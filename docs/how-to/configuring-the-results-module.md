@@ -110,7 +110,9 @@ A configuration starts with **every position in every session worth nothing**. F
 
 Reads a configuration back to you privately. Positions worth nothing at the bottom of the table are collapsed into a single `P11+` line rather than listed one by one.
 
-> **Nothing is checked at the moment you set it, and nothing catches it later either.** You can give second place more points than first, and the bot will take it. There is a check meant to run at `/season approve` — but on a first approval it inspects a table the season has not been given yet, finds nothing, and passes. Do not rely on it: read the table back with `/results config view` before you approve, because a wrongly built table costs you a wrong championship rather than a refused approval. See [#131](https://github.com/asergio-marques/f1_league_racing_bot/issues/131).
+> **A lower position may never be worth as much as the one above it.** Give second place more points than first and the bot takes the change, then tells you the table is out of order and names the positions. The edit is not refused, because filling a table in passes through states that are momentarily wrong — setting second place before first, or repairing a table from the bottom up — and refusing them would make ordinary ways of building a table impossible to follow.
+>
+> **`/season approve` is where it is refused**, and `/season review` names it before you get there — the report lists every position at fault and the Approve button is withheld, so you are not offered an approval that would be turned down. Two positive values tying counts as out of order; positions worth nothing at the bottom of the table do not, being the ordinary shape of one.
 
 > **`/results config view` needs a season.** Between seasons there is none, and the command refuses — so a table you may want to check before starting your next season setup is unreachable until you have run `/season setup`. There is also no command that lists what configurations you hold, so keep a note of the names you chose.
 
@@ -127,7 +129,7 @@ Building a table does **not** put it in your season. Attaching it does, and it c
 
 **Attach as many as you will need.** On race day the bot offers you the attached configurations as buttons and you pick one **per session**, which is how a race stopped at half distance gets scored differently from the qualifying session that preceded it. Attach one only, and the bot picks it for you without asking.
 
-**A season cannot be approved with nothing attached.** That is the one thing this module reliably adds to approval beyond the channels — the ordering check from step 3 does not fire on a first approval.
+**A season cannot be approved with nothing attached**, and nor can one whose attached tables are out of order. Those are the two things this module adds to approval beyond the channels, and both are checked against the configurations as they stand when you press Approve — not against the season's copy, which is taken only once the approval has passed every gate.
 
 **At approval the season takes its own private copy of every attached table.** From that moment the season is sealed off: editing the server's `100%` afterwards changes nothing about the running championship, and the copy is what every round is scored against. Changing a running season's points is a separate job, described under [Correcting something afterwards](#the-points-system-itself-mid-season), and it is deliberately harder.
 
@@ -315,6 +317,8 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 
 `/results amend revert` throws the working copy away and starts it again from the season's real tables. You cannot switch amendment mode off while changes are staged — revert or review them first, and the refusal says so.
 
+> **An amendment that would leave the points out of order cannot be approved.** The same rule `/season approve` holds at the start of a season holds here, and for the same reason: an approved amendment rescores every round of every division against the new table at once. `review` shows the problem alongside the diff, and pressing Approve refuses and changes nothing — the working copy is left as it is, so you can repair it and review again. Each `amend session` or `amend bulk-session` that breaks the ordering warns you at the moment you stage it.
+
 > **Approving reposts every round that has been raced, and only those.** A round still to come is left alone, and a round that has been raced comes back under the label it already stood at — amending the points does not push a round at Final Results back to provisional. Expect a burst of posting across every division's channels: one round at a time, from the first round of the season, which on a long calendar takes a moment to work through.
 
 ### Posts that went missing
@@ -371,7 +375,7 @@ Worth knowing so you do not go looking for the setting.
 |---|---|
 | `/season approve` never replies at all | Known: a configuration is attached under a name that does not exist — a typo, or one you removed. Check `/season review` against your real names |
 | Season refused for a missing channel | A division is short of its results, standings or verdicts channel. The reply names each one |
-| A championship scoring second place above first | Known: the ordering check at `/season approve` does not fire on a first approval, so a wrongly ordered table gets through. Read it back with `/results config view` before you approve |
+| Season refused for a points table out of order | A position is worth as much as or more than the one above it. The refusal names each one; repair them with `/results config session` and approve again |
 | Season refused for having no points configuration | Nothing is attached. `/results config append` first |
 | No submission channel when a round started | The module is off, the division has no results channel, or the round was cancelled. The log channel says which |
 | No submission channel for a round you moved | `/round amend` re-arms the round's submission whatever your modules. If one still does not open, check the round actually reached its scheduled time |

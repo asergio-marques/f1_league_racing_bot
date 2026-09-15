@@ -378,7 +378,7 @@ The review ends by asking whether you accept the configuration, with a **✅ App
 | Two rounds in a division share a date and time | Reschedule one |
 | A team name cannot be used | Rename it — the message names every offender at once |
 
-**And more, depending on what you turned on** — a missing channel for any enabled module, a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. Each is named individually with the command that fixes it. `/season review` shows you all of them before you get here.
+**And more, depending on what you turned on** — a missing channel for any enabled module, a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. Each is named individually with the command that fixes it. `/season review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
 
 When it goes through, the bot:
 

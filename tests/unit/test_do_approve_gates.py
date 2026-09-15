@@ -410,3 +410,132 @@ async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
     await _run(cog, _interaction())
 
     cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# The points-ordering gate (#131)
+#
+# The defect these pin is not that the rule was wrong — it was right, and had its own
+# passing tests — but that the gate asked it about a table nothing had filled in yet.
+# Every test of the rule seeded the season's own points by hand, so none of them could
+# notice. These drive `_do_approve` with the results module on and a config a manager
+# could build this afternoon, which is the only vantage point the fault is visible from.
+# ---------------------------------------------------------------------------
+
+
+def _cog_with_results(db_path, **overrides):
+    """A cog whose results module is on and whose test mode is off.
+
+    Test mode matters: with it on, `_do_approve` seeds and attaches configs of its own
+    before the gate, which is precisely why the bug was invisible to anyone exercising
+    approval in test mode.
+    """
+    cog = _cog(db_path, **overrides)
+    cog.bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(test_mode_active=False)
+    )
+    return cog
+
+
+async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> None:
+    """Build a server-level config holding *points* and attach it to the season."""
+    from models.points_config import SessionType
+    from services import points_config_service, season_points_service
+
+    await points_config_service.create_config(db_path, SERVER_ID, config_name)
+    for position, pts in points:
+        await points_config_service.set_session_points(
+            db_path, SERVER_ID, config_name, SessionType.FEATURE_RACE, position, pts
+        )
+    await season_points_service.attach_config(db_path, SEASON_ID, config_name, "SETUP")
+
+
+async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
+    """The regression. Before the fix this season was approved without a word."""
+    await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
+    cog = _cog_with_results(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "violates monotonic ordering" in replies
+    assert "BROKEN" in replies
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_a_refused_season_takes_no_copy_of_the_points_it_was_refused_for(db_path):
+    """Refusing must leave nothing behind, or the next approval inherits the bad table."""
+    await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
+    cog = _cog_with_results(db_path)
+
+    await _run(cog, _interaction())
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM season_points_entries WHERE season_id = ?", (SEASON_ID,)
+        )
+        assert (await cursor.fetchone())["n"] == 0
+
+
+async def test_a_well_ordered_points_table_still_approves(db_path):
+    """The other half: a gate that refuses everything is no better than one that refuses nothing."""
+    await _attach(db_path, "GOOD", [(1, 25), (2, 18), (3, 15)])
+    cog = _cog_with_results(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "violates monotonic ordering" not in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+async def test_a_table_worth_nothing_below_the_points_still_approves(db_path):
+    """Trailing zeros are the ordinary shape of a points table, not a fault."""
+    await _attach(db_path, "ZEROS", [(1, 25), (2, 18), (3, 0), (4, 0)])
+    cog = _cog_with_results(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "violates monotonic ordering" not in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):
+    """The case the old check did cover, and which the new one must not displace.
+
+    The snapshot writes with INSERT OR REPLACE and clears nothing, so a season approved
+    once can be holding entries no attached config would ever mention.
+    """
+    await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
+    async with get_connection(db_path) as db:
+        for position, pts in [(1, 10), (2, 25)]:
+            await db.execute(
+                "INSERT INTO season_points_entries "
+                "(season_id, config_name, session_type, position, points) "
+                "VALUES (?, 'GONE', 'FEATURE_RACE', ?, ?)",
+                (SEASON_ID, position, pts),
+            )
+        await db.commit()
+    cog = _cog_with_results(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "GONE" in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_one_broken_position_is_named_once_however_many_checks_saw_it(db_path):
+    """A re-approval is looked at from both sides; the manager reads one line, not two."""
+    await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
+    from services import season_points_service
+
+    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID, SERVER_ID)
+    cog = _cog_with_results(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert _replies(interaction).count("Config 'BROKEN'") == 1
