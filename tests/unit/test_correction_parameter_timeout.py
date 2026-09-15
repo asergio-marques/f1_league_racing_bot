@@ -336,3 +336,75 @@ async def test_the_timeout_does_nothing_while_the_signup_module_is_disabled(tmp_
 
     assert await _state(db_path) == "AWAITING_CORRECTION_PARAMETER"
     assert channel.send.await_count == 0
+
+
+# ── Closing the window ────────────────────────────────────────────────────
+
+
+async def _open_the_window(db_path: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_module_config (server_id, signups_open, close_at) "
+            "VALUES (?, 1, NULL)",
+            (SERVER_ID,),
+        )
+        await db.commit()
+
+
+def _close_cog(db_path: str):
+    from cogs.signup_cog import SignupCog
+    from services.driver_service import DriverService
+    from services.signup_module_service import SignupModuleService
+
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.driver_service = DriverService(db_path)
+    bot.signup_module_service = SignupModuleService(db_path)
+    bot.get_guild = MagicMock(return_value=None)
+    bot.output_router.post_log = AsyncMock()
+
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = bot
+    return cog
+
+
+async def test_the_close_confirmation_counts_a_driver_awaiting_a_correction_parameter(tmp_path):
+    """Parked alone, they used to let `/signup close` shut with no confirmation at all."""
+    from cogs.signup_cog import SignupCog
+    from tests.support.undecorate import undecorate
+
+    db_path = await _seed(tmp_path)
+    await _open_the_window(db_path)
+    cog = _close_cog(db_path)
+
+    interaction = MagicMock()
+    interaction.guild_id = SERVER_ID
+    interaction.guild = None
+    interaction.user.id = ADMIN_ID
+    interaction.user.display_name = "Toto"
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+
+    await undecorate(SignupCog.signup_close)(cog, interaction)
+
+    reply = interaction.response.send_message.await_args.args[0]
+    assert "1 driver(s) are currently in progress" in reply
+    assert DRIVER_ID in reply
+
+
+async def test_a_close_leaves_a_driver_awaiting_a_correction_parameter_alone(tmp_path):
+    """Listed, but untouched — like the other two review-cycle states beside it.
+
+    A manager may still press Request Changes after the window has shut, so a close-time
+    revert would rescue nobody the restart sweep does not already rescue (decided
+    2026-09-15).
+    """
+    from cogs.module_cog import execute_forced_close
+
+    db_path = await _seed(tmp_path)
+    await _open_the_window(db_path)
+    cog = _close_cog(db_path)
+
+    await execute_forced_close(SERVER_ID, cog.bot, audit_action="SIGNUP_CLOSE")
+
+    assert await _state(db_path) == "AWAITING_CORRECTION_PARAMETER"
