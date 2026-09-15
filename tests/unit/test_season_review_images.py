@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -263,20 +264,36 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
 
     # Independent causes withhold the button, so the offer is guarded on every one of
     # them rather than sitting in an `else` belonging to any single one (#121, #122,
-    # #181). Assembled from the causes rather than pinned as a string: a new cause is
-    # meant to be added here, and a test that only accepted the two it was written with
-    # would read as though adding a third were the mistake.
-    causes = ("approval_blockers", "calendar_faults_found", "points_faults")
-    offer = "if " + " and ".join(f"not {cause}" for cause in causes) + ":"
-    assert offer in tail, (
+    # #181, #132). Assembled from the causes rather than pinned as a string: a new cause
+    # is meant to be added here, and a test that only accepted the two it was written
+    # with would read as though adding a third were the mistake.
+    #
+    # Matched against the source with its whitespace collapsed, because the condition is
+    # now long enough to wrap and how it is wrapped is not the rule being pinned — a
+    # reformat that changes nothing about which causes guard the button should not fail
+    # this (#132).
+    causes = (
+        "approval_blockers",
+        "calendar_faults_found",
+        "points_faults",
+        "phantom_configs",
+    )
+    offer = re.compile(
+        r"if\s*\(?\s*"
+        + r"\s+and\s+".join(re.escape(f"not {cause}") for cause in causes)
+        + r"\s*\)?\s*:"
+    )
+    match = offer.search(tail)
+    assert match is not None, (
         f"the approval prompt is not guarded on all of {', '.join(causes)}"
     )
-    fault_branch = tail[tail.index("if approval_blockers:"):tail.index(offer)]
+    offer_at = match.start()
+    fault_branch = tail[tail.index("if approval_blockers:"):offer_at]
     assert "_post_approval_prompt" not in fault_branch, (
         "the button must not be offered on a fault"
     )
     assert "image module is not correctly configured" in fault_branch
-    assert "_post_approval_prompt" in tail[tail.index(offer):]
+    assert "_post_approval_prompt" in tail[offer_at:]
 
 
 def test_the_roleless_team_warning_survives_the_graphic():
