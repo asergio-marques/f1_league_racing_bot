@@ -170,6 +170,12 @@ async def driver_standings_for_display(
 
     The recomputation that persists a snapshot resolves the same names, through
     :func:`recompute_standings_from_round`, so the stored order and the drawn order agree.
+
+    The name is whatever resolves at the moment of computing, and no earlier one is kept. A
+    driver renamed mid-season therefore moves among the entries they are tied with, and a
+    round reposted after the rename can order such a pair the other way about than when it
+    was first published. That is accepted rather than worked around (decided 2026-09-15):
+    preserving it would mean the standings reading a name nobody is called any more.
     """
     snaps = await standings_service.compute_driver_standings(db_path, division_id, round_id)
     if bot is None or guild is None or not snaps:
