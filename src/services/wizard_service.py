@@ -130,6 +130,11 @@ class WizardService:
         assert self._bot is not None, "WizardService.set_bot() not called"
         return self._bot.signup_module_service  # type: ignore[attr-defined]
 
+    @property
+    def _module_svc(self):
+        assert self._bot is not None, "WizardService.set_bot() not called"
+        return self._bot.module_service  # type: ignore[attr-defined]
+
     def _get_guild(self, server_id: int) -> discord.Guild | None:
         assert self._bot is not None, "WizardService.set_bot() not called"
         return self._bot.get_guild(server_id)  # type: ignore[attr-defined]
@@ -681,10 +686,15 @@ class WizardService:
             guild.get_channel(wizard.signup_channel_id)
             if wizard.signup_channel_id else None
         )
-        # Save reason so it appears only when the driver is prompted to re-submit
+        # Remember who asked. The actor is only a Discord object here, and the window can
+        # outlive the process, so the ID is written down rather than held — it is what
+        # lets _correction_timeout_callback mention the manager when the window lapses.
+        # The reason is saved alongside it, and appears only when the driver is prompted
+        # to re-submit.
+        wizard.draft_answers["_correction_requested_by"] = str(actor.id)
         if reason:
             wizard.draft_answers["_correction_reason"] = reason
-            await self._signup_svc.save_wizard(wizard)
+        await self._signup_svc.save_wizard(wizard)
 
         if isinstance(channel, discord.TextChannel):
             driver_member = guild.get_member(int(discord_user_id))
@@ -959,6 +969,8 @@ class WizardService:
 
         SC-005.
         """
+        await self.recover_correction_timeouts()
+
         wizards = await self._signup_svc.get_all_active_wizards_all_servers()
         now = datetime.now(timezone.utc)
         for wizard in wizards:
@@ -980,6 +992,44 @@ class WizardService:
             else:
                 asyncio.create_task(
                     self.handle_inactivity_timeout(server_id, discord_user_id)
+                )
+
+    async def recover_correction_timeouts(self) -> None:
+        """Called from recover_wizards: release every driver awaiting a correction parameter.
+
+        The five-minute selection window is an in-memory asyncio task, so a restart
+        discards it and nothing re-creates it — which left the driver parked for good,
+        shown in no listing and refused by their own Sign Up button (issue #129).
+
+        A restart releases them **unconditionally** rather than re-arming whatever time was
+        left. The state exists only while a manager is mid-decision, and a manager whose
+        bot has restarted is no longer mid-decision (decided 2026-09-15). That is also why
+        nothing here reads a stored deadline, and why a driver stranded by the old
+        behaviour — whose record predates any of this — is released on the same path.
+
+        These drivers cannot come from :meth:`recover_wizards`' own iteration: the wizard
+        record is UNENGAGED for the whole window, and
+        ``get_all_active_wizards_all_servers`` filters that out in SQL. The driver profile
+        is the only record that the window is open, so it is what is read here.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT server_id, discord_user_id FROM driver_profiles "
+                "WHERE current_state = ?",
+                (DriverState.AWAITING_CORRECTION_PARAMETER.value,),
+            )
+            rows = await cursor.fetchall()
+
+        for row in rows:
+            try:
+                await self._correction_timeout_callback(
+                    row["server_id"], row["discord_user_id"], after_restart=True
+                )
+            except Exception:
+                # One league's missing guild or deleted channel must not strand the rest.
+                log.exception(
+                    "recover_correction_timeouts: could not release %s/%s",
+                    row["server_id"], row["discord_user_id"],
                 )
 
     async def get_wizard_by_channel(
@@ -1621,17 +1671,36 @@ class WizardService:
         await self._correction_timeout_callback(server_id, discord_user_id)
 
     async def _correction_timeout_callback(
-        self, server_id: int, discord_user_id: str
+        self, server_id: int, discord_user_id: str, *, after_restart: bool = False
     ) -> None:
         """Auto-revert AWAITING_CORRECTION_PARAMETER → PENDING_ADMIN_APPROVAL (T038).
 
-        Clears the task entry, transitions driver back, and re-posts the
-        admin review panel with AdminReviewView.
+        Reached two ways: the five-minute selection window lapsing, and a restart, which
+        releases every parked driver unconditionally (issue #129). ``after_restart`` picks
+        the wording and nothing else — the revert is identical, because a driver parked
+        here is waiting on a manager either way.
+
+        The manager who pressed Request Changes is mentioned in the driver's signup
+        channel. That is the only place a ping reaches them: :meth:`OutputRouter.post_log`
+        wraps mentions in backticks by design, so a log entry names a manager without
+        telling them. The driver reads that channel too, and seeing the review go back to
+        an admin is intended (decided 2026-09-15).
         FR-043.
         """
         # Clear the task entry
         ckey = (server_id, discord_user_id)
         self._correction_tasks.pop(ckey, None)
+
+        # A league that has switched the module off gets no driver moved and no panel
+        # posted into a channel it has stopped using. The restart sweep makes this
+        # reachable in a way the in-memory task never really was, so the guard lands with
+        # it rather than after it.
+        if not await self._module_svc.is_signup_enabled(server_id):
+            log.debug(
+                "_correction_timeout_callback: signup module disabled for %s; leaving %s parked",
+                server_id, discord_user_id,
+            )
+            return
 
         # Transition driver back to PENDING_ADMIN_APPROVAL
         try:
@@ -1651,8 +1720,15 @@ class WizardService:
         if wizard is None or guild is None:
             return
 
+        # Read who asked before clearing it — the mention below is the last use.
+        requested_by = wizard.draft_answers.get("_correction_requested_by")
+
         wizard.wizard_state = WizardState.UNENGAGED
-        wizard.draft_answers.pop("_is_correction", None)
+        # The reason goes with the rest of the correction state. select_correction_parameter
+        # already pops it on the path that succeeds; leaving it behind on the path that
+        # lapses let a stale reason resurface on the manager's next correction.
+        for key in ("_is_correction", "_correction_reason", "_correction_requested_by"):
+            wizard.draft_answers.pop(key, None)
         await self._signup_svc.save_wizard(wizard)
 
         # Re-post admin review panel
@@ -1667,8 +1743,21 @@ class WizardService:
                         s.slot_id: s.display_label
                         for s in (wizard.config_snapshot.slots if wizard.config_snapshot else [])
                     }
+                    driver_member = guild.get_member(int(discord_user_id))
+                    driver_name = (
+                        driver_member.display_name if driver_member else discord_user_id
+                    )
+                    lapse = (
+                        "the bot restarted before a correction parameter was chosen"
+                        if after_restart
+                        else "nobody chose a correction parameter in time"
+                    )
+                    # No mention where the window was opened before the requesting manager
+                    # was recorded — that is exactly the driver stranded by issue #129,
+                    # and they are released here like any other.
+                    opening = f"<@{requested_by}> — {lapse}" if requested_by else lapse.capitalize()
                     await channel.send(
-                        "⏰ Parameter selection timed out. Here is the review panel again:",
+                        f"⏰ {opening}. **{driver_name}** is back in the approval queue.",
                     )
                     await channel.send(
                         self._format_review_panel(record, slot_labels, track_name_map=track_map),
