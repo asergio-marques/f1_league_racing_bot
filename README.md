@@ -859,7 +859,7 @@ Every successful reply echoes the other two deadlines, and the change is written
 
 > **The posted forecasts do not describe your configured horizons.** The message text carries the fixed wording "(5 days out)", "(2 days out)" and "(2 hours out)" whatever the deadlines are set to. The forecast is published at the configured time; only its self-description is wrong.
 
-> **Phase recovery after a restart uses 5 / 2 / 2.** Rescheduling after a bot restart uses the packaged defaults rather than your configured deadlines. `/round amend` no longer does — an amended round keeps the horizons you set.
+> **A restart keeps the horizons you set.** When the bot starts again with forecasts still outstanding, it works out which ones it missed from your configured deadlines, the same ones the catch-up uses when the module is enabled. It used to fall back to the packaged 5 / 2 / 2, as `/round amend` once did; neither does now.
 
 ---
 

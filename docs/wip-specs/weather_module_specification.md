@@ -144,6 +144,7 @@
 
 ## Recovery
 - Upon starting, the bot shall perform any phase of any round of an active season whose horizon has passed and which has not yet been performed.
+- The horizons it shall judge those phases by are the league's own configured ones, not the packaged ones, so that a restart and the catch-up performed when the module is enabled cannot disagree about a round.
 
 ## Image generation
 - Where the image module is enabled and its weather output switched on, each forecast shall be posted as a graphic in place of its text, on a message carrying the division role mention and nothing besides.

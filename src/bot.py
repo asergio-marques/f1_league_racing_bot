@@ -390,14 +390,29 @@ async def main() -> None:
 
 
 async def _recover_missed_phases(bot: commands.Bot) -> None:
-    """Re-fire any weather phases whose horizon has passed but were not executed."""
+    """Re-fire any weather phases whose horizon has passed but were not executed.
+
+    The horizons are the league's own, read from ``weather_pipeline_config``, not the packaged
+    5 / 2 / 2 (issue #111). Every other path that decides whether a phase is overdue reads that
+    config — ``/season approve``, the catch-up ``/module enable weather`` runs, and
+    ``amend_round`` — and a restart judging by the defaults made the same league see one set of
+    timings on an enable and another on a restart: a longer phase 1 was never published at all,
+    a shorter one was published days early.
+
+    The config is resolved once per server rather than once per round, since a season's rounds
+    all share one, and only after the module gate, so a server with weather switched off is
+    never queried for it.
+    """
     from db.database import get_connection
     from services.phase1_service import run_phase1
     from services.phase2_service import run_phase2
     from services.phase3_service import run_phase3
-    from datetime import datetime, timezone
+    from models.weather_config import WeatherPipelineConfig
+    from services.weather_config_service import get_weather_pipeline_config
+    from datetime import datetime, timedelta, timezone
 
     now = datetime.now(timezone.utc)
+    configs: dict[int, WeatherPipelineConfig] = {}
 
     async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
         cursor = await db.execute(
@@ -424,9 +439,13 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
         if not await bot.module_service.is_weather_enabled(server_id):  # type: ignore[attr-defined]
             continue
 
-        phase1_horizon = scheduled_at - __import__("datetime").timedelta(days=5)
-        phase2_horizon = scheduled_at - __import__("datetime").timedelta(days=2)
-        phase3_horizon = scheduled_at - __import__("datetime").timedelta(hours=2)
+        if server_id not in configs:
+            configs[server_id] = await get_weather_pipeline_config(bot.db_path, server_id)  # type: ignore[attr-defined]
+        cfg = configs[server_id]
+
+        phase1_horizon = scheduled_at - timedelta(days=cfg.phase_1_days)
+        phase2_horizon = scheduled_at - timedelta(days=cfg.phase_2_days)
+        phase3_horizon = scheduled_at - timedelta(hours=cfg.phase_3_hours)
 
         if not p1 and now >= phase1_horizon:
             log.info("Recovery: firing Phase 1 for round %s", round_id)

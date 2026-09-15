@@ -1,6 +1,6 @@
 # Testing with test mode
 
-Test mode exists because the bot is almost entirely time-driven. A season's behaviour is carried by scheduled jobs — weather phases at 5 days, 2 days and 2 hours before a round; result submission after it; check-in calls before it — and none of that can be observed in a useful timeframe by waiting.
+Test mode exists because the bot is almost entirely time-driven. A season's behaviour is carried by scheduled jobs — weather phases at the league's configured horizons before a round, 5 days, 2 days and 2 hours by default; result submission after it; check-in calls before it — and none of that can be observed in a useful timeframe by waiting.
 
 Test mode gives you two things the normal season does not:
 
