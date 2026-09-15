@@ -43,7 +43,7 @@
 ### Attendance points
 - <NEW COMMAND> An "attendance config no-rsvp-penalty" command will be made available to league managers, which shall have as input an integer standing for the number of attendance points gained upon failing to RSVP up for a round.
     - By default, this value will be 1.
-- <NEW COMMAND> An "attendance config no-attend-penalty" command will be made available to league managers, which shall have as input an integer standing for the number of attendance points gained upon failing to show up for a round (regardless of check-in status).
+- <NEW COMMAND> An "attendance config absent-penalty" command will be made available to league managers, which shall have as input an integer standing for the number of attendance points gained upon failing to show up for a round without having accepted the check-in. A driver who accepted and then did not show pays the no-show penalty below instead, never this one.
     - By default, this value will be 1.
 - <NEW COMMAND> An "attendance config no-show-penalty" command will be made available to league managers, which shall have as input an integer standing for the number of attendance points gained upon failing to show up for a round after having accepted the check-in.
     - By default, this value will be 1.
@@ -109,10 +109,11 @@
 - Attendance points shall only be distributed once the post-race penalties results are finalized, to prevent erroneous automatic sackings due to omitting a driver on the results accidentally.
 - Attendance points will be distributed as follows:
     - Failure to check-in, attended: no-rsvp-penalty points gained.
-    - Failure to check-in, did not attend: no-rsvp-penalty + no-attend-penalty points gained.
-    - Checked-in, attended: 0 points gained.
-    - Checked-in, did not attend: no-show-penalty points gained.
-- A new button will be made available in the penalty wizard (NOT available in the appeal stage) for "attendance pardons". When pressed, a form shall open, requesting a discord user ID, the type of attendance penalty excused (no RSVP, no attend, no show), and the justification.
+    - Failure to check-in, did not attend: no-rsvp-penalty + absent-penalty points gained.
+    - Checked-in, attended: 0 points gained, whichever answer was given.
+    - Accepted the check-in, did not attend: no-show-penalty points gained.
+    - Answered tentative or declined, did not attend: absent-penalty points gained.
+- A new button will be made available in the penalty wizard (NOT available in the appeal stage) for "attendance pardons". When pressed, a form shall open, requesting a discord user ID, the type of attendance penalty excused (no RSVP, absent, no show), and the justification.
     - The pardons attributed shall be validated against the check-in status (did check-in or not) and against the real attendance of the driver (current provisional round results).
     - The justification is merely for logging purposes, it shall not be displayed anywhere else but the logging channel. Privacy reasons.
     - Multiple pardons may be attributed to the same driver (so that a "failure to check-in, did not attend" may be fully waived).
