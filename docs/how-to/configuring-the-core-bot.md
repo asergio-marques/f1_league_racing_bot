@@ -148,7 +148,7 @@ Five modules, **all off to begin with**. The bot works without any of them, but 
 
 Each module then has its own configuration, which is not covered here. Start from [Slash Commands](../../README.md#slash-commands) in the README and find that module's section.
 
-> **Decide now, not later.** Two of the five cannot be turned *on* once a season is running, turning either off mid-season does real and irreversible damage — `results` deletes the season's championship outright — and a third changes what `/season approve` demands of you. This step being early is not an accident.
+> **Decide now, not later.** Two of the five cannot be turned *on* once a season is running, turning either off mid-season does real and irreversible damage — `results` deletes the season's championship outright — and a third changes what approval demands of you. This step being early is not an accident.
 
 ---
 
@@ -333,7 +333,7 @@ The bot posts the whole configuration to the channel, **as several messages rath
 
 Then a block per division giving its role, its channels, its full calendar and its lineup.
 
-With the image module on and the calendar or lineup output switched on, that division's calendar and lineup arrive as the drawn pictures rather than as text, so what you approve is what your league will actually receive. See [Configuring the image module](configuring-the-image-module.md) for the switches. A picture that cannot be drawn takes the **Approve** button away, and `/season approve` refuses on the same check, until you fix it. Two settings do the same without any picture being wrong: a driver-photo setting that could never fetch anything, and — if you have turned per-tier colours on — a colour slot one of your drawings uses that a division has no colour for. The review says which of the three it is.
+With the image module on and the calendar or lineup output switched on, that division's calendar and lineup arrive as the drawn pictures rather than as text, so what you approve is what your league will actually receive. See [Configuring the image module](configuring-the-image-module.md) for the switches. A picture that cannot be drawn takes the **Approve** button away until you fix it. Two settings do the same without any picture being wrong: a driver-photo setting that could never fetch anything, and — if you have turned per-tier colours on — a colour slot one of your drawings uses that a division has no colour for. The review says which of the three it is.
 
 A module you have not switched on has no settings to show, so its message is simply not posted — six is the most you will see, not the number you should expect.
 

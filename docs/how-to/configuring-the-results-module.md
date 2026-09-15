@@ -112,7 +112,7 @@ Reads a configuration back to you privately. Positions worth nothing at the bott
 
 > **A lower position may never be worth as much as the one above it.** Give second place more points than first and the bot takes the change, then tells you the table is out of order and names the positions. The edit is not refused, because filling a table in passes through states that are momentarily wrong — setting second place before first, or repairing a table from the bottom up — and refusing them would make ordinary ways of building a table impossible to follow.
 >
-> **`/season approve` is where it is refused**, and `/season review` names it before you get there — the report lists every position at fault and the Approve button is withheld, so you are not offered an approval that would be turned down. Two positive values tying counts as out of order; positions worth nothing at the bottom of the table do not, being the ordinary shape of one.
+> **Approval is where it is refused**, and `/season review` names it before you get there — the report lists every position at fault and the Approve button is withheld, so you are not offered an approval that would be turned down. Two positive values tying counts as out of order; positions worth nothing at the bottom of the table do not, being the ordinary shape of one.
 
 > **`/results config view` needs a season.** Between seasons there is none, and the command refuses — so a table you may want to check before starting your next season setup is unreachable until you have run `/season setup`. There is also no command that lists what configurations you hold, so keep a note of the names you chose.
 
@@ -133,7 +133,7 @@ Building a table does **not** put it in your season. Attaching it does, and it c
 
 **At approval the season takes its own private copy of every attached table.** From that moment the season is sealed off: editing the server's `100%` afterwards changes nothing about the running championship, and the copy is what every round is scored against. Changing a running season's points is a separate job, described under [Correcting something afterwards](#the-points-system-itself-mid-season), and it is deliberately harder.
 
-> **A name you mistype is accepted and breaks approval silently.** `/results config append` does not check that the configuration exists, so a typo attaches nothing at all — and `/season approve` then fails **with no message whatever**, leaving the season in setup with no clue as to why. The same happens if you `/results config remove` a configuration that is still attached, because removing one does not detach it. Check `/season review`, which lists the attached names, against the names you actually built.
+> **A name you mistype is accepted and breaks approval silently.** `/results config append` does not check that the configuration exists, so a typo attaches nothing at all — and approval then fails **with no message whatever**, leaving the season in setup with no clue as to why. The same happens if you `/results config remove` a configuration that is still attached, because removing one does not detach it. Check `/season review`, which lists the attached names, against the names you actually built.
 
 ---
 
@@ -317,7 +317,7 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 
 `/results amend revert` throws the working copy away and starts it again from the season's real tables. You cannot switch amendment mode off while changes are staged — revert or review them first, and the refusal says so.
 
-> **An amendment that would leave the points out of order cannot be approved.** The same rule `/season approve` holds at the start of a season holds here, and for the same reason: an approved amendment rescores every round of every division against the new table at once. `review` shows the problem alongside the diff, and pressing Approve refuses and changes nothing — the working copy is left as it is, so you can repair it and review again. Each `amend session` or `amend bulk-session` that breaks the ordering warns you at the moment you stage it.
+> **An amendment that would leave the points out of order cannot be approved.** The same rule approval holds at the start of a season holds here, and for the same reason: an approved amendment rescores every round of every division against the new table at once. `review` shows the problem alongside the diff, and pressing Approve refuses and changes nothing — the working copy is left as it is, so you can repair it and review again. Each `amend session` or `amend bulk-session` that breaks the ordering warns you at the moment you stage it.
 
 > **Approving reposts every round that has been raced, and only those.** A round still to come is left alone, and a round that has been raced comes back under the label it already stood at — amending the points does not push a round at Final Results back to provisional. Expect a burst of posting across every division's channels: one round at a time, from the first round of the season, which on a long calendar takes a moment to work through.
 
@@ -373,7 +373,7 @@ Worth knowing so you do not go looking for the setting.
 
 | What you see | Usually means |
 |---|---|
-| `/season approve` never replies at all | Known: a configuration is attached under a name that does not exist — a typo, or one you removed. Check `/season review` against your real names |
+| Pressing **Approve** never replies at all | Known: a configuration is attached under a name that does not exist — a typo, or one you removed. Check `/season review` against your real names |
 | Season refused for a missing channel | A division is short of its results, standings or verdicts channel. The reply names each one |
 | Season refused for a points table out of order | A position is worth as much as or more than the one above it. The refusal names each one; repair them with `/results config session` and approve again |
 | Season refused for having no points configuration | Nothing is attached. `/results config append` first |
