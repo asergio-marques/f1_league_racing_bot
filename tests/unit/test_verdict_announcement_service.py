@@ -1,6 +1,7 @@
 """Tests for verdict_announcement_service — translate_penalty and post helpers."""
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
@@ -173,3 +174,321 @@ async def test_post_appeal_announcements_empty_list_noop():
     state = _make_state("irrelevant.db")
     await post_appeal_announcements(bot, state, [])
     bot.get_channel.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# The name a verdict graphic draws a driver under (#141)
+# ---------------------------------------------------------------------------
+#
+# These drive the `post_*` entry points with a real driver in the database, which nothing
+# did before: the older tests above stop at an unconfigured or inaccessible channel, and
+# tests/unit/test_image_verdicts_post.py calls `_send_verdict` with the name already
+# resolved. The path in between resolved every real driver to their raw user id.
+
+SERVER_ID = 1001
+DRIVER_ID = 4815162342
+
+
+class _Member:
+    """A guild member, as `_driver_names` reads one."""
+
+    def __init__(self, display_name: str) -> None:
+        self.display_name = display_name
+
+
+class _Guild:
+    """A guild `_driver_names` can read, cache miss and all.
+
+    `fetch_member` is implemented rather than left off: absent it, the reader raises
+    AttributeError, `_graphic_name` falls back to the old behaviour and the test passes
+    for the wrong reason — the very thing these tests exist to catch.
+    """
+
+    def __init__(self, member: "_Member | None" = None) -> None:
+        self.id = SERVER_ID
+        self._member = member
+
+    def get_member(self, _user_id):
+        return self._member
+
+    async def fetch_member(self, _user_id):
+        import discord
+
+        raise discord.NotFound(
+            SimpleNamespace(status=404, reason="Not Found"), "Unknown Member"
+        )
+
+    def get_role(self, _role_id):
+        return None
+
+
+class _Channel:
+    def __init__(self, member: "_Member | None" = None) -> None:
+        self.sent: list[tuple] = []
+        self.guild = _Guild(member)
+
+    async def send(self, content=None, *, file=None, **_kwargs):
+        self.sent.append((content, file))
+
+
+class _Bot:
+    def __init__(self, db_path: str, channel: "_Channel") -> None:
+        self.db_path = db_path
+        self._channel = channel
+
+    def get_channel(self, _channel_id):
+        return self._channel
+
+
+@pytest.fixture()
+def capture_drawings(monkeypatch, tmp_path):
+    """Capture what the verdict graphic is asked to draw, without a rasteriser.
+
+    Mirrors `stub_image_path` in tests/unit/test_image_verdicts_post.py; kept local so the
+    image toggle can be switched off for the test that pins the textual announcement.
+    """
+    png = tmp_path / "verdict.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    state = {"enabled": True, "built": []}
+
+    async def _enabled(_bot, _server_id):
+        return state["enabled"]
+
+    async def _build(_bot, **kwargs):
+        from services.image_verdict_service import VerdictDrawing, resolve_mentions
+
+        state["built"].append(kwargs)
+        return VerdictDrawing(
+            kind=kwargs["kind"],
+            season_number=kwargs["season_number"],
+            division_name=kwargs["division_name"],
+            round_number=kwargs["round_number"],
+            session_name=kwargs["session_label"],
+            driver_name=kwargs["driver_name"],
+            team_name=kwargs.get("team_name"),
+            penalty=kwargs["penalty_description"],
+            description=resolve_mentions(
+                kwargs["description_text"], lambda _u: kwargs["driver_name"]
+            ),
+            justification=resolve_mentions(
+                kwargs["justification_text"], lambda _u: kwargs["driver_name"]
+            ),
+        )
+
+    async def _render(_bot, _server_id, drawing, **_kwargs):
+        from services.image_verdict_post import VerdictRender
+
+        return VerdictRender(png=png, notices=[], problem=None)
+
+    async def _report(*_args, **_kwargs):
+        return None
+
+    async def _team(_bot, _guild, **_kwargs):
+        return "Red Bull"
+
+    from services import image_verdict_post
+
+    monkeypatch.setattr(image_verdict_post, "verdicts_enabled", _enabled)
+    monkeypatch.setattr(image_verdict_post, "build_drawing", _build)
+    monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
+    monkeypatch.setattr(image_verdict_post, "report", _report)
+    monkeypatch.setattr(image_verdict_post, "report_notices", _report)
+    monkeypatch.setattr(image_verdict_post, "team_name_for_entry", _team)
+    return state
+
+
+async def _seed_round(db_path: str) -> dict:
+    """A season, a division with a verdicts channel, and one round with a race result."""
+    from db.database import run_migrations, get_connection
+
+    await run_migrations(db_path)
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 10, 20, 30)",
+            (SERVER_ID,),
+        )
+        cursor = await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number) "
+            "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
+            (SERVER_ID,),
+        )
+        season_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id) "
+            "VALUES (?, 'Division A', 777)",
+            (season_id,),
+        )
+        division_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+            "VALUES (?, 1, 'STANDARD', 'AWAITING_REPORT_VERDICTS', '2026-01-01T18:00:00')",
+            (division_id,),
+        )
+        round_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, penalty_channel_id) "
+            "VALUES (?, 55555)",
+            (division_id,),
+        )
+        cursor = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type) "
+            "VALUES (?, ?, 'FEATURE_RACE')",
+            (round_id, division_id),
+        )
+        session_result_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position) VALUES (?, ?, 888, 1)",
+            (session_result_id, DRIVER_ID),
+        )
+        race_result_id = cursor.lastrowid
+        await db.commit()
+
+    return {"round_id": round_id, "race_result_id": race_result_id}
+
+
+async def _seed_driver(
+    db_path: str,
+    *,
+    signup_display_name: str | None = None,
+    signup_username: str | None = None,
+    test_display_name: str | None = None,
+) -> None:
+    """One driver profile, and the signup record the league holds for them where it does."""
+    from db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
+            "is_test_driver, test_display_name) VALUES (?, ?, 'FULL_TIME', ?, ?)",
+            (
+                SERVER_ID,
+                str(DRIVER_ID),
+                1 if test_display_name else 0,
+                test_display_name,
+            ),
+        )
+        if signup_display_name is not None or signup_username is not None:
+            await db.execute(
+                "INSERT INTO signup_records (server_id, discord_user_id, "
+                "discord_username, server_display_name) VALUES (?, ?, ?, ?)",
+                (SERVER_ID, str(DRIVER_ID), signup_username, signup_display_name),
+            )
+        await db.commit()
+
+
+def _penalty_record(race_result_id: int) -> dict:
+    return {
+        "race_result_id": race_result_id,
+        "qual_result_id": None,
+        "driver_user_id": DRIVER_ID,
+        "team_role_id": 888,
+        "penalty_type": "TIME",
+        "time_seconds": 5,
+        "description": "Contact at turn four.",
+        "justification": f"<@{DRIVER_ID}> was found wholly at fault.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_penalty_verdict_names_the_driver_not_their_id(tmp_path, capture_drawings):
+    """A real driver is drawn under their server display name, never their user id (#141)."""
+    db_path = str(tmp_path / "test.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path, signup_display_name="Signed Up Name")
+
+    channel = _Channel(_Member("Ada on Server"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"])]
+    )
+
+    assert len(capture_drawings["built"]) == 1
+    drawn = capture_drawings["built"][0]["driver_name"]
+    assert drawn == "Ada on Server"
+    assert str(DRIVER_ID) not in drawn
+
+
+@pytest.mark.asyncio
+async def test_penalty_verdict_falls_back_to_the_signup_name(tmp_path, capture_drawings):
+    """Unreachable on the server, the driver is drawn under the name the league recorded."""
+    db_path = str(tmp_path / "test.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path, signup_display_name="Signed Up Name")
+
+    channel = _Channel(None)  # no member: left the server, or not in the cache
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"])]
+    )
+
+    assert capture_drawings["built"][0]["driver_name"] == "Signed Up Name"
+
+
+@pytest.mark.asyncio
+async def test_penalty_verdict_resolves_the_mention_in_the_justification(
+    tmp_path, capture_drawings
+):
+    """The mention a steward wrote is drawn as the driver's name, not as their id (#141)."""
+    db_path = str(tmp_path / "test.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path, signup_display_name="Signed Up Name")
+
+    channel = _Channel(_Member("Ada on Server"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"])]
+    )
+
+    justification = capture_drawings["built"][0]["justification_text"]
+    from services.image_verdict_service import resolve_mentions
+
+    drawn = resolve_mentions(
+        justification, lambda _u: capture_drawings["built"][0]["driver_name"]
+    )
+    assert drawn == "Ada on Server was found wholly at fault."
+
+
+@pytest.mark.asyncio
+async def test_appeal_verdict_names_the_driver_not_their_id(tmp_path, capture_drawings):
+    """An appeal correction names the driver the same way a penalty does (#141)."""
+    db_path = str(tmp_path / "test.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path, signup_display_name="Signed Up Name")
+
+    channel = _Channel(_Member("Ada on Server"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    record = _penalty_record(seeded["race_result_id"])
+    record["time_seconds"] = -5
+    await post_appeal_announcements(bot, state, [record])
+
+    assert capture_drawings["built"][0]["driver_name"] == "Ada on Server"
+
+
+@pytest.mark.asyncio
+async def test_mock_driver_is_still_drawn_under_its_test_name(tmp_path, capture_drawings):
+    """A test driver keeps the name test mode gave it — the case that always worked."""
+    db_path = str(tmp_path / "test.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path, test_display_name="Mock Driver")
+
+    channel = _Channel(None)  # a mock driver is nobody on the server
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"])]
+    )
+
+    assert capture_drawings["built"][0]["driver_name"] == "Mock Driver"
