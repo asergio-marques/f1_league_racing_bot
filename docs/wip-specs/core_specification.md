@@ -322,6 +322,7 @@ it only to place it; the rules governing it belong to its own specification.
 - The former-driver flag shall be false by default and shall be set once a driver has raced a round. A driver so marked shall not be deleted, only amended.
     - A driver shall be held to have raced a round only once that round is final, and only by its final results. Results still awaiting report or appeal verdicts shall mark nobody.
     - An entry recording that the driver did not start shall not count as having raced. A driver whose only entries in a round are did-not-start entries has not raced that round.
+    - An amendment of a final round's results that leaves a driver no longer having raced that round shall clear the flag, unless another final round marks them.
 - A driver returning to Not Signed Up shall be deleted where the flag is false, and shall be retained with their personal details cleared where it is true, so that the results they raced for remain attributed.
 - A driver may be sacked from Unassigned or Assigned. Sacking shall free every seat they hold, revoke every division, team and signup role, and return them to Not Signed Up.
 
