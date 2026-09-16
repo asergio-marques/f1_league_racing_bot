@@ -96,8 +96,9 @@ later polish phase.
 is expected to pass in full. Any failure is a real one; do not write it off as pre-existing
 without first confirming it on a clean tree.
 
-**A full run is cheap — use it.** `pytest tests/ -q` is some 4,980 tests and finishes in about
-five minutes on the Pi (measured 2026-09-10 at 319s), because the schema-template substitution
+**A full run is cheap — use it.** `pytest tests/ -q` is some 8,200 tests and finishes in about
+eight minutes on the Pi (measured 2026-09-16 at 476s, up from 319s for 4,980 when issue #208
+roughly doubled the suite), because the schema-template substitution
 described below removed the per-test migration cost. Guidance that a full run costs the better
 part of an hour predates that change and is wrong by an order of magnitude; there is no need to
 work from a grep-derived subset to avoid it. A subset is a convenience while iterating on one
