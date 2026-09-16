@@ -12,10 +12,13 @@ The schema is also built once here rather than once per test — see
 `_install_template_migrations` below for why that is worth the indirection.
 
 Scratch is not kept. `pytest.ini` sets `tmp_path_retention_count = 0`, so pytest clears
-every earlier run's `tmp_path` tree at session start and its own at session end; a full run
-leaves some 294 MB, and three of them overran the 923 MB tmpfs `/tmp` sits on the Raspberry
-Pi, which failed the rasteriser tests with 0-byte PNGs. The template scratch below is the
-one thing pytest does not own, so `pytest_sessionstart` sweeps it to the same schedule.
+every earlier run's `tmp_path` tree at session start and its own at session end; three
+retained runs overran the 923 MB tmpfs `/tmp` sits on the Raspberry Pi, which failed the
+rasteriser tests with 0-byte PNGs. It also sets `tmp_path_retention_policy = failed`, which
+drops each *passing* test's directory as it finishes — the count alone acts only at session
+end, and one run's accumulated scratch reached 817 MB and filled the tmpfs before it could.
+The template scratch below is the one thing pytest does not own, so `pytest_sessionstart`
+sweeps it to the same schedule.
 """
 from __future__ import annotations
 

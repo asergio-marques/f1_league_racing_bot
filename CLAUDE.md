@@ -181,12 +181,16 @@ Pi — the version divergence above, in its most common concrete form. `pytest.i
 dead one (decided 2026-09-08, after five such tests failed on the Pi alone).
 
 **The suite keeps no scratch.** `pytest.ini` sets `tmp_path_retention_count = 0` and
-`tests/conftest.py` sweeps the template scratch pytest does not own. A full run leaves some
-294 MB of `tmp_path` trees, and pytest's default of retaining three sessions fills the 923 MB
-tmpfs `/tmp` is on the Pi — which fails dishonestly, as 0-byte PNGs and `database or disk is
-full` scattered across unrelated modules. To inspect a failing test's scratch, restore
-retention for that run only: `pytest tests/ -q -o tmp_path_retention_count=3`. Both mechanisms
-are pinned by `tests/unit/test_scratch_retention.py` (decided 2026-09-08).
+`tmp_path_retention_policy = failed`, and `tests/conftest.py` sweeps the template scratch
+pytest does not own. The `tmp_path` trees fill the 923 MB tmpfs `/tmp` is on the Pi two
+separate ways — three retained sessions under pytest's default, or **one** run's own trees,
+which reached 817 MB at some 7,000 tests because every test that migrates a database copies
+the schema template into its directory and keeps it until the session ends. Either fails
+dishonestly, as 0-byte PNGs and `database or disk is full` scattered across unrelated
+modules. The policy drops a *passing* test's scratch as it finishes; a **failing** test's is
+kept, so a red run can still be inspected (decided 2026-09-16, measured at 152 MB against
+2.9 MB on the same subset). All three mechanisms are pinned by
+`tests/unit/test_scratch_retention.py` (decided 2026-09-08).
 
 **A mass failure across unrelated modules is a full `/tmp` until proved otherwise.** The two
 mechanisms above exist to prevent it and either can be defeated — by an interrupted run that
