@@ -37,7 +37,7 @@ def test_pytest_keeps_no_scratch_between_runs():
     """Nothing else clears these. At the default of three retained sessions the Pi's
     tmpfs is full after three runs, and the failures that follow name the wrong culprit."""
     parser = configparser.ConfigParser()
-    parser.read(REPO_ROOT / "pytest.ini")
+    parser.read(REPO_ROOT / "pytest.ini", encoding="utf-8")
 
     assert parser.get("pytest", "tmp_path_retention_count") == "0"
 
@@ -47,7 +47,7 @@ def test_a_passing_test_s_scratch_goes_as_soon_as_it_passes():
     within one run is every test's scratch at once — which is how a full suite filled the
     Pi's tmpfs mid-run and failed as a mass regression across unrelated modules."""
     parser = configparser.ConfigParser()
-    parser.read(REPO_ROOT / "pytest.ini")
+    parser.read(REPO_ROOT / "pytest.ini", encoding="utf-8")
 
     assert parser.get("pytest", "tmp_path_retention_policy") == "failed"
 
@@ -56,7 +56,7 @@ def test_a_failing_test_s_scratch_is_kept_as_evidence():
     """`none` would clear it and would look like the tidier choice. A failure's scratch is
     the only record of what the test wrote, and a red run is exactly when it is wanted."""
     parser = configparser.ConfigParser()
-    parser.read(REPO_ROOT / "pytest.ini")
+    parser.read(REPO_ROOT / "pytest.ini", encoding="utf-8")
 
     assert parser.get("pytest", "tmp_path_retention_policy") != "none"
 

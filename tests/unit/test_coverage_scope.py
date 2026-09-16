@@ -36,7 +36,7 @@ def _workflow() -> str:
 
 def _coveragerc() -> configparser.ConfigParser:
     parser = configparser.ConfigParser()
-    parser.read(COVERAGERC)
+    parser.read(COVERAGERC, encoding="utf-8")
     return parser
 
 
