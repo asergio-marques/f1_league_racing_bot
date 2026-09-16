@@ -462,3 +462,142 @@ async def test_a_fired_rsvp_notice_is_logged_to_the_league(tmp_path):
     await _advance(cog, _interaction(), _entry(5))
 
     cog.bot.output_router.post_log.assert_awaited()
+
+
+@pytest.mark.parametrize(
+    "phase,runner,label",
+    [
+        (6, "run_rsvp_last_notice", "RSVP last-notice"),
+        (7, "run_rsvp_deadline", "RSVP deadline"),
+    ],
+)
+async def test_the_later_check_in_phases_are_fired(tmp_path, phase, runner, label):
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+
+    mocks = await _advance(cog, interaction, _entry(phase))
+
+    mocks[runner].assert_awaited_once_with(ROUND_ID, cog.bot)
+    assert label in _replied(interaction)
+
+
+@pytest.mark.parametrize("phase", [6, 7])
+async def test_a_fired_check_in_phase_cancels_its_own_job(tmp_path, phase):
+    """Otherwise the real job fires later and the division is asked a second time."""
+    cog = _make_cog(await _make_db(tmp_path))
+
+    await _advance(cog, _interaction(), _entry(phase, job_id="rsvp_job"))
+
+    cog.bot.scheduler_service.cancel_job.assert_called_once_with("rsvp_job")
+
+
+@pytest.mark.parametrize("phase", [6, 7])
+async def test_a_check_in_phase_with_no_job_cancels_nothing(tmp_path, phase):
+    cog = _make_cog(await _make_db(tmp_path))
+
+    await _advance(cog, _interaction(), _entry(phase, job_id=None))
+
+    cog.bot.scheduler_service.cancel_job.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "phase,runner,phrase",
+    [
+        (6, "services.rsvp_service.run_rsvp_last_notice", "RSVP last-notice"),
+        (7, "services.rsvp_service.run_rsvp_deadline", "RSVP deadline"),
+    ],
+)
+async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, runner, phrase):
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+
+    await _advance(
+        cog, interaction, _entry(phase), **{runner: AsyncMock(side_effect=RuntimeError("x"))}
+    )
+
+    replied = _replied(interaction)
+    assert "internal error" in replied
+    assert phrase in replied
+    cog.bot.output_router.post_log.assert_not_awaited()
+
+
+@pytest.mark.parametrize("phase,name", [(6, "rsvp_last_notice"), (7, "rsvp_deadline")])
+async def test_a_fired_check_in_phase_is_logged_by_name(tmp_path, phase, name):
+    cog = _make_cog(await _make_db(tmp_path))
+
+    await _advance(cog, _interaction(), _entry(phase))
+
+    assert f"phase: {name}" in str(cog.bot.output_router.post_log.await_args.args[1])
+
+
+async def test_the_deadline_reply_says_reserves_were_distributed(tmp_path):
+    """The deadline is where reserves are called up, which is what a maintainer rehearsing
+    it is looking to see happen."""
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+
+    await _advance(cog, interaction, _entry(7))
+
+    assert "Reserve distribution complete" in _replied(interaction)
+
+
+# ---------------------------------------------------------------------------
+# The weather phases
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("phase,runner", [(1, "run_phase1"), (2, "run_phase2"), (3, "run_phase3")])
+async def test_each_weather_phase_reaches_its_own_runner(tmp_path, phase, runner):
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+
+    mocks = await _advance(cog, interaction, _entry(phase))
+
+    mocks[runner].assert_awaited_once_with(ROUND_ID, cog.bot)
+    for other in {"run_phase1", "run_phase2", "run_phase3"} - {runner}:
+        mocks[other].assert_not_awaited()
+    assert f"Advanced **Phase {phase}**" in _replied(interaction)
+
+
+async def test_a_weather_phase_cancels_its_job_before_running(tmp_path):
+    """Before, not after: a runner that raised would otherwise leave the real job queued to
+    fire the same phase again."""
+    cog = _make_cog(await _make_db(tmp_path))
+    order: list[str] = []
+    cog.bot.scheduler_service.cancel_job = MagicMock(side_effect=lambda _j: order.append("cancel"))
+
+    await _advance(
+        cog,
+        _interaction(),
+        _entry(2),
+        **{"services.phase2_service.run_phase2": AsyncMock(side_effect=lambda *_: order.append("run"))},
+    )
+
+    assert order == ["cancel", "run"]
+
+
+async def test_a_failing_weather_phase_names_the_round_and_track(tmp_path):
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+
+    await _advance(
+        cog,
+        interaction,
+        _entry(1),
+        **{"services.phase1_service.run_phase1": AsyncMock(side_effect=RuntimeError("boom"))},
+    )
+
+    replied = _replied(interaction)
+    assert "internal error occurred while advancing Phase 1" in replied
+    assert "Silverstone Circuit" in replied
+    cog.bot.output_router.post_log.assert_not_awaited()
+
+
+async def test_a_fired_weather_phase_is_logged_with_its_track(tmp_path):
+    cog = _make_cog(await _make_db(tmp_path))
+
+    await _advance(cog, _interaction(), _entry(3))
+
+    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    assert "phase: 3" in logged
+    assert "track: Silverstone Circuit" in logged
