@@ -40,7 +40,10 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
-from models.session import SessionType  # noqa: E402
+# The results pipeline's session types, not the weather module's — `penalty_service`
+# and `result_submission_service` both import this one, and these are the values
+# `session_results.session_type` actually holds.
+from models.points_config import SessionType  # noqa: E402
 from services.penalty_service import StagedPenalty  # noqa: E402
 from services.result_submission_service import enter_resubmit_flow  # noqa: E402
 
@@ -85,7 +88,7 @@ async def _make_db(tmp_path, *, results: int = 2) -> str:
         # One row per session type: `session_results` is unique on (round, session type),
         # which is the shape a real round has — a qualifying and a race, not two races.
         for index, session_type in enumerate(
-            ("FULL_QUALIFYING", "FULL_RACE")[:results], start=1
+            ("FEATURE_QUALIFYING", "FEATURE_RACE")[:results], start=1
         ):
             await db.execute(
                 "INSERT INTO session_results "
@@ -181,7 +184,7 @@ async def _flags(db_path: str) -> tuple[int, int]:
 def _penalty(seconds: int = 5, penalty_type: str = "TIME") -> StagedPenalty:
     return StagedPenalty(
         driver_user_id=DRIVER_A,
-        session_type=SessionType.FULL_RACE,
+        session_type=SessionType.FEATURE_RACE,
         penalty_type=penalty_type,  # type: ignore[arg-type]
         penalty_seconds=seconds,
     )

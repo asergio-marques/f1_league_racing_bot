@@ -40,7 +40,10 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
-from models.session import SessionType  # noqa: E402
+# The results pipeline's session types, not the weather module's — `penalty_service`
+# and `result_submission_service` both import this one, and these are the values
+# `session_results.session_type` actually holds.
+from models.points_config import SessionType  # noqa: E402
 from services.penalty_service import StagedPenalty  # noqa: E402
 from services.penalty_wizard import (  # noqa: E402
     PenaltyReviewState,
@@ -97,7 +100,7 @@ def test_an_unreadable_penalty_counts_as_none(raw):
 def _penalty(seconds: int | None, penalty_type: str = "TIME") -> StagedPenalty:
     return StagedPenalty(
         driver_user_id=DRIVER_A,
-        session_type=SessionType.FULL_RACE,
+        session_type=SessionType.FEATURE_RACE,
         penalty_type=penalty_type,  # type: ignore[arg-type]
         penalty_seconds=seconds,
     )
@@ -137,7 +140,7 @@ def _state(bot, db_path: str = ":memory:") -> PenaltyReviewState:
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
         submission_channel_id=1,
-        session_types_present=[SessionType.FULL_RACE],
+        session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=bot,
     )
@@ -240,7 +243,7 @@ async def _make_db(tmp_path, *, attendees=(), test_names=None) -> str:
             await db.execute(
                 "INSERT INTO session_results "
                 "(id, round_id, division_id, session_type, status) "
-                "VALUES (1, ?, ?, 'FULL_RACE', 'ACTIVE')",
+                "VALUES (1, ?, ?, 'FEATURE_RACE', 'ACTIVE')",
                 (ROUND_ID, DIVISION_ID),
             )
             for index, uid in enumerate(attendees, start=1):
@@ -325,8 +328,8 @@ async def test_every_staged_penalty_appears_on_the_prompt(tmp_path):
     it would be applied on approval without anybody having read it."""
     db_path = await _make_db(tmp_path, attendees=(DRIVER_A,))
     staged = [
-        StagedPenalty(DRIVER_A, SessionType.FULL_RACE, "TIME", 5),
-        StagedPenalty(DRIVER_B, SessionType.FULL_RACE, "DSQ", None),
+        StagedPenalty(DRIVER_A, SessionType.FEATURE_RACE, "TIME", 5),
+        StagedPenalty(DRIVER_B, SessionType.FEATURE_RACE, "DSQ", None),
     ]
 
     content = await _render_prompt_content(_state_for(db_path, staged=staged))
@@ -341,8 +344,8 @@ async def test_each_staged_penalty_is_numbered_for_removal(tmp_path):
     removes the wrong penalty."""
     db_path = await _make_db(tmp_path, attendees=(DRIVER_A,))
     staged = [
-        StagedPenalty(DRIVER_A, SessionType.FULL_RACE, "TIME", 5),
-        StagedPenalty(DRIVER_B, SessionType.FULL_RACE, "TIME", 10),
+        StagedPenalty(DRIVER_A, SessionType.FEATURE_RACE, "TIME", 5),
+        StagedPenalty(DRIVER_B, SessionType.FEATURE_RACE, "TIME", 10),
     ]
 
     content = await _render_prompt_content(_state_for(db_path, staged=staged))
@@ -355,11 +358,11 @@ async def test_the_session_a_penalty_belongs_to_is_named(tmp_path):
     """A penalty applies to one session, and a qualifying penalty read as a race penalty
     would move the wrong grid."""
     db_path = await _make_db(tmp_path, attendees=(DRIVER_A,))
-    staged = [StagedPenalty(DRIVER_A, SessionType.FULL_QUALIFYING, "TIME", 5)]
+    staged = [StagedPenalty(DRIVER_A, SessionType.FEATURE_QUALIFYING, "TIME", 5)]
 
     content = await _render_prompt_content(_state_for(db_path, staged=staged))
 
-    assert "Full Qualifying" in content
+    assert "Feature Qualifying" in content
 
 
 async def test_staged_pardons_are_shown_with_their_kind(tmp_path):

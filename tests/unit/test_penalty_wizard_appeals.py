@@ -36,7 +36,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.session import SessionType  # noqa: E402
+# The results pipeline's session types, not the weather module's — `penalty_service`
+# and `result_submission_service` both import this one, and these are the values
+# `session_results.session_type` actually holds.
+from models.points_config import SessionType  # noqa: E402
 from services.penalty_service import StagedPenalty  # noqa: E402
 from services.penalty_wizard import (  # noqa: E402
     PenaltyReviewState,
@@ -62,7 +65,7 @@ def _correction(
     driver_user_id: int = DRIVER_A,
     seconds: int | None = -5,
     penalty_type: str = "TIME",
-    session_type: SessionType = SessionType.FULL_RACE,
+    session_type: SessionType = SessionType.FEATURE_RACE,
 ) -> StagedPenalty:
     return StagedPenalty(
         driver_user_id=driver_user_id,
@@ -87,7 +90,7 @@ def _state(*, appeals=(), prompt_id: int | None = PROMPT_ID, channel=...):
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
         submission_channel_id=CHANNEL_ID,
-        session_types_present=[SessionType.FULL_RACE],
+        session_types_present=[SessionType.FEATURE_RACE],
         db_path=":memory:",
         bot=bot,
     )
@@ -178,10 +181,10 @@ async def test_each_correction_is_numbered_for_removal():
 
 async def test_the_session_a_correction_belongs_to_is_named():
     content = await _render_appeals_prompt_content(
-        _state(appeals=[_correction(session_type=SessionType.FULL_QUALIFYING)])
+        _state(appeals=[_correction(session_type=SessionType.FEATURE_QUALIFYING)])
     )
 
-    assert "Full Qualifying" in content
+    assert "Feature Qualifying" in content
 
 
 async def test_the_appeals_prompt_carries_no_attendee_list():
