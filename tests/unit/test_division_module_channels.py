@@ -25,8 +25,8 @@ lost and a reassignment cannot be traced back; the attendance pair record it. Th
 `new_value`'s channel id as an integer where the attendance pair write a string, so a reader
 querying the audit for a channel id has to know which command wrote the row. These tests assert
 the behaviour that exists — a test claiming the tidier behaviour would simply fail — and the
-inconsistency is on the defect list rather than silently corrected here, since this change is a
-coverage change and #208 says so.
+inconsistency is recorded as issue #212 rather than silently corrected here, since this change
+is a coverage change and #208 says so.
 
 **"Set" and "updated" are different words for a reason** on the attendance pair: a manager who
 meant to assign a fresh channel and is told it was *updated* has just moved an existing one, and
@@ -517,8 +517,8 @@ async def test_the_gated_commands_record_the_channel_they_replaced(tmp_path, whi
 @pytest.mark.parametrize("which", UNGATED)
 async def test_the_core_pair_record_no_previous_channel(tmp_path, which):
     """Pinned as it stands, not as it ought to be: `old_value` is written as an empty
-    string, so a lineup or calendar channel that moves cannot be traced back. It is on the
-    defect list rather than fixed here — #208 is a coverage change, and a test asserting the
+    string, so a lineup or calendar channel that moves cannot be traced back. Recorded as
+    issue #212 rather than fixed here — #208 is a coverage change, and a test asserting the
     tidier behaviour would simply fail."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)

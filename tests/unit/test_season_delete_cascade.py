@@ -30,7 +30,9 @@ ordering the comment in the source is about.
 results.** Migration 036 dropped `driver_session_results`; the cascade still deletes from it,
 inside the branch that only runs when the season has `session_results` rows — which is every
 season a league has actually raced. The whole delete raises `no such table` and rolls back, so
-`/season delete` cannot remove a used season at all. That is pinned by
+the method cannot remove a used season at all. No league command reaches it: there is no
+`/season delete`, its only caller is the obsolete `tools/gen_season_cog.py`, and a season that
+has been raced must never be deleted anyway. Issue #214 records both. That is pinned by
 `test_deleting_a_season_with_results_fails_today`, which asserts the failure rather than the
 cascade, and is written to fail loudly the day it is fixed so whoever fixes it replaces it with
 the assertion beneath. Everything else here therefore seeds a season *without* results, which is
@@ -245,10 +247,9 @@ async def test_no_child_row_survives_the_delete(tmp_path, table, column, value):
 async def test_deleting_a_season_with_results_fails_today(tmp_path):
     """**A defect, pinned as it stands.** Migration 036 dropped `driver_session_results`;
     the cascade still deletes from it, inside the branch that only runs when the season has
-    `session_results` rows. So `/season delete` raises `no such table` and rolls back on any
+    `session_results` rows. So the method raises `no such table` and rolls back on any
     season a league has actually raced — the season, its divisions and its rounds all
-    survive, and the manager is told the delete failed for a reason that names a table
-    nobody has heard of.
+    survive. No league command reaches it (issue #214).
 
     Asserting the failure rather than the cascade, so this fails loudly the day it is fixed
     and whoever fixes it replaces it with the assertion below.
@@ -432,8 +433,8 @@ async def test_a_division_with_no_rounds_deletes_cleanly(tmp_path):
 
 
 async def test_deleting_a_season_that_is_not_there_is_not_an_error(tmp_path):
-    """`/season delete` can race a restart or a second manager, and a delete that raises
-    would report a failure for work that is already done."""
+    """A delete racing another that already removed the season must not raise, or it would
+    report a failure for work that is already done."""
     db_path, _ = await _make_db(tmp_path, name="delete_missing")
 
     await SeasonService(db_path).delete_season(404)

@@ -12,7 +12,7 @@ manager is told to paste the results again, those results are already deleted an
 listening for the new paste. They stay gone until a restart, when the start-up sweep treats the
 round as abandoned mid-submission and reopens the ordinary wizard.
 `test_resubmitting_fails_before_asking_for_anything_today` asserts the failure itself and is
-written to fail the day it is fixed. It is on the defect list rather than corrected here,
+written to fail the day it is fixed. It is recorded as issue #210 rather than corrected here,
 because #208 is a coverage change.
 
 **The rest of the file tests the collection loop with the context it expects.**

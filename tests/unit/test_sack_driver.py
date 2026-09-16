@@ -17,7 +17,7 @@ had. So sacking anyone who is *not* a former driver raises `no such column` and 
 is not a harmless failure: the roles are revoked before the database is touched, so the driver
 loses every role and keeps their seat, their assignment and their profile. See
 `test_sacking_a_driver_who_is_not_a_former_driver_fails_today`, which asserts the failure and
-the half-state, and is written to fail loudly the day it is fixed.
+the half-state, and is written to fail loudly the day it is fixed. Issue #211.
 
 **Only an Unassigned or Assigned driver can be sacked.** Someone mid-signup has nothing to
 revoke and someone banned is already out; sacking either would either do nothing or quietly
