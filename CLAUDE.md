@@ -183,6 +183,12 @@ Note that pinning `requirements.txt` does **not** settle this. A Debian or Raspb
 that installs from apt imports out of `/usr/lib/python3/dist-packages`, which pip never writes
 to, so the pins govern CI and a virtualenv and nothing else.
 
+**No test may depend on `.env`.** A development host carries a gitignored one; CI runners do
+not. `src/bot.py` reads `BOT_TOKEN` at import time, so `tests/conftest.py` gives it a
+placeholder before collection — import `bot` at module level freely, and do not add a per-file
+default. Five test files passed on the Pi and failed collection on both runners before this
+(2026-09-16); `tests/unit/test_suite_needs_no_dotenv.py` pins it.
+
 **A test that constructs a `discord.ui.View` or `Modal` must be `async def`.** apt's discord.py
 2.5.0 calls `asyncio.get_running_loop()` in `View.__init__`; the pinned 2.7.1 defers it. So a
 sync test that builds one passes on CI and raises `RuntimeError: no running event loop` on the
