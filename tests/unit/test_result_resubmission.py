@@ -150,8 +150,9 @@ def _logged(state) -> str:
 async def _run(state, interaction):
     """Call the flow with the background collection task stubbed out.
 
-    The loop it starts reads messages from a live Discord channel, which `CLAUDE.md` puts
-    outside this suite; what is under test is everything the button does before it.
+    What is under test here is everything the button does before the loop starts. The loop
+    itself is driven with a fake `wait_for` in `test_resubmission_collection.py`, which is
+    also where its current failure is pinned — stubbing it here is why that went unnoticed.
     """
     with patch(
         "services.result_submission_service._resubmit_collection_task",
