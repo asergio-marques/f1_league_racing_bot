@@ -122,6 +122,13 @@ Do not start the next task on a red or absent test.
 connection, or a real server belongs to full system testing, which is done by hand outside this
 repo. Tests here stub Discord and exercise the code beneath it.
 
+**Scripts in `tools/` are not unit-tested** (decided 2026-09-16). They are developer tools run
+by hand, verified by running them, and a broken one costs a maintainer a rerun rather than a
+league anything. Do not add tests for them. The one exception is `tools/coverage_by_module.py`:
+CI runs it as the per-module coverage gate, so it is part of the build and keeps its tests. Bot
+code a tool happens to use is in `src/` and is tested like any other — the LCH colour maths
+`tools/tier_palette.py` relies on is tested in `tests/unit/test_colour_lch.py`.
+
 Tests that pin a date must pin "now" alongside it. Several services accept a `now` parameter for
 exactly this; a test that seeds a future date and lets the code read the wall clock passes today
 and fails silently months later.
