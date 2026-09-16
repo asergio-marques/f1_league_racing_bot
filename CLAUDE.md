@@ -137,24 +137,34 @@ erroring. A skip is
 not itself a build failure, but it is a gap in what "the suite passes" actually verified — treat
 a new one as something to justify, not a convenient way to silence a broken test.
 
-**That floor is one number for the whole repository, and a module with no tests at all can
-hide inside it.** `tools/coverage_by_module.py` groups a `coverage json` report by module so
-the thin one is visible; CI prints it into the run summary on every ubuntu run, before the
-gate, so the breakdown survives a failing build. Run it by hand as:
+**The floor applies to each module as well as to `src/` as a whole** (decided 2026-09-16,
+issue #208 — it reverses the earlier "reported, never gated"). One number for the whole
+repository is something a module with no tests at all can sit inside unnoticed, which issue
+#161 was exactly. `tools/coverage_by_module.py` groups a `coverage json` report by module and,
+given `--fail-under`, exits non-zero naming every module below it. CI passes
+`MIN_COVERAGE_REQUIRED` to it, so the floor is written once and read at two grains; it runs
+before the whole-repo gate and prints the table either way, so the breakdown survives a
+failing build. Run it by hand as:
 
 ```
-python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
+COVERAGE_CORE=sysmon python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
 python3 -m coverage json -q -o coverage.json
 python3 tools/coverage_by_module.py coverage.json --module weather
 ```
 
-It is **reported, never gated** — the gate stays one number, for the reason given above.
-It measures `src/` **only**: the suite is some 36,000 statements and is ~98% "covered" by
-construction, because a test file's lines are hit by running it, so counting it inflates
-every figure. The gate itself does not yet make that distinction, which is why the number it
-prints is far above the bot's real coverage — issue #208 tracks closing that gap. A file
-matching no rule in the tool is printed as `UNASSIGNED` rather than absorbed into `core`, so
-add new services to `RULES` when it says so.
+`COVERAGE_CORE=sysmon` is **not optional on the Pi**: coverage's default C tracer reached 3%
+of the suite in ten minutes there, where the sys.monitoring backend ran the whole of it in
+under four. It needs Python 3.12+, and both the Pi and CI are on 3.13.
+
+**What is measured is `src/`, and that lives in `.coveragerc`.** The suite is some 36,000
+statements and is ~98% "covered" by construction, because a test file's lines are hit by
+running it — before #208 nothing scoped the run, so the gate counted the suite and reported
+86% while the bot sat at 68.8%, under the floor, on every green build. Do not add a scope to
+`pyproject.toml` or `setup.cfg`: coverage reads those first and the two would drift.
+`tests/unit/test_coverage_scope.py` pins both halves.
+
+A file matching no rule in the tool is printed as `UNASSIGNED` rather than absorbed into
+`core`, and is gated like any other bucket — so add new services to `RULES` when it says so.
 
 **A test must not depend on what the host happens to carry.** The suite runs on three
 materially different environments — a Windows development machine, CI's runners, and the

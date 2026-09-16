@@ -112,5 +112,15 @@ pytest tests/ -q -m rasteriser
 Verify generated images as PNG, never as SVG in a browser — the rasteriser exposes bugs the
 browser hides.
 
-CI runs the suite on Linux and Windows and gates on a coverage floor; read the threshold from
-`.github/workflows/unit-test.yml` rather than assuming one.
+CI runs the suite on Linux and Windows and gates on a coverage floor — applied both to `src/`
+as a whole and to **each module separately**, so a thin module cannot hide inside a healthy
+average. Read the threshold from `.github/workflows/unit-test.yml` rather than assuming one.
+Coverage measures `src/` only; `.coveragerc` says so and explains why.
+
+Before opening a pull request, check where your change left the module you touched:
+
+```
+COVERAGE_CORE=sysmon python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
+python3 -m coverage json -q -o coverage.json
+python3 tools/coverage_by_module.py coverage.json --fail-under 75
+```
