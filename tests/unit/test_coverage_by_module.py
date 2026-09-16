@@ -4,7 +4,7 @@ The tool exists because the CI gate reports one number for the whole repository,
 module with no tests at all can sit inside unnoticed — issue #161, where the weather
 module's configuration and pipeline were uncovered while the repository reported 85%.
 
-Two properties carry that purpose and are pinned here:
+Three properties carry that purpose and are pinned here:
 
 - **Only `src/` is measured.** The test suite is some 36,000 statements at ~98% "covered"
   by construction, because a test file's lines are hit by running it. Counting it inflates
@@ -13,6 +13,10 @@ Two properties carry that purpose and are pinned here:
 - **An unclassified file is reported, never absorbed.** Anything matching no rule lands in
   `UNASSIGNED` and is printed. Were it defaulted into `core` instead, a new service would
   silently drag that module's figure about and no one would know the mapping had gone stale.
+- **It gates, at a floor given on the command line** (#208, reversing "reported, never
+  gated"). `--fail-under N` exits non-zero naming every bucket below *N*, after printing the
+  table — the breakdown is the useful part of a failing build. The default of 0 gates
+  nothing, so running the tool by hand is still a report.
 
 The real `RULES` are exercised rather than a fixture mapping, so a rule deleted or a module
 renamed fails here rather than quietly reclassifying half the codebase.
@@ -322,3 +326,134 @@ def test_no_rule_is_empty():
     """An empty pattern tuple would match nothing and silently retire a module."""
     for module, patterns in cbm.RULES:
         assert patterns, f"{module} has no patterns"
+
+
+# ---------------------------------------------------------------------------
+# The per-module floor
+# ---------------------------------------------------------------------------
+
+
+def _mixed_report() -> dict:
+    """One healthy module and one thin one, by the real rules."""
+    return _report(
+        ("src/services/phase1_service.py", 100, 5),      # weather, 95%
+        ("src/services/attendance_service.py", 100, 60),  # attendance, 40%
+    )
+
+
+def test_a_module_below_the_floor_fails_the_run(tmp_path, capsys):
+    """The situation the tool was written to make visible and could previously only report:
+    a healthy average with a module emptied out inside it."""
+    report_path = tmp_path / "coverage.json"
+    report_path.write_text(json.dumps(_mixed_report()))
+
+    assert cbm.main([str(report_path), "--fail-under", "75"]) == 1
+    assert "attendance" in capsys.readouterr().out
+
+
+def test_every_module_above_the_floor_passes(tmp_path):
+    report_path = tmp_path / "coverage.json"
+    report_path.write_text(json.dumps(_report(
+        ("src/services/phase1_service.py", 100, 5),
+        ("src/services/attendance_service.py", 100, 20),
+    )))
+
+    assert cbm.main([str(report_path), "--fail-under", "75"]) == 0
+
+
+def test_a_module_exactly_on_the_floor_passes(tmp_path):
+    """The floor is a minimum, not a target to exceed — and a module held at exactly the
+    number by a contributor who did the arithmetic should not be told it failed."""
+    report_path = tmp_path / "coverage.json"
+    report_path.write_text(json.dumps(_report(
+        ("src/services/phase1_service.py", 100, 25),
+    )))
+
+    assert cbm.main([str(report_path), "--fail-under", "75"]) == 0
+
+
+def test_the_failure_names_every_module_below_the_floor(tmp_path, capsys):
+    """Not just the first: one build should show all the work, so a contributor is not
+    fixing one module at a time through six red builds."""
+    report_path = tmp_path / "coverage.json"
+    report_path.write_text(json.dumps(_report(
+        ("src/services/phase1_service.py", 100, 60),       # weather
+        ("src/services/attendance_service.py", 100, 60),   # attendance
+        ("src/services/wizard_service.py", 100, 60),       # signup
+    )))
+
+    assert cbm.main([str(report_path), "--fail-under", "75"]) == 1
+
+    out = capsys.readouterr().out
+    for module in ("weather", "attendance", "signup"):
+        assert f"FAIL {module}" in out
+
+
+def test_the_failure_names_the_figure_and_the_floor(tmp_path, capsys):
+    """A build that says only "below the floor" leaves a contributor guessing how far."""
+    report_path = tmp_path / "coverage.json"
+    report_path.write_text(json.dumps(_report(
+        ("src/services/attendance_service.py", 100, 60),
+    )))
+
+    cbm.main([str(report_path), "--fail-under", "75"])
+
+    out = capsys.readouterr().out
+    assert "40.0%" in out
+    assert "75%" in out
+
+
+def test_an_unassigned_bucket_is_gated_like_any_other(tmp_path, capsys):
+    """No special cases. A new service with no rule and no tests fails the build with a
+    message saying exactly that, rather than being tolerated because it has no home yet."""
+    report_path = tmp_path / "coverage.json"
+    report_path.write_text(json.dumps(_report(
+        ("src/services/phase1_service.py", 100, 0),
+        ("src/services/brand_new_thing.py", 100, 90),
+    )))
+
+    assert cbm.main([str(report_path), "--fail-under", "75"]) == 1
+    assert f"FAIL {cbm.UNASSIGNED}" in capsys.readouterr().out
+
+
+def test_the_table_still_prints_when_the_gate_fails(tmp_path, capsys):
+    """The breakdown is the useful part of a failing build; a later tidy that returned early
+    before printing would defeat the step's purpose."""
+    report_path = tmp_path / "coverage.json"
+    report_path.write_text(json.dumps(_mixed_report()))
+
+    cbm.main([str(report_path), "--fail-under", "75"])
+
+    out = capsys.readouterr().out
+    assert "module" in out and "stmts" in out
+    assert "phase1_service" not in out or "FAIL" in out
+
+
+def test_the_default_floor_gates_nothing(tmp_path):
+    """Running the tool by hand stays a report — a contributor looking at where the cover is
+    should not have the command fail at them."""
+    report_path = tmp_path / "coverage.json"
+    report_path.write_text(json.dumps(_mixed_report()))
+
+    assert cbm.main([str(report_path)]) == 0
+
+
+def test_the_shortfalls_are_ordered_worst_first(tmp_path):
+    """So the module most worth working on is the first line read."""
+    buckets = cbm.group(_report(
+        ("src/services/phase1_service.py", 100, 60),      # weather, 40%
+        ("src/services/attendance_service.py", 100, 30),  # attendance, 70%
+    ))
+
+    assert [module for module, _ in cbm.shortfalls(buckets, 75)] == [
+        "weather",
+        "attendance",
+    ]
+
+
+def test_nothing_is_a_shortfall_against_a_floor_of_zero(tmp_path):
+    """Which is what makes the default a report rather than a gate that always passes by
+    accident."""
+    buckets = cbm.group(_report(("src/services/phase1_service.py", 100, 100)))
+
+    assert cbm.shortfalls(buckets, 0) == []

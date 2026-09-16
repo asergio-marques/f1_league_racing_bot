@@ -2,6 +2,10 @@ name: Check Python application
 
 on: [push]
 
+# One floor, read twice: once per module and once for `src/` as a whole. Until #208 it was
+# measured against the whole repository including `tests/`, which is ~98% covered by
+# construction and hid production code sitting below this number. `.coveragerc` scopes the
+# measurement to `src/`; do not raise or lower this without reading that file.
 env:
   MIN_COVERAGE_REQUIRED: 75
 
@@ -25,8 +29,19 @@ jobs:
         pip install -r requirements.txt
     # `rasteriser`-marked tests need Inkscape, which is too heavy to install on a hosted
     # runner for what it returns. They are run by hand — see CLAUDE.md, Testing.
+    #
+    # `COVERAGE_CORE=sysmon` selects the sys.monitoring backend (Python 3.12+; this job is
+    # on 3.13). The default C tracer costs enough on a large suite to matter against this
+    # job's twenty-minute bound — measured on the Pi at 3% of the suite in ten minutes,
+    # against under four minutes for the whole of it under sysmon. `.coveragerc` scopes what
+    # is measured; this only changes how.
+    #
+    # `-rs` prints every skipped test and its reason. The summary line below counts skips but
+    # cannot say which, and CLAUDE.md asks that a new skip be justified — which needs its name.
     - name: Github Action for testing the code
-      run: coverage run -m pytest tests/ -q -m "not rasteriser" --junitxml=pytest-results.xml
+      env:
+        COVERAGE_CORE: sysmon
+      run: coverage run -m pytest tests/ -q -rs -m "not rasteriser" --junitxml=pytest-results.xml
 
     - name: Verify no test failed
       run: |
@@ -42,16 +57,20 @@ jobs:
         sys.exit(1 if failures or errors else 0)
         '
 
-    # Reported, never gated. The gate below is a single number for the whole repository,
-    # which a module with no tests at all can sit inside unnoticed — issue #161 was exactly
-    # that. This prints where the cover actually is, per module and worst last.
+    # Reported *and* gated, at the same floor as the whole-repo gate below (#208, reversing
+    # "reported, never gated"). One number for the whole repository is something a module
+    # with no tests at all can sit inside unnoticed — issue #161 was exactly that — so the
+    # floor is applied per module as well. It is one threshold at two grains, not two
+    # thresholds: `MIN_COVERAGE_REQUIRED` is written once, above, and read by both steps.
     #
-    # It runs *before* the gate so the breakdown is present on a failing build, which is when
-    # it is most worth reading. It measures `src/` only; see the tool's docstring and #208.
+    # This runs *before* the whole-repo gate so the breakdown is present on a failing build,
+    # which is when it is most worth reading, and the tool prints the table before it exits
+    # non-zero for the same reason.
     - name: Coverage by module
       run: |
         coverage json -q -o coverage.json
-        python tools/coverage_by_module.py coverage.json | tee /tmp/by-module.txt
+        python tools/coverage_by_module.py coverage.json \
+          --fail-under "$MIN_COVERAGE_REQUIRED" | tee /tmp/by-module.txt
         {
           echo '### Coverage by module'
           echo '```'
@@ -104,9 +123,10 @@ jobs:
         pip install -r requirements.txt
 
     # Inkscape is absent here as it is on the Linux runner, so the marker is deselected for
-    # the same reason. See CLAUDE.md, Testing.
+    # the same reason. See CLAUDE.md, Testing. `-rs` as on the Linux job: this runner's fonts
+    # differ, so its skips differ too, and the log should say which.
     - name: Github Action for testing the code
-      run: pytest tests/ -q -m "not rasteriser" --junitxml=pytest-results.xml
+      run: pytest tests/ -q -rs -m "not rasteriser" --junitxml=pytest-results.xml
 
     - name: Verify no test failed
       run: |

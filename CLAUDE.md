@@ -96,8 +96,9 @@ later polish phase.
 is expected to pass in full. Any failure is a real one; do not write it off as pre-existing
 without first confirming it on a clean tree.
 
-**A full run is cheap — use it.** `pytest tests/ -q` is some 4,980 tests and finishes in about
-five minutes on the Pi (measured 2026-09-10 at 319s), because the schema-template substitution
+**A full run is cheap — use it.** `pytest tests/ -q` is some 8,200 tests and finishes in about
+eight minutes on the Pi (measured 2026-09-16 at 476s, up from 319s for 4,980 when issue #208
+roughly doubled the suite), because the schema-template substitution
 described below removed the per-test migration cost. Guidance that a full run costs the better
 part of an hour predates that change and is wrong by an order of magnitude; there is no need to
 work from a grep-derived subset to avoid it. A subset is a convenience while iterating on one
@@ -121,6 +122,13 @@ Do not start the next task on a red or absent test.
 connection, or a real server belongs to full system testing, which is done by hand outside this
 repo. Tests here stub Discord and exercise the code beneath it.
 
+**Scripts in `tools/` are not unit-tested** (decided 2026-09-16). They are developer tools run
+by hand, verified by running them, and a broken one costs a maintainer a rerun rather than a
+league anything. Do not add tests for them. The one exception is `tools/coverage_by_module.py`:
+CI runs it as the per-module coverage gate, so it is part of the build and keeps its tests. Bot
+code a tool happens to use is in `src/` and is tested like any other — the LCH colour maths
+`tools/tier_palette.py` relies on is tested in `tests/unit/test_colour_lch.py`.
+
 Tests that pin a date must pin "now" alongside it. Several services accept a `now` parameter for
 exactly this; a test that seeds a future date and lets the code read the wall clock passes today
 and fails silently months later.
@@ -137,24 +145,34 @@ erroring. A skip is
 not itself a build failure, but it is a gap in what "the suite passes" actually verified — treat
 a new one as something to justify, not a convenient way to silence a broken test.
 
-**That floor is one number for the whole repository, and a module with no tests at all can
-hide inside it.** `tools/coverage_by_module.py` groups a `coverage json` report by module so
-the thin one is visible; CI prints it into the run summary on every ubuntu run, before the
-gate, so the breakdown survives a failing build. Run it by hand as:
+**The floor applies to each module as well as to `src/` as a whole** (decided 2026-09-16,
+issue #208 — it reverses the earlier "reported, never gated"). One number for the whole
+repository is something a module with no tests at all can sit inside unnoticed, which issue
+#161 was exactly. `tools/coverage_by_module.py` groups a `coverage json` report by module and,
+given `--fail-under`, exits non-zero naming every module below it. CI passes
+`MIN_COVERAGE_REQUIRED` to it, so the floor is written once and read at two grains; it runs
+before the whole-repo gate and prints the table either way, so the breakdown survives a
+failing build. Run it by hand as:
 
 ```
-python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
+COVERAGE_CORE=sysmon python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
 python3 -m coverage json -q -o coverage.json
 python3 tools/coverage_by_module.py coverage.json --module weather
 ```
 
-It is **reported, never gated** — the gate stays one number, for the reason given above.
-It measures `src/` **only**: the suite is some 36,000 statements and is ~98% "covered" by
-construction, because a test file's lines are hit by running it, so counting it inflates
-every figure. The gate itself does not yet make that distinction, which is why the number it
-prints is far above the bot's real coverage — issue #208 tracks closing that gap. A file
-matching no rule in the tool is printed as `UNASSIGNED` rather than absorbed into `core`, so
-add new services to `RULES` when it says so.
+`COVERAGE_CORE=sysmon` is **not optional on the Pi**: coverage's default C tracer reached 3%
+of the suite in ten minutes there, where the sys.monitoring backend ran the whole of it in
+under four. It needs Python 3.12+, and both the Pi and CI are on 3.13.
+
+**What is measured is `src/`, and that lives in `.coveragerc`.** The suite is some 36,000
+statements and is ~98% "covered" by construction, because a test file's lines are hit by
+running it — before #208 nothing scoped the run, so the gate counted the suite and reported
+86% while the bot sat at 68.8%, under the floor, on every green build. Do not add a scope to
+`pyproject.toml` or `setup.cfg`: coverage reads those first and the two would drift.
+`tests/unit/test_coverage_scope.py` pins both halves.
+
+A file matching no rule in the tool is printed as `UNASSIGNED` rather than absorbed into
+`core`, and is gated like any other bucket — so add new services to `RULES` when it says so.
 
 **A test must not depend on what the host happens to carry.** The suite runs on three
 materially different environments — a Windows development machine, CI's runners, and the
@@ -172,6 +190,12 @@ Note that pinning `requirements.txt` does **not** settle this. A Debian or Raspb
 that installs from apt imports out of `/usr/lib/python3/dist-packages`, which pip never writes
 to, so the pins govern CI and a virtualenv and nothing else.
 
+**No test may depend on `.env`.** A development host carries a gitignored one; CI runners do
+not. `src/bot.py` reads `BOT_TOKEN` at import time, so `tests/conftest.py` gives it a
+placeholder before collection — import `bot` at module level freely, and do not add a per-file
+default. Five test files passed on the Pi and failed collection on both runners before this
+(2026-09-16); `tests/unit/test_suite_needs_no_dotenv.py` pins it.
+
 **A test that constructs a `discord.ui.View` or `Modal` must be `async def`.** apt's discord.py
 2.5.0 calls `asyncio.get_running_loop()` in `View.__init__`; the pinned 2.7.1 defers it. So a
 sync test that builds one passes on CI and raises `RuntimeError: no running event loop` on the
@@ -181,12 +205,16 @@ Pi — the version divergence above, in its most common concrete form. `pytest.i
 dead one (decided 2026-09-08, after five such tests failed on the Pi alone).
 
 **The suite keeps no scratch.** `pytest.ini` sets `tmp_path_retention_count = 0` and
-`tests/conftest.py` sweeps the template scratch pytest does not own. A full run leaves some
-294 MB of `tmp_path` trees, and pytest's default of retaining three sessions fills the 923 MB
-tmpfs `/tmp` is on the Pi — which fails dishonestly, as 0-byte PNGs and `database or disk is
-full` scattered across unrelated modules. To inspect a failing test's scratch, restore
-retention for that run only: `pytest tests/ -q -o tmp_path_retention_count=3`. Both mechanisms
-are pinned by `tests/unit/test_scratch_retention.py` (decided 2026-09-08).
+`tmp_path_retention_policy = failed`, and `tests/conftest.py` sweeps the template scratch
+pytest does not own. The `tmp_path` trees fill the 923 MB tmpfs `/tmp` is on the Pi two
+separate ways — three retained sessions under pytest's default, or **one** run's own trees,
+which reached 817 MB at some 7,000 tests because every test that migrates a database copies
+the schema template into its directory and keeps it until the session ends. Either fails
+dishonestly, as 0-byte PNGs and `database or disk is full` scattered across unrelated
+modules. The policy drops a *passing* test's scratch as it finishes; a **failing** test's is
+kept, so a red run can still be inspected (decided 2026-09-16, measured at 152 MB against
+2.9 MB on the same subset). All three mechanisms are pinned by
+`tests/unit/test_scratch_retention.py` (decided 2026-09-08).
 
 **A mass failure across unrelated modules is a full `/tmp` until proved otherwise.** The two
 mechanisms above exist to prevent it and either can be defeated — by an interrupted run that

@@ -21,11 +21,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-# `bot.py` reads the token at import time and raises without it. Nothing here connects to
-# Discord — the sweep is an ordinary function taking a bot object — but the module has to
-# import before it can be reached, and this is the first test in the suite to need it.
-os.environ.setdefault("BOT_TOKEN", "not-a-real-token")
-
+# `bot.py` reads the token at import time and raises without it; `tests/conftest.py` gives it
+# a placeholder before collection, so every file importing `bot` can do so at module level.
 from bot import _recover_expired_review_prompts  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 

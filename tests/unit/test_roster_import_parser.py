@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -222,23 +221,3 @@ def test_the_divisions_come_back_in_the_order_they_appear():
     )
 
     assert divisions_named(drivers) == ["Elite", "Challenger"]
-
-
-# ── The real file ─────────────────────────────────────────────────────────
-
-
-def test_the_generator_s_own_roster_parses():
-    """The file this import exists for, read exactly as it ships.
-
-    A change to the generator's columns would otherwise be found by pasting fifty-one
-    drivers into a modal and being refused.
-    """
-    csv_path = Path(__file__).resolve().parents[2] / "tools" / "data-generator" / "roster.csv"
-    if not csv_path.is_file():
-        pytest.skip("the generator has not been run with --record on this host")
-
-    drivers, errors = parse_roster_csv(csv_path.read_text(encoding="utf-8"))
-
-    assert errors == []
-    assert drivers, "the shipped roster.csv parsed to nothing"
-    assert all(d.discord_user_id >= SYNTHETIC_ID_BASE for d in drivers)
