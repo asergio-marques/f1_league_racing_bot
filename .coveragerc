@@ -1,0 +1,21 @@
+# What the coverage gate measures.
+#
+# Nothing set `source`, `include` or `omit` before this file existed, so `coverage run`
+# measured every file the run imported — and the largest thing it imports is the test suite
+# itself. The suite is some 36,000 statements and is ~98% "covered" by construction, because
+# a test file's lines are hit by the act of running it. It was 60% of what the gate counted,
+# and it dragged the reported figure to 86% while the bot itself sat at 68.8% — under the
+# workflow's own floor, on every green build for months (issue #208).
+#
+# `source = src` is the whole fix: the gate now measures the bot. Both `coverage run` and
+# `coverage json` pick this file up automatically, so the workflow's commands are unchanged.
+#
+# It also makes coverage report the files no test imports at all. Under the old arrangement
+# an unimported module was simply absent and counted as nothing; here it is counted and
+# entirely missed, which is the honest answer and the reason the scoped figure came out
+# slightly *worse* than a filtered report suggested.
+#
+# Pinned by tests/unit/test_coverage_scope.py: without that test a later reader deletes this
+# file and the gate silently goes back to measuring the suite.
+[run]
+source = src
