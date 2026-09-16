@@ -11,8 +11,9 @@ from, so the thin one is visible.
 
 **It measures `src/` only.** The test suite is some 36,000 statements and is ~98% "covered"
 by construction — a test file's lines are hit because the file ran — so including it inflates
-every figure and tells you nothing. `tools/` is excluded for the same reason. See issue #208:
-the CI gate itself does not yet make this distinction.
+every figure and tells you nothing. `tools/` is excluded for the same reason. Since #208 the
+gate reads the same scope, from `.coveragerc`; the filter here is now belt and braces rather
+than the only thing keeping the suite out of the figure.
 
 **The mapping is data, not cleverness.** `RULES` is an ordered list of (module, patterns);
 the first pattern matching a path wins. Anything matching nothing lands in `UNASSIGNED` and
@@ -20,12 +21,29 @@ is printed, rather than being swept into `core` where it would quietly distort t
 figure. A new service therefore shows up as unassigned until someone places it, which is the
 intended failure mode — a silent default is how a mapping rots.
 
-It changes nothing. It prints a table.
+**It gates, as well as reporting** (decided 2026-09-16, reversing "reported, never gated").
+`--fail-under N` prints the table and then exits non-zero naming every bucket below *N*. The
+old reasoning — the gate is one number, and two measurements would drift — does not apply to
+a per-module floor reading the *same* number: it is one threshold applied at two grains, and
+the workflow passes `MIN_COVERAGE_REQUIRED` to both so the value is written once. Without it
+the whole-repo figure can clear 75% with a module at 40% inside it, which is the situation
+this tool was written to make visible and could only report.
 
-    python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
+Every bucket is gated on the same terms, `UNASSIGNED` included. A new service with no rule
+and no tests fails the build with a message that says exactly that, rather than being quietly
+tolerated because it has no home yet.
+
+The default floor is 0, so running it by hand is still a report.
+
+    COVERAGE_CORE=sysmon python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
     python3 -m coverage json -q -o coverage.json
     python3 tools/coverage_by_module.py coverage.json
     python3 tools/coverage_by_module.py coverage.json --module weather
+    python3 tools/coverage_by_module.py coverage.json --fail-under 75
+
+`COVERAGE_CORE=sysmon` is not optional on the Raspberry Pi: coverage's default C tracer
+reached 3% of the suite in ten minutes there, where sysmon ran the whole of it in under four.
+It needs Python 3.12+, and CI is on 3.13.
 """
 from __future__ import annotations
 
@@ -167,6 +185,20 @@ def format_module(buckets: dict[str, dict], module: str) -> str:
     return "\n".join(lines)
 
 
+def shortfalls(buckets: dict[str, dict], floor: float) -> list[tuple[str, float]]:
+    """Every module below *floor*, worst first, as ``(module, cover)``.
+
+    All of them, not the first: one build should show all the work, so a contributor is not
+    fixing one module at a time through six red builds.
+    """
+    below = [
+        (module, percentage(bucket["statements"], bucket["missing"]))
+        for module, bucket in buckets.items()
+        if percentage(bucket["statements"], bucket["missing"]) < floor
+    ]
+    return sorted(below, key=lambda item: (item[1], item[0]))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -179,6 +211,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--module",
         help="also break this module down file by file",
+    )
+    parser.add_argument(
+        "--fail-under",
+        type=float,
+        default=0.0,
+        metavar="N",
+        help=(
+            "exit non-zero if any module is below N%% (default: 0, which gates nothing)"
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -205,6 +246,18 @@ def main(argv: list[str] | None = None) -> int:
             f"\n{len(buckets[UNASSIGNED]['files'])} file(s) matched no rule. "
             "Add them to RULES in tools/coverage_by_module.py."
         )
+
+    # The gate comes last, after everything above has printed: the breakdown is the useful
+    # part of a failing build, and returning early would defeat the step's whole purpose.
+    below = shortfalls(buckets, args.fail_under)
+    if below:
+        print()
+        for module, cover in below:
+            print(
+                f"FAIL {module}: {cover:.1f}% is below the {args.fail_under:g}% floor "
+                f"every module must clear."
+            )
+        return 1
 
     return 0
 
