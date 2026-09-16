@@ -35,10 +35,13 @@ jobs:
     # job's twenty-minute bound — measured on the Pi at 3% of the suite in ten minutes,
     # against under four minutes for the whole of it under sysmon. `.coveragerc` scopes what
     # is measured; this only changes how.
+    #
+    # `-rs` prints every skipped test and its reason. The summary line below counts skips but
+    # cannot say which, and CLAUDE.md asks that a new skip be justified — which needs its name.
     - name: Github Action for testing the code
       env:
         COVERAGE_CORE: sysmon
-      run: coverage run -m pytest tests/ -q -m "not rasteriser" --junitxml=pytest-results.xml
+      run: coverage run -m pytest tests/ -q -rs -m "not rasteriser" --junitxml=pytest-results.xml
 
     - name: Verify no test failed
       run: |
@@ -120,9 +123,10 @@ jobs:
         pip install -r requirements.txt
 
     # Inkscape is absent here as it is on the Linux runner, so the marker is deselected for
-    # the same reason. See CLAUDE.md, Testing.
+    # the same reason. See CLAUDE.md, Testing. `-rs` as on the Linux job: this runner's fonts
+    # differ, so its skips differ too, and the log should say which.
     - name: Github Action for testing the code
-      run: pytest tests/ -q -m "not rasteriser" --junitxml=pytest-results.xml
+      run: pytest tests/ -q -rs -m "not rasteriser" --junitxml=pytest-results.xml
 
     - name: Verify no test failed
       run: |
