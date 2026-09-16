@@ -1,0 +1,448 @@
+"""`/season cancel` and `/season complete` — the two ways a season ends.
+
+Issue #208. `season_cog.py` is the largest file in the bot and was at 45.7%. These two commands
+are how a league closes a season out, and between them they carry two rules that were each
+learned the hard way.
+
+**A cancelled season is still league history.** It happened, and the drivers raced in it — so
+the driver history entries are written **before** the cascade that tears the season down.
+Written after, the rows would be beyond reach of a retry, because the command refuses once the
+season is no longer active: a failure in between would lose them with no way to put them back.
+Before the cascade the season is still ACTIVE, so the whole command can simply be run again,
+and the write is idempotent. `test_driver_history_is_written_before_the_cascade` holds the
+ordering rather than merely that both happened, which is the only way to hold it.
+
+**A refusal must always say what is holding the season open.** Issue #154 was a league stranded
+by `/season complete` refusing with nothing named: no round outstanding, yet some division
+neither finished nor cancelled, and no way forward. The command now names the divisions in that
+case, and `test_a_refusal_with_no_outstanding_round_names_the_divisions` is the regression test.
+
+**Division statuses are re-read before the gate.** The status is written when a round is
+finalised, but a stale row here is the one place that would strand a league — so it is worth
+the reread, and that is deliberate rather than defensive clutter.
+
+Both commands are `CONFIRM`-gated or irreversible, and both are a league admin's.
+"""
+from __future__ import annotations
+
+import os
+import sys
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+
+from cogs.season_cog import SeasonCog  # noqa: E402
+from services.season_service import SeasonImmutableError  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
+
+SERVER_ID = 10808
+SEASON_ID = 3
+ACTOR_ID = 77
+
+
+# ---------------------------------------------------------------------------
+# Fixtures / helpers
+# ---------------------------------------------------------------------------
+
+
+def _division(div_id: int, name: str, status: str = "ACTIVE", channel: int | None = 5000):
+    return SimpleNamespace(
+        id=div_id, name=name, status=status, tier=div_id, forecast_channel_id=channel
+    )
+
+
+def _make_cog(
+    *,
+    season=SimpleNamespace(id=SEASON_ID, season_number=3),
+    mutable: bool = True,
+    divisions=None,
+    all_finished: bool = True,
+    outstanding=None,
+    order=None,
+) -> SeasonCog:
+    bot = MagicMock()
+    bot.db_path = "/tmp/does-not-matter.db"
+
+    bot.season_service = MagicMock()
+    bot.season_service.get_active_season = AsyncMock(return_value=season)
+    bot.season_service.assert_season_mutable = AsyncMock(
+        side_effect=None if mutable else SeasonImmutableError("archived")
+    )
+    bot.season_service.get_divisions = AsyncMock(
+        return_value=divisions if divisions is not None else [_division(11, "Division 1")]
+    )
+    bot.season_service.get_division_rounds = AsyncMock(return_value=[])
+    bot.season_service.refresh_division_status = AsyncMock(return_value=True)
+    bot.season_service.all_divisions_finished = AsyncMock(return_value=all_finished)
+    bot.season_service.get_outstanding_rounds = AsyncMock(
+        return_value=outstanding if outstanding is not None else []
+    )
+
+    async def _cascade(**kwargs):
+        if order is not None:
+            order.append("cascade")
+
+    bot.season_service.cancel_season_cascade = AsyncMock(side_effect=_cascade)
+
+    bot.scheduler_service = MagicMock()
+    bot.output_router = MagicMock()
+    bot.output_router.post_log = AsyncMock(return_value=None)
+
+    cog = SeasonCog.__new__(SeasonCog)
+    cog.bot = bot
+    return cog
+
+
+def _interaction(*, channel=...):
+    interaction = MagicMock()
+    interaction.guild_id = SERVER_ID
+    interaction.user = MagicMock()
+    interaction.user.id = ACTOR_ID
+    interaction.user.display_name = "Admin"
+    interaction.user.__str__ = lambda self: "Admin#0001"  # type: ignore[assignment]
+
+    resolved = MagicMock() if channel is ... else channel
+    if resolved is not None:
+        resolved.send = AsyncMock(return_value=None)
+    guild = MagicMock()
+    guild.get_channel = MagicMock(return_value=resolved)
+    interaction.guild = guild
+    interaction._channel = resolved
+
+    interaction.response = MagicMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+def _replied(interaction) -> str:
+    return "\n".join(
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+        if call.args
+    )
+
+
+def _season_end(order=None, history_error=None):
+    """Patch the two season-end helpers the cancel path reaches into."""
+
+    async def _history(season, bot, **kwargs):
+        if history_error is not None:
+            raise history_error
+        if order is not None:
+            order.append("history")
+
+    return (
+        patch(
+            "services.season_end_service._write_driver_history_entries",
+            new=AsyncMock(side_effect=_history),
+        ),
+        patch(
+            "services.season_end_service._revoke_season_roles",
+            new=AsyncMock(return_value=None),
+        ),
+    )
+
+
+async def _cancel(cog, interaction, confirm: str = "CONFIRM"):
+    await undecorate(SeasonCog.season_cancel)(cog, interaction, confirm)
+
+
+async def _complete(cog, interaction):
+    await undecorate(SeasonCog.season_complete)(cog, interaction)
+
+
+# ---------------------------------------------------------------------------
+# /season cancel — the gates
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("word", ["confirm", "Confirm", "yes", ""])
+async def test_cancelling_needs_the_exact_confirmation_word(word):
+    cog = _make_cog()
+    interaction = _interaction()
+    history, roles = _season_end()
+
+    with history, roles:
+        await _cancel(cog, interaction, confirm=word)
+
+    assert "Type exactly" in _replied(interaction)
+    cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
+
+
+async def test_cancelling_with_no_active_season_is_refused():
+    cog = _make_cog(season=None)
+    interaction = _interaction()
+    history, roles = _season_end()
+
+    with history, roles:
+        await _cancel(cog, interaction)
+
+    assert "No active season" in _replied(interaction)
+
+
+async def test_cancelling_an_archived_season_is_refused():
+    cog = _make_cog(mutable=False)
+    interaction = _interaction()
+    history, roles = _season_end()
+
+    with history, roles:
+        await _cancel(cog, interaction)
+
+    assert "archived" in _replied(interaction)
+    cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# /season cancel — the ordering that matters
+# ---------------------------------------------------------------------------
+
+
+async def test_driver_history_is_written_before_the_cascade():
+    """The rule this command was written around. After the cascade the rows would be
+    beyond reach of a retry — the command refuses once the season is no longer active — so
+    a failure in between would lose a season's history with no way to put it back."""
+    order: list[str] = []
+    cog = _make_cog(order=order)
+    history, roles = _season_end(order=order)
+
+    with history, roles:
+        await _cancel(cog, _interaction())
+
+    assert order == ["history", "cascade"]
+
+
+async def test_the_history_is_marked_cancelled_explicitly():
+    """Marked rather than inferred from the divisions, which the cascade is about to
+    change underneath it."""
+    cog = _make_cog()
+    history, roles = _season_end()
+
+    with history as history_mock, roles:
+        await _cancel(cog, _interaction())
+
+    assert history_mock.await_args.kwargs["force_cancelled"] is True
+
+
+async def test_a_failed_history_write_leaves_the_season_standing():
+    """So the whole command can simply be run again. Tearing the season down first and
+    failing here is the case the ordering exists to prevent."""
+    cog = _make_cog()
+    history, roles = _season_end(history_error=RuntimeError("database is locked"))
+
+    with history, roles, pytest.raises(RuntimeError):
+        await _cancel(cog, _interaction())
+
+    cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# /season cancel — what else it does
+# ---------------------------------------------------------------------------
+
+
+async def test_every_division_is_told_in_its_own_channel():
+    """The drivers are the people affected, and they read their division's channel."""
+    cog = _make_cog(
+        divisions=[_division(11, "Division 1"), _division(12, "Division 2")]
+    )
+    interaction = _interaction()
+    history, roles = _season_end()
+
+    with history, roles:
+        await _cancel(cog, interaction)
+
+    assert interaction._channel.send.await_count == 2
+    assert "Season Cancelled" in interaction._channel.send.await_args.args[0]
+
+
+async def test_a_division_already_cancelled_is_not_told_again():
+    """It was announced when it was cancelled; saying it twice reads as a second event."""
+    cog = _make_cog(
+        divisions=[_division(11, "Division 1", status="CANCELLED")]
+    )
+    interaction = _interaction()
+    history, roles = _season_end()
+
+    with history, roles:
+        await _cancel(cog, interaction)
+
+    interaction._channel.send.assert_not_awaited()
+
+
+async def test_a_division_whose_channel_is_gone_does_not_stop_the_cancellation():
+    """The announcement is a courtesy; the cancellation is the command."""
+    cog = _make_cog()
+    interaction = _interaction(channel=None)
+    history, roles = _season_end()
+
+    with history, roles:
+        await _cancel(cog, interaction)
+
+    cog.bot.season_service.cancel_season_cascade.assert_awaited_once()
+
+
+async def test_a_failed_announcement_does_not_stop_the_cancellation():
+    cog = _make_cog()
+    interaction = _interaction()
+    interaction._channel.send = AsyncMock(side_effect=RuntimeError("forbidden"))
+    history, roles = _season_end()
+
+    with history, roles:
+        await _cancel(cog, interaction)
+
+    cog.bot.season_service.cancel_season_cascade.assert_awaited_once()
+
+
+async def test_every_scheduled_job_is_cancelled():
+    """A cancelled season must produce nothing further — forecasts, check-ins and the
+    season-end job alike."""
+    rounds = [SimpleNamespace(id=1), SimpleNamespace(id=2)]
+    cog = _make_cog()
+    cog.bot.season_service.get_division_rounds = AsyncMock(return_value=rounds)
+    history, roles = _season_end()
+
+    with history, roles:
+        await _cancel(cog, _interaction())
+
+    assert cog.bot.scheduler_service.cancel_round.call_count == 2
+    cog.bot.scheduler_service.cancel_season_end.assert_called_once_with(SERVER_ID)
+
+
+async def test_the_season_s_roles_are_revoked():
+    """The drivers are no longer of a division that is running."""
+    cog = _make_cog()
+    history, roles = _season_end()
+
+    with history, roles as revoke:
+        await _cancel(cog, _interaction())
+
+    revoke.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# /season complete
+# ---------------------------------------------------------------------------
+
+
+async def test_completing_with_no_active_season_is_refused():
+    cog = _make_cog(season=None)
+    interaction = _interaction()
+
+    await _complete(cog, interaction)
+
+    assert "No active season" in _replied(interaction)
+
+
+async def test_division_statuses_are_refreshed_before_the_gate():
+    """The status is written when a round is finalised, but a stale row here is the one
+    place that would strand a league with no way forward."""
+    cog = _make_cog(divisions=[_division(11, "Division 1", status="ACTIVE")])
+
+    with patch(
+        "services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
+    ):
+        await _complete(cog, _interaction())
+
+    cog.bot.season_service.refresh_division_status.assert_awaited_once_with(11)
+
+
+async def test_a_finished_division_is_not_refreshed():
+    """Nothing about it can have changed, and the reread is deliberate rather than free."""
+    cog = _make_cog(divisions=[_division(11, "Division 1", status="FINISHED")])
+
+    with patch(
+        "services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
+    ):
+        await _complete(cog, _interaction())
+
+    cog.bot.season_service.refresh_division_status.assert_not_awaited()
+
+
+async def test_outstanding_rounds_are_named_in_the_refusal():
+    """A manager needs to know which rounds to finalise, not merely that some exist."""
+    cog = _make_cog(
+        all_finished=False,
+        outstanding=[
+            {"division": "Division 1", "round_number": 5, "track_name": "Monza"},
+            {"division": "Division 2", "round_number": 4},
+        ],
+    )
+    interaction = _interaction()
+
+    await _complete(cog, interaction)
+
+    replied = _replied(interaction)
+    assert "Division 1" in replied
+    assert "Monza" in replied
+    assert "Round 4" in replied
+
+
+async def test_a_long_list_of_outstanding_rounds_is_truncated():
+    """Twenty is the cap; a league mid-season could otherwise overflow the message and the
+    manager would see nothing at all."""
+    cog = _make_cog(
+        all_finished=False,
+        outstanding=[
+            {"division": f"Division {n}", "round_number": n} for n in range(1, 31)
+        ],
+    )
+    interaction = _interaction()
+
+    await _complete(cog, interaction)
+
+    assert "Division 21" not in _replied(interaction)
+
+
+async def test_a_refusal_with_no_outstanding_round_names_the_divisions():
+    """Issue #154. A refusal naming nothing stranded a league: no round outstanding, yet
+    some division neither finished nor cancelled, and no way forward."""
+    cog = _make_cog(
+        all_finished=False,
+        outstanding=[],
+        divisions=[
+            _division(11, "Division 1", status="FINISHED"),
+            _division(12, "Division 2", status="ACTIVE"),
+        ],
+    )
+    interaction = _interaction()
+
+    await _complete(cog, interaction)
+
+    replied = _replied(interaction)
+    assert "no round is outstanding" in replied
+    assert "Division 2" in replied
+    assert "Division 1" not in replied
+
+
+async def test_the_empty_refusal_says_what_to_do_about_it():
+    """Naming the division is half the fix; the manager still needs telling that
+    cancelling it is the way forward."""
+    cog = _make_cog(
+        all_finished=False, outstanding=[], divisions=[_division(12, "Division 2")]
+    )
+    interaction = _interaction()
+
+    await _complete(cog, interaction)
+
+    assert "Cancel a division" in _replied(interaction)
+
+
+async def test_a_season_with_everything_finished_is_completed():
+    cog = _make_cog(all_finished=True)
+    interaction = _interaction()
+
+    with patch(
+        "services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
+    ) as execute:
+        await _complete(cog, interaction)
+
+    execute.assert_awaited_once()
+    assert "complete" in _replied(interaction)
+    cog.bot.output_router.post_log.assert_awaited_once()
