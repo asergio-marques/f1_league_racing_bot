@@ -24,8 +24,6 @@ ALLOWED_TRANSITIONS: dict[DriverState, set[DriverState]] = {
         DriverState.AWAITING_CORRECTION_PARAMETER,
         DriverState.UNASSIGNED,
         DriverState.NOT_SIGNED_UP,  # rejection or withdrawal
-        DriverState.SEASON_BANNED,
-        DriverState.LEAGUE_BANNED,
     },
     DriverState.AWAITING_CORRECTION_PARAMETER: {
         DriverState.PENDING_DRIVER_CORRECTION,
@@ -35,27 +33,14 @@ ALLOWED_TRANSITIONS: dict[DriverState, set[DriverState]] = {
     DriverState.PENDING_DRIVER_CORRECTION: {
         DriverState.PENDING_ADMIN_APPROVAL,
         DriverState.NOT_SIGNED_UP,  # withdrawal, inactivity, or force-close
-        DriverState.SEASON_BANNED,
-        DriverState.LEAGUE_BANNED,
     },
     DriverState.UNASSIGNED: {
         DriverState.ASSIGNED,
         DriverState.NOT_SIGNED_UP,  # /driver sack
-        DriverState.SEASON_BANNED,
-        DriverState.LEAGUE_BANNED,
     },
     DriverState.ASSIGNED: {
         DriverState.UNASSIGNED,
         DriverState.NOT_SIGNED_UP,  # /driver sack
-        DriverState.SEASON_BANNED,
-        DriverState.LEAGUE_BANNED,
-    },
-    DriverState.SEASON_BANNED: {
-        DriverState.NOT_SIGNED_UP,
-        DriverState.LEAGUE_BANNED,
-    },
-    DriverState.LEAGUE_BANNED: {
-        DriverState.NOT_SIGNED_UP,
     },
 }
 
@@ -104,10 +89,6 @@ def _row_to_profile(row) -> DriverProfile:
         discord_user_id=row["discord_user_id"],
         current_state=DriverState(row["current_state"]),
         former_driver=bool(row["former_driver"]),
-        race_ban_count=row["race_ban_count"],
-        season_ban_count=row["season_ban_count"],
-        league_ban_count=row["league_ban_count"],
-        ban_races_remaining=row["ban_races_remaining"] if "ban_races_remaining" in row.keys() else 0,
     )
 
 
@@ -138,8 +119,7 @@ class DriverService:
         """Return the DriverProfile for this server/user, or None."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, discord_user_id, current_state, former_driver, "
-                "       race_ban_count, season_ban_count, league_ban_count, ban_races_remaining "
+                "SELECT id, server_id, discord_user_id, current_state, former_driver "
                 "FROM driver_profiles WHERE server_id = ? AND discord_user_id = ?",
                 (server_id, discord_user_id),
             )
@@ -158,9 +138,8 @@ class DriverService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "INSERT INTO driver_profiles "
-                "(server_id, discord_user_id, current_state, former_driver, "
-                " race_ban_count, season_ban_count, league_ban_count) "
-                "VALUES (?, ?, ?, 0, 0, 0, 0)",
+                "(server_id, discord_user_id, current_state, former_driver) "
+                "VALUES (?, ?, ?, 0)",
                 (server_id, discord_user_id, initial_state.value),
             )
             await db.commit()
@@ -171,9 +150,6 @@ class DriverService:
             discord_user_id=discord_user_id,
             current_state=initial_state,
             former_driver=False,
-            race_ban_count=0,
-            season_ban_count=0,
-            league_ban_count=0,
         )
 
     # ------------------------------------------------------------------
