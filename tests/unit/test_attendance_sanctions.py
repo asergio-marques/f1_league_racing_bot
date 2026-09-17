@@ -194,6 +194,7 @@ def _make_bot(db_path: str) -> MagicMock:
     placement.sack_driver = AsyncMock(return_value=None)
     placement.assign_driver = AsyncMock(return_value=None)
     placement.unassign_driver = AsyncMock(return_value=None)
+    placement.move_driver = AsyncMock(return_value=None)
     placement._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
 
@@ -436,17 +437,21 @@ async def test_a_driver_already_signed_off_logs_a_no_op_rather_than_raising(
 async def test_a_driver_over_the_autoreserve_threshold_is_moved_to_reserve(
     tmp_path, announcer, sheet
 ):
-    """The move is an unassign followed by an assign onto the division's Reserve team, in
-    that order — assigning first would need a seat the driver does not yet have."""
+    """The move is one `move_driver` onto the division's Reserve team (issue #220), and never
+    the unassign and assign it replaced, which left the driver roleless in between and posted
+    the lineup twice."""
     db_path = await _make_db(tmp_path, autoreserve=10, autosack=None)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 12})
     bot = _make_bot(db_path)
 
     await _run(bot, db_path)
 
-    bot.placement_service.unassign_driver.assert_awaited_once()
-    bot.placement_service.assign_driver.assert_awaited_once()
-    assert bot.placement_service.assign_driver.await_args.kwargs["team_name"] == "Reserve"
+    bot.placement_service.move_driver.assert_awaited_once()
+    kwargs = bot.placement_service.move_driver.await_args.kwargs
+    assert kwargs["team_name"] == "Reserve"
+    assert kwargs["from_division_id"] == kwargs["to_division_id"]
+    bot.placement_service.unassign_driver.assert_not_awaited()
+    bot.placement_service.assign_driver.assert_not_awaited()
     assert "ATTENDANCE_AUTORESERVE" in _logged(bot)
 
 
@@ -495,7 +500,7 @@ async def test_a_failed_autoreserve_is_warned_and_does_not_stop_the_run(
     db_path = await _make_db(tmp_path, autoreserve=10, autosack=None)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 12})
     bot = _make_bot(db_path)
-    bot.placement_service.assign_driver = AsyncMock(side_effect=RuntimeError("discord down"))
+    bot.placement_service.move_driver = AsyncMock(side_effect=RuntimeError("discord down"))
 
     with caplog.at_level("WARNING"):
         await _run(bot, db_path)

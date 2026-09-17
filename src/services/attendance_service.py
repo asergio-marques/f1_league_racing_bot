@@ -1536,22 +1536,16 @@ async def enforce_attendance_sanctions(
             reserve_team_name: str = reserve_row["name"]
 
             try:
-                await placement.unassign_driver(
+                # One move rather than an unassign and an assign (issue #220): the driver
+                # keeps a seat throughout, their roles are swapped once, and the lineup is
+                # posted once rather than twice.
+                await placement.move_driver(
                     server_id=server_id,
                     driver_profile_id=profile_id,
-                    division_id=division_id,
                     season_id=season_id,
-                    acting_user_id=acting_id,
-                    acting_user_name=acting_name,
-                    guild=guild,
-                    discord_user_id=discord_user_id,
-                )
-                await placement.assign_driver(
-                    server_id=server_id,
-                    driver_profile_id=profile_id,
-                    division_id=division_id,
+                    from_division_id=division_id,
+                    to_division_id=division_id,
                     team_name=reserve_team_name,
-                    season_id=season_id,
                     acting_user_id=acting_id,
                     acting_user_name=acting_name,
                     guild=guild,

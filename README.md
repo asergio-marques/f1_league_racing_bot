@@ -1706,7 +1706,7 @@ All commands below require the attendance module to be enabled (`/module enable 
 |-----------|------|----------|-------------|
 | `points` | Integer | ✅ | Cumulative attendance-penalty threshold that triggers auto-reserve. Use `0` to disable. |
 
-When a driver's cumulative attendance-penalty total reaches this value they are automatically unassigned from their current full-time seat and moved to the reserve team of their division.
+When a driver's cumulative attendance-penalty total reaches this value they are automatically moved from their current full-time seat to the reserve team of their division — one move, as `/driver move` makes it: their team role is swapped for the Reserve team's and the lineup is posted once.
 
 > **Limitation:** Cannot be set to a non-zero value while auto-sack is active. Disable auto-sack first (`/attendance config autosack 0`). The two features are mutually exclusive.
 
