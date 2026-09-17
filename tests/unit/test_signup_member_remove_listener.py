@@ -132,7 +132,8 @@ async def test_a_driver_with_no_signup_record_is_named_by_their_discord_name(tmp
 
 
 @pytest.mark.parametrize(
-    "state", [None, "NOT_SIGNED_UP", "PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL", "LEAGUE_BANNED"]
+    "state", [None, "NOT_SIGNED_UP", "PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL",
+              "PENDING_DRIVER_CORRECTION"]
 )
 async def test_anyone_else_leaving_is_not_announced(tmp_path, state):
     """Logging every departure from a large server would bury the ones that matter."""

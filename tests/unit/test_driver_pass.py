@@ -55,7 +55,6 @@ async def db_path(tmp_path):
             (3, "1003", "UNASSIGNED", 0, 0),    # approved, never placed: deleted
             (4, "1004", "PENDING_ADMIN_APPROVAL", 0, 0),  # in review: deleted
             (5, "1005", "NOT_SIGNED_UP", 0, 0),  # pending deletion already: deleted
-            (6, "1006", "SEASON_BANNED", 0, 0),  # banned: untouched
             (7, "9000000000000000007", "ASSIGNED", 0, 1),  # test driver: reset, not deleted
         ]
         for pid, uid, state, former, test in drivers:
@@ -106,7 +105,6 @@ async def test_the_pass_resets_and_deletes_as_the_rules_say(db_path):
 
     assert await _states(db_path) == {
         1: "NOT_SIGNED_UP",
-        6: "SEASON_BANNED",
         7: "NOT_SIGNED_UP",
     }
     assert result == {"reset": 5, "deleted": 4}

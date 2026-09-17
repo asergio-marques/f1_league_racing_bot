@@ -248,13 +248,11 @@ async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
         DriverState.NOT_SIGNED_UP,
         DriverState.PENDING_ADMIN_APPROVAL,
         DriverState.PENDING_DRIVER_CORRECTION,
-        DriverState.SEASON_BANNED,
-        DriverState.LEAGUE_BANNED,
     ],
 )
 async def test_any_other_state_is_refused(tmp_path, state):
-    """Someone mid-signup has nothing to revoke and someone banned is already out —
-    sacking either would do nothing or quietly overwrite a ban with a milder state."""
+    """Someone mid-signup has nothing to revoke, and someone at Not Signed Up is already
+    out — sacking either would do nothing but move a driver the season no longer holds."""
     db_path = await _make_db(tmp_path, name=f"refuse_{state.value}", state=state)
 
     with pytest.raises(ValueError, match="Unassigned or Assigned"):
@@ -265,12 +263,12 @@ async def test_any_other_state_is_refused(tmp_path, state):
 
 async def test_the_refusal_names_the_state_it_found(tmp_path):
     """A manager who meets it needs to know which state they hit, not merely that they hit
-    one — a banned driver and a half-signed-up one call for different next steps."""
+    one — a driver still in review and one already gone call for different next steps."""
     db_path = await _make_db(
-        tmp_path, name="refuse_names", state=DriverState.LEAGUE_BANNED
+        tmp_path, name="refuse_names", state=DriverState.PENDING_ADMIN_APPROVAL
     )
 
-    with pytest.raises(ValueError, match="LEAGUE_BANNED"):
+    with pytest.raises(ValueError, match="PENDING_ADMIN_APPROVAL"):
         await _sack(_service(db_path), _guild())
 
 
