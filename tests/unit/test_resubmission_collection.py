@@ -643,8 +643,19 @@ async def test_a_paste_is_still_collected_when_nobody_presses_cancel(tmp_path):
     db_path = await _make_db(tmp_path, name="resubmit_cancel_idle")
     await _seed_old_results(db_path)
     view = _cancel_view()
+    pastes = iter(["garbage", QUALI_PASTE, RACE_PASTE])
 
-    await _run(_bot(db_path, ["garbage", QUALI_PASTE, RACE_PASTE]), cancel_view=view)
+    async def _wait_for(event, check):
+        # A paste arrives some ticks after the wait begins, as a real one does. Answered at
+        # once, it would win every race before the button's side had run at all.
+        for _ in range(5):
+            await asyncio.sleep(0)
+        return _message(next(pastes))
+
+    bot = _bot(db_path, [])
+    bot.wait_for = AsyncMock(side_effect=_wait_for)
+
+    await _run(bot, cancel_view=view)
 
     assert [s[0] for s in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
 
