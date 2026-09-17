@@ -294,7 +294,9 @@ With nothing at fault the report ends with a **✅ Confirm configuration** butto
 > **Confirming fixes the configuration for the season.** From then until the season ends, the team list, the game edition, test mode and the signup module's settings cannot change.
 
 #### `/division add` — Add a division
-*Access: League manager · Requires active `/season setup` session*
+*Access: League manager · Placements only*
+
+Divisions are built once the season is in **placements** — after its configuration is confirmed and, where the signup module is enabled, its signup window has closed. You plan divisions around the drivers who actually signed up, so the command is refused in configuration, while waiting for the window, and while it is open.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

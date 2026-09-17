@@ -2657,6 +2657,22 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        # Divisions are built only in Placements (issue #220): a league does not plan its
+        # divisions before it knows how many drivers signed up. Every other command that
+        # builds the season needs a division to act on, so this is the one door to guard.
+        stage = (
+            await self.bot.season_service.get_stage(cfg.season_id)
+            if cfg.season_id
+            else None
+        )
+        if stage is not SeasonStage.PLACEMENTS:
+            await interaction.followup.send(
+                "\u26d4 Divisions can only be added while the season is in placements — "
+                "once its configuration is confirmed and its signup window has closed.",
+                ephemeral=True,
+            )
+            return
+
         if tier < 1:
             await interaction.followup.send(
                 "\u26d4 Tier must be 1 or higher.",

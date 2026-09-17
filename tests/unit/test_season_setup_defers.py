@@ -28,6 +28,7 @@ import pytest
 from cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
 from models.server_config import ServerConfig
 from models.round import RoundFormat
+from models.season import SeasonStage
 
 
 CHANNEL = 111
@@ -86,6 +87,7 @@ def _bot() -> MagicMock:
     bot.config_service.get_server_config = AsyncMock(return_value=_config())
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     bot.season_service.get_setup_season = AsyncMock(return_value=None)
+    bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))
     bot.season_service.get_divisions = AsyncMock(return_value=[])
     bot.season_service.restore_driver_seats = AsyncMock()
