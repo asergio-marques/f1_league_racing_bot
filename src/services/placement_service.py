@@ -267,22 +267,6 @@ class PlacementService:
     # Seeded unassigned listing (T008)
     # ------------------------------------------------------------------
 
-    async def count_unplaced_signups(self, server_id: int) -> int:
-        """How many drivers hold a completed signup and have not yet been placed.
-
-        Deliberately the same population ``get_unassigned_drivers_seeded`` reports, so the
-        guard on slot changes and the placement view can never disagree about who is
-        waiting.
-        """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT COUNT(*) FROM driver_profiles "
-                "WHERE server_id = ? AND current_state = 'UNASSIGNED'",
-                (server_id,),
-            )
-            row = await cursor.fetchone()
-        return int(row[0]) if row else 0
-
     async def get_unassigned_drivers_seeded(self, server_id: int) -> list[dict]:
         """Return all Unassigned drivers ordered by seed (total_lap_ms ASC NULLS LAST,
         then earliest approval timestamp)."""

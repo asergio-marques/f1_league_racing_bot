@@ -214,38 +214,3 @@ class TestPermittedWhileFree:
         await _add(_cog(db_path), _interaction())
 
         assert "Friday 21:00 UTC" in await _slot_labels(db_path)
-
-
-# ---------------------------------------------------------------------------
-# The count itself
-# ---------------------------------------------------------------------------
-
-
-class TestCountUnplacedSignups:
-    async def test_counts_only_this_server(self, tmp_path):
-        db_path = await _seed(tmp_path, unassigned=2)
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "INSERT INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (7777, 1, 2, 3)"
-            )
-            await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (50, 7777, '9050', 'UNASSIGNED')"
-            )
-            await db.commit()
-
-        from services.placement_service import PlacementService
-
-        svc = PlacementService(db_path, bot=MagicMock())
-        assert await svc.count_unplaced_signups(SERVER_ID) == 2
-        assert await svc.count_unplaced_signups(7777) == 1
-
-    async def test_agrees_with_the_placement_view(self, tmp_path):
-        """The guard and `/signup unassigned list` must report the same population."""
-        db_path = await _seed(tmp_path, unassigned=4)
-        from services.placement_service import PlacementService
-
-        svc = PlacementService(db_path, bot=MagicMock())
-        listed = await svc.get_unassigned_drivers_seeded(SERVER_ID)
-        assert await svc.count_unplaced_signups(SERVER_ID) == len(listed)
