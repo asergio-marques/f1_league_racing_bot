@@ -465,6 +465,68 @@ class DriverCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
+    # /driver reject
+    # ------------------------------------------------------------------
+
+    @driver.command(
+        name="reject",
+        description="Turn down an approved driver who has not been placed.",
+    )
+    @app_commands.describe(user="The Unassigned driver to turn down.")
+    @league_manager_only
+    async def reject(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        """Turn down an Unassigned driver (issue #220).
+
+        Available while the season is in Placements or Ongoing, placements — where the
+        drivers of a window are settled. The driver returns to Not Signed Up and loses the
+        signed-up role; their signup is kept with the season.
+        """
+        from models.driver_profile import DriverState
+
+        await interaction.response.defer(ephemeral=True)
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
+        if season is None or season.stage not in _PLACING_STAGES:
+            await interaction.followup.send(
+                _NOT_PLACING_REFUSAL.format(command="/driver reject"), ephemeral=True
+            )
+            return
+
+        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        if profile is None or profile.current_state is not DriverState.UNASSIGNED:
+            await interaction.followup.send(
+                f"⛔ **{user.display_name}** is not an Unassigned driver. A placed driver is "
+                "unassigned first; a signup still in review is rejected from its panel.",
+                ephemeral=True,
+            )
+            return
+
+        await self.bot.driver_service.transition(  # type: ignore[attr-defined]
+            server_id, str(user.id), DriverState.NOT_SIGNED_UP
+        )
+
+        signup_cfg = await self.bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
+        role_id = getattr(signup_cfg, "signed_up_role_id", None)
+        if role_id and interaction.guild is not None:
+            role = interaction.guild.get_role(role_id)
+            if role is not None:
+                try:
+                    await user.remove_roles(role, reason="Driver rejected")
+                except discord.HTTPException as exc:
+                    log.warning("reject: could not remove the signed-up role: %s", exc)
+
+        await interaction.followup.send(
+            f"✅ Turned down **{user.display_name}**. They are no longer signed up.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reject | Success\n"
+            f"  user: {user.display_name} (<@{user.id}>)",
+        )
+
+    # ------------------------------------------------------------------
     # /driver sack
     # ------------------------------------------------------------------
 

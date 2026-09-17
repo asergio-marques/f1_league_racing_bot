@@ -952,6 +952,15 @@ Refused for a driver's **only** seat — sack them with `/driver sack` or move t
 | `user` | Member | ✅ | The driver to release |
 | `division` | String | ✅ | Division tier number or name to release them from |
 
+#### `/driver reject` — Turn down an approved driver
+*Access: League manager · Placements only*
+
+Turns down a driver who was approved but has not been placed — one in the Unassigned state. They return to Not Signed Up and lose the signed-up role; their signup is kept with the season. Available while the season is in placements, or mid-season while the drivers of a closed signup window are placed — the moments every signup has to be settled before placements are confirmed. A signup still in review is rejected from its review panel instead, and a placed driver is unassigned first.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user` | Member | ✅ | The Unassigned driver to turn down |
+
 #### `/driver sack` — Sack a driver
 *Access: League admin*
 
