@@ -233,6 +233,108 @@ async def test_a_refused_reassignment_is_reported_not_raised(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# The portrait of the account left behind (issue #222)
+# ---------------------------------------------------------------------------
+#
+# A portrait is a cache of one account's own profile picture, so nothing of it is carried by a
+# re-key — the new account has a picture of its own. The old file is removed instead, and the
+# directory is the league's own, so these tests build one under `tmp_path` and never resolve
+# the configured `resources/league/` tree.
+
+
+def _with_portraits(cog, directory, monkeypatch, *, remover=None):
+    """Point *cog* at a configured driver directory and return the remover it will call."""
+    from services import driver_portrait_service, image_render_service
+
+    cog.bot.db_path = "db.sqlite"
+    cog.bot.image_config_service = MagicMock()
+    cog.bot.image_config_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(driver_image_directory=str(directory))
+    )
+    monkeypatch.setattr(
+        image_render_service,
+        "resolve_configured_directories",
+        lambda *a, **k: ({"driver": directory}, {}),
+    )
+    remover = remover or AsyncMock(return_value=True)
+    monkeypatch.setattr(driver_portrait_service, "remove_portrait", remover)
+    return remover
+
+
+async def test_reassign_removes_the_portrait_of_the_account_left_behind(
+    tmp_path, monkeypatch
+):
+    directory = tmp_path / "drivers"
+    directory.mkdir()
+    cog = _make_cog()
+    remover = _with_portraits(cog, directory, monkeypatch)
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
+
+    remover.assert_awaited_once_with("db.sqlite", SERVER_ID, "4242", directory)
+    assert "re-keyed successfully" in _replied(interaction)
+
+
+async def test_reassign_leaves_the_portrait_where_no_directory_resolves(
+    tmp_path, monkeypatch
+):
+    """A row taken without its file would disown a portrait the bot wrote, after which the
+    bot would never overwrite its own leftover. Both are left alone instead."""
+    from services import image_render_service
+
+    directory = tmp_path / "drivers"
+    directory.mkdir()
+    cog = _make_cog()
+    remover = _with_portraits(cog, directory, monkeypatch)
+    monkeypatch.setattr(
+        image_render_service,
+        "resolve_configured_directories",
+        lambda *a, **k: ({}, {"driver": "outside the project root"}),
+    )
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
+
+    remover.assert_not_awaited()
+    assert "re-keyed successfully" in _replied(interaction)
+
+
+async def test_reassign_leaves_the_portrait_where_the_league_has_no_image_config(
+    tmp_path, monkeypatch
+):
+    directory = tmp_path / "drivers"
+    directory.mkdir()
+    cog = _make_cog()
+    remover = _with_portraits(cog, directory, monkeypatch)
+    cog.bot.image_config_service.get_config = AsyncMock(return_value=None)
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
+
+    remover.assert_not_awaited()
+
+
+async def test_a_portrait_that_cannot_be_removed_does_not_fail_the_re_key(
+    tmp_path, monkeypatch
+):
+    """The re-key is committed by the time the portrait is touched, so a read-only directory
+    must not turn a successful command into a reported failure."""
+    directory = tmp_path / "drivers"
+    directory.mkdir()
+    cog = _make_cog()
+    _with_portraits(
+        cog, directory, monkeypatch, remover=AsyncMock(side_effect=OSError("read-only"))
+    )
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
+
+    assert "re-keyed successfully" in _replied(interaction)
+    cog.bot.output_router.post_log.assert_awaited()
+
+
+# ---------------------------------------------------------------------------
 # The refusal ladder, command by command
 # ---------------------------------------------------------------------------
 

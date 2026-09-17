@@ -262,6 +262,71 @@ async def test_a_generated_avatar_does_not_remove_a_file_the_league_supplied(db_
     assert (directory / "7.svg").read_text() == "<svg>the league's own</svg>"
 
 
+async def test_removing_a_portrait_takes_the_file_and_the_row(db_path, directory):
+    """What `/driver reassign` does with the account a driver has left (issue #222)."""
+    from services.driver_portrait_service import remove_portrait
+
+    await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
+
+    assert await remove_portrait(db_path, SERVER_ID, "7", directory) is True
+    assert not (directory / "7.svg").exists()
+    assert await _rows(db_path) == {}
+
+
+async def test_removing_a_portrait_leaves_the_league_s_own_artwork_alone(db_path, directory):
+    """A file with no row was placed by the league, and migration 047 is explicit that the
+    bot never overwrites one. Removing it on a re-key would delete a deliberate choice."""
+    from services.driver_portrait_service import remove_portrait
+
+    (directory / "7.svg").write_text("<svg>the league's own</svg>")
+
+    assert await remove_portrait(db_path, SERVER_ID, "7", directory) is False
+    assert (directory / "7.svg").read_text() == "<svg>the league's own</svg>"
+
+
+async def test_removing_a_portrait_whose_file_has_gone_still_takes_the_row(db_path, directory):
+    """The row is the ownership register; left behind it would claim a file that is not there."""
+    from services.driver_portrait_service import remove_portrait
+
+    await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
+    (directory / "7.svg").unlink()
+
+    assert await remove_portrait(db_path, SERVER_ID, "7", directory) is True
+    assert await _rows(db_path) == {}
+
+
+async def test_removing_one_driver_s_portrait_leaves_the_rest(db_path, directory):
+    from services.driver_portrait_service import remove_portrait
+
+    await refresh_portraits(
+        db_path, SERVER_ID, [_member(7, "abc"), _member(8, "def")], directory, now=NOW
+    )
+
+    await remove_portrait(db_path, SERVER_ID, "7", directory)
+
+    assert sorted(await _rows(db_path)) == ["8"]
+    assert (directory / "8.svg").is_file()
+
+
+async def test_the_new_account_is_fetched_fresh_once_the_old_portrait_has_gone(
+    db_path, directory
+):
+    """Nothing of the portrait is carried by a re-key: the new account has a picture of its
+    own, and the next refresh obtains it."""
+    from services.driver_portrait_service import remove_portrait
+
+    await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
+    await remove_portrait(db_path, SERVER_ID, "7", directory)
+
+    written = await refresh_portraits(
+        db_path, SERVER_ID, [_member(9, "xyz")], directory, now=NOW
+    )
+
+    assert written == 1
+    assert (directory / "9.svg").is_file()
+    assert sorted(await _rows(db_path)) == ["9"]
+
+
 async def test_a_missing_file_is_refetched_even_where_the_hash_matches(db_path, directory):
     await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
     (directory / "7.svg").unlink()

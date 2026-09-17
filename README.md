@@ -914,13 +914,19 @@ Every successful reply echoes the other two deadlines, and the change is written
 #### `/driver reassign` — Re-key a driver profile to a new Discord account
 *Access: League manager*
 
-Transfers an existing driver profile from one Discord account to another, with every signup the profile made. Provide either `old_user` (mention) or `old_user_id` (raw snowflake) for users who have left the server.
+Transfers an existing driver profile from one Discord account to another, with **everything the league holds of that driver**: every signup they made, their results in every session they raced, their standings in every division, and their history of every season that has ended. Their standings and their history read the same afterwards as before, under the new account. Provide either `old_user` (mention) or `old_user_id` (raw snowflake) for users who have left the server.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `new_user` | Member | ✅ | Target Discord account. Must not already have a driver profile. |
+| `new_user` | Member | ✅ | Target Discord account. Must not already have a driver profile, nor results, standings or history of its own. |
 | `old_user` | Member | — | Mention of the existing Discord user whose profile is to be transferred |
 | `old_user_id` | String | — | Raw Discord snowflake ID, for users who have left the server |
+
+> **Only this league moves.** A person who races in two leagues that share this bot carries only the profile of the league whose manager ran the command.
+
+> **The driver's portrait is not carried, and does not need to be.** A portrait is the picture of the Discord account itself, so the one taken for the old account is discarded and the new account's own is fetched before the next graphic is drawn. A portrait you placed in the driver directory yourself is never touched.
+
+> **Refused where the new account has raced here before.** An account that already holds results, standings or history of its own cannot take another driver's profile — the two records would merge with no way to separate them again. Nothing is changed by the refusal.
 
 #### `/driver assign` — Assign a driver to a team and division
 *Access: League manager*
