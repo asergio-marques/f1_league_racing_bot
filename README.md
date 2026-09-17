@@ -524,8 +524,7 @@ signed-up roles are revoked; an open signup window is closed; every driver who w
 signing up or in review returns to **Not Signed Up**, so they can sign up for the next season; every
 driver who never raced is then deleted, with their placements and history, though their signups stay
 with the season; test mode is switched off, deleting the drivers it created and keeping their
-history; and the season is archived as `COMPLETED`. Former drivers are kept, and banned drivers are
-left as they are.
+history; and the season is archived as `COMPLETED`. Former drivers are kept.
 
 A **round** moves through six states, and the middle ones are named for what the round is waiting
 on: **not run** before its time comes, **awaiting results** once it has, **awaiting report
@@ -689,7 +688,7 @@ No parameters. Flips test mode on/off; state persists across bot restarts.
 
 **Test mode is chosen for a season, in its configuration.** The toggle is refused unless a season is in configuration — start one with `/season setup` first. Confirming the configuration with `/season config-review` fixes test mode for the rest of that season. A season in test mode never opens a signup window: confirming its configuration takes it straight to placements.
 
-**Test mode cannot be enabled while your league has real drivers.** A server is either running a real league or being tested, never both, and the command refuses — naming how many drivers stand in the way — if any driver profile is signed up, unassigned, assigned or banned. Former drivers who have left do not count.
+**Test mode cannot be enabled while your league has real drivers.** A server is either running a real league or being tested, never both, and the command refuses — naming how many drivers stand in the way — if any driver profile is signed up, unassigned or assigned. Former drivers who have left do not count.
 
 Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached, as ordinary server configurations that `/results config` can view and edit like any other. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**; the two configurations are kept, being configuration rather than scaffolding.
 
