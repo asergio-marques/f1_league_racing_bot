@@ -1660,6 +1660,8 @@ No parameters. Displays a diff of the staged changes against the current season 
 
 > **Only rounds that have been raced are reposted**, and each one is reposted under the label it currently stands at — a round at Final Results stays "Final Results". Rounds still to come are left alone.
 
+> **An amendment it could not publish is refused, not half-made.** Before overwriting a single value the bot checks that every division's results and standings channels are still there and that it can post to them — and, with the attendance module on, its attendance channel too. If any of them has been deleted or the bot's permission has been taken away, the panel names the division and the channel, pressing Approve refuses, and **nothing is changed**: the season keeps its points, the staged changes stay staged, and amendment mode stays on. Repair the channel and review again. Either the whole approval happens or none of it does.
+
 ---
 
 #### Reserve Driver Visibility

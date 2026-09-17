@@ -210,6 +210,12 @@
 - If approved, then the contents of the season points schema store will be overwritten by the modification store. All round results, and standings after each round result, shall be recalculated and reposted in the appropriate channels for each division. The modified flag will then be set to false, the modification store cleared, and amending mode switched off.
     - Only a round that has results shall be reposted. A round not yet raced has nothing posted for it and shall have nothing posted for it by the recalculation, its standings included.
     - Each round shall be reposted under the state that round has reached, as the "results standings sync" and "results rounds sync" commands do. Amending the points of a season shall not move a round to a different state nor label it as though it had.
+- An amendment shall not be approved unless everything its approval will do can be done. Either the whole of an approval succeeds or none of it does; there is no partial approval.
+    - Before the season's points are overwritten, the bot shall establish that every division's configured results and standings channels exist and can be posted to, and — where the attendance module is enabled — that the same holds of its attendance channel, and of its verdicts channel where an autosack or autoreserve threshold is set. A channel a division has not configured is not a fault.
+    - Where any of it cannot be done, the approval shall be refused and shall change nothing at all: not the season's points, not the modification store, not the amending mode.
+    - "results amend review" shall name the division and the channel at fault alongside the staged changes, so the fault is visible while the decision is being taken, and shall say which command repairs it.
+    - The attendance recalculation an approval performs shall be applied entire or not at all, the running totals of every later round included.
+- An approval shall not be recorded as a success before the reposting it claims has been done.
 - If rejected, nothing happens. The modification store will remain as it is, and the amending mode will remain active.
 
 #### Viewing configs after placements are confirmed
