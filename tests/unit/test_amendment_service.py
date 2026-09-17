@@ -886,6 +886,18 @@ def _bot_recording_reposts(reposted: list[tuple], *, missing: tuple[int, ...] = 
     The channels are specced as ``discord.TextChannel`` because the approval now checks
     that what a division points at is something that can be posted in (#187). A bare
     ``AsyncMock`` is not, and would be refused before any reposting was attempted.
+
+    **A bare ``MagicMock`` grants every permission.** The validation reads permissions with
+    ``getattr(permissions, name, False)``, and a ``MagicMock`` answers any attribute with a
+    truthy child mock — so the object handed back by ``permissions_for`` below means
+    "everything allowed", which is what these tests want: they are about the cascade, not
+    about permissions.
+
+    The trap is in the other direction. A test that means to *deny* a permission must set
+    that attribute to ``False`` by name, and a **misspelt** attribute silently grants
+    instead of denying — leaving a test that reads as though it proves a refusal while
+    actually exercising the success path. Set the attribute, then assert on the fault text,
+    so the test fails if the denial never took.
     """
     import discord
     from unittest.mock import AsyncMock, MagicMock

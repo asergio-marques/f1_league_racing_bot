@@ -771,6 +771,14 @@ def _permissions(**denied):
     A ``MagicMock`` rather than a real ``discord.Permissions``: the Pi runs apt's
     discord.py 2.5.0 and CI the pinned 2.7.1, and constructing library objects in a test
     is how a suite comes to pass on one and fail on the other.
+
+    **Granting is the default, so a denial must be spelt correctly.** The validation reads
+    permissions with ``getattr(permissions, name, False)`` and a ``MagicMock`` answers any
+    attribute with a truthy child mock — so every permission is granted until named here.
+    A **misspelt** keyword therefore grants rather than denies, and the test goes green
+    while exercising the success path it was written to rule out. Every caller below pairs
+    its denial with an assertion on the fault text for that reason: if the denial did not
+    take, no fault is raised and the assertion fails rather than the test quietly passing.
     """
     permissions = MagicMock()
     for name, value in denied.items():
