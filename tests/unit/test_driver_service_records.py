@@ -41,6 +41,13 @@ OLD_USER = "4242"
 NEW_USER = "5353"
 ACTOR_ID = 77
 
+#: A second league on the same bot, for the tests that pin the scope of a re-key.
+OTHER_SERVER = 9109
+
+#: Each league's season, division, round and session are all seeded under this id, so that
+#: one number names the whole of a league's racing and no two leagues share a row.
+LEAGUE, OTHER_LEAGUE = 1, 2
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -57,7 +64,92 @@ async def _make_db(tmp_path) -> str:
             (SERVER_ID,),
         )
         await db.commit()
+    await _seed_league(db_path, SERVER_ID, LEAGUE)
     return db_path
+
+
+async def _seed_league(db_path: str, server_id: int, league: int) -> None:
+    """Seed one league's season, division, round and race session, all under *league*.
+
+    A standings snapshot and a session result carry no server of their own; they reach one
+    through their division, so the tests need the chain to exist to be scoped by it at all.
+    """
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
+            (server_id,),
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
+            "VALUES (?, ?, '2026-09-17', 'ACTIVE', 1, 'ONGOING')",
+            (league, server_id),
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, tier, status) "
+            "VALUES (?, ?, 'Pro', 1001, 1, 'ACTIVE')",
+            (league, league),
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at, status) "
+            "VALUES (?, ?, 1, 'NORMAL', '2026-09-20T18:00:00', 'FINAL')",
+            (league, league),
+        )
+        await db.execute(
+            "INSERT INTO session_results (id, round_id, division_id, session_type, status) "
+            "VALUES (?, ?, ?, 'RACE', 'ACTIVE')",
+            (league, league, league),
+        )
+        await db.commit()
+
+
+async def _seed_snapshot(
+    db_path: str, user_id: str = OLD_USER, league: int = LEAGUE, *, points: int = 88
+) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_standings_snapshots "
+            "(round_id, division_id, driver_user_id, standing_position, total_points) "
+            "VALUES (?, ?, ?, 2, ?)",
+            (league, league, user_id, points),
+        )
+        await db.commit()
+
+
+async def _seed_results(db_path: str, user_id: str = OLD_USER, league: int = LEAGUE) -> None:
+    """One race result and one qualifying result for *user_id* in *league*'s race session."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position, points_awarded) VALUES (?, ?, 501, 2, 18)",
+            (league, user_id),
+        )
+        await db.execute(
+            "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position) VALUES (?, ?, 501, 3)",
+            (league, user_id),
+        )
+        await db.commit()
+
+
+async def _standings_users(db_path: str) -> list[tuple[int, int]]:
+    """Every standings snapshot as (division, driver), sorted — never in insertion order."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT division_id, driver_user_id FROM driver_standings_snapshots "
+            "ORDER BY division_id, driver_user_id"
+        )
+        return [(r["division_id"], r["driver_user_id"]) for r in await cursor.fetchall()]
+
+
+async def _result_users(db_path: str, table: str) -> list[tuple[int, int]]:
+    """Every row of *table* as (session, driver), sorted."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT session_result_id, driver_user_id FROM {table} "
+            "ORDER BY session_result_id, driver_user_id"
+        )
+        return [(r["session_result_id"], r["driver_user_id"]) for r in await cursor.fetchall()]
 
 
 async def _seed_profile(
@@ -66,12 +158,13 @@ async def _seed_profile(
     user_id: str = OLD_USER,
     state: str = "UNASSIGNED",
     former: bool = False,
+    server_id: int = SERVER_ID,
 ) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO driver_profiles "
             "(server_id, discord_user_id, current_state, former_driver) VALUES (?, ?, ?, ?)",
-            (SERVER_ID, user_id, state, int(former)),
+            (server_id, user_id, state, int(former)),
         )
         await db.commit()
         return cursor.lastrowid
@@ -227,6 +320,60 @@ async def test_re_keying_carries_every_signup_to_the_new_account(tmp_path):
         )
         rows = {row["discord_user_id"]: row["n"] for row in await cursor.fetchall()}
     assert rows == {NEW_USER: 2}
+
+
+async def test_re_keying_carries_the_driver_s_standings_to_the_new_account(tmp_path):
+    """Issue #222. Keyed by the abandoned account, a driver's points join to no profile: the
+    standings draw them as a raw snowflake and the season's end reads their final standing
+    as nothing at all."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path)
+    await _seed_snapshot(db_path)
+    service = DriverService(db_path)
+
+    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+
+    assert await _standings_users(db_path) == [(LEAGUE, int(NEW_USER))]
+
+
+async def test_re_keying_carries_both_session_result_tables_to_the_new_account(tmp_path):
+    """A driver's results are the source of the standings and of every statistic, so both
+    tables move or the standings are rebuilt under the old account at the next round."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path)
+    await _seed_results(db_path)
+    service = DriverService(db_path)
+
+    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+
+    assert await _result_users(db_path, "race_session_results") == [(LEAGUE, int(NEW_USER))]
+    assert await _result_users(db_path, "qualifying_session_results") == [
+        (LEAGUE, int(NEW_USER))
+    ]
+
+
+async def test_re_keying_leaves_another_league_s_racing_alone(tmp_path):
+    """Neither table holds a server of its own, so an unscoped re-key would move the same
+    person's results in every other league this bot serves."""
+    db_path = await _make_db(tmp_path)
+    await _seed_league(db_path, OTHER_SERVER, OTHER_LEAGUE)
+    await _seed_profile(db_path)
+    await _seed_profile(db_path, server_id=OTHER_SERVER)
+    for league in (LEAGUE, OTHER_LEAGUE):
+        await _seed_snapshot(db_path, league=league)
+        await _seed_results(db_path, league=league)
+    service = DriverService(db_path)
+
+    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+
+    assert await _standings_users(db_path) == [
+        (LEAGUE, int(NEW_USER)),
+        (OTHER_LEAGUE, int(OLD_USER)),
+    ]
+    assert await _result_users(db_path, "race_session_results") == [
+        (LEAGUE, int(NEW_USER)),
+        (OTHER_LEAGUE, int(OLD_USER)),
+    ]
 
 
 async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):

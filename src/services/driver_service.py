@@ -107,6 +107,21 @@ async def resolve_driver_profile_id(server_id: int, discord_user_id: int, db) ->
     return row[0] if row else None
 
 
+#: The divisions of one server, for re-keying rows that carry no server of their own.
+#:
+#: `driver_standings_snapshots` and the two session-result tables name their driver by Discord
+#: account but hold no `server_id`, so an unscoped re-key would move the same person's results
+#: in every other league this bot serves. They reach their server through their division.
+_DIVISIONS_OF_SERVER_SQL = (
+    "SELECT d.id FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE s.server_id = ?"
+)
+
+#: The sessions of one server, scoped exactly as `_DIVISIONS_OF_SERVER_SQL` is.
+_SESSIONS_OF_SERVER_SQL = (
+    f"SELECT sr.id FROM session_results sr WHERE sr.division_id IN ({_DIVISIONS_OF_SERVER_SQL})"
+)
+
+
 class DriverService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -212,7 +227,22 @@ class DriverService:
         actor_id: int,
         actor_name: str,
     ) -> DriverProfile:
-        """Re-key an existing driver profile, and its signups, from old_user_id to new_user_id."""
+        """Re-key a driver profile, and everything naming the driver, onto another account.
+
+        A re-key exists so that a person changing Discord account keeps their history (core
+        specification, *Changing the account behind a profile*), so every record naming the
+        driver by their account is carried with the profile: their signups, their session
+        results and their standings. Left on the old account, as they were until issue #222,
+        the driver's standings line is drawn as a **raw snowflake** — a name is resolved by
+        joining `driver_profiles` on the account, and the old one no longer holds a profile —
+        and the season's end reads their final standing as zero points and no position.
+
+        **The ids bind as TEXT against the INTEGER columns on purpose.** `driver_profiles`
+        holds the account as TEXT where the results tables hold it as INTEGER, and SQLite's
+        column affinity converts a TEXT parameter on both sides: `driver_user_id = '4242'`
+        matches `4242`, and the `SET` stores an integer. Casting in Python instead would
+        raise on an account id that is not a number, where affinity simply matches nothing.
+        """
         existing_old = await self.get_profile(server_id, old_user_id)
         if existing_old is None:
             raise ValueError(
@@ -236,6 +266,18 @@ class DriverService:
                 "WHERE server_id = ? AND discord_user_id = ?",
                 (new_user_id, server_id, old_user_id),
             )
+            # Their standings, and their results in every session they raced (issue #222).
+            await db.execute(
+                f"UPDATE driver_standings_snapshots SET driver_user_id = ? "
+                f"WHERE driver_user_id = ? AND division_id IN ({_DIVISIONS_OF_SERVER_SQL})",
+                (new_user_id, old_user_id, server_id),
+            )
+            for table in ("race_session_results", "qualifying_session_results"):
+                await db.execute(
+                    f"UPDATE {table} SET driver_user_id = ? WHERE driver_user_id = ? "
+                    f"AND session_result_id IN ({_SESSIONS_OF_SERVER_SQL})",
+                    (new_user_id, old_user_id, server_id),
+                )
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
