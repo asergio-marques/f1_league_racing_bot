@@ -576,6 +576,33 @@ async def test_the_same_blocker_from_several_divisions_is_said_once(db_path):
     assert _private(messages).count("could not be drawn") == 1
 
 
+async def test_an_unsettled_signup_withholds_approval_and_is_named(db_path):
+    """Every signup is placed or rejected before placements are confirmed (issue #220)."""
+    cog = _cog(db_path)
+    cog._placement_confirmation_faults = AsyncMock(
+        return_value=(["**Racer** — not yet placed"], [])
+    )
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "Every signup must be settled" in _private(messages)
+    assert "**Racer** — not yet placed" in _private(messages)
+    assert "`/driver reject`" in _private(messages)
+
+
+async def test_a_division_without_its_lineup_or_calendar_channel_withholds_approval(db_path):
+    """The two channels every division posts to are required at confirmation (issue #220)."""
+    cog = _cog(db_path)
+    cog._placement_confirmation_faults = AsyncMock(
+        return_value=([], ["**Pro** has no lineup channel and no calendar channel"])
+    )
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "Every division needs its lineup and calendar channels" in _private(messages)
+    assert "**Pro** has no lineup channel" in _private(messages)
+
+
 async def test_a_phantom_points_configuration_withholds_approval(db_path):
     cog = _cog(db_path, results=True, phantoms=["Standrad"])
     messages = await _review(cog, _interaction())
