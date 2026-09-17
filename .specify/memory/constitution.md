@@ -1,6 +1,53 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-17 — v10.1.0 → v11.0.0: MAJOR — the driver has no ban states (issue #221)]
+  Version change    : 10.1.0 → 11.0.0
+  Bump rationale    : MAJOR. Two states are removed from the Principle VIII enumeration and four
+                      transitions from its table, and the Season Banned mechanics rule is struck
+                      out entirely. A removal from an exhaustive enumeration is backward
+                      incompatible by construction: a document that read the old table would
+                      admit a state this one forbids. MINOR was weighed and rejected because
+                      nothing is added or relaxed — the enumeration narrows.
+
+  Modified sections :
+    - Principle VIII, Driver States — the Season Banned and League Banned rows are removed,
+      leaving seven states, and a standing rule is added: no state bars a driver from signing
+      up, and a driver MUST NOT be banned.
+    - Principle VIII, Permitted Transitions — the four ban rows are removed (two ban commands,
+      the ban_races_remaining expiry, and the league admin's lift).
+    - Principle VIII, Season Banned mechanics → **No ban states** — the per-round decrement rule
+      is replaced by the rule forbidding ban counters and signup bars, and naming the stewarding
+      module as the owner that must bring a state, its counter and its commands in one piece.
+    - Data & State Management, New Entities (v2.0.0) — DriverProfile loses its `ban_counts` line.
+
+  Why the constitution is the document that moved:
+    - Issue #221 found that nothing in src/ ever wrote either state: the only writer of a
+      driver's state is write_transition, and none of its call sites named one. The four
+      counters were written as zero at profile creation and never again.
+    - Decided with the user in conversation on 2026-09-17: remove the states rather than build
+      the ban commands the constitution already specified. The alternative — building /driver
+      ban and /driver unban to the mechanics written here — was offered and declined.
+    - race_ban_count went with them. The bot can issue neither a race ban nor a qualifying ban
+      (services.image_preview_data.VERDICT_SANCTIONS names the four it can), and the profile
+      counted only one of that pair.
+
+  Removed sections  : none. Two table rows, four table rows and one bullet were struck within
+                      Principle VIII; no section, principle or heading was deleted.
+
+  Deferred items    : none. The stewarding module's own sanction rules are not written here and
+                      are not owed until that module is specified.
+
+  Templates         : no template reads the driver state enumeration or the ban counters; none
+                      required changes.
+
+  Sync impact reports below this one are the historical record and were left untouched, the
+  ban rules they name included.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-17 — v10.0.0 → v10.1.0: MINOR — pending placements turned down when every division is done]
   Version change    : 10.0.0 → 10.1.0
   Bump rationale    : MINOR. A new permitted transition is added — pending placements are turned
@@ -4639,8 +4686,9 @@ their Discord User ID in server scope. The following rules are non-negotiable:
 | Pending Driver Correction | Specific field flagged; driver must re-submit that field only. |
 | Unassigned | Signup approved; not yet placed in any division-team seat. |
 | Assigned | Placed in at least one division-team seat. |
-| Season Banned | Banned for `ban_races_remaining` rounds (see Season Banned mechanics). Cannot sign up. |
-| League Banned | Permanently banned. Cannot sign up until explicitly lifted by a league admin. |
+
+No state bars a driver from signing up. A driver MUST NOT be banned: sanctions belong to the
+stewarding module, which will bring the bar together with the commands that impose and lift it.
 
 #### Permitted Transitions
 
@@ -4662,18 +4710,15 @@ their Discord User ID in server scope. The following rules are non-negotiable:
 | Assigned | Not Signed Up | `/driver sack`, while the season is in an ongoing stage, of a driver whose placement is confirmed |
 | Unassigned, Assigned, Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction | Not Signed Up | The season's end: its completion, cancellation or abort |
 | Unassigned, Assigned, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction | Not Signed Up | Every division of a season in Ongoing, signups open or Ongoing, placements is finished or cancelled: the season's signup window is closed, every unsettled signup and every driver whose placements are all uncommitted is turned down, and the season moves straight to Pending completion |
-| Any (except League Banned, Season Banned) | Season Banned | Ban command issued |
-| Any (except League Banned) | League Banned | Ban command issued by a league admin |
-| Season Banned | Not Signed Up | `ban_races_remaining` decrements to 0 |
-| League Banned | Not Signed Up | League admin explicitly lifts ban |
 | Not Signed Up | Unassigned | Test mode: admin direct-assign |
 | Not Signed Up | Assigned | Test mode: admin direct-assign |
 
-- **Season Banned mechanics**: When a Season Ban is issued, `ban_races_remaining` is set to
-  the total round count of the active season at the time of issuance. This counter decrements
-  by 1 for each round that completes anywhere within the server. When `ban_races_remaining`
-  reaches 0, the driver automatically transitions to *Not Signed Up* under the same rules as
-  any other transition to that state (immutability gate, pending deletion).
+- **No ban states**: The profile MUST NOT carry ban counters, and no driver state may bar a
+  driver from signing up. *Season Banned* and *League Banned* were enumerated here and wired
+  into the transition table while no command could impose or lift either, so every rule above had to
+  account for two states no league could reach (issue #221). A ban is a sanction, and sanctions
+  are the stewarding module's: it MUST bring the state, the counter and the commands that write
+  them in one piece, rather than inherit a state with no command behind it.
 - **Signup data retention**: Every completed signup — one that reached Pending Admin Approval —
   belongs to the season and the signup window it was made in, and MUST be kept for as long as
   that season is kept, whatever becomes of the driver. A driver who signs up more than once
@@ -7120,7 +7165,6 @@ for the season persistence increment.
 - `discord_user_id` (TEXT, PK within server) — canonical key; may be updated by admin only.
 - `current_state` (ENUM) — enforced by state machine (Principle VIII).
 - `former_driver` (BOOLEAN, default false) — immutability gate (Principle VIII).
-- `ban_counts` (race_bans INT, season_bans INT, league_bans INT) — accumulated ban history.
 - Current and historical season assignment data linked via a normalized join table,
   avoiding redundant column-per-division patterns.
 
@@ -7724,4 +7768,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 10.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-17
+**Version**: 11.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-17
