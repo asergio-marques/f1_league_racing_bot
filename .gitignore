@@ -224,6 +224,15 @@ __marimo__/
 # Other
 poc/
 
+# Claude Code worktrees. `EnterWorktree` and the `fix-issues` skill root their worktrees here,
+# one per issue being worked in parallel. Each is a full checkout of this repository carrying
+# its own `.git` file, so leaving the directory tracked offers every one of them to the next
+# `git add -A` as an embedded repository -- committed as a bare gitlink pointing at a commit
+# in a repository nobody else can reach, which is the same trap the `resources/league`
+# negations below are written to avoid. The directory is created on demand and holds nothing
+# worth keeping once a worktree is removed.
+.claude/worktrees/
+
 # Data generator output — regenerated on every run, never committed
 tools/data-generator/roster.csv
 tools/data-generator/roster_old.csv

@@ -83,6 +83,13 @@ later polish phase.
   `resources/league/` is where a league puts its own — a folder per class, kept by `.gitkeep`
   and otherwise **gitignored**, so an update to the bot cannot overwrite it and its contents
   never reach a diff. See [resources/README.md](resources/README.md).
+- **Stage paths by name. Never `git add -A`, `git add .` or `git commit -a`** (decided
+  2026-09-17). Too much here is ignored or untracked for a blanket stage to be safe: the
+  league's artwork above, `poc/` below, and the worktrees under `.claude/worktrees/` — each a
+  full checkout carrying its own `.git`, which commits as a bare gitlink pointing at a commit
+  nobody else can reach. Run `git status --porcelain` and stage from what it shows. The rule
+  binds hardest when several agents work in parallel, where a blanket stage cannot tell one
+  agent's change from another's; see the `fix-issues` skill.
 - `poc/` is **gitignored scratch** — the proof of concept, plus the sample assets and the
   earlier template copies. Not a design input, and never something to port code from. The
   one exception is a *rule* it already encodes: `normalize()` in `poc/build_poc.py` calls
@@ -107,7 +114,10 @@ module, never a substitute for the full run the paragraph above asks for.
 **Never run two pytest sessions at once.** They race on the shared schema template described
 below, and the loser reads a half-built database — which surfaces as a mass failure scattered
 across unrelated modules, not as a lock error. If a run is already going, wait for it rather
-than opening a second terminal to check one thing.
+than opening a second terminal to check one thing. Where several agents are at work in parallel
+— see the `fix-issues` skill — waiting is mechanised rather than left to judgement: every run
+goes behind `flock -w 3600 /tmp/f1-pytest.lock`. The rule is unchanged; the lock is only how it
+is kept when nobody is watching the clock.
 
 **Every change to production code carries its unit tests with it.** Update or add the tests in
 the same change as the code, then run the suite — a production change reported complete without
