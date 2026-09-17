@@ -237,7 +237,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ### Pending completion
 - A season in Ongoing shall move to Pending completion as soon as every one of its divisions is finished or cancelled. A season in Ongoing, signups open or Ongoing, placements whose divisions are all finished or cancelled shall move to Pending completion upon returning to Ongoing.
-- In Pending completion the results of a round already final may still be amended, and an amendment of the season's points may still be approved. The only other thing that may be done with the season is to complete it.
+- In Pending completion the results of a round already final may still be amended, and an amendment of the season's points may still be approved. The only other thing that may be done with the season is to complete it. No module shall be disabled in Pending completion.
 
 ### Ending a season
 
@@ -255,7 +255,8 @@ it only to place it; the rules governing it belong to its own specification.
 
 #### The driver pass
 - The driver pass shall move every driver who is Unassigned, Assigned, Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter or Pending Driver Correction to Not Signed Up, cancelling any signup still in progress.
-- It shall then delete every driver at Not Signed Up whose former-driver flag is false, with their placements and history entries. Their signups shall remain with the season.
+- It shall then delete every real driver at Not Signed Up whose former-driver flag is false, with their placements and history entries. Their signups shall remain with the season.
+- A driver created by test mode shall not be deleted by the driver pass. Test mode deletes such drivers when it is switched off, and keeps their history entries, as set out under Test mode.
 - A driver whose former-driver flag is true shall be retained.
 - A driver who is Season Banned or League Banned shall be left untouched.
 
@@ -277,7 +278,7 @@ it only to place it; the rules governing it belong to its own specification.
 - The archive shall be the source from which season history and statistics are drawn.
 - Each driver holding a committed placement in a season that has ended, and retained by the driver pass, shall keep a history entry stating the season's number, the division's name and tier, and the driver's final position, final points and gap to the winner of that division.
     - The entry shall record whether the driver's division was cancelled. Cancellation reaches a driver only through their division, so a season cancelled outright marks every one of its entries.
-    - A driver created by test mode shall gain a history entry as any other driver does, until test mode deletes them.
+    - A driver created by test mode shall gain a history entry as any other driver does, and shall keep it after test mode deletes them.
 
 ## Divisions
 - A division shall be created while its season is in Placements, taking a name, a role and a tier.
@@ -488,6 +489,7 @@ section states the rules it holds to.
 - Enabling test mode shall create and attach two ordinary points configurations, "Standard" and "Half Points", to the season in Configuration, unless a configuration of that name is already attached to it. They shall be created as ordinary configurations of the server and shall be indistinguishable from ones a league made itself, so that a test season passes the points requirement of confirming placements without one being built by hand.
 - Test mode shall not relax any requirement of confirming placements beyond the points configurations above. In particular, a season holding a round whose moment has passed, or a round already inside one of its enabled modules' configured windows, shall be refused under test mode exactly as it is refused otherwise, so a test season built in the past shall not be confirmable — and the first of those shall refuse it with every module switched off. A test season that quietly lost its check-ins would misreport attendance precisely as a real one does, and is a worse thing to be testing against than a calendar that has to be moved forward.
 - Switching test mode off, by the toggle or at the end of its season, shall delete every driver created by test mode upon the server, across every division.
+    - The history entries of a driver so deleted shall be kept, identified by the driver's identifier, whether or not the driver had raced. A driver created by test mode in a later season under the same identifier shall hold that history as its own.
 
 ### Fake drivers and rosters
 - A driver created by test mode shall be seated directly into a team of a division, bypassing the signup entirely, while the season is in Placements, and shall be indistinguishable thereafter from one added any other way.
