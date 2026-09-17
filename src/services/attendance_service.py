@@ -1773,11 +1773,8 @@ async def recalculation_faults(
     autoreserve thresholds are unset, so a league using neither must not be refused for a
     channel it will never post to.
     """
-    from services.results_post_service import (
-        _bot_member,
-        _channel_fault,
-        _image_aspect_on,
-    )
+    from services.image_validity_service import aspect_attaches_files
+    from services.results_post_service import _bot_member, _channel_fault
 
     if guild is None:
         # The results half already reports an absent guild; saying it twice would have a
@@ -1821,7 +1818,7 @@ async def recalculation_faults(
         thresholds
         and (thresholds["autoreserve_threshold"] or thresholds["autosack_threshold"])
     )
-    attendance_graphics = await _image_aspect_on(bot, guild.id, "attendance")
+    attendance_graphics = await aspect_attaches_files(bot, guild.id, "attendance")
 
     faults: list[str] = []
     for row in division_rows:

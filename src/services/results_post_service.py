@@ -1042,38 +1042,6 @@ _REPOST_PERMISSIONS: tuple[tuple[str, str], ...] = (
 _ATTACHMENT_PERMISSION: tuple[str, str] = ("attach_files", "Attach Files")
 
 
-async def _image_aspect_on(bot, server_id: int, aspect: str) -> bool:
-    """Whether *aspect*'s graphics could be posted at all for this server.
-
-    **Asked of the aspect, not of each template** (#187). ``standings_enabled`` and
-    ``results_enabled`` go one step further and ask whether a *particular* template is
-    valid, because that is what decides whether one graphic falls back to text. That is the
-    wrong grain for a permission: template validity changes whenever a league edits its
-    artwork, and a refusal built on it would come and go with the artwork rather than with
-    the permission it is actually about. The question here is the stable one — could this
-    channel ever be sent a file — and it is answered by the module switch and the aspect
-    toggle, which is what a league sets and leaves set.
-
-    The over-approximation is deliberate and is the safe direction. A league with the module
-    on and the aspect on, but without Attach Files, cannot receive the graphics it has asked
-    for; being told so is right, even though the textual fallback would have limped on.
-    """
-    if bot is None:
-        return False
-    try:
-        if not await bot.module_service.is_images_enabled(server_id):
-            return False
-        toggles = await bot.image_config_service.get_toggles(server_id)
-        return bool(toggles.get(aspect))
-    except Exception as exc:  # noqa: BLE001 — never refuse an amendment on this reader
-        log.error(
-            "repost_channel_faults: image enablement check failed for server %s: %s",
-            server_id,
-            exc,
-        )
-        return False
-
-
 def _bot_member(guild: "discord.Guild", bot):
     """The bot's own member object in *guild*, or ``None`` where it cannot be resolved.
 
@@ -1185,8 +1153,14 @@ async def repost_channel_faults(
         )
         division_rows = await cursor.fetchall()
 
-    results_graphics = await _image_aspect_on(bot, guild.id, "results")
-    standings_graphics = await _image_aspect_on(bot, guild.id, "standings")
+    # Asked of the image module rather than read out of its configuration here: a posting
+    # service hands the image module an occasion and acts on what comes back, and does not
+    # read its settings (#187, and the layering
+    # `tests/integration/test_image_module_flow.py` holds).
+    from services.image_validity_service import aspect_attaches_files
+
+    results_graphics = await aspect_attaches_files(bot, guild.id, "results")
+    standings_graphics = await aspect_attaches_files(bot, guild.id, "standings")
 
     faults: list[str] = []
     for row in division_rows:

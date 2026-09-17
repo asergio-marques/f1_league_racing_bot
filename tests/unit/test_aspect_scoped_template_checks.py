@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -26,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.image_constants import ASPECTS, ASPECT_TEMPLATES, TEMPLATE_COLUMNS  # noqa: E402
 from services.image_validity_service import (  # noqa: E402
+    aspect_attaches_files,
     blocking_template_problems,
     check_all_templates,
     templates_of_enabled_aspects,
@@ -140,3 +142,87 @@ def test_nothing_blocks_when_every_output_is_off(config_missing_verdicts):
     toggles = {aspect: False for aspect in ASPECTS}
 
     assert blocking_template_problems(config_missing_verdicts, toggles) == []
+
+
+# ── Whether an aspect could attach a file, asked at aspect grain (#187) ───
+#
+# The pre-flight of an amendment asks whether the bot will need Attach Files on a
+# division's channels. That is a different question from "will this graphic draw", and the
+# tests below exist to keep it different — see `aspect_attaches_files`' docstring.
+
+
+def _bot(*, module_on=True, toggles=None, reports=None):
+    """A bot answering the two readers the predicate uses, and a third it must not."""
+    bot = MagicMock()
+    bot.module_service.is_images_enabled = AsyncMock(return_value=module_on)
+    bot.image_config_service.get_toggles = AsyncMock(return_value=toggles or {})
+    # Every template broken. Nothing here may change the answer.
+    bot.image_validity_service.template_reports = AsyncMock(return_value=reports or {})
+    return bot
+
+
+async def test_an_aspect_that_is_on_could_attach_a_file():
+    assert await aspect_attaches_files(_bot(toggles={"standings": True}), 1, "standings")
+
+
+async def test_an_aspect_that_is_off_could_not():
+    assert not await aspect_attaches_files(_bot(toggles={"standings": False}), 1, "standings")
+
+
+async def test_an_aspect_absent_from_the_toggles_could_not():
+    """A server with no configuration row attaches nothing, rather than raising."""
+    assert not await aspect_attaches_files(_bot(toggles={}), 1, "standings")
+
+
+async def test_the_module_being_off_settles_it_whatever_the_toggles_say():
+    """A toggle set before the module was switched off still reads as off."""
+    bot = _bot(module_on=False, toggles={"standings": True})
+
+    assert not await aspect_attaches_files(bot, 1, "standings")
+    bot.image_config_service.get_toggles.assert_not_awaited()
+
+
+async def test_each_aspect_is_asked_for_separately():
+    """Standings being on says nothing about the results channel needing Attach Files."""
+    bot = _bot(toggles={"standings": True, "results": False})
+
+    assert await aspect_attaches_files(bot, 1, "standings")
+    assert not await aspect_attaches_files(bot, 1, "results")
+
+
+async def test_template_validity_is_deliberately_not_consulted():
+    """**The guard on the decision, not an incidental assertion.**
+
+    This predicate is one template check away from looking exactly like its three siblings
+    — ``results_enabled``, ``standings_enabled``, ``attendance_enabled`` — and a later
+    reader who notices the difference will be tempted to close it. They must not: template
+    validity moves whenever a league edits its own artwork, so a permission requirement
+    built on it would appear and vanish with the SVGs and refuse the same amendment on one
+    day and accept it the next for reasons having nothing to do with the permission.
+
+    Asserting that ``template_reports`` is never awaited is what makes adding the check
+    fail here rather than a year later in a league's server.
+    """
+    bot = _bot(toggles={"standings": True}, reports={})
+
+    assert await aspect_attaches_files(bot, 1, "standings"), (
+        "a broken template must not stop the channel being asked for Attach Files"
+    )
+    bot.image_validity_service.template_reports.assert_not_awaited()
+
+
+async def test_no_bot_in_scope_attaches_nothing():
+    assert not await aspect_attaches_files(None, 1, "standings")
+
+
+async def test_a_reader_that_raises_answers_no_rather_than_raising():
+    """The callers are pre-flight checks that must refuse cleanly or not at all.
+
+    An exception here would come out of a check whose whole purpose is to produce a
+    readable refusal, and Attach Files is only ever an extra requirement on top of the
+    three a posting needs anyway — so under-reporting is the safe way to fail.
+    """
+    bot = _bot(toggles={"standings": True})
+    bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("no config"))
+
+    assert not await aspect_attaches_files(bot, 1, "standings")
