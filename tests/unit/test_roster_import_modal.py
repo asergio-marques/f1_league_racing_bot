@@ -42,6 +42,8 @@ def _cog(*, test_mode: bool = True):
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(test_mode_active=test_mode)
     )
+    # The stage the roster may change in has tests of its own (test_test_mode_roster_stage).
+    cog._refuse_roster_change_outside_placements = AsyncMock(return_value=False)
     return cog
 
 
