@@ -144,13 +144,18 @@ async def _write_driver_history_entries(
         cursor = await db.execute(
             """
             SELECT dsa.driver_profile_id,
+                   dp.server_id,
+                   dp.discord_user_id,
                    d.id     AS division_id,
                    d.name   AS division_name,
                    d.tier   AS division_tier,
                    d.status AS division_status
             FROM driver_season_assignments dsa
             JOIN divisions d ON d.id = dsa.division_id
+            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
             WHERE d.season_id = ?
+              -- Only a committed placement earns a history entry (issue #220).
+              AND dsa.committed = 1
             """,
             (season.id,),
         )
@@ -220,11 +225,14 @@ async def _write_driver_history_entries(
             await db.execute(
                 """
                 INSERT OR IGNORE INTO driver_history_entries
-                    (driver_profile_id, season_number, division_name, division_tier,
-                     final_position, final_points, points_gap_to_winner, cancelled)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (server_id, discord_user_id, driver_profile_id, season_number,
+                     division_name, division_tier, final_position, final_points,
+                     points_gap_to_winner, cancelled)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    asgn["server_id"],
+                    asgn["discord_user_id"],
                     driver_profile_id,
                     season.season_number,
                     div_name,

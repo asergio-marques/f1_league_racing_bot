@@ -81,6 +81,20 @@ async def _next_synthetic_id(db_path: str) -> int:
     return _SYNTHETIC_ID_BASE + 1 if current_max is None else current_max + 1
 
 
+async def _reattach_history(db, server_id: int, discord_user_id: str, profile_id: int) -> None:
+    """Give a driver created by test mode the history an earlier one of the same identifier left.
+
+    Test mode deletes its drivers when it is switched off, and keeps their history entries
+    (issue #220). A driver created again under the same identifier in a later season holds
+    that history as their own.
+    """
+    await db.execute(
+        "UPDATE driver_history_entries SET driver_profile_id = ? "
+        "WHERE server_id = ? AND discord_user_id = ? AND driver_profile_id IS NULL",
+        (profile_id, server_id, discord_user_id),
+    )
+
+
 async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
     """Return the live season ID for a server, or None if it has none.
 
@@ -218,6 +232,7 @@ async def add_test_driver(
             profile_id: int = profile_cursor.lastrowid  # type: ignore[assignment]
         except Exception as exc:
             return f"Failed to create driver profile: {exc}"
+        await _reattach_history(db, server_id, uid_str, profile_id)
 
         # Occupy the seat
         await db.execute(
@@ -416,6 +431,7 @@ async def add_test_drivers_in_bulk(
                 ),
             )
             profile_id = profile_cursor.lastrowid
+            await _reattach_history(db, server_id, str(driver.discord_user_id), profile_id)
 
             await db.execute(
                 "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
