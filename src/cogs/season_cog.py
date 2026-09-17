@@ -37,6 +37,7 @@ from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
 from models.division import Division
 from models.round import Round as RoundModel
 from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
+from models.season import SeasonStage
 from services import season_points_service
 import services.track_service as track_service
 from services.season_service import SeasonImmutableError
@@ -502,7 +503,7 @@ class SeasonCog(commands.Cog):
 
         cfg = PendingConfig(server_id=server_id, game_edition=game_edition)
         self._pending[interaction.user.id] = cfg
-        await self._snapshot_pending(cfg)
+        await self._snapshot_pending(cfg, initial_stage=SeasonStage.CONFIGURATION)
 
         await interaction.followup.send(
             f"\u2705 Season setup started. **Season #{cfg.season_number} (F1 {cfg.game_edition})** is being configured.\n\n"
@@ -4700,8 +4701,14 @@ class SeasonCog(commands.Cog):
             interaction.guild_id
         )
 
-    async def _snapshot_pending(self, cfg: PendingConfig) -> None:
-        """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id."""
+    async def _snapshot_pending(
+        self, cfg: PendingConfig, *, initial_stage: SeasonStage | None = None
+    ) -> None:
+        """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id.
+
+        *initial_stage* is the stage a season created by this snapshot begins in, and is
+        passed only by `/season setup`; see ``SeasonService.save_pending_snapshot``.
+        """
         divisions_data = [
             {
                 "name": d.name,
@@ -4714,7 +4721,12 @@ class SeasonCog(commands.Cog):
             if d.name
         ]
         new_season_id, season_number = await self.bot.season_service.save_pending_snapshot(
-            cfg.server_id, cfg.start_date, cfg.season_id, divisions_data, cfg.game_edition
+            cfg.server_id,
+            cfg.start_date,
+            cfg.season_id,
+            divisions_data,
+            cfg.game_edition,
+            initial_stage=initial_stage,
         )
         cfg.season_id = new_season_id
         cfg.season_number = season_number
@@ -5845,6 +5857,7 @@ async def _judge_round_amendment(
     return judge_amendment(
         rnd, dict(amendments), now=now, attendance=attendance, weather=weather
     )
+
 
 
 class _ConfirmView(discord.ui.View):

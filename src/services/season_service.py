@@ -320,11 +320,14 @@ class SeasonService:
         existing_season_id: int,
         divisions: list[dict],
         game_edition: int = 0,
+        initial_stage: SeasonStage | None = None,
     ) -> tuple[int, int]:
         """Atomically replace the SETUP season snapshot for *server_id* in the DB.
 
-        Deletes the previous SETUP season (if *existing_season_id* is non-zero)
-        and re-inserts the full pending config.  Sessions are NOT created here —
+        Rebuilds everything beneath the season row (if *existing_season_id* is non-zero)
+        and re-inserts the full pending config. *initial_stage* is the stage a season
+        created by this call begins in; left unset it takes the default migration 057
+        gives a SETUP row. It is ignored for an existing season, which keeps its stage.  Sessions are NOT created here —
         they are created at approve time.
 
         **Everything not held in the PendingConfig must be carried across by hand.**
@@ -540,9 +543,15 @@ class SeasonService:
             else:
                 cursor = await db.execute(
                     "INSERT INTO seasons "
-                    "(server_id, start_date, status, season_number, game_edition) "
-                    "VALUES (?, ?, 'SETUP', ?, ?)",
-                    (server_id, start_date.isoformat(), season_number, game_edition),
+                    "(server_id, start_date, status, season_number, game_edition, stage) "
+                    "VALUES (?, ?, 'SETUP', ?, ?, ?)",
+                    (
+                        server_id,
+                        start_date.isoformat(),
+                        season_number,
+                        game_edition,
+                        initial_stage.value if initial_stage is not None else None,
+                    ),
                 )
                 new_season_id = cursor.lastrowid  # type: ignore[assignment]
 

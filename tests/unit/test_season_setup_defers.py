@@ -200,3 +200,18 @@ def test_no_setup_command_replies_through_response(command):
     assert "interaction.response.send_message" not in src, (
         f"{command} still replies via response.send_message after deferring"
     )
+
+
+async def test_season_setup_begins_the_season_in_configuration():
+    """Issue #220: a season is set up in Configuration, before any division exists."""
+    from models.season import SeasonStage
+
+    cog = _cog(None)
+    interaction = _interaction()
+
+    from tests.support.undecorate import undecorate
+
+    await undecorate(SeasonCog.season_setup)(cog, interaction, game_edition=2026)
+
+    kwargs = cog.bot.season_service.save_pending_snapshot.await_args.kwargs
+    assert kwargs["initial_stage"] is SeasonStage.CONFIGURATION

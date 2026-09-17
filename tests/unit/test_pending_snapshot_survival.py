@@ -437,3 +437,33 @@ async def test_a_rebuild_with_nobody_seated_holds_nothing(tmp_path):
     await _snapshot(service, existing=first)
 
     assert service._pending_driver_seats == {}
+
+
+async def test_a_first_snapshot_begins_in_the_stage_it_is_given(tmp_path):
+    """`/season setup` begins a season in Configuration (issue #220)."""
+    from models.season import SeasonStage
+
+    db_path = await _make_db(tmp_path)
+    service = SeasonService(db_path)
+
+    season_id, _ = await service.save_pending_snapshot(
+        SERVER_ID, START, 0, [], initial_stage=SeasonStage.CONFIGURATION
+    )
+
+    assert await service.get_stage(season_id) is SeasonStage.CONFIGURATION
+
+
+async def test_a_rebuild_ignores_the_initial_stage(tmp_path):
+    from models.season import SeasonStage
+
+    db_path = await _make_db(tmp_path)
+    service = SeasonService(db_path)
+    first, _ = await service.save_pending_snapshot(
+        SERVER_ID, START, 0, [], initial_stage=SeasonStage.CONFIGURATION
+    )
+
+    await service.save_pending_snapshot(
+        SERVER_ID, START, first, [_division()], initial_stage=SeasonStage.PLACEMENTS
+    )
+
+    assert await service.get_stage(first) is SeasonStage.CONFIGURATION
