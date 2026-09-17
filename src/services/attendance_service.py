@@ -265,42 +265,53 @@ class AttendanceService:
         division_id: int,
         driver_profile_id: int,
         status: str,
-    ) -> None:
-        """Update rsvp_status and manage accepted_at per FR-022.
+    ) -> bool:
+        """Record *status* for one driver of one round, and manage accepted_at with it.
 
         - Transitioning TO 'ACCEPTED': set accepted_at to current UTC time.
         - Re-accepting after a non-ACCEPTED status: reset accepted_at to current UTC time.
         - Transitioning AWAY from 'ACCEPTED': set accepted_at to NULL.
+
+        Returns whether a row now carries the answer, so a caller can tell a driver the truth
+        rather than assume the write landed.
+
+        **It inserts, and that is the point** (issue #209). This was two bare ``UPDATE``
+        statements despite its name, so a driver holding no ``driver_round_attendance`` row
+        had their answer discarded in silence while the button handler thanked them for it.
+        Only ``bulk_insert_attendance_rows`` creates those rows and only ``run_rsvp_notice``
+        calls it, against the roster as it stood when the call was posted — so a driver
+        assigned, moved or confirmed into the division afterwards has none, and pressing a
+        button was the one way they could ever get one.
+
+        The insert belongs here rather than on the paths that place a driver. By the time
+        ``handle_rsvp_button`` reaches this method it has established everything the row
+        needs — the driver holds a confirmed placement in this division, the round exists,
+        and the answer is inside the lock — so the fact arrives at the press and nowhere
+        earlier. Seeding rows from ``assign_driver``, ``move_driver`` and
+        ``commit_mid_season_placements`` instead would put the same work in three places,
+        each having to decide for itself which of the division's rounds have a call standing,
+        and any placement route added later would reopen the hole.
+
+        A row created here is written carrying the answered status in one statement, never
+        created as NO_RSVP and then updated: the intermediate state has no reader, and
+        ``accepted_at`` follows the ordinary rule above rather than a special case of it.
+        Every other column takes the same default ``bulk_insert_attendance_rows`` gives it.
         """
-        now_iso = datetime.now(timezone.utc).isoformat()
-        if status == "ACCEPTED":
-            async with get_connection(self._db_path) as db:
-                await db.execute(
-                    """
-                    UPDATE driver_round_attendance
-                       SET rsvp_status = ?,
-                           accepted_at = ?
-                     WHERE round_id = ?
-                       AND division_id = ?
-                       AND driver_profile_id = ?
-                    """,
-                    (status, now_iso, round_id, division_id, driver_profile_id),
-                )
-                await db.commit()
-        else:
-            async with get_connection(self._db_path) as db:
-                await db.execute(
-                    """
-                    UPDATE driver_round_attendance
-                       SET rsvp_status = ?,
-                           accepted_at = NULL
-                     WHERE round_id = ?
-                       AND division_id = ?
-                       AND driver_profile_id = ?
-                    """,
-                    (status, round_id, division_id, driver_profile_id),
-                )
-                await db.commit()
+        accepted_at = datetime.now(timezone.utc).isoformat() if status == "ACCEPTED" else None
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                INSERT INTO driver_round_attendance
+                    (round_id, division_id, driver_profile_id, rsvp_status, accepted_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (round_id, division_id, driver_profile_id) DO UPDATE
+                   SET rsvp_status = excluded.rsvp_status,
+                       accepted_at = excluded.accepted_at
+                """,
+                (round_id, division_id, driver_profile_id, status, accepted_at),
+            )
+            await db.commit()
+        return cursor.rowcount > 0
 
     async def get_attendance_rows(
         self,
