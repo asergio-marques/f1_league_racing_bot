@@ -118,3 +118,19 @@ async def test_deleting_the_season_takes_its_signups_windows_and_configuration(t
         for table in ("seasons", "signup_windows", "season_signup_config", "signup_records"):
             cursor = await db.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
             assert (await cursor.fetchone())[0] == 0, table
+
+
+async def test_an_abort_goes_ahead_when_the_close_timer_cannot_be_cancelled():
+    """A timer already gone is what cancelling it aims at, so its failure stops nothing."""
+    cog = _cog(SeasonStage.SIGNUPS)
+    cog.bot.scheduler_service.cancel_signup_close_timer = MagicMock(
+        side_effect=RuntimeError("no such job")
+    )
+
+    with patch(
+        "services.season_end_service.end_of_season_pass", new=AsyncMock(return_value={})
+    ) as the_pass:
+        await undecorate(SeasonCog.season_abort)(cog, _interaction(), "CONFIRM")
+
+    the_pass.assert_awaited_once()
+    cog.bot.season_service.delete_season.assert_awaited_once_with(7)

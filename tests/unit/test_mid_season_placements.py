@@ -160,3 +160,191 @@ async def test_cancelling_discards_the_uncommitted_placements_and_frees_their_se
         )
         assert (await cursor.fetchone())[0] == 0
     assert await _service(db_path).uncommitted_placements(1) == []
+
+
+# ── The mid-season report ──────────────────────────────────────────────────────────
+
+
+class _RecordedView:
+    made: list["_RecordedView"] = []
+
+    def __init__(self, cog, reviewer_id):
+        self.record_fingerprint = AsyncMock()
+        self.bind = AsyncMock()
+        self.carries = MagicMock()
+        _RecordedView.made.append(self)
+
+
+def _report_cog(*, placements, unsettled=()):
+    cog = _cog(":memory:", SeasonStage.ONGOING_PLACEMENTS)
+    cog.bot.placement_service.uncommitted_placements = AsyncMock(return_value=placements)
+    cog.bot.season_service.get_divisions = AsyncMock(
+        return_value=[
+            SimpleNamespace(id=DIVISION_ID, name="Pro", status="ACTIVE"),
+            SimpleNamespace(id=99, name="Old", status="CANCELLED"),
+        ]
+    )
+    cog.bot.team_service.get_division_teams = AsyncMock(
+        return_value=[
+            {"name": "Alpha", "seats": [{"discord_user_id": "1001"}, {"discord_user_id": "1002"}]},
+            {"name": "Reserve", "seats": [{"discord_user_id": None}]},
+        ]
+    )
+    cog._placement_confirmation_faults = AsyncMock(return_value=(list(unsettled), []))
+    return cog
+
+
+async def _mid_season_report(cog, monkeypatch):
+    import cogs.season_cog as season_cog
+
+    _RecordedView.made = []
+    monkeypatch.setattr(season_cog, "_ConfirmMidSeasonPlacementsView", _RecordedView)
+    interaction = _interaction()
+    interaction.followup.send = AsyncMock(return_value=MagicMock())
+    sent = interaction.followup.send
+    await undecorate(SeasonCog.season_review)(cog, interaction)
+    return [(call.args[0], bool(call.kwargs.get("ephemeral"))) for call in sent.await_args_list]
+
+
+async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the_button(monkeypatch):
+    cog = _report_cog(
+        placements=[
+            {"test_display_name": None, "discord_user_id": "1002",
+             "team_name": "Alpha", "division_name": "Pro"},
+            {"test_display_name": "Test Bravo", "discord_user_id": "9000",
+             "team_name": "Reserve", "division_name": "Pro"},
+        ]
+    )
+
+    messages = await _mid_season_report(cog, monkeypatch)
+    text = "\n".join(m for m, _ in messages)
+
+    assert "Placements Review (Season #1) — mid-season" in text
+    assert "<@1002> → **Alpha** in **Pro**" in text
+    assert "Test Bravo → **Reserve** in **Pro**" in text
+    assert "**Alpha**: <@1001>, <@1002>" in text
+    assert "**Reserve**: *(empty)*" in text
+    assert "Old" not in text, "a cancelled division has no lineup to confirm"
+    assert "Do you confirm these placements?" in messages[-1][0]
+    (view,) = _RecordedView.made
+    view.record_fingerprint.assert_awaited_once_with(SERVER_ID, 1)
+    view.bind.assert_awaited_once()
+
+
+async def test_a_mid_season_review_with_nothing_new_says_so(monkeypatch):
+    cog = _report_cog(placements=[])
+
+    messages = await _mid_season_report(cog, monkeypatch)
+
+    assert "*No new placement to confirm.*" in messages[0][0]
+
+
+async def test_an_unsettled_signup_withholds_the_mid_season_button(monkeypatch):
+    cog = _report_cog(placements=[], unsettled=["**Racer** — awaiting approval"])
+
+    messages = await _mid_season_report(cog, monkeypatch)
+
+    refusal, ephemeral = messages[-1]
+    assert ephemeral
+    assert "Every signup must be settled" in refusal
+    assert "**Racer** — awaiting approval" in refusal
+    assert _RecordedView.made == []
+
+
+async def test_confirming_after_the_season_moved_on_still_reports_the_placements(db_path):
+    """The placements are committed either way; only the stage move is skipped."""
+    from models.season import InvalidStageTransition
+
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE driver_profiles SET current_state = 'ASSIGNED'")
+        await db.commit()
+    cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
+    cog.bot.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
+    interaction = _interaction()
+
+    await cog._do_confirm_mid_season_placements(interaction)
+
+    cog.bot.placement_service.commit_mid_season_placements.assert_awaited_once()
+    assert "1 placement(s) confirmed" in interaction.followup.send.await_args.args[0]
+    assert "placements: 1" in cog.bot.output_router.post_log.await_args.args[1]
+
+
+# ── The mid-season button ──────────────────────────────────────────────────────────
+
+
+REVIEWER = 42
+ADMIN_ROLE = 444
+
+
+def _view():
+    import discord  # noqa: F401 — the view is built on a running loop
+
+    from cogs.season_cog import _ConfirmMidSeasonPlacementsView
+
+    cog = MagicMock()
+    cog._do_confirm_mid_season_placements = AsyncMock()
+    cog.bot.db_path = "/nonexistent/nowhere.db"
+    cog.bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(league_admin_role_id=ADMIN_ROLE)
+    )
+    view = _ConfirmMidSeasonPlacementsView(cog, REVIEWER)
+    view._server_id = SERVER_ID
+    view._season_id = 1
+    view._forget = AsyncMock()
+    view._clear_report = AsyncMock()
+    view._expire_now = AsyncMock()
+    return view, cog
+
+
+def _pressed_by(user_id: int):
+    import discord
+
+    interaction = _interaction()
+    member = MagicMock(spec=discord.Member)
+    member.id = user_id
+    member.roles = []
+    interaction.user = member
+    return interaction
+
+
+async def test_the_reviewer_confirms_the_mid_season_placements():
+    from cogs.season_cog import _ConfirmMidSeasonPlacementsView
+
+    view, cog = _view()
+    interaction = _pressed_by(REVIEWER)
+
+    await _ConfirmMidSeasonPlacementsView.approve(view, interaction, MagicMock())
+
+    cog._do_confirm_mid_season_placements.assert_awaited_once_with(interaction)
+    view._clear_report.assert_awaited_once()
+
+
+async def test_another_league_manager_may_not_confirm_the_mid_season_placements():
+    from cogs.season_cog import _ConfirmMidSeasonPlacementsView
+
+    view, cog = _view()
+    interaction = _pressed_by(99)
+
+    await _ConfirmMidSeasonPlacementsView.approve(view, interaction, MagicMock())
+
+    cog._do_confirm_mid_season_placements.assert_not_awaited()
+    assert "Nothing has been confirmed" in interaction.response.send_message.await_args.args[0]
+
+
+async def test_mid_season_placements_changed_since_the_review_are_not_confirmed(monkeypatch):
+    import services.season_fingerprint_service as fingerprints
+    from cogs.season_cog import _ConfirmMidSeasonPlacementsView
+
+    view, cog = _view()
+    view._fingerprint = MagicMock()
+    view._fingerprint.differs_from = MagicMock(return_value=["the seated drivers"])
+    monkeypatch.setattr(fingerprints, "take_fingerprint", AsyncMock(return_value=MagicMock()))
+    interaction = _pressed_by(REVIEWER)
+
+    await _ConfirmMidSeasonPlacementsView.approve(view, interaction, MagicMock())
+
+    cog._do_confirm_mid_season_placements.assert_not_awaited()
+    reply = interaction.response.send_message.await_args.args[0]
+    assert "• the seated drivers" in reply
+    assert "`/season placements-review`" in reply
+    view._expire_now.assert_awaited_once()
