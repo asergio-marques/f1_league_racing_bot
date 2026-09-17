@@ -148,9 +148,11 @@ it only to place it; the rules governing it belong to its own specification.
 - The configuration shall be confirmed through a configuration review, run by the configuration review command.
     - The review shall report the season, the modules enabled upon it and the configuration of each, and every fault that would prevent the configuration being confirmed.
     - The review shall end with a button confirming the configuration, which shall be withheld while any fault stands. The button shall be governed as the button confirming placements is: who may press it, how long it stands, the evidence it is confirmed upon, and what becomes of a review that expires or is refused.
-- Confirming the configuration shall require:
+- The configuration review shall check everything that can be checked before the season has divisions: every check the placements review makes shall be made here too, save those concerning divisions, lineups, calendars and division channels. Confirming the configuration shall require, among them:
     - where the signup module is enabled, its signup channel, its base role and its signed-up role each to be set, every one missing being named;
-    - every team name to be usable as the filename of that team's artwork, whether or not the image module is enabled.
+    - every team name to be usable as the filename of that team's artwork, whether or not the image module is enabled;
+    - every requirement an enabled module states of its configuration alone — its points configurations and its templates among them — as that module's own specification sets out.
+- Every check the configuration review makes shall be made again when placements are confirmed, the configuration of a module other than signup being able to change in between.
 - Confirming the configuration shall fix, for the rest of the season, the team list, the game edition, test mode, and whether the signup module is enabled and how it is configured.
 
 ### Waiting and signups
@@ -158,7 +160,8 @@ it only to place it; the rules governing it belong to its own specification.
 - A season in Signups shall move to Placements when the window closes, by command or at its close time. What the close does to the drivers still signing up is the signup module's own to state.
 
 ### Building a season
-- Divisions shall be created, amended and deleted, rounds added, amended and deleted, and the channels of each division configured, only while the season is in Placements.
+- Divisions shall be created and deleted, and rounds added and deleted, only while the season is in Placements. What may be amended once placements are confirmed is set out under Divisions and Rounds below.
+- The channels of each division may be set while the season is in Placements, and at any time after, so that a channel lost may be repaired.
 - Drivers shall be placed and removed while the season is in Placements, as set out under Drivers below. No role shall be granted for a placement until placements are confirmed.
 - Once placements are first confirmed, nothing shall be added to a season and nothing deleted from it. Rounds and divisions may only be amended and cancelled.
 
@@ -198,6 +201,8 @@ it only to place it; the rules governing it belong to its own specification.
 #### What confirming placements requires
 - No signup of the season shall be unsettled: every driver who signed up shall be placed or rejected.
 - Where the season is in Placements, additionally:
+    - Every check the configuration review makes shall pass.
+    - Every division shall have set every channel the season will post to: its lineup channel, its calendar channel, and every channel an enabled module requires of it. Each one missing shall be named with its division.
     - The tiers of a season's divisions shall form a sequence from 1 with no gaps.
     - Every division shall hold at least one round.
     - No two rounds of one division shall be scheduled at the same moment.
@@ -358,6 +363,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A server shall hold a list of teams. The teams of a division shall be created from that list when the division is created.
 - The list shall ship holding the Reserve team alone. A league shall build its own.
 - The Reserve team shall always exist upon the server and in every division. It shall not be added, renamed or removed, and it shall have no limit of seats. Its role shall be set by a command of its own.
+- The role of any team may be set at any time, whatever the state of the season, so that a role deleted from the server may be repaired.
 - Adding, renaming or removing a team shall change the server's list. It shall be permitted while the server holds no active season, or while the active season is in Configuration, and shall be refused otherwise.
 - A team name shall reduce to a usable filename:
     - It shall not be empty and shall hold at least one letter or digit.
@@ -414,7 +420,7 @@ it only to place it; the rules governing it belong to its own specification.
     - A driver pending deletion shall not be deleted at once. They shall be deleted by the driver pass of the season's completion, cancellation or abort.
     - Until then the profile shall stand at Not Signed Up and may sign up again. Whether to accept them is the league's to decide.
 - A driver whose flag is true and who reaches Not Signed Up shall be retained, with nothing of their profile or their signups cleared, so that the results they raced for remain attributed.
-- A driver may be sacked from Unassigned or Assigned, only while the season is in one of the three ongoing states. Sacking shall free every seat they hold, revoke every division, team and signup role, and return them to Not Signed Up.
+- A committed driver may be sacked, only while the season is in one of the three ongoing states. A driver who is not committed shall not be sacked: an uncommitted placement is removed by the command removing a driver from a division, and an Unassigned driver is turned down by the reject command. Sacking shall free every seat they hold, revoke every division, team and signup role, and return them to Not Signed Up.
 
 ### Placement into a division and team
 - A placement shall be **committed** once placements have been confirmed with it standing, and uncommitted until then. A driver holding a committed placement is a **committed driver**; a driver placed or awaiting placement who holds none is an **uncommitted driver**.
