@@ -854,6 +854,12 @@ class SeasonService:
             row = await cursor.fetchone()
         return row is not None and row[0] == 0
 
+    async def advance_to_pending_completion(self, season_id: int) -> bool:
+        """Move *season_id* to Pending completion where every division is done (issue #220)."""
+        from services.season_lifecycle_service import advance_to_pending_completion
+
+        return await advance_to_pending_completion(self._db_path, season_id)
+
     async def refresh_division_status(self, division_id: int) -> bool:
         """Move a division ACTIVE -> FINISHED once none of its rounds is outstanding.
 
@@ -892,7 +898,18 @@ class SeasonService:
                 (division_id,),
             )
             await db.commit()
-            return cursor.rowcount > 0
+            moved = cursor.rowcount > 0
+            cursor = await db.execute(
+                "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
+            )
+            season_row = await cursor.fetchone()
+
+        # A division finishing may be the last one its season waited on (issue #220).
+        if moved and season_row is not None:
+            from services.season_lifecycle_service import advance_to_pending_completion
+
+            await advance_to_pending_completion(self._db_path, season_row["season_id"])
+        return moved
 
     async def end_rounds_awaiting_results(
         self,
@@ -1502,6 +1519,16 @@ class SeasonService:
                 db, division_id, server_id, actor_id, actor_name, now
             )
             await db.commit()
+            cursor = await db.execute(
+                "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
+            )
+            season_row = await cursor.fetchone()
+
+        # Cancelling the last division still running leaves the season pending completion.
+        if season_row is not None:
+            from services.season_lifecycle_service import advance_to_pending_completion
+
+            await advance_to_pending_completion(self._db_path, season_row["season_id"])
 
     async def cancel_season_cascade(
         self,

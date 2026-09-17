@@ -135,6 +135,8 @@ async def advance_on_window_close(db_path: str, server_id: int) -> SeasonStage |
     else:
         return None
     await _move(db_path, season_id, stage, target)
+    if target is SeasonStage.ONGOING:
+        await advance_to_pending_completion(db_path, season_id)
     return target
 
 
@@ -167,4 +169,34 @@ async def modules_frozen_for_completion(db_path: str, server_id: int) -> bool:
     """
     found = await live_season_stage(db_path, server_id)
     return found is not None and found[1] is SeasonStage.PENDING_COMPLETION
+
+
+async def advance_to_pending_completion(db_path: str, season_id: int) -> bool:
+    """Move a season in Ongoing to Pending completion once every division is done (issue #220).
+
+    A division is done when it is finished or cancelled. Only a season in plain Ongoing moves:
+    one with a signup window open, or placements still to confirm, waits until it has returned
+    to Ongoing — and every path returning it there calls this again. Returns True where this
+    call moved it.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT stage, "
+            "  (SELECT COUNT(*) FROM divisions d WHERE d.season_id = s.id) AS divisions, "
+            "  (SELECT COUNT(*) FROM divisions d WHERE d.season_id = s.id "
+            "     AND d.status NOT IN ('FINISHED', 'CANCELLED')) AS outstanding "
+            "FROM seasons s WHERE s.id = ?",
+            (season_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None or row["stage"] != SeasonStage.ONGOING.value:
+        return False
+    if row["divisions"] == 0 or row["outstanding"] != 0:
+        return False
+    try:
+        await _move(db_path, season_id, SeasonStage.ONGOING, SeasonStage.PENDING_COMPLETION)
+    except InvalidStageTransition:
+        return False
+    log.info("season %s is pending completion", season_id)
+    return True
 

@@ -2370,6 +2370,11 @@ class SeasonCog(commands.Cog):
             await self.bot.season_service.set_stage(season.id, SeasonStage.ONGOING)  # type: ignore[attr-defined]
         except InvalidStageTransition:
             log.warning("mid-season placements: season %s had already moved on", season.id)
+        else:
+            from services.season_lifecycle_service import advance_to_pending_completion
+
+            # Rounds may have finished every division while the new drivers were placed.
+            await advance_to_pending_completion(self.bot.db_path, season.id)  # type: ignore[attr-defined]
 
         await interaction.followup.send(
             f"\u2705 {len(committed)} placement(s) confirmed. The season is ongoing again.",
@@ -2804,6 +2809,24 @@ class SeasonCog(commands.Cog):
         for div in divisions:
             if div.status == "ACTIVE":
                 await self.bot.season_service.refresh_division_status(div.id)
+
+        # A season is completed from Pending completion alone (issue #220). The reread above
+        # can be what moves it there; one still holding a window open or placements to
+        # confirm is told what stands in the way.
+        await self.bot.season_service.advance_to_pending_completion(season.id)
+        stage = await self.bot.season_service.get_stage(season.id)
+        if stage in (SeasonStage.ONGOING_SIGNUPS, SeasonStage.ONGOING_PLACEMENTS):
+            await interaction.response.send_message(
+                "\u274c Cannot complete season — "
+                + (
+                    "a signup window is open. Close it with `/signup close` first."
+                    if stage is SeasonStage.ONGOING_SIGNUPS
+                    else "placements are still to be confirmed. Confirm them from "
+                    "`/season placements-review` first."
+                ),
+                ephemeral=True,
+            )
+            return
 
         all_done = await self.bot.season_service.all_divisions_finished(interaction.guild_id)
         if not all_done:
