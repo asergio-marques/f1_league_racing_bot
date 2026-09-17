@@ -266,6 +266,25 @@ class DriverService:
                 "WHERE server_id = ? AND discord_user_id = ?",
                 (new_user_id, server_id, old_user_id),
             )
+            # Their history of every season that has ended, which names them by identifier so
+            # that it outlives the profile (issue #220), and the signup they are part-way
+            # through. An abandoned wizard record standing on the new account is dropped
+            # first: a wizard record is the transient state of one signup in progress, the
+            # new account holds no profile, and so nothing of a driver's can be lost with it.
+            await db.execute(
+                "UPDATE driver_history_entries SET discord_user_id = ? "
+                "WHERE server_id = ? AND discord_user_id = ?",
+                (new_user_id, server_id, old_user_id),
+            )
+            await db.execute(
+                "DELETE FROM signup_wizard_records WHERE server_id = ? AND discord_user_id = ?",
+                (server_id, new_user_id),
+            )
+            await db.execute(
+                "UPDATE signup_wizard_records SET discord_user_id = ? "
+                "WHERE server_id = ? AND discord_user_id = ?",
+                (new_user_id, server_id, old_user_id),
+            )
             # Their standings, and their results in every session they raced (issue #222).
             await db.execute(
                 f"UPDATE driver_standings_snapshots SET driver_user_id = ? "

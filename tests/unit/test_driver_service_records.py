@@ -132,6 +132,29 @@ async def _seed_results(db_path: str, user_id: str = OLD_USER, league: int = LEA
         await db.commit()
 
 
+async def _seed_history(
+    db_path: str, user_id: str = OLD_USER, *, server_id: int = SERVER_ID, season: int = 1
+) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_history_entries (server_id, discord_user_id, season_number, "
+            "division_name, division_tier, final_position, final_points) "
+            "VALUES (?, ?, ?, 'Pro', 1, 2, 88)",
+            (server_id, user_id, season),
+        )
+        await db.commit()
+
+
+async def _seed_wizard(db_path: str, user_id: str, *, state: str = "COLLECTING") -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_wizard_records (server_id, discord_user_id, wizard_state, "
+            "draft_answers_json) VALUES (?, ?, ?, ?)",
+            (SERVER_ID, user_id, state, '{"platform": "Steam"}'),
+        )
+        await db.commit()
+
+
 async def _standings_users(db_path: str) -> list[tuple[int, int]]:
     """Every standings snapshot as (division, driver), sorted — never in insertion order."""
     async with get_connection(db_path) as db:
@@ -350,6 +373,69 @@ async def test_re_keying_carries_both_session_result_tables_to_the_new_account(t
     assert await _result_users(db_path, "qualifying_session_results") == [
         (LEAGUE, int(NEW_USER))
     ]
+
+
+async def test_re_keying_carries_every_history_entry_to_the_new_account(tmp_path):
+    """A history entry names its driver by identifier so that it outlives the profile, which
+    is exactly why a re-key has to move it — and only in the league that ordered it."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path)
+    await _seed_history(db_path, season=1)
+    await _seed_history(db_path, season=2)
+    await _seed_history(db_path, server_id=OTHER_SERVER)
+    service = DriverService(db_path)
+
+    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT server_id, discord_user_id, season_number FROM driver_history_entries "
+            "ORDER BY server_id, season_number"
+        )
+        rows = [tuple(r) for r in await cursor.fetchall()]
+    assert rows == [
+        (SERVER_ID, NEW_USER, 1),
+        (SERVER_ID, NEW_USER, 2),
+        (OTHER_SERVER, OLD_USER, 1),
+    ]
+
+
+async def test_re_keying_carries_a_part_finished_signup_to_the_new_account(tmp_path):
+    """The driver's answers so far are held against the account, and the review panel reads
+    the driver from the wizard record, so the record moves with the profile."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path)
+    await _seed_wizard(db_path, OLD_USER)
+    service = DriverService(db_path)
+
+    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, draft_answers_json FROM signup_wizard_records"
+        )
+        rows = [tuple(r) for r in await cursor.fetchall()]
+    assert rows == [(NEW_USER, '{"platform": "Steam"}')]
+
+
+async def test_an_abandoned_wizard_on_the_new_account_is_replaced(tmp_path):
+    """The new account holds no profile, so a record standing on it is an abandoned draft and
+    the live one being carried wins. Left in place it would collide, the account and the
+    server being unique together."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path)
+    await _seed_wizard(db_path, OLD_USER)
+    await _seed_wizard(db_path, NEW_USER, state="UNENGAGED")
+    service = DriverService(db_path)
+
+    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, wizard_state FROM signup_wizard_records"
+        )
+        rows = [tuple(r) for r in await cursor.fetchall()]
+    assert rows == [(NEW_USER, "COLLECTING")]
 
 
 async def test_re_keying_carries_the_fastest_lap_override_to_the_new_account(tmp_path):
