@@ -456,6 +456,7 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 
 | The refusal | The fix |
 |---|---|
+| The season has no divisions, or every one is cancelled | `/division add` one |
 | Division tiers are not 1, 2, 3… with no gaps | `/division amend` the tiers |
 | A division has no rounds at all | Add one, or delete the division |
 | Two rounds in a division share a date and time | Reschedule one |

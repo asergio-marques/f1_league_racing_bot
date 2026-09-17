@@ -220,6 +220,8 @@ def _cog(
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    # A season with no division is refused on its own terms, pinned in test_placements_confirmation.py.
+    cog._season_has_divisions = AsyncMock(return_value=True)
     return cog
 
 
@@ -574,6 +576,15 @@ async def test_the_same_blocker_from_several_divisions_is_said_once(db_path):
     messages = await _review(cog, _interaction())
 
     assert _private(messages).count("could not be drawn") == 1
+
+
+async def test_a_season_with_no_division_withholds_approval(db_path):
+    cog = _cog(db_path)
+    cog._season_has_divisions = AsyncMock(return_value=False)
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "This season has no divisions" in _private(messages)
 
 
 async def test_an_unsettled_signup_withholds_approval_and_is_named(db_path):

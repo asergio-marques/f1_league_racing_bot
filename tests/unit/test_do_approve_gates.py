@@ -112,6 +112,8 @@ def _cog(db_path, **overrides):
 
     season_svc.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    # A season with no division is refused on its own terms, pinned in test_placements_confirmation.py.
+    cog._season_has_divisions = AsyncMock(return_value=True)
 
     for name, value in overrides.items():
         setattr(cog, name, value)

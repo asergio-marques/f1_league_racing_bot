@@ -279,6 +279,7 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
         "phantom_configs",
         "unsettled",
         "channel_faults",
+        "no_divisions",
     )
     offer = re.compile(
         r"if\s*\(?\s*"

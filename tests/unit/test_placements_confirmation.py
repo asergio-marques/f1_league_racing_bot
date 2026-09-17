@@ -139,6 +139,9 @@ async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(
     pending = SimpleNamespace(server_id=SERVER_ID, season_id=SEASON_ID, season_number=1)
     cog._pending = {USER_ID: pending}
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
+    cog.bot.season_service.get_divisions = AsyncMock(
+        return_value=[SimpleNamespace(status="SETUP")]
+    )
     cog.bot.season_service.transition_to_active = AsyncMock()
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
@@ -149,6 +152,27 @@ async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(
     await SeasonCog._do_approve(cog, interaction)
 
     assert "Alice" in interaction.followup.send.await_args.args[0]
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+@pytest.mark.parametrize("divisions", [[], [SimpleNamespace(status="CANCELLED")]])
+async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divisions):
+    """A season with nothing to race would never reach Pending completion (issue #220)."""
+    cog = _cog(db_path)
+    cog._pending = {USER_ID: SimpleNamespace(server_id=SERVER_ID, season_id=SEASON_ID)}
+    cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
+    cog.bot.season_service.get_divisions = AsyncMock(return_value=divisions)
+    cog.bot.season_service.transition_to_active = AsyncMock()
+    interaction = MagicMock()
+    interaction.guild_id = SERVER_ID
+    interaction.user.id = USER_ID
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+
+    await SeasonCog._do_approve(cog, interaction)
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert "no divisions" in reply and "Nothing has been approved" in reply
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 

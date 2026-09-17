@@ -2170,6 +2170,12 @@ class SeasonCog(commands.Cog):
                     "then run `/season placements-review` again.",
                     ephemeral=True,
                 )
+            no_divisions = not await self._season_has_divisions(cfg.season_id)
+            if no_divisions:
+                await interaction.followup.send(
+                    NO_DIVISIONS_REFUSAL + " Then run `/season placements-review` again.",
+                    ephemeral=True,
+                )
             if (
                 not approval_blockers
                 and not calendar_faults_found
@@ -2177,6 +2183,7 @@ class SeasonCog(commands.Cog):
                 and not phantom_configs
                 and not unsettled
                 and not channel_faults
+                and not no_divisions
             ):
                 # Taken here rather than at the top of the command: the fingerprint must
                 # describe the season as the report just described it, and the report is
@@ -2207,6 +2214,15 @@ class SeasonCog(commands.Cog):
             )
 
         interaction.followup.send = original_followup
+
+    async def _season_has_divisions(self, season_id: int) -> bool:
+        """Whether *season_id* holds a division that is not cancelled.
+
+        A season with none has nothing to race, and would never reach Pending completion —
+        so its placements are not confirmed.
+        """
+        divisions = await self.bot.season_service.get_divisions(season_id)  # type: ignore[attr-defined]
+        return any(division.status != "CANCELLED" for division in divisions)
 
     async def _placement_confirmation_faults(
         self, server_id: int, season_id: int
@@ -5495,6 +5511,12 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        if not await self._season_has_divisions(cfg.season_id):
+            await interaction.followup.send(
+                NO_DIVISIONS_REFUSAL + " **Nothing has been approved.**", ephemeral=True
+            )
+            return
+
         # ── Gate S: every signup settled, every division's own channels set (#220) ──
         unsettled, channel_faults = await self._placement_confirmation_faults(
             cfg.server_id, cfg.season_id
@@ -6125,6 +6147,12 @@ class SeasonCog(commands.Cog):
 #: half an hour ago would approve a season nobody has actually reviewed. Five minutes is
 #: long enough to read the report and short enough that little can have changed.
 APPROVAL_WINDOW_SECONDS = 300
+
+#: Said by the placements review and its confirmation alike: a season with no division has
+#: nothing to race and would never reach Pending completion (issue #220).
+NO_DIVISIONS_REFUSAL = (
+    "\u26d4 **This season has no divisions.** Add one with `/division add`."
+)
 
 
 class _BackupBeforeApprovalView(discord.ui.View):

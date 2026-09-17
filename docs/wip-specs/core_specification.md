@@ -203,6 +203,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Where the season is in Placements, additionally:
     - Every check the configuration review makes shall pass.
     - Every division shall have set every channel the season will post to: its lineup channel, its calendar channel, and every channel an enabled module requires of it. Each one missing shall be named with its division.
+    - The season shall hold at least one division that is not cancelled.
     - The tiers of a season's divisions shall form a sequence from 1 with no gaps.
     - Every division shall hold at least one round.
     - No two rounds of one division shall be scheduled at the same moment.

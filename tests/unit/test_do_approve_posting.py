@@ -154,6 +154,8 @@ def _cog(
 
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    # A season with no division is refused on its own terms, pinned in test_placements_confirmation.py.
+    cog._season_has_divisions = AsyncMock(return_value=True)
     cog._team_name_problems = AsyncMock(return_value=[])
     cog._lineup_problems = AsyncMock(return_value=[])
 
