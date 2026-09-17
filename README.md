@@ -885,7 +885,7 @@ Every successful reply echoes the other two deadlines, and the change is written
 #### `/driver reassign` — Re-key a driver profile to a new Discord account
 *Access: League manager*
 
-Transfers an existing driver profile from one Discord account to another. Provide either `old_user` (mention) or `old_user_id` (raw snowflake) for users who have left the server.
+Transfers an existing driver profile from one Discord account to another, with every signup the profile made. Provide either `old_user` (mention) or `old_user_id` (raw snowflake) for users who have left the server.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

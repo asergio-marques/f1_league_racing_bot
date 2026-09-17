@@ -243,6 +243,24 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
     assert await service.get_profile(SERVER_ID, OLD_USER) is None
 
 
+async def test_re_keying_carries_every_signup_to_the_new_account(tmp_path):
+    """Issue #220: signups are kept under the account, so they must move with the profile."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path)
+    await _seed_signup_record(db_path)
+    await _seed_signup_record(db_path)
+    service = DriverService(db_path)
+
+    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, COUNT(*) AS n FROM signup_records GROUP BY discord_user_id"
+        )
+        rows = {row["discord_user_id"]: row["n"] for row in await cursor.fetchall()}
+    assert rows == {NEW_USER: 2}
+
+
 async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
     service = DriverService(db_path)

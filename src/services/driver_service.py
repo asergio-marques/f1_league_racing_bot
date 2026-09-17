@@ -243,7 +243,7 @@ class DriverService:
         actor_id: int,
         actor_name: str,
     ) -> DriverProfile:
-        """Re-key an existing driver profile from old_user_id to new_user_id."""
+        """Re-key an existing driver profile, and its signups, from old_user_id to new_user_id."""
         existing_old = await self.get_profile(server_id, old_user_id)
         if existing_old is None:
             raise ValueError(
@@ -259,6 +259,13 @@ class DriverService:
             await db.execute(
                 "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
                 (new_user_id, existing_old.id),
+            )
+            # Every signup the profile made goes with it (issue #220): they are keyed by the
+            # account, and left on the old one they would belong to nobody's history.
+            await db.execute(
+                "UPDATE signup_records SET discord_user_id = ? "
+                "WHERE server_id = ? AND discord_user_id = ?",
+                (new_user_id, server_id, old_user_id),
             )
             await db.execute(
                 "INSERT INTO audit_entries "
