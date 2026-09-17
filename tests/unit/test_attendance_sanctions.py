@@ -354,6 +354,61 @@ async def test_autosack_supersedes_autoreserve(tmp_path, announcer, sheet):
     bot.placement_service.assign_driver.assert_not_awaited()
 
 
+async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
+    tmp_path, announcer, sheet
+):
+    """Issue #211, through the real placement service rather than the double above.
+
+    A driver who keeps not turning up never appears in a result, so is never a former
+    driver — the autosack's usual target. Their sack raised something other than
+    `ValueError`, which escaped this loop, and every driver after them in the round went
+    unsanctioned with nothing reported. Two such drivers are past the threshold here, so a
+    failure on the first leaves the second's profile standing whichever is read first.
+    """
+    from services.placement_service import PlacementService
+
+    second_profile = 103
+    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles "
+            "(id, server_id, discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES (?, ?, ?, 'ASSIGNED', 1, 'No Show')",
+            (second_profile, SERVER_ID, str(second_profile)),
+        )
+        await db.execute(
+            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (22, 10, 2, ?)",
+            (second_profile,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id) VALUES (?, ?, ?, 22)",
+            (second_profile, SEASON_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "UPDATE driver_profiles SET current_state = 'ASSIGNED', former_driver = 0 "
+            "WHERE id = ?",
+            (FULL_TIME_PROFILE,),
+        )
+        await db.commit()
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 20, second_profile: 25})
+    bot = _make_bot(db_path)
+    placement = PlacementService(db_path)
+    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.placement_service = placement
+
+    await _run(bot, db_path)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM driver_profiles WHERE id IN (?, ?)",
+            (FULL_TIME_PROFILE, second_profile),
+        )
+        assert (await cursor.fetchone())[0] == 0
+    assert _logged(bot).count("ATTENDANCE_AUTOSACK") == 2
+
+
 async def test_a_driver_already_signed_off_logs_a_no_op_rather_than_raising(
     tmp_path, announcer, sheet
 ):
