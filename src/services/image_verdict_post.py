@@ -123,8 +123,9 @@ async def _driver_nationality(
                             ELSE sr.nationality END AS nationality
                 FROM driver_profiles dp
                 LEFT JOIN signup_records sr
-                       ON sr.server_id = dp.server_id
-                      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT)
+                       ON sr.id = (SELECT MAX(id) FROM signup_records
+                                   WHERE server_id = dp.server_id
+                                     AND discord_user_id = CAST(dp.discord_user_id AS TEXT))
                 WHERE dp.server_id = ?
                   AND CAST(dp.discord_user_id AS INTEGER) = ?
                 ORDER BY dp.id DESC LIMIT 1

@@ -97,6 +97,7 @@ def committer():
     signup_svc.get_wizard = AsyncMock(return_value=_wizard())
     signup_svc.save_wizard = AsyncMock(return_value=None)
     signup_svc.save_record = AsyncMock(side_effect=_save_record)
+    signup_svc.get_record = AsyncMock(return_value=SimpleNamespace(id=9))
 
     driver_service = MagicMock()
     driver_service.get_profile = AsyncMock(return_value=None)
@@ -280,6 +281,26 @@ async def test_a_correction_is_logged_as_a_correction(committer):
     await _commit(committer)
 
     assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[1]
+
+
+async def test_a_correction_amends_the_signup_it_was_asked_of(committer):
+    """Issue #220: signups are kept, never overwritten, so a correction must name the record
+    it amends or it would be stored as a second signup."""
+    from models.driver_profile import DriverState
+
+    committer.driver_service.get_profile = AsyncMock(
+        return_value=SimpleNamespace(current_state=DriverState.PENDING_DRIVER_CORRECTION)
+    )
+
+    await _commit(committer)
+
+    assert committer.saved[0].id == 9
+
+
+async def test_a_first_submission_is_a_new_signup(committer):
+    await _commit(committer)
+
+    assert committer.saved[0].id == -1
 
 
 async def test_the_prior_state_is_read_before_anything_is_written(committer):

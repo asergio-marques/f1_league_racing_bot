@@ -135,8 +135,9 @@ async def _driver_names(bot, guild, user_ids: list[int]) -> dict[int, str]:
                     f"       sr.server_display_name, sr.discord_username "
                     f"FROM driver_profiles dp "
                     f"LEFT JOIN signup_records sr "
-                    f"       ON sr.server_id = dp.server_id "
-                    f"      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
+                    f"       ON sr.id = (SELECT MAX(id) FROM signup_records "
+                    f"                   WHERE server_id = dp.server_id "
+                    f"                     AND discord_user_id = CAST(dp.discord_user_id AS TEXT)) "
                     f"WHERE dp.discord_user_id IN ({placeholders})",
                     [str(uid) for uid in user_ids],
                 )
@@ -182,8 +183,9 @@ async def _nationalities(bot, user_ids: list[int]) -> dict[int, str | None]:
                 f"            ELSE sr.nationality END AS nationality "
                 f"FROM driver_profiles dp "
                 f"LEFT JOIN signup_records sr "
-                    f"       ON sr.server_id = dp.server_id "
-                    f"      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
+                    f"       ON sr.id = (SELECT MAX(id) FROM signup_records "
+                    f"                   WHERE server_id = dp.server_id "
+                    f"                     AND discord_user_id = CAST(dp.discord_user_id AS TEXT)) "
                 f"WHERE dp.discord_user_id IN ({placeholders})",
                 [str(uid) for uid in user_ids],
             )

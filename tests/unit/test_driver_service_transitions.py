@@ -362,7 +362,7 @@ async def db_with_signup(tmp_path):
 
 
 class TestSignupDataClearing:
-    """T052: NOT_SIGNED_UP transition clears signup data for former drivers."""
+    """T052: NOT_SIGNED_UP keeps a former driver's signup data (issue #220 withdrew the clearing)."""
 
     async def _seed_former_driver_with_record(self, db_path: str, user_id: str) -> None:
         import aiosqlite
@@ -382,8 +382,8 @@ class TestSignupDataClearing:
             )
             await db.commit()
 
-    async def test_former_driver_nsu_nulls_signup_fields(self, db_with_signup):
-        """former_driver=True: NOT_SIGNED_UP nulls all signup data but retains channel."""
+    async def test_former_driver_nsu_keeps_signup_fields(self, db_with_signup):
+        """former_driver=True: NOT_SIGNED_UP keeps the signup, which is season history (#220)."""
         import aiosqlite
         from models.driver_profile import DriverState
         await self._seed_former_driver_with_record(db_with_signup, "fd1")
@@ -391,7 +391,7 @@ class TestSignupDataClearing:
         result = await svc.transition(1, "fd1", DriverState.NOT_SIGNED_UP)
         assert result is not None  # former driver profile retained
         assert result.current_state == DriverState.NOT_SIGNED_UP
-        # Verify signup_records fields were nulled
+        # The signup is kept whole
         async with aiosqlite.connect(db_with_signup) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
@@ -399,10 +399,10 @@ class TestSignupDataClearing:
                 "WHERE server_id = 1 AND discord_user_id = 'fd1'"
             )
             row = await cur.fetchone()
-        assert row is not None  # record still exists
-        assert row["discord_username"] is None
-        assert row["platform"] is None
-        assert row["platform_id"] is None
+        assert row is not None
+        assert row["discord_username"] == "TestUser"
+        assert row["platform"] == "Steam"
+        assert row["platform_id"] == "SteamUser123"
 
     async def test_non_former_driver_nsu_deletes_profile(self, db_with_signup):
         """former_driver=False: NOT_SIGNED_UP deletes the driver profile."""

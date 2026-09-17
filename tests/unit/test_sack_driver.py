@@ -450,9 +450,8 @@ async def test_a_former_driver_is_returned_to_not_signed_up(tmp_path):
     assert await _profile_state(db_path) == DriverState.NOT_SIGNED_UP.value
 
 
-async def test_a_former_drivers_signup_details_are_blanked(tmp_path):
-    """The record of *having raced* is kept; the personal details submitted to sign up are
-    not, because they are no longer signed up."""
+async def test_a_former_drivers_signup_details_are_kept(tmp_path):
+    """A former driver's signups are season history and are kept whole (issue #220)."""
     db_path = await _make_db(tmp_path, name="former_blanked", former_driver=True)
 
     await _sack(_service(db_path), _guild())
@@ -464,8 +463,8 @@ async def test_a_former_drivers_signup_details_are_blanked(tmp_path):
             (SERVER_ID, DISCORD_USER_ID),
         )
         row = await cursor.fetchone()
-    assert row["discord_username"] is None
-    assert row["nationality"] is None
+    assert row["discord_username"] is not None
+    assert row["nationality"] is not None
 
 
 async def test_a_former_drivers_attendance_history_is_kept(tmp_path):

@@ -145,9 +145,9 @@ async def test_an_ordinary_driver_s_profile_is_deleted_outright(tmp_path):
     assert await _profile_count(db_path) == 0
 
 
-async def test_a_former_driver_is_kept_and_their_signup_blanked(tmp_path):
-    """`former_driver` records that somebody raced in this league once. Deleting them
-    would lose that permanently, so the record is emptied instead."""
+async def test_a_former_driver_is_kept_with_their_signup(tmp_path):
+    """`former_driver` records that somebody raced in this league once, so the profile is
+    kept — and their signups with it, those being season history (issue #220)."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, state="UNASSIGNED", former=True)
     await _seed_signup_record(db_path)
@@ -163,7 +163,7 @@ async def test_a_former_driver_is_kept_and_their_signup_blanked(tmp_path):
             (SERVER_ID, OLD_USER),
         )
         row = await cursor.fetchone()
-    assert row is None or row["platform"] is None
+    assert row is not None and row["platform"] is not None
 
 
 async def test_a_deleted_driver_leaves_no_seat_behind_them(tmp_path):

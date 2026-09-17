@@ -677,7 +677,8 @@ class SignupCog(commands.Cog):
                 async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
                     cursor = await db.execute(
                         "SELECT server_display_name, discord_username "
-                        "FROM signup_records WHERE server_id = ? AND discord_user_id = ?",
+                        "FROM signup_records WHERE server_id = ? AND discord_user_id = ? "
+                        "ORDER BY id DESC LIMIT 1",
                         (member.guild.id, str(member.id)),
                     )
                     rec = await cursor.fetchone()

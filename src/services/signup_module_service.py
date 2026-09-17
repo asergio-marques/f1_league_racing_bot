@@ -422,81 +422,112 @@ class SignupModuleService:
 
     # ── SignupRecord CRUD ─────────────────────────────────────────────
 
-    async def get_record(self, server_id: int, discord_user_id: str) -> SignupRecord | None:
+    _RECORD_COLUMNS = (
+        "id, server_id, season_id, window_id, discord_user_id, discord_username, "
+        "server_display_name, nationality, platform, platform_id, availability_slot_ids, "
+        "driver_type, preferred_teams, preferred_teammate, lap_times_json, notes, "
+        "signup_channel_id, total_lap_ms"
+    )
+
+    async def get_record(
+        self, server_id: int, discord_user_id: str, season_id: int | None = None
+    ) -> SignupRecord | None:
+        """The driver's latest signup, in *season_id* where one is named.
+
+        Records are never overwritten (issue #220), so "the" record of a driver is the most
+        recent of theirs: the one a review, a correction or an approval acts upon.
+        """
+        query = (
+            f"SELECT {self._RECORD_COLUMNS} FROM signup_records "
+            "WHERE server_id = ? AND discord_user_id = ?"
+        )
+        params: list = [server_id, discord_user_id]
+        if season_id is not None:
+            query += " AND season_id = ?"
+            params.append(season_id)
+        query += " ORDER BY id DESC LIMIT 1"
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, server_id, discord_user_id, discord_username, server_display_name, "
-                "       nationality, platform, platform_id, availability_slot_ids, driver_type, "
-                "       preferred_teams, preferred_teammate, lap_times_json, notes, signup_channel_id "
-                "FROM signup_records WHERE server_id = ? AND discord_user_id = ?",
-                (server_id, discord_user_id),
-            )
+            cursor = await db.execute(query, params)
             row = await cursor.fetchone()
         if row is None:
             return None
         return self._row_to_signup_record(row)
 
-    async def save_record(self, record: SignupRecord) -> None:
+    async def get_records(self, season_id: int) -> list[SignupRecord]:
+        """Every signup kept under *season_id*, oldest first."""
         async with get_connection(self._db_path) as db:
-            await db.execute(
+            cursor = await db.execute(
+                f"SELECT {self._RECORD_COLUMNS} FROM signup_records "
+                "WHERE season_id = ? ORDER BY id",
+                (season_id,),
+            )
+            rows = await cursor.fetchall()
+        return [self._row_to_signup_record(row) for row in rows]
+
+    async def save_record(self, record: SignupRecord) -> int:
+        """Store *record*, returning its id.
+
+        A record not yet stored (``id`` of -1 or below 1) is inserted as a new signup, under
+        the season and window it names or, where it names none, under the server's active
+        season and that season's latest window. A stored record is updated in place.
+        """
+        fields = (
+            record.discord_username,
+            record.server_display_name,
+            record.nationality,
+            record.platform,
+            record.platform_id,
+            json.dumps(record.availability_slot_ids),
+            record.driver_type,
+            json.dumps(record.preferred_teams),
+            record.preferred_teammate,
+            json.dumps(record.lap_times),
+            record.notes,
+            record.signup_channel_id,
+        )
+        async with get_connection(self._db_path) as db:
+            if record.id is not None and record.id > 0:
+                await db.execute(
+                    """
+                    UPDATE signup_records SET
+                        discord_username = ?, server_display_name = ?, nationality = ?,
+                        platform = ?, platform_id = ?, availability_slot_ids = ?,
+                        driver_type = ?, preferred_teams = ?, preferred_teammate = ?,
+                        lap_times_json = ?, notes = ?, signup_channel_id = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    (*fields, record.id),
+                )
+                await db.commit()
+                return record.id
+
+            season_id = record.season_id
+            if season_id is None:
+                season_id = await self._live_season_id(db, record.server_id)
+            window_id = record.window_id
+            if window_id is None and season_id is not None:
+                cursor = await db.execute(
+                    "SELECT MAX(id) AS id FROM signup_windows WHERE season_id = ?",
+                    (season_id,),
+                )
+                row = await cursor.fetchone()
+                window_id = row["id"] if row is not None else None
+            cursor = await db.execute(
                 """
                 INSERT INTO signup_records
-                    (server_id, discord_user_id, discord_username, server_display_name,
-                     nationality, platform, platform_id, availability_slot_ids,
-                     driver_type, preferred_teams, preferred_teammate, lap_times_json,
-                     notes, signup_channel_id, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                ON CONFLICT(server_id, discord_user_id) DO UPDATE SET
-                    discord_username     = excluded.discord_username,
-                    server_display_name  = excluded.server_display_name,
-                    nationality          = excluded.nationality,
-                    platform             = excluded.platform,
-                    platform_id          = excluded.platform_id,
-                    availability_slot_ids = excluded.availability_slot_ids,
-                    driver_type          = excluded.driver_type,
-                    preferred_teams      = excluded.preferred_teams,
-                    preferred_teammate   = excluded.preferred_teammate,
-                    lap_times_json       = excluded.lap_times_json,
-                    notes                = excluded.notes,
-                    signup_channel_id    = excluded.signup_channel_id,
-                    updated_at           = excluded.updated_at
+                    (server_id, season_id, window_id, discord_user_id, discord_username,
+                     server_display_name, nationality, platform, platform_id,
+                     availability_slot_ids, driver_type, preferred_teams,
+                     preferred_teammate, lap_times_json, notes, signup_channel_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    record.server_id,
-                    record.discord_user_id,
-                    record.discord_username,
-                    record.server_display_name,
-                    record.nationality,
-                    record.platform,
-                    record.platform_id,
-                    json.dumps(record.availability_slot_ids),
-                    record.driver_type,
-                    json.dumps(record.preferred_teams),
-                    record.preferred_teammate,
-                    json.dumps(record.lap_times),
-                    record.notes,
-                    record.signup_channel_id,
-                ),
+                (record.server_id, season_id, window_id, record.discord_user_id, *fields),
             )
             await db.commit()
-
-    async def clear_record(self, server_id: int, discord_user_id: str) -> None:
-        """Null out all signup fields for a former driver, retaining the row."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                UPDATE signup_records
-                SET discord_username = NULL, server_display_name = NULL,
-                    nationality = NULL, platform = NULL, platform_id = NULL,
-                    availability_slot_ids = NULL, driver_type = NULL,
-                    preferred_teams = NULL, preferred_teammate = NULL,
-                    lap_times_json = NULL, total_lap_ms = NULL, notes = NULL,
-                    updated_at = datetime('now')
-                WHERE server_id = ? AND discord_user_id = ?
-                """,
-                (server_id, discord_user_id),
-            )
-            await db.commit()
+            new_id = int(cursor.lastrowid)
+        record.id, record.season_id, record.window_id = new_id, season_id, window_id
+        return new_id
 
     @staticmethod
     def _row_to_signup_record(row) -> SignupRecord:
@@ -517,6 +548,8 @@ class SignupModuleService:
             notes=row["notes"],
             signup_channel_id=row["signup_channel_id"],
             total_lap_ms=row["total_lap_ms"] if "total_lap_ms" in row.keys() else None,
+            season_id=row["season_id"] if "season_id" in row.keys() else None,
+            window_id=row["window_id"] if "window_id" in row.keys() else None,
         )
 
     # ── SignupWizardRecord CRUD ────────────────────────────────────────

@@ -392,8 +392,9 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
                     "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
                     "LEFT JOIN signup_records sr "
-                    "       ON sr.server_id = dp.server_id "
-                    "      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
+                    "       ON sr.id = (SELECT MAX(id) FROM signup_records "
+                    "                   WHERE server_id = dp.server_id "
+                    "                     AND discord_user_id = CAST(dp.discord_user_id AS TEXT)) "
                     "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
                     (context.division_id, instance["id"]),
                 )

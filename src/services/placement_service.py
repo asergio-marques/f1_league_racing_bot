@@ -257,7 +257,8 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE signup_records SET total_lap_ms = ? "
-                "WHERE server_id = ? AND discord_user_id = ?",
+                "WHERE id = (SELECT MAX(id) FROM signup_records "
+                "            WHERE server_id = ? AND discord_user_id = ?)",
                 (total_ms, server_id, discord_user_id),
             )
             await db.commit()
@@ -286,9 +287,13 @@ class PlacementService:
                     sr.total_lap_ms,
                     sr.updated_at           AS approved_at
                 FROM driver_profiles dp
+                -- The driver's latest signup: records are kept, never overwritten (#220).
                 LEFT JOIN signup_records sr
-                    ON sr.server_id = dp.server_id
-                    AND sr.discord_user_id = dp.discord_user_id
+                    ON sr.id = (
+                        SELECT MAX(id) FROM signup_records
+                        WHERE server_id = dp.server_id
+                          AND discord_user_id = dp.discord_user_id
+                    )
                 WHERE dp.server_id = ?
                   AND dp.current_state = 'UNASSIGNED'
                 ORDER BY
@@ -353,9 +358,13 @@ class PlacementService:
                     sr.total_lap_ms,
                     sr.updated_at           AS approved_at
                 FROM driver_profiles dp
+                -- The driver's latest signup: records are kept, never overwritten (#220).
                 LEFT JOIN signup_records sr
-                    ON sr.server_id = dp.server_id
-                    AND sr.discord_user_id = dp.discord_user_id
+                    ON sr.id = (
+                        SELECT MAX(id) FROM signup_records
+                        WHERE server_id = dp.server_id
+                          AND discord_user_id = dp.discord_user_id
+                    )
                 WHERE dp.server_id = ?
                   AND dp.current_state = 'UNASSIGNED'
                 ORDER BY
@@ -1230,23 +1239,11 @@ class PlacementService:
                 )
             # Transition to NOT_SIGNED_UP per constitution rules
             if former_driver:
-                # Retain profile row; null signup record fields
+                # Retain the profile, and its signups with it: they are season history
+                # (issue #220), so nothing of them is cleared.
                 await db.execute(
                     "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
                     (DriverState.NOT_SIGNED_UP.value, driver_profile_id),
-                )
-                await db.execute(
-                    """
-                    UPDATE signup_records
-                    SET discord_username = NULL, server_display_name = NULL,
-                        nationality = NULL, platform = NULL, platform_id = NULL,
-                        availability_slot_ids = NULL, driver_type = NULL,
-                        preferred_teams = NULL, preferred_teammate = NULL,
-                        lap_times_json = NULL, notes = NULL, total_lap_ms = NULL,
-                        updated_at = datetime('now')
-                    WHERE server_id = ? AND discord_user_id = ?
-                    """,
-                    (server_id, discord_user_id),
                 )
             else:
                 # Everything below references the profile with no ON DELETE CASCADE, so it

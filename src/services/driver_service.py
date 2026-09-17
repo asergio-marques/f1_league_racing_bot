@@ -173,32 +173,6 @@ class DriverService:
             )
             await db.commit()
 
-    async def _clear_signup_record(self, server_id: int, discord_user_id: str) -> None:
-        """Null out all signup data fields for a former driver (FR-036).
-        The signup_channel_id is retained until the channel is pruned."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                UPDATE signup_records
-                SET discord_username     = NULL,
-                    server_display_name  = NULL,
-                    nationality          = NULL,
-                    platform             = NULL,
-                    platform_id          = NULL,
-                    availability_slot_ids = NULL,
-                    driver_type          = NULL,
-                    preferred_teams      = NULL,
-                    preferred_teammate   = NULL,
-                    lap_times_json       = NULL,
-                    total_lap_ms         = NULL,
-                    notes                = NULL,
-                    updated_at           = datetime('now')
-                WHERE server_id = ? AND discord_user_id = ?
-                """,
-                (server_id, discord_user_id),
-            )
-            await db.commit()
-
     # ------------------------------------------------------------------
     # State machine
     # ------------------------------------------------------------------
@@ -245,14 +219,13 @@ class DriverService:
                 f"Allowed targets: {sorted(s.value for s in allowed) or 'none'}."
             )
 
+        # A former driver's signups are season history and are kept (issue #220); nothing
+        # of theirs is cleared on reaching Not Signed Up.
         if new_state == DriverState.NOT_SIGNED_UP:
             if not profile.former_driver:
                 await self._clear_seat_references(profile.id)
                 await self._delete_profile(profile.id)
                 return None
-            else:
-                # Former driver: null out signup record fields (FR-036)
-                await self._clear_signup_record(profile.server_id, profile.discord_user_id)
 
         await self._update_state(profile.id, new_state)
         profile.current_state = new_state
