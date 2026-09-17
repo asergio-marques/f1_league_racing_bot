@@ -197,7 +197,7 @@ async def test_deleting_outside_setup_is_refused():
 
     await _delete(cog, interaction)
 
-    assert "only be used during season setup" in _replied(interaction)
+    assert "only be used while the season is in placements" in _replied(interaction)
     cog.bot.season_service.delete_round.assert_not_awaited()
 
 

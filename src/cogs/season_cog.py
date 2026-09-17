@@ -2707,14 +2707,14 @@ class SeasonCog(commands.Cog):
 
     @season.command(
         name="status",
-        description="View a summary of the active season.",
+        description="View a summary of the season being raced.",
     )
     @league_manager_only
     async def season_status(self, interaction: discord.Interaction) -> None:
         season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
-                "\u2139\ufe0f No active season found for this server.",
+                "\u2139\ufe0f No season is being raced on this server.",
                 ephemeral=True,
             )
             return
@@ -2753,7 +2753,7 @@ class SeasonCog(commands.Cog):
 
     @season.command(
         name="cancel",
-        description="Cancel and delete the active season (server admin only, irreversible).",
+        description="Cancel the season being raced (league admin only, irreversible).",
     )
     @app_commands.describe(confirm='Type "CONFIRM" to proceed with season cancellation.')
     @league_admin_only
@@ -2772,7 +2772,7 @@ class SeasonCog(commands.Cog):
         season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
-                "\u274c No active season to cancel. A season whose placements are yet to be "
+                "\u274c No season is being raced, so there is none to cancel. A season whose placements are yet to be "
                 "confirmed is abandoned with `/season abort`.",
                 ephemeral=True,
             )
@@ -2932,7 +2932,7 @@ class SeasonCog(commands.Cog):
         season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
-                "\u274c No active season to complete.", ephemeral=True
+                "\u274c No season is being raced, so there is none to complete.", ephemeral=True
             )
             return
 
@@ -3115,7 +3115,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/division duplicate` can only be used during season setup.",
+                "\u274c `/division duplicate` can only be used while the season is in placements.",
                 ephemeral=True,
             )
             return
@@ -3228,7 +3228,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/division delete` can only be used during season setup.",
+                "\u274c `/division delete` can only be used while the season is in placements.",
                 ephemeral=True,
             )
             return
@@ -3278,7 +3278,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/division rename` can only be used during season setup.",
+                "\u274c `/division rename` can only be used while the season is in placements.",
                 ephemeral=True,
             )
             return
@@ -3323,7 +3323,7 @@ class SeasonCog(commands.Cog):
 
     @division.command(
         name="amend",
-        description="Amend a division's name, tier, or role during season setup.",
+        description="Amend a division's name, tier, or role while the season is in placements.",
     )
     @app_commands.describe(
         name="Current name of the division",
@@ -3352,7 +3352,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/division amend` is only permitted during season setup.",
+                "\u274c `/division amend` is only permitted while the season is in placements.",
                 ephemeral=True,
             )
             return
@@ -3445,7 +3445,7 @@ class SeasonCog(commands.Cog):
 
     @division.command(
         name="cancel",
-        description="Cancel a division in the active season (irreversible).",
+        description="Cancel a division of the season being raced (irreversible).",
     )
     @app_commands.describe(
         name="Name of the division to cancel",
@@ -4568,7 +4568,7 @@ class SeasonCog(commands.Cog):
         # Active-season DB path
         season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
-            await interaction.followup.send("\u274c No active season found.", ephemeral=True)
+            await interaction.followup.send("\u274c No season is being raced.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
@@ -4685,7 +4685,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/round delete` can only be used during season setup.",
+                "\u274c `/round delete` can only be used while the season is in placements.",
                 ephemeral=True,
             )
             return
@@ -4740,7 +4740,7 @@ class SeasonCog(commands.Cog):
 
     @round.command(
         name="cancel",
-        description="Cancel a round in the active season (irreversible).",
+        description="Cancel a round of the season being raced (irreversible).",
     )
     @app_commands.describe(
         division_name="Name of the division containing this round",

@@ -207,7 +207,7 @@ async def test_cancelling_with_no_active_season_is_refused():
     with history, roles:
         await _cancel(cog, interaction)
 
-    assert "No active season" in _replied(interaction)
+    assert "No season is being raced" in _replied(interaction)
 
 
 async def test_cancelling_a_season_pending_completion_is_refused():
@@ -377,7 +377,7 @@ async def test_completing_with_no_active_season_is_refused():
 
     await _complete(cog, interaction)
 
-    assert "No active season" in _replied(interaction)
+    assert "No season is being raced" in _replied(interaction)
 
 
 async def test_division_statuses_are_refreshed_before_the_gate():

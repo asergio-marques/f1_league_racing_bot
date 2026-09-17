@@ -472,10 +472,10 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 
 ### Active Season Commands
 
-#### `/season status` — Active season summary
+#### `/season status` — Summary of the season being raced
 *Access: League manager*
 
-No parameters. Shows active season overview: divisions, next scheduled round per division, and its track and datetime.
+No parameters. Shows an overview of the season being raced — one whose placements are confirmed: divisions, next scheduled round per division, and its track and datetime.
 
 #### `/season abort` — Abandon a season before its placements are confirmed
 *Access: League admin*
@@ -1058,10 +1058,10 @@ Points a team of the server list at a different Discord role. Unlike the list it
 
 Displays all teams on the server's default list alongside their configured Discord roles. If a SETUP season is active and its team list differs from the server default, the divergence is shown with a warning.
 
-#### `/team lineup` — Show team lineups for the active season
+#### `/team lineup` — Show the confirmed team lineups of the season being raced
 *Access: League manager*
 
-Displays the placed drivers for each team seat in the active season. If a division name or tier number is provided only that division is shown; otherwise all divisions are listed. Requires an active season.
+Displays the placed drivers for each team seat in the active season. If a division name or tier number is provided only that division is shown; otherwise all divisions are listed. Requires a season being raced, its placements confirmed.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

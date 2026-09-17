@@ -432,7 +432,7 @@ async def test_duplicating_outside_setup_is_refused(tmp_path):
 
     await _duplicate(cog, interaction)
 
-    assert "only be used during season setup" in _replied(interaction)
+    assert "only be used while the season is in placements" in _replied(interaction)
     cog.bot.season_service.duplicate_division.assert_not_awaited()
 
 

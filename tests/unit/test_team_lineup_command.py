@@ -82,7 +82,9 @@ def _make_cog(
     bot.placement_service.resolve_division = AsyncMock(return_value=resolve)
     bot.placement_service.set_team_role_config = AsyncMock(return_value=None)
     bot.placement_service.delete_team_role_config = AsyncMock(return_value=None)
+    bot.placement_service.swap_team_role = AsyncMock(return_value=0)
     bot.team_service = MagicMock()
+    bot.team_service.get_teams_with_roles = AsyncMock(return_value=[])
     bot.team_service.get_division_teams = AsyncMock(
         return_value=teams if teams is not None else []
     )
@@ -142,7 +144,7 @@ async def test_no_active_season_is_refused(tmp_path):
     with _no_graphic():
         await _lineup(cog, interaction)
 
-    assert "No active season" in _sent(interaction)
+    assert "No season is being raced" in _sent(interaction)
 
 
 async def test_an_unknown_division_is_refused_by_name(tmp_path):

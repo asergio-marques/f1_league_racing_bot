@@ -307,7 +307,7 @@ class TeamCog(commands.Cog):
 
     @team.command(
         name="lineup",
-        description="Show team lineups for the active season.",
+        description="Show the confirmed team lineups of the season being raced.",
     )
     @app_commands.describe(
         division="Division name or tier number. Omit to show all divisions.",
@@ -326,7 +326,7 @@ class TeamCog(commands.Cog):
             interaction.guild_id
         )
         if season is None:
-            await interaction.followup.send("⛔ No active season.", ephemeral=True)
+            await interaction.followup.send("⛔ No season is being raced, so no lineup is confirmed.", ephemeral=True)
             return
 
         all_divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
