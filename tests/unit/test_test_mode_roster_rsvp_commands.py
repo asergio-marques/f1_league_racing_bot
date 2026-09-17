@@ -286,7 +286,7 @@ async def test_an_unknown_division_is_refused(tmp_path):
     await _set_status(cog, interaction, division="Rookie")
 
     assert "Rookie" in _replied(interaction)
-    assert "not found in the active season" in _replied(interaction)
+    assert "not found in a season being raced" in _replied(interaction)
     interaction.response.send_modal.assert_not_awaited()
 
 
@@ -299,7 +299,23 @@ async def test_a_division_from_another_season_is_not_found(tmp_path):
 
     await _set_status(cog, interaction)
 
-    assert "not found in the active season" in _replied(interaction)
+    assert "not found in a season being raced" in _replied(interaction)
+
+
+async def test_a_division_of_a_season_pending_completion_is_not_found(tmp_path):
+    """Issue #220: check-ins belong to the three ongoing stages, not to a season whose
+    divisions are all done."""
+    db_path = await _make_db(tmp_path, name="rsvp_pending")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE seasons SET stage = 'PENDING_COMPLETION'")
+        await db.commit()
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _set_status(cog, interaction)
+
+    assert "not found in a season being raced" in _replied(interaction)
+    interaction.response.send_modal.assert_not_awaited()
 
 
 async def test_a_division_with_no_open_check_in_says_what_to_run_first(tmp_path):

@@ -1157,23 +1157,27 @@ class TestModeCog(commands.Cog):
 
         from db.database import get_connection as _gc
 
-        # Validate division exists in the active season and has an active RSVP embed
+        # Validate the division is of a season being raced — one of the three ongoing stages,
+        # a check-in belonging to nothing else (issue #220) — and has an active RSVP embed.
+        from models.season import ONGOING_STAGES
+
+        ongoing = [stage.value for stage in ONGOING_STAGES]
         async with _gc(self.bot.db_path) as db:  # type: ignore[attr-defined]
             cur = await db.execute(
-                """
+                f"""
                 SELECT d.id AS division_id
                   FROM divisions d
                   JOIN seasons s ON s.id = d.season_id
-                 WHERE s.server_id = ? AND s.status = 'ACTIVE'
+                 WHERE s.server_id = ? AND s.stage IN ({",".join("?" for _ in ongoing)})
                    AND LOWER(d.name) = LOWER(?)
                 """,
-                (guild_id, division),
+                (guild_id, *ongoing, division),
             )
             div_row = await cur.fetchone()
 
         if div_row is None:
             await interaction.response.send_message(
-                f"❌ Division **{division}** not found in the active season.", ephemeral=True
+                f"❌ Division **{division}** not found in a season being raced.", ephemeral=True
             )
             return
         division_id: int = div_row["division_id"]
