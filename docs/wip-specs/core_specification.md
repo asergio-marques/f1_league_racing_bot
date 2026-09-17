@@ -144,7 +144,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A season shall be begun by a setup command naming the edition of the game, and shall begin in Configuration.
 - In Configuration the league shall settle the team list and the team roles, which modules are enabled and their settings, and whether the season runs in test mode. No division, round or placement shall exist in Configuration.
 - The signup module shall be enabled, disabled and configured only while its season is in Configuration, or while the server holds no active season.
-- Every other module may be enabled, and its settings changed, until the season's placements are first confirmed, or while the server holds no active season.
+- Every other module may be enabled until the season's placements are first confirmed, or while the server holds no active season. Its settings may be changed at any time before then; once placements are confirmed, on the terms its own specification sets for a season being raced.
 - The configuration shall be confirmed through a configuration review, run by the configuration review command.
     - The review shall report the season, the modules enabled upon it and the configuration of each, and every fault that would prevent the configuration being confirmed.
     - The review shall end with a button confirming the configuration, which shall be withheld while any fault stands. The button shall be governed as the button confirming placements is: who may press it, how long it stands, the evidence it is confirmed upon, and what becomes of a review that expires or is refused.
@@ -275,25 +275,25 @@ it only to place it; the rules governing it belong to its own specification.
     - A driver created by test mode shall gain a history entry as any other driver does, until test mode deletes them.
 
 ## Divisions
-- A division shall be created during setup, taking a name, a role and a tier.
+- A division shall be created while its season is in Placements, taking a name, a role and a tier.
     - A division's name shall be unique within its season, without regard to case.
     - A division's tier shall be unique within its season and shall be no lower than 1.
-- The tiers of a season's divisions shall form a sequence from 1 with no gaps, or approval shall be refused. Divisions shall be held and displayed in ascending order of tier, tier 1 being the highest.
+- The tiers of a season's divisions shall form a sequence from 1 with no gaps, or confirming placements shall be refused. Divisions shall be held and displayed in ascending order of tier, tier 1 being the highest.
 - A division's tier may be used to identify it in a command, but its name shall be what the bot displays.
 - A division may be created by duplicating another, taking a new name, role and tier and an offset in days and hours. Every round of the source division shall be copied with its moment shifted by that offset and the copies renumbered.
     - A duplication producing a round in the past shall warn and shall not be refused.
     - A division created by duplication shall inherit none of the source division's channels.
-- A division may be renamed, and its name, tier and role amended, during setup alone.
-- A division deleted during setup shall take with it its rounds, its sessions, its teams and seats, and the placements made in it.
-- A division shall stand in one of four states: setup while its season is being built, active once its season is being raced, finished once every one of its rounds is finished, and cancelled where it was called off.
-- A division of an active season may be cancelled, upon the word `CONFIRM`. Its rounds shall be unscheduled, every one of them that may still be cancelled shall be, a notice shall be posted to it, and it shall thereafter be excluded from the validation of tiers, from the standings and from the end of the season.
+- A division may be renamed, and its name, tier and role amended, while its season is in Placements alone.
+- A division deleted while its season is in Placements shall take with it its rounds, its sessions, its teams and seats, and the placements made in it.
+- A division shall stand in one of four states: setup until its season's placements are first confirmed, active once they are, finished once every one of its rounds is finished, and cancelled where it was called off.
+- A division of a season in one of the three ongoing states may be cancelled, upon the word `CONFIRM`. Its rounds shall be unscheduled, every one of them that may still be cancelled shall be, a notice shall be posted to it, and it shall thereafter be excluded from the validation of tiers, from the standings and from the end of the season.
 - Every division shall carry a role, which the bot mentions when it posts to that division.
 - A division's calendar may be reposted on demand. A calendar already posted shall not update itself.
 
 ## Rounds
 - A round shall belong to one division and shall state a moment in UTC, a format and a track.
 - Round numbers shall never be entered. The rounds of a division shall be ordered by their moment and numbered from 1, and adding, deleting or re-timing one shall renumber the division.
-- Two rounds of one division shall not be scheduled at the same moment. This shall be refused by every command that would create one, and again at approval.
+- Two rounds of one division shall not be scheduled at the same moment. This shall be refused by every command that would create one, and again when placements are first confirmed.
 - A round shall be refused where the division would thereby hold more rounds than its calendar graphic can draw.
 
 ### Building a calendar in bulk
@@ -312,7 +312,7 @@ it only to place it; the rules governing it belong to its own specification.
     - Sprint: a sprint qualifying, a sprint race, a feature qualifying and a feature race.
     - Endurance: a full qualifying and a full race.
     - Mystery: no sessions at all.
-- The sessions of every round shall be created when the season is approved.
+- The sessions of every round shall be created when the season's placements are first confirmed.
 
 ### Mystery rounds
 - A mystery round shall name no track. A round of any other format shall name one the bot can resolve.
@@ -321,7 +321,7 @@ it only to place it; the rules governing it belong to its own specification.
 - What a mystery round receives in place of a forecast is specified by [the weather module](weather_module_specification.md).
 
 ### Amending and cancelling a round
-- A round of an active season may have its track, its moment or its format amended, behind a confirmation.
+- A round of a season whose placements have been confirmed may have its track, its moment or its format amended, behind a confirmation.
 - An amendment shall be judged and carried out as one change, however many of the three fields it alters. Where any rule refuses any part of it, none of it shall happen and the round shall stand exactly as it did, and the manager shall be told so.
 - Every rule shall read the round as it will stand once amended: its new moment where one is given, its present moment otherwise.
 - The rules shall be judged again at the moment the amendment is confirmed and not only when it is offered, a window being able to pass while the confirmation stands. Where the answer has changed the amendment shall be abandoned and the manager invited to start again.
@@ -342,7 +342,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Neither shall be amended once the round's moment has passed.
 - Where the round's moment is amended in the same change, both rules shall read the new moment and the forecasts as they will stand once it is amended. Moving a round is therefore the league's remedy for a circuit or a format that must be corrected late.
 - A mystery round names no circuit, so its track shall not be amended unless its format is amended in the same change.
-- A round may be cancelled upon the word `CONFIRM`. Its scheduled work shall be cancelled and a notice posted.
+- A round of a season in one of the three ongoing states may be cancelled upon the word `CONFIRM`. Its scheduled work shall be cancelled and a notice posted.
 - A round shall not be cancelled once its results have been entered. From that moment the drivers have reports and appeals to lodge against them, and calling the round off would take that from them.
 - A round shall not be cancelled while a results submission for it stands open.
 
@@ -358,17 +358,17 @@ it only to place it; the rules governing it belong to its own specification.
 - A server shall hold a list of teams. The teams of a division shall be created from that list when the division is created.
 - The list shall ship holding the Reserve team alone. A league shall build its own.
 - The Reserve team shall always exist upon the server and in every division. It shall not be added, renamed or removed, and it shall have no limit of seats. Its role shall be set by a command of its own.
-- Adding, renaming or removing a team shall change the server's list and, where a season stands in setup, every division of that season. It shall be refused once the season is active.
+- Adding, renaming or removing a team shall change the server's list. It shall be permitted while the server holds no active season, or while the active season is in Configuration, and shall be refused otherwise.
 - A team name shall reduce to a usable filename:
     - It shall not be empty and shall hold at least one letter or digit.
     - It shall not reduce to `reserve`.
     - It shall not reduce to the same form as another team's name in its scope — the server for the server's list, the division for the teams of a season.
     - This shall bind whether or not the image module is enabled, the reduced name being the filename under which every graphic seeks that team's artwork.
     - Only the new name shall be validated when a team is renamed, so that a team named before this rule may still be corrected.
-    - A season already approved shall not be validated against this rule again.
+    - A season whose configuration has been confirmed shall not be validated against this rule again.
 - Every team other than Reserve shall hold two seats.
 - Teams shall be ordered as they were added and not alphabetically, so that adding or renaming one never moves those already drawn.
-- The season review shall display every team, the drivers seated in each, and every driver not yet placed.
+- The placements review shall display every team, the drivers seated in each, and every signup still unsettled.
 
 ## Drivers
 
@@ -452,7 +452,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ## When the bot stops
 - The bot is a program somebody shall keep running. While it is stopped nothing happens.
-- When it starts again it shall recover: the weather phases that came due, where the weather module is enabled; the check-in calls and deadlines that came due; a signup window's closing timer, closing the window at once where its moment has passed; interrupted result submissions, which shall be cleared and reopened with the league manager told to submit again; penalty and appeal reviews, which shall be posted again rather than discarded; abandoned amendment channels, which shall be deleted; season reviews left standing, which shall be expired; and seasons left part-built.
+- When it starts again it shall recover: the weather phases that came due, where the weather module is enabled; the check-in calls and deadlines that came due; a signup window's closing timer, closing the window at once where its moment has passed and moving its season on as a close does; interrupted result submissions, which shall be cleared and reopened with the league manager told to submit again; penalty and appeal reviews, which shall be posted again rather than discarded; abandoned amendment channels, which shall be deleted; configuration and placements reviews left standing, which shall be expired; and seasons left part-built.
 - The end of a season shall not be recovered. A league admin shall complete it.
 - Anything else that came due while the bot was stopped is missed.
 - A message the bot failed to post shall be retried until it is delivered, shall survive a restart, and its eventual delivery shall be recorded in the log channel. A message still undelivered after about an hour shall be reported there.
@@ -463,7 +463,7 @@ cannot be observed by waiting for it. [Testing with test mode](../how-to/test-mo
 section states the rules it holds to.
 
 ### What test mode is
-- Test mode shall be a state of the server, persisted and surviving a restart, switched by a toggle asking what configuring a league asks.
+- Test mode shall be a state of the server, persisted and surviving a restart, switched by a toggle asking what configuring a league asks. It is chosen for a season, and holds for that season until it ends.
 - Test mode shall provide a command firing the next scheduled event at once, in the order the events would have fired, without altering the moment any of them was scheduled for.
 - Test mode shall provide a command reporting, for every round, which of its scheduled work has run and which remains.
 - Test mode shall provide synthetic drivers, so that a division may be filled and raced without real Discord accounts.
@@ -473,22 +473,21 @@ section states the rules it holds to.
 
 ### Entering and leaving it
 - A server shall be either running a real league or under test, never both.
-- Test mode shall not be enabled while the server holds a real driver whose state is anything other than Not Signed Up. A driver profile retained at Not Signed Up is a former driver and shall not stand in the way.
+- The toggle shall be refused unless the server holds a season in Configuration. Test mode shall be fixed for the season when its configuration is confirmed, and shall be switched off when the season is completed, cancelled or aborted.
+- Test mode shall not be enabled while the server holds a real driver whose state is anything other than Not Signed Up. A driver profile at Not Signed Up is a former driver or pending deletion, and shall not stand in the way.
     - The refusal shall name how many real drivers the server holds, and the state of test mode shall be left unchanged.
-- Test mode shall not be enabled while the signup window is open. The refusal shall direct the league admin to close the window, and the window shall be left open — enabling test mode shall not close it.
-- Test mode shall not be disabled while a season that has started holds a driver created by test mode. Such a season shall hold test mode open until it is completed, and the refusal shall direct the league admin to complete it.
-    - Neither a season yet to start nor a completed one shall stand in the way.
 - While test mode is enabled:
-    - A real driver shall not begin a signup. The sign-up button shall refuse them, and the command opening a signup window shall be refused.
     - A real driver shall not be placed in a team. A driver created by test mode shall still be placed freely.
-- Enabling test mode shall create and attach two ordinary points configurations, "Standard" and "Half Points", to a season standing in setup or active, unless a configuration of that name is already attached to it. They shall be created as ordinary configurations of the server and shall be indistinguishable from ones a league made itself, so that a test season passes the points requirement of approval without one being built by hand.
-- Test mode shall not relax any requirement of approval beyond the points configurations above. In particular, a season holding a round whose moment has passed, or a round already inside one of its enabled modules' configured windows, shall be refused under test mode exactly as it is refused otherwise, so a test season built in the past shall not be approvable — and the first of those shall refuse it with every module switched off. A test season that quietly lost its check-ins would misreport attendance precisely as a real one does, and is a worse thing to be testing against than a calendar that has to be moved forward.
-- Disabling test mode shall delete every driver created by test mode upon the server, across every division.
+    - The season shall pass from Configuration straight to Placements, and shall never open a signup window.
+- Enabling test mode shall create and attach two ordinary points configurations, "Standard" and "Half Points", to the season in Configuration, unless a configuration of that name is already attached to it. They shall be created as ordinary configurations of the server and shall be indistinguishable from ones a league made itself, so that a test season passes the points requirement of confirming placements without one being built by hand.
+- Test mode shall not relax any requirement of confirming placements beyond the points configurations above. In particular, a season holding a round whose moment has passed, or a round already inside one of its enabled modules' configured windows, shall be refused under test mode exactly as it is refused otherwise, so a test season built in the past shall not be confirmable — and the first of those shall refuse it with every module switched off. A test season that quietly lost its check-ins would misreport attendance precisely as a real one does, and is a worse thing to be testing against than a calendar that has to be moved forward.
+- Switching test mode off, by the toggle or at the end of its season, shall delete every driver created by test mode upon the server, across every division.
 
 ### Fake drivers and rosters
-- A driver created by test mode shall be seated directly into a team of a division, bypassing the signup entirely, and shall be indistinguishable thereafter from one added any other way.
+- A driver created by test mode shall be seated directly into a team of a division, bypassing the signup entirely, while the season is in Placements, and shall be indistinguishable thereafter from one added any other way.
 - The identifiers of such drivers shall be drawn from a range above any identifier a real Discord account can hold.
 - A driver created by test mode shall never be granted or revoked a Discord role.
+- The commands adding, removing and clearing drivers created by test mode shall be refused in any state but Placements.
 - A command shall take a whole roster at once, as comma-separated values written one driver to a line, stating the driver's identifier, name, team, division and nationality. A header line naming the columns shall be accepted and ignored.
     - The identifier stated for a driver shall be the identifier the driver is created with. The roster is authoritative, the files generated beside it naming its drivers by those identifiers.
     - An identifier below the range reserved for test drivers shall be refused.
@@ -509,9 +508,9 @@ section states the rules it holds to.
 - Restoring shall not replace the databases while the bot runs. It shall prepare the replacement, and the replacement shall be made when the bot next starts, before any part of the bot has opened either database. The manager shall be told that a restart is required.
 - A state restored shall carry the test mode flag it was saved with.
 
-### Saving a season before it is approved
-- Where the server is in test mode, the approval of a season shall ask whether the databases are to be saved before it commits anything. The question shall be put after every validation of the season has passed and before the first thing is written.
+### Saving a season before its placements are confirmed
+- Where the server is in test mode, the first confirmation of a season's placements shall ask whether the databases are to be saved before it commits anything. The question shall be put after every validation of the season has passed and before the first thing is written.
 - The question shall not be put where the server is not in test mode.
-- The question shall offer three answers: to save and approve, to approve without saving, and to abandon the approval.
-- The question shall be given what remains of the validity of the review, and not a validity of its own. A review left unanswered at this question shall expire exactly when it would otherwise have expired, and the season shall not be approved.
-- A saved state that cannot be taken shall not refuse the season. The manager shall be told that it was not taken and the approval shall continue.
+- The question shall offer three answers: to save and confirm, to confirm without saving, and to abandon the confirmation.
+- The question shall be given what remains of the validity of the review, and not a validity of its own. A review left unanswered at this question shall expire exactly when it would otherwise have expired, and the placements shall not be confirmed.
+- A saved state that cannot be taken shall not refuse the season. The manager shall be told that it was not taken and the confirmation shall continue.
