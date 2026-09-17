@@ -10,7 +10,7 @@ there is no approval to hang them on. Each guard is tested with its own refusal,
 has to name what is missing rather than merely refusing: a manager reading "cannot be enabled"
 has nowhere to go.
 
-**Enabling Results or Attendance is refused while a season is active** (FR-003). Both change
+**Enabling Results or Attendance is refused once a season's placements are confirmed** (FR-003). Both change
 how a round is scored, and turning one on mid-season would score the remaining rounds by
 different rules than the ones already run — the standings would then be a mixture nobody could
 reproduce.
@@ -264,7 +264,7 @@ async def test_results_cannot_be_enabled_mid_season(tmp_path):
 
     await cog._enable_results(interaction, SERVER_ID)
 
-    assert "while a season is active" in _replied(interaction)
+    assert "once a season's placements are confirmed" in _replied(interaction)
     assert await _audit(db_path) == []
 
 
@@ -341,7 +341,7 @@ async def test_attendance_cannot_be_enabled_mid_season(tmp_path):
 
     await cog._enable_attendance(interaction, SERVER_ID)
 
-    assert "while a season is active" in _replied(interaction)
+    assert "once a season's placements are confirmed" in _replied(interaction)
 
 
 async def test_the_results_dependency_is_checked_before_the_season(tmp_path):

@@ -171,7 +171,7 @@ class _RsvpButton(discord.ui.Button):
 # loses the season's check-ins for good — the mistake issue #117 made for weather, in reverse.
 # Gated, the jobs stay booked and fire into nothing, which costs a query each and is
 # recoverable. They stay dormant for the rest of the season because ``/module enable
-# attendance`` refuses while a season is active; that is the enable guard's business, not
+# attendance`` refuses once a season's placements are confirmed; that is the enable guard's business, not
 # this gate's, and nothing here should try to compensate for it.
 
 

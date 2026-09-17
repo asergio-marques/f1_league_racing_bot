@@ -182,7 +182,7 @@ def _results_disable_warning(*, season_active: bool, attendance: bool) -> str:
             "• every check-in call, reminder and deadline still to come will stop;\n"
             "• every division's check-in and attendance channels will be cleared, and you "
             "will have to set them again;\n"
-            "• Attendance cannot be switched back on while a season is active.\n"
+            "• Attendance cannot be switched back on once a season's placements are confirmed.\n"
             "Timings, penalties and thresholds are kept either way."
         )
 
@@ -475,7 +475,7 @@ class ModuleCog(commands.Cog):
         active_season = await self.bot.season_service.get_confirmed_season(server_id)
         if active_season is not None:
             await interaction.response.send_message(
-                "❌ Results & Standings module cannot be enabled while a season is active.",
+                "❌ Results & Standings module cannot be enabled once a season's placements are confirmed.",
                 ephemeral=True,
             )
             return
@@ -673,7 +673,7 @@ class ModuleCog(commands.Cog):
         active_season = await self.bot.season_service.get_confirmed_season(server_id)
         if active_season is not None:
             await interaction.response.send_message(
-                "❌ Attendance module cannot be enabled while a season is active.",
+                "❌ Attendance module cannot be enabled once a season's placements are confirmed.",
                 ephemeral=True,
             )
             return

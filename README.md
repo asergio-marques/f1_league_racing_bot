@@ -869,7 +869,7 @@ The weather module's own configuration is these three commands and nothing else.
 All three commands share the same preconditions, checked in this order:
 
 1. The weather module must be enabled — otherwise `❌ The weather module is not enabled.`
-2. **No season may be active** — otherwise `❌ Phase deadline configuration cannot be changed while a season is active.` Deadlines are therefore set during setup, or between seasons.
+2. **No season's placements may be confirmed** — otherwise `❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.` Deadlines are therefore set with no season, or before placements are confirmed.
 3. The value must be at least 1.
 4. The ordering invariant below must hold.
 

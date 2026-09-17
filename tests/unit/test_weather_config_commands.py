@@ -204,7 +204,7 @@ async def test_command_is_refused_while_a_season_is_active(command, setter, valu
             mocks[name].assert_not_awaited()
 
     interaction.response.send_message.assert_awaited_once()
-    assert "season is active" in _sent_text(interaction)
+    assert "placements are confirmed" in _sent_text(interaction)
     cog.bot.output_router.post_log.assert_not_awaited()
 
 

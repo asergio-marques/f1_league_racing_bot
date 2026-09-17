@@ -49,7 +49,7 @@ class WeatherCog(commands.Cog):
         season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
         if season is not None:
             await interaction.response.send_message(
-                "❌ Phase deadline configuration cannot be changed while a season is active.",
+                "❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.",
                 ephemeral=True,
             )
             return True

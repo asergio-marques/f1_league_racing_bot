@@ -241,7 +241,7 @@ async def test_the_timing_commands_are_refused_while_a_season_is_active():
     await _invoke(AttendanceCog.config_rsvp_deadline, cog, interaction, 3)
 
     cog.bot.attendance_service.update_rsvp_deadline_hours.assert_not_awaited()
-    assert "active" in interaction.response.send_message.await_args.args[0]
+    assert "placements are confirmed" in interaction.response.send_message.await_args.args[0]
 
 
 async def test_a_timing_value_breaking_the_invariant_is_not_written():
