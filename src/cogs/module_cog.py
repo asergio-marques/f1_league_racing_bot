@@ -590,6 +590,13 @@ class ModuleCog(commands.Cog):
             server_id, interaction.user.id, str(interaction.user)
         )
 
+        # The division finishing may have been the season's last: a season with a window open or
+        # placements to confirm is wound down and moves to Pending completion at once (#220).
+        try:
+            await self.bot.season_service.wind_down_ongoing(self.bot, server_id)
+        except Exception:  # noqa: BLE001 — never fail the disabling on the season's next stage
+            log.exception("could not wind the season of server %s down", server_id)
+
         if purged["rounds"]:
             async with get_connection(self.bot.db_path) as db:
                 await db.execute(

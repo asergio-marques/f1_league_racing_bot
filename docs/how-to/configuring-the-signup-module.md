@@ -240,6 +240,8 @@ Closing deletes the Sign Up button, posts a **Signups are now closed** notice in
 
 **Closing moves the season on**, whether you close it or its close time does. Before the season has started, it moves to placements, where you build divisions and place drivers. Mid-season, it moves to placements for the new drivers where anyone is still Unassigned, awaiting approval or mid-correction, and straight back to ongoing where nobody is.
 
+> **A mid-season window ends with the season's last division.** Once every division is finished or cancelled there is no round left to place anyone into: the window is closed for you, and every driver still waiting — unplaced, unconfirmed, awaiting approval or mid-correction — is turned down and returns to Not Signed Up.
+
 > **It drops fewer drivers than it warns you about.** The confirmation says every in-progress driver will be reset, and counts everyone still filling the form in *plus* everyone waiting on you. Only the ones still filling it in are actually dropped. Drivers waiting for your approval, fixing something you sent back, or sat with the field buttons up keep their place — you can still approve them after the window has shut, and you should. See [#128](https://github.com/asergio-marques/f1_league_racing_bot/issues/128).
 >
 > **Closing is not a deadline for your own review.** Request Changes still works after the window has shut, so a driver you send back then behaves exactly as they would have before it — including the five-minute field window and the ping if you leave it.

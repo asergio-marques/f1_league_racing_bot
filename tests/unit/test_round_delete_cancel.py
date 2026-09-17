@@ -107,6 +107,7 @@ def _make_cog(
     )
     bot.season_service.delete_round = AsyncMock(return_value=None)
     bot.season_service.cancel_round = AsyncMock(return_value=None)
+    bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
 
     bot.scheduler_service = MagicMock()
     bot.output_router = MagicMock()
@@ -380,6 +381,18 @@ async def test_a_cancelled_round_has_its_jobs_cancelled():
     await _cancel(cog, _interaction())
 
     cog.bot.scheduler_service.cancel_round.assert_called_once_with(ROUND_ID)
+
+
+async def test_cancelling_a_round_winds_a_finished_season_down():
+    """The round may have been the last its season waited on (issue #220)."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _cancel(cog, interaction)
+
+    cog.bot.season_service.wind_down_ongoing.assert_awaited_once_with(
+        cog.bot, interaction.guild_id
+    )
 
 
 async def test_the_jobs_go_before_the_round_is_recorded_cancelled():

@@ -129,6 +129,7 @@ def _make_cog(
     bot.season_service.delete_division = AsyncMock(return_value=None)
     bot.season_service.rename_division = AsyncMock(return_value=None)
     bot.season_service.cancel_division = AsyncMock(return_value=None)
+    bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
     bot.scheduler_service = MagicMock()
     bot.scheduler_service.cancel_round = MagicMock(return_value=None)
     bot.output_router = MagicMock()
@@ -601,6 +602,19 @@ async def test_a_division_is_cancelled(tmp_path):
     assert kwargs["division_id"] == DIVISION_ID
     assert kwargs["actor_id"] == ACTOR_ID
     assert "cancelled" in _replied(interaction)
+
+
+async def test_cancelling_a_division_winds_a_finished_season_down(tmp_path):
+    """The division may have been the season's last (issue #220)."""
+    db_path = await _make_db(tmp_path, status="ACTIVE", name="division_cancel_wind_down")
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _cancel(cog, interaction)
+
+    cog.bot.season_service.wind_down_ongoing.assert_awaited_once_with(
+        cog.bot, interaction.guild_id
+    )
 
 
 async def test_cancelling_needs_an_active_season(tmp_path):

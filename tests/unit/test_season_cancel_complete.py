@@ -97,7 +97,7 @@ def _make_cog(
     # The stage has tests of its own (test_pending_completion.py); here it never stands in the way.
     from models.season import SeasonStage
 
-    bot.season_service.advance_to_pending_completion = AsyncMock(return_value=False)
+    bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PENDING_COMPLETION)
     bot.season_service.get_outstanding_rounds = AsyncMock(
         return_value=outstanding if outstanding is not None else []

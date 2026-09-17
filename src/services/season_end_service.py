@@ -99,7 +99,7 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     if guild is not None:
         await _revoke_season_roles(server_id, season.id, guild, bot)
 
-    # 4-6. The driver pass, the signup window and test mode, shared with cancelling.
+    # 4-6. The signup window, the driver pass and test mode, shared with cancelling.
     await end_of_season_pass(server_id, bot, guild)
 
     # 7. Archive: flip status to COMPLETED (all data retained)
@@ -123,9 +123,10 @@ async def end_of_season_pass(server_id: int, bot: "Bot", guild) -> dict:
 
     Shared by completing, cancelling and aborting a season, in that order within each:
 
+    - the signup window closed, where one stands open — first, so that nobody begins a signup
+      the driver pass has already gone by;
     - the driver pass, returning the season's drivers to Not Signed Up and deleting those
       pending deletion;
-    - the signup window closed, where one stands open;
     - test mode switched off, deleting every driver it created and keeping their history.
 
     Each step is fail-soft against the next: a window that cannot be closed does not keep a
@@ -133,8 +134,6 @@ async def end_of_season_pass(server_id: int, bot: "Bot", guild) -> dict:
     """
     from services.season_lifecycle_service import run_driver_pass
     from services.test_mode_service import switch_test_mode_off
-
-    result = await run_driver_pass(bot.db_path, server_id, bot=bot, guild=guild)
 
     try:
         signup_cfg = await bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
@@ -144,6 +143,8 @@ async def end_of_season_pass(server_id: int, bot: "Bot", guild) -> dict:
             await execute_forced_close(server_id, bot, audit_action="SIGNUP_SEASON_END_CLOSE")
     except Exception:  # noqa: BLE001
         log.exception("end_of_season_pass: could not close the signup window")
+
+    result = await run_driver_pass(bot.db_path, server_id, bot=bot, guild=guild)
 
     try:
         await switch_test_mode_off(server_id, bot)

@@ -15,7 +15,7 @@ import json
 import logging
 
 from db.database import get_connection
-from models.season import InvalidStageTransition, SeasonStage, status_of_stage
+from models.season import ONGOING_STAGES, InvalidStageTransition, SeasonStage, status_of_stage
 
 log = logging.getLogger(__name__)
 
@@ -141,6 +141,133 @@ async def advance_on_window_close(db_path: str, server_id: int) -> SeasonStage |
     return target
 
 
+async def turn_down_pending_placements(bot, server_id: int, season_id: int, guild) -> list[int]:
+    """Turn down every placement of *season_id* still pending, as the reject command would.
+
+    Pending are the unsettled signups — Unassigned, awaiting approval or mid-correction — and
+    every placement not yet committed. Each such placement is discarded, and each such driver
+    returns to Not Signed Up: a signup in review has its channel closed, an approved driver
+    loses the signed-up role. A driver without the former-driver flag is thereby pending
+    deletion. Returns the profile ids turned down.
+    """
+    from models.driver_profile import DriverState
+    from services.driver_service import write_transition
+
+    db_path = bot.db_path
+    placeholders = ",".join("?" for _ in UNSETTLED_STATES)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
+            f"WHERE server_id = ? AND ("
+            f"  current_state IN ({placeholders}) "
+            f"  OR (current_state = 'ASSIGNED' AND id IN ("
+            f"      SELECT driver_profile_id FROM driver_season_assignments "
+            f"      WHERE season_id = ? AND committed = 0) "
+            f"    AND id NOT IN ("
+            f"      SELECT driver_profile_id FROM driver_season_assignments "
+            f"      WHERE season_id = ? AND committed = 1))"
+            f") ORDER BY id",
+            (server_id, *UNSETTLED_STATES, season_id, season_id),
+        )
+        drivers = [dict(r) for r in await cursor.fetchall()]
+        cursor = await db.execute(
+            "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
+            (server_id,),
+        )
+        cfg_row = await cursor.fetchone()
+
+    await _close_driver_signups(
+        server_id, drivers, cfg_row["signed_up_role_id"] if cfg_row else None,
+        bot=bot, guild=guild,
+        notice="🔒 Every division of this season is done, so its signups are closed. "
+        "This channel will be automatically deleted in 24 hours.",
+        reason="Season's divisions done; signup turned down",
+    )
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE team_seats SET driver_profile_id = NULL WHERE id IN ("
+            "  SELECT team_seat_id FROM driver_season_assignments "
+            "  WHERE season_id = ? AND committed = 0 AND team_seat_id IS NOT NULL)",
+            (season_id,),
+        )
+        await db.execute(
+            "DELETE FROM driver_season_assignments WHERE season_id = ? AND committed = 0",
+            (season_id,),
+        )
+        for driver in drivers:
+            await write_transition(
+                db, driver["id"], DriverState(driver["current_state"]), DriverState.NOT_SIGNED_UP
+            )
+        if drivers:
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, 0, 'system', NULL, 'PENDING_PLACEMENTS_TURNED_DOWN', ?, ?, datetime('now'))",
+                (
+                    server_id,
+                    json.dumps({d["id"]: d["current_state"] for d in drivers}, sort_keys=True),
+                    json.dumps({"state": "NOT_SIGNED_UP"}),
+                ),
+            )
+        await db.commit()
+    return [d["id"] for d in drivers]
+
+
+async def wind_down_ongoing(bot, server_id: int) -> bool:
+    """Take a season whose every division is done out of the ongoing stages (issue #220).
+
+    A season in Ongoing, signups open or Ongoing, placements has no round left to place a
+    driver into once every division is finished or cancelled. Its signup window is closed,
+    every pending placement is turned down, and it moves straight to Pending completion. A
+    season in plain Ongoing moves too. Called from everywhere a division can finish; a no-op
+    for any other season. Returns True where the season was moved.
+    """
+    db_path = bot.db_path
+    found = await live_season_stage(db_path, server_id)
+    if found is None:
+        return False
+    season_id, stage = found
+    if stage not in ONGOING_STAGES:
+        return False
+    _, done = await _stage_and_whether_done(db_path, season_id)
+    if not done:
+        return False
+
+    guild = bot.get_guild(server_id)
+    if stage is not SeasonStage.ONGOING:
+        try:
+            signup_cfg = await bot.signup_module_service.get_config(server_id)
+            if signup_cfg is not None and signup_cfg.signups_open:
+                from cogs.module_cog import execute_forced_close
+
+                try:
+                    bot.scheduler_service.cancel_signup_close_timer(server_id)
+                except Exception:  # noqa: BLE001 — a timer already gone is the aim
+                    pass
+                await execute_forced_close(
+                    server_id, bot, audit_action="SIGNUP_DIVISIONS_DONE_CLOSE"
+                )
+        except Exception:  # noqa: BLE001 — the window's close must not hold the season
+            log.exception("wind_down_ongoing: could not close the signup window of %s", server_id)
+        turned_down = await turn_down_pending_placements(bot, server_id, season_id, guild)
+        current_stage, _ = await _stage_and_whether_done(db_path, season_id)
+        if current_stage in (SeasonStage.ONGOING_SIGNUPS.value, SeasonStage.ONGOING_PLACEMENTS.value):
+            await _move(db_path, season_id, SeasonStage(current_stage), SeasonStage.ONGOING)
+        if turned_down:
+            try:
+                await bot.output_router.post_log(
+                    server_id,
+                    "System | Every division is done | Signups closed\n"
+                    f"  pending placements turned down: {len(turned_down)}",
+                )
+            except Exception:  # noqa: BLE001
+                log.exception("wind_down_ongoing: could not post the log line")
+    await advance_to_pending_completion(db_path, season_id)
+    final_stage, _ = await _stage_and_whether_done(db_path, season_id)
+    return final_stage == SeasonStage.PENDING_COMPLETION.value
+
+
 async def signup_configuration_fixed(db_path: str, server_id: int) -> int | None:
     """The number of the season holding the signup module fixed, or None where it is free.
 
@@ -172,13 +299,10 @@ async def modules_frozen_for_completion(db_path: str, server_id: int) -> bool:
     return found is not None and found[1] is SeasonStage.PENDING_COMPLETION
 
 
-async def advance_to_pending_completion(db_path: str, season_id: int) -> bool:
-    """Move a season in Ongoing to Pending completion once every division is done (issue #220).
+async def _stage_and_whether_done(db_path: str, season_id: int) -> tuple[str | None, bool]:
+    """The season's stage, and whether every one of its divisions is finished or cancelled.
 
-    A division is done when it is finished or cancelled. Only a season in plain Ongoing moves:
-    one with a signup window open, or placements still to confirm, waits until it has returned
-    to Ongoing — and every path returning it there calls this again. Returns True where this
-    call moved it.
+    A season with no division is not done: it has had nothing to race.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -190,9 +314,22 @@ async def advance_to_pending_completion(db_path: str, season_id: int) -> bool:
             (season_id,),
         )
         row = await cursor.fetchone()
-    if row is None or row["stage"] != SeasonStage.ONGOING.value:
-        return False
-    if row["divisions"] == 0 or row["outstanding"] != 0:
+    if row is None:
+        return None, False
+    return row["stage"], row["divisions"] > 0 and row["outstanding"] == 0
+
+
+async def advance_to_pending_completion(db_path: str, season_id: int) -> bool:
+    """Move a season in Ongoing to Pending completion once every division is done (issue #220).
+
+    A division is done when it is finished or cancelled. Only a season in plain Ongoing is
+    moved here, this needing nothing but the database. A season with a signup window open or
+    placements still to confirm has signups to close and placements to turn down first, which
+    need Discord: :func:`wind_down_ongoing` does that, from wherever a division can finish.
+    Returns True where this call moved it.
+    """
+    stage, done = await _stage_and_whether_done(db_path, season_id)
+    if stage != SeasonStage.ONGOING.value or not done:
         return False
     try:
         await _move(db_path, season_id, SeasonStage.ONGOING, SeasonStage.PENDING_COMPLETION)
@@ -220,6 +357,54 @@ _SIGNUP_IN_PROGRESS: frozenset[str] = frozenset({
     "AWAITING_CORRECTION_PARAMETER",
     "PENDING_DRIVER_CORRECTION",
 })
+
+
+async def _close_driver_signups(
+    server_id: int,
+    drivers: list[dict],
+    signed_up_role_id: int | None,
+    *,
+    bot,
+    guild,
+    notice: str,
+    reason: str,
+) -> None:
+    """The Discord side of returning *drivers* to Not Signed Up: their signups and their role.
+
+    A signup still in progress or in review has its channel told *notice* and set to be
+    deleted, and its inactivity timeout cancelled; an approved real driver loses the signed-up
+    role. Each driver is a row with ``discord_user_id``, ``current_state`` and
+    ``is_test_driver``. Nothing here is worth the caller's work: every failure is logged.
+    """
+    for driver in drivers:
+        uid = driver["discord_user_id"]
+        if driver["current_state"] in _SIGNUP_IN_PROGRESS and bot is not None:
+            try:
+                if guild is not None:
+                    await bot.wizard_service._trigger_channel_hold(server_id, uid, guild, notice)
+                # The channel's own deletion job stays armed, and reads the wizard record
+                # when it fires; only the inactivity timeout is cancelled.
+                try:
+                    bot.scheduler_service._scheduler.remove_job(
+                        f"wizard_inactivity_{server_id}_{uid}"
+                    )
+                except Exception:  # noqa: BLE001 — a job already gone is the aim
+                    pass
+            except Exception:  # noqa: BLE001 — a signup channel is never worth the pass
+                log.exception("closing signups: could not close the signup of %s", uid)
+        if (
+            guild is not None
+            and signed_up_role_id
+            and not driver["is_test_driver"]
+            and driver["current_state"] in ("UNASSIGNED", "ASSIGNED")
+        ):
+            member = guild.get_member(int(uid))
+            role = guild.get_role(signed_up_role_id)
+            if member is not None and role is not None and role in member.roles:
+                try:
+                    await member.remove_roles(role, reason=reason)
+                except Exception:  # noqa: BLE001 — a role is never worth the pass
+                    log.warning("closing signups: could not revoke the signed-up role of %s", uid)
 
 
 async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bool) -> None:
@@ -290,39 +475,11 @@ async def run_driver_pass(db_path: str, server_id: int, *, bot=None, guild=None)
         cfg_row = await cursor.fetchone()
     signed_up_role_id = cfg_row["signed_up_role_id"] if cfg_row else None
 
-    for driver in to_reset:
-        uid = driver["discord_user_id"]
-        if driver["current_state"] in _SIGNUP_IN_PROGRESS and bot is not None:
-            try:
-                if guild is not None:
-                    await bot.wizard_service._trigger_channel_hold(
-                        server_id, uid, guild,
-                        "🔒 This season has ended. This channel will be automatically "
-                        "deleted in 24 hours.",
-                    )
-                # The channel's own deletion job stays armed, and reads the wizard record
-                # when it fires; only the inactivity timeout is cancelled.
-                try:
-                    bot.scheduler_service._scheduler.remove_job(
-                        f"wizard_inactivity_{server_id}_{uid}"
-                    )
-                except Exception:  # noqa: BLE001 — a job already gone is the aim
-                    pass
-            except Exception:  # noqa: BLE001 — a signup channel is never worth the pass
-                log.exception("driver pass: could not close the signup of %s", uid)
-        if (
-            guild is not None
-            and signed_up_role_id
-            and not driver["is_test_driver"]
-            and driver["current_state"] in ("UNASSIGNED", "ASSIGNED")
-        ):
-            member = guild.get_member(int(uid))
-            role = guild.get_role(signed_up_role_id)
-            if member is not None and role is not None and role in member.roles:
-                try:
-                    await member.remove_roles(role, reason="Season ended")
-                except Exception:  # noqa: BLE001 — a role is never worth the pass
-                    log.warning("driver pass: could not revoke the signed-up role of %s", uid)
+    await _close_driver_signups(
+        server_id, to_reset, signed_up_role_id, bot=bot, guild=guild,
+        notice="🔒 This season has ended. This channel will be automatically deleted in 24 hours.",
+        reason="Season ended",
+    )
 
     from models.driver_profile import DriverState
     from services.driver_service import write_transition

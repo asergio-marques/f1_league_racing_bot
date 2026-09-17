@@ -116,7 +116,7 @@ it only to place it; the rules governing it belong to its own specification.
     - Ongoing to Ongoing, signups open, upon a signup window being opened.
     - Ongoing, signups open to Ongoing, placements, upon the window being closed while any signup remains unsettled; to Ongoing where none does.
     - Ongoing, placements to Ongoing, upon placements being confirmed.
-    - Ongoing to Pending completion, as set out below.
+    - Ongoing, Ongoing, signups open and Ongoing, placements to Pending completion, as set out below.
     - Pending completion to Completed, upon the season being completed.
     - Ongoing, Ongoing, signups open and Ongoing, placements to Cancelled, upon the season being cancelled.
     - Configuration, Waiting, Signups and Placements to nothing at all, upon the season being aborted.
@@ -237,7 +237,10 @@ it only to place it; the rules governing it belong to its own specification.
 - A cancellation is irreversible.
 
 ### Pending completion
-- A season in Ongoing shall move to Pending completion as soon as every one of its divisions is finished or cancelled. A season in Ongoing, signups open or Ongoing, placements whose divisions are all finished or cancelled shall move to Pending completion upon returning to Ongoing.
+- A season in any of the three ongoing states shall move to Pending completion as soon as every one of its divisions is finished or cancelled. There being no round left to place a driver into, a season leaving Ongoing, signups open or Ongoing, placements shall first:
+    - close its signup window, where one is open;
+    - discard every placement not yet committed;
+    - return to Not Signed Up every driver whose signup is unsettled and every driver whose placements were all uncommitted, as the reject command would: an approved driver loses the signed-up role, and a signup in review has its channel closed.
 - In Pending completion the results of a round already final may still be amended, and an amendment of the season's points may still be approved. The only other thing that may be done with the season is to complete it. No module shall be disabled in Pending completion.
 
 ### Ending a season
@@ -248,8 +251,8 @@ it only to place it; the rules governing it belong to its own specification.
     1. post each division's final classification;
     2. record a history entry for every driver holding a committed placement;
     3. revoke the division, team and signup roles of the season's drivers;
-    4. run the driver pass;
-    5. close the signup window, where one is open;
+    4. close the signup window, where one is open, so that no signup begins after the driver pass has gone by;
+    5. run the driver pass;
     6. switch test mode off, deleting every driver created by test mode;
     7. mark the season completed.
 - Once completed, the server shall hold no active season.
@@ -264,13 +267,13 @@ it only to place it; the rules governing it belong to its own specification.
 #### Cancelling a season
 - Cancelling a season shall be a league admin's, shall require the word `CONFIRM`, and shall be refused in any state but the three ongoing states. A season is cancelled where it should not go on; a season that was raced to its end is completed.
 - Cancelling a season shall post a notice to each division still running, shall cancel every piece of scheduled work, shall cancel every division of it that is not already cancelled, and shall discard every placement not yet committed.
-- It shall then record a history entry for every driver holding a committed placement, as completing one does, revoke the same roles, run the driver pass, close the signup window where one is open, switch test mode off, and only then mark the season cancelled. A season that was cancelled is league history: it happened, and its drivers raced in it.
+- It shall then record a history entry for every driver holding a committed placement, as completing one does, revoke the same roles, close the signup window where one is open, run the driver pass, switch test mode off, and only then mark the season cancelled. A season that was cancelled is league history: it happened, and its drivers raced in it.
 - A cancellation shall never discard a result. Only a round not yet run, or run but with its results not yet entered, may be cancelled — by itself, or by the cancelling of the division or season above it. A round further along shall keep its place and its results.
 
 #### Aborting a season
 - An abort command shall be a league admin's, shall require the word `CONFIRM`, and shall be refused in any state but Configuration, Waiting, Signups and Placements.
 - Aborting a season shall delete the season and every record belonging to it, its signups included. The season shall take no number and shall leave nothing in the archive.
-- Aborting shall revoke the signup roles of the season's drivers, run the driver pass without recording any history, close the signup window where one is open, and switch test mode off, deleting every driver created by test mode.
+- Aborting shall close the signup window where one is open, revoke the signup roles of the season's drivers, run the driver pass without recording any history, and switch test mode off, deleting every driver created by test mode.
 - Once aborted, the server shall hold no active season.
 
 ### The archive

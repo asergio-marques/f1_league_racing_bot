@@ -860,6 +860,17 @@ class SeasonService:
 
         return await advance_to_pending_completion(self._db_path, season_id)
 
+    async def wind_down_ongoing(self, bot, server_id: int) -> bool:
+        """Take a season whose every division is done out of the ongoing stages (issue #220).
+
+        Its signup window closed, its pending placements turned down, and on to Pending
+        completion. A wrapper, so that a command reaches it through the service it already
+        holds; see :func:`services.season_lifecycle_service.wind_down_ongoing`.
+        """
+        from services.season_lifecycle_service import wind_down_ongoing
+
+        return await wind_down_ongoing(bot, server_id)
+
     async def refresh_division_status(self, division_id: int) -> bool:
         """Move a division ACTIVE -> FINISHED once none of its rounds is outstanding.
 

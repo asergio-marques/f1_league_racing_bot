@@ -188,3 +188,27 @@ async def test_a_window_that_cannot_be_closed_does_not_keep_test_mode_on(db_path
             "SELECT test_mode_active FROM server_configs WHERE server_id = ?", (SERVER_ID,)
         )
         assert (await cursor.fetchone())[0] == 0
+
+
+async def test_the_window_is_closed_before_the_driver_pass(db_path):
+    """Closed first, so that nobody begins a signup the driver pass has already gone by."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_module_config (server_id, signups_open) VALUES (?, 1)",
+            (SERVER_ID,),
+        )
+        await db.commit()
+    order: list[str] = []
+
+    async def closing(*args, **kwargs):
+        order.append("window")
+
+    async def passing(*args, **kwargs):
+        order.append("driver pass")
+        return {"reset": 0, "deleted": 0}
+
+    with patch("cogs.module_cog.execute_forced_close", new=closing), \
+            patch("services.season_lifecycle_service.run_driver_pass", new=passing):
+        await _complete(db_path)
+
+    assert order == ["window", "driver pass"]

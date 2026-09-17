@@ -112,38 +112,165 @@ async def test_a_season_with_no_division_is_not_pending_completion(tmp_path):
 # ── /season complete ────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    "stage, says",
-    [
-        (SeasonStage.ONGOING_SIGNUPS, "/signup close"),
-        (SeasonStage.ONGOING_PLACEMENTS, "placements-review"),
-    ],
-)
-async def test_completing_is_refused_while_a_window_or_placements_stand(tmp_path, stage, says):
+# ── Leaving the ongoing stages with every division done ────────────────────────────
+
+
+def _wind_down_bot(path, *, signups_open=False):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock
+
+    bot = MagicMock()
+    bot.db_path = path
+    bot.get_guild = MagicMock(return_value=None)
+    bot.signup_module_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(signups_open=signups_open)
+    )
+    bot.output_router.post_log = AsyncMock()
+    return bot
+
+
+async def _seed_pending_drivers(path):
+    """Driver 1 committed, 2 placed but uncommitted, 3 Unassigned, 4 awaiting approval."""
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
+            "VALUES (10, 1, 'Alpha', 4, 0)"
+        )
+        for pid, state, committed in ((1, "ASSIGNED", 1), (2, "ASSIGNED", 0),
+                                      (3, "UNASSIGNED", None), (4, "PENDING_ADMIN_APPROVAL", None)):
+            await db.execute(
+                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
+                "VALUES (?, ?, ?, ?)",
+                (pid, SERVER_ID, str(1000 + pid), state),
+            )
+            if committed is not None:
+                cursor = await db.execute(
+                    "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+                    "VALUES (10, ?, ?)",
+                    (pid, pid),
+                )
+                await db.execute(
+                    "INSERT INTO driver_season_assignments "
+                    "(driver_profile_id, season_id, division_id, team_seat_id, committed) "
+                    "VALUES (?, ?, 1, ?, ?)",
+                    (pid, SEASON_ID, cursor.lastrowid, committed),
+                )
+        await db.commit()
+
+
+async def _states(path):
+    async with get_connection(path) as db:
+        cursor = await db.execute("SELECT id, current_state FROM driver_profiles ORDER BY id")
+        return {r["id"]: r["current_state"] for r in await cursor.fetchall()}
+
+
+@pytest.mark.parametrize("stage", [SeasonStage.ONGOING_SIGNUPS, SeasonStage.ONGOING_PLACEMENTS])
+async def test_a_season_whose_divisions_are_done_is_wound_down_to_pending_completion(tmp_path, stage):
+    """No round is left to place anyone into: pending placements are turned down at once."""
+    path = await _db(tmp_path, stage=stage, divisions=(("FINISHED", None), ("CANCELLED", None)))
+    await _seed_pending_drivers(path)
+
+    assert await lifecycle.wind_down_ongoing(_wind_down_bot(path), SERVER_ID) is True
+
+    assert await _stage(path) is SeasonStage.PENDING_COMPLETION
+    assert await _states(path) == {
+        1: "ASSIGNED",
+        2: "NOT_SIGNED_UP",
+        3: "NOT_SIGNED_UP",
+        4: "NOT_SIGNED_UP",
+    }
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "SELECT driver_profile_id, committed FROM driver_season_assignments ORDER BY 1"
+        )
+        assert [tuple(r) for r in await cursor.fetchall()] == [(1, 1)]
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM team_seats WHERE driver_profile_id = 2"
+        )
+        assert (await cursor.fetchone())[0] == 0
+
+
+async def test_an_open_window_is_closed_before_the_pending_placements_are_turned_down(tmp_path):
+    from unittest.mock import AsyncMock, patch
+
+    path = await _db(tmp_path, stage=SeasonStage.ONGOING_SIGNUPS, divisions=(("FINISHED", None),))
+    bot = _wind_down_bot(path, signups_open=True)
+
+    with patch("cogs.module_cog.execute_forced_close", new=AsyncMock()) as closed:
+        assert await lifecycle.wind_down_ongoing(bot, SERVER_ID) is True
+
+    closed.assert_awaited_once()
+    bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with(SERVER_ID)
+
+
+async def test_a_season_with_a_division_still_running_is_not_wound_down(tmp_path):
+    path = await _db(tmp_path, stage=SeasonStage.ONGOING_PLACEMENTS)
+    await _seed_pending_drivers(path)
+
+    assert await lifecycle.wind_down_ongoing(_wind_down_bot(path), SERVER_ID) is False
+
+    assert await _stage(path) is SeasonStage.ONGOING_PLACEMENTS
+    assert (await _states(path))[3] == "UNASSIGNED"
+
+
+async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_kept_off(tmp_path):
+    from unittest.mock import AsyncMock, MagicMock
+
+    path = await _db(tmp_path, stage=SeasonStage.ONGOING_PLACEMENTS, divisions=(("FINISHED", None),))
+    await _seed_pending_drivers(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO signup_module_config (server_id, signed_up_role_id) VALUES (?, 555)",
+            (SERVER_ID,),
+        )
+        await db.commit()
+    bot = _wind_down_bot(path)
+    bot.wizard_service._trigger_channel_hold = AsyncMock()
+    role = MagicMock()
+    member = MagicMock()
+    member.roles = [role]
+    member.remove_roles = AsyncMock()
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=member)
+    guild.get_role = MagicMock(return_value=role)
+    bot.get_guild = MagicMock(return_value=guild)
+
+    await lifecycle.wind_down_ongoing(bot, SERVER_ID)
+
+    held = [c.args[1] for c in bot.wizard_service._trigger_channel_hold.await_args_list]
+    assert held == ["1004"]
+    # The two approved drivers turned down lose the signed-up role; the committed one keeps it.
+    assert member.remove_roles.await_count == 2
+    assert "pending placements turned down: 3" in bot.output_router.post_log.await_args.args[1]
+
+
+async def test_completing_winds_a_finished_season_down_first(tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     from cogs.season_cog import SeasonCog
     from tests.support.undecorate import undecorate
 
-    path = await _db(tmp_path, stage=stage, divisions=(("FINISHED", None),))
+    path = await _db(tmp_path, stage=SeasonStage.ONGOING_SIGNUPS, divisions=(("FINISHED", None),))
     cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = MagicMock()
-    cog.bot.db_path = path
+    cog.bot = _wind_down_bot(path)
     service = SeasonService(path)
     cog.bot.season_service = service
     service.get_confirmed_season = AsyncMock(
-        return_value=SimpleNamespace(id=SEASON_ID, stage=stage)
+        return_value=SimpleNamespace(id=SEASON_ID, stage=SeasonStage.ONGOING_SIGNUPS)
     )
+    cog.bot.output_router.post_log = AsyncMock()
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.response.send_message = AsyncMock()
     interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
 
-    await undecorate(SeasonCog.season_complete)(cog, interaction)
+    with patch("services.season_end_service.execute_season_end", new=AsyncMock()) as ended:
+        await undecorate(SeasonCog.season_complete)(cog, interaction)
 
-    assert says in interaction.response.send_message.await_args.args[0]
-    interaction.response.defer.assert_not_awaited()
+    assert await _stage(path) is SeasonStage.PENDING_COMPLETION
+    ended.assert_awaited_once()
 
 
 async def test_a_season_that_moves_on_meanwhile_is_not_made_pending_completion(tmp_path):

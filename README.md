@@ -517,7 +517,7 @@ and one whose placements have never been confirmed is abandoned with `/season ab
 No parameters. Triggers the season-end flow manually. The bot refuses while any division of the
 season is neither finished nor cancelled, and lists the rounds still to be finalised.
 
-> **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then the only things left are amending the results of a round already final, approving an amendment of the season's points, and completing the season — no module can be disabled. A season with a signup window open, or mid-season placements still to confirm, waits: `/season complete` refuses and says which, and the season moves on as soon as that is settled. Once every
+> **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then the only things left are amending the results of a round already final, approving an amendment of the season's points, and completing the season — no module can be disabled. A season with a signup window open, or mid-season placements still to confirm, moves there too: there is no round left to place anyone into, so the window is closed, every placement not yet confirmed is discarded, and every driver still unplaced, unconfirmed, awaiting approval or mid-correction returns to Not Signed Up as `/driver reject` would. Once every
 division is done it ends the season, in this order: each division's final classification is posted;
 a history entry is written for every driver whose placement was confirmed; the division, team and
 signed-up roles are revoked; every driver who was Unassigned, placed, signing up or in review returns
