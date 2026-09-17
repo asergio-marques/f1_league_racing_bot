@@ -515,6 +515,35 @@ Things change. While the season is ongoing:
 
 Each takes effect at once, roles and lineup posts included, because the placement it changes is already confirmed. A driver moved, released or sacked keeps their place in the season's history: when the season ends they get an entry for every division they took part in, the ones they left included. `/driver release` is refused for a driver's only confirmed seat — a placement not yet confirmed elsewhere does not count — so move or sack them instead.
 
+### Changing the account behind a driver
+
+A driver who loses their Discord account, or moves to a new one, keeps everything they have
+earned. Re-key their profile onto the new account:
+
+```
+/driver reassign new_user:@TheirNewAccount old_user_id:123456789012345678
+```
+
+Name the old account with `old_user` where it is still in the server, or with `old_user_id` —
+the raw snowflake — where it has gone, which is the usual case.
+
+Everything the league holds of that driver moves with the profile: every signup they made,
+their results in every session they raced, their standings in every division, and their
+history of every season that has ended. The standings and the history read the same
+afterwards as before, under the new account.
+
+Two things to know before you run it:
+
+- **The new account must be a stranger to the league.** It cannot already have a driver
+  profile, and it cannot hold results, standings or history of its own — two drivers' records
+  merged together could never be separated again. Nothing is changed by the refusal.
+- **Their portrait is fetched again, not carried.** A portrait is the picture of the account
+  itself, so the old one is discarded and the new account's own is taken before the next
+  graphic is drawn. A portrait you put in the driver directory yourself is never touched.
+
+Where a driver races in two leagues that share this bot, only the league you run the command
+in is changed.
+
 ### Signing up drivers mid-season
 
 A signup window can be opened again while the season is ongoing. The same two steps follow it: closing the window moves the season to **Ongoing, placements** where anyone is left to settle — place or reject them as in step 10, then run `/season placements-review`, which in this stage reviews only the lineups and the drivers to confirm. Confirming grants the new drivers their roles, posts each lineup that changed once, and returns the season to ongoing. No division or round can be added mid-season.
