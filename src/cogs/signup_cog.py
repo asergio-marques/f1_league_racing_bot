@@ -138,6 +138,25 @@ async def _resolve_view_context(
     return bot, server_id, (wizard.discord_user_id if wizard else None)
 
 
+#: The states a driver may stand in when they press Sign Up having already got a profile,
+#: split by the refusal each earns. Between them they cover every state that is not
+#: ``NOT_SIGNED_UP``, which is what lets the callback below use a bare ``else`` for the
+#: approved arm: a state belonging to neither set gets a refusal rather than falling
+#: through into the wizard and signing somebody up by accident. Add a state — a ban, when
+#: the stewarding module brings one — and you must put it in one of these.
+#: ``tests/unit/test_signup_button_driver_states.py`` pins the cover and the disjointness.
+IN_PROGRESS_STATES = {
+    DriverState.PENDING_SIGNUP_COMPLETION,
+    DriverState.PENDING_ADMIN_APPROVAL,
+    DriverState.AWAITING_CORRECTION_PARAMETER,
+    DriverState.PENDING_DRIVER_CORRECTION,
+}
+APPROVED_STATES = {
+    DriverState.UNASSIGNED,
+    DriverState.ASSIGNED,
+}
+
+
 class SignupButtonView(discord.ui.View):
     """Persistent signup button view (T016).
 
@@ -175,24 +194,14 @@ class SignupButtonView(discord.ui.View):
             return
 
         profile = await bot.driver_service.get_profile(server_id, discord_user_id)  # type: ignore[attr-defined]
-        if profile is not None and profile.driver_state != DriverState.NOT_SIGNED_UP:
-            _IN_PROGRESS_STATES = {
-                DriverState.PENDING_SIGNUP_COMPLETION,
-                DriverState.PENDING_ADMIN_APPROVAL,
-                DriverState.AWAITING_CORRECTION_PARAMETER,
-                DriverState.PENDING_DRIVER_CORRECTION,
-            }
-            _APPROVED_STATES = {
-                DriverState.UNASSIGNED,
-                DriverState.ASSIGNED,
-            }
-            if profile.driver_state in _IN_PROGRESS_STATES:
+        if profile is not None and profile.current_state != DriverState.NOT_SIGNED_UP:
+            if profile.current_state in IN_PROGRESS_STATES:
                 await interaction.response.send_message(
                     "⛔ You already have a signup in progress — "
                     "check your private wizard channel.",
                     ephemeral=True,
                 )
-            elif profile.driver_state in _APPROVED_STATES:
+            elif profile.current_state in APPROVED_STATES:
                 await interaction.response.send_message(
                     "⛔ Your signup has already been approved. "
                     "You cannot sign up again.",
