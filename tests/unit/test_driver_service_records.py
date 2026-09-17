@@ -674,3 +674,103 @@ async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_pat
     await service.transition(SERVER_ID, OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert await _profile_count(db_path) == 1
+
+
+# ---------------------------------------------------------------------------
+# Every column that names a driver by their Discord account
+# ---------------------------------------------------------------------------
+#
+# Issue #222 was a hand-written list of tables going stale: the re-key moved two of them and
+# nobody noticed the other six. The guard below reads the schema instead of trusting a list,
+# so a table added later cannot quietly reintroduce the same defect — it fails here until
+# somebody decides, in writing, whether a re-key carries it.
+
+
+def _names_a_driver(column: str) -> bool:
+    """Whether *column* could name a driver: by account, by profile, or by override.
+
+    Deliberately wider than the columns a re-key moves. The point is to catch the next one
+    somebody adds, so a match here is a question to answer rather than a fault.
+    """
+    return "user_id" in column or (
+        "driver" in column and (column.endswith("_id") or column.endswith("_override"))
+    )
+
+
+#: Every column the schema has that could name a driver, and what a re-key does with it.
+#:
+#: `CARRIED` means the re-key moves it, and each one has a test of its own above. Any other
+#: value is the reason it is left alone, and reads as a decision rather than an oversight.
+CARRIED = "carried by a re-key"
+
+_DRIVER_COLUMNS: dict[tuple[str, str], str] = {
+    ("driver_profiles", "discord_user_id"): CARRIED,
+    ("signup_records", "discord_user_id"): CARRIED,
+    ("driver_history_entries", "discord_user_id"): CARRIED,
+    ("signup_wizard_records", "discord_user_id"): CARRIED,
+    ("driver_standings_snapshots", "driver_user_id"): CARRIED,
+    ("race_session_results", "driver_user_id"): CARRIED,
+    ("qualifying_session_results", "driver_user_id"): CARRIED,
+    ("session_results", "fl_driver_override"): CARRIED,
+    ("driver_portraits", "discord_user_id"): (
+        "a cache of that account's own profile picture, so the row and its file are removed "
+        "rather than carried: the new account has a picture of its own"
+    ),
+    ("lap_records", "driver_id"): (
+        "migration 029 raised the table as a structural prerequisite and nothing writes it, "
+        "so it holds no rows to carry. Whoever populates it answers this question then"
+    ),
+    ("track_records", "driver_id"): (
+        "as lap_records — created by migration 029 and written by nothing"
+    ),
+    ("driver_history_entries", "driver_profile_id"): (
+        "keyed by the profile, which a re-key does not replace"
+    ),
+    ("driver_standings_snapshots", "driver_profile_id"): "keyed by the profile",
+    ("race_session_results", "driver_profile_id"): "keyed by the profile",
+    ("qualifying_session_results", "driver_profile_id"): "keyed by the profile",
+    ("driver_division_memberships", "driver_profile_id"): "keyed by the profile",
+    ("driver_round_attendance", "driver_profile_id"): "keyed by the profile",
+    ("driver_season_assignments", "driver_profile_id"): "keyed by the profile",
+    ("team_seats", "driver_profile_id"): "keyed by the profile",
+}
+
+
+async def test_every_column_naming_a_driver_is_accounted_for_by_the_re_key(tmp_path):
+    """A table added later that names a driver fails here until somebody decides about it.
+
+    Read the failure as a question: does a re-key have to carry this column? Add it to
+    `_DRIVER_COLUMNS` as `CARRIED`, with a test beside the others above, or with the reason
+    it is left alone. Do not simply add the name to silence the test.
+    """
+    db_path = await _make_db(tmp_path)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+        )
+        tables = [row["name"] for row in await cursor.fetchall()]
+        found: set[tuple[str, str]] = set()
+        for table in tables:
+            cursor = await db.execute(f"PRAGMA table_info('{table}')")
+            for row in await cursor.fetchall():
+                if _names_a_driver(row["name"]):
+                    found.add((table, row["name"]))
+
+    assert sorted(found) == sorted(_DRIVER_COLUMNS)
+
+
+async def test_the_columns_a_re_key_carries_are_named_as_such(tmp_path):
+    """The eight of them, so that dropping one from the service is dropping it from here."""
+    carried = sorted(key for key, why in _DRIVER_COLUMNS.items() if why == CARRIED)
+
+    assert carried == [
+        ("driver_history_entries", "discord_user_id"),
+        ("driver_profiles", "discord_user_id"),
+        ("driver_standings_snapshots", "driver_user_id"),
+        ("qualifying_session_results", "driver_user_id"),
+        ("race_session_results", "driver_user_id"),
+        ("session_results", "fl_driver_override"),
+        ("signup_records", "discord_user_id"),
+        ("signup_wizard_records", "discord_user_id"),
+    ]
