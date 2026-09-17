@@ -151,8 +151,8 @@ async def _run(state, interaction):
     """Call the flow with the background collection task stubbed out.
 
     What is under test here is everything the button does before the loop starts. The loop
-    itself is driven with a fake `wait_for` in `test_resubmission_collection.py`, which is
-    also where its current failure is pinned — stubbing it here is why that went unnoticed.
+    itself is driven with a fake `wait_for` in `test_resubmission_collection.py`. Stubbing it
+    here is half of why issue #210 — a loop that raised on its first line — went unnoticed.
     """
     with patch(
         "services.result_submission_service._resubmit_collection_task",
