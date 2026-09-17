@@ -285,7 +285,7 @@ class TeamCog(commands.Cog):
     ) -> None:
         await interaction.response.defer(ephemeral=not public)
 
-        season = await self.bot.season_service.get_active_season(  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season(  # type: ignore[attr-defined]
             interaction.guild_id
         )
         if season is None:

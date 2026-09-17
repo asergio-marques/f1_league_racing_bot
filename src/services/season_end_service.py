@@ -42,7 +42,7 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     season_svc = bot.season_service  # type: ignore[attr-defined]
 
     # Idempotency guard: verify the season still exists and is active
-    season = await season_svc.get_active_season(server_id)
+    season = await season_svc.get_confirmed_season(server_id)
     if season is None:
         log.info(
             "execute_season_end: no active season for server %s — already archived.",

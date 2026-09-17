@@ -91,7 +91,7 @@ def _make_cog(
 
     bot.season_service = MagicMock()
     bot.season_service.get_setup_season = AsyncMock(return_value=setup_season)
-    bot.season_service.get_active_season = AsyncMock(return_value=active_season)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=active_season)
     bot.season_service.assert_season_mutable = AsyncMock(
         side_effect=None if mutable else SeasonImmutableError("archived")
     )

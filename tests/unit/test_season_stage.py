@@ -236,6 +236,6 @@ async def test_set_stage_refuses_a_season_that_does_not_exist(db_path):
 async def test_a_season_read_carries_its_stage(db_path):
     svc = SeasonService(db_path)
     await _insert(db_path, "ACTIVE", "ONGOING_PLACEMENTS")
-    season = await svc.get_active_season(SERVER_ID)
+    season = await svc.get_confirmed_season(SERVER_ID)
     assert season is not None
     assert season.stage is SeasonStage.ONGOING_PLACEMENTS

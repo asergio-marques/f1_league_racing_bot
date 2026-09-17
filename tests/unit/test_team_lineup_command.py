@@ -74,7 +74,7 @@ def _make_cog(
 ) -> TeamCog:
     bot = MagicMock()
     bot.season_service = MagicMock()
-    bot.season_service.get_active_season = AsyncMock(return_value=season)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division(11, "Division 1", 1)]
     )

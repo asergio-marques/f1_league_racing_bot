@@ -318,7 +318,7 @@ class ModuleCog(commands.Cog):
             return
 
         # 2. Validate all active-season divisions have forecast_channel_id
-        season = await self.bot.season_service.get_active_season(server_id)
+        season = await self.bot.season_service.get_confirmed_season(server_id)
         if season:
             divisions = await self.bot.season_service.get_divisions(season.id)
             missing = [d.name for d in divisions if not d.forecast_channel_id]
@@ -485,7 +485,7 @@ class ModuleCog(commands.Cog):
             return
 
         # 2. Block if ACTIVE season exists (FR-003)
-        active_season = await self.bot.season_service.get_active_season(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season(server_id)
         if active_season is not None:
             await interaction.response.send_message(
                 "❌ Results & Standings module cannot be enabled while a season is active.",
@@ -542,7 +542,7 @@ class ModuleCog(commands.Cog):
             return
 
         # Warn before anything irreversible, and write nothing until the league confirms it.
-        active_season = await self.bot.season_service.get_active_season(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season(server_id)
         attendance_on = await self.bot.module_service.is_attendance_enabled(server_id)
 
         if active_season is not None or attendance_on:
@@ -676,7 +676,7 @@ class ModuleCog(commands.Cog):
             return
 
         # 2. Guard: no ACTIVE season
-        active_season = await self.bot.season_service.get_active_season(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season(server_id)
         if active_season is not None:
             await interaction.response.send_message(
                 "❌ Attendance module cannot be enabled while a season is active.",

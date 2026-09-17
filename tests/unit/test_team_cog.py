@@ -417,7 +417,7 @@ class TestTeamLineupDiscardsItsPictures:
         from cogs.team_cog import TeamCog
 
         bot = _make_bot()
-        bot.season_service.get_active_season = AsyncMock(return_value=_make_season())
+        bot.season_service.get_confirmed_season = AsyncMock(return_value=_make_season())
         bot.season_service.get_divisions = AsyncMock(return_value=divisions)
         return TeamCog(bot), bot
 

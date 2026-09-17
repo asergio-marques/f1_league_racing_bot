@@ -118,7 +118,7 @@ def _make_cog(
     bot.season_service.get_divisions = AsyncMock(
         side_effect=[divisions, remaining if remaining is not None else divisions] * 4
     )
-    bot.season_service.get_active_season = AsyncMock(return_value=season)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
     bot.season_service.assert_season_mutable = AsyncMock(
         side_effect=SeasonImmutableError("archived") if immutable else None
     )

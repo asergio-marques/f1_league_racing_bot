@@ -57,7 +57,7 @@ def _make_interaction(guild_id: int = 1) -> MagicMock:
 def _make_cog(pending_cfg: PendingConfig | None) -> tuple[SeasonCog, MagicMock]:
     """Return (cog, bot_mock) with SeasonCog having *pending_cfg* in _pending."""
     bot = MagicMock()
-    bot.season_service.get_active_season = AsyncMock(return_value=None)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))
     bot.season_service.get_divisions = AsyncMock(return_value=[])
     bot.season_service.restore_driver_seats = AsyncMock()
@@ -269,5 +269,5 @@ async def test_no_pending_cfg_falls_through_to_db_path() -> None:
         track="Australia",
     )
 
-    # get_active_season is what the DB path calls first
-    bot.season_service.get_active_season.assert_called_once_with(interaction.guild_id)
+    # get_confirmed_season is what the DB path calls first
+    bot.season_service.get_confirmed_season.assert_called_once_with(interaction.guild_id)

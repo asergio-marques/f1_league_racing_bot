@@ -484,7 +484,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if await self.bot.season_service.get_active_season(server_id) is not None:
+        if await self.bot.season_service.get_confirmed_season(server_id) is not None:
             await interaction.followup.send(
                 "\u274c A season is currently active for this server. "
                 "Complete it before starting a new one.",
@@ -2171,7 +2171,7 @@ class SeasonCog(commands.Cog):
     )
     @league_manager_only
     async def season_status(self, interaction: discord.Interaction) -> None:
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
                 "\u2139\ufe0f No active season found for this server.",
@@ -2229,7 +2229,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
                 "\u274c No active season to cancel.",
@@ -2310,7 +2310,7 @@ class SeasonCog(commands.Cog):
         self,
         interaction: discord.Interaction,
     ) -> None:
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
                 "\u274c No active season to complete.", ephemeral=True
@@ -2824,7 +2824,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
                 "\u274c `/division cancel` requires an active season.",
@@ -3915,7 +3915,7 @@ class SeasonCog(commands.Cog):
             return
 
         # Active-season DB path
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.followup.send("\u274c No active season found.", ephemeral=True)
             return
@@ -4111,7 +4111,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
                 "\u274c `/round cancel` requires an active season.",

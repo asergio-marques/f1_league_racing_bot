@@ -303,7 +303,7 @@ class DriverCog(commands.Cog):
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
-        season = await self.bot.season_service.get_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
 
         if season is not None:
             try:

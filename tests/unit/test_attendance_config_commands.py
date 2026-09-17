@@ -73,7 +73,7 @@ def _make_cog(*, cfg: AttendanceConfig | None = None) -> AttendanceCog:
     bot.module_service = MagicMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.season_service = MagicMock()
-    bot.season_service.get_active_season = AsyncMock(return_value=None)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     return AttendanceCog(bot)
 
 
@@ -235,7 +235,7 @@ async def test_a_penalty_of_zero_is_written():
 async def test_the_timing_commands_are_refused_while_a_season_is_active():
     """Timing cannot move mid-season; the penalties can, and are covered above."""
     cog = _make_cog()
-    cog.bot.season_service.get_active_season = AsyncMock(return_value=MagicMock())
+    cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=MagicMock())
     interaction = _interaction()
 
     await _invoke(AttendanceCog.config_rsvp_deadline, cog, interaction, 3)

@@ -78,8 +78,15 @@ class SeasonService:
             status=SeasonStatus.SETUP,
         )
 
-    async def get_active_season(self, server_id: int) -> Season | None:
-        """Return the ACTIVE season for *server_id*, or None."""
+    async def get_confirmed_season(self, server_id: int) -> Season | None:
+        """Return the ACTIVE season for *server_id*, or None.
+
+        ACTIVE is every stage from the first confirmation of placements to the season's
+        completion or cancellation: the three ongoing stages and Pending completion. This was
+        ``get_active_season``, renamed once the specification came to call a season *active*
+        from the moment it is set up (issue #220). Read ``Season.stage`` where the stage
+        within ACTIVE matters.
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "

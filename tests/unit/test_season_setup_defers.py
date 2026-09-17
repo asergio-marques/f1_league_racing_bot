@@ -84,7 +84,7 @@ def _bot() -> MagicMock:
     # guards, which is how these tests once reached the command body without one; the tier
     # guards refuse it instead, there being no channel to check and no role to hold.
     bot.config_service.get_server_config = AsyncMock(return_value=_config())
-    bot.season_service.get_active_season = AsyncMock(return_value=None)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     bot.season_service.get_setup_season = AsyncMock(return_value=None)
     bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))
     bot.season_service.get_divisions = AsyncMock(return_value=[])
