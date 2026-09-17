@@ -967,7 +967,7 @@ Available while the season is ongoing (including while a mid-season signup windo
 
 Removes a driver whose placement is confirmed from **one** division, while they keep every other seat they hold. That division's role is revoked, and the team role only where no other seat of theirs maps to it; the division's lineup is posted again. Their points in that division stay where they were scored.
 
-Refused for a driver's **only** seat — sack them with `/driver sack` or move them with `/driver move` — and for a placement not yet confirmed, which `/driver unassign` removes.
+Refused for a driver's **only** confirmed seat — a seat not yet confirmed in another division does not count — sack them with `/driver sack` or move them with `/driver move` — and for a placement not yet confirmed, which `/driver unassign` removes.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

@@ -60,6 +60,17 @@ async def test_a_drivers_only_seat_is_not_released(db_path):
     assert await _where(db_path) == [(PRO, "Alpha")]
 
 
+async def test_an_unconfirmed_seat_elsewhere_does_not_make_a_confirmed_one_releasable(db_path):
+    """Releasing it would leave the driver out of the championship; that is a move."""
+    await _seat(db_path, PRO, "Alpha")
+    await _seat(db_path, AM, "Bravo", committed=0)
+
+    with pytest.raises(ValueError, match="only seat"):
+        await _release(_service(db_path), PRO)
+
+    assert sorted(await _where(db_path)) == [(PRO, "Alpha"), (AM, "Bravo")]
+
+
 async def test_an_uncommitted_placement_is_not_released(db_path):
     await _seat(db_path, PRO, "Alpha")
     await _seat(db_path, AM, "Bravo", committed=0)

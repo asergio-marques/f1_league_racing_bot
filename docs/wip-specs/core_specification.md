@@ -444,7 +444,7 @@ it only to place it; the rules governing it belong to its own specification.
     - A driver moved to another division shall leave the points they scored in the division they left.
 - A command shall release a committed driver from one division, while they keep every other seat they hold.
     - The season shall stand in one of the three ongoing states.
-    - The command shall be refused for a driver's only seat. Sacking or moving the driver applies there.
+    - The command shall be refused for a driver's only committed seat, a placement not yet committed elsewhere not counting as one. Sacking or moving the driver applies there.
     - The division's role shall be revoked. The team's role shall be revoked only where the driver holds no other seat, across all divisions, mapping to that role. The division's lineup shall be posted again.
 - A command shall reject a driver who is Unassigned.
     - The season shall stand in Placements or in Ongoing, placements.

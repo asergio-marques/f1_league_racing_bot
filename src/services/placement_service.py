@@ -1253,9 +1253,12 @@ class PlacementService:
                 raise ValueError(
                     "That placement is not yet confirmed. Remove it with `/driver unassign`."
                 )
+            # Only a confirmed seat counts: a driver left holding nothing but an unconfirmed
+            # placement has been taken out of the championship, which moving them does instead.
             cursor = await db.execute(
                 "SELECT COUNT(*) AS n FROM driver_season_assignments "
-                "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ?",
+                "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ? "
+                "AND committed = 1",
                 (driver_profile_id, season_id, division_id),
             )
             if (await cursor.fetchone())["n"] == 0:
