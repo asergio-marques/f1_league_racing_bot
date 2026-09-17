@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from models.season import SeasonStage
+from models.season import ONGOING_STAGES, SeasonStage
 from utils.channel_guard import league_admin_only, league_manager_only
 from services.season_service import SeasonImmutableError
 
@@ -290,6 +290,105 @@ class DriverCog(commands.Cog):
         log.info(
             "unassign: server=%s user=%s from division=%s by %s",
             server_id, user.id, division, actor_name,
+        )
+
+    # ------------------------------------------------------------------
+    # /driver move
+    # ------------------------------------------------------------------
+
+    @driver.command(
+        name="move",
+        description="Move a confirmed driver to another team, in the same division or another.",
+    )
+    @app_commands.describe(
+        user="The Discord member to move.",
+        from_division="Division tier number or name the driver is moved from.",
+        team="Exact team name the driver is moved into.",
+        to_division="Division tier number or name moved into. Omit for the same division.",
+    )
+    @league_manager_only
+    async def move(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        from_division: str,
+        team: str,
+        to_division: str | None = None,
+    ) -> None:
+        """Move a committed driver in one step (issue #220).
+
+        Full-time to Reserve, team to team, or a promotion or relegation between divisions,
+        with the roles swapped and each lineup touched posted once. Available in the three
+        ongoing stages; before placements are confirmed a seat is changed by unassigning and
+        assigning again.
+        """
+        await interaction.response.defer(ephemeral=True)
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        if season is None or season.stage not in ONGOING_STAGES:
+            await interaction.followup.send(
+                "⛔ `/driver move` is available only while the season is ongoing.",
+                ephemeral=True,
+            )
+            return
+
+        resolved_from = await self.bot.placement_service.resolve_division(  # type: ignore[attr-defined]
+            season.id, from_division
+        )
+        if resolved_from is None:
+            await interaction.followup.send(
+                f"⛔ Division **{from_division}** not found in the active season.", ephemeral=True
+            )
+            return
+        resolved_to = resolved_from
+        if to_division is not None:
+            resolved_to = await self.bot.placement_service.resolve_division(  # type: ignore[attr-defined]
+                season.id, to_division
+            )
+            if resolved_to is None:
+                await interaction.followup.send(
+                    f"⛔ Division **{to_division}** not found in the active season.",
+                    ephemeral=True,
+                )
+                return
+
+        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        if profile is None:
+            await interaction.followup.send(
+                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
+            )
+            return
+
+        try:
+            result = await self.bot.placement_service.move_driver(  # type: ignore[attr-defined]
+                server_id=server_id,
+                driver_profile_id=profile.id,
+                season_id=season.id,
+                from_division_id=resolved_from[0],
+                to_division_id=resolved_to[0],
+                team_name=team,
+                acting_user_id=interaction.user.id,
+                acting_user_name=str(interaction.user),
+                guild=interaction.guild,
+                discord_user_id=str(user.id),
+            )
+        except ValueError as exc:
+            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            f"✅ Moved **{user.display_name}** from **{result['from_team']}** in "
+            f"**{result['from_division']}** to **{result['to_team']}** in "
+            f"**{result['to_division']}**.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver move | Success\n"
+            f"  user: {user.display_name} (<@{user.id}>)\n"
+            f"  from: {result['from_team']}, {result['from_division']}\n"
+            f"  to: {result['to_team']}, {result['to_division']}",
         )
 
     # ------------------------------------------------------------------

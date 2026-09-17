@@ -926,6 +926,20 @@ Removes a driver's placement from one division. If this was their only assignmen
 | `user` | Member | ✅ | The driver to unassign |
 | `division` | String | ✅ | Division tier number or name |
 
+#### `/driver move` — Move a confirmed driver to another seat
+*Access: League manager · Ongoing only*
+
+Moves a driver whose placement is confirmed from their seat in one division to a team of the same division or another — full-time to Reserve, one team to another, or a promotion or relegation — as **one change**. The seat left is freed and the seat taken filled together; the roles of the seat left are revoked where no other seat of the driver maps to them, the roles of the new seat are granted, and the lineup of each division touched is posted once. A driver moved to another division leaves the points they scored in the division they left.
+
+Available while the season is ongoing (including while a mid-season signup window is open or its drivers are being placed). Refused where the placement is not yet confirmed — change that with `/driver unassign` and `/driver assign` — where the driver already holds a seat in the other division, where they already sit in that team, and where the team has no seat free.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user` | Member | ✅ | The driver to move |
+| `from_division` | String | ✅ | Division tier number or name the driver is moved from |
+| `team` | String | ✅ | Exact team name the driver is moved into |
+| `to_division` | String | — | Division tier number or name moved into; omit to stay in the same division |
+
 #### `/driver sack` — Sack a driver
 *Access: League admin*
 

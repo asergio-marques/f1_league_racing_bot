@@ -814,6 +814,232 @@ class PlacementService:
     # Assign driver (T010)
     # ------------------------------------------------------------------
 
+    async def _free_seat(self, db, division_id: int, team_name: str) -> tuple[int, bool]:
+        """The first free seat of *team_name* in *division_id*, and whether it is Reserve.
+
+        A race team's seats are finite and fill in number order; the reserve team makes
+        another seat rather than refusing. Raises ValueError for a team the division does
+        not hold, or a race team with no seat free. Shared by placing a driver and moving
+        one, so the two cannot disagree about where a driver may sit.
+        """
+        cursor = await db.execute(
+            """
+            SELECT ti.is_reserve FROM team_instances ti
+            WHERE ti.division_id = ? AND ti.name = ?
+            """,
+            (division_id, team_name),
+        )
+        ti_row = await cursor.fetchone()
+        if ti_row is None:
+            raise ValueError(f"Team **{team_name}** not found in this division.")
+        is_reserve = bool(ti_row["is_reserve"])
+
+        cursor = await db.execute(
+            """
+            SELECT ts.id FROM team_seats ts
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            WHERE ti.division_id = ? AND ti.name = ? AND ts.driver_profile_id IS NULL
+            ORDER BY ts.seat_number ASC
+            LIMIT 1
+            """,
+            (division_id, team_name),
+        )
+        seat_row = await cursor.fetchone()
+        if seat_row is not None:
+            return seat_row["id"], is_reserve
+        if not is_reserve:
+            raise ValueError(f"**{team_name}** in this division has no available seats.")
+
+        # Reserve has unlimited seats; create a new one
+        cursor = await db.execute(
+            "SELECT MAX(ts.seat_number) FROM team_seats ts "
+            "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+            "WHERE ti.division_id = ? AND ti.name = ?",
+            (division_id, team_name),
+        )
+        max_row = await cursor.fetchone()
+        next_seat = (max_row[0] or 0) + 1
+        cursor = await db.execute(
+            "SELECT id FROM team_instances WHERE division_id = ? AND name = ?",
+            (division_id, team_name),
+        )
+        ti_id = (await cursor.fetchone())["id"]
+        cursor = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (?, ?, NULL)",
+            (ti_id, next_seat),
+        )
+        return cursor.lastrowid, is_reserve
+
+    async def move_driver(
+        self,
+        server_id: int,
+        driver_profile_id: int,
+        season_id: int,
+        from_division_id: int,
+        to_division_id: int,
+        team_name: str,
+        acting_user_id: int,
+        acting_user_name: str,
+        guild: discord.Guild | None,
+        discord_user_id: str,
+    ) -> dict:
+        """Move a committed driver from their seat in one division to a team of the same or another.
+
+        One change (issue #220): the old seat freed and the new one taken in a single
+        transaction, the roles of the seat left revoked where no other seat of the driver maps
+        to them, the roles of the seat taken granted, and the lineup of each division touched
+        posted once. A driver moved to another division leaves the points they scored in the
+        division they left, those being counted per division.
+
+        Refused where the driver holds no committed placement in the division left, where
+        they already hold a seat in a different division moved into, where the team is the
+        one they already sit in, and where the team has no seat free.
+
+        Returns a summary dict: from_division, to_division, from_team, to_team.
+        """
+        await self._guard_image_capacity(server_id, to_division_id, season_id, team_name)
+
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ? AND server_id = ?",
+                (driver_profile_id, server_id),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                raise ValueError("Driver profile not found.")
+            is_test_driver = bool(row["is_test_driver"])
+
+            cursor = await db.execute(
+                """
+                SELECT dsa.id, dsa.team_seat_id, dsa.committed, ti.name AS team_name
+                FROM driver_season_assignments dsa
+                LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
+                WHERE dsa.driver_profile_id = ? AND dsa.season_id = ? AND dsa.division_id = ?
+                """,
+                (driver_profile_id, season_id, from_division_id),
+            )
+            source = await cursor.fetchone()
+            if source is None:
+                raise ValueError("Driver holds no seat in the division they are moved from.")
+            if not source["committed"]:
+                raise ValueError(
+                    "That placement is not yet confirmed. Change it with `/driver unassign` "
+                    "and `/driver assign`."
+                )
+            if from_division_id == to_division_id and source["team_name"] == team_name:
+                raise ValueError(f"Driver already sits in **{team_name}** in this division.")
+            if from_division_id != to_division_id:
+                cursor = await db.execute(
+                    "SELECT 1 FROM driver_season_assignments "
+                    "WHERE driver_profile_id = ? AND season_id = ? AND division_id = ?",
+                    (driver_profile_id, season_id, to_division_id),
+                )
+                if await cursor.fetchone() is not None:
+                    raise ValueError(
+                        "Driver already holds a seat in the division they would move into."
+                    )
+
+            new_seat_id, _ = await self._free_seat(db, to_division_id, team_name)
+
+            cursor = await db.execute(
+                "SELECT id, name, mention_role_id FROM divisions WHERE id IN (?, ?)",
+                (from_division_id, to_division_id),
+            )
+            divisions = {r["id"]: r for r in await cursor.fetchall()}
+
+            await db.execute(
+                "UPDATE team_seats SET driver_profile_id = NULL WHERE id = ?",
+                (source["team_seat_id"],),
+            )
+            await db.execute(
+                "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
+                (driver_profile_id, new_seat_id),
+            )
+            if from_division_id == to_division_id:
+                await db.execute(
+                    "UPDATE driver_season_assignments SET team_seat_id = ? WHERE id = ?",
+                    (new_seat_id, source["id"]),
+                )
+            else:
+                # A placement in the division left goes with the seat; the points already
+                # scored there stay in that division's results, which is where they count.
+                await db.execute(
+                    "UPDATE driver_season_assignments "
+                    "SET division_id = ?, team_seat_id = ?, current_position = 0, "
+                    "    current_points = 0, points_gap_to_first = 0 "
+                    "WHERE id = ?",
+                    (to_division_id, new_seat_id, source["id"]),
+                )
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, ?, 'DRIVER_MOVE', ?, ?, ?)",
+                (
+                    server_id, acting_user_id, acting_user_name, to_division_id,
+                    json.dumps({"division": divisions[from_division_id]["name"],
+                                "team": source["team_name"]}),
+                    json.dumps({"division": divisions[to_division_id]["name"],
+                                "team": team_name}),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            await db.commit()
+
+            # Which team roles the driver still holds a seat for, now the move is written.
+            cursor = await db.execute(
+                """
+                SELECT DISTINCT ti.name FROM driver_season_assignments dsa
+                JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                JOIN team_instances ti ON ti.id = ts.team_instance_id
+                WHERE dsa.driver_profile_id = ? AND dsa.season_id = ?
+                """,
+                (driver_profile_id, season_id),
+            )
+            teams_held = {r["name"] for r in await cursor.fetchall()}
+
+        if guild is not None and not is_test_driver:
+            member = guild.get_member(int(discord_user_id))
+            if member is None:
+                try:
+                    member = await guild.fetch_member(int(discord_user_id))
+                except discord.HTTPException:
+                    member = None
+            if member is not None:
+                old_cfg = (
+                    await self.get_team_role_config(server_id, source["team_name"])
+                    if source["team_name"] else None
+                )
+                new_cfg = await self.get_team_role_config(server_id, team_name)
+                held_role_ids = set()
+                for held in teams_held:
+                    cfg = await self.get_team_role_config(server_id, held)
+                    if cfg is not None:
+                        held_role_ids.add(cfg.role_id)
+                revoke: list[int] = []
+                if from_division_id != to_division_id:
+                    revoke.append(divisions[from_division_id]["mention_role_id"])
+                if old_cfg is not None and old_cfg.role_id not in held_role_ids:
+                    revoke.append(old_cfg.role_id)
+                if revoke:
+                    await self._revoke_roles(member, *revoke)
+                grant = [divisions[to_division_id]["mention_role_id"]]
+                if new_cfg is not None:
+                    grant.append(new_cfg.role_id)
+                await self._grant_roles(member, *grant)
+
+        if guild is not None:
+            for division_id in dict.fromkeys((from_division_id, to_division_id)):
+                await self._refresh_lineup_post(guild, division_id)
+
+        return {
+            "from_division": divisions[from_division_id]["name"],
+            "to_division": divisions[to_division_id]["name"],
+            "from_team": source["team_name"],
+            "to_team": team_name,
+        }
+
     async def assign_driver(
         self,
         server_id: int,
@@ -905,73 +1131,7 @@ class PlacementService:
                 )
 
             # 3. Find a free seat in this team/division (Reserve = always free)
-            cursor = await db.execute(
-                """
-                SELECT ti.is_reserve FROM team_instances ti
-                WHERE ti.division_id = ? AND ti.name = ?
-                """,
-                (division_id, team_name),
-            )
-            ti_row = await cursor.fetchone()
-            if ti_row is None:
-                raise ValueError(f"Team **{team_name}** not found in this division.")
-            is_reserve = bool(ti_row["is_reserve"])
-
-            seat_id: int | None = None
-            if not is_reserve:
-                cursor = await db.execute(
-                    """
-                    SELECT ts.id FROM team_seats ts
-                    JOIN team_instances ti ON ti.id = ts.team_instance_id
-                    WHERE ti.division_id = ? AND ti.name = ? AND ts.driver_profile_id IS NULL
-                    ORDER BY ts.seat_number ASC
-                    LIMIT 1
-                    """,
-                    (division_id, team_name),
-                )
-                seat_row = await cursor.fetchone()
-                if seat_row is None:
-                    raise ValueError(
-                        f"**{team_name}** in this division has no available seats."
-                    )
-                seat_id = seat_row["id"]
-            else:
-                # For Reserve, pick the first seat (unlimited; driver_profile_id may be set)
-                cursor = await db.execute(
-                    """
-                    SELECT ts.id FROM team_seats ts
-                    JOIN team_instances ti ON ti.id = ts.team_instance_id
-                    WHERE ti.division_id = ? AND ti.name = ? AND ts.driver_profile_id IS NULL
-                    ORDER BY ts.seat_number ASC
-                    LIMIT 1
-                    """,
-                    (division_id, team_name),
-                )
-                seat_row = await cursor.fetchone()
-                if seat_row is None:
-                    # Reserve has unlimited seats; create a new one
-                    cursor2 = await db.execute(
-                        "SELECT MAX(ts.seat_number) FROM team_seats ts "
-                        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
-                        "WHERE ti.division_id = ? AND ti.name = ?",
-                        (division_id, team_name),
-                    )
-                    max_row = await cursor2.fetchone()
-                    next_seat = (max_row[0] or 0) + 1
-                    cursor3 = await db.execute(
-                        "SELECT id FROM team_instances WHERE division_id = ? AND name = ?",
-                        (division_id, team_name),
-                    )
-                    ti_id_row = await cursor3.fetchone()
-                    ti_id = ti_id_row["id"]
-                    cursor4 = await db.execute(
-                        "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
-                        "VALUES (?, ?, NULL)",
-                        (ti_id, next_seat),
-                    )
-                    seat_id = cursor4.lastrowid
-                else:
-                    seat_id = seat_row["id"]
+            seat_id, is_reserve = await self._free_seat(db, division_id, team_name)
 
             # 4. Fetch division name and role
             cursor = await db.execute(
