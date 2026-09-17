@@ -893,13 +893,6 @@ async def approve_amendment(
 
     server_id = int(srv_row["server_id"]) if srv_row else None
 
-    if server_id:
-        await bot.output_router.post_log(
-            server_id,
-            f"<@{approved_by}> | AMENDMENT_APPROVED | Success\n"
-            f"  season_id: {season_id}"
-        )
-
     # Cascade-recompute all divisions
     from services import results_post_service
     async with get_connection(db_path) as db:
@@ -978,3 +971,15 @@ async def approve_amendment(
                         "approve_amendment: recalculate_attendance_for_round failed for division %s",
                         division_id,
                     )
+
+    # Logged last, after the cascade it reports (#187). This used to be posted the moment
+    # the points were committed and before a single message had been attempted, so the log
+    # recorded `AMENDMENT_APPROVED | Success` for an approval whose reposting had not
+    # started and might not survive. The season's approval logs its own success at the end
+    # for the same reason (`season_end_service.execute_season_end`).
+    if server_id:
+        await bot.output_router.post_log(
+            server_id,
+            f"<@{approved_by}> | AMENDMENT_APPROVED | Success\n"
+            f"  season_id: {season_id}"
+        )

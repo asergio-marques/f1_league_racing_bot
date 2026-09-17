@@ -1240,6 +1240,54 @@ async def test_a_division_with_no_channels_does_not_refuse_the_amendment(db_path
 
 
 @pytest.mark.asyncio
+async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
+    """The log records the approval once the reposting it claims has been done (#187).
+
+    It used to be posted the moment the points were committed, before a single message had
+    been attempted — so ``AMENDMENT_APPROVED | Success`` stood in the log whatever became
+    of the cascade, and a manager reading it had no reason to check the channels.
+    """
+    from unittest.mock import AsyncMock
+
+    from services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await _staged_amendment(path, season_id)
+
+    order: list[str] = []
+    reposted: list[tuple] = []
+    bot = _bot_recording_reposts(reposted)
+    guild = bot.get_guild.return_value
+    working = guild.get_channel
+
+    def get_channel(channel_id):
+        channel = working(channel_id)
+        sent = channel.send
+
+        async def recording_send(content=None, **kwargs):
+            order.append("repost")
+            return await sent(content, **kwargs)
+
+        channel.send = recording_send
+        return channel
+
+    guild.get_channel = get_channel
+
+    async def recording_log(_server_id, content):
+        order.append("log" if "AMENDMENT_APPROVED" in str(content) else "other-log")
+
+    bot.output_router.post_log = AsyncMock(side_effect=recording_log)
+
+    await approve_amendment(path, season_id, 99, bot)
+
+    assert "repost" in order, "nothing was reposted, so the ordering proves nothing"
+    assert order.index("log") > order.index("repost"), order
+    assert order[-1] == "log", f"the approval was not the last thing logged: {order}"
+
+
+@pytest.mark.asyncio
 async def test_the_ordering_refusal_still_comes_first(db_path):
     """A table out of order is refused as such, not as an undeliverable one — the two
     refusals name different repairs and must not be confused."""
