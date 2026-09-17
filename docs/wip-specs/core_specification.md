@@ -76,7 +76,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A disabled module shall produce nothing. While a module is disabled the bot shall neither compute, record nor post any of that module's output, whatever the path arrives at it — a scheduled job, a restart, or a command that amends work arranged while the module was still enabled.
     - Nothing done while a module was disabled shall be recorded as that module's work, so that enabling the module later does not find its work already done.
 - Disabling a module shall stop that module's work and no other's. Scheduled work belonging to a module that remains enabled shall continue for every round still to come, and shall be cancelled only by its own module being disabled, by the round or season it belongs to ending, or by a reset. Where a module's specification states that another module depends upon it, disabling it shall disable the dependent module too, and that cascade shall be reported.
-- Which modules are enabled shall be displayed in the season review.
+- Which modules are enabled shall be displayed in the configuration review and the placements review.
 - Seasons, divisions, rounds, tracks, teams and drivers are foundational and shall not be disabled.
 - Stewarding, statistics and help are recorded as intended modules and are not built.
 
@@ -96,12 +96,37 @@ it only to place it; the rules governing it belong to its own specification.
 ## Seasons
 
 ### The life of a season
-- A season shall stand in one of four states: setup while it is being built, active while it is being raced, completed once it has been ended, and cancelled where it was abandoned.
-- A server shall hold at most one season in setup or active at any moment. A new season cannot be built until the standing one is completed or cancelled; completed and cancelled seasons never stand in the way.
-- A season shall carry a number, assigned by the bot as one higher than the count of seasons that have left setup. That number shall be the one displayed in all bot output.
-- A season shall carry the edition of the game it is raced on.
+- A season shall stand in one of ten states:
+    - **Configuration**, while the league settles what the season is to be;
+    - **Waiting**, while the season waits for its signup window to open;
+    - **Signups**, while that window is open;
+    - **Placements**, while the season is built and its drivers are placed;
+    - **Ongoing**, while it is being raced;
+    - **Ongoing, signups open**, while it is being raced and a signup window is open;
+    - **Ongoing, placements**, while it is being raced and the drivers of that window are placed;
+    - **Pending completion**, once every one of its divisions is finished or cancelled;
+    - **Completed**, once it has been completed;
+    - **Cancelled**, where it was abandoned.
+- The permitted transitions shall be:
+    - Configuration to Waiting, upon the configuration being confirmed. Where the signup module is disabled, or the season is configured in test mode, to Placements instead.
+    - Waiting to Signups, upon the signup window being opened.
+    - Signups to Placements, upon the signup window being closed.
+    - Placements to Ongoing, upon placements being confirmed.
+    - Ongoing to Ongoing, signups open, upon a signup window being opened.
+    - Ongoing, signups open to Ongoing, placements, upon the window being closed while any signup remains unsettled; to Ongoing where none does.
+    - Ongoing, placements to Ongoing, upon placements being confirmed.
+    - Ongoing to Pending completion, as set out below.
+    - Pending completion to Completed, upon the season being completed.
+    - Ongoing, Ongoing, signups open and Ongoing, placements to Cancelled, upon the season being cancelled.
+    - Configuration, Waiting, Signups and Placements to nothing at all, upon the season being aborted.
+- A signup is **unsettled** while its driver is Unassigned, Pending Admin Approval, Awaiting Correction Parameter or Pending Driver Correction.
+- Ongoing, Ongoing, signups open and Ongoing, placements are **the three ongoing states**.
+- A season is **active** from the moment it is set up until its completion or cancellation has finished, or until it is aborted. A server shall hold at most one active season. A new season cannot be set up until the standing one is completed, cancelled or aborted; completed and cancelled seasons never stand in the way.
+- A season configured in test mode shall never enter Ongoing, signups open.
+- A season shall carry a number, assigned by the bot as one higher than the count of seasons whose placements have been confirmed. The number is provisional until the season's placements are first confirmed, and an aborted season takes none. That number shall be the one displayed in all bot output.
+- A season shall carry the edition of the game it is raced on, named when the season is set up.
 - A completed or cancelled season shall be immutable. Every command that would change one shall be refused.
-- No season shall end of its own accord. A league admin shall complete it, completing a season being among the acts nothing puts back.
+- No season shall be completed of its own accord. A league admin shall complete it, completing a season being among the acts nothing puts back.
 - A round shall stand in one of six states, each of the middle four naming what the round is waiting on:
     - **not run**, before its moment has arrived;
     - **awaiting results**, once its moment has passed and its results have not been entered;
@@ -110,82 +135,143 @@ it only to place it; the rules governing it belong to its own specification.
     - **final**, once the appeal verdicts are posted and the results stand;
     - **cancelled**, where the round was called off.
 - Final and cancelled are the ends of a round's life. A round is finished when it reaches either.
-- A division is finished when every one of its rounds is finished. A season may be completed when every one of its divisions is finished or cancelled.
+- A division is finished when every one of its rounds is finished.
 - A round of a league that does not run the results module shall become final when its moment passes, there being no results to await.
-- A round waiting on results, on report verdicts or on appeal verdicts shall become final if the results module is disabled while its season runs. Those three states wait upon that module alone, and a round left in one of them once the module is gone would never be finished, would hold its division open, and would leave its season unable to be completed. What else that disabling destroys is the results module's own to state.
+- A round waiting on results, on report verdicts or on appeal verdicts shall become final if the results module is disabled while its season is in one of the three ongoing states. Those three states wait upon that module alone, and a round left in one of them once the module is gone would never be finished, would hold its division open, and would leave its season unable to be completed. What else that disabling destroys is the results module's own to state.
+
+### Configuring a season
+- A season shall be begun by a setup command naming the edition of the game, and shall begin in Configuration.
+- In Configuration the league shall settle the team list and the team roles, which modules are enabled and their settings, and whether the season runs in test mode. No division, round or placement shall exist in Configuration.
+- The signup module shall be enabled, disabled and configured only while its season is in Configuration, or while the server holds no active season.
+- Every other module may be enabled, and its settings changed, until the season's placements are first confirmed, or while the server holds no active season.
+- The configuration shall be confirmed through a configuration review, run by the configuration review command.
+    - The review shall report the season, the modules enabled upon it and the configuration of each, and every fault that would prevent the configuration being confirmed.
+    - The review shall end with a button confirming the configuration, which shall be withheld while any fault stands. The button shall be governed as the button confirming placements is: who may press it, how long it stands, the evidence it is confirmed upon, and what becomes of a review that expires or is refused.
+- Confirming the configuration shall require:
+    - where the signup module is enabled, its signup channel, its base role and its signed-up role each to be set, every one missing being named;
+    - every team name to be usable as the filename of that team's artwork, whether or not the image module is enabled.
+- Confirming the configuration shall fix, for the rest of the season, the team list, the game edition, test mode, and whether the signup module is enabled and how it is configured.
+
+### Waiting and signups
+- A season in Waiting shall wait for the signup window to be opened, and shall move to Signups when it is.
+- A season in Signups shall move to Placements when the window closes, by command or at its close time. What the close does to the drivers still signing up is the signup module's own to state.
 
 ### Building a season
-- A season shall be begun by a setup command naming the edition of the game.
-- While a season is in setup, its divisions and rounds may be added, amended and deleted freely, and the teams of its divisions may be changed.
-- Once a season is active, nothing shall be added and nothing deleted. Rounds and divisions may only be amended and cancelled.
+- Divisions shall be created, amended and deleted, rounds added, amended and deleted, and the channels of each division configured, only while the season is in Placements.
+- Drivers shall be placed and removed while the season is in Placements, as set out under Drivers below. No role shall be granted for a placement until placements are confirmed.
+- Once placements are first confirmed, nothing shall be added to a season and nothing deleted from it. Rounds and divisions may only be amended and cancelled.
 
-### Reviewing a season
-- The season review shall be run by any holder of the interaction role. Reading what a season is configured to be is not an administrative act.
-- The review shall post its report publicly, as one message per subsection and not as one message carrying them all. The subsections are, in this order: the season and the modules enabled upon it; the signup configuration; the attendance configuration; the points configurations; the weather configuration; and the image outputs. The blocks describing each division follow them.
+### Reviewing placements
+- The placements review shall be run by any holder of the interaction role. Reading what a season is configured to be is not an administrative act.
+- Run while the season is in Placements, the review shall post its report publicly, as one message per subsection and not as one message carrying them all. The subsections are, in this order: the season and the modules enabled upon it; the signup configuration; the attendance configuration; the points configurations; the weather configuration; and the image outputs. The blocks describing each division follow them.
+- Run while the season is in Ongoing, placements, the review shall report the lineups alone: every division's lineup as it will stand once placements are confirmed, and every signup still unsettled.
 - A subsection holding nothing shall not be posted.
 - Each subsection shall further be divided across as many messages as its own length requires.
 - The validations that belong to the season rather than to a module shall be posted with the first subsection, whatever modules are enabled.
 - Each division's block shall state its role and every channel configured for it, and shall show its calendar and its lineup as the league will actually receive them.
 - A division's calendar shall carry the faults of its own dates, whichever form the calendar takes. A calendar drawn as a graphic is drawn from the very rounds that are wrong and cannot show which of them have gone by, so the finding shall be posted beside it.
 - Those faults shall be reduced to the latest round of each kind: the last round whose moment has passed, and the last round holding an elapsed window where that is a later round than the first. A round whose moment has passed shall not also be named for the windows it missed, every one of which has elapsed too. Every earlier round is implied by the round named, a calendar moved past it having been moved past them all.
-- The report shall state how many drivers are not yet placed in a division.
-- The report shall end with the question approving the season.
+- The report shall name every signup still unsettled.
+- The report shall end with the question confirming placements.
+- The placements review command shall be refused in any state but Placements and Ongoing, placements. The configuration review command shall be refused in any state but Configuration.
 
-### Approving a season
-- No command shall approve a season. A season shall be approved by the button the season review posts, and by no other means.
-- The button shall be carried by a message of its own, asking whether the season configuration is accepted and naming both the member who ran the review and who may answer it.
-- That message shall be posted publicly, and not to the reviewer alone. A reviewer who may not approve is thereby able to put the question to a member who may.
-- The button shall be pressed only by the member who ran the review, or by a league admin. A press by any other member shall be refused, shall say who may approve, and shall approve nothing; the refusal is seen by the presser alone.
+### Confirming placements
+- No command shall confirm placements. Placements shall be confirmed by the button the placements review posts, and by no other means.
+- The button shall be carried by a message of its own, asking whether the placements are accepted and naming both the member who ran the review and who may answer it.
+- That message shall be posted publicly, and not to the reviewer alone. A reviewer who may not confirm is thereby able to put the question to a member who may.
+- The button shall be pressed only by the member who ran the review, or by a league admin. A press by any other member shall be refused, shall say who may confirm, and shall confirm nothing; the refusal is seen by the presser alone.
 - Who is pressing shall be the first thing the button settles, before the state of the season is read.
 - The button shall carry no other action. The season is amended by the commands that amend it and reviewed again.
 - The button shall stand for five minutes from the posting of the review that carries it. Upon their passing its message shall be deleted, and a notice posted in its place naming the reviewer, saying that the review has expired and that it must be run again.
 - A review standing when the bot stops shall be treated as expired when the bot next starts.
-- A season approved shall have the review it was approved from deleted, the question and every message of the report alike. A review expired shall have its report deleted on the same terms.
-- The button shall be withheld altogether where the review found something that would prevent the season being raced as configured.
+- Placements confirmed shall have the review they were confirmed from deleted, the question and every message of the report alike. A review expired shall have its report deleted on the same terms.
+- The button shall be withheld altogether where the review found something that would prevent the placements being confirmed.
 
-#### The evidence a season is approved upon
-- The season review shall record the state of the season at the moment its report is posted, over the whole of what that report describes: the season, its divisions, its rounds, its teams and seats, its seated drivers, its channels, the modules enabled upon it, its points configurations, the configuration of each module, and the template and artwork files its graphics are drawn from.
-- The button shall refuse where that state has changed since the report was posted, shall name the parts of it that changed, and shall approve nothing. The report read is the report approved.
-- The state shall be compared before the season is validated and before anything is drawn, and after the member pressing has been found entitled to approve.
+#### The evidence placements are confirmed upon
+- The review shall record the state of the season at the moment its report is posted, over the whole of what that report describes: the season, its divisions, its rounds, its teams and seats, its seated drivers, its unsettled signups, its channels, the modules enabled upon it, its points configurations, the configuration of each module, and the template and artwork files its graphics are drawn from.
+- The button shall refuse where that state has changed since the report was posted, shall name the parts of it that changed, and shall confirm nothing. The report read is the report confirmed.
+- The state shall be compared before the season is validated and before anything is drawn, and after the member pressing has been found entitled to confirm.
 - A review refused upon a changed state shall end as an expired one does.
-- The approval shall not draw the graphics of the season. The review draws them, and withholds its own button where one will not draw.
+- The confirmation shall not draw the graphics of the season. The review draws them, and withholds its own button where one will not draw.
 
-#### What approval requires
-- The tiers of a season's divisions shall form a sequence from 1 with no gaps.
-- Every division shall hold at least one round.
-- No two rounds of one division shall be scheduled at the same moment.
-- No round shall have a moment that has already passed, and this shall hold whatever the modules enabled. A round's result submission is armed against its own moment and is the round's one passage from awaiting its moment to awaiting its results; armed in the past it is discarded rather than run, and no command opens a submission afterwards, so the round could never take results at all and could never leave the state of not having run. The rule is the one that governs moving a round, stated at the other door so that the two cannot disagree.
-- No round shall be inside a window that one of the enabled modules configures before the round. A module disabled contributes no window; the round's own moment above is judged regardless.
-- A cancelled round shall be exempt from both, having no scheduled work left to lose. Refusing a season on account of one would leave a league unable to approve until they deleted a record they may want to keep.
-- Every team name shall be usable as the filename of that team's artwork, whether or not the image module is enabled.
-- Each enabled module shall impose its own requirements, stated in its own specification.
-- A season failing any requirement shall be refused with nothing committed, and every fault shall be named, save the two date requirements above, whose faults are reduced to the latest round of each kind a division holds.
+#### What confirming placements requires
+- No signup of the season shall be unsettled: every driver who signed up shall be placed or rejected.
+- Where the season is in Placements, additionally:
+    - The tiers of a season's divisions shall form a sequence from 1 with no gaps.
+    - Every division shall hold at least one round.
+    - No two rounds of one division shall be scheduled at the same moment.
+    - No round shall have a moment that has already passed, and this shall hold whatever the modules enabled. A round's result submission is armed against its own moment and is the round's one passage from awaiting its moment to awaiting its results; armed in the past it is discarded rather than run, and no command opens a submission afterwards, so the round could never take results at all and could never leave the state of not having run. The rule is the one that governs moving a round, stated at the other door so that the two cannot disagree.
+    - No round shall be inside a window that one of the enabled modules configures before the round. A module disabled contributes no window; the round's own moment above is judged regardless.
+    - A cancelled round shall be exempt from both, having no scheduled work left to lose. Refusing a season on account of one would leave a league unable to confirm until they deleted a record they may want to keep.
+    - Each enabled module shall impose its own requirements, stated in its own specification.
+- A confirmation failing any requirement shall be refused with nothing committed, and every fault shall be named, save the two date requirements above, whose faults are reduced to the latest round of each kind a division holds.
 
-#### What approval does
-- The sessions of every round shall be created.
-- The season's scheduled work shall be armed before the season's state is changed, so that a failure to arm it leaves the season in setup.
-- The points configurations attached to the season shall be recorded upon it as they stand.
-- Every placed driver shall be granted their division's role and their team's role.
-- Each division's lineup, calendar and opening classification shall be posted. A posting that fails shall be reported and shall not refuse the season.
+#### What confirming placements does
+- Every placement not yet committed shall be committed.
+- Where the season is in Placements:
+    - The sessions of every round shall be created.
+    - The season's scheduled work shall be armed before the season's state is changed, so that a failure to arm it leaves the season in Placements.
+    - The points configurations attached to the season shall be recorded upon it as they stand.
+    - Every placed driver shall be granted their division's role and their team's role.
+    - Each division's lineup, calendar and opening classification shall be posted. A posting that fails shall be reported and shall not refuse the confirmation.
+    - The season shall move to Ongoing and take its number.
+- Where the season is in Ongoing, placements:
+    - Every driver whose placement is committed by it shall be granted their division's role and their team's role.
+    - The lineup of each division holding such a driver shall be posted once.
+    - The season shall move to Ongoing.
 
-### Amending an active season
-- Once a season is active nothing shall be added to it and nothing deleted from it. A round may be amended or cancelled and a division may be cancelled, as set out under Rounds and Divisions below.
+### The ongoing states
+- In Ongoing, a signup window may be opened, moving the season to Ongoing, signups open. A signup window shall be opened from no other ongoing state.
+- In Ongoing, signups open, the championship shall carry on unchanged: rounds, results, penalties, check-ins, attendance sanctions, sacking, the amending and cancelling of rounds, and the disabling of modules.
+- In Ongoing, placements, the championship shall carry on as in Ongoing, signups open. A driver whose placement is not yet committed shall stand outside it until it is: they shall hold no role, shall not appear in any lineup, shall receive no check-in call and accrue no attendance points, and shall not appear in any results or standings. A round run meanwhile shall be run without them.
+- Sacking a driver, and cancelling the season, a division or a round, shall be possible only in the three ongoing states.
+- No module shall be enabled in any of the three ongoing states. A module may be disabled on the terms its own specification states.
+- Nothing shall be added to a season in any of the three ongoing states and nothing deleted from it. A round may be amended or cancelled and a division may be cancelled, as set out under Rounds and Divisions below.
 - A cancellation is irreversible.
 
+### Pending completion
+- A season in Ongoing shall move to Pending completion as soon as every one of its divisions is finished or cancelled. A season in Ongoing, signups open or Ongoing, placements whose divisions are all finished or cancelled shall move to Pending completion upon returning to Ongoing.
+- In Pending completion the results of a round already final may still be amended, and an amendment of the season's points may still be approved. The only other thing that may be done with the season is to complete it.
+
 ### Ending a season
-- Completing a season shall be refused while any division of it is neither finished nor cancelled, and the refusal shall name the rounds still to be finalised.
-- Completing a season shall post each division's final classification, shall record a history entry for every placed driver, shall revoke the division, team and signup roles from them, and shall mark the season completed.
-- Cancelling a season shall require the word `CONFIRM`, shall post a notice to each division still running, shall cancel every piece of scheduled work, and shall revoke the same roles. A season is cancelled where it should never have existed; a season that was raced is completed.
-- Cancelling a season shall cancel every division of it that is not already cancelled, and only then mark the season itself cancelled.
-- Cancelling a season shall record a history entry for every placed driver, as completing one does. A season that was cancelled is league history: it happened, and its drivers raced in it.
+
+#### Completing a season
+- Completing a season shall be a league admin's, and shall be refused in any state but Pending completion.
+- Completing a season shall, in this order:
+    1. post each division's final classification;
+    2. record a history entry for every driver holding a committed placement;
+    3. revoke the division, team and signup roles of the season's drivers;
+    4. run the driver pass;
+    5. close the signup window, where one is open;
+    6. switch test mode off, deleting every driver created by test mode;
+    7. mark the season completed.
+- Once completed, the server shall hold no active season.
+
+#### The driver pass
+- The driver pass shall move every driver who is Unassigned, Assigned, Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter or Pending Driver Correction to Not Signed Up, cancelling any signup still in progress.
+- It shall then delete every driver at Not Signed Up whose former-driver flag is false, with their placements and history entries. Their signups shall remain with the season.
+- A driver whose former-driver flag is true shall be retained.
+- A driver who is Season Banned or League Banned shall be left untouched.
+
+#### Cancelling a season
+- Cancelling a season shall be a league admin's, shall require the word `CONFIRM`, and shall be refused in any state but the three ongoing states. A season is cancelled where it should not go on; a season that was raced to its end is completed.
+- Cancelling a season shall post a notice to each division still running, shall cancel every piece of scheduled work, shall cancel every division of it that is not already cancelled, and shall discard every placement not yet committed.
+- It shall then record a history entry for every driver holding a committed placement, as completing one does, revoke the same roles, run the driver pass, close the signup window where one is open, switch test mode off, and only then mark the season cancelled. A season that was cancelled is league history: it happened, and its drivers raced in it.
 - A cancellation shall never discard a result. Only a round not yet run, or run but with its results not yet entered, may be cancelled — by itself, or by the cancelling of the division or season above it. A round further along shall keep its place and its results.
 
+#### Aborting a season
+- An abort command shall be a league admin's, shall require the word `CONFIRM`, and shall be refused in any state but Configuration, Waiting, Signups and Placements.
+- Aborting a season shall delete the season and every record belonging to it, its signups included. The season shall take no number and shall leave nothing in the archive.
+- Aborting shall revoke the signup roles of the season's drivers, run the driver pass without recording any history, close the signup window where one is open, and switch test mode off, deleting every driver created by test mode.
+- Once aborted, the server shall hold no active season.
+
 ### The archive
-- A completed season and everything belonging to it shall be retained permanently and shall never be changed or deleted: its divisions, its rounds and their amendments, its weather, its results, its standings, its placements, its points configurations and its record of changes.
+- A completed or cancelled season and everything belonging to it shall be retained permanently and shall never be changed or deleted: its divisions, its rounds and their amendments, its weather, its results, its standings, its placements, its points configurations, its signups and the signup configuration and windows they were made under, and its record of changes.
+- A driver deleted by the driver pass shall leave no placement and no history entry in the archive. Their signups shall remain.
 - The archive shall be the source from which season history and statistics are drawn.
-- Each driver placed in a season that has ended shall gain a history entry stating the season's number, the division's name and tier, and the driver's final position, final points and gap to the winner of that division.
+- Each driver holding a committed placement in a season that has ended, and retained by the driver pass, shall keep a history entry stating the season's number, the division's name and tier, and the driver's final position, final points and gap to the winner of that division.
     - The entry shall record whether the driver's division was cancelled. Cancellation reaches a driver only through their division, so a season cancelled outright marks every one of its entries.
-    - A driver created by test mode shall gain a history entry as any other driver does.
+    - A driver created by test mode shall gain a history entry as any other driver does, until test mode deletes them.
 
 ## Divisions
 - A division shall be created during setup, taking a name, a role and a tier.
