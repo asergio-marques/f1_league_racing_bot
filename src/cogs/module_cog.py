@@ -277,6 +277,9 @@ class ModuleCog(commands.Cog):
     ) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
+        if await self._refuse_module_change(interaction, server_id, module_name.value, "enable"):
+            return
+
         if module_name.value == "weather":
             await self._enable_weather(interaction, server_id)
         elif module_name.value == "results":
@@ -304,6 +307,9 @@ class ModuleCog(commands.Cog):
     ) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
+        if await self._refuse_module_change(interaction, server_id, module_name.value, "disable"):
+            return
+
         if module_name.value == "weather":
             await self._disable_weather(interaction, server_id)
         elif module_name.value == "results":
@@ -314,6 +320,60 @@ class ModuleCog(commands.Cog):
             await self._disable_images(interaction, server_id)
         else:
             await self._disable_signup(interaction, server_id)
+
+    async def _refuse_module_change(
+        self,
+        interaction: discord.Interaction,
+        server_id: int,
+        module: str,
+        action: str,
+    ) -> bool:
+        """Refuse enabling or disabling a module where the season's stage forbids it.
+
+        Issue #220, in the order a league meets the rules:
+
+        - the signup module is enabled and disabled only with no active season, or while its
+          season is in Configuration;
+        - no other module is enabled once the season's placements have been confirmed;
+        - no module is disabled while the season is in Pending completion.
+
+        Checked here, before the module's own handler, so every module answers alike. Returns
+        True where the command was refused, having answered the interaction.
+        """
+        from services.season_lifecycle_service import (
+            modules_frozen_for_completion,
+            signup_configuration_fixed,
+        )
+
+        if module == "signup":
+            season_number = await signup_configuration_fixed(self.bot.db_path, server_id)
+            if season_number is not None:
+                await interaction.response.send_message(
+                    f"❌ The signup module is fixed for Season {season_number} now that its "
+                    f"configuration has been confirmed. It can be {action}d again once the "
+                    "season has ended, or while a new season is in configuration.",
+                    ephemeral=True,
+                )
+                return True
+        elif action == "enable":
+            if await self.bot.season_service.get_confirmed_season(server_id) is not None:
+                await interaction.response.send_message(
+                    "❌ A module cannot be enabled once the season's placements have been "
+                    "confirmed. Enable it before then, or once the season has ended.",
+                    ephemeral=True,
+                )
+                return True
+
+        if action == "disable" and await modules_frozen_for_completion(
+            self.bot.db_path, server_id
+        ):
+            await interaction.response.send_message(
+                "❌ No module can be disabled while the season is pending completion. "
+                "Complete it with `/season complete` first.",
+                ephemeral=True,
+            )
+            return True
+        return False
 
     # ── Weather enable (T011) ──────────────────────────────────────────
 
@@ -327,19 +387,9 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        # 2. Validate all active-season divisions have forecast_channel_id
-        season = await self.bot.season_service.get_confirmed_season(server_id)
-        if season:
-            divisions = await self.bot.season_service.get_divisions(season.id)
-            missing = [d.name for d in divisions if not d.forecast_channel_id]
-            if missing:
-                names = ", ".join(f"**{n}**" for n in missing)
-                await interaction.response.send_message(
-                    f"❌ Weather module cannot be enabled — the following divisions are missing "
-                    f"a forecast channel: {names}. Add a forecast channel to each division first.",
-                    ephemeral=True,
-                )
-                return
+        # A season whose placements are confirmed refuses the enable before this handler is
+        # reached (issue #220), so there is never a running season to catch up on: its
+        # forecast channels are checked, and its phases armed, when placements are confirmed.
 
         await interaction.response.defer(ephemeral=True)
 
@@ -365,27 +415,6 @@ class ModuleCog(commands.Cog):
                 ephemeral=True,
             )
             return
-
-        # 4. Run catch-up phases and schedule future jobs
-        if season:
-            try:
-                await self._catchup_and_schedule_weather(server_id, season)
-            except Exception as exc:
-                log.exception("Weather enable catch-up failed for server %s", server_id)
-                # Rollback: cancel any partially-created jobs, reset flag
-                await self.bot.scheduler_service.cancel_all_weather_for_server(server_id)
-                async with get_connection(self.bot.db_path) as db:
-                    await db.execute(
-                        "UPDATE server_configs SET weather_module_enabled = 0 WHERE server_id = ?",
-                        (server_id,),
-                    )
-                    await db.commit()
-                await interaction.followup.send(
-                    f"❌ Weather module enable failed during phase execution: {exc}. "
-                    "Module remains disabled.",
-                    ephemeral=True,
-                )
-                return
 
         # 5. Post log channel confirmation
         await self.bot.output_router.post_log(

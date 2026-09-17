@@ -134,11 +134,11 @@ Five modules, **all off to begin with**. The bot works without any of them, but 
 | Module | The rule |
 |---|---|
 | `attendance` | Turn `results` on first. Attendance is refused without it |
-| `results` and `attendance` | Cannot be turned **on** while a season is active. Decide before you approve |
-| `weather` | Can be turned on mid-season, but every division must already have a forecast channel. It then immediately runs any forecast that is already overdue |
-| `signup` and `images` | Free to switch at any time |
+| `signup` | Switched on or off only with no season, or while the season is in configuration. Confirming the configuration fixes it |
+| `weather`, `results`, `attendance`, `images` | Cannot be turned **on** once a season's placements are confirmed. Decide before then |
+| Any module | Cannot be turned **off** while a season is pending completion |
 
-> **Turning one off is not guarded the way turning it on is.** `results` and `attendance` refuse to be *enabled* mid-season, but both can still be *disabled* mid-season. You are no longer allowed to do it unawares: each asks you to confirm and tells you what it costs. Turning `results` off mid-season is the expensive one — it deletes the season's results entire.
+> **Turning one off is not guarded the way turning it on is.** No module but signup can be *enabled* mid-season, but `results` and `attendance` can still be *disabled* mid-season. You are no longer allowed to do it unawares: each asks you to confirm and tells you what it costs. Turning `results` off mid-season is the expensive one — it deletes the season's results entire.
 
 > **Turning `results` off takes `attendance` with it.** If attendance is on, the bot warns you what the cascade will take and disables nothing until you confirm; the reply that follows names both modules, and the log channel records it as well.
 

@@ -801,10 +801,11 @@ Ordering and timing constraints:
 
 | Module | Constraint |
 |---|---|
-| `results` | Cannot be **enabled** while a season is **active**. It can be disabled at any time, but disabling it while a season is active destroys that season's results — see [`/module disable`](#module-disable--disable-a-bot-module) |
-| `attendance` | Requires `results` to be enabled first, and cannot be enabled while a season is **active** |
-| `weather` | If a season is active, every division must already have a forecast channel. Enabling runs any overdue phases immediately and schedules the rest |
-| `signup`, `images` | No constraint |
+| `signup` | Enabled and disabled only while no season is active, or while the season is still in **configuration**. Confirming the configuration fixes it for the season |
+| `weather`, `results`, `images` | Cannot be **enabled** once a season's placements have been confirmed. Enable them with no season, or at any point before that confirmation |
+| `attendance` | Requires `results` to be enabled first, and cannot be enabled once a season's placements have been confirmed |
+
+**No module can be disabled while a season is pending completion** — once every division has finished, the only thing left is `/season complete`. `results` can still be disabled while a season is ongoing, but doing so destroys that season's results — see [`/module disable`](#module-disable--disable-a-bot-module).
 
 #### `/module disable` — Disable a bot module
 *Access: League admin*
@@ -827,7 +828,7 @@ Historical data is always retained. How much configuration a disable actually cl
 
 > **Disabling `results` while a season is ACTIVE destroys that season's championship.** You are warned and must confirm before anything is written — whether or not attendance is on — and the warning names what goes. Afterwards the season can be completed normally: the rounds that were waiting on results are closed, so their divisions finish. The purge is recorded in the log channel and audited as `RESULTS_SEASON_PURGED`, and each round closed is audited as a `round.status` change of its own. With no season running, disabling clears nothing and asks nothing — it is the cheap command it looks like.
 
-Enabling is guarded where disabling is not: `results` and `attendance` both refuse to be enabled while a season is ACTIVE, and neither refuses to be disabled. Disabling mid-season is **not** safe, whichever you turn off, and it is one-way until the season ends. `attendance` stops every check-in still to come; `results` additionally deletes the season's results outright, as described above. Both ask you to confirm first.
+Enabling is guarded where disabling mostly is not: no module but signup can be enabled once a season's placements are confirmed, while every module but signup can still be disabled until the season is pending completion. Disabling mid-season is **not** safe, whichever you turn off, and it is one-way until the season ends. `attendance` stops every check-in still to come; `results` additionally deletes the season's results outright, as described above. Both ask you to confirm first.
 
 ---
 
@@ -1105,11 +1106,10 @@ No parameters.
 > never changes anyone's answer and the export always marks the times they actually chose. Remove a
 > slot and put it back at the same day and time, and the drivers who chose it are on it again.
 
-> **Slots cannot be edited while anyone is waiting to be placed.** Both `add` and `remove` are
-> refused while signups are open, and also while any driver holds a completed signup you have not
-> yet placed — the drivers `/signup unassigned list` shows you. The refusal says how many are
-> waiting. Removing a slot deletes the answers that named it, and either change renumbers the list
-> you are reading off while you place people by hand, so the block stays up until the queue is clear.
+> **The signup settings are fixed once a season's configuration is confirmed.** `add` and `remove`,
+> and every other signup setting — the channel, both roles, nationality, time type and time image —
+> work while no season is active or while the season is in configuration, and are refused from
+> confirmation until that season ends. The season's signups were made under those settings.
 
 #### `/signup open` — Open the signup window
 *Access: League manager*

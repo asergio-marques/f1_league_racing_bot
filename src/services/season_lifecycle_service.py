@@ -115,3 +115,35 @@ async def advance_on_window_close(db_path: str, server_id: int) -> SeasonStage |
         return None
     await _move(db_path, season_id, stage, target)
     return target
+
+
+async def signup_configuration_fixed(db_path: str, server_id: int) -> int | None:
+    """The number of the season holding the signup module fixed, or None where it is free.
+
+    The signup module is enabled, disabled and configured only while the server holds no
+    active season, or while its season stands in Configuration. From the confirmation of
+    that configuration to the season's end, it is fixed: its time slots, its questions and
+    its roles are what that season's signups were made under.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT season_number, stage FROM seasons "
+            "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
+            "ORDER BY id DESC LIMIT 1",
+            (server_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None or row["stage"] == SeasonStage.CONFIGURATION.value:
+        return None
+    return int(row["season_number"])
+
+
+async def modules_frozen_for_completion(db_path: str, server_id: int) -> bool:
+    """True while the server's season stands in Pending completion.
+
+    Nothing but amending a final round's results, approving an amendment of the season's
+    points and completing the season may be done then, so no module may be disabled.
+    """
+    found = await live_season_stage(db_path, server_id)
+    return found is not None and found[1] is SeasonStage.PENDING_COMPLETION
+

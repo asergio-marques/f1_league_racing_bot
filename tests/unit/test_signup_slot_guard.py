@@ -1,14 +1,14 @@
-"""`/signup time-slot add` and `remove` are refused while drivers await placement.
+"""The signup module's settings are fixed once a season's configuration is confirmed.
 
-Slot changes are blocked while signups are open, and that block used to lift entirely at
-`/signup close` — which is exactly when a manager edits the list for the next season,
-with last season's answers still on the books and still being read to place drivers by
-hand. Removing a slot deletes the answers that named it, and either direction shifts the
-display numbers a manager reads off `/signup time-slot list`. So the block now extends
-past closing until the placement queue is empty (issue #126).
+Issue #220. The signup module is enabled, disabled and configured only while the server holds
+no active season, or while its season stands in Configuration. Confirming that configuration
+fixes it until the season ends: the time slots, the questions and the roles are what the
+season's signups were made under.
 
-The guard's population is deliberately the one `/signup unassigned list` reports, so the
-two can never disagree about who is waiting.
+This replaced two narrower guards (issue #126): a slot change refused while the window was
+open, and while any driver awaited placement. Both only ever arise inside a season whose
+configuration is already confirmed, so the one rule covers them.
+
 """
 from __future__ import annotations
 
@@ -32,8 +32,13 @@ SERVER_ID = 5512
 # ---------------------------------------------------------------------------
 
 
-async def _seed(tmp_path, *, unassigned: int, slots=((1, "19:00"), (3, "20:00"))):
-    """A server with signups closed, `unassigned` drivers waiting, and `slots` set."""
+async def _seed(
+    tmp_path, *, unassigned: int, slots=((1, "19:00"), (3, "20:00")), stage: str | None = None
+):
+    """A server with signups closed, `unassigned` drivers waiting, and `slots` set.
+
+    *stage* seeds an active season in that stage; left unset, the server holds none.
+    """
     path = str(tmp_path / "slot_guard.db")
     await run_migrations(path)
     async with get_connection(path) as db:
@@ -51,6 +56,15 @@ async def _seed(tmp_path, *, unassigned: int, slots=((1, "19:00"), (3, "20:00"))
                 "INSERT INTO signup_availability_slots (server_id, day_of_week, time_hhmm) "
                 "VALUES (?, ?, ?)",
                 (SERVER_ID, day, time_hhmm),
+            )
+        if stage is not None:
+            from models.season import SeasonStage, status_of_stage
+
+            status = status_of_stage(SeasonStage(stage)).value
+            await db.execute(
+                "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
+                "VALUES (?, '2026-09-17', ?, 3, ?)",
+                (SERVER_ID, status, stage),
             )
         for i in range(1, unassigned + 1):
             await db.execute(
@@ -112,67 +126,73 @@ async def _slot_labels(db_path):
 
 
 # ---------------------------------------------------------------------------
-# Refused while anyone waits
+# Fixed once the configuration is confirmed
 # ---------------------------------------------------------------------------
 
 
-class TestRefusedWhileDriversAwaitPlacement:
-    async def test_slot_add_refused_while_drivers_await_placement(self, tmp_path):
-        db_path = await _seed(tmp_path, unassigned=3)
+_FIXED_STAGES = ["WAITING", "SIGNUPS", "PLACEMENTS", "ONGOING", "ONGOING_SIGNUPS",
+                 "PENDING_COMPLETION"]
+
+
+class TestRefusedOnceConfigurationIsConfirmed:
+    @pytest.mark.parametrize("stage", _FIXED_STAGES)
+    async def test_slot_add_is_refused(self, tmp_path, stage):
+        db_path = await _seed(tmp_path, unassigned=0, stage=stage)
         before = await _slot_labels(db_path)
         interaction = _interaction()
 
         await _add(_cog(db_path), interaction)
 
-        assert "3 driver(s) are waiting to be placed" in _reply(interaction)
+        assert "fixed for Season 3" in _reply(interaction)
         assert await _slot_labels(db_path) == before, "no slot may have been added"
 
-    async def test_slot_remove_refused_while_drivers_await_placement(self, tmp_path):
-        db_path = await _seed(tmp_path, unassigned=1)
+    async def test_slot_remove_is_refused(self, tmp_path):
+        db_path = await _seed(tmp_path, unassigned=0, stage="PLACEMENTS")
         before = await _slot_labels(db_path)
         interaction = _interaction()
 
         await _remove(_cog(db_path), interaction)
 
-        assert "1 driver(s) are waiting to be placed" in _reply(interaction)
+        assert "/signup time-slot remove" in _reply(interaction)
         assert await _slot_labels(db_path) == before, "no slot may have been removed"
 
-    async def test_the_refusal_names_the_way_out(self, tmp_path):
-        """A manager must be told why, and where to look."""
+    @pytest.mark.parametrize(
+        "command, args",
+        [
+            ("nationality", ()),
+            ("time_type", ()),
+            ("time_image", ()),
+        ],
+    )
+    async def test_every_setting_is_refused(self, tmp_path, command, args):
+        db_path = await _seed(tmp_path, unassigned=0, stage="ONGOING")
+        cog = _cog(db_path)
+        cog.bot.signup_module_service = MagicMock()
+        cog.bot.signup_module_service.get_settings = AsyncMock()
+        interaction = _interaction()
+
+        await undecorate(getattr(SignupCog, command))(cog, interaction, *args)
+
+        assert "fixed for Season 3" in _reply(interaction)
+        cog.bot.signup_module_service.get_settings.assert_not_awaited()
+
+    async def test_the_roles_and_channel_are_refused(self, tmp_path):
+        db_path = await _seed(tmp_path, unassigned=0, stage="WAITING")
+        cog = _cog(db_path)
+        for command in ("signup_channel", "signup_base_role", "signup_complete_role"):
+            interaction = _interaction()
+            await undecorate(getattr(SignupCog, command))(cog, interaction, MagicMock())
+            assert "fixed for Season 3" in _reply(interaction), command
+
+
+# ---------------------------------------------------------------------------
+# Free with no season, and in configuration
+# ---------------------------------------------------------------------------
+
+
+class TestPermittedWhileFree:
+    async def test_slot_change_permitted_with_no_season(self, tmp_path):
         db_path = await _seed(tmp_path, unassigned=2)
-        interaction = _interaction()
-
-        await _add(_cog(db_path), interaction)
-
-        reply = _reply(interaction)
-        assert "/signup unassigned list" in reply
-        assert "available for" in reply
-
-    async def test_a_placed_driver_does_not_block(self, tmp_path):
-        """Only the unplaced queue counts; an assigned driver is not waiting."""
-        db_path = await _seed(tmp_path, unassigned=0)
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (1, ?, '9001', 'ASSIGNED')",
-                (SERVER_ID,),
-            )
-            await db.commit()
-        interaction = _interaction()
-
-        await _add(_cog(db_path), interaction)
-
-        assert "Friday 21:00 UTC" in await _slot_labels(db_path)
-
-
-# ---------------------------------------------------------------------------
-# Permitted with an empty queue
-# ---------------------------------------------------------------------------
-
-
-class TestPermittedWhenNobodyWaits:
-    async def test_slot_change_permitted_when_no_driver_awaits_placement(self, tmp_path):
-        db_path = await _seed(tmp_path, unassigned=0)
         cog = _cog(db_path)
 
         await _add(cog, _interaction())
@@ -180,6 +200,20 @@ class TestPermittedWhenNobodyWaits:
 
         await _remove(cog, _interaction(), slot_id=1)
         assert "Monday 19:00 UTC" not in await _slot_labels(db_path)
+
+    async def test_slot_change_permitted_in_configuration(self, tmp_path):
+        db_path = await _seed(tmp_path, unassigned=0, stage="CONFIGURATION")
+
+        await _add(_cog(db_path), _interaction())
+
+        assert "Friday 21:00 UTC" in await _slot_labels(db_path)
+
+    async def test_an_archived_season_holds_nothing_fixed(self, tmp_path):
+        db_path = await _seed(tmp_path, unassigned=0, stage="COMPLETED")
+
+        await _add(_cog(db_path), _interaction())
+
+        assert "Friday 21:00 UTC" in await _slot_labels(db_path)
 
 
 # ---------------------------------------------------------------------------

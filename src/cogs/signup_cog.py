@@ -735,6 +735,8 @@ class SignupCog(commands.Cog):
         base_role: discord.Role,
         signed_up_role: discord.Role,
     ) -> None:
+        if await self._refuse_while_configuration_fixed(interaction, "/signup config roles"):
+            return
         # Deprecated: use /signup base-role and /signup complete-role.
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         cfg = await self.bot.signup_module_service.get_config(server_id)
@@ -810,6 +812,8 @@ class SignupCog(commands.Cog):
     async def signup_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
+        if await self._refuse_while_configuration_fixed(interaction, "/signup channel"):
+            return
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         guild = interaction.guild
         assert guild is not None
@@ -936,6 +940,8 @@ class SignupCog(commands.Cog):
     async def signup_base_role(
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
+        if await self._refuse_while_configuration_fixed(interaction, "/signup base-role"):
+            return
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         guild = interaction.guild
         assert guild is not None
@@ -1000,6 +1006,8 @@ class SignupCog(commands.Cog):
     async def signup_complete_role(
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
+        if await self._refuse_while_configuration_fixed(interaction, "/signup complete-role"):
+            return
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         cfg = await self.bot.signup_module_service.get_config(server_id)
@@ -1039,6 +1047,8 @@ class SignupCog(commands.Cog):
     @signup.command(name="nationality", description="Toggle whether nationality is required in signups.")
     @league_manager_only
     async def nationality(self, interaction: discord.Interaction) -> None:
+        if await self._refuse_while_configuration_fixed(interaction, "/signup nationality"):
+            return
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         settings = await self.bot.signup_module_service.get_settings(server_id)
         old_val = settings.nationality_required
@@ -1073,6 +1083,8 @@ class SignupCog(commands.Cog):
     @signup.command(name="time-type", description="Toggle the time type setting (Time Trial / Short Qualification).")
     @league_manager_only
     async def time_type(self, interaction: discord.Interaction) -> None:
+        if await self._refuse_while_configuration_fixed(interaction, "/signup time-type"):
+            return
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         settings = await self.bot.signup_module_service.get_settings(server_id)
         old_val = settings.time_type
@@ -1109,6 +1121,8 @@ class SignupCog(commands.Cog):
     @signup.command(name="time-image", description="Toggle whether a time image is required in signups.")
     @league_manager_only
     async def time_image(self, interaction: discord.Interaction) -> None:
+        if await self._refuse_while_configuration_fixed(interaction, "/signup time-image"):
+            return
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         settings = await self.bot.signup_module_service.get_settings(server_id)
         old_val = settings.time_image_required
@@ -1146,28 +1160,29 @@ class SignupCog(commands.Cog):
         parent=signup,
     )
 
-    async def _refuse_slot_change_while_drivers_await_placement(
-        self, interaction: discord.Interaction
+    async def _refuse_while_configuration_fixed(
+        self, interaction: discord.Interaction, command: str
     ) -> bool:
-        """Refuse a slot change while anyone still holds an unplaced signup.
+        """Refuse a change to the signup module's settings once a season has fixed them.
 
-        Slot changes are blocked while signups are open, but that block lifts at
-        `/signup close` — which is exactly when a manager edits the list for the next
-        season, with last season's answers still on the books and still being used to
-        place drivers by hand. Removing a slot deletes the answers that named it, and
-        both directions shift the display numbers a manager reads. So the block extends
-        past closing until the placement queue is empty (issue #126).
+        The settings are free while the server holds no active season and while its season
+        stands in Configuration; confirming that configuration fixes them until the season
+        ends (issue #220). This replaces the older guards that blocked a slot change while
+        the window was open or drivers awaited placement — both only ever happen inside a
+        season whose configuration is already fixed.
 
         Returns True when the command replied and must stop.
         """
+        from services.season_lifecycle_service import signup_configuration_fixed
+
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        waiting = await self.bot.placement_service.count_unplaced_signups(server_id)  # type: ignore[attr-defined]
-        if waiting == 0:
+        season_number = await signup_configuration_fixed(self.bot.db_path, server_id)
+        if season_number is None:
             return False
         await interaction.response.send_message(
-            f"❌ {waiting} driver(s) are waiting to be placed. Adding or removing a slot "
-            "now would change what they are recorded as being available for. Place or "
-            "clear them first — see `/signup unassigned list`.",
+            f"❌ The signup module's settings are fixed for Season {season_number} now that "
+            f"its configuration has been confirmed. `{command}` is available again once the "
+            "season has ended, or while a new season is in configuration.",
             ephemeral=True,
         )
         return True
@@ -1184,16 +1199,7 @@ class SignupCog(commands.Cog):
     ) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
-        # Guard: signups must be closed
-        if await self.bot.signup_module_service.get_window_state(server_id):
-            await interaction.response.send_message(
-                "❌ Slots cannot be modified while signups are open. Close signups first with `/signup close`.",
-                ephemeral=True,
-            )
-            return
-
-        # Guard: nobody may be left waiting to be placed
-        if await self._refuse_slot_change_while_drivers_await_placement(interaction):
+        if await self._refuse_while_configuration_fixed(interaction, "/signup time-slot add"):
             return
 
         # Guard: max slots
@@ -1257,15 +1263,7 @@ class SignupCog(commands.Cog):
     ) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
-        if await self.bot.signup_module_service.get_window_state(server_id):
-            await interaction.response.send_message(
-                "❌ Slots cannot be modified while signups are open.",
-                ephemeral=True,
-            )
-            return
-
-        # Guard: nobody may be left waiting to be placed
-        if await self._refuse_slot_change_while_drivers_await_placement(interaction):
+        if await self._refuse_while_configuration_fixed(interaction, "/signup time-slot remove"):
             return
 
         slots = await self.bot.signup_module_service.get_slots(server_id)

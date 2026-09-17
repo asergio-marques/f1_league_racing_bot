@@ -132,9 +132,7 @@ Times go in as `20:00` or as `8:00pm`; both work. The list numbers them in day-a
 
 **The numbers move, and that is fine.** They are positions in the list, not permanent labels. Add a Monday morning slot and everything after it counts up by one; delete `#2` and the old `#3` becomes the new `#2`. What your drivers told you does not move with them — their availability is recorded against the slot itself, so editing the list never changes anyone's answer and the export always marks the times they actually chose. Remove a slot and put it back at the same day and time, and the drivers who chose it are on it again.
 
-**You cannot edit the list while anyone is waiting to be placed.** Two blocks sit on `add` and `remove`. The first is the window: slots are locked while signups are open, so changing the list means closing first. The second outlasts it — while any driver holds a completed signup you have not yet placed, both commands are refused and the reply tells you how many are waiting. Removing a slot does delete the answers that named it, and either change renumbers the list you are reading off while you place people by hand.
-
-So get the list right before you open, and if you do need to change it between seasons, place or clear last season's queue first — `/signup unassigned list` is the same queue the block counts.
+**The list is fixed once the season's configuration is confirmed.** So is every other setting in this guide — the channel, both roles, nationality, time type and time image, and turning the module on or off. They work while no season is active, or while the season is in configuration, and are refused from confirmation until that season ends: the season's signups are made under them. Get the list right before you run `/season config-review`.
 
 ---
 
@@ -338,7 +336,7 @@ Worth running through before you open the window.
 - [ ] The signup channel is a channel of its own, not one with permissions you care about
 - [ ] The base role and the complete role are both set, and are two different roles — one is who may sign up, the other is who got through
 - [ ] Your teams are added, so the preferred-team question has something to offer
-- [ ] Every slot you might race in is on the list, in UTC, and you are happy with it — because the list locks once the window opens, and again while anyone is waiting to be placed
+- [ ] Every slot you might race in is on the list, in UTC, and you are happy with it — because the list is fixed once the season's configuration is confirmed
 - [ ] You have decided about lap times, and have the track IDs to hand if you want them
 - [ ] `/signup config view` shows what you expect
 - [ ] You have run one signup end to end yourself
@@ -359,7 +357,7 @@ Worth running through before you open the window.
 | `/signup config channel` errors out | Known: that command is broken. Use `/signup channel` |
 | `/signup close` refused, naming an auto-close time | You set a `close_time`. Run `/signup close-time cancel`, then `/signup close` again — or `/signup close-time modify` if you only want to move the deadline |
 | Drivers you expected to be dropped by a close are still there | Known: closing only drops drivers still filling the form in. Anyone waiting on you keeps their place — approve them |
-| `/signup time-slot add` or `remove` refused, naming a number of drivers | Drivers are waiting to be placed. Place or clear them — `/signup unassigned list` is the same queue |
+| `/signup time-slot add`, `remove` or another signup setting refused, naming a season | That season's configuration is confirmed, so its signup settings are fixed until it ends |
 | Your time slots came back after disabling the module | Known: disabling clears the channel and roles only, whatever the message says |
 | A driver went back to waiting for approval on their own | The five-minute field window lapsed, or the bot restarted while it was open. The ping in their channel says which. Press **Request Changes** again |
 | Roles not granted after `/driver assign` | The season is still in setup. They are all granted at approval |
