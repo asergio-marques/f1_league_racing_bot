@@ -229,6 +229,36 @@ async def _disown(db_path: str, server_id: int, user_id: str) -> None:
         await db.commit()
 
 
+async def remove_portrait(db_path: str, server_id: int, user_id: str, directory) -> bool:
+    """Remove the portrait this bot obtained for *user_id*, the file and its row together.
+
+    Returns whether anything was removed. Two paths want this: a driver who takes their
+    profile picture down, whose seat reverts to the placeholder, and a driver re-keyed onto
+    another account, whose old portrait is that account's picture and not theirs (issue #222).
+
+    **Only where the file is ours to remove.** `driver_portraits` is the ownership register:
+    a portrait with no row was placed by the league itself, and migration 047 is explicit
+    that the bot never overwrites such a file and never fetches over it. An unowned portrait
+    is therefore left exactly where it is, being the league's own artwork and deliberate.
+
+    **The row never goes without the file.** Deleting the row alone would *disown* a portrait
+    the bot wrote, after which the bot would refuse to overwrite its own leftover for good —
+    the very thing the register exists to prevent. A caller that cannot resolve a directory
+    must leave both alone rather than take the row on its own.
+    """
+    user_id = str(user_id)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT 1 FROM driver_portraits WHERE server_id = ? AND discord_user_id = ?",
+            (server_id, user_id),
+        )
+        if await cursor.fetchone() is None:
+            return False
+    portrait_path(Path(directory), user_id).unlink(missing_ok=True)
+    await _disown(db_path, server_id, user_id)
+    return True
+
+
 async def assigned_driver_ids(db_path: str, server_id: int) -> list[str]:
     """The Discord user IDs assigned to a seat in *server_id*'s active season.
 
@@ -418,10 +448,8 @@ async def refresh_portraits(
 
         if not has_own_avatar(member):
             # Removing an avatar reverts the seat to the placeholder, but only where the file
-            # is ours to remove.
-            if user_id in owned:
-                path.unlink(missing_ok=True)
-                await _disown(db_path, server_id, user_id)
+            # is ours to remove — which `remove_portrait` is the one judge of.
+            await remove_portrait(db_path, server_id, user_id, directory)
             continue
 
         if user_id not in owned and path.exists():

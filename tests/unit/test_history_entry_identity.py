@@ -117,3 +117,85 @@ async def test_history_held_by_a_living_profile_is_not_taken(db_path):
         await _reattach_history(db, SERVER_ID, "9000000000000000001", 99)
         cursor = await db.execute("SELECT driver_profile_id FROM driver_history_entries")
         assert [r[0] for r in await cursor.fetchall()] == [1]
+
+
+# ---------------------------------------------------------------------------
+# A re-keyed driver's final standing
+# ---------------------------------------------------------------------------
+#
+# The end of a season reads each driver's final standing by joining their profile to their
+# standings snapshots **on the Discord account**. Until issue #222 a re-key moved the profile
+# and left the snapshots, so the join found nothing and the driver's entry recorded no points,
+# no position, and a gap the size of the winner's whole total.
+
+_OLD_USER, _NEW_USER = "4242", "5353"
+_SEASON_ID, _DIVISION_ID, _ROUND_ID, _PROFILE_ID = 70, 71, 72, 2
+
+
+async def _seed_a_finished_season(db_path: str) -> None:
+    """A season whose only division ran one round, with our driver second on 88 points.
+
+    A second driver is given the win so that the gap to the winner is a number the writer has
+    to derive, rather than the zero it would be were our driver the only one in the standings.
+    """
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
+            "VALUES (?, ?, ?, 'ASSIGNED')",
+            (_PROFILE_ID, SERVER_ID, _OLD_USER),
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
+            "VALUES (?, ?, '2026-09-17', 'ACTIVE', 4, 'ONGOING')",
+            (_SEASON_ID, SERVER_ID),
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, tier, status) "
+            "VALUES (?, ?, 'Pro', 1001, 1, 'ACTIVE')",
+            (_DIVISION_ID, _SEASON_ID),
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at, status) "
+            "VALUES (?, ?, 1, 'NORMAL', '2026-09-20T18:00:00', 'FINAL')",
+            (_ROUND_ID, _DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO driver_division_memberships (season_id, division_id, "
+            "driver_profile_id) VALUES (?, ?, ?)",
+            (_SEASON_ID, _DIVISION_ID, _PROFILE_ID),
+        )
+        for user_id, position, points in ((_OLD_USER, 2, 88), ("6464", 1, 100)):
+            await db.execute(
+                "INSERT INTO driver_standings_snapshots (round_id, division_id, "
+                "driver_user_id, standing_position, total_points) VALUES (?, ?, ?, ?, ?)",
+                (_ROUND_ID, _DIVISION_ID, user_id, position, points),
+            )
+        await db.commit()
+
+
+async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path):
+    """Issue #222, as a league sees it: the season ends and the driver's history is right."""
+    from types import SimpleNamespace
+
+    from services.driver_service import DriverService
+    from services.season_end_service import _write_driver_history_entries
+
+    await _seed_a_finished_season(db_path)
+    await DriverService(db_path).reassign_user_id(
+        SERVER_ID, _OLD_USER, _NEW_USER, 77, "Manager"
+    )
+
+    await _write_driver_history_entries(
+        SimpleNamespace(id=_SEASON_ID, season_number=4),
+        SimpleNamespace(db_path=db_path),
+    )
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, final_position, final_points, points_gap_to_winner "
+            "FROM driver_history_entries WHERE driver_profile_id = ?",
+            (_PROFILE_ID,),
+        )
+        rows = [tuple(r) for r in await cursor.fetchall()]
+
+    assert rows == [(_NEW_USER, 2, 88, 12)]
