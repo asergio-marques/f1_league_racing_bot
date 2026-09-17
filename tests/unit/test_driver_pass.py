@@ -221,3 +221,43 @@ async def test_a_role_discord_will_not_take_back_does_not_stop_the_pass(db_path)
 
     assert member.remove_roles.await_count == 3
     assert (await _states(db_path))[1] == "NOT_SIGNED_UP"
+
+
+async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatch):
+    """Constitution VIII: no code path sets a driver's state directly."""
+    import services.driver_service as driver_service
+
+    seen = []
+    real = driver_service.write_transition
+
+    async def recording(db, profile_id, current, new_state, **kwargs):
+        seen.append((profile_id, current.value, new_state.value))
+        await real(db, profile_id, current, new_state, **kwargs)
+
+    monkeypatch.setattr(driver_service, "write_transition", recording)
+
+    await run_driver_pass(db_path, SERVER_ID)
+
+    assert sorted(seen) == [
+        (1, "ASSIGNED", "NOT_SIGNED_UP"),
+        (2, "ASSIGNED", "NOT_SIGNED_UP"),
+        (3, "UNASSIGNED", "NOT_SIGNED_UP"),
+        (4, "PENDING_ADMIN_APPROVAL", "NOT_SIGNED_UP"),
+        (7, "ASSIGNED", "NOT_SIGNED_UP"),
+    ]
+
+
+async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
+    import json
+
+    await run_driver_pass(db_path, SERVER_ID)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT actor_name, old_value, new_value FROM audit_entries "
+            "WHERE change_type = 'DRIVER_PASS'"
+        )
+        (row,) = await cursor.fetchall()
+    assert row["actor_name"] == "system"
+    assert json.loads(row["old_value"])["2"] == "ASSIGNED"
+    assert json.loads(row["new_value"])["deleted"] == [2, 3, 4, 5]

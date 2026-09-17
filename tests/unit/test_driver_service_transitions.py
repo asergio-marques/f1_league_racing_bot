@@ -420,3 +420,35 @@ class TestSignupDataClearing:
         result = await svc.transition(1, "nfd1", DriverState.NOT_SIGNED_UP)
         assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP
 
+
+
+async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):
+    """`write_transition` is how a sack or the driver pass changes a state inside a larger
+    write, and it refuses what the table refuses, writing nothing."""
+    from db.database import get_connection, run_migrations
+    from models.driver_profile import DriverState
+    from services.driver_service import write_transition
+
+    path = str(tmp_path / "write_transition.db")
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (1, 1, 2, 3)"
+        )
+        await db.execute(
+            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
+            "VALUES (9, 1, '99', 'PENDING_SIGNUP_COMPLETION')"
+        )
+        await db.commit()
+
+        with pytest.raises(ValueError, match="not allowed"):
+            await write_transition(
+                db, 9, DriverState.PENDING_SIGNUP_COMPLETION, DriverState.ASSIGNED
+            )
+        await write_transition(
+            db, 9, DriverState.PENDING_SIGNUP_COMPLETION, DriverState.NOT_SIGNED_UP
+        )
+        await db.commit()
+        cursor = await db.execute("SELECT current_state FROM driver_profiles WHERE id = 9")
+        assert (await cursor.fetchone())[0] == "NOT_SIGNED_UP"

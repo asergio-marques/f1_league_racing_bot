@@ -9,6 +9,7 @@ import discord
 
 from db.database import get_connection
 from models.driver_profile import DriverProfile, DriverState
+from services.driver_service import write_transition
 from models.signup_module import AvailabilitySlot
 from models.team import TeamRoleConfig
 
@@ -1166,9 +1167,8 @@ class PlacementService:
             )
             is_committed = bool((await cursor.fetchone())["committed"])
             if was_unassigned:
-                await db.execute(
-                    "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
-                    (DriverState.ASSIGNED.value, driver_profile_id),
+                await write_transition(
+                    db, driver_profile_id, DriverState.UNASSIGNED, DriverState.ASSIGNED
                 )
             # Audit log
             await db.execute(
@@ -1409,9 +1409,8 @@ class PlacementService:
                 "DELETE FROM driver_season_assignments WHERE id = ?", (asgn_id,)
             )
             if not has_remaining:
-                await db.execute(
-                    "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
-                    (DriverState.UNASSIGNED.value, driver_profile_id),
+                await write_transition(
+                    db, driver_profile_id, DriverState.ASSIGNED, DriverState.UNASSIGNED
                 )
 
             await db.execute(
@@ -1599,9 +1598,8 @@ class PlacementService:
                 "WHERE driver_profile_id = ? AND season_id = ?",
                 (driver_profile_id, season_id),
             )
-            await db.execute(
-                "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
-                (DriverState.NOT_SIGNED_UP.value, driver_profile_id),
+            await write_transition(
+                db, driver_profile_id, current_state, DriverState.NOT_SIGNED_UP
             )
             await db.execute(
                 "INSERT INTO audit_entries "

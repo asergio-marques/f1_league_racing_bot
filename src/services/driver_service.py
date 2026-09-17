@@ -66,6 +66,36 @@ _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP: set[DriverState] = {
 }
 
 
+async def write_transition(
+    db,
+    profile_id: int,
+    current: DriverState,
+    new_state: DriverState,
+    *,
+    test_mode_active: bool = False,
+) -> None:
+    """Write *profile_id*'s move from *current* to *new_state*, within the caller's transaction.
+
+    The one place a driver's state is written (Constitution VIII: no code path sets a state
+    directly). A caller changing a state as part of a larger write — a sack freeing seats in
+    the same transaction, the driver pass ending a season — calls this rather than issuing
+    the UPDATE itself, so the transition table governs every route alike. Raises ValueError
+    for a transition the table does not allow, having written nothing. Does not commit.
+    """
+    allowed = set(ALLOWED_TRANSITIONS.get(current, set()))
+    if test_mode_active and current == DriverState.NOT_SIGNED_UP:
+        allowed |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
+    if new_state not in allowed:
+        raise ValueError(
+            f"Transition from {current.value} to {new_state.value} is not allowed. "
+            f"Allowed targets: {sorted(s.value for s in allowed) or 'none'}."
+        )
+    await db.execute(
+        "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
+        (new_state.value, profile_id),
+    )
+
+
 def _row_to_profile(row) -> DriverProfile:
     """Convert an aiosqlite Row from driver_profiles to a DriverProfile."""
     return DriverProfile(
@@ -146,15 +176,6 @@ class DriverService:
             league_ban_count=0,
         )
 
-    async def _update_state(self, profile_id: int, new_state: DriverState) -> None:
-        """Persist a state change."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
-                (new_state.value, profile_id),
-            )
-            await db.commit()
-
     # ------------------------------------------------------------------
     # State machine
     # ------------------------------------------------------------------
@@ -191,22 +212,15 @@ class DriverService:
                 )
             return await self._create_profile(server_id, discord_user_id, new_state)
 
-        current = profile.current_state
-        allowed = set(ALLOWED_TRANSITIONS.get(current, set()))
-        if test_mode_active and current == DriverState.NOT_SIGNED_UP:
-            allowed |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
-
-        if new_state not in allowed:
-            raise ValueError(
-                f"Transition from {current.value} to {new_state.value} is not allowed. "
-                f"Allowed targets: {sorted(s.value for s in allowed) or 'none'}."
-            )
-
         # Reaching Not Signed Up deletes nothing and clears nothing (issue #220). A driver
         # without the former-driver flag is pending deletion, deleted by the season's end;
         # a former driver's signups are season history and are kept whole.
-
-        await self._update_state(profile.id, new_state)
+        async with get_connection(self._db_path) as db:
+            await write_transition(
+                db, profile.id, profile.current_state, new_state,
+                test_mode_active=test_mode_active,
+            )
+            await db.commit()
         profile.current_state = new_state
         return profile
 

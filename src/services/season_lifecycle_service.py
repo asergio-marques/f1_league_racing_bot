@@ -11,6 +11,7 @@ with nothing but a path.
 """
 from __future__ import annotations
 
+import json
 import logging
 
 from db.database import get_connection
@@ -323,14 +324,15 @@ async def run_driver_pass(db_path: str, server_id: int, *, bot=None, guild=None)
                 except Exception:  # noqa: BLE001 — a role is never worth the pass
                     log.warning("driver pass: could not revoke the signed-up role of %s", uid)
 
+    from models.driver_profile import DriverState
+    from services.driver_service import write_transition
+
     async with get_connection(db_path) as db:
-        if to_reset:
-            reset_ids = [d["id"] for d in to_reset]
-            id_placeholders = ",".join("?" for _ in reset_ids)
-            await db.execute(
-                f"UPDATE driver_profiles SET current_state = 'NOT_SIGNED_UP' "
-                f"WHERE id IN ({id_placeholders})",
-                reset_ids,
+        # Through the transition table, as every change of a driver's state is.
+        for driver in to_reset:
+            await write_transition(
+                db, driver["id"], DriverState(driver["current_state"]),
+                DriverState.NOT_SIGNED_UP,
             )
         cursor = await db.execute(
             "SELECT id FROM driver_profiles WHERE server_id = ? AND is_test_driver = 0 "
@@ -339,6 +341,16 @@ async def run_driver_pass(db_path: str, server_id: int, *, bot=None, guild=None)
         )
         pending_deletion = [r["id"] for r in await cursor.fetchall()]
         await delete_driver_profiles(db, pending_deletion, keep_history=False)
+        await db.execute(
+            "INSERT INTO audit_entries "
+            "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+            "VALUES (?, 0, 'system', NULL, 'DRIVER_PASS', ?, ?, datetime('now'))",
+            (
+                server_id,
+                json.dumps({d["id"]: d["current_state"] for d in to_reset}, sort_keys=True),
+                json.dumps({"state": "NOT_SIGNED_UP", "deleted": sorted(pending_deletion)}),
+            ),
+        )
         await db.commit()
 
     return {"reset": len(to_reset), "deleted": len(pending_deletion)}
