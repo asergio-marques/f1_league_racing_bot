@@ -175,3 +175,49 @@ async def test_the_signed_up_role_is_revoked_from_a_real_driver(db_path):
 
     # The two Assigned real drivers and the Unassigned one; not the test driver.
     assert member.remove_roles.await_count == 3
+
+
+async def test_a_signup_channel_that_cannot_be_closed_does_not_stop_the_pass(db_path):
+    """A signup channel is never worth a season's end: the drivers still move on."""
+    bot = MagicMock()
+    bot.wizard_service._trigger_channel_hold = AsyncMock(side_effect=RuntimeError("gone"))
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=None)
+
+    await run_driver_pass(db_path, SERVER_ID, bot=bot, guild=guild)
+
+    assert (await _states(db_path)).get(4) is None, "the driver in review is still deleted"
+
+
+async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass(db_path):
+    bot = MagicMock()
+    bot.wizard_service._trigger_channel_hold = AsyncMock()
+    bot.scheduler_service._scheduler.remove_job = MagicMock(side_effect=LookupError("no job"))
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=None)
+
+    await run_driver_pass(db_path, SERVER_ID, bot=bot, guild=guild)
+
+    bot.wizard_service._trigger_channel_hold.assert_awaited_once()
+    assert (await _states(db_path))[1] == "NOT_SIGNED_UP"
+
+
+async def test_a_role_discord_will_not_take_back_does_not_stop_the_pass(db_path):
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_module_config (server_id, signed_up_role_id) VALUES (?, 555)",
+            (SERVER_ID,),
+        )
+        await db.commit()
+    role = MagicMock()
+    member = MagicMock()
+    member.roles = [role]
+    member.remove_roles = AsyncMock(side_effect=RuntimeError("Missing Permissions"))
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=member)
+    guild.get_role = MagicMock(return_value=role)
+
+    await run_driver_pass(db_path, SERVER_ID, guild=guild)
+
+    assert member.remove_roles.await_count == 3
+    assert (await _states(db_path))[1] == "NOT_SIGNED_UP"

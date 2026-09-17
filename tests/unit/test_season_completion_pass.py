@@ -155,3 +155,36 @@ async def test_an_open_signup_window_is_closed(db_path):
         await _complete(db_path)
 
     closed.assert_awaited_once()
+
+
+async def test_test_mode_that_cannot_be_switched_off_does_not_stop_completion(db_path):
+    """Each step of the end-of-season pass stands apart from the next."""
+    with patch(
+        "services.test_mode_service.switch_test_mode_off",
+        new=AsyncMock(side_effect=RuntimeError("disk full")),
+    ):
+        await _complete(db_path)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT status FROM seasons WHERE id = 1")
+        assert (await cursor.fetchone())[0] == "COMPLETED"
+
+
+async def test_a_window_that_cannot_be_closed_does_not_keep_test_mode_on(db_path):
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_module_config (server_id, signups_open) VALUES (?, 1)",
+            (SERVER_ID,),
+        )
+        await db.commit()
+
+    with patch(
+        "cogs.module_cog.execute_forced_close", new=AsyncMock(side_effect=RuntimeError("gone"))
+    ):
+        await _complete(db_path)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT test_mode_active FROM server_configs WHERE server_id = ?", (SERVER_ID,)
+        )
+        assert (await cursor.fetchone())[0] == 0

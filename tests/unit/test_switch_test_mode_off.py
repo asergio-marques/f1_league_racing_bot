@@ -142,3 +142,30 @@ async def test_a_server_not_in_test_mode_is_left_alone(db_path):
 
     assert await switch_test_mode_off(SERVER_ID, SimpleNamespace(db_path=db_path)) == 0
     assert await _profiles(db_path) == [1, 2, 3]
+
+
+async def test_a_flush_that_fails_still_switches_test_mode_off(db_path):
+    """A stale forecast is not worth staying in test mode for."""
+    bot = SimpleNamespace(db_path=db_path)
+    with patch(
+        "services.forecast_cleanup_service.flush_pending_deletions",
+        new=AsyncMock(side_effect=RuntimeError("channel gone")),
+    ):
+        assert await switch_test_mode_off(SERVER_ID, bot) == 2
+
+    assert await _profiles(db_path) == [3]
+
+
+async def test_clearing_one_division_deletes_its_fake_drivers_and_keeps_their_history(db_path):
+    from services.test_roster_service import _delete_test_drivers_in_division
+
+    assert await _delete_test_drivers_in_division(1, db_path) == 1
+
+    # The seated fake driver goes; the unseated one and the real driver stay.
+    assert await _profiles(db_path) == [2, 3]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, driver_profile_id FROM driver_history_entries "
+            "WHERE discord_user_id = '9000000000000000001'"
+        )
+        assert tuple(await cursor.fetchone()) == ("9000000000000000001", None)
