@@ -53,20 +53,15 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     # Cancel any pending season-end scheduler job (no-op if already fired)
     bot.scheduler_service.cancel_season_end(server_id)  # type: ignore[attr-defined]
 
-    # Revoke division, team, and signup roles from all assigned drivers
     guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
-    if guild is not None:
-        await _revoke_season_roles(server_id, season.id, guild, bot)
 
-    # Write DriverHistoryEntry records for every assigned driver before archiving
-    await _write_driver_history_entries(season, bot)
-
-    # ── The final classification, per division ────────────────────────────
-    # The season's last word: each division's standings and attendance record posted once
-    # more, headed `Final Classification`, as graphics with no text above them. Posted
-    # while the season is still ACTIVE, because everything downstream of here reads it as
-    # the live one. A failure never blocks the archival — the season completes either way,
-    # and a picture is not what the completion is for (XIV.7).
+    # The season's end, in the order the core specification sets (issue #220).
+    # 1. The final classification, per division. The season's last word: each division's
+    #    standings and attendance record posted once more, headed `Final Classification`, as
+    #    graphics with no text above them. Posted while the season is still active, because
+    #    everything downstream of here reads it as the live one. A failure never blocks the
+    #    archival — the season completes either way, and a picture is not what the completion
+    #    is for (XIV.7).
     if guild is not None:
         from services import season_classification_service as classification
 
@@ -97,7 +92,17 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
                     "execute_season_end: could not post the final classification report"
                 )
 
-    # Archive: flip status to COMPLETED (all data retained)
+    # 2. History entries, for every driver holding a committed placement.
+    await _write_driver_history_entries(season, bot)
+
+    # 3. The division, team and signup roles of the season's drivers.
+    if guild is not None:
+        await _revoke_season_roles(server_id, season.id, guild, bot)
+
+    # 4-6. The driver pass, the signup window and test mode, shared with cancelling.
+    await end_of_season_pass(server_id, bot, guild)
+
+    # 7. Archive: flip status to COMPLETED (all data retained)
     await season_svc.complete_season(season.id)
 
     # Announce completion
@@ -111,6 +116,41 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
         season_id,
         server_id,
     )
+
+
+async def end_of_season_pass(server_id: int, bot: "Bot", guild) -> dict:
+    """The driver pass, the signup window and test mode: what every end of a season does (#220).
+
+    Shared by completing, cancelling and aborting a season, in that order within each:
+
+    - the driver pass, returning the season's drivers to Not Signed Up and deleting those
+      pending deletion;
+    - the signup window closed, where one stands open;
+    - test mode switched off, deleting every driver it created and keeping their history.
+
+    Each step is fail-soft against the next: a window that cannot be closed does not keep a
+    server in test mode. Returns what the driver pass reported.
+    """
+    from services.season_lifecycle_service import run_driver_pass
+    from services.test_mode_service import switch_test_mode_off
+
+    result = await run_driver_pass(bot.db_path, server_id, bot=bot, guild=guild)
+
+    try:
+        signup_cfg = await bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
+        if signup_cfg is not None and signup_cfg.signups_open:
+            from cogs.module_cog import execute_forced_close
+
+            await execute_forced_close(server_id, bot, audit_action="SIGNUP_SEASON_END_CLOSE")
+    except Exception:  # noqa: BLE001
+        log.exception("end_of_season_pass: could not close the signup window")
+
+    try:
+        await switch_test_mode_off(server_id, bot)
+    except Exception:  # noqa: BLE001
+        log.exception("end_of_season_pass: could not switch test mode off")
+
+    return result
 
 
 async def _write_driver_history_entries(

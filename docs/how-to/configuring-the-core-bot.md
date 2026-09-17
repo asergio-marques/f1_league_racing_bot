@@ -427,7 +427,7 @@ Things change. During an active season:
 /season complete
 ```
 
-**Nothing ends a season by itself.** You run this once every round in every division has been finalised, and the bot refuses — listing the outstanding rounds — until they are. It then archives the season: it is marked complete, a history entry is written for every driver who raced, each division's **final classification** is posted, and it is announced in the log channel. **Nothing is deleted.**
+**Nothing ends a season by itself.** You run this once every round in every division has been finalised, and the bot refuses — listing the outstanding rounds — until they are. It then ends the season: each division's **final classification** is posted, a history entry is written for every driver whose placement was confirmed, the season's roles are revoked, and every driver returns to **Not Signed Up** — ready to sign up for the next season. Drivers who never raced are deleted at this point, their signups kept with the season; former drivers are kept. An open signup window is closed, test mode is switched off, and the season is archived and announced in the log channel.
 
 > **What "finalised" means here.** A round is finished once its **appeals review is approved** —
 > not when you submit its results, and not when you approve its penalties. Each stage in between

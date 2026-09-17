@@ -505,9 +505,14 @@ No parameters. Triggers the season-end flow manually. The bot refuses while any 
 season is neither finished nor cancelled, and lists the rounds still to be finalised.
 
 > **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then the only things left are amending the results of a round already final, approving an amendment of the season's points, and completing the season — no module can be disabled. A season with a signup window open, or mid-season placements still to confirm, waits: `/season complete` refuses and says which, and the season moves on as soon as that is settled. Once every
-division is done it archives the season: status becomes `COMPLETED`, a history entry is written for
-every assigned driver, each division's final classification is posted, and completion is announced
-in the log channel. **No data is deleted** — that is what distinguishes this from `/season cancel`.
+division is done it ends the season, in this order: each division's final classification is posted;
+a history entry is written for every driver whose placement was confirmed; the division, team and
+signed-up roles are revoked; every driver who was Unassigned, placed, signing up or in review returns
+to **Not Signed Up**, so they can sign up for the next season; every driver who never raced is then
+deleted, with their placements and history, though their signups stay with the season; an open
+signup window is closed; test mode is switched off, deleting the drivers it created and keeping their
+history; and the season is archived as `COMPLETED`. Former drivers are kept, and banned drivers are
+left as they are.
 
 A **round** moves through six states, and the middle ones are named for what the round is waiting
 on: **not run** before its time comes, **awaiting results** once it has, **awaiting report
