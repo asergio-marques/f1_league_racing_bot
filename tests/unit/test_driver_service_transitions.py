@@ -42,10 +42,6 @@ async def db_path(tmp_path):
                 discord_user_id  TEXT NOT NULL,
                 current_state    TEXT NOT NULL DEFAULT 'NOT_SIGNED_UP',
                 former_driver    INTEGER NOT NULL DEFAULT 0,
-                race_ban_count   INTEGER NOT NULL DEFAULT 0,
-                season_ban_count INTEGER NOT NULL DEFAULT 0,
-                league_ban_count INTEGER NOT NULL DEFAULT 0,
-                ban_races_remaining INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(server_id, discord_user_id)
             );
 
@@ -294,10 +290,6 @@ async def db_with_signup(tmp_path):
                 discord_user_id    TEXT NOT NULL,
                 current_state      TEXT NOT NULL DEFAULT 'NOT_SIGNED_UP',
                 former_driver      INTEGER NOT NULL DEFAULT 0,
-                race_ban_count     INTEGER NOT NULL DEFAULT 0,
-                season_ban_count   INTEGER NOT NULL DEFAULT 0,
-                league_ban_count   INTEGER NOT NULL DEFAULT 0,
-                ban_races_remaining INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(server_id, discord_user_id)
             );
 
