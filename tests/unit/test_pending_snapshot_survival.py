@@ -2,8 +2,8 @@
 
 Issue #208. `save_pending_snapshot` is how every `/round add`, `/division add` and `/round amend`
 during setup persists the season being built — and it does so by **dropping every division,
-team, seat and round and re-inserting them with new row ids**. Anything hanging off the old ids
-is lost unless it is saved before the teardown and restored after it, keyed by division *name*
+team, seat and round and re-inserting them with new row ids**. The season row itself is kept
+(issue #220). Anything hanging off the old ids is lost unless it is saved before the teardown and restored after it, keyed by division *name*
 rather than by id.
 
 The method's docstring carries an audited list of what that covers, dated 2026-09-04, and ends:
@@ -122,11 +122,19 @@ async def test_a_first_snapshot_creates_the_season(tmp_path):
     assert await _division_id(db_path, season_id) > 0
 
 
-async def test_a_rebuild_replaces_the_previous_setup_season(tmp_path):
-    """One live season per server, so the old row has to go rather than accumulate."""
+async def test_a_rebuild_keeps_the_season_row(tmp_path):
+    """One live season per server, and it keeps its id across a rebuild (issue #220).
+
+    A season in setup is referred to by more than its divisions: its lifecycle stage, and
+    from the Signups stage on the signups made to it. A rebuild that gave the season a new
+    id would orphan them, so only what hangs beneath the season row is rebuilt.
+    """
     db_path = await _make_db(tmp_path)
     service = SeasonService(db_path)
     first, _ = await _snapshot(service)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE seasons SET stage = 'SIGNUPS' WHERE id = ?", (first,))
+        await db.commit()
 
     second, _ = await _snapshot(service, existing=first)
 
@@ -135,7 +143,8 @@ async def test_a_rebuild_replaces_the_previous_setup_season(tmp_path):
             "SELECT COUNT(*) AS n FROM seasons WHERE server_id = ?", (SERVER_ID,)
         )
         assert (await cursor.fetchone())["n"] == 1
-    assert second != first
+    assert second == first
+    assert (await service.get_stage(second)).value == "SIGNUPS"
 
 
 async def test_the_season_number_survives_a_rebuild(tmp_path):

@@ -424,8 +424,8 @@ class SeasonService:
                     if did in saved_div_names
                 }
 
-                # Save attached points config names before the season row is deleted
-                # (season_points_links has ON DELETE CASCADE so they disappear with it).
+                # Save attached points config names. The season row is no longer deleted, so
+                # they survive in place; they are re-attached with INSERT OR IGNORE regardless.
                 cursor = await db.execute(
                     "SELECT config_name FROM season_points_links "
                     "WHERE season_id = ? ORDER BY config_name",
@@ -516,20 +516,28 @@ class SeasonService:
                 await db.execute(
                     "DELETE FROM divisions WHERE season_id = ?", (existing_season_id,)
                 )
-                await db.execute(
-                    "DELETE FROM seasons WHERE id = ?", (existing_season_id,)
-                )
             else:
                 channels_by_name = {}
                 saved_config_names = []
                 seats_by_division = {}
 
-            cursor = await db.execute(
-                "INSERT INTO seasons (server_id, start_date, status, season_number, game_edition) "
-                "VALUES (?, ?, 'SETUP', ?, ?)",
-                (server_id, start_date.isoformat(), season_number, game_edition),
-            )
-            new_season_id: int = cursor.lastrowid  # type: ignore[assignment]
+            # The season row itself is kept: only what hangs beneath it is rebuilt. A season
+            # in setup is referred to by more than its divisions — its stage, and from the
+            # Signups stage on the signups made to it — and a new id would orphan them all.
+            if existing_season_id != 0:
+                await db.execute(
+                    "UPDATE seasons SET start_date = ?, game_edition = ? WHERE id = ?",
+                    (start_date.isoformat(), game_edition, existing_season_id),
+                )
+                new_season_id: int = existing_season_id
+            else:
+                cursor = await db.execute(
+                    "INSERT INTO seasons "
+                    "(server_id, start_date, status, season_number, game_edition) "
+                    "VALUES (?, ?, 'SETUP', ?, ?)",
+                    (server_id, start_date.isoformat(), season_number, game_edition),
+                )
+                new_season_id = cursor.lastrowid  # type: ignore[assignment]
 
             # Restore season-level points config attachments under the new season ID.
             for config_name in saved_config_names:
