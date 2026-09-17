@@ -58,8 +58,14 @@ def _member(user_id: int, name: str) -> MagicMock:
     return member
 
 
-def _season(status: str = "ACTIVE") -> SimpleNamespace:
-    return SimpleNamespace(id=SEASON_ID, status=SimpleNamespace(value=status))
+def _season(status: str = "ACTIVE", stage: str = "PLACEMENTS") -> SimpleNamespace:
+    """A season. Its stage defaults to Placements, where assign and unassign are available
+    (issue #220); the stage gates have tests of their own in test_placement_committed.py."""
+    from models.season import SeasonStage
+
+    return SimpleNamespace(
+        id=SEASON_ID, status=SimpleNamespace(value=status), stage=SeasonStage(stage)
+    )
 
 
 def _make_cog(
@@ -233,7 +239,7 @@ async def test_no_season_refuses_a_placement_change(command):
 
     await command(cog, interaction)
 
-    assert "No season in SETUP or ACTIVE" in _replied(interaction)
+    assert "available only while the season is in placements" in _replied(interaction)
     cog.bot.placement_service.assign_driver.assert_not_awaited()
     cog.bot.placement_service.unassign_driver.assert_not_awaited()
 
@@ -296,16 +302,20 @@ async def test_a_driver_is_assigned_to_the_named_team_and_division(tmp_path):
     assert "Assigned" in _replied(interaction)
 
 
-async def test_the_season_state_is_passed_to_the_placement(tmp_path):
-    """Placement behaves differently in SETUP and ACTIVE — a seat filled during setup is
-    part of the lineup, one filled mid-season is a transfer — so the state travels with
-    the call rather than being re-derived there."""
-    cog = _make_cog(season=_season("SETUP"))
+@pytest.mark.parametrize(
+    "stage, uncommitted_only", [("PLACEMENTS", False), ("ONGOING_PLACEMENTS", True)]
+)
+async def test_an_assignment_is_made_uncommitted(stage, uncommitted_only):
+    """Issue #220: a placement stands outside the championship until placements are confirmed,
+    and mid-season the command is kept to drivers who hold no confirmed placement."""
+    cog = _make_cog(season=_season("SETUP", stage))
     interaction = _interaction()
 
     await _assign(cog, interaction)
 
-    assert cog.bot.placement_service.assign_driver.await_args.kwargs["season_state"] == "SETUP"
+    kwargs = cog.bot.placement_service.assign_driver.await_args.kwargs
+    assert kwargs["committed"] is False
+    assert kwargs["uncommitted_only"] is uncommitted_only
 
 
 async def test_a_refused_assignment_is_reported_not_raised(tmp_path):

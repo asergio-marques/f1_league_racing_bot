@@ -896,9 +896,9 @@ Transfers an existing driver profile from one Discord account to another, with e
 #### `/driver assign` — Assign a driver to a team and division
 *Access: League manager*
 
-Places an Unassigned driver into a specific team seat within a division. Requires a season in either **SETUP** or **ACTIVE** state — placement does not wait for approval.
+Places an Unassigned driver into a specific team seat within a division. Available only while the season is in **placements**, or mid-season while the drivers of a closed signup window are being placed — and then only for a driver who holds no confirmed placement. A driver whose placement is confirmed is moved or released instead.
 
-**When roles are granted depends on the season state.** For an **ACTIVE** season the division role and the team role (if configured via `/team add`) are granted immediately. For a **SETUP** season no roles are granted at assignment; they are granted in bulk to every placed driver at approval.
+**A placement stands outside the championship until placements are confirmed.** No role is granted and no lineup posted when you assign; the division and team roles are granted, and the lineups posted, when placements are confirmed from the review.
 
 A driver may hold at most one seat per division. Non-Reserve teams run out of seats; the Reserve team always has room.
 
@@ -913,9 +913,7 @@ Refused while test mode is active: a real driver is never seated in a division u
 #### `/driver unassign` — Remove a driver from a division
 *Access: League manager*
 
-Removes a driver's placement from one division. If this was their only assignment the driver reverts to Unassigned. Requires a season in **SETUP** or **ACTIVE** state.
-
-For an **ACTIVE** season this revokes the division role and, if no other seat mapping to it remains in any division, the team role. For a **SETUP** season no role is revoked, the driver never having held one.
+Removes a driver's placement from one division. If this was their only assignment the driver reverts to Unassigned. Available in the same stages as `/driver assign`, and only for a placement not yet confirmed — which held no role, so none is revoked and no lineup is posted.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

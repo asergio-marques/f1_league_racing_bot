@@ -7,10 +7,20 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from models.season import SeasonStage
 from utils.channel_guard import league_admin_only, league_manager_only
 from services.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)
+
+#: The stages `/driver assign` and `/driver unassign` are available in (issue #220): while the
+#: season is built, and mid-season for the drivers of the window just closed.
+_PLACING_STAGES = frozenset({SeasonStage.PLACEMENTS, SeasonStage.ONGOING_PLACEMENTS})
+
+_NOT_PLACING_REFUSAL = (
+    "⛔ `{command}` is available only while the season is in placements, or mid-season "
+    "while the drivers of a closed signup window are being placed."
+)
 
 
 class DriverCog(commands.Cog):
@@ -117,11 +127,11 @@ class DriverCog(commands.Cog):
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
-        # Resolve season
+        # Resolve season, and the stage placements may be made in (issue #220)
         season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
-        if season is None:
+        if season is None or season.stage not in _PLACING_STAGES:
             await interaction.followup.send(
-                "⛔ No season in SETUP or ACTIVE state found.", ephemeral=True
+                _NOT_PLACING_REFUSAL.format(command="/driver assign"), ephemeral=True
             )
             return
 
@@ -166,7 +176,8 @@ class DriverCog(commands.Cog):
                 acting_user_name=actor_name,
                 guild=interaction.guild,
                 discord_user_id=str(user.id),
-                season_state=season.status.value if hasattr(season.status, "value") else str(season.status),
+                committed=False,
+                uncommitted_only=season.stage is SeasonStage.ONGOING_PLACEMENTS,
             )
         except ValueError as exc:
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
@@ -215,9 +226,9 @@ class DriverCog(commands.Cog):
         actor_name = str(interaction.user)
 
         season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
-        if season is None:
+        if season is None or season.stage not in _PLACING_STAGES:
             await interaction.followup.send(
-                "⛔ No season in SETUP or ACTIVE state found.", ephemeral=True
+                _NOT_PLACING_REFUSAL.format(command="/driver unassign"), ephemeral=True
             )
             return
 
@@ -259,7 +270,7 @@ class DriverCog(commands.Cog):
                 acting_user_name=actor_name,
                 guild=interaction.guild,
                 discord_user_id=str(user.id),
-                season_state=season.status.value if hasattr(season.status, "value") else str(season.status),
+                uncommitted_only=season.stage is SeasonStage.ONGOING_PLACEMENTS,
             )
         except ValueError as exc:
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)

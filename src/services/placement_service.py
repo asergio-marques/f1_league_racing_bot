@@ -758,10 +758,24 @@ class PlacementService:
         guild: discord.Guild,
         discord_user_id: str,
         season_state: str = "ACTIVE",
+        *,
+        committed: bool | None = None,
+        uncommitted_only: bool = False,
     ) -> dict:
         """Assign a driver to a team seat in a division.
 
-        Returns a summary dict with keys: was_unassigned, team_name, division_name.
+        *committed* says whether the placement is committed (issue #220). `/driver assign`
+        places uncommitted drivers only, so it passes False: the placement stands outside the
+        championship — no role granted, no lineup posted — until placements are confirmed.
+        Left None, the placement takes the default migration 060 gives its season: committed
+        where the season's placements are confirmed. *uncommitted_only* refuses a driver who
+        already holds a committed placement in the season, which is how Ongoing, placements
+        keeps the assign command to the drivers of the window just closed.
+
+        *season_state* is no longer read: whether roles are granted follows the placement's
+        being committed, not the season's status.
+
+        Returns a summary dict with keys: was_unassigned, team_name, division_name, committed.
         Raises ValueError for all blocking conditions.
         """
         # A command that would carry a division past what its configured templates can
@@ -792,6 +806,19 @@ class PlacementService:
                     f"Driver must be Unassigned or Assigned to be placed "
                     f"(current state: {current_state.value})."
                 )
+
+            if uncommitted_only:
+                cursor = await db.execute(
+                    "SELECT 1 FROM driver_season_assignments "
+                    "WHERE driver_profile_id = ? AND season_id = ? AND committed = 1 LIMIT 1",
+                    (driver_profile_id, season_id),
+                )
+                if await cursor.fetchone() is not None:
+                    raise ValueError(
+                        "Driver already holds a confirmed placement this season. Move them "
+                        "with `/driver move`, or release them from a division with "
+                        "`/driver release`."
+                    )
 
             # 2. Check no duplicate division assignment
             cursor = await db.execute(
@@ -894,13 +921,22 @@ class PlacementService:
                 "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
                 (driver_profile_id, seat_id),
             )
-            await db.execute(
+            cursor = await db.execute(
                 "INSERT INTO driver_season_assignments "
                 "(driver_profile_id, season_id, division_id, team_seat_id, "
-                " current_position, current_points, points_gap_to_first) "
-                "VALUES (?, ?, ?, ?, 0, 0, 0)",
-                (driver_profile_id, season_id, division_id, seat_id),
+                " current_position, current_points, points_gap_to_first, committed) "
+                "VALUES (?, ?, ?, ?, 0, 0, 0, ?)",
+                (
+                    driver_profile_id, season_id, division_id, seat_id,
+                    None if committed is None else int(committed),
+                ),
             )
+            assignment_id = cursor.lastrowid
+            cursor = await db.execute(
+                "SELECT committed FROM driver_season_assignments WHERE id = ?",
+                (assignment_id,),
+            )
+            is_committed = bool((await cursor.fetchone())["committed"])
             if was_unassigned:
                 await db.execute(
                     "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
@@ -936,17 +972,23 @@ class PlacementService:
             except discord.HTTPException:
                 member = None
 
-        if member is not None and not is_test_driver:
-            if season_state == "ACTIVE":
-                role_ids_to_grant = [div_role_id]
-                team_cfg = await self.get_team_role_config(server_id, team_name)
-                if team_cfg is not None:
-                    role_ids_to_grant.append(team_cfg.role_id)
-                await self._grant_roles(member, *role_ids_to_grant)
+        # An uncommitted placement is outside the championship: it grants no role and posts
+        # no lineup. Both follow when placements are confirmed.
+        if member is not None and not is_test_driver and is_committed:
+            role_ids_to_grant = [div_role_id]
+            team_cfg = await self.get_team_role_config(server_id, team_name)
+            if team_cfg is not None:
+                role_ids_to_grant.append(team_cfg.role_id)
+            await self._grant_roles(member, *role_ids_to_grant)
 
-        if guild is not None:
+        if guild is not None and is_committed:
             await self._refresh_lineup_post(guild, division_id)
-        return {"was_unassigned": was_unassigned, "team_name": team_name, "division_name": div_name}
+        return {
+            "was_unassigned": was_unassigned,
+            "team_name": team_name,
+            "division_name": div_name,
+            "committed": is_committed,
+        }
 
     # ------------------------------------------------------------------
     # Unassign driver (T012)
@@ -963,8 +1005,15 @@ class PlacementService:
         guild: discord.Guild,
         discord_user_id: str,
         season_state: str = "ACTIVE",
+        *,
+        uncommitted_only: bool = False,
     ) -> dict:
         """Remove a driver's assignment from one division.
+
+        Roles are revoked and the lineup posted again only where the placement was committed;
+        an uncommitted one held neither (issue #220). *uncommitted_only* refuses a committed
+        placement, which `/driver move` and `/driver release` change instead. *season_state*
+        is no longer read.
 
         Returns a summary dict: division_name, has_remaining_assignments.
         Raises ValueError for blocking conditions.
@@ -988,7 +1037,7 @@ class PlacementService:
 
             # 2. Find the assignment row for this division
             cursor = await db.execute(
-                "SELECT id, team_seat_id FROM driver_season_assignments "
+                "SELECT id, team_seat_id, committed FROM driver_season_assignments "
                 "WHERE driver_profile_id = ? AND season_id = ? AND division_id = ?",
                 (driver_profile_id, season_id, division_id),
             )
@@ -1004,6 +1053,12 @@ class PlacementService:
                 )
             asgn_id = asgn_row["id"]
             seat_id = asgn_row["team_seat_id"]
+            was_committed = bool(asgn_row["committed"])
+            if uncommitted_only and was_committed:
+                raise ValueError(
+                    "That placement has been confirmed. Move the driver with `/driver move`, "
+                    "or release them from the division with `/driver release`."
+                )
 
             # 3. Fetch team name for this seat (needed for role revocation)
             team_name: str | None = None
@@ -1103,14 +1158,13 @@ class PlacementService:
             except discord.HTTPException:
                 member = None
 
-        if member is not None and not is_test_driver:
-            if season_state == "ACTIVE":
-                roles_to_revoke = [div_role_id]
-                if team_role_id_to_revoke is not None:
-                    roles_to_revoke.append(team_role_id_to_revoke)
-                await self._revoke_roles(member, *roles_to_revoke)
+        if member is not None and not is_test_driver and was_committed:
+            roles_to_revoke = [div_role_id]
+            if team_role_id_to_revoke is not None:
+                roles_to_revoke.append(team_role_id_to_revoke)
+            await self._revoke_roles(member, *roles_to_revoke)
 
-        if guild is not None:
+        if guild is not None and was_committed:
             await self._refresh_lineup_post(guild, division_id)
         return {"division_name": div_name, "has_remaining_assignments": has_remaining, "team_name": team_name}
 
