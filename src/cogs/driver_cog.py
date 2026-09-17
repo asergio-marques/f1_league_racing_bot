@@ -392,6 +392,79 @@ class DriverCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
+    # /driver release
+    # ------------------------------------------------------------------
+
+    @driver.command(
+        name="release",
+        description="Release a confirmed driver from one division, keeping their other seats.",
+    )
+    @app_commands.describe(
+        user="The Discord member to release.",
+        division="Division tier number or name to release them from.",
+    )
+    @league_manager_only
+    async def release(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        division: str,
+    ) -> None:
+        """Release a committed driver from one division (issue #220), in the ongoing stages."""
+        await interaction.response.defer(ephemeral=True)
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        if season is None or season.stage not in ONGOING_STAGES:
+            await interaction.followup.send(
+                "⛔ `/driver release` is available only while the season is ongoing.",
+                ephemeral=True,
+            )
+            return
+
+        resolved = await self.bot.placement_service.resolve_division(  # type: ignore[attr-defined]
+            season.id, division
+        )
+        if resolved is None:
+            await interaction.followup.send(
+                f"⛔ Division **{division}** not found in the active season.", ephemeral=True
+            )
+            return
+
+        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        if profile is None:
+            await interaction.followup.send(
+                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
+            )
+            return
+
+        try:
+            result = await self.bot.placement_service.release_driver(  # type: ignore[attr-defined]
+                server_id=server_id,
+                driver_profile_id=profile.id,
+                division_id=resolved[0],
+                season_id=season.id,
+                acting_user_id=interaction.user.id,
+                acting_user_name=str(interaction.user),
+                guild=interaction.guild,
+                discord_user_id=str(user.id),
+            )
+        except ValueError as exc:
+            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            f"✅ Released **{user.display_name}** from **{result['division_name']}**.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver release | Success\n"
+            f"  user: {user.display_name} (<@{user.id}>)\n"
+            f"  division: {result['division_name']}",
+        )
+
+    # ------------------------------------------------------------------
     # /driver sack
     # ------------------------------------------------------------------
 

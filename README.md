@@ -940,6 +940,18 @@ Available while the season is ongoing (including while a mid-season signup windo
 | `team` | String | ✅ | Exact team name the driver is moved into |
 | `to_division` | String | — | Division tier number or name moved into; omit to stay in the same division |
 
+#### `/driver release` — Release a confirmed driver from one division
+*Access: League manager · Ongoing only*
+
+Removes a driver whose placement is confirmed from **one** division, while they keep every other seat they hold. That division's role is revoked, and the team role only where no other seat of theirs maps to it; the division's lineup is posted again. Their points in that division stay where they were scored.
+
+Refused for a driver's **only** seat — sack them with `/driver sack` or move them with `/driver move` — and for a placement not yet confirmed, which `/driver unassign` removes.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user` | Member | ✅ | The driver to release |
+| `division` | String | ✅ | Division tier number or name to release them from |
+
 #### `/driver sack` — Sack a driver
 *Access: League admin*
 

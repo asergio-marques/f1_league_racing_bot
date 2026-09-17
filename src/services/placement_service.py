@@ -1222,6 +1222,58 @@ class PlacementService:
     # Unassign driver (T012)
     # ------------------------------------------------------------------
 
+    async def release_driver(
+        self,
+        server_id: int,
+        driver_profile_id: int,
+        division_id: int,
+        season_id: int,
+        acting_user_id: int,
+        acting_user_name: str,
+        guild: discord.Guild,
+        discord_user_id: str,
+    ) -> dict:
+        """Release a committed driver from one division, keeping every other seat they hold.
+
+        Issue #220. The division's role is revoked, the team's role only where no other seat
+        maps to it, and the division's lineup is posted again — the removal a committed
+        placement undergoes. Refused for an uncommitted placement, which is unassigned instead,
+        and for a driver's only seat, which is sacked or moved instead.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT committed FROM driver_season_assignments "
+                "WHERE driver_profile_id = ? AND season_id = ? AND division_id = ?",
+                (driver_profile_id, season_id, division_id),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                raise ValueError("Driver holds no seat in that division.")
+            if not row["committed"]:
+                raise ValueError(
+                    "That placement is not yet confirmed. Remove it with `/driver unassign`."
+                )
+            cursor = await db.execute(
+                "SELECT COUNT(*) AS n FROM driver_season_assignments "
+                "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ?",
+                (driver_profile_id, season_id, division_id),
+            )
+            if (await cursor.fetchone())["n"] == 0:
+                raise ValueError(
+                    "That is the driver's only seat. Sack them with `/driver sack`, or move "
+                    "them with `/driver move`."
+                )
+        return await self.unassign_driver(
+            server_id=server_id,
+            driver_profile_id=driver_profile_id,
+            division_id=division_id,
+            season_id=season_id,
+            acting_user_id=acting_user_id,
+            acting_user_name=acting_user_name,
+            guild=guild,
+            discord_user_id=discord_user_id,
+        )
+
     async def unassign_driver(
         self,
         server_id: int,
