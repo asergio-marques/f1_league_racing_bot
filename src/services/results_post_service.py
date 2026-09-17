@@ -17,7 +17,11 @@ from models.session_result import (
 )
 from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 from services import standings_service
-from services.channel_registry_service import missing_channel_fault
+from services.channel_registry_service import (
+    SETTING_LABELS,
+    missing_channel_fault,
+    unpostable_channel_fault,
+)
 from utils import results_formatter
 
 log = logging.getLogger(__name__)
@@ -1016,6 +1020,179 @@ async def post_round_results(
             db_path, session_result, driver_rows, points_map, results_channel, guild,
             round_number, track_name, label, is_sprint, bot=bot,
         )
+
+
+#: What the repost needs of a channel before it starts, by the names Discord's own
+#: interface uses. ``view_channel`` is listed even though a bot that cannot see a channel
+#: usually cannot send to it either: the two are separate permissions and Discord will
+#: report ``send_messages`` as granted on a channel the bot cannot read, so checking only
+#: the latter would pass a channel nothing can be posted to.
+#:
+#: ``read_message_history`` is here because a repost *replaces* rather than appends — it
+#: finds what it posted last with ``fetch_message``, which needs it. ``manage_messages`` is
+#: deliberately absent: the bot only ever deletes its own messages, which needs no
+#: permission at all.
+_REPOST_PERMISSIONS: tuple[tuple[str, str], ...] = (
+    ("view_channel", "View Channel"),
+    ("send_messages", "Send Messages"),
+    ("read_message_history", "Read Message History"),
+)
+
+#: Asked of a channel that may receive a graphic, in addition to the above.
+_ATTACHMENT_PERMISSION: tuple[str, str] = ("attach_files", "Attach Files")
+
+
+async def _image_aspect_on(bot, server_id: int, aspect: str) -> bool:
+    """Whether *aspect*'s graphics could be posted at all for this server.
+
+    **Asked of the aspect, not of each template** (#187). ``standings_enabled`` and
+    ``results_enabled`` go one step further and ask whether a *particular* template is
+    valid, because that is what decides whether one graphic falls back to text. That is the
+    wrong grain for a permission: template validity changes whenever a league edits its
+    artwork, and a refusal built on it would come and go with the artwork rather than with
+    the permission it is actually about. The question here is the stable one — could this
+    channel ever be sent a file — and it is answered by the module switch and the aspect
+    toggle, which is what a league sets and leaves set.
+
+    The over-approximation is deliberate and is the safe direction. A league with the module
+    on and the aspect on, but without Attach Files, cannot receive the graphics it has asked
+    for; being told so is right, even though the textual fallback would have limped on.
+    """
+    if bot is None:
+        return False
+    try:
+        if not await bot.module_service.is_images_enabled(server_id):
+            return False
+        toggles = await bot.image_config_service.get_toggles(server_id)
+        return bool(toggles.get(aspect))
+    except Exception as exc:  # noqa: BLE001 — never refuse an amendment on this reader
+        log.error(
+            "repost_channel_faults: image enablement check failed for server %s: %s",
+            server_id,
+            exc,
+        )
+        return False
+
+
+def _channel_fault(
+    guild: discord.Guild,
+    bot_member,
+    division_name: str,
+    setting: str,
+    channel_id: int,
+    *,
+    needs_attachment: bool,
+) -> str | None:
+    """The fault standing between the bot and posting to *channel_id*, or None.
+
+    Reads the gateway cache rather than calling Discord, which is what makes it usable as a
+    gate: it is the same reading ``/division results-channel`` already takes before it
+    accepts a channel.
+    """
+    channel = guild.get_channel(channel_id)
+    if channel is None:
+        return missing_channel_fault(division_name, setting, channel_id)
+
+    if not isinstance(channel, discord.TextChannel):
+        label = SETTING_LABELS.get(setting, setting)
+        return (
+            f"**{division_name}** — the {label} channel <#{channel_id}> is not a text "
+            f"channel, so nothing can be posted in it."
+        )
+
+    permissions = channel.permissions_for(bot_member)
+    wanted = list(_REPOST_PERMISSIONS)
+    if needs_attachment:
+        wanted.append(_ATTACHMENT_PERMISSION)
+    missing = [name for attr, name in wanted if not getattr(permissions, attr, False)]
+    if missing:
+        return unpostable_channel_fault(division_name, setting, channel_id, missing)
+    return None
+
+
+async def repost_channel_faults(
+    db_path: str,
+    season_id: int,
+    guild: "discord.Guild | None",
+    bot=None,
+) -> list[str]:
+    """What stands between this season and reposting every division's results (#187).
+
+    Returns the faults as lines a league can read, and an empty list where every division's
+    configured channels are there and can be posted to.
+
+    **Read before anything is written, so that an amendment is refused entire rather than
+    half-made.** The approval of a mid-season amendment overwrites the season's points and
+    then reposts every round of every division against the new numbers. A channel that has
+    been deleted, or one the bot's Send Messages has been revoked on, used to be discovered
+    only once the points were already overwritten — and then swallowed, so the league was
+    told the championship had been republished when none of it had. Establishing it first
+    turns that into a refusal that changes nothing.
+
+    **A channel a division never configured is not a fault.** It has nothing posted for it
+    and the cascade is right to skip it in silence; reporting it would refuse leagues that
+    are correctly configured. Only a channel the league *did* configure and the server no
+    longer holds, or holds and will not accept a posting in, is reported here.
+
+    **The bot's own member object is required, not assumed.** Without it there is no
+    permission arithmetic to do, and guessing would defeat the point of the gate — so an
+    unresolvable bot member is itself a fault rather than a reason to wave the season
+    through.
+    """
+    if guild is None:
+        return [
+            "The bot is not in this server, so nothing can be reposted. "
+            "Check that it is still a member and try again."
+        ]
+
+    bot_member = guild.me
+    if bot_member is None and bot is not None:
+        bot_user = getattr(bot, "user", None)
+        if bot_user is not None:
+            bot_member = guild.get_member(bot_user.id)
+    if bot_member is None:
+        return [
+            "The bot cannot read its own permissions in this server, so it cannot tell "
+            "whether the reposting would succeed. Try again in a moment."
+        ]
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT d.id, d.name,
+                   drc.results_channel_id, drc.standings_channel_id
+            FROM divisions d
+            LEFT JOIN division_results_config drc ON drc.division_id = d.id
+            WHERE d.season_id = ? AND d.status != 'CANCELLED'
+            ORDER BY d.tier, d.id
+            """,
+            (season_id,),
+        )
+        division_rows = await cursor.fetchall()
+
+    results_graphics = await _image_aspect_on(bot, guild.id, "results")
+    standings_graphics = await _image_aspect_on(bot, guild.id, "standings")
+
+    faults: list[str] = []
+    for row in division_rows:
+        division_name = row["name"] or f"division {row['id']}"
+        for setting, channel_id, needs_attachment in (
+            ("results", row["results_channel_id"], results_graphics),
+            ("standings", row["standings_channel_id"], standings_graphics),
+        ):
+            if not channel_id:
+                continue
+            fault = _channel_fault(
+                guild,
+                bot_member,
+                division_name,
+                setting,
+                int(channel_id),
+                needs_attachment=needs_attachment,
+            )
+            if fault is not None:
+                faults.append(fault)
+    return faults
 
 
 async def repost_round_results(
