@@ -158,11 +158,10 @@ async def test_an_empty_server_holds_no_real_drivers() -> None:
 
 @pytest.mark.parametrize(
     "state",
-    ["PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL", "UNASSIGNED", "ASSIGNED",
-     "SEASON_BANNED", "LEAGUE_BANNED"],
+    ["PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL", "UNASSIGNED", "ASSIGNED"],
 )
 async def test_every_live_state_counts(state: str) -> None:
-    """Anyone the league is holding — mid-signup, placed or banned — is a real driver."""
+    """Anyone the league is holding — mid-signup, approved or placed — is a real driver."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
     try:

@@ -457,8 +457,7 @@ async def run_driver_pass(db_path: str, server_id: int, *, bot=None, guild=None)
        is deleted, with their placements and history entries. Their signups remain.
 
     A former driver is kept. A driver created by test mode is not deleted here: switching test
-    mode off does that, and keeps their history. Season Banned and League Banned drivers are
-    left untouched. Returns ``{"reset": n, "deleted": m}``.
+    mode off does that, and keeps their history. Returns ``{"reset": n, "deleted": m}``.
     """
     placeholders = ",".join("?" for _ in DRIVER_PASS_STATES)
     async with get_connection(db_path) as db:

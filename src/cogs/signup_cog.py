@@ -185,8 +185,6 @@ class SignupButtonView(discord.ui.View):
             _APPROVED_STATES = {
                 DriverState.UNASSIGNED,
                 DriverState.ASSIGNED,
-                DriverState.SEASON_BANNED,
-                DriverState.LEAGUE_BANNED,
             }
             if profile.driver_state in _IN_PROGRESS_STATES:
                 await interaction.response.send_message(

@@ -146,7 +146,7 @@ async def count_live_real_drivers(server_id: int, db_path: str) -> int:
     """Return how many *live* real drivers this server holds.
 
     A live real driver is a driver_profiles row with is_test_driver = 0 whose state is
-    anything but NOT_SIGNED_UP: someone mid-signup, unassigned, assigned or banned. A row
+    anything but NOT_SIGNED_UP: someone mid-signup, unassigned or assigned. A row
     sitting at NOT_SIGNED_UP is a retained former driver — the profile of someone who has
     left, kept only for their history — and is not in the league, so it does not count.
 
