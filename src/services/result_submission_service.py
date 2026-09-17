@@ -960,62 +960,85 @@ async def save_session_result(
     fl_driver_override: int | None = None,
 ) -> int:
     """INSERT session_results + new result tables; return session_result_id."""
+    async with get_connection(db_path) as db:
+        session_result_id = await _save_session_result_in_tx(
+            db, round_id, division_id, session_type, status, config_name,
+            submitted_by, driver_rows, fl_driver_override,
+        )
+        await db.commit()
+    return session_result_id
+
+
+async def _save_session_result_in_tx(
+    db,
+    round_id: int,
+    division_id: int,
+    session_type: SessionType,
+    status: str,
+    config_name: str | None,
+    submitted_by: int | None,
+    driver_rows: list[dict],
+    fl_driver_override: int | None = None,
+) -> int:
+    """Do what `save_session_result` does on the caller's connection, without committing.
+
+    Split out for `replace_round_results`, which has to write every session of a round in the
+    same transaction as the delete of the results they replace.
+    """
     from services.season_service import SeasonImmutableError
     from services.driver_service import resolve_driver_profile_id
 
     submitted_at = datetime.now(timezone.utc).isoformat()
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT s.status AS season_status, s.server_id
-            FROM rounds r
-            JOIN divisions d ON d.id = r.division_id
-            JOIN seasons s ON s.id = d.season_id
-            WHERE r.id = ?
-            """,
-            (round_id,),
+    cursor = await db.execute(
+        """
+        SELECT s.status AS season_status, s.server_id
+        FROM rounds r
+        JOIN divisions d ON d.id = r.division_id
+        JOIN seasons s ON s.id = d.season_id
+        WHERE r.id = ?
+        """,
+        (round_id,),
+    )
+    season_row = await cursor.fetchone()
+    if season_row and season_row["season_status"] == "COMPLETED":
+        raise SeasonImmutableError(
+            f"Round {round_id} belongs to an archived season — results cannot be submitted."
         )
-        season_row = await cursor.fetchone()
-        if season_row and season_row["season_status"] == "COMPLETED":
-            raise SeasonImmutableError(
-                f"Round {round_id} belongs to an archived season — results cannot be submitted."
-            )
-        server_id_for_profile: int | None = season_row["server_id"] if season_row else None
+    server_id_for_profile: int | None = season_row["server_id"] if season_row else None
 
-        cursor = await db.execute(
-            """
-            INSERT INTO session_results
-                (round_id, division_id, session_type, status, config_name,
-                 submitted_by, submitted_at, fl_driver_override)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                round_id,
-                division_id,
-                session_type.value,
-                status,
-                config_name,
-                submitted_by,
-                submitted_at,
-                fl_driver_override,
-            ),
-        )
-        session_result_id = cursor.lastrowid
-        _profile_id_map: dict[int, int | None] = {}
-        for row in driver_rows:
-            driver_profile_id: int | None = None
-            if server_id_for_profile is not None:
-                driver_profile_id = await resolve_driver_profile_id(
-                    server_id_for_profile, row["driver_user_id"], db
-                )
-            _profile_id_map[row["driver_user_id"]] = driver_profile_id
-            if driver_profile_id is not None:
-                await db.execute(
-                    "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
-                    (driver_profile_id,),
-                )
-        await _insert_new_tables_in_tx(db, session_result_id, session_type, driver_rows, _profile_id_map)
-        await db.commit()
+    cursor = await db.execute(
+        """
+        INSERT INTO session_results
+            (round_id, division_id, session_type, status, config_name,
+             submitted_by, submitted_at, fl_driver_override)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            round_id,
+            division_id,
+            session_type.value,
+            status,
+            config_name,
+            submitted_by,
+            submitted_at,
+            fl_driver_override,
+        ),
+    )
+    session_result_id = cursor.lastrowid
+    _profile_id_map: dict[int, int | None] = {}
+    for row in driver_rows:
+        driver_profile_id: int | None = None
+        if server_id_for_profile is not None:
+            driver_profile_id = await resolve_driver_profile_id(
+                server_id_for_profile, row["driver_user_id"], db
+            )
+        _profile_id_map[row["driver_user_id"]] = driver_profile_id
+        if driver_profile_id is not None:
+            await db.execute(
+                "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
+                (driver_profile_id,),
+            )
+    await _insert_new_tables_in_tx(db, session_result_id, session_type, driver_rows, _profile_id_map)
     return session_result_id
 
 
@@ -2101,58 +2124,75 @@ async def _apply_points_from_config(
     This is called after save_session_result so that the new result tables have
     points_awarded and fastest_lap_bonus populated from the chosen points configuration.
     """
+    async with get_connection(db_path) as db:
+        if await _apply_points_in_tx(db, session_result_id, season_id, config_name, session_type):
+            await db.commit()
+
+
+async def _apply_points_in_tx(
+    db,
+    session_result_id: int,
+    season_id: int,
+    config_name: str,
+    session_type: SessionType,
+) -> bool:
+    """Do what `_apply_points_from_config` does on the caller's connection, without committing.
+
+    Returns whether anything was written. Split out for `replace_round_results`, which scores
+    the sessions it inserts in the same transaction, so a crash can never leave a round's new
+    results in place with no points on them.
+    """
     from services.standings_service import compute_points_for_session  # lazy import
 
-    async with get_connection(db_path) as db:
-        # Load config entries for (season, config, session_type)
-        entries_cursor = await db.execute(
-            "SELECT position, points FROM season_points_entries "
-            "WHERE season_id = ? AND config_name = ? AND session_type = ? "
-            "ORDER BY position",
-            (season_id, config_name, session_type.value),
-        )
-        entry_rows = await entries_cursor.fetchall()
+    # Load config entries for (season, config, session_type)
+    entries_cursor = await db.execute(
+        "SELECT position, points FROM season_points_entries "
+        "WHERE season_id = ? AND config_name = ? AND session_type = ? "
+        "ORDER BY position",
+        (season_id, config_name, session_type.value),
+    )
+    entry_rows = await entries_cursor.fetchall()
 
-        # Load FL config
-        fl_cursor = await db.execute(
-            "SELECT fl_points, fl_position_limit FROM season_points_fl "
-            "WHERE season_id = ? AND config_name = ? AND session_type = ?",
-            (season_id, config_name, session_type.value),
-        )
-        fl_row = await fl_cursor.fetchone()
+    # Load FL config
+    fl_cursor = await db.execute(
+        "SELECT fl_points, fl_position_limit FROM season_points_fl "
+        "WHERE season_id = ? AND config_name = ? AND session_type = ?",
+        (season_id, config_name, session_type.value),
+    )
+    fl_row = await fl_cursor.fetchone()
 
-        # Load driver result rows for this session
-        if session_type.is_qualifying:
-            dsr_cursor = await db.execute(
-                "SELECT id, driver_user_id, team_role_id, finishing_position, "
-                "outcome, NULL AS fastest_lap "
-                "FROM qualifying_session_results "
-                "WHERE session_result_id = ?",
-                (session_result_id,),
-            )
-        else:
-            dsr_cursor = await db.execute(
-                "SELECT id, driver_user_id, team_role_id, finishing_position, "
-                "outcome, fastest_lap "
-                "FROM race_session_results "
-                "WHERE session_result_id = ?",
-                (session_result_id,),
-            )
-        dsr_rows = await dsr_cursor.fetchall()
-
-        # Load FL driver override (if any) from the session header
-        fl_override_cursor = await db.execute(
-            "SELECT fl_driver_override FROM session_results WHERE id = ?",
+    # Load driver result rows for this session
+    if session_type.is_qualifying:
+        dsr_cursor = await db.execute(
+            "SELECT id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, NULL AS fastest_lap "
+            "FROM qualifying_session_results "
+            "WHERE session_result_id = ?",
             (session_result_id,),
         )
-        fl_override_row = await fl_override_cursor.fetchone()
-        fl_driver_override: int | None = (
-            fl_override_row["fl_driver_override"] if fl_override_row else None
+    else:
+        dsr_cursor = await db.execute(
+            "SELECT id, driver_user_id, team_role_id, finishing_position, "
+            "outcome, fastest_lap "
+            "FROM race_session_results "
+            "WHERE session_result_id = ?",
+            (session_result_id,),
         )
+    dsr_rows = await dsr_cursor.fetchall()
+
+    # Load FL driver override (if any) from the session header
+    fl_override_cursor = await db.execute(
+        "SELECT fl_driver_override FROM session_results WHERE id = ?",
+        (session_result_id,),
+    )
+    fl_override_row = await fl_override_cursor.fetchone()
+    fl_driver_override: int | None = (
+        fl_override_row["fl_driver_override"] if fl_override_row else None
+    )
 
     if not entry_rows and fl_row is None:
         # No config data — nothing to compute (0 points stays as-is)
-        return
+        return False
 
     config_entries = [
         PointsConfigEntry(
@@ -2202,24 +2242,23 @@ async def _apply_points_from_config(
     compute_points_for_session(driver_rows, config_entries, fl_config, session_type, fl_override=fl_driver_override)
 
     # Persist to new tables (keyed by session_result_id + driver_user_id)
-    async with get_connection(db_path) as db:
-        if session_type.is_qualifying:
-            for row in driver_rows:
-                await db.execute(
-                    "UPDATE qualifying_session_results "
-                    "SET points_awarded = ? "
-                    "WHERE session_result_id = ? AND driver_user_id = ?",
-                    (row.points_awarded, session_result_id, row.driver_user_id),
-                )
-        else:
-            for row in driver_rows:
-                await db.execute(
-                    "UPDATE race_session_results "
-                    "SET points_awarded = ?, fastest_lap_bonus = ? "
-                    "WHERE session_result_id = ? AND driver_user_id = ?",
-                    (row.points_awarded, row.fastest_lap_bonus, session_result_id, row.driver_user_id),
-                )
-        await db.commit()
+    if session_type.is_qualifying:
+        for row in driver_rows:
+            await db.execute(
+                "UPDATE qualifying_session_results "
+                "SET points_awarded = ? "
+                "WHERE session_result_id = ? AND driver_user_id = ?",
+                (row.points_awarded, session_result_id, row.driver_user_id),
+            )
+    else:
+        for row in driver_rows:
+            await db.execute(
+                "UPDATE race_session_results "
+                "SET points_awarded = ?, fastest_lap_bonus = ? "
+                "WHERE session_result_id = ? AND driver_user_id = ?",
+                (row.points_awarded, row.fastest_lap_bonus, session_result_id, row.driver_user_id),
+            )
+    return True
 
 
 
