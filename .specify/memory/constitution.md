@@ -1,6 +1,53 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-17 — v9.4.0 → v10.0.0: MAJOR — drivers sign up for each season (issue #220)]
+  Version change    : 9.4.0 → 10.0.0
+  Bump rationale    : MAJOR. Two rules of Principle VIII are redefined incompatibly: the
+                      Deletion rule required a flagless driver's profile to be deleted in the
+                      same transaction as their move to Not Signed Up, and Signup data clearing
+                      required a former driver's signup fields to be nulled on leaving. Both are
+                      withdrawn — a driver is now pending deletion until the season's end, and
+                      every completed signup is kept under its season. Code complying with v9.4.0
+                      violates v10.0.0 on both counts, which is what MAJOR is for. MINOR was
+                      weighed and rejected on that ground.
+
+  Modified sections :
+    - Principle VIII, Permitted Transitions — Unassigned → Not Signed Up is now `/driver reject`,
+      in Placements or Ongoing, placements; Assigned → Not Signed Up by `/driver sack` is limited
+      to the ongoing stages and confirmed placements; unassign removes a placement not yet
+      confirmed; a new row returns every placed, unplaced and mid-signup driver to Not Signed Up
+      at the season's end.
+    - Principle VIII — Signup data clearing replaced by Signup data retention; Deletion rule
+      replaced by Pending deletion, test drivers' history kept by identifier; Season Banned
+      mechanics reworded to match; User ID reassignment carries the profile's signups.
+    - Principle IX — team-name validation runs at both reviews; the team list is fixed from
+      configuration confirmation to the season's end, team roles never; new Building a season
+      bullet naming the stages under each status and limiting division and round creation to
+      Placements; Sequential tier ordering reworded to the confirmation of placements.
+    - Principle XI — Signup data persistence commits a record per signup; new Signups belong to
+      a season bullet (module fixed at configuration, window by stage, test mode); the lineup
+      and calendar channel clause posts on confirmed placements only.
+
+  Why the constitution is the document that moved:
+    - The season lifecycle decided in conversation on 2026-09-17 (issue #220) is specified in
+      docs/wip-specs/core_specification.md and signup_module_specification.md, and built on
+      feature/220-season-lifecycle. The constitution still bound the old model.
+
+  Unchanged, deliberately:
+    - Principles XII and XIII keep their `SETUP` / `ACTIVE` wording for module enabling and
+      approval gates. The status column still carries that coarse grain, and every such rule
+      still holds read against it.
+
+  Deferred items    : none.
+
+  Templates         : no template reads the driver state machine, the team list lock or the
+                      signup window rules; none required changes.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-15 — v9.3.0 → v9.4.0: MINOR — the standings ranking hierarchy is made total]
   Version change    : 9.3.0 → 9.4.0
   Bump rationale    : MINOR. The Standings Computation section named a hierarchy that ran out
@@ -4574,9 +4621,10 @@ their Discord User ID in server scope. The following rules are non-negotiable:
 | Pending Admin Approval | Unassigned | League manager approves signup |
 | Pending Admin Approval | Not Signed Up | League manager rejects signup; or driver withdraws |
 | Unassigned | Assigned | `/driver assign` places driver in their first seat |
-| Assigned | Unassigned | `/driver unassign` removes driver's last seat assignment |
-| Unassigned | Not Signed Up | `/driver sack` |
-| Assigned | Not Signed Up | `/driver sack` |
+| Assigned | Unassigned | `/driver unassign` removes driver's last seat assignment, that placement not yet confirmed |
+| Unassigned | Not Signed Up | `/driver reject`, while the season is in Placements or Ongoing, placements |
+| Assigned | Not Signed Up | `/driver sack`, while the season is in an ongoing stage, of a driver whose placement is confirmed |
+| Unassigned, Assigned, Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction | Not Signed Up | The season's end: its completion, cancellation or abort |
 | Any (except League Banned, Season Banned) | Season Banned | Ban command issued |
 | Any (except League Banned) | League Banned | Ban command issued by a league admin |
 | Season Banned | Not Signed Up | `ban_races_remaining` decrements to 0 |
@@ -4588,19 +4636,27 @@ their Discord User ID in server scope. The following rules are non-negotiable:
   the total round count of the active season at the time of issuance. This counter decrements
   by 1 for each round that completes anywhere within the server. When `ban_races_remaining`
   reaches 0, the driver automatically transitions to *Not Signed Up* under the same rules as
-  any other transition to that state (immutability gate, deletion, signup-data clearing).
-- **Signup data clearing**: On transition to *Not Signed Up* with `former_driver = true`, all
-  signup record fields (collected parameters) MUST be nulled; the driver's signup channel
-  reference is retained until the channel is pruned per Principle XI.
+  any other transition to that state (immutability gate, pending deletion).
+- **Signup data retention**: Every completed signup — one that reached Pending Admin Approval —
+  belongs to the season and the signup window it was made in, and MUST be kept for as long as
+  that season is kept, whatever becomes of the driver. A driver who signs up more than once
+  holds a record for each signup. No transition clears a signup record; a season deleted by
+  abort takes its signups with it. The former rule nulling a former driver's signup fields on
+  leaving is **withdrawn**.
 - **Immutability of former drivers**: Once `former_driver` is `true` (set on first round
   participation), the profile record MUST NOT be deleted — only modified. Deletion attempts
   MUST be rejected.
-- **Deletion rule**: Transitioning to *Not Signed Up* with `former_driver = false` MUST delete
-  the record atomically in the same transaction as the state change.
+- **Pending deletion**: A driver with `former_driver = false` who reaches *Not Signed Up* by
+  any route is **pending deletion**. The profile MUST NOT be deleted at the transition: it
+  stands at *Not Signed Up*, and MAY sign up again, until the driver pass run when the season
+  is completed, cancelled or aborted deletes it with its placements and history entries. Its
+  signups are kept. The driver pass MUST NOT delete a test driver; test drivers are deleted
+  when test mode is switched off, their history entries kept by their identifier, so that a
+  test driver created again under the same identifier holds them.
 - **User ID reassignment**: Only a league admin may change the Discord User ID.
   Both old and new IDs MUST be logged as an audit event (Principle V). Upon reassignment,
   the stored Discord username and server display name MUST be overwritten by those of the
-  new account.
+  new account, and every signup record of the profile MUST be carried to the new account.
 - **Test-mode overrides**: When test mode is active, league admins MAY directly set
   `former_driver` to `true` or `false`, and MAY assign *Not Signed Up* drivers directly to
   *Unassigned* or *Assigned*. All such overrides MUST produce audit log entries.
@@ -4628,11 +4684,11 @@ point:
   non-empty, is unique within its scope — the server for the server's team configuration, the
   division for the teams of a season — and is not `reserve`, which is reserved for the Reserve
   team. `team add` and `team rename` MUST reject a name failing any of these with
-  a clear diagnostic, and `season review` MUST fail validation of a season any team of which
-  fails them, naming every offending team. Of the two names `team rename` takes, only the **new**
+  a clear diagnostic, and `season config-review` and `season placements-review` MUST fail
+  validation of a season any team of which fails them, naming every offending team. Of the two names `team rename` takes, only the **new**
   one is validated: the current name identifies a team that already exists, and validating it
   would leave a team named before this rule impossible to rename or to remove. The same holds for
-  the name taken by `team remove`. Seasons already approved MUST NOT be re-validated against this
+  the name taken by `team remove`. Seasons whose placements are confirmed MUST NOT be re-validated against this
   rule, and no team may be renamed or removed by its introduction.
 
   A name **beginning with a digit is admitted**. The requirement that it begin with a letter held
@@ -4646,10 +4702,18 @@ point:
   team's history.
 - **Configurable teams**: The standard ten constructor teams (Alpine, Aston Martin, Ferrari,
   Haas, McLaren, Mercedes, Racing Bulls, Red Bull, Sauber, Williams) each carry exactly 2 seats
-  by default. A league manager MAY add or modify configurable teams in the server-level
-  default set at any time, and a league admin MAY remove one — a removed team taking its
-  seats with it, and nothing putting it back. Changes to the default set MAY be applied to all
-  divisions of the current season ONLY during the `SETUP` lifecycle phase.
+  by default. A league manager MAY add or rename configurable teams in the server-level
+  default set, and a league admin MAY remove one — a removed team taking its seats with it,
+  and nothing putting it back — only while no season is live or while the live season is in
+  **Configuration**. From the confirmation of a season's configuration to that season's end the
+  team list MUST NOT change. A team's Discord role MAY be changed in any stage. A division
+  takes its teams from the default set when it is created.
+- **Building a season**: Divisions and rounds MUST be created and deleted only while the
+  season is in **Placements** — after its configuration is confirmed and any signup window has
+  closed. A season's stages are Configuration, Waiting, Signups and Placements under the
+  `SETUP` status; Ongoing, Ongoing signups, Ongoing placements and Pending completion under
+  `ACTIVE`; and Completed and Cancelled. Once placements are confirmed, divisions and rounds
+  MAY only be amended or cancelled.
 - **Division isolation**: A team definition or seat assignment in Division A MUST NOT affect
   Division B. Team data is partitioned per division, per season.
 - **Divisions MAY differ in composition**: the divisions of a season MAY field different teams,
@@ -4659,8 +4723,8 @@ point:
   block beyond the teams of the division being removed in silence. The former invariant requiring
   the divisions of a season to field the same teams and the same seats — gated on the `lineup`
   aspect — is **withdrawn**, the template convention that forced it having been withdrawn with it.
-- **Sequential tier ordering**: Before a season may be approved (transitioned from `SETUP` to
-  `ACTIVE`), all configured divisions MUST have tier values that form a gapless sequence
+- **Sequential tier ordering**: Before a season's placements may be confirmed (its stage moving
+  from Placements to Ongoing, its status from `SETUP` to `ACTIVE`), all configured divisions MUST have tier values that form a gapless sequence
   starting at 1 (e.g., 1, 2, 3 — not 1, 3). The bot MUST block season approval and return a
   clear diagnostic if this rule is violated. Divisions are stored and displayed in ascending
   tier order, with tier 1 representing the highest tier.
@@ -4794,8 +4858,17 @@ lifecycle state (Principle VIII). The following rules are non-negotiable:
   in Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter, or
   Pending Driver Correction. Pressing it transitions the driver to Not Signed Up immediately.
 - **Signup data persistence**: Collected answers are stored as draft data during the wizard.
-  On transition to Pending Admin Approval the complete record MUST be committed atomically.
-  Draft data MUST be discarded on any transition to Not Signed Up.
+  On transition to Pending Admin Approval the complete record MUST be committed atomically, as a
+  new record of the season and window (Principle VIII, Signup data retention); a correction
+  amends the record it was asked of. Draft data MUST be discarded on any transition to Not
+  Signed Up.
+- **Signups belong to a season**: The signup module MUST be enabled, disabled and configured
+  only while no season is live or while the live season is in Configuration; confirming the
+  configuration fixes it, and a snapshot of it is kept with the season, until the season ends.
+  A signup window MUST open only while the season is in Waiting or Ongoing, and opening it moves
+  the season to Signups or Ongoing signups. Closing it, by any route, MUST move the season to
+  Placements, or mid-season to Ongoing placements where any signup is unsettled and to Ongoing
+  where none is. A season in test mode MUST NOT open a signup window.
 - **Image proof validation (configurable)**: When `time_image_required` is enabled, every
   lap-time submission MUST include an attached image; text-only submissions MUST be rejected
   with a clear explanation. The requirement MUST be stated in the channel before each
@@ -4826,9 +4899,10 @@ lifecycle state (Principle VIII). The following rules are non-negotiable:
   whenever a season exists, without requiring the signup module to be enabled. When
   `lineup_channel_id` is configured for a division, the bot MUST delete the previous lineup
   message (tracked via `lineup_message_id` on the `divisions` row) and post a fresh lineup
-  message whenever a driver's assignment in that division changes (assign, unassign, or sack).
-  When `calendar_channel_id` is configured, a calendar message is posted to that channel
-  upon season approval. If neither channel is configured for a division, no messages are
+  message whenever a confirmed placement in that division changes (placements confirmed, move,
+  release, or sack); a placement not yet confirmed posts nothing. When `calendar_channel_id`
+  is configured, a calendar message is posted to that channel when the season's placements are
+  confirmed. If neither channel is configured for a division, no messages are
   posted for that division.
   *(Amended v2.8.0: lineup channel ownership moved from signup_division_config to divisions;
   calendar_channel_id and lineup_message_id added to divisions; /division calendar-channel
@@ -7613,4 +7687,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 9.4.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-15
+**Version**: 10.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-17
