@@ -21,6 +21,20 @@ submission in two ways, and both are deliberate:
   already holds the review's history.
 - **It hands the round back to penalty review marked as a resubmission**, so the provisional
   tables it reposts say they replace the earlier ones.
+
+**Nothing is written until the last session is in.** A resubmission supersedes the round's
+results rather than deleting them first, so each session is held in memory and
+`replace_round_results` swaps them in at the end. Team agreement across sessions is checked
+against those held sessions, not the stored results being replaced.
+
+**Cancel, or a failure before the swap, returns the round to penalty review** with the results
+it had, which are already posted. The announcement's Cancel button is raced against every paste
+through an `asyncio.Event` rather than `View.wait()`, whose stopped future is destroyed by the
+first wait cancelled on it; `test_a_paste_is_still_collected_when_nobody_presses_cancel` holds
+that.
+
+`test_pressing_resubmit_collects_and_replaces_the_results` runs the whole path from the button,
+because every piece of it was tested with the next piece stubbed and the whole never worked.
 """
 from __future__ import annotations
 
@@ -37,9 +51,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 import services.penalty_wizard as pw  # noqa: E402
+from models.points_config import SessionType  # noqa: E402
+from services.penalty_service import StagedPenalty  # noqa: E402
 from services.result_submission_service import (  # noqa: E402
     ResubmissionCancelView,
     _resubmit_collection_task,
+    enter_resubmit_flow,
 )
 
 SERVER_ID = 14108
@@ -665,3 +682,99 @@ async def test_cancel_pressed_by_a_league_manager_stops_the_resubmission(monkeyp
 
     assert view.cancelled_by == MANAGER
     assert view.pressed.is_set()
+
+
+# ---------------------------------------------------------------------------
+# From the button to the swap, with nothing between them stubbed
+# ---------------------------------------------------------------------------
+
+
+def _review_state(bot, *, staged=()):
+    return SimpleNamespace(
+        bot=bot,
+        db_path=bot.db_path,
+        round_id=ROUND_ID,
+        division_id=DIVISION_ID,
+        division_name="Pro",
+        submission_channel_id=SUB_CHANNEL,
+        staged=list(staged),
+        prompt_message_id=None,
+    )
+
+
+def _pressed_resubmit():
+    interaction = MagicMock()
+    interaction.user = MagicMock()
+    interaction.user.id = MANAGER
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+async def _press_resubmit_and_collect(bot, state):
+    """Press Resubmit and wait for the collection it starts, stubbing only Discord and the
+    division lookups the collection's own tests already cover."""
+    with patch(
+        "services.result_submission_service._build_division_validation_data",
+        new=AsyncMock(
+            return_value=({101, 102}, {TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set())
+        ),
+    ), patch(
+        "services.season_points_service.get_attached_config_names",
+        new=AsyncMock(return_value=["Standard"]),
+    ), patch(
+        "services.result_submission_service.enter_penalty_state", new=AsyncMock()
+    ) as penalty:
+        await enter_resubmit_flow(_pressed_resubmit(), state)
+        task = next(t for t in asyncio.all_tasks() if t.get_name() == f"resubmit_r{ROUND_ID}")
+        await asyncio.wait_for(task, timeout=5)
+    return penalty
+
+
+async def test_pressing_resubmit_collects_and_replaces_the_results(tmp_path):
+    """Issue #210, end to end. The button used to delete the results and start a collection
+    that raised on its first line; every part of it was tested with the next part stubbed."""
+    db_path = await _make_db(tmp_path, name="resubmit_end_to_end")
+    await _seed_old_results(db_path)
+    channel = _channel()
+    bot = _bot(db_path, [QUALI_PASTE, RACE_PASTE])
+    bot.get_channel = MagicMock(return_value=channel)
+
+    penalty = await _press_resubmit_and_collect(bot, _review_state(bot))
+
+    assert [s[:2] for s in await _sessions(db_path)] == [
+        ("FEATURE_QUALIFYING", "ACTIVE"),
+        ("FEATURE_RACE", "ACTIVE"),
+    ]
+    assert await _resubmitting(db_path) == 0
+    assert penalty.await_args.kwargs["is_resubmission"] is True
+
+
+async def test_staged_penalties_stay_discarded_after_cancelling(tmp_path):
+    """Resubmit logged and cleared them. Cancelling keeps the results, not the staged list —
+    the review comes back empty, as the announcement's log already recorded."""
+    db_path = await _make_db(tmp_path, name="resubmit_end_to_end_cancel")
+    await _seed_old_results(db_path)
+    channel = _channel()
+    bot = _bot(db_path, [])
+    bot.get_channel = MagicMock(return_value=channel)
+    staged = StagedPenalty(
+        driver_user_id=101, session_type=SessionType.FEATURE_RACE,
+        penalty_type="TIME", penalty_seconds=5,
+    )
+    state = _review_state(bot, staged=[staged])
+
+    async def _wait_for(event, check):
+        view = next(
+            c.kwargs["view"] for c in channel.send.await_args_list if "view" in c.kwargs
+        )
+        view.cancelled_by = MANAGER
+        view.pressed.set()
+        await asyncio.Event().wait()
+
+    bot.wait_for = AsyncMock(side_effect=_wait_for)
+
+    penalty = await _press_resubmit_and_collect(bot, state)
+
+    assert state.staged == []
+    assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
+    assert penalty.await_args.kwargs["skip_results_post"] is True
