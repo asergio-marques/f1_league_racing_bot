@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -2802,6 +2802,65 @@ async def run_result_submission_job(round_id: int, bot) -> None:
 # ---------------------------------------------------------------------------
 # Resubmission flow — triggered by the 🔄 Resubmit Initial Results button
 # ---------------------------------------------------------------------------
+
+@dataclass
+class CollectedSession:
+    """One session of a resubmission, validated and held until the last session is in."""
+
+    session_type: SessionType
+    status: str
+    config_name: str | None
+    submitted_by: int | None
+    driver_rows: list[dict] = field(default_factory=list)
+    fl_driver_override: int | None = None
+
+
+async def replace_round_results(
+    db_path: str,
+    round_id: int,
+    division_id: int,
+    season_id: int,
+    collected: list[CollectedSession],
+) -> None:
+    """Replace every session of a round with a resubmission's, in one transaction.
+
+    A resubmission supersedes the round's results: the ones already submitted stand, published
+    and counted, until every session has been entered again (issue #210). So nothing is written
+    while the manager pastes, and this is the one write at the end. The delete of the old
+    results, the insert of the new, their points and the clearing of the channel's
+    `resubmitting` flag either all land or none do — a crash part-way cannot leave a round
+    holding some of each, or new results with no points on them.
+
+    `results_posted` is cleared in the same transaction. The round is still in penalty review,
+    so a crash after the commit is recovered as a review whose results were never posted, and
+    the new ones go out then.
+
+    Raises `SeasonImmutableError` for an archived season, with the old results untouched.
+    """
+    async with get_connection(db_path) as db:
+        try:
+            await db.execute("DELETE FROM session_results WHERE round_id = ?", (round_id,))
+            for session in collected:
+                session_result_id = await _save_session_result_in_tx(
+                    db, round_id, division_id, session.session_type, session.status,
+                    session.config_name, session.submitted_by, session.driver_rows,
+                    fl_driver_override=session.fl_driver_override,
+                )
+                if session.config_name is not None:
+                    await _apply_points_in_tx(
+                        db, session_result_id, season_id, session.config_name,
+                        session.session_type,
+                    )
+            await db.execute(
+                "UPDATE round_submission_channels SET resubmitting = 0, results_posted = 0 "
+                "WHERE round_id = ?",
+                (round_id,),
+            )
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            raise
+
 
 async def enter_resubmit_flow(
     interaction: discord.Interaction,
