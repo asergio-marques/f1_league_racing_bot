@@ -241,6 +241,13 @@ class SignupModuleService:
     async def set_window_open(
         self, server_id: int, button_message_id: int, selected_tracks: list[str]
     ) -> None:
+        """Open the window, and record it as a window of the server's active season.
+
+        The record is what a signup made through this window is kept against (issue #220):
+        the tracks it asked times for, and later its close time. A server with no active
+        season records none — `/signup open` refuses there, so only a caller outside that
+        command reaches this without one.
+        """
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE signup_module_config "
@@ -249,7 +256,45 @@ class SignupModuleService:
                 "WHERE server_id = ?",
                 (button_message_id, json.dumps(selected_tracks), server_id),
             )
+            season_id = await self._live_season_id(db, server_id)
+            if season_id is not None:
+                await db.execute(
+                    "INSERT INTO signup_windows (server_id, season_id, selected_tracks_json) "
+                    "VALUES (?, ?, ?)",
+                    (server_id, season_id, json.dumps(selected_tracks)),
+                )
             await db.commit()
+
+    @staticmethod
+    async def _live_season_id(db, server_id: int) -> int | None:
+        cursor = await db.execute(
+            "SELECT id FROM seasons WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
+            "ORDER BY id DESC LIMIT 1",
+            (server_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row["id"]) if row is not None else None
+
+    async def get_windows(self, season_id: int) -> list[dict]:
+        """Every signup window *season_id* opened, oldest first."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, season_id, selected_tracks_json, close_at, opened_at, closed_at "
+                "FROM signup_windows WHERE season_id = ? ORDER BY id",
+                (season_id,),
+            )
+            rows = await cursor.fetchall()
+        return [
+            {
+                "id": row["id"],
+                "season_id": row["season_id"],
+                "selected_tracks": json.loads(row["selected_tracks_json"]),
+                "close_at": row["close_at"],
+                "opened_at": row["opened_at"],
+                "closed_at": row["closed_at"],
+            }
+            for row in rows
+        ]
 
     async def set_window_closed(
         self, server_id: int, *, closed_msg_id: int | None = None
@@ -262,6 +307,12 @@ class SignupModuleService:
                 "WHERE server_id = ?",
                 (closed_msg_id, server_id),
             )
+            # The window record keeps the close time it carried; only its closing is stamped.
+            await db.execute(
+                "UPDATE signup_windows SET closed_at = datetime('now') "
+                "WHERE server_id = ? AND closed_at IS NULL",
+                (server_id,),
+            )
             await db.commit()
 
     async def set_close_at(self, server_id: int, close_at_iso: str | None) -> None:
@@ -271,7 +322,65 @@ class SignupModuleService:
                 "UPDATE signup_module_config SET close_at = ? WHERE server_id = ?",
                 (close_at_iso, server_id),
             )
+            await db.execute(
+                "UPDATE signup_windows SET close_at = ? "
+                "WHERE server_id = ? AND closed_at IS NULL",
+                (close_at_iso, server_id),
+            )
             await db.commit()
+
+    async def snapshot_season_config(self, server_id: int, season_id: int) -> None:
+        """Keep the signup configuration *season_id* is confirmed with (issue #220).
+
+        Taken when the season's configuration is confirmed, from which point the module's
+        settings are fixed until the season ends, so the snapshot is exactly what every
+        signup of the season answered. Taken again only if called again — replaced, not
+        duplicated.
+        """
+        settings = await self.get_settings(server_id)
+        slots = await self.get_slots(server_id)
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "INSERT INTO season_signup_config "
+                "(season_id, nationality_required, time_type, time_image_required, slots_json) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(season_id) DO UPDATE SET "
+                "nationality_required = excluded.nationality_required, "
+                "time_type = excluded.time_type, "
+                "time_image_required = excluded.time_image_required, "
+                "slots_json = excluded.slots_json, captured_at = datetime('now')",
+                (
+                    season_id,
+                    int(settings.nationality_required),
+                    settings.time_type,
+                    int(settings.time_image_required),
+                    json.dumps([
+                        {"slot_id": slot.slot_id, "day_of_week": slot.day_of_week,
+                         "time_hhmm": slot.time_hhmm}
+                        for slot in slots
+                    ]),
+                ),
+            )
+            await db.commit()
+
+    async def get_season_config(self, season_id: int) -> dict | None:
+        """The signup configuration *season_id* was confirmed with, or None."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT nationality_required, time_type, time_image_required, slots_json, "
+                "captured_at FROM season_signup_config WHERE season_id = ?",
+                (season_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "nationality_required": bool(row["nationality_required"]),
+            "time_type": row["time_type"],
+            "time_image_required": bool(row["time_image_required"]),
+            "slots": json.loads(row["slots_json"]),
+            "captured_at": row["captured_at"],
+        }
 
     async def save_closed_message_id(self, server_id: int, msg_id: int | None) -> None:
         """Persist only the closed-status message ID without altering other fields."""

@@ -2383,6 +2383,11 @@ class SeasonCog(commands.Cog):
         target = (
             SeasonStage.WAITING if signup_on and not test_mode else SeasonStage.PLACEMENTS
         )
+        if signup_on:
+            # The season's signups are made under these settings, fixed from this moment.
+            await self.bot.signup_module_service.snapshot_season_config(  # type: ignore[attr-defined]
+                server_id, cfg.season_id
+            )
         try:
             await self.bot.season_service.set_stage(cfg.season_id, target)  # type: ignore[attr-defined]
         except InvalidStageTransition:

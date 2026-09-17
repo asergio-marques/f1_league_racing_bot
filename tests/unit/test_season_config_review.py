@@ -71,6 +71,7 @@ def _bot(
     bot.config_service.get_server_config = AsyncMock(
         return_value=_server_config(test_mode=test_mode)
     )
+    bot.signup_module_service.snapshot_season_config = AsyncMock()
     bot.season_service.get_stage = AsyncMock(return_value=stage)
     bot.season_service.set_stage = AsyncMock()
     bot.output_router.post_log = AsyncMock()
@@ -197,6 +198,22 @@ async def test_confirming_moves_the_season_on(signup, test_mode, expected):
 
     bot.season_service.set_stage.assert_awaited_once_with(SEASON_ID, expected)
     assert "confirmed" in interaction.followup.send.await_args.args[0]
+
+
+async def test_confirming_keeps_the_signup_configuration_for_the_season():
+    bot = _bot(signup=True)
+    await _cog(bot)._do_confirm_configuration(_interaction())
+
+    bot.signup_module_service.snapshot_season_config.assert_awaited_once_with(
+        SERVER_ID, SEASON_ID
+    )
+
+
+async def test_confirming_without_signup_keeps_no_signup_configuration():
+    bot = _bot(signup=False)
+    await _cog(bot)._do_confirm_configuration(_interaction())
+
+    bot.signup_module_service.snapshot_season_config.assert_not_awaited()
 
 
 async def test_confirming_refuses_on_a_fault_found_afresh():
