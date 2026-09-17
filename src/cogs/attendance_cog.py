@@ -10,6 +10,7 @@ from discord.ext import commands
 
 from db.database import get_connection
 from services.attendance_service import validate_timing_invariant
+from services.season_lifecycle_service import uncommitted_seat_excluded
 from utils.channel_guard import league_manager_only
 
 log = logging.getLogger(__name__)
@@ -486,10 +487,21 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
 
     division_id: int = round_row["division_id"]
 
-    # Verify the driver is in this division (full-time or reserve) (FR-011)
+    # Verify the driver holds a confirmed placement in this division (full-time or reserve)
+    # (FR-011). Only a driver with one may answer the call: an unconfirmed placement stands
+    # outside the championship until `/season placements-review` confirms it (issue #220), so
+    # it is called to no check-in and accrues no attendance. This is the one reader of the
+    # championship that walked the seats without `uncommitted_seat_excluded`, which went
+    # unnoticed while `upsert_rsvp_status` discarded every answer it had no row for; now that
+    # it opens rows, the predicate is what stops it opening one here (issue #209).
+    #
+    # No answer of its own: the refusal below is one message for every way of not being a
+    # driver of this division — an unconfirmed placement, a seat in another division, or no
+    # driver profile at all. A league manager who does not drive and presses a button out of
+    # curiosity is in the same position, and telling them apart would serve nobody.
     async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
         cur = await db.execute(
-            """
+            f"""
             SELECT ti.is_reserve
               FROM driver_season_assignments dsa
               JOIN team_seats ts ON ts.driver_profile_id = dsa.driver_profile_id
@@ -497,7 +509,8 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
                                     AND ti.division_id = dsa.division_id
              WHERE dsa.driver_profile_id = ?
                AND dsa.division_id = ?
-            """,
+               AND {uncommitted_seat_excluded("ts")}
+            """,  # noqa: S608
             (driver_profile_id, division_id),
         )
         assignment_row = await cur.fetchone()

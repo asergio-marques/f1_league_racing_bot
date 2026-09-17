@@ -191,6 +191,21 @@ async def _set_status(db_path: str, profile_id: int, status: str) -> None:
         await db.commit()
 
 
+async def _uncommit_placement(db_path: str, profile_id: int) -> None:
+    """Put the driver's placement back to unconfirmed, as a mid-season signup's stands.
+
+    `_make_db` seeds an ACTIVE season, and migration 057's trigger defaults a placement
+    written into one to `committed = 1` — which is what keeps every fixture seating a driver
+    in a running season meaning what it always meant. Saying otherwise has to be deliberate.
+    """
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_season_assignments SET committed = 0 WHERE driver_profile_id = ?",
+            (profile_id,),
+        )
+        await db.commit()
+
+
 async def _status(db_path: str, profile_id: int) -> str | None:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -287,6 +302,32 @@ async def test_a_driver_of_another_division_is_turned_away(tmp_path):
     await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "not a member of this division" in _reply(interaction)
+
+
+async def test_a_driver_whose_placement_is_not_confirmed_is_turned_away(tmp_path):
+    """Only a driver with a *confirmed* placement in the division may answer its call.
+
+    An unconfirmed placement stands outside the championship until `/season
+    placements-review` confirms it (issue #220) — no roles, no lineup, no check-in, no
+    attendance points — and `handle_rsvp_button` was the one reader of the championship that
+    walked the seats without `uncommitted_seat_excluded`. It did not show while
+    `upsert_rsvp_status` silently discarded every answer it held no row for; the moment that
+    began opening rows, the predicate became what stops it opening one here (issue #209).
+
+    **The same refusal as every other way of not being a driver of this division**, together
+    with the two tests above: an unconfirmed placement, a seat in another division, and no
+    profile at all are one rule with one message. Telling them apart would serve nobody — a
+    league manager who does not drive and presses a button out of curiosity is in exactly the
+    same position — and who can see a check-in channel in the first place is the league's own
+    permissions to set, which this bot does not touch."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3), call_posted=False)
+    await _uncommit_placement(db_path, FULL_TIME_PROFILE)
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+
+    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert "not a member of this division" in _reply(interaction)
+    assert await _status(db_path, FULL_TIME_PROFILE) is None
 
 
 async def test_a_button_for_a_deleted_round_says_so(tmp_path):
