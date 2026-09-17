@@ -216,15 +216,19 @@ async def compute_driver_standings(
     # Every seat in the division, reserves included. Two jobs, one query: the non-reserve
     # seats decide who joins the standings without having scored, and every seat supplies the
     # team the final tiebreak orders on — a reserve who raced is in the set already.
+    from services.season_lifecycle_service import uncommitted_seat_excluded
+
+    # A driver whose placement is not yet confirmed is not in the standings (issue #220).
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            """
+            f"""
             SELECT dp.discord_user_id, ti.name AS team_name, ti.is_reserve
             FROM team_seats ts
             JOIN team_instances ti ON ti.id = ts.team_instance_id
             JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
             WHERE ti.division_id = ?
               AND ts.driver_profile_id IS NOT NULL
+              AND {uncommitted_seat_excluded("ts")}
             """,
             (division_id,),
         )
@@ -482,9 +486,11 @@ async def opening_driver_standings(
     """
     names = display_names or {}
 
+    from services.season_lifecycle_service import uncommitted_seat_excluded
+
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            """
+            f"""
             SELECT dp.discord_user_id, ti.name AS team_name
             FROM team_seats ts
             JOIN team_instances ti ON ti.id = ts.team_instance_id
@@ -492,6 +498,7 @@ async def opening_driver_standings(
             WHERE ti.division_id = ?
               AND ti.is_reserve = 0
               AND ts.driver_profile_id IS NOT NULL
+              AND {uncommitted_seat_excluded("ts")}
             """,
             (division_id,),
         )

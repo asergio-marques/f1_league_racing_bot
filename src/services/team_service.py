@@ -487,7 +487,9 @@ class TeamService:
     # Read helpers for review output (US6)
     # ------------------------------------------------------------------
 
-    async def get_division_teams(self, division_id: int) -> list[dict]:
+    async def get_division_teams(
+        self, division_id: int, *, committed_only: bool = False
+    ) -> list[dict]:
         """Return team instances with their seats for a division, in **insertion** order.
 
         Ordered by ``id``, not by name. A lineup graphic addresses a team by the ordinal of
@@ -501,6 +503,8 @@ class TeamService:
         (FR-009). The **server's** default team list is a separate thing and stays sorted
         by name: it is a configuration listing and no ordinal is read from it.
         """
+        from services.season_lifecycle_service import uncommitted_seat_excluded
+
         async with get_connection(self._db_path) as db:
             instance_rows = await (
                 await db.execute(
@@ -511,12 +515,15 @@ class TeamService:
             ).fetchall()
             teams = []
             for inst in instance_rows:
+                # *committed_only* reads a seat held by a driver whose placement is not yet
+                # confirmed as empty: that driver is outside the championship (issue #220).
                 seat_rows = await (
                     await db.execute(
-                        "SELECT ts.seat_number, ts.driver_profile_id, dp.discord_user_id "
+                        "SELECT ts.seat_number, dp.id AS driver_profile_id, dp.discord_user_id "
                         "FROM team_seats ts "
                         "LEFT JOIN driver_profiles dp ON dp.id = ts.driver_profile_id "
-                        "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
+                        + (f"AND {uncommitted_seat_excluded('ts')} " if committed_only else "")
+                        + "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
                         (inst["id"],),
                     )
                 ).fetchall()

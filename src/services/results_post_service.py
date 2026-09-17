@@ -843,15 +843,18 @@ async def _set_standings_message_id(
 
 async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:
     """Return discord_user_ids of all drivers seated in a reserve team for this division."""
+    from services.season_lifecycle_service import uncommitted_seat_excluded
+
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            """
+            f"""
             SELECT dp.discord_user_id
             FROM team_seats ts
             JOIN team_instances ti ON ti.id = ts.team_instance_id
             JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
             WHERE ti.division_id = ? AND ti.is_reserve = 1
               AND ts.driver_profile_id IS NOT NULL
+              AND {uncommitted_seat_excluded("ts")}
             """,
             (division_id,),
         )

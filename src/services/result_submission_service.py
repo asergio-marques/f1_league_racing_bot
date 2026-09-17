@@ -2035,7 +2035,8 @@ async def _build_division_validation_data(
     reserve team.  They appear in ``division_driver_ids`` and ``driver_team_map`` but
     must be treated differently during submission validation.
     """
-    div_teams = await bot.team_service.get_division_teams(division_id)
+    # Only drivers whose placements are confirmed may be scored (issue #220).
+    div_teams = await bot.team_service.get_division_teams(division_id, committed_only=True)
     teams_with_roles = await bot.team_service.get_teams_with_roles(server_id)
 
     name_to_role: dict[str, int] = {
