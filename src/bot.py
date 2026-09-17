@@ -598,6 +598,41 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
                     )
 
 
+async def _abandon_interrupted_resubmission(
+    bot: commands.Bot,
+    round_id: int,
+    channel: discord.abc.Messageable,
+    announcement_id: int | None,
+) -> None:
+    """Close out a resubmission a restart cut short, leaving the round's results as they were.
+
+    The collection ran in memory and is gone. The flag is cleared first, so the review
+    channel's message guard is back in force before the prompt returns, and the Cancel button
+    on the announcement is taken down because nothing is listening for it any more.
+    """
+    from db.database import get_connection
+
+    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        await db.execute(
+            "UPDATE round_submission_channels SET resubmitting = 0 WHERE round_id = ?",
+            (round_id,),
+        )
+        await db.commit()
+
+    if announcement_id is not None:
+        try:
+            announcement = await channel.fetch_message(announcement_id)
+            await announcement.edit(view=None)
+        except (discord.NotFound, discord.HTTPException):
+            pass  # Already gone; the notice below says what happened either way
+
+    await channel.send(
+        "⚠️ **The bot restarted during a results resubmission**, and the sessions entered so "
+        "far were lost. The earlier results still stand. Press **🔄 Resubmit Initial Results** "
+        "again to re-enter them."
+    )
+
+
 async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
     """Close any submission channels left open by a previous bot process.
 
@@ -613,6 +648,10 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         (production path — test mode uses /test-mode advance instead).
 
     Penalty-review orphans (in_penalty_review=1):
+      - Where a resubmission was in progress (resubmitting=1), its collection is lost but
+        the round's results are not: nothing is written until the last session is in
+        (issue #210). Clear the flag, take down the announcement's Cancel button, and say in
+        the channel that the earlier results stand — then re-prompt as below.
       - Re-post the penalty review prompt.  skip_results_post is set based on
         the results_posted column so we never re-post interim results that were
         already sent before the crash.
@@ -627,6 +666,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
             """
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
                    rsc.results_posted, rsc.staged_penalties, rsc.prompt_message_id,
+                   rsc.resubmitting, rsc.resubmit_prompt_message_id,
                    r.division_id, r.status, s.server_id
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
@@ -644,6 +684,8 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         results_posted: int = row["results_posted"]
         staged_penalties_json: str | None = row["staged_penalties"]
         prompt_message_id: int | None = row["prompt_message_id"]
+        resubmitting: int = row["resubmitting"]
+        resubmit_prompt_message_id: int | None = row["resubmit_prompt_message_id"]
         division_id: int = row["division_id"]
         round_status: str = row["status"] or ""
         server_id: int = row["server_id"]
@@ -704,6 +746,11 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                 )
                 continue
             try:
+                if resubmitting:
+                    await _abandon_interrupted_resubmission(
+                        bot, round_id, channel, resubmit_prompt_message_id
+                    )
+
                 # If staged_penalties is set, penalties were already written to
                 # the result tables before the crash.  Warn the LM before
                 # re-posting the prompt with an empty staged list so they know
