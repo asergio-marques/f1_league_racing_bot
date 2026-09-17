@@ -90,6 +90,9 @@ class DriverCog(commands.Cog):
             f"   Former driver: {former}",
             ephemeral=True,
         )
+        # After the reply, so that reading the image configuration and touching the league's
+        # directory can never eat into Discord's three seconds.
+        await self._remove_old_portrait(server_id, resolved_old_id)
         await self.bot.output_router.post_log(
             server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reassign | Success\n"
@@ -100,6 +103,46 @@ class DriverCog(commands.Cog):
             "Driver profile re-keyed on server %s: %s → %s by %s",
             server_id, resolved_old_id, new_user_id, actor_name,
         )
+
+    async def _remove_old_portrait(self, server_id: int, discord_user_id: str) -> None:
+        """Delete the portrait the bot obtained for a re-keyed driver's former account.
+
+        A portrait is a cache of one Discord account's own profile picture, so unlike the
+        driver's results and history there is nothing here to carry: the new account has a
+        picture of its own, which is obtained before the next graphic is drawn. What is left
+        behind is the old file, sitting in the league's driver directory under an account
+        that will never be drawn again — so it goes (issue #222).
+
+        Where the league names no image configuration, or a directory that cannot be
+        resolved, the file and its ownership row are **both** left alone. See
+        `driver_portrait_service.remove_portrait` for why the row must never go on its own.
+
+        Never raises. The re-key is committed by the time this runs, and a portrait is not
+        worth reporting a successful command as a failure.
+        """
+        try:
+            from services.driver_portrait_service import remove_portrait
+            from services.image_render_service import resolve_configured_directories
+
+            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
+            if config is None:
+                return
+            directories, _faults = resolve_configured_directories(
+                config,
+                (("driver", "driver_image_directory"),),
+                image_type="driver_portraits",
+            )
+            directory = directories.get("driver")
+            if directory is None:
+                return
+            await remove_portrait(
+                self.bot.db_path, server_id, discord_user_id, directory  # type: ignore[attr-defined]
+            )
+        except Exception:  # noqa: BLE001 — a portrait never fails a command
+            log.warning(
+                "/driver reassign: could not remove the portrait of %s on server %s",
+                discord_user_id, server_id, exc_info=True,
+            )
 
     # ------------------------------------------------------------------
     # /driver assign
