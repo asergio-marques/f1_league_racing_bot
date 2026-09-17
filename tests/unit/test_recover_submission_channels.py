@@ -30,6 +30,11 @@ two staged lists, and whichever is approved second overwrites the first.
 **A mid-submission orphan is announced.** The sessions submitted before the crash are gone and
 the manager has to re-enter them; that is not something to discover from an empty wizard.
 
+**A restart mid-resubmission keeps the round's results** (issue #210). The pastes collected so
+far lived in memory and are gone, but nothing was written until the last session was in, so the
+round is an ordinary review whose `resubmitting` flag has to come down. Treating it as
+mid-submission would delete the results the resubmission was meant to supersede.
+
 **Nothing here may raise.** This runs inside start-up, so one unrecoverable round must not stop
 the rest being recovered — nor stop the bot finishing its start-up at all. Every failure path
 is tested for it, because a guild missing from the cache is ordinary on a large bot and a
@@ -73,6 +78,8 @@ async def _make_db(
     prompt_message_id: int | None = None,
     round_status: str = "AWAITING_RESULTS",
     with_results: bool = True,
+    resubmitting: int = 0,
+    resubmit_prompt_message_id: int | None = None,
 ) -> str:
     db_path = os.path.join(str(tmp_path), f"{name}.db")
     await run_migrations(db_path)
@@ -99,8 +106,9 @@ async def _make_db(
         )
         await db.execute(
             "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
-            "closed, in_penalty_review, results_posted, staged_penalties, prompt_message_id) "
-            "VALUES (?, ?, '2026-02-01T00:00:00+00:00', ?, ?, ?, ?, ?)",
+            "closed, in_penalty_review, results_posted, staged_penalties, prompt_message_id, "
+            "resubmitting, resubmit_prompt_message_id) "
+            "VALUES (?, ?, '2026-02-01T00:00:00+00:00', ?, ?, ?, ?, ?, ?, ?)",
             (
                 ROUND_ID,
                 CHANNEL_ID,
@@ -109,6 +117,8 @@ async def _make_db(
                 results_posted,
                 staged_penalties,
                 prompt_message_id,
+                resubmitting,
+                resubmit_prompt_message_id,
             ),
         )
         if with_results:
@@ -666,3 +676,96 @@ async def test_an_appeals_round_whose_guild_is_missing_is_left_intact(tmp_path):
 
     stubs["appeals_view"].assert_not_called()
     assert await _rows(db_path, "session_results") == 1
+
+
+# ---------------------------------------------------------------------------
+# A restart in the middle of a resubmission
+# ---------------------------------------------------------------------------
+
+
+async def _resubmitting_db(tmp_path, name, **kwargs):
+    return await _make_db(
+        tmp_path, name=name, in_penalty_review=1, results_posted=1, resubmitting=1,
+        round_status="AWAITING_REPORT_VERDICTS", **kwargs,
+    )
+
+
+async def _resubmitting_flag(db_path) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT resubmitting FROM round_submission_channels WHERE round_id = ?", (ROUND_ID,)
+        )
+        return (await cursor.fetchone())[0]
+
+
+async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_review(tmp_path):
+    db_path = await _resubmitting_db(tmp_path, "recover_resubmit")
+    channel = _channel()
+    stub = _bot(db_path, channel=channel)
+
+    stubs = await _recover(stub)
+
+    assert await _rows(db_path, "session_results") == 1
+    channel.delete.assert_not_awaited()
+    stubs["rerun"].assert_not_called()
+    stubs["enter"].assert_awaited_once()
+    assert stubs["enter"].await_args.kwargs["skip_results_post"] is True
+
+
+async def test_a_restart_mid_resubmission_clears_the_flag(tmp_path):
+    """Left set, the review channel's guard would stay down and let messages through."""
+    db_path = await _resubmitting_db(tmp_path, "recover_resubmit_flag")
+    stub = _bot(db_path, channel=_channel())
+
+    await _recover(stub)
+
+    assert await _resubmitting_flag(db_path) == 0
+
+
+async def test_a_restart_mid_resubmission_says_the_earlier_results_stand(tmp_path):
+    """The manager was part-way through pasting; the prompt coming back unexplained would
+    look as though the pastes had been accepted."""
+    db_path = await _resubmitting_db(tmp_path, "recover_resubmit_notice")
+    channel = _channel()
+    stub = _bot(db_path, channel=channel)
+
+    await _recover(stub)
+
+    assert "The earlier results still stand" in _posted(channel)
+
+
+async def test_a_restart_mid_resubmission_takes_down_the_cancel_button(tmp_path):
+    """The view was not persistent, so after a restart pressing it would only fail."""
+    db_path = await _resubmitting_db(
+        tmp_path, "recover_resubmit_button", resubmit_prompt_message_id=6100
+    )
+    channel = _channel()
+    channel._old.edit = AsyncMock()
+    stub = _bot(db_path, channel=channel)
+
+    await _recover(stub)
+
+    channel.fetch_message.assert_any_await(6100)
+    channel._old.edit.assert_awaited_once_with(view=None)
+
+
+async def test_a_resubmission_announcement_already_gone_does_not_stop_the_recovery(tmp_path):
+    db_path = await _resubmitting_db(
+        tmp_path, "recover_resubmit_gone", resubmit_prompt_message_id=6100
+    )
+    stub = _bot(db_path, channel=_channel(fetch_fails=True))
+
+    stubs = await _recover(stub)
+
+    assert await _resubmitting_flag(db_path) == 0
+    stubs["enter"].assert_awaited_once()
+
+
+async def test_an_ordinary_review_is_not_told_about_a_resubmission(tmp_path):
+    db_path = await _make_db(tmp_path, name="recover_not_resubmit", in_penalty_review=1)
+    channel = _channel()
+    stub = _bot(db_path, channel=channel)
+
+    await _recover(stub)
+
+    assert "resubmission" not in _posted(channel)

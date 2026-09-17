@@ -348,7 +348,7 @@
 #### Penalties and appeals are settled in the submission channel
 Penalties are not applied by a command. Once every session of a round has been submitted or cancelled, the submission channel remains open and carries the round through two review stages before it closes. Each stage is worked from buttons, and the results are published under three headings in turn: provisional, post-race penalty, and final. These are the labels the league reads on the posted results; the round's own lifecycle states, which the two reviews move it through, are set out in the [core specification](core_specification.md).
 
-- Any message posted in the submission channel while it is in a review stage shall be deleted, with a reply saying why.
+- Any message posted in the submission channel while it is in a review stage shall be deleted, with a reply saying why. A resubmission in progress is exempt.
 - Every button in both stages shall be usable by holders of the server's interaction role.
 - A round in which every session was cancelled shall skip both stages: the channel closes and no standings are computed for that round.
 
@@ -362,7 +362,13 @@ Penalties are not applied by a command. Once every session of a round has been s
     - A driver not present in the chosen session's results shall be rejected.
 - **No Penalties / Confirm** — proceeds with nothing applied. Where entries are staged, it shall first ask for confirmation that they are to be discarded.
 - **Approve** — proceeds with what is staged. It shall be unavailable while nothing is staged.
-- **Resubmit Initial Results** — discards the staged penalties, supersedes the round's submitted results, and restarts collection from the first session.
+- **Resubmit Initial Results** — discards the staged penalties, takes down the prompt, and restarts collection in the same channel from the first session.
+    - The resubmission shall supersede the round's submitted results rather than delete them. The submitted results shall stand, published and counted, until every session has been submitted again, and shall then be replaced all at once. Decided 2026-09-17 (issue #210).
+    - Team agreement across the sessions of the round shall be checked against the sessions of the resubmission, not the results being replaced.
+    - The resubmission shall carry a button labelled "Cancel", usable by league managers. Pressing it shall end the resubmission, keep the submitted results, and post the stage-one prompt again. The staged penalties it discarded shall not be restored. Decided 2026-09-17.
+    - A resubmission that fails before its results are saved shall end as a cancelled one does, and say so in the channel.
+    - A restart during a resubmission shall keep the submitted results and restore stage one, saying in the channel that the sessions entered so far were lost.
+    - The resubmission shall be refused where the submission channel no longer exists, and nothing shall be discarded.
 - **Attendance Pardon** — stages an attendance pardon, per the attendance module specification.
 - One **Remove** button per staged entry.
 

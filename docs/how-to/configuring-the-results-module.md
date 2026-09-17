@@ -231,7 +231,7 @@ See [Test mode](test-mode.md) for the whole picture.
 
 ## Settling the round: penalties, then appeals
 
-The submission channel stays open, and there are **two** stages to get through. Both are worked entirely from buttons; anything else typed in the channel is deleted with an explanation.
+The submission channel stays open, and there are **two** stages to get through. Both are worked entirely from buttons; anything else typed in the channel is deleted with an explanation, except while you are resubmitting the round's results.
 
 ### Stage one — post-race penalties
 
@@ -242,10 +242,14 @@ The prompt carries five buttons:
 | **➕ Add Penalty** | Pick a session, then give the driver, the sanction, a description and a justification |
 | **No Penalties / Confirm** | Move to approval with nothing applied. If you have anything staged, it asks whether you really mean to discard it |
 | **✅ Approve** | Commit what you have staged, immediately. With nothing staged it refuses and points you at **No Penalties / Confirm** — the button is never greyed out |
-| **🔄 Resubmit Initial Results** | Throw the whole round's submission away and start collecting it again from the first session |
+| **🔄 Resubmit Initial Results** | Start collecting the whole round again from the first session. The results already submitted stay in place until the last session is in |
 | **🏳️ Attendance Pardon** | Only useful with the attendance module on — see [its guide](configuring-the-attendance-module.md) |
 
 Each staged penalty also gets its own **Remove** button, so you can take one back without clearing the list.
+
+**Resubmitting keeps the round's results until you have replaced them.** Pressing it discards anything you have staged, takes the prompt down, and asks for every session again in the same channel, the same way as the first time. Until the last session is in, the results, tables and standings the league is looking at are the ones you already submitted — then the new ones replace them in one go and are published as provisional again, marked as amended. Changed your mind part-way? The announcement carries a **Cancel** button: it stops the resubmission, leaves the earlier results exactly as they were, and brings the prompt back. The penalties you had staged do not come back with it.
+
+> **A restart during a resubmission loses what you had pasted, not the round's results.** The earlier results stand and the prompt comes back, with a note in the channel. Press **🔄 Resubmit Initial Results** again to start over.
 
 **A sanction is `DSQ` or a number of whole seconds**, positive or negative — `+5s` for the usual thing, `-3s` to give time back, `DSQ` to drop a driver to the bottom of the classification. Qualifying sessions take `DSQ` only. The bot refuses a negative penalty larger than the penalties that driver actually holds, and one that would leave them with a negative race time. Fractions of a second are refused: five and a half seconds cannot be given here.
 
@@ -385,7 +389,7 @@ Worth knowing so you do not go looking for the setting.
 | No submission channel for a round you moved | `/round amend` re-arms the round's submission whatever your modules. If one still does not open, check the round actually reached its scheduled time |
 | A submission rejected over a team role | The Reserve role in a team column, three lines under one team, or a driver under a different team from the one another session of the round already records |
 | A submission rejected over a driver | Not mentioned, or not seated in that division. A reserve also needs `/team reserve-role` set |
-| Everything you pasted gone after a restart | Known: a part-finished submission is discarded and reopened from the first session |
+| Everything you pasted gone after a restart | Known: a part-finished submission is discarded and reopened from the first session. A part-finished *resubmission* is dropped too, but the round keeps the results it had |
 | Results posted but no standings | Every session of the round was cancelled, so there was nothing to score |
 | Points on the tables you did not expect | The session was scored against whichever configuration was chosen for it. `/results config view` shows what that configuration says |
 | A driver keeping their fastest-lap point after retiring | Intended. A retirement forfeits position points, not the bonus |

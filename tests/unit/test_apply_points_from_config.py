@@ -34,7 +34,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
-from services.result_submission_service import _apply_points_from_config  # noqa: E402
+from services.result_submission_service import (  # noqa: E402
+    _apply_points_from_config,
+    _apply_points_in_tx,
+)
 
 SERVER_ID = 12708
 SEASON_ID = 1
@@ -358,3 +361,35 @@ async def test_another_season_s_table_is_not_used(tmp_path):
     await _apply(db_path)
 
     assert (await _points(db_path))[DRIVER_A][0] == 25
+
+
+# ---------------------------------------------------------------------------
+# Inside a caller's transaction
+# ---------------------------------------------------------------------------
+
+
+async def test_scoring_inside_a_transaction_writes_nothing_until_it_commits(tmp_path):
+    """`replace_round_results` scores the sessions it inserts in the same transaction as the
+    delete of the results they replace (issue #210). Scoring that committed on its own would
+    let a crash leave the round half-replaced."""
+    db_path = await _make_db(tmp_path)
+
+    async with get_connection(db_path) as db:
+        written = await _apply_points_in_tx(
+            db, SESSION_RESULT_ID, SEASON_ID, CONFIG, SessionType.FEATURE_RACE
+        )
+        await db.rollback()
+
+    assert written is True
+    assert await _points(db_path) == {DRIVER_A: (0, 0), DRIVER_B: (0, 0)}
+
+
+async def test_scoring_inside_a_transaction_says_when_there_was_nothing_to_score(tmp_path):
+    db_path = await _make_db(tmp_path, entries=(), fl=None)
+
+    async with get_connection(db_path) as db:
+        written = await _apply_points_in_tx(
+            db, SESSION_RESULT_ID, SEASON_ID, CONFIG, SessionType.FEATURE_RACE
+        )
+
+    assert written is False

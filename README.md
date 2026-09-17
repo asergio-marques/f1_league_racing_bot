@@ -1429,7 +1429,7 @@ After all sessions of a round are submitted, the submission channel enters **pen
 - **➕ Add Penalty** — prompts for the session, then opens a modal taking a driver mention or user ID, a penalty value (e.g. `+5s`, `-3s`, `DSQ`), a description and a justification. Both text fields are required and both are published in the verdict. Positive and negative time penalties are supported for race sessions; only DSQ is accepted for qualifying sessions. Values are **whole seconds only**. Negative penalties are rejected if their magnitude exceeds the time penalties the driver already carries in that session, or if they would produce a negative total race time.
 - **No Penalties / Confirm** — moves to the approval step with nothing applied. When entries are staged, it first asks for confirmation that they are to be discarded.
 - **✅ Approve** — applies the staged penalties immediately (see below). It is never disabled: pressed with nothing staged it replies that no penalties are staged and points at **No Penalties / Confirm**.
-- **🔄 Resubmit Initial Results** — discards the staged penalties, supersedes the submitted results, and restarts collection from the first session.
+- **🔄 Resubmit Initial Results** — discards the staged penalties, takes the prompt down, and asks for every session again in the same channel, from the first. The results already submitted **stand, published and counted, until the last session is in**, and are then replaced all at once. The resubmission's announcement carries a **Cancel** button: pressing it stops the resubmission, keeps the earlier results, and brings the penalty prompt back — without the staged penalties, which stay discarded.
 - **🏳️ Attendance Pardon** — stages an attendance pardon; see [Attendance Module](#attendance-module). Present regardless of whether that module is enabled.
 - **Remove #N** — a per-entry button appears for each staged penalty, allowing individual removals.
 
@@ -1446,12 +1446,14 @@ Approving the penalty stage posts a second prompt to the same channel, carrying 
 Approving here — or **No Changes / Confirm** with nothing staged — deletes and reposts everything under the **Final Results** label, records each correction, posts its verdict, cascades subsequent standings, marks the round **FINAL**, and deletes the submission channel. There is no second confirmation step on this stage.
 
 **Notes:**
-- Any message posted in the submission channel while it is in penalty review state is automatically deleted with an explanatory reply.
+- Any message posted in the submission channel while it is in penalty review state is automatically deleted with an explanatory reply — except while a resubmission is collecting results.
 - Penalties can be positive (`+5s`, `5s`, `5`) or negative (`-3s`, `-3`) for race sessions.
 - A DSQ on the fastest-lap holder forfeits the bonus; no other driver receives it.
 - A round that has been submitted but has not reached **final** blocks `/test-mode advance` until both review stages are approved. The refusal names whichever review is standing.
 - `/round cancel` is refused once the round's results have been entered — from then on the drivers have reports and appeals to lodge, and cancelling would take that from them. It is also refused while a submission channel stands open. The same rule governs `/division cancel` and `/season cancel`, so a round that cannot be cancelled on its own is not cancelled by a cascade either.
 - On bot restart, a channel already in penalty or appeals review is restored and its prompt reposted. A channel still **mid-submission** is not: the round's submitted sessions are discarded and collection restarts from the first session, with a notice in the log channel.
+- A restart during a **resubmission** loses the sessions pasted so far but not the round's results: the earlier results stand, the penalty prompt comes back, and the channel says what happened. Press **🔄 Resubmit Initial Results** again to start over.
+- A resubmission that fails before the new results are saved also leaves the earlier results in place and brings the penalty prompt back, saying so in the channel.
 - A round in which every session is submitted as `CANCELLED` skips both review stages entirely — the channel closes and no standings are computed for it.
 
 ##### Fastest-lap tie-breaking — FL override header
