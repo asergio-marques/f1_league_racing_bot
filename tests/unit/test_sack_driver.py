@@ -4,20 +4,19 @@ Issue #208. `PlacementService.sack_driver` is ninety statements and was uncovere
 most destructive thing a league manager can do to one person's record, and what it destroys
 depends on a single flag.
 
-**A former driver keeps their profile; anyone else is meant to lose it.** `former_driver` marks
+**A former driver keeps their profile; anyone else loses it.** `former_driver` marks
 someone who has raced in this league before, and their profile row is what every historical
 result points at — deleting it would either fail on a foreign key or rewrite a season's results
 to name nobody. So a former driver is transitioned to Not Signed Up with their signup record
 blanked. That path works and is covered here in full.
 
-**The other path does not work at all, and this file pins that as it stands.** Deleting a
-profile clears what points at it first, and one of those statements —
-`UPDATE signup_records SET driver_profile_id = NULL` — names a column `signup_records` has never
-had. So sacking anyone who is *not* a former driver raises `no such column` and rolls back. It
-is not a harmless failure: the roles are revoked before the database is touched, so the driver
-loses every role and keeps their seat, their assignment and their profile. See
-`test_sacking_a_driver_who_is_not_a_former_driver_fails_today`, which asserts the failure and
-the half-state, and is written to fail loudly the day it is fixed. Issue #211.
+**Anyone else loses their profile.** A driver who has never raced has no results the league
+needs attributed to them, so the profile is deleted, and everything pointing at it has to go
+or let go first or the foreign keys refuse the deletion. Their attendance history goes with
+them. The result and standings rows they appear in stay, naming nobody by profile, because
+those belong to the round rather than to the driver. Issue #211: this path once cleared a
+column `signup_records` has never had, so every such sack raised and rolled back, leaving the
+driver stripped of their roles but still seated. Nothing had ever run it.
 
 **Only an Unassigned or Assigned driver can be sacked.** Someone mid-signup has nothing to
 revoke and someone banned is already out; sacking either would either do nothing or quietly
@@ -26,8 +25,8 @@ needs to know which one they hit.
 
 **Roles are revoked before the database changes.** The roles are the only part a driver can see,
 and the seat assignments are what the revocation is computed from — doing it afterwards would
-revoke nothing, because the assignments are gone by then. It is also what makes the defect above
-worse than a plain failure.
+revoke nothing, because the assignments are gone by then. It is also why a failure in the
+database step is not harmless: the roles are already gone when it happens.
 
 **A test driver has no roles to revoke.** They are a rehearsal's fiction with no Discord member
 behind them, and asking Discord about them would be a fetch that fails on every sack of a
@@ -291,46 +290,80 @@ async def test_a_profile_from_another_server_is_not_found(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# A driver who never raced: the profile is meant to go, and cannot
+# A driver who never raced: the profile goes
 # ---------------------------------------------------------------------------
 
 
-async def test_sacking_a_driver_who_is_not_a_former_driver_fails_today(tmp_path):
-    """**A defect, pinned as it stands.** The deletion path clears the soft references
-    pointing at the profile before removing it, and one of those statements names a column
-    `signup_records` has never had — so the sack raises `no such column` and rolls back.
+async def test_a_driver_who_never_raced_is_deleted(tmp_path):
+    """Before round 1 is final nobody in the league has raced, so this is the ordinary case
+    and not an edge — issue #211, where it raised and left the driver seated."""
+    db_path = await _make_db(tmp_path, name="sack_delete", former_driver=False)
 
-    Asserting the failure rather than the deletion, so this fails loudly the day it is fixed
-    and whoever fixes it replaces it with the assertions the docstring describes.
-    """
-    import sqlite3
+    await _sack(_service(db_path), _guild())
 
-    db_path = await _make_db(tmp_path, name="sack_defect", former_driver=False)
-
-    with pytest.raises(sqlite3.OperationalError, match="driver_profile_id"):
-        await _sack(_service(db_path), _guild())
-
-
-async def test_the_failed_sack_leaves_the_driver_stripped_of_their_roles(tmp_path):
-    """Which is what makes it worse than a plain failure. The roles are revoked before the
-    database is touched, so the driver loses every role and keeps their seat, their
-    assignment and their profile — and a manager who retries gets the same failure."""
-    import sqlite3
-
-    db_path = await _make_db(tmp_path, name="sack_halfstate", former_driver=False)
-    service = _service(db_path)
-
-    with pytest.raises(sqlite3.OperationalError):
-        await _sack(service, _guild())
-
-    service.revoke_all_placement_roles.assert_awaited_once()
-    assert await _count(db_path, "SELECT COUNT(*) FROM driver_profiles") == 1
+    assert await _profile_state(db_path) is None
     assert (
         await _count(
             db_path, "SELECT COUNT(*) FROM team_seats WHERE driver_profile_id IS NOT NULL"
         )
-        == 1
+        == 0
     )
+    assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 0
+
+
+async def test_a_driver_who_never_raced_is_still_stripped_of_their_roles(tmp_path):
+    """Deletion is the database half; the roles are the half the driver sees."""
+    db_path = await _make_db(tmp_path, name="sack_delete_roles", former_driver=False)
+    service = _service(db_path)
+
+    await _sack(service, _guild())
+
+    service.revoke_all_placement_roles.assert_awaited_once()
+    service._revoke_roles.assert_awaited_once()
+
+
+async def test_a_driver_who_never_raced_loses_their_attendance_history(tmp_path):
+    """It references the profile with no cascade, so it has to go first or the deletion is
+    refused — and a driver who is deleted keeps no record to attach it to."""
+    db_path = await _make_db(tmp_path, name="sack_delete_attendance", former_driver=False)
+
+    await _sack(_service(db_path), _guild())
+
+    assert await _count(db_path, "SELECT COUNT(*) FROM driver_round_attendance") == 0
+
+
+async def test_results_and_standings_outlive_a_deleted_driver(tmp_path):
+    """They belong to the round, and deleting them would change what every other driver in
+    it scored and where they stood. They let go of the profile instead."""
+    db_path = await _make_db(tmp_path, name="sack_delete_results", former_driver=False)
+
+    await _sack(_service(db_path), _guild())
+
+    for table in (
+        "race_session_results",
+        "qualifying_session_results",
+        "driver_standings_snapshots",
+    ):
+        assert await _count(db_path, f"SELECT COUNT(*) FROM {table}") == 1, table
+        assert (
+            await _count(
+                db_path, f"SELECT COUNT(*) FROM {table} WHERE driver_profile_id IS NOT NULL"
+            )
+            == 0
+        ), table
+
+
+async def test_a_deleted_drivers_deletion_is_audited_as_such(tmp_path):
+    db_path = await _make_db(tmp_path, name="sack_delete_audit", former_driver=False)
+
+    await _sack(_service(db_path), _guild())
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT new_value FROM audit_entries WHERE server_id = ?", (SERVER_ID,)
+        )
+        row = await cursor.fetchone()
+    assert json.loads(row["new_value"])["former_driver"] is False
 
 
 # ---------------------------------------------------------------------------

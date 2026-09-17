@@ -1283,11 +1283,6 @@ class PlacementService:
                     "WHERE driver_profile_id = ?",
                     (driver_profile_id,),
                 )
-                await db.execute(
-                    "UPDATE signup_records SET driver_profile_id = NULL "
-                    "WHERE driver_profile_id = ?",
-                    (driver_profile_id,),
-                )
                 # Delete profile atomically
                 await db.execute(
                     "DELETE FROM driver_profiles WHERE id = ?", (driver_profile_id,)
