@@ -6,7 +6,7 @@ directory is the only place templates are searched, so a folder that does not ho
 drawings a league's switched-on outputs need is a configuration that cannot produce those
 images.
 
-The survey is **scoped to the enabled aspects**, as `/season review` and `/season approve`
+The survey is **scoped to the enabled aspects**, as `/season placements-review` and the confirmation of placements
 are: a folder holding no verdicts drawing is a perfectly good folder for a league that
 posts verdicts as text, and demanding all fifteen would force every league to supply
 drawings for outputs it has switched off. Switching an aspect on checks its own drawings

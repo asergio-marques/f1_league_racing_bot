@@ -1,13 +1,14 @@
-"""`/test-mode toggle` refuses to enable test mode over a real league.
+"""`/test-mode toggle` answers to the season's stage and refuses a real league.
 
-Test mode and a real roster may not share a server: switching test mode off deletes every
-fake driver on it without confirmation, and while it is on the signup and placement paths
-refuse real drivers outright. An open signup window is refused on the same footing — its
-button would reject every driver who pressed it.
+Test mode is chosen for a season, while that season is in Configuration (issue #220). Outside
+Configuration the toggle is refused: confirming the configuration fixes test mode, and the
+season's end switches it off. That retired the two refusals the toggle used to make — an open
+signup window, and a started season holding fake drivers — since neither can arise while the
+season is in Configuration.
 
-Leaving is refused in one case only: a season that has started while holding fake drivers
-keeps test mode on until it is completed, because a driver the season has raced cannot be
-deleted and the delete is what disabling does.
+Test mode and a real roster may still not share a server: switching test mode off deletes every
+fake driver on it without confirmation, and while it is on the signup and placement paths refuse
+real drivers outright.
 
 The callback runs against a migrated database with Discord stubbed, and the guards are
 unwrapped the way the other cog suites unwrap them.
@@ -207,6 +208,11 @@ async def db_path(tmp_path):
             "signed_up_role_id, signups_open) VALUES (?, 11, 12, 13, 0)",
             (SERVER_ID,),
         )
+        await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
+            "VALUES (?, '2026-09-17', 'SETUP', 1, 'CONFIGURATION')",
+            (SERVER_ID,),
+        )
         await db.commit()
     return path
 
@@ -273,184 +279,73 @@ class TestEnabling:
         assert "**2** real driver" in interaction.reply
 
 
-class TestAnOpenSignupWindow:
-    async def test_it_refuses_the_toggle(self, cog, db_path):
-        await _open_signups(db_path)
-
-        interaction = await _toggle(cog)
-
-        assert "signups are open" in interaction.reply
-        assert "`/signup close`" in interaction.reply
-
-    async def test_the_flag_is_left_alone(self, cog, db_path):
-        await _open_signups(db_path)
-
-        await _toggle(cog)
-
-        assert await _flag(db_path) is False
-
-    async def test_the_window_is_not_closed_for_them(self, cog, db_path):
-        """A flag flip must not post a public notice in a channel a league reads."""
-        await _open_signups(db_path)
-
-        await _toggle(cog)
-
+class TestTheSeasonsStage:
+    async def test_it_is_refused_with_no_season(self, cog, db_path):
         async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT signups_open FROM signup_module_config WHERE server_id = ?",
-                (SERVER_ID,),
-            )
-            row = await cursor.fetchone()
-        assert bool(row["signups_open"]) is True
-
-    async def test_a_closed_window_does_not_stand_in_the_way(self, cog, db_path):
-        interaction = await _toggle(cog)
-
-        assert "**enabled**" in interaction.reply
-
-    async def test_a_server_without_the_signup_module_is_not_held_up(self, cog, db_path):
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "DELETE FROM signup_module_config WHERE server_id = ?", (SERVER_ID,)
-            )
+            await db.execute("DELETE FROM seasons")
             await db.commit()
 
         interaction = await _toggle(cog)
 
-        assert "**enabled**" in interaction.reply
-
-
-# ── Leaving ───────────────────────────────────────────────────────────────
-
-
-class TestLeaving:
-    async def test_the_entry_guards_do_not_hold_a_server_in_test_mode(
-        self, cog, db_path, monkeypatch
-    ):
-        """Neither an open window nor a real driver keeps a server under test."""
-        await _in_test_mode(db_path)
-        await _open_signups(db_path)
-        await _add_driver(db_path, "4006", "ASSIGNED")
-        monkeypatch.setattr(
-            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
-        )
-
-        interaction = await _toggle(cog)
-
-        assert "**disabled**" in interaction.reply
+        assert "only be switched while a season is in configuration" in interaction.reply
         assert await _flag(db_path) is False
 
-    async def test_a_running_season_holding_fake_drivers_refuses_it(
-        self, cog, db_path, monkeypatch
+    @pytest.mark.parametrize(
+        "stage, status",
+        [("WAITING", "SETUP"), ("PLACEMENTS", "SETUP"), ("ONGOING", "ACTIVE"),
+         ("PENDING_COMPLETION", "ACTIVE")],
+    )
+    async def test_it_is_refused_once_the_configuration_is_confirmed(
+        self, cog, db_path, stage, status
     ):
-        await _in_test_mode(db_path)
-        team_id = await _season(db_path, "ACTIVE")
-        await _seat_a_test_driver(db_path, team_id)
-        monkeypatch.setattr(
-            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
-        )
-
-        interaction = await _toggle(cog)
-
-        assert "cannot be disabled" in interaction.reply
-        assert "`/season complete`" in interaction.reply
-        assert await _flag(db_path) is True
-
-    async def test_the_roster_is_left_where_it_is(self, cog, db_path, monkeypatch):
-        """Refusing must not run the deletion it exists to hold back."""
-        await _in_test_mode(db_path)
-        team_id = await _season(db_path, "ACTIVE")
-        await _seat_a_test_driver(db_path, team_id)
-        monkeypatch.setattr(
-            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
-        )
-
-        await _toggle(cog)
-
-        assert await _fake_drivers(db_path) == 1
-
-    async def test_a_driver_who_has_raced_no_longer_strands_the_server(
-        self, cog, db_path, monkeypatch
-    ):
-        """The failure this guard exists for: the check-in row that blocks the delete.
-
-        `bulk_insert_attendance_rows` writes one of these for every driver in a division
-        when the check-in posts. It carries a foreign key to the profile, so deleting the
-        driver raised — after the flag had been flipped — and the command died in silence.
-        """
-        await _in_test_mode(db_path)
-        team_id = await _season(db_path, "ACTIVE")
-        await _seat_a_test_driver(db_path, team_id)
         async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT ti.division_id FROM team_instances ti WHERE ti.id = ?", (team_id,)
-            )
-            division_id = (await cursor.fetchone())["division_id"]
-            cursor = await db.execute(
-                "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-                "VALUES (?, 1, 'STANDARD', '2026-06-01T18:00:00')",
-                (division_id,),
-            )
-            round_id = cursor.lastrowid
-            cursor = await db.execute(
-                "SELECT id FROM driver_profiles WHERE server_id = ? AND is_test_driver = 1",
-                (SERVER_ID,),
-            )
-            profile_id = (await cursor.fetchone())["id"]
-            await db.execute(
-                "INSERT INTO driver_round_attendance (round_id, division_id, "
-                "driver_profile_id, rsvp_status) VALUES (?, ?, ?, 'ACCEPTED')",
-                (round_id, division_id, profile_id),
-            )
+            await db.execute("UPDATE seasons SET status = ?, stage = ?", (status, stage))
             await db.commit()
-        monkeypatch.setattr(
-            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
-        )
+        await _in_test_mode(db_path)
 
         interaction = await _toggle(cog)
 
-        assert "cannot be disabled" in interaction.reply
-        assert await _flag(db_path) is True
-        assert await _fake_drivers(db_path) == 1
+        assert "only be switched while a season is in configuration" in interaction.reply
+        assert await _flag(db_path) is True, "test mode stays as the season fixed it"
 
-    async def test_a_season_still_in_setup_does_not_refuse_it(
-        self, cog, db_path, monkeypatch
-    ):
-        """A season that has not started has raced nobody, so its roster deletes cleanly."""
+    async def test_it_may_be_switched_off_again_in_configuration(self, cog, db_path):
         await _in_test_mode(db_path)
-        team_id = await _season(db_path, "SETUP")
-        await _seat_a_test_driver(db_path, team_id)
-        monkeypatch.setattr(
-            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
-        )
-
-        interaction = await _toggle(cog)
-
-        assert "**disabled**" in interaction.reply
-        assert await _fake_drivers(db_path) == 0
-
-    async def test_a_completed_season_does_not_refuse_it(self, cog, db_path, monkeypatch):
-        await _in_test_mode(db_path)
-        team_id = await _season(db_path, "COMPLETED")
-        await _seat_a_test_driver(db_path, team_id)
-        monkeypatch.setattr(
-            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
-        )
-
-        interaction = await _toggle(cog)
-
-        assert "**disabled**" in interaction.reply
-
-    async def test_a_running_season_with_no_fake_drivers_does_not_refuse_it(
-        self, cog, db_path, monkeypatch
-    ):
-        await _in_test_mode(db_path)
-        await _season(db_path, "ACTIVE")
-        monkeypatch.setattr(
-            "services.forecast_cleanup_service.flush_pending_deletions", AsyncMock()
-        )
 
         interaction = await _toggle(cog)
 
         assert "**disabled**" in interaction.reply
         assert await _flag(db_path) is False
+
+
+# ── The saved backup goes with test mode ──────────────────────────────────
+
+
+async def test_toggling_off_deletes_the_saved_backup(cog, db_path):
+    """Decided 2026-09-17: the backup commands run in test mode alone, so a state kept past
+    it is one nothing could restore. The lock does not protect it."""
+    from pathlib import Path
+
+    from services import backup_service
+
+    await _toggle(cog)  # on
+    jobstore = Path(db_path).with_name("scheduler.db")
+    jobstore.write_bytes(b"")
+    backup_service.backup_path(db_path).write_bytes(b"saved")
+    backup_service.backup_path(jobstore).write_bytes(b"saved jobs")
+    backup_service.set_lock(db_path, who="Maintainer")
+
+    interaction = await _toggle(cog)  # off
+
+    assert not backup_service.backup_path(db_path).exists()
+    assert not backup_service.backup_path(jobstore).exists()
+    assert not backup_service.lock_path(db_path).exists()
+    assert "Deleted the saved test-mode backup" in interaction.reply
+    assert "backup: deleted" in cog.bot.output_router.post_log.await_args.args[1]
+
+
+async def test_toggling_off_with_nothing_saved_says_nothing_about_a_backup(cog, db_path):
+    await _toggle(cog)  # on
+
+    interaction = await _toggle(cog)  # off
+
+    assert "backup" not in interaction.reply.lower()

@@ -176,7 +176,7 @@ async def test_the_restored_assignment_carries_its_team_seat_id(db_path):
     """`team_seat_id` must name the seat the driver actually sits in.
 
     Everything that reads a seated driver joins `team_seats` through this column —
-    `/season review`'s lineup block and the whole attendance module among them — so an
+    `/season placements-review`'s lineup block and the whole attendance module among them — so an
     assignment restored without it is invisible to every one of them. The driver is
     seated, `/test-mode roster list` shows them, and the review reports the division
     empty. That is what a NULL here looks like from the outside.
@@ -325,7 +325,7 @@ async def _seat_real_driver(db_path, season_id, *, team="Redline", seat_number=1
 
 
 async def _lineup_sees(db_path):
-    """The drivers `/season review` and the attendance module would find."""
+    """The drivers `/season placements-review` and the attendance module would find."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """

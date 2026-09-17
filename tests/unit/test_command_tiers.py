@@ -64,6 +64,8 @@ LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
     # Destroying what a league is built from, where nothing puts it back.
     "season cancel": ADMIN,
     "season complete": ADMIN,
+    # Deletes a season whose placements were never confirmed, its signups included (#220).
+    "season abort": ADMIN,
     "division cancel": ADMIN,
     "division delete": ADMIN,
     "round cancel": ADMIN,

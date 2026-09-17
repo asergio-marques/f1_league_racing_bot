@@ -3,7 +3,7 @@
 `/test-mode toggle` seeds "Standard" and "Half Points" so a test season can be scored
 without the manager building a ladder by hand. They are written the way `/results config`
 writes one — into `points_config_store`, `points_config_entries` and `points_config_fl` —
-and attached to the season through `season_points_links`, so `/season approve` copies them
+and attached to the season through `season_points_links`, so the confirmation of placements copies them
 into the season's own store through the ordinary snapshot.
 
 They used to be written straight into `season_points_entries` with only an empty name row
@@ -166,7 +166,7 @@ async def test_approve_carries_the_seeded_config_into_the_season_store(
 
 
 async def test_the_seeded_config_passes_the_approval_gate(db_path, season_id):
-    """`/season approve` refuses a non-monotonic ladder; a seeded one must not trip it."""
+    """The confirmation of placements refuses a non-monotonic ladder; a seeded one must not trip it."""
     await ensure_test_configs(SERVER_ID, season_id, db_path)
     await season_points_service.snapshot_configs_to_season(
         db_path, season_id, SERVER_ID

@@ -171,7 +171,7 @@ class _RsvpButton(discord.ui.Button):
 # loses the season's check-ins for good — the mistake issue #117 made for weather, in reverse.
 # Gated, the jobs stay booked and fire into nothing, which costs a query each and is
 # recoverable. They stay dormant for the rest of the season because ``/module enable
-# attendance`` refuses while a season is active; that is the enable guard's business, not
+# attendance`` refuses once a season's placements are confirmed; that is the enable guard's business, not
 # this gate's, and nothing here should try to compensate for it.
 
 
@@ -227,9 +227,13 @@ async def query_division_roster(db_path: str, division_id: int) -> list[dict]:
                          "test_display_name": str | None}, ...]
         }
     """
+    from services.season_lifecycle_service import uncommitted_seat_excluded
+
+    # A driver whose placement is not yet confirmed is not called to check-in (issue #220),
+    # and so holds no attendance row for the round either.
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            """
+            f"""
             SELECT ti.id        AS team_id,
                    ti.name      AS team_name,
                    ti.is_reserve,
@@ -239,6 +243,7 @@ async def query_division_roster(db_path: str, division_id: int) -> list[dict]:
               FROM team_instances ti
               LEFT JOIN team_seats ts ON ts.team_instance_id = ti.id
               LEFT JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
+                                          AND {uncommitted_seat_excluded("ts")}
              WHERE ti.division_id = ?
              ORDER BY ti.is_reserve ASC, ti.name ASC, dp.id ASC
             """,

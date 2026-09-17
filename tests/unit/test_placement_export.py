@@ -48,14 +48,14 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
             uid = d.get("discord_user_id", str(9000 + i))
             await db.execute(
                 "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?, 'UNASSIGNED')",
-                (i, SERVER_ID, uid),
+                "VALUES (?, ?, ?, ?)",
+                (i, SERVER_ID, uid, d.get("state", "UNASSIGNED")),
             )
             await db.execute(
                 "INSERT INTO signup_records (server_id, discord_user_id, discord_username, "
                 "server_display_name, platform, platform_id, availability_slot_ids, "
-                "driver_type, preferred_teams, total_lap_ms, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "driver_type, preferred_teams, total_lap_ms, updated_at, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     SERVER_ID,
                     uid,
@@ -68,6 +68,7 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
                     json.dumps(d.get("preferred_teams", [])),
                     d.get("total_lap_ms"),
                     d.get("updated_at", f"2026-01-0{i}T00:00:00+00:00"),
+                    d.get("created_at", f"2026-01-0{i}T00:00:00+00:00"),
                 ),
             )
         await db.commit()
@@ -219,6 +220,34 @@ class TestExportRow:
         assert [r["seed"] for r in rows] == [1, 2]
         assert rows[0]["total_lap_fmt"] == _fmt_ms(83456)
 
+    async def test_a_tie_goes_to_whoever_submitted_first_not_whoever_was_corrected_last(
+        self, tmp_path
+    ):
+        """The seed tiebreak reads the moment a signup was sent in. A correction amends the
+        record and moves its last update, and must not cost the driver their place."""
+        db_path = await _seed(
+            tmp_path,
+            [
+                {
+                    "discord_user_id": "later",
+                    "total_lap_ms": 85000,
+                    "created_at": "2026-01-05T00:00:00+00:00",
+                    "updated_at": "2026-01-05T00:00:00+00:00",
+                },
+                {
+                    "discord_user_id": "earlier_but_corrected",
+                    "total_lap_ms": 85000,
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-09T00:00:00+00:00",
+                },
+            ],
+        )
+        rows, _ = await _export(db_path)
+        listed = await _service(db_path).get_unassigned_drivers_seeded(SERVER_ID)
+
+        assert [r["discord_user_id"] for r in rows] == ["earlier_but_corrected", "later"]
+        assert [r["discord_user_id"] for r in listed] == ["earlier_but_corrected", "later"]
+
     async def test_total_lap_ms_none_becomes_empty_string(self, tmp_path):
         db_path = await _seed(tmp_path, [{"total_lap_ms": None}])
         rows, _ = await _export(db_path)
@@ -243,3 +272,49 @@ class TestExportRow:
         )
         rows, _ = await _export(db_path)
         assert rows[0]["display_name"] == "999"
+
+
+# ---------------------------------------------------------------------------
+# Every unsettled signup is listed (issue #220)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "state", ["PENDING_ADMIN_APPROVAL", "AWAITING_CORRECTION_PARAMETER", "PENDING_DRIVER_CORRECTION"]
+)
+async def test_a_signup_still_in_review_follows_the_seeded_drivers_unseeded(tmp_path, state):
+    from services.placement_service import PlacementService
+
+    db_path = await _seed(
+        tmp_path,
+        [
+            {"discord_user_id": "1001", "state": state, "total_lap_ms": 1},
+            {"discord_user_id": "1002", "total_lap_ms": 90_000},
+        ],
+    )
+    service = PlacementService(db_path, bot=MagicMock())
+
+    for rows in (
+        await service.get_unassigned_drivers_seeded(SERVER_ID),
+        await service.get_unassigned_drivers_for_export(SERVER_ID, []),
+    ):
+        assert [r["discord_user_id"] for r in rows] == ["1002", "1001"]
+        assert [r["seed"] for r in rows] == [1, None]
+        assert rows[1]["state"] == state
+
+
+async def test_a_placed_or_departed_driver_is_not_listed(tmp_path):
+    from services.placement_service import PlacementService
+
+    db_path = await _seed(
+        tmp_path,
+        [
+            {"discord_user_id": "2001", "state": "ASSIGNED"},
+            {"discord_user_id": "2002", "state": "NOT_SIGNED_UP"},
+        ],
+    )
+
+    assert await PlacementService(db_path, bot=MagicMock()).get_unassigned_drivers_seeded(
+        SERVER_ID
+    ) == []
+

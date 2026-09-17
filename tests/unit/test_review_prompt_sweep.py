@@ -1,6 +1,6 @@
 """The season-review approve button, swept away by a restart.
 
-The button expires five minutes after `/season review` posts it, and the timer that does
+The button expires five minutes after `/season placements-review` posts it, and the timer that does
 so is a `discord.ui.View` timeout — held in memory, and lost with the process. A bot
 restarted inside that window leaves a public message offering a button nothing is
 listening to, and nothing else would ever clear it.
@@ -96,7 +96,7 @@ async def test_the_notice_pings_the_reviewer(db_path):
 
     notice = channel.send.await_args.args[0]
     assert f"<@{REVIEWER_ID}>" in notice
-    assert "/season review" in notice
+    assert "/season placements-review" in notice
 
 
 async def test_the_row_is_cleared(db_path):

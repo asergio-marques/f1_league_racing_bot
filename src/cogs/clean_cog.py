@@ -7,7 +7,7 @@ Requires the bot to have the Manage Messages permission in that channel.
 and swept five hundred messages, which is a great deal of channel to lose to a slip of the
 finger — and irreversibly, since Discord keeps no undo. Ten is enough for the job it is
 actually for: clearing the tail of a multi-message command that did not clear itself. An
-approved or expired `/season review` now deletes its own report, which was the case the
+approved or expired `/season placements-review` now deletes its own report, which was the case the
 five hundred was reaching for.
 """
 from __future__ import annotations

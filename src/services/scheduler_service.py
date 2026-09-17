@@ -623,7 +623,7 @@ class SchedulerService:
           Cancelled, the round never leaves NOT_RUN, its division never finishes and its
           season can never be completed.
         * ``rsvp_notice``, ``rsvp_last_notice`` and ``rsvp_deadline`` are attendance's, and
-          nothing short of ``/season approve`` recreates them — which cannot be run again
+          nothing short of the confirmation of placements recreates them — which cannot be run again
           on an active season, so cancelling them loses the season's check-ins for good.
 
         Do not widen this back to a whole-round cancel: that was issue #117, in which

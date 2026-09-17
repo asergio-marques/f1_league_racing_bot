@@ -81,6 +81,20 @@ async def _next_synthetic_id(db_path: str) -> int:
     return _SYNTHETIC_ID_BASE + 1 if current_max is None else current_max + 1
 
 
+async def _reattach_history(db, server_id: int, discord_user_id: str, profile_id: int) -> None:
+    """Give a driver created by test mode the history an earlier one of the same identifier left.
+
+    Test mode deletes its drivers when it is switched off, and keeps their history entries
+    (issue #220). A driver created again under the same identifier in a later season holds
+    that history as their own.
+    """
+    await db.execute(
+        "UPDATE driver_history_entries SET driver_profile_id = ? "
+        "WHERE server_id = ? AND discord_user_id = ? AND driver_profile_id IS NULL",
+        (profile_id, server_id, discord_user_id),
+    )
+
+
 async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
     """Return the live season ID for a server, or None if it has none.
 
@@ -91,7 +105,7 @@ async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
     The ordering is written in regardless, because it costs nothing and the query used to
     be a bare ``LIMIT 1`` over both states. Which row that returned was uncontracted, and
     on a server that held two it seated a mock driver in one season's divisions while
-    `/season review` drew the other's: a full `roster list` beside an empty lineup, with
+    `/season placements-review` drew the other's: a full `roster list` beside an empty lineup, with
     neither command reporting a fault.
     """
     async with get_connection(db_path) as db:
@@ -218,6 +232,7 @@ async def add_test_driver(
             profile_id: int = profile_cursor.lastrowid  # type: ignore[assignment]
         except Exception as exc:
             return f"Failed to create driver profile: {exc}"
+        await _reattach_history(db, server_id, uid_str, profile_id)
 
         # Occupy the seat
         await db.execute(
@@ -416,6 +431,7 @@ async def add_test_drivers_in_bulk(
                 ),
             )
             profile_id = profile_cursor.lastrowid
+            await _reattach_history(db, server_id, str(driver.discord_user_id), profile_id)
 
             await db.execute(
                 "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
@@ -561,35 +577,32 @@ async def remove_test_driver(
 
 
 async def clear_all_test_drivers(server_id: int, db_path: str) -> int:
-    """Remove all fake drivers from all divisions in the active season.
+    """Remove every driver created by test mode on the server, keeping their history.
 
-    Returns the total count removed. Safe to call even if no active season exists.
+    Every one of them, seated or not and in whatever season — switching test mode off deletes
+    every fake driver on the server. Their history entries are kept, naming them by identifier,
+    so a driver created again under the same identifier holds that history (issue #220).
+
+    Returns the count removed.
     """
-    season_id = await _get_active_season_id(server_id, db_path)
-    if season_id is None:
-        return 0
+    from services.season_lifecycle_service import delete_driver_profiles
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM divisions WHERE season_id = ? AND status != 'CANCELLED'",
-            (season_id,),
+            "SELECT id FROM driver_profiles WHERE server_id = ? AND is_test_driver = 1",
+            (server_id,),
         )
-        division_rows = await cursor.fetchall()
-
-    total = 0
-    for row in division_rows:
-        total += await _delete_test_drivers_in_division(row["id"], db_path)
-    return total
+        profile_ids = [r["id"] for r in await cursor.fetchall()]
+        await delete_driver_profiles(db, profile_ids, keep_history=True)
+        await db.commit()
+    return len(profile_ids)
 
 
 async def _delete_test_drivers_in_division(division_id: int, db_path: str) -> int:
-    """Delete all fake driver profiles (and related rows) from *division_id*.
+    """Delete every fake driver seated in *division_id*, keeping their history."""
+    from services.season_lifecycle_service import delete_driver_profiles
 
-    Cascades handle season_assignments; we also vacate the occupied seats manually
-    since team_seats.driver_profile_id is a nullable FK without ON DELETE SET NULL.
-    """
     async with get_connection(db_path) as db:
-        # Collect fake driver profile IDs in this division
         cursor = await db.execute(
             """
             SELECT dp.id AS profile_id
@@ -601,37 +614,9 @@ async def _delete_test_drivers_in_division(division_id: int, db_path: str) -> in
             """,
             (division_id,),
         )
-        profile_rows = await cursor.fetchall()
-
-        if not profile_rows:
-            return 0
-
-        profile_ids = [r["profile_id"] for r in profile_rows]
-        placeholders = ",".join("?" * len(profile_ids))
-
-        # Vacate team seats (nullable FK — no cascade)
-        await db.execute(
-            f"UPDATE team_seats SET driver_profile_id = NULL "
-            f"WHERE driver_profile_id IN ({placeholders})",
-            profile_ids,
-        )
-
-        # Delete season assignments (FK cascade would handle this if defined,
-        # but we do it explicitly for clarity)
-        await db.execute(
-            f"DELETE FROM driver_season_assignments "
-            f"WHERE driver_profile_id IN ({placeholders})",
-            profile_ids,
-        )
-
-        # Delete the profiles
-        await db.execute(
-            f"DELETE FROM driver_profiles WHERE id IN ({placeholders})",
-            profile_ids,
-        )
-
+        profile_ids = [r["profile_id"] for r in await cursor.fetchall()]
+        await delete_driver_profiles(db, profile_ids, keep_history=True)
         await db.commit()
-
     return len(profile_ids)
 
 
@@ -704,7 +689,7 @@ async def _ensure_single_config(
     ``points_config_store``/``points_config_entries``/``points_config_fl`` — the same
     three tables `/results config` writes — and then attached to the season through
     ``season_points_links``. It is a real config of the server from that moment: it is
-    listed, viewed and edited exactly as a hand-built one, and `/season approve` copies
+    listed, viewed and edited exactly as a hand-built one, and the confirmation of placements copies
     it into the season's own store through the ordinary snapshot.
 
     This used to write the points straight into ``season_points_entries`` while leaving

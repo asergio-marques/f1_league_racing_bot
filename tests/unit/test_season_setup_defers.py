@@ -28,6 +28,7 @@ import pytest
 from cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
 from models.server_config import ServerConfig
 from models.round import RoundFormat
+from models.season import SeasonStage
 
 
 CHANNEL = 111
@@ -84,8 +85,9 @@ def _bot() -> MagicMock:
     # guards, which is how these tests once reached the command body without one; the tier
     # guards refuse it instead, there being no channel to check and no role to hold.
     bot.config_service.get_server_config = AsyncMock(return_value=_config())
-    bot.season_service.get_active_season = AsyncMock(return_value=None)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     bot.season_service.get_setup_season = AsyncMock(return_value=None)
+    bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))
     bot.season_service.get_divisions = AsyncMock(return_value=[])
     bot.season_service.restore_driver_seats = AsyncMock()
@@ -200,3 +202,18 @@ def test_no_setup_command_replies_through_response(command):
     assert "interaction.response.send_message" not in src, (
         f"{command} still replies via response.send_message after deferring"
     )
+
+
+async def test_season_setup_begins_the_season_in_configuration():
+    """Issue #220: a season is set up in Configuration, before any division exists."""
+    from models.season import SeasonStage
+
+    cog = _cog(None)
+    interaction = _interaction()
+
+    from tests.support.undecorate import undecorate
+
+    await undecorate(SeasonCog.season_setup)(cog, interaction, game_edition=2026)
+
+    kwargs = cog.bot.season_service.save_pending_snapshot.await_args.kwargs
+    assert kwargs["initial_stage"] is SeasonStage.CONFIGURATION

@@ -6,21 +6,18 @@ from being switched on in an order that cannot work.
 
 **The dependencies are the substance.** Attendance requires Results & Standings, because
 attendance points are distributed after post-race penalties are approved — with Results off
-there is no approval to hang them on. Weather requires every division of an active season to
-have a forecast channel, because a module that cannot post its output is a module producing
-nothing. Each guard is tested with its own refusal, and the refusal has to name what is missing
-rather than merely refusing: a manager reading "cannot be enabled" has nowhere to go.
+there is no approval to hang them on. Each guard is tested with its own refusal, and the refusal
+has to name what is missing rather than merely refusing: a manager reading "cannot be enabled"
+has nowhere to go.
 
-**Enabling Results or Attendance is refused while a season is active** (FR-003). Both change
+**Enabling Results or Attendance is refused once a season's placements are confirmed** (FR-003). Both change
 how a round is scored, and turning one on mid-season would score the remaining rounds by
 different rules than the ones already run — the standings would then be a mixture nobody could
 reproduce.
 
-**Every enable and disable writes an audit entry**, and enabling weather has a rollback: if the
-catch-up phase run fails, the flag is put back and the partially-created jobs cancelled, so a
-failed enable leaves the module off rather than on-but-broken.
-`test_a_failed_catch_up_leaves_weather_disabled` holds that, and it is the one a reader
-simplifying the error handling would lose.
+**Every enable and disable writes an audit entry.** No module is enabled once a season's
+placements are confirmed (issue #220); that gate stands in front of every handler here and is
+tested in `test_module_stage_gates.py`, so weather no longer catches up on a running season.
 
 Enabling something already enabled is a warning rather than an error, and does no work — a
 manager running the command twice must not get two audit entries or a second set of jobs.
@@ -88,7 +85,7 @@ def _make_cog(
     bot.module_service.set_weather_enabled = AsyncMock(return_value=None)
 
     bot.season_service = MagicMock()
-    bot.season_service.get_active_season = AsyncMock(return_value=season)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division(11, "Division 1")]
     )
@@ -181,46 +178,6 @@ async def test_enabling_weather_twice_does_no_work(tmp_path):
     assert await _audit(db_path) == []
 
 
-async def test_weather_is_refused_when_a_division_has_no_forecast_channel(tmp_path):
-    """A module that cannot post its output is a module producing nothing, so the check
-    happens before the flag rather than at the first forecast."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(
-        db_path,
-        season=_season(),
-        divisions=[
-            _division(11, "Division 1"),
-            _division(12, "Division 2", forecast_channel_id=None),
-        ],
-    )
-    interaction = _interaction()
-
-    await cog._enable_weather(interaction, SERVER_ID)
-
-    assert "Division 2" in _replied(interaction)
-    assert await _weather_flag(db_path) == 0
-
-
-async def test_the_weather_refusal_names_every_division_missing_a_channel(tmp_path):
-    """Naming one at a time would send a manager round the loop per division."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(
-        db_path,
-        season=_season(),
-        divisions=[
-            _division(11, "Division 1", forecast_channel_id=None),
-            _division(12, "Division 2", forecast_channel_id=None),
-        ],
-    )
-    interaction = _interaction()
-
-    await cog._enable_weather(interaction, SERVER_ID)
-
-    replied = _replied(interaction)
-    assert "Division 1" in replied
-    assert "Division 2" in replied
-
-
 async def test_weather_may_be_enabled_between_seasons(tmp_path):
     """With no active season there are no divisions to check, and a league setting the bot
     up before its first season must not be blocked."""
@@ -240,36 +197,6 @@ async def test_enabling_weather_is_audited(tmp_path):
     entry = (await _audit(db_path))[0]
     assert entry["change_type"] == "MODULE_ENABLE"
     assert json.loads(entry["new_value"])["module"] == "weather"
-
-
-async def test_a_failed_catch_up_leaves_weather_disabled(tmp_path):
-    """The rollback. A failed enable must leave the module off rather than on-but-broken —
-    on-but-broken is the state where a league believes forecasts are coming and none are."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, season=_season())
-    cog._catchup_and_schedule_weather = AsyncMock(  # type: ignore[method-assign]
-        side_effect=RuntimeError("API down")
-    )
-    interaction = _interaction()
-
-    await cog._enable_weather(interaction, SERVER_ID)
-
-    assert await _weather_flag(db_path) == 0
-    assert "remains disabled" in _replied(interaction)
-
-
-async def test_a_failed_catch_up_cancels_the_jobs_it_had_created(tmp_path):
-    """Half-created jobs would fire for a module the league believes is off — the module
-    output rule, in its worst form."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, season=_season())
-    cog._catchup_and_schedule_weather = AsyncMock(  # type: ignore[method-assign]
-        side_effect=RuntimeError("API down")
-    )
-
-    await cog._enable_weather(_interaction(), SERVER_ID)
-
-    cog.bot.scheduler_service.cancel_all_weather_for_server.assert_awaited_once()
 
 
 async def test_disabling_weather_cancels_every_scheduled_job(tmp_path):
@@ -337,7 +264,7 @@ async def test_results_cannot_be_enabled_mid_season(tmp_path):
 
     await cog._enable_results(interaction, SERVER_ID)
 
-    assert "while a season is active" in _replied(interaction)
+    assert "once a season's placements are confirmed" in _replied(interaction)
     assert await _audit(db_path) == []
 
 
@@ -414,7 +341,7 @@ async def test_attendance_cannot_be_enabled_mid_season(tmp_path):
 
     await cog._enable_attendance(interaction, SERVER_ID)
 
-    assert "while a season is active" in _replied(interaction)
+    assert "once a season's placements are confirmed" in _replied(interaction)
 
 
 async def test_the_results_dependency_is_checked_before_the_season(tmp_path):

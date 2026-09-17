@@ -21,23 +21,23 @@ This is a developer and maintainer document. For configuring a league, see [Conf
 
 There is no on/off parameter — it flips, and the new state is persisted to `server_configs.test_mode_active`, so it survives a restart. Every command below refuses unless the flag is set.
 
-**A server holding real drivers cannot enter test mode.** Enabling is refused, naming the count, while any real driver profile stands at anything other than Not Signed Up — mid-signup, unassigned, assigned or banned. A profile retained at Not Signed Up is a former driver who has left, and does not stand in the way, so a league between seasons can still test.
+**Test mode belongs to a season's configuration.** The toggle is refused unless the server holds a season in Configuration, so run `/season setup` first. `/season config-review` fixes test mode for the season once its button is pressed, and a test-mode season goes straight from Configuration to Placements — it never opens a signup window. The roster commands that change fake drivers (`roster add`, `add-bulk`, `remove`, `clear`) are refused outside Placements, which is where a real league places its drivers.
 
-**A running season holding fake drivers holds test mode on.** Disabling is refused, naming the count, while a season is ACTIVE and any fake driver exists; `/season complete` releases it. This is not a nicety: disabling deletes every fake driver, and a driver the season has raced cannot be deleted — the check-in, the standings and the season's end each write a row carrying a foreign key to the profile. Before the guard, the delete raised *after* the flag had been persisted, leaving the server out of test mode with its roster still seated and the command replying nothing at all. A season in SETUP has raced nobody and lets go freely; a COMPLETED season deletes nothing, so its fake drivers stay in the database until `/bot-reset`.
-
-**An open signup window is refused too**, on the same footing as `/signup open` refusing under test mode: a window left open would have its button posted and pinging the base role while rejecting every driver who pressed it. Close it with `/signup close` first. The toggle does not close it for you — that posts a public notice in a channel a league reads, which is not something a flag flip should do.
+**A server holding real drivers cannot enter test mode.** Enabling is refused, naming the count, while any real driver profile stands at anything other than Not Signed Up — mid-signup, unassigned, assigned or banned. A profile retained at Not Signed Up is a former driver who has left, and does not stand in the way. Every driver returns to Not Signed Up when a season ends, so a league can test in the next season's configuration before its real window opens.
 
 **And while test mode is on, no real driver may join.** The Sign Up button and `/signup open` both refuse, and `assign_driver` — the single choke point every placement passes through, so `/driver assign` and attendance's autoreserve alike — refuses any driver that is not a fake one. The two rules together keep a real roster and a test roster from ever mixing, which matters because leaving test mode deletes the fake half without asking.
 
 Two side effects on **enable**, both aimed at getting to a testable season quickly:
 
-- Where a season is in SETUP or ACTIVE, **Standard** and **Half Points** are created and attached unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone. They are created as ordinary server configurations, in the same place `/results config create` puts one, so `/results config view` shows their full ladder while the season is still in setup and approval copies them into the season by the ordinary route.
+- **Standard** and **Half Points** are created and attached to the season in Configuration unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone. They are created as ordinary server configurations, in the same place `/results config create` puts one, so `/results config view` shows their full ladder while the season is still in setup and approval copies them into the season by the ordinary route.
 - Approval performs the same seeding, so a season approved under test mode will not fail its points-configuration gate — but that path seeds only when nothing at all is attached, which the toggle path does not check.
 
-Two on **disable**:
+**Test mode is left one of two ways**: by the toggle, while the season is still in Configuration, or by the season ending — completed, cancelled or aborted, it switches test mode off as part of its end-of-season pass. Nothing else turns it off, so there is no mid-run toggle to destroy a roster by accident. Either way:
 
 - Pending forecast-message deletions are flushed.
-- **Every fake driver on the server is deleted**, across all divisions. This is not scoped to one division and there is no confirmation. Toggling off mid-run destroys your roster.
+- **Every fake driver on the server is deleted**, across all divisions, with no confirmation.
+- **The saved backup is deleted**, the lock with it, when you toggle test mode off and when the season is completed. The backup commands run in test mode alone, so a state kept past it is one nothing could restore. A season **cancelled or aborted** keeps its saved state: that is the one you go back to.
+- **Their history is kept.** A completed or cancelled season has already written a history entry for every division each fake driver took part in, and the entry is kept by the driver's synthetic ID rather than by the profile. A fake driver created later under the same ID — which the roster generator's CSV does, run after run — holds that history again, so career statistics can be tested across seasons.
 
 **The two seeded points configurations are kept** (decided 2026-09-04). "Standard" and "Half Points" are ordinary configurations of the server from the moment they are seeded — they sit in the same tables a hand-built one does, and `/results config` lists, views and edits them identically — so disabling test mode leaves them alone. A mock driver is scaffolding and goes; a points ladder is configuration and stays. The consequence is that a server which has ever had test mode enabled keeps both configurations permanently, and they appear in `/results config list` and in the season review. Remove them with `/results config remove` if a real season should not offer them — and note that where the season is still in setup and holds them, the removal names that season and asks first, then detaches as well as deletes, leaving the season needing a configuration of its own before it can be approved (#132).
 
@@ -84,7 +84,7 @@ That database detection is load-bearing rather than a fallback: approval skips s
 
 **Database state also covers everything the job store has lost.** Before returning a scheduler job, `advance` checks every chronologically earlier round for work the scheduler cannot see: phases evicted by misfire grace, RSVP jobs never created because their round was already past-dated when they were scheduled, and result submission. Where the job store holds nothing at all, that same check drives the whole queue. This is why `advance` still works on a season most of whose jobs were never created.
 
-> **Approval is no longer a route to such a season** (decided 2026-09-10). A season holding a round already inside one of its enabled modules' configured windows is reported by `/season review`, which withholds its button, and refused by the approval as well, and test mode is not exempt — so a test season has to be built with its rounds beyond the check-in notice and every weather phase deadline. The generator in step 2 of [A workable order](#a-workable-order) does this for you, dating its calendars in the year after the run.
+> **Approval is no longer a route to such a season** (decided 2026-09-10). A season holding a round already inside one of its enabled modules' configured windows is reported by `/season placements-review`, which withholds its button, and refused by the approval as well, and test mode is not exempt — so a test season has to be built with its rounds beyond the check-in notice and every weather phase deadline. The generator in step 2 of [A workable order](#a-workable-order) does this for you, dating its calendars in the year after the run.
 >
 > **Nor with every module switched off** (decided 2026-09-14). The windows above are contributed by the modules that configure them, so a test server running neither weather nor attendance offered none at all and a season built wholly in the past was approved in silence. A round's **own moment** is judged too, whatever the modules, and each division's calendar in the review names the latest round of it that has gone by.
 >
@@ -133,7 +133,7 @@ The response includes a **synthetic mention string** (`<@…>` with the fake pro
 | `/test-mode roster list` | Per division. The cheat sheet — reprints every mention string, with team and nationality. A long roster arrives as several messages, each one a complete table |
 | `/test-mode roster clear` | Empties one division |
 
-Fake drivers show up in `/season review`'s lineup block with their display name beside the mention, which is the quickest way to confirm a division is fully seated — provided the lineup is being shown as text. With the `lineup` image output switched on, the review draws the picture instead, which carries the driver's display name and not the mention; switch that output off, or use `/test-mode roster list`, to read the mentions back.
+Fake drivers show up in `/season placements-review`'s lineup block with their display name beside the mention, which is the quickest way to confirm a division is fully seated — provided the lineup is being shown as text. With the `lineup` image output switched on, the review draws the picture instead, which carries the driver's display name and not the mention; switch that output off, or use `/test-mode roster list`, to read the mentions back.
 
 ### Seating a whole grid at once
 
@@ -175,7 +175,7 @@ Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` 
 /test-mode rsvp set-status division:Pro
 ```
 
-Opens a modal for setting the RSVP status of the division's test drivers in one pass. The attendance module must be enabled, and the division must be in the **active** season and have a check-in currently open — the command resolves the open RSVP embed and refuses without one. The module check matters because a check-in posted before the module was switched off leaves its embed behind: without it the command would go on writing answers for a module that is off.
+Opens a modal for setting the RSVP status of the division's test drivers in one pass. The attendance module must be enabled, and the division must be in the **ongoing** season and have a check-in currently open — the command resolves the open RSVP embed and refuses without one. The module check matters because a check-in posted before the module was switched off leaves its embed behind: without it the command would go on writing answers for a module that is off.
 
 Driving a check-in through the buttons requires as many Discord accounts as there are drivers, which is precisely what makes attendance untestable by hand. This is the way round it.
 
@@ -187,13 +187,15 @@ Driving a check-in through the buttons requires as many Discord accounts as ther
 /test-mode set-former-driver user:@someone value:True
 ```
 
-`former_driver` is otherwise only set by saving a session's results, at submission or amendment, for every driver in the classification who has a profile (`result_submission_service`). It decides what happens to a profile when the driver returns to Not Signed Up, by `/driver sack` or any other route: a former driver's profile is kept with their signup details blanked, and anyone else's is deleted. This sets it directly so both branches can be reached without submitting results first.
+`former_driver` is otherwise only set by saving a session's results, at submission or amendment, for every driver in the classification who has a profile (`result_submission_service`). It decides what becomes of a profile once the driver has returned to Not Signed Up, by `/driver sack` or any other route: nothing is deleted at that moment, but when the season ends its driver pass keeps a former driver's profile and deletes anyone else's — every signup is kept either way. This sets it directly so both branches can be reached without submitting results first.
+
+The pass reads **real** drivers only. A fake driver is never deleted by it, flag or no flag: fake drivers go when test mode is switched off, which the same end-of-season pass does once the driver pass is through. To exercise the pass itself, reach it with a real account at Not Signed Up.
 
 ---
 
 ## Previewing images
 
-The `/images test` commands draw the server's own data — its rounds, its teams, its seated drivers and the artwork folders it configures. Which season they read is decided for them: the **approved** season where there is one, the season **pending approval** where there is none approved, and neither where the server holds no season at all.
+The `/images test` commands draw the server's own data — its rounds, its teams, its seated drivers and the artwork folders it configures. Which season they read is decided for them: the season whose placements are **confirmed** where there is one, the season **not yet confirmed** where there is none confirmed, and neither where the server holds no season at all.
 
 That last case is the one worth knowing. A server with no season is **refused** — the previews need something of the league's own to draw. The bot used to invent a whole league here, over the server's configured team names, but that was withdrawn on 2026-09-06 along with the optional `division` and `round` parameters that reached it: an invented league says nothing about the configuration a preview exists to check.
 
@@ -201,7 +203,7 @@ So a season is the prerequisite, and a test season is the cheapest one to build.
 
 Seven things worth knowing when previewing against a test season:
 
-- **A test season still in SETUP draws.** It does not need approving first. It is drawn exactly as it will be once it is approved, and the reply says it is pending.
+- **A test season not yet confirmed draws.** Its placements need not be confirmed first. It is drawn exactly as it will be once they are, and the reply says it is pending.
 - **A mock driver is drawn by its `roster add` name.** It is a seated driver, not an empty seat, so no names are invented over a division seated with them.
 - **A mock driver draws the flag of the nationality `roster add` gave it**, and none where it was given none. Where the league collects nationality, a driver holding none draws **no flag**, exactly as a real posting would, and the reply counts how many were drawn that way. Blank flags on a roster built without nationalities are not a broken flag directory. With `/test-mode nationality` off, neither a preview nor a posting draws a flag for anybody, and neither reports one missing.
 - **A division with no seated driver still draws.** The bot invents drivers for the seats and says so. `roster add` is only needed when you want to see particular names, or to check a lineup drawing against your own team list.
@@ -230,9 +232,11 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 **What it saves.** Both `bot.db` and the scheduler's `scheduler.db`, so the jobs come back with the data. Restoring puts you back exactly where the snapshot was taken, test mode included.
 
-**The approval offers to save for you.** Under test mode, pressing Approve on a season review pauses just before it commits anything and asks whether to save first — after every check has passed, and before the schedule is armed or a single lineup posted. That is the moment worth returning to, so you need not remember to save beforehand.
+**The approval offers to save for you.** Under test mode, pressing Approve on `/season placements-review` pauses just before it commits anything and asks whether to save first — after every check has passed, and before the schedule is armed or a single lineup posted. That is the moment worth returning to, so you need not remember to save beforehand.
 
 > The question inherits what is left of the review's five minutes rather than getting its own. Leave it unanswered and the review expires and nothing is approved, exactly as if you had never pressed the button. If the save itself fails, you are told and the season is approved anyway — it was a convenience, not a condition.
+
+**They do not outlive their test season.** Completing the season deletes the saved state, and so does toggling test mode off — the lock included, since it refuses a save rather than keeping a state past the run it belongs to. Restore before you complete, or abandon the season with `/season cancel` or `/season abort`, which leave the state alone.
 
 **What it is not.** The backups sit beside the live files, on the same disk — the same SD card, on a Pi. They protect you from a test run that went somewhere unhelpful or a migration worth undoing. They protect you from nothing that happens to the card. If you want a copy that survives the machine, copy `bot.bkup.db` off it yourself.
 
@@ -242,14 +246,14 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 ## A workable order
 
-1. `/test-mode toggle` — before you approve the season, so the points configurations get seeded, and before any real driver signs up, since a server holding one is refused.
-2. Build and approve a season as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md). **Keep every round still to come, and beyond the configured windows**: a round whose moment has passed is refused at approval whatever the modules, and a first round inside the check-in notice or a weather phase deadline is refused as well, test mode included. The generator's own dates, in the year after the run, clear them all.
-3. `/test-mode roster add` until each division is seated — with a `nationality` on each if you mean to look at the graphics. `/test-mode roster list` to collect the mention strings.
-4. `/test-mode advance` repeatedly, checking each posted message as it appears.
-5. For attendance rounds, `/test-mode rsvp set-status` once the check-in has been advanced into existence.
-6. `/season complete` when `advance` reports nothing left.
-7. `/test-mode toggle` off — which is refused until step 6 is done, and takes the fake drivers with it where the season never started.
-8. `/bot-reset confirm:CONFIRM` to clear the season and go again.
+1. `/season setup`, then `/test-mode toggle` while the season is in configuration — so the points configurations get seeded — and `/season config-review` to confirm it, which takes the season straight to placements.
+2. Build the divisions and calendar as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md). **Keep every round still to come, and beyond the configured windows**: a round whose moment has passed is refused at confirmation whatever the modules, and a first round inside the check-in notice or a weather phase deadline is refused as well, test mode included. The generator's own dates, in the year after the run, clear them all.
+3. `/test-mode roster add` or `add-bulk` until each division is seated — with a `nationality` on each if you mean to look at the graphics — **before** confirming placements, since the roster commands work only in placements. `/test-mode roster list` to collect the mention strings.
+4. `/season placements-review`, and approve it.
+5. `/test-mode advance` repeatedly, checking each posted message as it appears.
+6. For attendance rounds, `/test-mode rsvp set-status` once the check-in has been advanced into existence.
+7. `/season complete` when `advance` reports nothing left. Test mode switches itself off and the fake drivers are deleted, their history kept.
+8. `/season setup` and `/test-mode toggle` again to go round once more — or, to throw away a test season that never reached ongoing, `/season abort confirm:CONFIRM`, which leaves nothing behind. `/bot-reset confirm:CONFIRM` is still there for wiping the server's seasons outright.
 
 ---
 

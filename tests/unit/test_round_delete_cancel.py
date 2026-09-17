@@ -42,6 +42,7 @@ from cogs.season_cog import SeasonCog  # noqa: E402
 from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus  # noqa: E402
 from services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
+from models.season import SeasonStage  # noqa: E402
 
 SERVER_ID = 10908
 SEASON_ID = 3
@@ -81,7 +82,10 @@ def _make_cog(
     *,
     setup_season_id: int | None = SEASON_ID,
     setup_season=SimpleNamespace(id=SEASON_ID, season_number=3),
-    active_season=SimpleNamespace(id=SEASON_ID, season_number=3),
+    active_season=SimpleNamespace(
+        id=SEASON_ID, season_number=3,
+        stage=SeasonStage.ONGOING,
+    ),
     mutable: bool = True,
     divisions=None,
     rounds=None,
@@ -91,7 +95,7 @@ def _make_cog(
 
     bot.season_service = MagicMock()
     bot.season_service.get_setup_season = AsyncMock(return_value=setup_season)
-    bot.season_service.get_active_season = AsyncMock(return_value=active_season)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=active_season)
     bot.season_service.assert_season_mutable = AsyncMock(
         side_effect=None if mutable else SeasonImmutableError("archived")
     )
@@ -103,6 +107,7 @@ def _make_cog(
     )
     bot.season_service.delete_round = AsyncMock(return_value=None)
     bot.season_service.cancel_round = AsyncMock(return_value=None)
+    bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
 
     bot.scheduler_service = MagicMock()
     bot.output_router = MagicMock()
@@ -192,7 +197,7 @@ async def test_deleting_outside_setup_is_refused():
 
     await _delete(cog, interaction)
 
-    assert "only be used during season setup" in _replied(interaction)
+    assert "only be used while the season is in placements" in _replied(interaction)
     cog.bot.season_service.delete_round.assert_not_awaited()
 
 
@@ -291,7 +296,7 @@ async def test_cancelling_without_an_active_season_is_refused():
 
     await _cancel(cog, interaction)
 
-    assert "requires an active season" in _replied(interaction)
+    assert "only while the season is ongoing" in _replied(interaction)
 
 
 async def test_cancelling_in_an_archived_season_is_refused():
@@ -376,6 +381,18 @@ async def test_a_cancelled_round_has_its_jobs_cancelled():
     await _cancel(cog, _interaction())
 
     cog.bot.scheduler_service.cancel_round.assert_called_once_with(ROUND_ID)
+
+
+async def test_cancelling_a_round_winds_a_finished_season_down():
+    """The round may have been the last its season waited on (issue #220)."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _cancel(cog, interaction)
+
+    cog.bot.season_service.wind_down_ongoing.assert_awaited_once_with(
+        cog.bot, interaction.guild_id
+    )
 
 
 async def test_the_jobs_go_before_the_round_is_recorded_cancelled():

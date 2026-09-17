@@ -9,15 +9,16 @@ existing whether or not this module is enabled.
 
 # Signup wizard and flow
 ## Enabling signup flow
+- The signup module shall be enabled, disabled and configured only while the server holds no active season, or while its active season is in Configuration. Every command below that enables, disables or configures the module shall be refused otherwise, and confirming a season's configuration fixes all of it for that season.
 - A "module enable signup" command shall be a league admin's and shall enable signup functionality. This command shall take the module name and nothing else.
 - The general sign up channel, the "base role" and the "signed up" role shall each be set by a command of their own: "signup channel", "signup base-role" and "signup complete-role".
     - Setting the sign up channel shall apply the channel permissions described below. Setting the base role shall re-apply them, removing the overwrite of the role it replaces.
     - Until all three are set, it shall not be possible to open signups.
-    - While the signup module is enabled, season approval shall be blocked until all three are set, and the bot shall name each one that is missing.
+    - While the signup module is enabled, confirming a season's configuration shall be refused until all three are set, and the bot shall name each one that is missing.
 - The general sign up channel shall be visible only to holders of the interaction role, holders of the league admin role, and those with the base role.
 - The general sign up channel may not be the bot interaction channel.
 - The bot shall modify the permissions of the channel configured as general sign-up channel so that it is only visible to holders of the league admin role, holders of the interaction role, and users with the "base role". No other interaction aside from pressing a button shall be possible in this channel, for those of the "base role".
-- <NEW COMMAND> A "module disable signup" command shall be a league admin's and will disable signup functionality, clearing all settings from the previous enabling.
+- <NEW COMMAND> A "module disable signup" command shall be a league admin's and will disable signup functionality, clearing all settings from the previous enabling. The signups kept with each season, and the signup configuration kept beside them, shall not be cleared.
 
 ## Signup module configuration
 - A "signup nationality" command shall be made available which will toggle on and off whether a driver's nationality is requested during the signups. By default, the nationality will be requested.
@@ -36,16 +37,16 @@ existing whether or not this module is enabled.
     - Where a driver's recorded availability names a time slot that no longer exists, that availability shall be reported as an unknown slot, and shall mark no column of the unassigned export.
 - A "signup time-slot remove" command shall be made available to remove time slots configured above. The available time slots will be listed with clarification to what day of the week and time of day they pertain to. If there are no configured time slots, this command will be blocked.
 - A "signup time-slot list" command shall list the configured time slots.
-- No more than 25 time slots may be configured, and time slots may not be added or removed while signups are open.
-    - Nor may a time slot be added or removed while any driver holds a completed signup that has not yet been placed — the drivers the "signup unassigned list" command reports. The refusal shall state how many drivers are waiting.
+- No more than 25 time slots may be configured.
 - The three configuration commands above and the time-slot commands are a league manager's.
-- A "signup open" command shall be made available, in which 0..x tracks of those configured must be selected by the user; these are the sign-up tracks to be shown to the user later, so the choices will require persistance.
+- A "signup open" command shall be made available only while the active season is in Waiting or in Ongoing, and shall be refused in every other state. Opening the window shall move the season from Waiting to Signups, or from Ongoing to Ongoing, signups open. The command shall take 0..x tracks of those configured must be selected by the user; these are the sign-up tracks to be shown to the user later, so the choices will require persistance.
     - This command shall additionally accept an optional close time, as an ISO 8601 UTC datetime that shall be in the future. When given, the bot shall close the signup window automatically at that instant, and shall re-arm or immediately execute the closure after a restart.
     - The announcement shall state the close time when one is set.
 - It shall not be possible to open signups if there are no configured time slots.
 - It shall be possible to set 0 signup tracks. Where no tracks are set, no signup times shall be collected and drivers shall have no time sum to be seeded on.
 - Once enabled, the bot shall post a button that allows the initiation of the signup procedure by users with the "base role" in the "general sign up channel". Likewise, the bot shall post a message informing that "signups are open", listing the signup tracks as well, as well as whether image proof of the signup times is necessary.
 - A "signup close" command shall be made available, no parameters. When run, if there are no incomplete signups (no users in the Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction states), the signups will be immediately closed; otherwise, if there are incomplete signups, the administrator shall be informed of all the drivers and their signup channels, and prompted to either confirm or cancel the closing of the signups via buttons.
+        - Closing the window, by this command or at its close time, shall move the season from Signups to Placements. From Ongoing, signups open it shall move the season to Ongoing, placements where any signup remains unsettled — any driver Unassigned, Pending Admin Approval, Awaiting Correction Parameter or Pending Driver Correction — and to Ongoing where none does.
         - Closing the window shall transition only drivers in the Pending Signup Completion state to Not Signed Up. Drivers in Pending Admin Approval, Awaiting Correction Parameter and Pending Driver Correction shall retain their state and may still be approved, rejected or corrected after the window has closed.
         - A driver in Awaiting Correction Parameter shall be counted and listed among the incomplete signups, but the close shall not move them. A league manager may request changes after the window has closed, so a close is not a boundary for a driver mid-review; the restart rule below is what guarantees they never stay there (decided 2026-09-15).
         - This command shall be refused while a close time is armed, and the refusal shall state the armed time and name the "signup close-time cancel" command. Closing a window ahead of its close time is deliberately two steps, and the command the refusal names shall be one that exists (decided 2026-09-15).
@@ -81,12 +82,12 @@ existing whether or not this module is enabled.
         - If the Discord User ID associated with a driver profile is changed, the discord username and display name shall likewise be overwritten by those of the new account.
     - Once all the information in this form is finalized, the one performing the signup shall enter the "pending admin approval" state.
     - A button shall be made available to drivers in "pending signup completion", "pending admin approval" and "pending driver correction" states to withdraw their signup. This will be the only way to make corrections due to constraints. This button will be available throughout the signup wizard as well.
-    - Once the "pending admin approval" state is reached, signup information shall be persisted (excluding images) alongside the new state. The bot shall post 3 buttons: 1 to approve signup, 1 to request changes, 1 to reject sign-up outright. These buttons are a league manager's, and shall be refused to the driver whose signup they judge, who can read the channel they are posted in.
+    - Once the "pending admin approval" state is reached, signup information shall be persisted (excluding images) alongside the new state, as a signup of the season and of the window it came through. The bot shall post 3 buttons: 1 to approve signup, 1 to request changes, 1 to reject sign-up outright. These buttons are a league manager's, and shall be refused to the driver whose signup they judge, who can read the channel they are posted in.
     - If the user leaves the server during the signup (meaning Pending Signup Completion, Pending Admin Approval, Pending Driver Correction states), their signup will be cancelled and the channel deleted immediately.
     - If the driver does not change from the "Pending Signup Completion" state for 24 hours, their signup will be cancelled and the channel deleted after another 24 hours (still visible to the driver at hand, but impossible to interact with it). A message informing of the cancellation shall be posted by the bot.
     - If the driver does not change from the "Pending Driver Correction" state for 24 hours, their signup will be cancelled and the channel deleted after another 24 hours (still visible to the driver at hand, but impossible to interact with it). A message informing of the cancellation shall be posted by the bot.
     - If a driver's signup is rejected by a league manager, their signup will be cancelled and the channel deleted after another 24 hours (still visible to the driver at hand, but impossible to interact with it). A message informing of the cancellation shall be posted by the bot.
-    - Once a signup is deemed cancelled, the driver's state will change to "not signed up".
+    - Once a signup is deemed cancelled, the driver's state will change to "not signed up". A driver reaching it without the former-driver flag is pending deletion, as [the core specification](core_specification.md) sets out, and is not deleted at once.
     - If a driver with an active signup channel reengages the signup procedure via the signup wizard start button, any existing signup channel associated with the user shall be deleted immediately.
     - If a driver's signup is approved via the aforementioned button by a league manager, the driver entry shall move to the "unassigned" state.
     - If changes are requested to a drivers' signup, the driver will be changed to the "pending driver correction" state. Several buttons will appear, each one pertaining to a sign up parameter, which is to be pressed by a league manager exclusively to designate which aspect of the signup requires new information.
@@ -97,7 +98,7 @@ existing whether or not this module is enabled.
         - This effectively means that when a driver is in "pending signup completion" state, the signup wizard shall transition states sequentially, but when a driver is in "pending driver correction" state, the signup wizard will hop from "unengaged" to parameter states and back directly.
 
 ## Placement of drivers
-    - A "signup unassigned list" command shall list all users in the "unassigned" state. This command will return text containing the following data, per line, and in seeding order:
+    - A "signup unassigned list" command shall list the unsettled signups of the current season: every driver in the "unassigned" state, in seeding order, followed by every driver awaiting approval or correction, who holds no seed. This command will return text containing the following data, per line:
         - Seeding (to be explained later)
         - Discord User ID and display name
         - Platform
@@ -108,8 +109,19 @@ existing whether or not this module is enabled.
         - Sum of all signup times
         - Signup notes
     - An easier, quicker way to implement the above command will be to have an "unassigned" driver list that is indexed by seeding number, holding only the "discord user ID" and the sum of all signup times. This last parameter shall determine the seeding; drivers with lower signup time sum shall be seeded higher (e.g. 3:40.055 would be seed 1, 3:40.097 seed 2, 3:41.423 seed 3, etc). This way, the seeding is always kept up to date.
-        - The sum of signup times shall be computed at the transition to "unassigned" and shall not be recomputed thereafter. Drivers with no recorded time shall be seeded last, and ties shall be broken by order of approval.
-    - A "signup unassigned export" command shall return the same drivers as a CSV file in seeding order. The columns shall be: seed, display name, Discord user ID, driver type, time sum, one column per configured availability slot marking those the driver selected, three preferred team columns, platform and platform ID.
-    - The placement of a driver into a division and team is specified in [the core specification](core_specification.md).
+        - The sum of signup times shall be computed at the transition to "unassigned" and shall not be recomputed thereafter. Drivers with no recorded time shall be seeded last, and ties shall be broken by the order in which the signups were submitted — the moment each reached "pending admin approval" for the first time — which neither approval nor a correction shall move.
+    - A "signup unassigned export" command shall return the same drivers as a CSV file, in the same order. The columns shall be: seed, display name, Discord user ID, driver type, time sum, one column per configured availability slot marking those the driver selected, three preferred team columns, platform and platform ID.
+    - The placement of a driver into a division and team, and the rejection of an Unassigned driver by the "driver reject" command, are specified in [the core specification](core_specification.md).
+
+## Signup data
+- A signup shall belong to the season, and to the window it came through, and shall be kept permanently as part of that season's history. It shall not be overwritten by a later signup.
+- Every completed signup shall be kept — one that reached "pending admin approval" — whatever became of it: approved, rejected when reviewed or afterwards, or withdrawn after it reached review. A signup abandoned during the wizard, or timed out before completion, shall not be kept.
+- A driver who signs up more than once in a season shall keep every signup, one record to each.
+- A correction requested of a driver shall amend the signup it was requested of, and shall not make a new one.
+- The signups of a driver deleted by the driver pass shall remain with the season, identified by the driver's Discord account.
+- The season's signup configuration — its time slots, its time type, and which questions were asked — shall be kept with the season as it stood when the configuration was confirmed, and each window's tracks and close time shall be kept with the window, so that a signup kept remains readable. A driver's availability names the season's slots, and their times name the window's tracks.
+- The signups of an aborted season shall be deleted with it.
+- The "driver reassign" command shall carry every signup of the profile to its new account.
+- Wherever the bot names a driver from their signup, or reads the nationality they gave in it, it shall read the driver's signup to the season concerned: the graphics of a season, and the notice that a driver has left the server, alike. A driver created by test mode holds no signup, and their nationality shall be read from the driver profile as before.
 
 The name of the commands is an example and only tentative. If further commands are required, please inform.

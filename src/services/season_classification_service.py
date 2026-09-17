@@ -33,7 +33,7 @@ async def post_opening_classifications(
 ) -> list[str]:
     """Post every division's opening standings and attendance sheet.
 
-    *div_rounds* maps a division id to its rounds, as ``/season review`` already assembled
+    *div_rounds* maps a division id to its rounds, as ``/season placements-review`` already assembled
     them. The division's **first** round is what the sheets are drawn against: not because
     they stand after it — they stand after nothing — but because the grid of rounds down the
     side of both sheets is read from the season's calendar, and because the heading context
@@ -63,7 +63,10 @@ async def post_opening_classifications(
             # in it; the second is the one that counts.
             roster = await standings_service.opening_driver_standings(db_path, division.id)
             names = await _driver_names(
-                bot, guild, [snapshot.driver_user_id for snapshot in roster]
+                bot,
+                guild,
+                [snapshot.driver_user_id for snapshot in roster],
+                division_id=division.id,
             )
             driver_snaps = await standings_service.opening_driver_standings(
                 db_path, division.id, names

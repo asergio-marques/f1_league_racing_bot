@@ -7,10 +7,20 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from models.season import ONGOING_STAGES, SeasonStage
 from utils.channel_guard import league_admin_only, league_manager_only
 from services.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)
+
+#: The stages `/driver assign` and `/driver unassign` are available in (issue #220): while the
+#: season is built, and mid-season for the drivers of the window just closed.
+_PLACING_STAGES = frozenset({SeasonStage.PLACEMENTS, SeasonStage.ONGOING_PLACEMENTS})
+
+_NOT_PLACING_REFUSAL = (
+    "⛔ `{command}` is available only while the season is in placements, or mid-season "
+    "while the drivers of a closed signup window are being placed."
+)
 
 
 class DriverCog(commands.Cog):
@@ -117,11 +127,11 @@ class DriverCog(commands.Cog):
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
-        # Resolve season
+        # Resolve season, and the stage placements may be made in (issue #220)
         season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
-        if season is None:
+        if season is None or season.stage not in _PLACING_STAGES:
             await interaction.followup.send(
-                "⛔ No season in SETUP or ACTIVE state found.", ephemeral=True
+                _NOT_PLACING_REFUSAL.format(command="/driver assign"), ephemeral=True
             )
             return
 
@@ -166,7 +176,8 @@ class DriverCog(commands.Cog):
                 acting_user_name=actor_name,
                 guild=interaction.guild,
                 discord_user_id=str(user.id),
-                season_state=season.status.value if hasattr(season.status, "value") else str(season.status),
+                committed=False,
+                uncommitted_only=season.stage is SeasonStage.ONGOING_PLACEMENTS,
             )
         except ValueError as exc:
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
@@ -215,9 +226,9 @@ class DriverCog(commands.Cog):
         actor_name = str(interaction.user)
 
         season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
-        if season is None:
+        if season is None or season.stage not in _PLACING_STAGES:
             await interaction.followup.send(
-                "⛔ No season in SETUP or ACTIVE state found.", ephemeral=True
+                _NOT_PLACING_REFUSAL.format(command="/driver unassign"), ephemeral=True
             )
             return
 
@@ -259,7 +270,7 @@ class DriverCog(commands.Cog):
                 acting_user_name=actor_name,
                 guild=interaction.guild,
                 discord_user_id=str(user.id),
-                season_state=season.status.value if hasattr(season.status, "value") else str(season.status),
+                uncommitted_only=season.stage is SeasonStage.ONGOING_PLACEMENTS,
             )
         except ValueError as exc:
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
@@ -279,6 +290,240 @@ class DriverCog(commands.Cog):
         log.info(
             "unassign: server=%s user=%s from division=%s by %s",
             server_id, user.id, division, actor_name,
+        )
+
+    # ------------------------------------------------------------------
+    # /driver move
+    # ------------------------------------------------------------------
+
+    @driver.command(
+        name="move",
+        description="Move a confirmed driver to another team, in the same division or another.",
+    )
+    @app_commands.describe(
+        user="The Discord member to move.",
+        from_division="Division tier number or name the driver is moved from.",
+        team="Exact team name the driver is moved into.",
+        to_division="Division tier number or name moved into. Omit for the same division.",
+    )
+    @league_manager_only
+    async def move(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        from_division: str,
+        team: str,
+        to_division: str | None = None,
+    ) -> None:
+        """Move a committed driver in one step (issue #220).
+
+        Full-time to Reserve, team to team, or a promotion or relegation between divisions,
+        with the roles swapped and each lineup touched posted once. Available in the three
+        ongoing stages; before placements are confirmed a seat is changed by unassigning and
+        assigning again.
+        """
+        await interaction.response.defer(ephemeral=True)
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        if season is None or season.stage not in ONGOING_STAGES:
+            await interaction.followup.send(
+                "⛔ `/driver move` is available only while the season is ongoing.",
+                ephemeral=True,
+            )
+            return
+
+        resolved_from = await self.bot.placement_service.resolve_division(  # type: ignore[attr-defined]
+            season.id, from_division
+        )
+        if resolved_from is None:
+            await interaction.followup.send(
+                f"⛔ Division **{from_division}** not found in the active season.", ephemeral=True
+            )
+            return
+        resolved_to = resolved_from
+        if to_division is not None:
+            resolved_to = await self.bot.placement_service.resolve_division(  # type: ignore[attr-defined]
+                season.id, to_division
+            )
+            if resolved_to is None:
+                await interaction.followup.send(
+                    f"⛔ Division **{to_division}** not found in the active season.",
+                    ephemeral=True,
+                )
+                return
+
+        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        if profile is None:
+            await interaction.followup.send(
+                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
+            )
+            return
+
+        try:
+            result = await self.bot.placement_service.move_driver(  # type: ignore[attr-defined]
+                server_id=server_id,
+                driver_profile_id=profile.id,
+                season_id=season.id,
+                from_division_id=resolved_from[0],
+                to_division_id=resolved_to[0],
+                team_name=team,
+                acting_user_id=interaction.user.id,
+                acting_user_name=str(interaction.user),
+                guild=interaction.guild,
+                discord_user_id=str(user.id),
+            )
+        except ValueError as exc:
+            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            f"✅ Moved **{user.display_name}** from **{result['from_team']}** in "
+            f"**{result['from_division']}** to **{result['to_team']}** in "
+            f"**{result['to_division']}**.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver move | Success\n"
+            f"  user: {user.display_name} (<@{user.id}>)\n"
+            f"  from: {result['from_team']}, {result['from_division']}\n"
+            f"  to: {result['to_team']}, {result['to_division']}",
+        )
+
+    # ------------------------------------------------------------------
+    # /driver release
+    # ------------------------------------------------------------------
+
+    @driver.command(
+        name="release",
+        description="Release a confirmed driver from one division, keeping their other seats.",
+    )
+    @app_commands.describe(
+        user="The Discord member to release.",
+        division="Division tier number or name to release them from.",
+    )
+    @league_manager_only
+    async def release(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        division: str,
+    ) -> None:
+        """Release a committed driver from one division (issue #220), in the ongoing stages."""
+        await interaction.response.defer(ephemeral=True)
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        if season is None or season.stage not in ONGOING_STAGES:
+            await interaction.followup.send(
+                "⛔ `/driver release` is available only while the season is ongoing.",
+                ephemeral=True,
+            )
+            return
+
+        resolved = await self.bot.placement_service.resolve_division(  # type: ignore[attr-defined]
+            season.id, division
+        )
+        if resolved is None:
+            await interaction.followup.send(
+                f"⛔ Division **{division}** not found in the active season.", ephemeral=True
+            )
+            return
+
+        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        if profile is None:
+            await interaction.followup.send(
+                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
+            )
+            return
+
+        try:
+            result = await self.bot.placement_service.release_driver(  # type: ignore[attr-defined]
+                server_id=server_id,
+                driver_profile_id=profile.id,
+                division_id=resolved[0],
+                season_id=season.id,
+                acting_user_id=interaction.user.id,
+                acting_user_name=str(interaction.user),
+                guild=interaction.guild,
+                discord_user_id=str(user.id),
+            )
+        except ValueError as exc:
+            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            f"✅ Released **{user.display_name}** from **{result['division_name']}**.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver release | Success\n"
+            f"  user: {user.display_name} (<@{user.id}>)\n"
+            f"  division: {result['division_name']}",
+        )
+
+    # ------------------------------------------------------------------
+    # /driver reject
+    # ------------------------------------------------------------------
+
+    @driver.command(
+        name="reject",
+        description="Turn down an approved driver who has not been placed.",
+    )
+    @app_commands.describe(user="The Unassigned driver to turn down.")
+    @league_manager_only
+    async def reject(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        """Turn down an Unassigned driver (issue #220).
+
+        Available while the season is in Placements or Ongoing, placements — where the
+        drivers of a window are settled. The driver returns to Not Signed Up and loses the
+        signed-up role; their signup is kept with the season.
+        """
+        from models.driver_profile import DriverState
+
+        await interaction.response.defer(ephemeral=True)
+        server_id: int = interaction.guild_id  # type: ignore[assignment]
+
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
+        if season is None or season.stage not in _PLACING_STAGES:
+            await interaction.followup.send(
+                _NOT_PLACING_REFUSAL.format(command="/driver reject"), ephemeral=True
+            )
+            return
+
+        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        if profile is None or profile.current_state is not DriverState.UNASSIGNED:
+            await interaction.followup.send(
+                f"⛔ **{user.display_name}** is not an Unassigned driver. A placed driver is "
+                "unassigned first; a signup still in review is rejected from its panel.",
+                ephemeral=True,
+            )
+            return
+
+        await self.bot.driver_service.transition(  # type: ignore[attr-defined]
+            server_id, str(user.id), DriverState.NOT_SIGNED_UP
+        )
+
+        signup_cfg = await self.bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
+        role_id = getattr(signup_cfg, "signed_up_role_id", None)
+        if role_id and interaction.guild is not None:
+            role = interaction.guild.get_role(role_id)
+            if role is not None:
+                try:
+                    await user.remove_roles(role, reason="Driver rejected")
+                except discord.HTTPException as exc:
+                    log.warning("reject: could not remove the signed-up role: %s", exc)
+
+        await interaction.followup.send(
+            f"✅ Turned down **{user.display_name}**. They are no longer signed up.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reject | Success\n"
+            f"  user: {user.display_name} (<@{user.id}>)",
         )
 
     # ------------------------------------------------------------------
@@ -303,17 +548,16 @@ class DriverCog(commands.Cog):
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
-        season = await self.bot.season_service.get_active_season(server_id)  # type: ignore[attr-defined]
-
-        if season is not None:
-            try:
-                await self.bot.season_service.assert_season_mutable(season)  # type: ignore[attr-defined]
-            except SeasonImmutableError:
-                await interaction.followup.send(
-                    "❌ This season is archived (COMPLETED) and cannot be modified.",
-                    ephemeral=True,
-                )
-                return
+        # Sacking is available only while the season is ongoing (issue #220). Between seasons
+        # every driver has already been returned to Not Signed Up by the season's end, and a
+        # season still being built has no confirmed placement to sack anyone from.
+        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        if season is None or season.stage not in ONGOING_STAGES:
+            await interaction.followup.send(
+                "⛔ `/driver sack` is available only while the season is ongoing.",
+                ephemeral=True,
+            )
+            return
 
         profile = await self.bot.driver_service.get_profile(  # type: ignore[attr-defined]
             server_id, str(user.id)
@@ -328,7 +572,7 @@ class DriverCog(commands.Cog):
             await self.bot.placement_service.sack_driver(  # type: ignore[attr-defined]
                 server_id=server_id,
                 driver_profile_id=profile.id,
-                season_id=season.id if season is not None else None,
+                season_id=season.id,
                 acting_user_id=actor_id,
                 acting_user_name=actor_name,
                 guild=interaction.guild,

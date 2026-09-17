@@ -4,7 +4,7 @@
 configured ones, not the packaged ones."
 
 Every other path that decides whether a phase is overdue reads `weather_pipeline_config`:
-`/season approve`, the catch-up `/module enable weather` runs, and `amend_round` since #110.
+the confirmation of placements, the catch-up `/module enable weather` runs, and `amend_round` since #110.
 `_recover_missed_phases` did not — it worked from `timedelta(days=5)`, `timedelta(days=2)` and
 `timedelta(hours=2)` literals, so a restart judged every league by the packaged 5 / 2 / 2. A league
 running a longer phase 1 lost the forecast entirely until the bot happened to restart inside the

@@ -136,7 +136,7 @@ class PreviewContext:
     #: withdrawn along with the optional ``division`` and ``round`` parameters that made
     #: it reachable.
     fabricated_drivers: bool = False
-    #: The season drawn is still awaiting ``/season approve``.
+    #: The season drawn is still awaiting the confirmation of placements.
     season_pending_approval: bool = False
     #: Seated drivers drawn with no flag where the league collects nationality. A test-mode
     #: mock driver records none, and a manager reading the reply should be told why the
@@ -362,6 +362,9 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
     ``resolve_drawing``, so the preview and the posting path hand the same thing to the
     same function.
     """
+    from services.image_results_post import SIGNUP_FOR_SEASON_SQL, season_of_division
+
+    season_id = await season_of_division(bot.db_path, context.division_id)
     async with get_connection(bot.db_path) as db:
         instances = await (
             await db.execute(
@@ -388,14 +391,16 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
                     "       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
                     "            ELSE sr.nationality END AS nationality "
                     "FROM team_seats ts "
+                    # A placement not yet confirmed mid-season is not drawn (issue #220).
                     "LEFT JOIN driver_season_assignments dsa "
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
+                    "      AND (dsa.committed = 1 OR NOT EXISTS ("
+                    "          SELECT 1 FROM seasons s WHERE s.id = dsa.season_id "
+                    "          AND s.status = 'ACTIVE')) "
                     "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
-                    "LEFT JOIN signup_records sr "
-                    "       ON sr.server_id = dp.server_id "
-                    "      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
+                    f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
                     "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
-                    (context.division_id, instance["id"]),
+                    (context.division_id, season_id, instance["id"]),
                 )
             ).fetchall()
             teams.append(

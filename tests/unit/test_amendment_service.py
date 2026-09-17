@@ -593,7 +593,7 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
 
     Cancelling the round takes all eight of its jobs, the check-in call, its reminder and its
     deadline included, and only the weather ones were ever put back. Nothing else arms them —
-    `schedule_attendance_round` is called from `/season approve` and nowhere else, and that
+    `schedule_attendance_round` is called from the confirmation of placements and nowhere else, and that
     cannot be run again on an active season. So the round asked nobody whether they were racing,
     opened no attendance records, charged nobody, and read afterwards as perfect attendance for
     the entire division, with nothing anywhere reporting it.
@@ -990,7 +990,7 @@ async def test_approve_amendment_still_overwrites_the_points(db_path):
 # ---------------------------------------------------------------------------
 # The ordering rule holds at the mid-season end too
 #
-# `/season approve` refuses a points table that is out of order. Approving an amendment
+# The confirmation of placements refuses a points table that is out of order. Approving an amendment
 # installed one without a word — deleting the season's points and refilling them from
 # the modification store, then rescoring and reposting every round of every division
 # against the new numbers. A rule that bound only the approval was a rule a league could

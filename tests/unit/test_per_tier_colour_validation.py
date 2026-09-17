@@ -5,7 +5,7 @@ that slot matters. Leaving it unset for a tier would draw that tier in whatever 
 happened to be authored in — silently, and differently from its siblings. So it is a
 shortfall, and it is reported wherever a manager looks at their configuration.
 
-**The point of this file is that there is one implementation, not three.** `/season review`,
+**The point of this file is that there is one implementation, not three.** `/season placements-review`,
 `/images config view` and the aspect toggle all read the same `AspectStatus` list — a fact
 `season_cog` records in as many words at its `_build_image_review_section` — and
 `test_the_shortfall_reaches_every_surface` is what stops that quietly becoming untrue.
@@ -198,7 +198,7 @@ async def test_the_shortfall_is_computed_once_the_feature_is_on():
 # ── One rule, three surfaces ──────────────────────────────────────────────
 
 def test_the_shortfall_reaches_every_surface():
-    """`/images config view`, `/season review` and the aspect toggle read one list.
+    """`/images config view`, `/season placements-review` and the aspect toggle read one list.
 
     All three render `AspectStatus`, so this asserts the property that makes that safe:
     the reason appears in the rolled-up status, which is the only thing any of them sees.
@@ -243,7 +243,7 @@ def test_the_aspect_toggle_passes_the_shortfall_through():
 # ── The season approval gate ──────────────────────────────────────────────
 
 async def test_the_approval_gate_flattens_the_same_shortfall():
-    """`/season approve` reads `colour_shortfall`, not a rule of its own."""
+    """The confirmation of placements reads `colour_shortfall`, not a rule of its own."""
     from cogs.season_cog import SeasonCog
 
     cog = MagicMock(spec=SeasonCog)

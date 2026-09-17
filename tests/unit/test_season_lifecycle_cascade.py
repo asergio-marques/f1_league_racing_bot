@@ -464,11 +464,14 @@ async def _run_season_complete(divisions, outstanding, all_done=False):
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = AsyncMock()
     svc = cog.bot.season_service
-    svc.get_active_season = AsyncMock(return_value=MagicMock(id=1, season_number=1))
+    svc.get_confirmed_season = AsyncMock(return_value=MagicMock(id=1, season_number=1))
     svc.get_divisions = AsyncMock(return_value=divisions)
     svc.refresh_division_status = AsyncMock(return_value=False)
     svc.all_divisions_finished = AsyncMock(return_value=all_done)
     svc.get_outstanding_rounds = AsyncMock(return_value=outstanding)
+    from models.season import SeasonStage
+
+    svc.get_stage = AsyncMock(return_value=SeasonStage.PENDING_COMPLETION)
 
     sent: list[str] = []
     interaction = MagicMock()

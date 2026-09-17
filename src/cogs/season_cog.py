@@ -2,8 +2,8 @@
 
 Commands:
   /season setup    — start season configuration (admin only)
-  /season review   — view pending config with Approve/Amend actions
-  (approval is the button `/season review` posts; there is no `/season approve`)
+  /season placements-review   — view pending config with Approve/Amend actions
+  (placements are confirmed from the button `/season placements-review` posts, and by no command)
   /season status   — read-only summary of active season
   /season cancel   — delete the active season (admin only, destructive)
 
@@ -37,6 +37,7 @@ from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
 from models.division import Division
 from models.round import Round as RoundModel
 from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
+from models.season import SeasonStage
 from services import season_points_service
 import services.track_service as track_service
 from services.season_service import SeasonImmutableError
@@ -143,7 +144,7 @@ def _duplicate_datetime_errors(
 ) -> list[str]:
     """Every incoming round whose datetime is already taken, within the batch or before it.
 
-    `/season approve` refuses a season holding two rounds of one division at the same
+    The confirmation of placements refuses a season holding two rounds of one division at the same
     moment (Gate 0b), and it does so long after the calendar has been built and possibly
     posted. A repeated line is the likeliest fault in a pasted calendar, so it is caught
     here instead — at the first moment the whole batch can be seen.
@@ -426,7 +427,7 @@ async def _overflow_for(cog, guild_id: int, _division_name: str, would_hold: int
 # ---------------------------------------------------------------------------
 
 
-#: What a graphic did in `/season review`, and what the text around it must therefore do.
+#: What a graphic did in `/season placements-review`, and what the text around it must therefore do.
 #:
 #: The review shows a manager what their league will actually see, so a graphic
 #: **replaces** the section's text rather than standing beside it. Three states and not
@@ -479,12 +480,12 @@ class SeasonCog(commands.Cog):
         if self._get_pending_for_server(server_id) is not None:
             await interaction.followup.send(
                 "\u274c A season setup is already in progress for this server. "
-                "Use `/season review` to approve, or `/bot-reset` to cancel it first.",
+                "Use `/season placements-review` to approve, or `/bot-reset` to cancel it first.",
                 ephemeral=True,
             )
             return
 
-        if await self.bot.season_service.get_active_season(server_id) is not None:
+        if await self.bot.season_service.get_confirmed_season(server_id) is not None:
             await interaction.followup.send(
                 "\u274c A season is currently active for this server. "
                 "Complete it before starting a new one.",
@@ -495,19 +496,19 @@ class SeasonCog(commands.Cog):
         if await self.bot.season_service.get_setup_season(server_id) is not None:
             await interaction.followup.send(
                 "\u274c A season setup is already in progress for this server. "
-                "Use `/season review` to continue, or cancel it first.",
+                "Use `/season placements-review` to continue, or cancel it first.",
                 ephemeral=True,
             )
             return
 
         cfg = PendingConfig(server_id=server_id, game_edition=game_edition)
         self._pending[interaction.user.id] = cfg
-        await self._snapshot_pending(cfg)
+        await self._snapshot_pending(cfg, initial_stage=SeasonStage.CONFIGURATION)
 
         await interaction.followup.send(
             f"\u2705 Season setup started. **Season #{cfg.season_number} (F1 {cfg.game_edition})** is being configured.\n\n"
             "Use `/division add` for each division, then `/round add` for each round.\n"
-            "When done, run `/season review` to review and approve.",
+            "When done, run `/season placements-review` to review and approve.",
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
@@ -541,7 +542,7 @@ class SeasonCog(commands.Cog):
     async def _points_ordering_problems(self, server_id: int, season_id: int) -> list[str]:
         """Every place this season's points would score a lower position above a higher one.
 
-        **One helper because two surfaces ask the same question.** `/season review` reports
+        **One helper because two surfaces ask the same question.** `/season placements-review` reports
         what would block an approval and `_do_approve` refuses on it; a review that promised
         to surface the blockers and did not look for this one sent a manager to an approval
         that then refused, for a fault the report had just told them nothing about.
@@ -572,7 +573,7 @@ class SeasonCog(commands.Cog):
         """Every points configuration this season is attached to that no longer exists.
 
         **One helper because two surfaces ask the same question**, in the manner of
-        `_points_ordering_problems`: `/season review` reports what would block an approval
+        `_points_ordering_problems`: `/season placements-review` reports what would block an approval
         and `_do_approve` refuses on it, and a review that listed the name as attached while
         the approval choked on it is what made #132 unreadable.
 
@@ -671,7 +672,7 @@ class SeasonCog(commands.Cog):
     async def _prerender_review_images(
         self, interaction, divisions, rounds_by_division, season_number
     ) -> dict:
-        """Draw every graphic `/season review` will post, before it posts any of them.
+        """Draw every graphic `/season placements-review` will post, before it posts any of them.
 
         Returns ``{(division id, "calendar" | "lineup"): outcome}``. A key is absent where
         the aspect is off, where the render failed, or where the budget above stopped the
@@ -789,7 +790,7 @@ class SeasonCog(commands.Cog):
         prepared.clear()
 
     async def _post_review_lineup_image(self, interaction, division, *, prepared=None) -> str:
-        """Post the lineup graphic for `/season review`, **in place of** the text lineup.
+        """Post the lineup graphic for `/season placements-review`, **in place of** the text lineup.
 
         Returns one of :data:`REVIEW_IMAGE_DREW`, :data:`REVIEW_IMAGE_TEXT` or
         :data:`REVIEW_IMAGE_FAULT`, which is what tells the caller whether to post the
@@ -896,12 +897,12 @@ class SeasonCog(commands.Cog):
     async def _post_review_calendar_image(
         self, interaction, division, rounds, season_number, *, prepared=None
     ) -> str:
-        """Post the calendar graphic for `/season review`, **in place of** the text.
+        """Post the calendar graphic for `/season placements-review`, **in place of** the text.
 
         The counterpart of :meth:`_post_review_lineup_image`, and it reads the same three
         states. Renders through ``calendar_post_service.render_for_command``, which posts
         to no channel and writes no ``calendar_message_id`` — the calendar of record is
-        `/season approve`'s to place, not the review's.
+        the confirmation's to place, not the review's.
 
         *prepared* carries a graphic :meth:`_prerender_review_images` already drew, on the
         same terms as the lineup's.
@@ -1317,7 +1318,7 @@ class SeasonCog(commands.Cog):
         return lines
 
     async def _build_image_review_section(self, server_id: int) -> list[str]:
-        """The image module's addendum to `/season review` (FR-033).
+        """The image module's addendum to `/season placements-review` (FR-033).
 
         Built from the same `AspectStatus` list `/images config view` renders, so a
         divergence between the two surfaces is impossible by construction. Template
@@ -1370,7 +1371,7 @@ class SeasonCog(commands.Cog):
         # same findings, so seeing them here is what lets them act first.
         #
         # Split by whether the aspect drawing the template is switched on, because that
-        # is what decides whether the fault stops the season. `/season approve` blocks on
+        # is what decides whether the fault stops the season. The confirmation of placements blocks on
         # exactly the first list, so the heading is a promise the gate keeps rather than
         # a guess. A template beneath a switched-off aspect is still named: it is a real
         # fault a manager will meet the moment they switch that aspect on, and finding it
@@ -1439,7 +1440,7 @@ class SeasonCog(commands.Cog):
     async def _portrait_configuration_blocker(self, server_id: int) -> str | None:
         """The portrait-settings reason approval must be withheld, or None.
 
-        Read by `/season review` and by `/season approve` alike, so the two cannot disagree
+        Read by `/season placements-review` and by the confirmation of placements alike, so the two cannot disagree
         about whether a season may be approved.
         """
         from services.image_config_service import portrait_configuration_fault
@@ -1454,7 +1455,7 @@ class SeasonCog(commands.Cog):
         return portrait_configuration_fault(config)
 
     async def _portrait_review_lines(self, server_id: int) -> list[str]:
-        """How driver portraits are being obtained, for `/season review`.
+        """How driver portraits are being obtained, for `/season placements-review`.
 
         Always stated, including when the feature is off: a manager reading the review is
         deciding whether the season is configured, and "the bot is not obtaining portraits"
@@ -1527,7 +1528,7 @@ class SeasonCog(commands.Cog):
         one window to shorten. Both name the **latest** round of their kind, which is the one
         that bounds the remedy — clear that round and every earlier one is cleared with it.
 
-        Takes the verdict rather than the rounds, because `/season review` and the approval
+        Takes the verdict rather than the rounds, because `/season placements-review` and the approval
         reach it by different routes and must not be able to reach different answers.
         """
         if fault is None:
@@ -1553,18 +1554,42 @@ class SeasonCog(commands.Cog):
         return lines
 
     @season.command(
-        name="review",
-        description="Review pending season configuration before approving.",
+        name="placements-review",
+        description="Review the season's divisions, calendar and lineups before confirming placements.",
     )
     # A league manager's, deliberately (2026-09-07). Reading what a season is configured to
     # be is not an administrative act: the report is what the review is for. Approving it is
     # the narrower right, and `_ApproveView` is where that is enforced.
     @league_manager_only
     async def season_review(self, interaction: discord.Interaction) -> None:
+        confirmed = await self.bot.season_service.get_confirmed_season(interaction.guild_id)  # type: ignore[attr-defined]
+        if confirmed is not None:
+            # Mid-season, the review covers the drivers of the window just closed (#220).
+            if confirmed.stage is SeasonStage.ONGOING_PLACEMENTS:
+                await self._review_mid_season_placements(interaction, confirmed)
+            else:
+                await interaction.response.send_message(
+                    "\u26d4 Placements can only be reviewed while the season is in placements, "
+                    "or mid-season while the drivers of a closed signup window are placed.",
+                    ephemeral=True,
+                )
+            return
+
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
                 "\u274c No pending season setup. Run `/season setup` first.",
+                ephemeral=True,
+            )
+            return
+
+        # Placements are reviewed only once the season is in Placements (issue #220).
+        if cfg.season_id and (
+            await self.bot.season_service.get_stage(cfg.season_id)  # type: ignore[attr-defined]
+        ) is not SeasonStage.PLACEMENTS:
+            await interaction.response.send_message(
+                "\u26d4 Placements can only be reviewed while the season is in placements. "
+                "A season in configuration is reviewed with `/season config-review`.",
                 ephemeral=True,
             )
             return
@@ -1694,87 +1719,22 @@ class SeasonCog(commands.Cog):
                 header_lines += [f"  • {problem}" for problem in name_problems]
                 header_lines.append("")
 
-            # ── Weather config ────────────────────────────────────────
+            # ── Each module's own configuration ───────────────────────
+            # Built by the helpers `/season config-review` reads too, so the two reviews
+            # report a module's configuration in the same words.
             if weather_on:
-                from services.weather_config_service import get_weather_pipeline_config as _gwpc
-                _wcfg = await _gwpc(self.bot.db_path, interaction.guild_id)  # type: ignore[attr-defined]
-                weather_lines += [
-                    "**Weather Config**",
-                    f"  • Phase 1 deadline: {_wcfg.phase_1_days} day(s) before race",
-                    f"  • Phase 2 deadline: {_wcfg.phase_2_days} day(s) before race",
-                    f"  • Phase 3 deadline: {_wcfg.phase_3_hours}h before race",
-                    "",
-                ]
-
-            # ── Signup config ─────────────────────────────────────────
+                weather_lines += await self._weather_review_lines(interaction.guild_id)
             if signup_on:
-                _s_cfg = await self.bot.signup_module_service.get_config(interaction.guild_id)  # type: ignore[attr-defined]
-                _s_settings = await self.bot.signup_module_service.get_settings(interaction.guild_id)  # type: ignore[attr-defined]
-                _s_slots = await self.bot.signup_module_service.get_slots(interaction.guild_id)  # type: ignore[attr-defined]
-                _signup_ch = f"<#{_s_cfg.signup_channel_id}>" if _s_cfg and _s_cfg.signup_channel_id else "*(not configured)*"
-                _signup_br = f"<@&{_s_cfg.base_role_id}>" if _s_cfg and _s_cfg.base_role_id else "*(not configured)*"
-                _signup_cr = f"<@&{_s_cfg.signed_up_role_id}>" if _s_cfg and _s_cfg.signed_up_role_id else "*(not configured)*"
-                _time_type = _s_settings.time_type.replace("_", " ").title()
-                _time_img = "Required" if _s_settings.time_image_required else "Not required"
-                _nationality = "Required" if _s_settings.nationality_required else "Not required"
-                _slot_labels = [s.display_label for s in _s_slots] if _s_slots else ["*(none configured)*"]
-                signup_lines += [
-                    "**Signup Config**",
-                    f"  • Channel: {_signup_ch}",
-                    f"  • Base role: {_signup_br}",
-                    f"  • Sign-up role: {_signup_cr}",
-                    f"  • Time type: {_time_type}",
-                    f"  • Time image: {_time_img}",
-                    f"  • Nationality: {_nationality}",
-                    f"  • Available slots: {', '.join(_slot_labels)}",
-                    "",
-                ]
-
-            # ── Attendance server-level config ────────────────────────
+                signup_lines += await self._signup_review_lines(interaction.guild_id)
             if attendance_on:
-                att_cfg = await self.bot.attendance_service.get_config(interaction.guild_id)  # type: ignore[attr-defined]
-                if att_cfg:
-                    ar = att_cfg.autoreserve_threshold
-                    as_ = att_cfg.autosack_threshold
-                    ar_str = f"{ar} pts" if ar is not None else "*(not set)*"
-                    as_str = f"{as_} pts" if as_ is not None else "*(not set)*"
-                    ln_last = (
-                        f"{att_cfg.rsvp_last_notice_hours}h before deadline"
-                        if att_cfg.rsvp_last_notice_hours
-                        else "*(disabled)*"
-                    )
-                    attendance_lines += [
-                        "**Attendance Config**",
-                        f"  • RSVP notice: {att_cfg.rsvp_notice_days} day(s) before race",
-                        f"  • Last notice: {ln_last}",
-                        f"  • Deadline: {att_cfg.rsvp_deadline_hours}h before race",
-                        f"  • No-RSVP penalty: {att_cfg.no_rsvp_penalty} pt(s)",
-                        f"  • Absent penalty: {att_cfg.absent_penalty} pt(s)",
-                        f"  • No-show penalty: {att_cfg.no_show_penalty} pt(s)",
-                        f"  • Auto-reserve threshold: {ar_str}",
-                        f"  • Auto-sack threshold: {as_str}",
-                        "",
-                    ]
-
-            # ── Points configs (names only) ───────────────────────────
-            config_names = await season_points_service.get_season_config_names(self.bot.db_path, cfg.season_id)  # type: ignore[attr-defined]
-            if config_names:
-                points_lines.append("**Points Configs:** " + ", ".join(config_names))
-            elif results_on:
-                server_config_tm = await self.bot.config_service.get_server_config(interaction.guild_id)  # type: ignore[attr-defined]
-                if server_config_tm is not None and server_config_tm.test_mode_active:
-                    points_lines.append(
-                        "**Points Configs:** *(none attached)* "
-                        "\u26a0\ufe0f Test mode active \u2014 Standard & Half Points will be auto-seeded on approval."
-                    )
-                else:
-                    points_lines.append("**Points Configs:** *(none attached)*")
-            else:
-                points_lines.append("**Points Configs:** *(none attached)*")
+                attendance_lines += await self._attendance_review_lines(interaction.guild_id)
+            points_lines += await self._points_names_review_lines(
+                interaction.guild_id, cfg.season_id, results_on
+            )
 
             # ── Points ordering ───────────────────────────────────────
             # Reported here rather than left to the approval. The refusal at
-            # `/season approve` is the one that matters, but a review whose whole purpose
+            # the confirmation of placements is the one that matters, but a review whose whole purpose
             # is to show a manager what stands in the way of approving is a review that
             # must look at this too — read through the same helper the gate reads, so
             # the report and the refusal cannot drift.
@@ -2057,18 +2017,19 @@ class SeasonCog(commands.Cog):
                 # one of them if it raised — must not be left on a tmpfs.
                 self._discard_prepared_review_images(prepared)
 
-            # ── Server-level UNASSIGNED warning ──────────────────────
-            async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
-                _cur = await _db.execute(
-                    "SELECT COUNT(*) AS cnt FROM driver_profiles WHERE server_id = ? AND current_state = 'UNASSIGNED'",
-                    (interaction.guild_id,),
-                )
-                _unassigned_row = await _cur.fetchone()
-            if _unassigned_row and _unassigned_row["cnt"] > 0:
-                await interaction.followup.send(
-                    f"⚠️ {_unassigned_row['cnt']} driver(s) UNASSIGNED — placement incomplete",
-                    ephemeral=False,
-                )
+            # ── Server-level unsettled signups (issue #220) ──────────
+            # Named in the public report, every one of them, so that whoever reads the review
+            # sees who is still to be placed or turned down — not merely how many.
+            unsettled, channel_faults = await self._placement_confirmation_faults(
+                interaction.guild_id, cfg.season_id
+            )
+            if unsettled:
+                for chunk in _chunk_message(
+                    "\u26a0\ufe0f **Unsettled signups** — each is to be placed with "
+                    "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
+                    + "\n".join(f"\u2022 {line}" for line in unsettled)
+                ):
+                    await interaction.followup.send(chunk, ephemeral=False)
             # The season-wide report of rounds already inside a configured window is
             # withdrawn (#181, decided 2026-09-14). It named every round against every
             # window it had missed, capped at eight rounds — sixty lines where two would do,
@@ -2084,7 +2045,7 @@ class SeasonCog(commands.Cog):
                     "⛔ **This season's calendar holds dates that have already gone by.**"
                     "\nEach division's calendar above names the round. The season is "
                     "**not** offered for approval while that stands — put the dates right "
-                    "with `/round amend`, then run `/season review` again.",
+                    "with `/round amend`, then run `/season placements-review` again.",
                     ephemeral=True,
                 )
             if approval_blockers:
@@ -2096,7 +2057,7 @@ class SeasonCog(commands.Cog):
                     "\u26d4 **The image module is not correctly configured.**\n"
                     f"{body}\n"
                     "The season is **not** offered for approval while that stands. "
-                    "Put it right, then run `/season review` again.",
+                    "Put it right, then run `/season placements-review` again.",
                     ephemeral=True,
                 )
             if phantom_configs:
@@ -2108,7 +2069,7 @@ class SeasonCog(commands.Cog):
                     "Nothing of that name is in the server's points store, so there is "
                     "nothing for the approval to copy. The season is **not** offered for "
                     "approval while that stands \u2014 build it with `/results config add`, or "
-                    "drop it with `/results config detach`, then run `/season review` "
+                    "drop it with `/results config detach`, then run `/season placements-review` "
                     "again.",
                     ephemeral=True,
                 )
@@ -2119,8 +2080,32 @@ class SeasonCog(commands.Cog):
                     f"{body}\n"
                     "A lower position cannot be worth as much as the one above it. The "
                     "season is **not** offered for approval while that stands — repair "
-                    "the tables with `/results config session`, then run `/season review` "
+                    "the tables with `/results config session`, then run `/season placements-review` "
                     "again.",
+                    ephemeral=True,
+                )
+            if unsettled:
+                await interaction.followup.send(
+                    "\u26d4 **Every signup must be settled before placements are confirmed.** "
+                    f"{len(unsettled)} signup(s) are not, each named in the review above. "
+                    "Place each driver with `/driver assign`, turn them down with "
+                    "`/driver reject`, or finish reviewing their signup — then run "
+                    "`/season placements-review` again.",
+                    ephemeral=True,
+                )
+            if channel_faults:
+                body = "\n".join(f"\u2022 {line}" for line in channel_faults)
+                await interaction.followup.send(
+                    "\u26d4 **Every division needs its lineup and calendar channels.**\n"
+                    f"{body}\n"
+                    "Set them with `/division lineup-channel` and `/division calendar-channel`, "
+                    "then run `/season placements-review` again.",
+                    ephemeral=True,
+                )
+            no_divisions = not await self._season_has_divisions(cfg.season_id)
+            if no_divisions:
+                await interaction.followup.send(
+                    NO_DIVISIONS_REFUSAL + " Then run `/season placements-review` again.",
                     ephemeral=True,
                 )
             if (
@@ -2128,6 +2113,9 @@ class SeasonCog(commands.Cog):
                 and not calendar_faults_found
                 and not points_faults
                 and not phantom_configs
+                and not unsettled
+                and not channel_faults
+                and not no_divisions
             ):
                 # Taken here rather than at the top of the command: the fingerprint must
                 # describe the season as the report just described it, and the report is
@@ -2159,22 +2147,574 @@ class SeasonCog(commands.Cog):
 
         interaction.followup.send = original_followup
 
-    # `/season approve` is withdrawn (2026-09-07). A season is approved from the button
-    # `/season review` posts and from nowhere else: the review is the evidence the
-    # approval rests on, and a command that could be run without one let a manager commit
+    async def _season_has_divisions(self, season_id: int) -> bool:
+        """Whether *season_id* holds a division that is not cancelled.
+
+        A season with none has nothing to race, and would never reach Pending completion —
+        so its placements are not confirmed.
+        """
+        divisions = await self.bot.season_service.get_divisions(season_id)  # type: ignore[attr-defined]
+        return any(division.status != "CANCELLED" for division in divisions)
+
+    async def _placement_confirmation_faults(
+        self, server_id: int, season_id: int
+    ) -> tuple[list[str], list[str]]:
+        """What stops placements being confirmed that no older gate checks (issue #220).
+
+        Returns ``(unsettled, channels)``: the unsettled signups, named, and each division
+        missing its lineup or calendar channel. The review withholds its button on either,
+        and the confirmation refuses on either, from this one reading.
+        """
+        from services.season_lifecycle_service import UNSETTLED_STATES
+
+        placeholders = ",".join("?" for _ in UNSETTLED_STATES)
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            cursor = await db.execute(
+                f"SELECT dp.discord_user_id, dp.current_state, sr.server_display_name "
+                f"FROM driver_profiles dp "
+                f"LEFT JOIN signup_records sr ON sr.id = ("
+                f"    SELECT MAX(id) FROM signup_records "
+                f"    WHERE server_id = dp.server_id AND discord_user_id = dp.discord_user_id) "
+                f"WHERE dp.server_id = ? AND dp.current_state IN ({placeholders}) "
+                f"ORDER BY dp.current_state, dp.discord_user_id",
+                (server_id, *UNSETTLED_STATES),
+            )
+            unsettled_rows = await cursor.fetchall()
+            cursor = await db.execute(
+                "SELECT name, lineup_channel_id, calendar_channel_id FROM divisions "
+                "WHERE season_id = ? AND status != 'CANCELLED' ORDER BY tier",
+                (season_id,),
+            )
+            division_rows = await cursor.fetchall()
+
+        state_labels = {
+            "UNASSIGNED": "not yet placed",
+            "PENDING_ADMIN_APPROVAL": "awaiting approval",
+            "AWAITING_CORRECTION_PARAMETER": "awaiting approval",
+            "PENDING_DRIVER_CORRECTION": "correcting their signup",
+        }
+        unsettled = [
+            f"**{row['server_display_name'] or row['discord_user_id']}** — "
+            f"{state_labels.get(row['current_state'], row['current_state'])}"
+            for row in unsettled_rows
+        ]
+        channels: list[str] = []
+        for row in division_rows:
+            missing = [
+                label
+                for label, value in (
+                    ("lineup channel", row["lineup_channel_id"]),
+                    ("calendar channel", row["calendar_channel_id"]),
+                )
+                if not value
+            ]
+            if missing:
+                channels.append(f"**{row['name']}** has no {' and no '.join(missing)}")
+        return unsettled, channels
+
+    # ------------------------------------------------------------------
+    # /season placements-review mid-season — Ongoing, placements (issue #220)
+    # ------------------------------------------------------------------
+
+    async def _review_mid_season_placements(self, interaction: discord.Interaction, season) -> None:
+        """Report the lineups as they will stand, and offer to confirm the new placements.
+
+        Mid-season placements only affect lineups — no division or round can be added — so
+        the review reports the drivers of the window just closed, each division's lineup with
+        them in it, and every signup still unsettled.
+        """
+        await interaction.response.defer(ephemeral=False)
+        server_id = interaction.guild_id
+        posted_messages: list = []
+        original_followup = self._recording_followup(interaction, posted_messages)
+        try:
+            placements = await self.bot.placement_service.uncommitted_placements(season.id)  # type: ignore[attr-defined]
+            lines = [
+                f"**Placements Review (Season #{season.season_number}) — mid-season**",
+                "",
+            ]
+            if placements:
+                lines.append("**Drivers to confirm**")
+                for p in placements:
+                    who = p["test_display_name"] or f"<@{p['discord_user_id']}>"
+                    lines.append(f"  {who} → **{p['team_name']}** in **{p['division_name']}**")
+            else:
+                lines.append("*No new placement to confirm.*")
+            lines.append("")
+            for chunk in _chunk_message("\n".join(lines)):
+                await interaction.followup.send(chunk, ephemeral=False)
+
+            for division in await self.bot.season_service.get_divisions(season.id):  # type: ignore[attr-defined]
+                if division.status == "CANCELLED":
+                    continue
+                teams = await self.bot.team_service.get_division_teams(division.id)  # type: ignore[attr-defined]
+                block = [f"\U0001f4c2 **{division.name}** — lineup once confirmed"]
+                for team in teams:
+                    seated = [
+                        f"<@{seat['discord_user_id']}>"
+                        for seat in team["seats"]
+                        if seat["discord_user_id"] is not None
+                    ]
+                    block.append(f"  **{team['name']}**: {', '.join(seated) or '*(empty)*'}")
+                for chunk in _chunk_message("\n".join(block)):
+                    await interaction.followup.send(chunk, ephemeral=False)
+
+            unsettled, _ = await self._placement_confirmation_faults(server_id, season.id)
+            if unsettled:
+                for chunk in _chunk_message(
+                    "\u26a0\ufe0f **Unsettled signups** — each is to be placed with "
+                    "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
+                    + "\n".join(f"\u2022 {line}" for line in unsettled)
+                ):
+                    await interaction.followup.send(chunk, ephemeral=False)
+                await interaction.followup.send(
+                    "\u26d4 **Every signup must be settled before placements are confirmed.** "
+                    f"{len(unsettled)} signup(s) are not, each named in the review above. "
+                    "Settle them, then run `/season placements-review` again.",
+                    ephemeral=True,
+                )
+                return
+
+            view = _ConfirmMidSeasonPlacementsView(self, interaction.user.id)
+            await view.record_fingerprint(server_id, season.id)
+            message = await interaction.followup.send(
+                "\U0001f4cb **Do you confirm these placements?**\n"
+                f"Reviewed by <@{interaction.user.id}>. Confirmation is open to them or to a "
+                f"league admin for the next {APPROVAL_WINDOW_SECONDS // 60} minutes. Confirming "
+                "grants the new drivers their roles and posts each affected lineup.",
+                view=view,
+                ephemeral=False,
+                wait=True,
+            )
+            view.carries(posted_messages)
+            await view.bind(message)
+        finally:
+            interaction.followup.send = original_followup
+
+    async def _do_confirm_mid_season_placements(self, interaction: discord.Interaction) -> None:
+        """Commit the new placements and return the season to Ongoing."""
+        from models.season import InvalidStageTransition
+
+        await interaction.response.defer(ephemeral=True)
+        server_id = interaction.guild_id
+        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        if season is None or season.stage is not SeasonStage.ONGOING_PLACEMENTS:
+            await interaction.followup.send(
+                "\u26d4 The season is no longer placing drivers. **Nothing has been confirmed.**",
+                ephemeral=True,
+            )
+            return
+        unsettled, _ = await self._placement_confirmation_faults(server_id, season.id)
+        if unsettled:
+            bullets = "\n".join(f"\u2022 {line}" for line in unsettled)
+            for chunk in _chunk_message(
+                f"\u26d4 Every signup must be settled first:\n{bullets}\n"
+                "**Nothing has been confirmed.**"
+            ):
+                await interaction.followup.send(chunk, ephemeral=True)
+            return
+
+        committed = await self.bot.placement_service.commit_mid_season_placements(  # type: ignore[attr-defined]
+            server_id, season.id, interaction.guild
+        )
+        try:
+            await self.bot.season_service.set_stage(season.id, SeasonStage.ONGOING)  # type: ignore[attr-defined]
+        except InvalidStageTransition:
+            log.warning("mid-season placements: season %s had already moved on", season.id)
+        else:
+            from services.season_lifecycle_service import advance_to_pending_completion
+
+            # Rounds may have finished every division while the new drivers were placed.
+            await advance_to_pending_completion(self.bot.db_path, season.id)  # type: ignore[attr-defined]
+
+        await interaction.followup.send(
+            f"\u2705 {len(committed)} placement(s) confirmed. The season is ongoing again.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+            f"/season placements-review | Confirmed\n"
+            f"  season: Season #{season.season_number}\n"
+            f"  placements: {len(committed)}",
+        )
+
+    # ------------------------------------------------------------------
+    # /season config-review — confirming the configuration (issue #220)
+    # ------------------------------------------------------------------
+
+    async def _configuration_faults(self, server_id: int, season_id: int) -> list[str]:
+        """Every fault that stops a season's configuration being confirmed.
+
+        The configuration review checks everything that can be checked before the season has
+        divisions: every check the placements review makes, save those concerning divisions,
+        lineups, calendars and division channels. The placements review makes all of these
+        again, the configuration of a module other than signup being free to change in
+        between.
+
+        **One helper for the review and the confirmation**, so the button is withheld on
+        exactly what the confirmation refuses. Each fault is a line a league manager reads,
+        naming what to run to put it right.
+        """
+        faults: list[str] = []
+
+        # ── Signup ─────────────────────────────────────────────────────────────
+        if await self.bot.module_service.is_signup_enabled(server_id):  # type: ignore[attr-defined]
+            signup_cfg = await self.bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
+            if signup_cfg is None or signup_cfg.signup_channel_id is None:
+                faults.append("The signup module has no **signup channel** — `/signup channel`.")
+            if signup_cfg is None or signup_cfg.base_role_id is None:
+                faults.append("The signup module has no **base role** — `/signup base-role`.")
+            if signup_cfg is None or signup_cfg.signed_up_role_id is None:
+                faults.append(
+                    "The signup module has no **complete role** — `/signup complete-role`."
+                )
+
+        # ── Team names ─────────────────────────────────────────────────────────
+        # The server's list alone: a season in configuration has no division to check.
+        faults += [
+            f"Team name: {problem}"
+            for problem in await self._team_name_problems(server_id, None)
+        ]
+
+        # ── Results: points configurations ────────────────────────────────────
+        if await self.bot.module_service.is_results_enabled(server_id):  # type: ignore[attr-defined]
+            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                cursor = await db.execute(
+                    "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
+                    (season_id,),
+                )
+                row = await cursor.fetchone()
+            if (row[0] if row else 0) == 0:
+                faults.append(
+                    "No points configuration is attached to this season — "
+                    "`/results config append`."
+                )
+            for name in await self._missing_points_config_problems(server_id, season_id):
+                faults.append(
+                    f"The attached points configuration **{name}** does not exist — build "
+                    f"it with `/results config add`, or drop it with `/results config detach`."
+                )
+            faults += [
+                f"Points table out of order: {fault}"
+                for fault in await self._points_ordering_problems(server_id, season_id)
+            ]
+
+        # ── Images: rasteriser, templates, colours, portraits ─────────────────
+        if await self.bot.module_service.is_images_enabled(server_id):  # type: ignore[attr-defined]
+            faults += await self._image_configuration_faults(server_id)
+
+        return faults
+
+    async def _weather_review_lines(self, server_id: int) -> list[str]:
+        """The weather deadlines, as both reviews report them."""
+        from services.weather_config_service import get_weather_pipeline_config as _gwpc
+
+        _wcfg = await _gwpc(self.bot.db_path, server_id)  # type: ignore[attr-defined]
+        return [
+            "**Weather Config**",
+            f"  • Phase 1 deadline: {_wcfg.phase_1_days} day(s) before race",
+            f"  • Phase 2 deadline: {_wcfg.phase_2_days} day(s) before race",
+            f"  • Phase 3 deadline: {_wcfg.phase_3_hours}h before race",
+            "",
+        ]
+
+    async def _signup_review_lines(self, server_id: int) -> list[str]:
+        """The signup module's configuration, as both reviews report it."""
+        _s_cfg = await self.bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
+        _s_settings = await self.bot.signup_module_service.get_settings(server_id)  # type: ignore[attr-defined]
+        _s_slots = await self.bot.signup_module_service.get_slots(server_id)  # type: ignore[attr-defined]
+        _signup_ch = f"<#{_s_cfg.signup_channel_id}>" if _s_cfg and _s_cfg.signup_channel_id else "*(not configured)*"
+        _signup_br = f"<@&{_s_cfg.base_role_id}>" if _s_cfg and _s_cfg.base_role_id else "*(not configured)*"
+        _signup_cr = f"<@&{_s_cfg.signed_up_role_id}>" if _s_cfg and _s_cfg.signed_up_role_id else "*(not configured)*"
+        _time_type = _s_settings.time_type.replace("_", " ").title()
+        _time_img = "Required" if _s_settings.time_image_required else "Not required"
+        _nationality = "Required" if _s_settings.nationality_required else "Not required"
+        _slot_labels = [s.display_label for s in _s_slots] if _s_slots else ["*(none configured)*"]
+        return [
+            "**Signup Config**",
+            f"  • Channel: {_signup_ch}",
+            f"  • Base role: {_signup_br}",
+            f"  • Sign-up role: {_signup_cr}",
+            f"  • Time type: {_time_type}",
+            f"  • Time image: {_time_img}",
+            f"  • Nationality: {_nationality}",
+            f"  • Available slots: {', '.join(_slot_labels)}",
+            "",
+        ]
+
+    async def _attendance_review_lines(self, server_id: int) -> list[str]:
+        """The attendance module's configuration, as both reviews report it."""
+        att_cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+        if not att_cfg:
+            return []
+        ar = att_cfg.autoreserve_threshold
+        as_ = att_cfg.autosack_threshold
+        ar_str = f"{ar} pts" if ar is not None else "*(not set)*"
+        as_str = f"{as_} pts" if as_ is not None else "*(not set)*"
+        ln_last = (
+            f"{att_cfg.rsvp_last_notice_hours}h before deadline"
+            if att_cfg.rsvp_last_notice_hours
+            else "*(disabled)*"
+        )
+        return [
+            "**Attendance Config**",
+            f"  • RSVP notice: {att_cfg.rsvp_notice_days} day(s) before race",
+            f"  • Last notice: {ln_last}",
+            f"  • Deadline: {att_cfg.rsvp_deadline_hours}h before race",
+            f"  • No-RSVP penalty: {att_cfg.no_rsvp_penalty} pt(s)",
+            f"  • Absent penalty: {att_cfg.absent_penalty} pt(s)",
+            f"  • No-show penalty: {att_cfg.no_show_penalty} pt(s)",
+            f"  • Auto-reserve threshold: {ar_str}",
+            f"  • Auto-sack threshold: {as_str}",
+            "",
+        ]
+
+    async def _points_names_review_lines(
+        self, server_id: int, season_id: int, results_on: bool
+    ) -> list[str]:
+        """The names of the points configurations attached to the season, as both reviews
+        report them. The faults of those configurations are reported beside them by each."""
+        config_names = await season_points_service.get_season_config_names(self.bot.db_path, season_id)  # type: ignore[attr-defined]
+        if config_names:
+            return ["**Points Configs:** " + ", ".join(config_names)]
+        if results_on:
+            server_config_tm = await self.bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+            if server_config_tm is not None and server_config_tm.test_mode_active:
+                return [
+                    "**Points Configs:** *(none attached)* "
+                    "\u26a0\ufe0f Test mode active \u2014 Standard & Half Points will be auto-seeded on approval."
+                ]
+        return ["**Points Configs:** *(none attached)*"]
+
+    async def _image_configuration_faults(self, server_id: int) -> list[str]:
+        """The image module's faults that need no division, round, lineup or calendar."""
+        from models.image_constants import TEMPLATE_LABELS
+        from services.image_render_service import CONVERTER_NAME, converter_available
+        from services.image_validity_service import (
+            plain_reason,
+            templates_of_enabled_aspects,
+        )
+
+        faults: list[str] = []
+        if not converter_available():
+            faults.append(f"{CONVERTER_NAME} is not installed on this host.")
+        try:
+            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+            drawn = templates_of_enabled_aspects(
+                await self.bot.image_config_service.get_toggles(server_id)  # type: ignore[attr-defined]
+            )
+        except Exception as exc:  # noqa: BLE001 — a check that never ran is not a pass
+            log.error("config review: the templates could not be read: %s", exc)
+            return [*faults, "The image templates could not be read."]
+        for key in sorted(reports):
+            report = reports[key]
+            if not report.valid and key in drawn:
+                label = TEMPLATE_LABELS.get(key, key)
+                faults.append(f"Template **{label}**: {plain_reason(report)}.")
+        faults += [
+            f"Tier colour: {problem}"
+            for problem in await self._colour_shortfall_problems(server_id)
+        ]
+        portrait_fault = await self._portrait_configuration_blocker(server_id)
+        if portrait_fault is not None:
+            faults.append(portrait_fault)
+        return faults
+
+    @season.command(
+        name="config-review",
+        description="Review the season's configuration and confirm it.",
+    )
+    @league_manager_only
+    async def season_config_review(self, interaction: discord.Interaction) -> None:
+        """Report the configuration of the season in Configuration, and offer to confirm it.
+
+        The report is public and ends with a confirm button, governed exactly as the
+        placements review's approve button is: the reviewer or a league admin may press it,
+        it stands for five minutes, and it refuses where the season changed since the report.
+        """
+        cfg = self.resolve_pending(interaction)
+        stage = (
+            await self.bot.season_service.get_stage(cfg.season_id)  # type: ignore[attr-defined]
+            if cfg is not None and cfg.season_id
+            else None
+        )
+        if stage is not SeasonStage.CONFIGURATION:
+            await interaction.response.send_message(
+                "⛔ There is no season in configuration. `/season setup` begins one; a "
+                "season whose configuration is confirmed is reviewed with `/season placements-review`.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=False)
+        server_id = interaction.guild_id
+        posted_messages: list = []
+        original_followup = self._recording_followup(interaction, posted_messages)
+        try:
+            module = self.bot.module_service  # type: ignore[attr-defined]
+            on, off = "✅ Enabled", "❌ Disabled"
+            server_config = await self.bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+            test_mode = bool(server_config is not None and server_config.test_mode_active)
+            lines = [
+                f"**Configuration Review (Season #{cfg.season_number} — F1 {cfg.game_edition})**",
+                "",
+                f"  Test mode: {'✅ On' if test_mode else '❌ Off'}",
+                "",
+                "**Modules**",
+                f"  Signup: {on if await module.is_signup_enabled(server_id) else off}",
+                f"  Results: {on if await module.is_results_enabled(server_id) else off}",
+                f"  Attendance: {on if await module.is_attendance_enabled(server_id) else off}",
+                f"  Weather: {on if await module.is_weather_enabled(server_id) else off}",
+                f"  Images: {on if await module.is_images_enabled(server_id) else off}",
+                "",
+            ]
+            teams = await self.bot.team_service.get_teams_with_roles(server_id)  # type: ignore[attr-defined]
+            lines.append("**Teams**")
+            for team in teams:
+                role = f"<@&{team['role_id']}>" if team["role_id"] else "no role"
+                lines.append(f"  {team['name']} → {role}")
+            lines.append("")
+            if not any(team["is_reserve"] and team["role_id"] for team in teams):
+                lines += [
+                    "⚠️ **Reserve team has no role assigned** — use `/team reserve-role`. "
+                    "Drivers on the reserve team will fail result validation.",
+                    "",
+                ]
+
+            # Every module's configuration, subsection by subsection, in the words and the
+            # order of the placements review — save the divisions, which do not exist yet.
+            results_on = await module.is_results_enabled(server_id)
+            sections: list[list[str]] = [lines]
+            if await module.is_signup_enabled(server_id):
+                sections.append(await self._signup_review_lines(server_id))
+            if await module.is_attendance_enabled(server_id):
+                sections.append(await self._attendance_review_lines(server_id))
+            if results_on:
+                sections.append(
+                    await self._points_names_review_lines(server_id, cfg.season_id, results_on)
+                )
+            if await module.is_weather_enabled(server_id):
+                sections.append(await self._weather_review_lines(server_id))
+            if await module.is_images_enabled(server_id):
+                sections.append(await self._build_image_review_section(server_id))
+            for section in sections:
+                body = "\n".join(section).strip()
+                if not body:
+                    continue
+                for chunk in _chunk_message(body):
+                    await interaction.followup.send(chunk, ephemeral=False)
+
+            faults = await self._configuration_faults(server_id, cfg.season_id)
+            if faults:
+                body = "\n".join(f"• {fault}" for fault in faults)
+                for chunk in _chunk_message(
+                    "⛔ **The configuration cannot be confirmed yet.**\n"
+                    f"{body}\n"
+                    "Put these right, then run `/season config-review` again."
+                ):
+                    await interaction.followup.send(chunk, ephemeral=False)
+                return
+
+            view = _ConfirmConfigurationView(self, interaction.user.id)
+            await view.record_fingerprint(server_id, cfg.season_id)
+            message = await interaction.followup.send(
+                "📋 **Do you confirm this season's configuration?**\n"
+                f"Reviewed by <@{interaction.user.id}>. Confirmation is open to them or to a "
+                f"league admin for the next {APPROVAL_WINDOW_SECONDS // 60} minutes. Once "
+                "confirmed, the team list, the game edition, test mode and the signup module "
+                "are fixed for this season.",
+                view=view,
+                ephemeral=False,
+                wait=True,
+            )
+            view.carries(posted_messages)
+            await view.bind(message)
+        finally:
+            interaction.followup.send = original_followup
+
+    async def _do_confirm_configuration(self, interaction: discord.Interaction) -> None:
+        """Confirm the configuration: judge the faults afresh, then move the season on.
+
+        To Waiting where the signup module is enabled, or to Placements where it is not or
+        the season runs in test mode, test mode never opening a signup window.
+        """
+        from models.season import InvalidStageTransition
+
+        server_id = interaction.guild_id
+        cfg = self._get_pending_for_server(server_id)
+        if cfg is None or not cfg.season_id:
+            await interaction.response.send_message(
+                "⛔ There is no season in configuration.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        faults = await self._configuration_faults(server_id, cfg.season_id)
+        if faults:
+            body = "\n".join(f"• {fault}" for fault in faults)
+            await interaction.followup.send(
+                f"⛔ The configuration cannot be confirmed:\n{body}\n"
+                "**Nothing has been confirmed.**",
+                ephemeral=True,
+            )
+            return
+
+        server_config = await self.bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+        test_mode = bool(server_config is not None and server_config.test_mode_active)
+        signup_on = await self.bot.module_service.is_signup_enabled(server_id)  # type: ignore[attr-defined]
+        target = (
+            SeasonStage.WAITING if signup_on and not test_mode else SeasonStage.PLACEMENTS
+        )
+        if signup_on:
+            # The season's signups are made under these settings, fixed from this moment.
+            await self.bot.signup_module_service.snapshot_season_config(  # type: ignore[attr-defined]
+                server_id, cfg.season_id
+            )
+        try:
+            await self.bot.season_service.set_stage(cfg.season_id, target)  # type: ignore[attr-defined]
+        except InvalidStageTransition:
+            await interaction.followup.send(
+                "⛔ The season is no longer in configuration. **Nothing has been confirmed.**",
+                ephemeral=True,
+            )
+            return
+
+        if target is SeasonStage.WAITING:
+            next_step = "The season now waits for its signup window — open it with `/signup open`."
+        else:
+            next_step = (
+                "The season is now in placements — build its divisions and calendar, place "
+                "its drivers, then run `/season placements-review`."
+            )
+        await interaction.followup.send(
+            f"✅ Season #{cfg.season_number}'s configuration is confirmed. {next_step}",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+            f"/season config-review | Confirmed\n"
+            f"  season: Season #{cfg.season_number}\n"
+            f"  stage: {target.value}",
+        )
+
+    # No command confirms placements (decided 2026-09-07). They are confirmed from the button
+    # `/season placements-review` posts and from nowhere else: the review is the evidence the
+    # confirmation rests on, and a command that could be run without one let a manager commit
     # a season they had not looked at. The button carries its own five-minute window, so
-    # what is approved is always a season someone has just read.
+    # what is confirmed is always a season someone has just read.
 
     @season.command(
         name="status",
-        description="View a summary of the active season.",
+        description="View a summary of the season being raced.",
     )
     @league_manager_only
     async def season_status(self, interaction: discord.Interaction) -> None:
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
-                "\u2139\ufe0f No active season found for this server.",
+                "\u2139\ufe0f No season is being raced on this server.",
                 ephemeral=True,
             )
             return
@@ -2213,7 +2753,7 @@ class SeasonCog(commands.Cog):
 
     @season.command(
         name="cancel",
-        description="Cancel and delete the active season (server admin only, irreversible).",
+        description="Cancel the season being raced (league admin only, irreversible).",
     )
     @app_commands.describe(confirm='Type "CONFIRM" to proceed with season cancellation.')
     @league_admin_only
@@ -2229,19 +2769,23 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
-                "\u274c No active season to cancel.",
+                "\u274c No season is being raced, so there is none to cancel. A season whose placements are yet to be "
+                "confirmed is abandoned with `/season abort`.",
                 ephemeral=True,
             )
             return
 
-        try:
-            await self.bot.season_service.assert_season_mutable(season)
-        except SeasonImmutableError:
+        # Cancelled only while ongoing (issue #220): a season pending completion has run its
+        # course and is completed instead.
+        from models.season import ONGOING_STAGES
+
+        if season.stage not in ONGOING_STAGES:
             await interaction.response.send_message(
-                "\u274c This season is archived (COMPLETED) and cannot be modified.",
+                "\u274c Every division of this season is done. Complete it with "
+                "`/season complete` instead.",
                 ephemeral=True,
             )
             return
@@ -2275,8 +2819,25 @@ class SeasonCog(commands.Cog):
         # with no way to put them back. Before the cascade, the season is still ACTIVE and the
         # whole command can simply be run again; the write is idempotent, so running it again
         # adds nothing.
-        from services.season_end_service import _write_driver_history_entries
+        #
+        # A placement not yet confirmed never entered the championship, and is discarded first so
+        # that it earns no history entry and holds no seat (issue #220).
+        await self.bot.season_service.discard_uncommitted_placements(season.id)
+
+        from services.season_end_service import (
+            _revoke_season_roles,
+            _write_driver_history_entries,
+            end_of_season_pass,
+        )
+
         await _write_driver_history_entries(season, self.bot, force_cancelled=True)
+
+        # The roles, the driver pass, the window and test mode — as completing a season does.
+        if interaction.guild is not None:
+            await _revoke_season_roles(
+                interaction.guild_id, season.id, interaction.guild, self.bot
+            )
+        await end_of_season_pass(interaction.guild_id, self.bot, interaction.guild)
 
         await self.bot.season_service.cancel_season_cascade(
             season_id=season.id,
@@ -2284,13 +2845,6 @@ class SeasonCog(commands.Cog):
             actor_id=interaction.user.id,
             actor_name=str(interaction.user),
         )
-
-        # Revoke division, team, and signup roles from all assigned drivers
-        if interaction.guild is not None:
-            from services.season_end_service import _revoke_season_roles
-            await _revoke_season_roles(
-                interaction.guild_id, season.id, interaction.guild, self.bot
-            )
 
         await interaction.followup.send(
             "\u2705 Season cancelled.",
@@ -2302,6 +2856,71 @@ class SeasonCog(commands.Cog):
         )
 
     @season.command(
+        name="abort",
+        description="Abandon a season whose placements were never confirmed, leaving nothing of it.",
+    )
+    @app_commands.describe(confirm='Type "CONFIRM" to abort the season.')
+    @league_admin_only
+    async def season_abort(self, interaction: discord.Interaction, confirm: str) -> None:
+        """Abort the active season before its placements are first confirmed (issue #220).
+
+        The season is deleted with every record of it, its signups included, and takes no
+        number. Its drivers go through the driver pass — no history is written, the season
+        having none — its signup window is closed and test mode is switched off. The way out
+        of a test-mode rehearsal, a wrong signup setting, or a season postponed for want of
+        signups.
+        """
+        if confirm != "CONFIRM":
+            await interaction.response.send_message(
+                "\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
+                ephemeral=True,
+            )
+            return
+
+        server_id = interaction.guild_id
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)
+        pre_confirmation = {
+            SeasonStage.CONFIGURATION,
+            SeasonStage.WAITING,
+            SeasonStage.SIGNUPS,
+            SeasonStage.PLACEMENTS,
+        }
+        if season is None or season.stage not in pre_confirmation:
+            await interaction.response.send_message(
+                "\u274c `/season abort` is available only before a season's placements are "
+                "first confirmed. An ongoing season is cancelled with `/season cancel`.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        from services.season_end_service import end_of_season_pass
+
+        try:
+            self.bot.scheduler_service.cancel_signup_close_timer(server_id)
+        except Exception:  # noqa: BLE001 — a timer already gone is the aim
+            log.exception("season abort: could not cancel the signup close timer")
+        result = await end_of_season_pass(server_id, self.bot, interaction.guild)
+        await self.bot.season_service.delete_season(season.id)
+
+        # The setup held in memory goes with the season it described.
+        for key in [k for k, cfg in self._pending.items() if cfg.server_id == server_id]:
+            del self._pending[key]
+
+        await interaction.followup.send(
+            "\u2705 The season has been aborted. Nothing of it remains, and a new season may "
+            "be set up with `/season setup`.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season abort | Success\n"
+            f"  drivers returned to Not Signed Up: {result.get('reset', 0)}\n"
+            f"  drivers deleted: {result.get('deleted', 0)}",
+        )
+
+    @season.command(
         name="complete",
         description="Manually mark the current season as complete (requires all rounds finalized).",
     )
@@ -2310,10 +2929,10 @@ class SeasonCog(commands.Cog):
         self,
         interaction: discord.Interaction,
     ) -> None:
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
-                "\u274c No active season to complete.", ephemeral=True
+                "\u274c No season is being raced, so there is none to complete.", ephemeral=True
             )
             return
 
@@ -2324,6 +2943,19 @@ class SeasonCog(commands.Cog):
         for div in divisions:
             if div.status == "ACTIVE":
                 await self.bot.season_service.refresh_division_status(div.id)
+
+        # A season is completed from Pending completion alone (issue #220). The reread above
+        # can be what moves it there — a season still holding a window open or placements to
+        # confirm is wound down on the way, its signups closed and its pending placements
+        # turned down, there being no round left to place anyone into.
+        #
+        # That wind-down posts to Discord — closing the window, closing review channels,
+        # taking roles back — and can outlast the three seconds an interaction has to answer,
+        # so the reply is deferred first wherever there is one to do.
+        deferred = season.stage in (SeasonStage.ONGOING_SIGNUPS, SeasonStage.ONGOING_PLACEMENTS)
+        if deferred:
+            await interaction.response.defer(ephemeral=True)
+        await self.bot.season_service.wind_down_ongoing(self.bot, interaction.guild_id)  # type: ignore[attr-defined]
 
         all_done = await self.bot.season_service.all_divisions_finished(interaction.guild_id)
         if not all_done:
@@ -2352,10 +2984,14 @@ class SeasonCog(commands.Cog):
                     f"divisions have not finished: {unfinished}. Cancel a division that will "
                     "never run, or report this."
                 )
-            await interaction.response.send_message(message, ephemeral=True)
+            if deferred:
+                await interaction.followup.send(message, ephemeral=True)
+            else:
+                await interaction.response.send_message(message, ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True)
+        if not deferred:
+            await interaction.response.defer(ephemeral=True)
         from services.season_end_service import execute_season_end
         await execute_season_end(interaction.guild_id, season.id, self.bot)
         await interaction.followup.send("\u2705 Season marked as complete.", ephemeral=True)
@@ -2401,6 +3037,22 @@ class SeasonCog(commands.Cog):
         if cfg is None:
             await interaction.followup.send(
                 "\u274c No pending season setup. Run `/season setup` first.",
+                ephemeral=True,
+            )
+            return
+
+        # Divisions are built only in Placements (issue #220): a league does not plan its
+        # divisions before it knows how many drivers signed up. Every other command that
+        # builds the season needs a division to act on, so this is the one door to guard.
+        stage = (
+            await self.bot.season_service.get_stage(cfg.season_id)
+            if cfg.season_id
+            else None
+        )
+        if stage is not SeasonStage.PLACEMENTS:
+            await interaction.followup.send(
+                "\u26d4 Divisions can only be added while the season is in placements — "
+                "once its configuration is confirmed and its signup window has closed.",
                 ephemeral=True,
             )
             return
@@ -2474,7 +3126,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/division duplicate` can only be used during season setup.",
+                "\u274c `/division duplicate` can only be used while the season is in placements.",
                 ephemeral=True,
             )
             return
@@ -2587,7 +3239,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/division delete` can only be used during season setup.",
+                "\u274c `/division delete` can only be used while the season is in placements.",
                 ephemeral=True,
             )
             return
@@ -2637,7 +3289,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/division rename` can only be used during season setup.",
+                "\u274c `/division rename` can only be used while the season is in placements.",
                 ephemeral=True,
             )
             return
@@ -2682,7 +3334,7 @@ class SeasonCog(commands.Cog):
 
     @division.command(
         name="amend",
-        description="Amend a division's name, tier, or role during season setup.",
+        description="Amend a division's name, tier, or role while the season is in placements.",
     )
     @app_commands.describe(
         name="Current name of the division",
@@ -2711,7 +3363,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/division amend` is only permitted during season setup.",
+                "\u274c `/division amend` is only permitted while the season is in placements.",
                 ephemeral=True,
             )
             return
@@ -2804,7 +3456,7 @@ class SeasonCog(commands.Cog):
 
     @division.command(
         name="cancel",
-        description="Cancel a division in the active season (irreversible).",
+        description="Cancel a division of the season being raced (irreversible).",
     )
     @app_commands.describe(
         name="Name of the division to cancel",
@@ -2824,10 +3476,13 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
-        if season is None:
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
+        from models.season import ONGOING_STAGES
+
+        # Available only while the season is ongoing (issue #220).
+        if season is None or season.stage not in ONGOING_STAGES:
             await interaction.response.send_message(
-                "\u274c `/division cancel` requires an active season.",
+                "\u274c `/division cancel` is available only while the season is ongoing.",
                 ephemeral=True,
             )
             return
@@ -2869,6 +3524,13 @@ class SeasonCog(commands.Cog):
             actor_id=interaction.user.id,
             actor_name=str(interaction.user),
         )
+
+        # The division finishing may have been the season's last: a season with a window open or
+        # placements to confirm is wound down and moves to Pending completion at once (#220).
+        try:
+            await self.bot.season_service.wind_down_ongoing(self.bot, interaction.guild_id)
+        except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
+            log.exception("could not wind the season of server %s down", interaction.guild_id)
 
         try:
             channel = interaction.guild.get_channel(div.forecast_channel_id)
@@ -2946,11 +3608,11 @@ class SeasonCog(commands.Cog):
         import json as _json
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
-        # 1. Find current season (any state)
-        season = await self.bot.season_service.get_season_for_server(server_id)
+        # 1. The live season: a division's channels belong to it, and an archived one's no longer matter (#220)
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)
         if season is None:
             await interaction.response.send_message(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -3104,10 +3766,10 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_season_for_server(server_id)
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)
         if season is None:
             await interaction.followup.send(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -3189,10 +3851,10 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_season_for_server(server_id)
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)
         if season is None:
             await interaction.followup.send(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -3276,10 +3938,10 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_season_for_server(server_id)
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)
         if season is None:
             await interaction.followup.send(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -3347,10 +4009,10 @@ class SeasonCog(commands.Cog):
     ) -> None:
         import json as _json
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        season = await self.bot.season_service.get_season_for_server(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
         if season is None:
             await interaction.response.send_message(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -3412,10 +4074,10 @@ class SeasonCog(commands.Cog):
     ) -> None:
         import json as _json
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        season = await self.bot.season_service.get_season_for_server(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
         if season is None:
             await interaction.response.send_message(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -3487,9 +4149,9 @@ class SeasonCog(commands.Cog):
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
         if season is None:
-            await interaction.followup.send("❌ No season found.", ephemeral=True)
+            await interaction.followup.send("❌ No season is live, so there is no calendar to sync.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
@@ -3639,7 +4301,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # Two rounds of one division may not share a moment. `/season approve` refuses a
+        # Two rounds of one division may not share a moment. The confirmation of placements refuses a
         # season that holds such a pair (Gate 0b), and on the same reasoning as the
         # overflow guard below it is refused here instead — at the command that would
         # cause it, rather than at an approval days later, with a calendar possibly
@@ -3902,7 +4564,7 @@ class SeasonCog(commands.Cog):
             ]
             await interaction.followup.send(
                 f"\u2705 Round {round_number} in **{pend_div.name}** updated in pending setup "
-                f"(no DB write \u2014 use `/season approve` to commit).\n\n"
+                f"(no DB write \u2014 it is committed when placements are confirmed from `/season placements-review`).\n\n"
                 + format_round_list(round_models),
                 ephemeral=True,
             )
@@ -3915,9 +4577,9 @@ class SeasonCog(commands.Cog):
             return
 
         # Active-season DB path
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
-            await interaction.followup.send("\u274c No active season found.", ephemeral=True)
+            await interaction.followup.send("\u274c No season is being raced.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
@@ -4034,7 +4696,7 @@ class SeasonCog(commands.Cog):
         season_id = await _get_setup_season_id(self.bot, interaction.guild_id)
         if season_id is None:
             await interaction.response.send_message(
-                "\u274c `/round delete` can only be used during season setup.",
+                "\u274c `/round delete` can only be used while the season is in placements.",
                 ephemeral=True,
             )
             return
@@ -4089,7 +4751,7 @@ class SeasonCog(commands.Cog):
 
     @round.command(
         name="cancel",
-        description="Cancel a round in the active season (irreversible).",
+        description="Cancel a round of the season being raced (irreversible).",
     )
     @app_commands.describe(
         division_name="Name of the division containing this round",
@@ -4111,10 +4773,13 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_active_season(interaction.guild_id)
-        if season is None:
+        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
+        from models.season import ONGOING_STAGES
+
+        # Available only while the season is ongoing (issue #220).
+        if season is None or season.stage not in ONGOING_STAGES:
             await interaction.response.send_message(
-                "\u274c `/round cancel` requires an active season.",
+                "\u274c `/round cancel` is available only while the season is ongoing.",
                 ephemeral=True,
             )
             return
@@ -4190,6 +4855,13 @@ class SeasonCog(commands.Cog):
             actor_id=interaction.user.id,
             actor_name=str(interaction.user),
         )
+
+        # The division finishing may have been the season's last: a season with a window open or
+        # placements to confirm is wound down and moves to Pending completion at once (#220).
+        try:
+            await self.bot.season_service.wind_down_ongoing(self.bot, interaction.guild_id)
+        except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
+            log.exception("could not wind the season of server %s down", interaction.guild_id)
 
         try:
             channel = interaction.guild.get_channel(div.forecast_channel_id)
@@ -4700,8 +5372,14 @@ class SeasonCog(commands.Cog):
             interaction.guild_id
         )
 
-    async def _snapshot_pending(self, cfg: PendingConfig) -> None:
-        """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id."""
+    async def _snapshot_pending(
+        self, cfg: PendingConfig, *, initial_stage: SeasonStage | None = None
+    ) -> None:
+        """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id.
+
+        *initial_stage* is the stage a season created by this snapshot begins in, and is
+        passed only by `/season setup`; see ``SeasonService.save_pending_snapshot``.
+        """
         divisions_data = [
             {
                 "name": d.name,
@@ -4714,7 +5392,12 @@ class SeasonCog(commands.Cog):
             if d.name
         ]
         new_season_id, season_number = await self.bot.season_service.save_pending_snapshot(
-            cfg.server_id, cfg.start_date, cfg.season_id, divisions_data, cfg.game_edition
+            cfg.server_id,
+            cfg.start_date,
+            cfg.season_id,
+            divisions_data,
+            cfg.game_edition,
+            initial_stage=initial_stage,
         )
         cfg.season_id = new_season_id
         cfg.season_number = season_number
@@ -4801,7 +5484,7 @@ class SeasonCog(commands.Cog):
         if remaining <= 0:
             await interaction.followup.send(
                 "⏱️ This review expired before the season could be approved. Run "
-                "`/season review` again. **Nothing has been approved.**",
+                "`/season placements-review` again. **Nothing has been approved.**",
                 ephemeral=True,
             )
             return False
@@ -4832,7 +5515,7 @@ class SeasonCog(commands.Cog):
         if view.answer is None:
             await interaction.followup.send(
                 "⏱️ This review expired while the backup question went "
-                "unanswered. Run `/season review` again. **Nothing has been approved.**",
+                "unanswered. Run `/season placements-review` again. **Nothing has been approved.**",
                 ephemeral=True,
             )
             return False
@@ -4872,6 +5555,31 @@ class SeasonCog(commands.Cog):
             return
 
         season_svc = self.bot.season_service
+
+        if await season_svc.get_stage(cfg.season_id) is not SeasonStage.PLACEMENTS:
+            await interaction.followup.send(
+                "\u26d4 The season is no longer in placements. **Nothing has been approved.**",
+                ephemeral=True,
+            )
+            return
+
+        if not await self._season_has_divisions(cfg.season_id):
+            await interaction.followup.send(
+                NO_DIVISIONS_REFUSAL + " **Nothing has been approved.**", ephemeral=True
+            )
+            return
+
+        # ── Gate S: every signup settled, every division's own channels set (#220) ──
+        unsettled, channel_faults = await self._placement_confirmation_faults(
+            cfg.server_id, cfg.season_id
+        )
+        if unsettled or channel_faults:
+            bullets = "\n".join(f"\u2022 {line}" for line in [*unsettled, *channel_faults])
+            for chunk in _chunk_message(
+                f"\u26d4 Season cannot be approved:\n{bullets}"
+            ):
+                await interaction.followup.send(chunk, ephemeral=True)
+            return
 
         # Validate tier sequential integrity before committing
         try:
@@ -4997,7 +5705,7 @@ class SeasonCog(commands.Cog):
 
             # ── Gate 2a: monotonic ordering check (FR-008) ───────────────────
             #
-            # Through the same helper `/season review` reports from, so the report a
+            # Through the same helper `/season placements-review` reports from, so the report a
             # manager was given and the refusal they then meet cannot disagree.
             mono_errors = await self._points_ordering_problems(cfg.server_id, cfg.season_id)
             if mono_errors:
@@ -5077,7 +5785,7 @@ class SeasonCog(commands.Cog):
         # window, and choosing between posting late, posting nothing, and losing the round's
         # records is the league's decision, not the bot's.
         #
-        # Checked again here although `/season review` reports it and withholds its button:
+        # Checked again here although `/season placements-review` reports it and withholds its button:
         # the review stands for five minutes, and a round on the right side of a window when
         # the report was drawn can be the wrong side of it by the time Approve is pressed.
         #
@@ -5124,7 +5832,7 @@ class SeasonCog(commands.Cog):
                 f"❌ Season cannot be approved — its calendar holds dates that have "
                 f"already gone by:\n{_body}\n"
                 f"Move those rounds with `/round amend`, or shorten the windows, then run "
-                f"`/season review` again. **Nothing has been approved.**",
+                f"`/season placements-review` again. **Nothing has been approved.**",
                 ephemeral=True,
             )
             return
@@ -5150,7 +5858,7 @@ class SeasonCog(commands.Cog):
             return
 
         # Gate 4 — every unusable template — is withdrawn (2026-09-07), with the render
-        # pass it belonged to. `/season review` draws every graphic and withholds its own
+        # pass it belonged to. `/season placements-review` draws every graphic and withholds its own
         # button where one will not draw; the fingerprint then proves the season is the one
         # that review described. A template broken here is therefore impossible: it was
         # broken at the review, and there was no button, or it has changed since, and the
@@ -5179,7 +5887,7 @@ class SeasonCog(commands.Cog):
         # on and marked a template with a slot has said that slot matters, and approving a
         # season with one unset would draw that tier in whatever the template happened to
         # be authored in — silently, and differently from its siblings. Read through the
-        # same `colour_shortfall` `/season review` and `/images config view` report, so the
+        # same `colour_shortfall` `/season placements-review` and `/images config view` report, so the
         # three cannot disagree about what is missing.
         colour_problems = await self._colour_shortfall_problems(cfg.server_id)
         if colour_problems:
@@ -5198,7 +5906,7 @@ class SeasonCog(commands.Cog):
         # no portrait
         # would ever be fetched, and the season would run drawing the placeholder for every
         # driver while the configuration said otherwise. Read through the same helper
-        # `/season review` reads, so the two cannot disagree.
+        # `/season placements-review` reads, so the two cannot disagree.
         portrait_fault = await self._portrait_configuration_blocker(cfg.server_id)
         if portrait_fault is not None:
             await interaction.followup.send(
@@ -5274,6 +5982,8 @@ class SeasonCog(commands.Cog):
                 )
 
         # Only transition to ACTIVE after scheduling succeeds
+        # Every placement made in Placements is committed with the season (issue #220).
+        await season_svc.commit_placements(cfg.season_id)
         await season_svc.transition_to_active(cfg.season_id)
 
         # ── T015: Bulk role grant for all ASSIGNED drivers (FR-006) ──────────
@@ -5375,7 +6085,7 @@ class SeasonCog(commands.Cog):
                 for _line in _calendar_problems:
                     log.error("_do_approve: calendar fell back to text - %s", _line)
                 if _calendar_problems or _calendar_notices:
-                    _report = ["/season approve | Calendar image generation"]
+                    _report = ["/season placements-review | Calendar image generation"]
                     if _calendar_problems:
                         _report.append("  Fell back to the textual calendar:")
                         _report += [f"    - {line}" for line in _calendar_problems]
@@ -5408,7 +6118,7 @@ class SeasonCog(commands.Cog):
 
                 if _opening_problems:
                     _opening_report = "\n".join(
-                        ["/season approve | Opening classification", *(
+                        ["/season placements-review | Opening classification", *(
                             f"    - {line}" for line in _opening_problems
                         )]
                     )
@@ -5447,7 +6157,7 @@ class SeasonCog(commands.Cog):
 
         await self.bot.output_router.post_log(
             cfg.server_id,
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season approve | Success\n"
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season placements-review | Placements confirmed\n"
             f"  season: {cfg.season_number}\n"
             f"  season_id: {cfg.season_id}",
         )
@@ -5489,6 +6199,12 @@ class SeasonCog(commands.Cog):
 #: half an hour ago would approve a season nobody has actually reviewed. Five minutes is
 #: long enough to read the report and short enough that little can have changed.
 APPROVAL_WINDOW_SECONDS = 300
+
+#: Said by the placements review and its confirmation alike: a season with no division has
+#: nothing to race and would never reach Pending completion (issue #220).
+NO_DIVISIONS_REFUSAL = (
+    "\u26d4 **This season has no divisions.** Add one with `/division add`."
+)
 
 
 class _BackupBeforeApprovalView(discord.ui.View):
@@ -5579,7 +6295,7 @@ class _ApproveView(discord.ui.View):
     """The standing question at the end of a review, and the button that answers it.
 
     **Who may press.** The member who ran the review, or a server administrator. A league
-    manager holding only the interaction role may run `/season review` — that is what the
+    manager holding only the interaction role may run `/season placements-review` — that is what the
     report is for — but approving somebody else's review is not theirs to do. The message
     is public, so this check is what stops a bystander answering it; the refusal is
     ephemeral, so only the presser reads it.
@@ -5589,6 +6305,9 @@ class _ApproveView(discord.ui.View):
     with the process, which is why the message is also recorded in `season_review_prompts`
     and swept at startup — see migration 050.
     """
+
+    #: The command whose report this button answers, named when the review expires.
+    _review_command = "/season placements-review"
 
     def __init__(self, cog: SeasonCog, reviewer_id: int) -> None:
         super().__init__(timeout=APPROVAL_WINDOW_SECONDS)
@@ -5719,8 +6438,8 @@ class _ApproveView(discord.ui.View):
             log.warning("season review: could not delete the expired prompt: %s", exc)
         try:
             await message.channel.send(
-                f"⏱️ <@{self._reviewer_id}> your season review has expired and "
-                f"can no longer be approved. Run `/season review` again to approve the season."
+                f"⏱️ <@{self._reviewer_id}> your review has expired and can no longer "
+                f"be answered. Run `{self._review_command}` again."
             )
         except (discord.HTTPException, discord.Forbidden) as exc:
             log.warning("season review: could not post the expiry notice: %s", exc)
@@ -5760,7 +6479,7 @@ class _ApproveView(discord.ui.View):
                 await interaction.response.send_message(
                     f"⛔ Your season has changed since this review, so the report above "
                     f"no longer describes it:\n{bullets}\n"
-                    f"Run `/season review` again and approve from the fresh report. "
+                    f"Run `/season placements-review` again and approve from the fresh report. "
                     f"**Nothing has been approved.**",
                     ephemeral=True,
                 )
@@ -5845,6 +6564,99 @@ async def _judge_round_amendment(
     return judge_amendment(
         rnd, dict(amendments), now=now, attendance=attendance, weather=weather
     )
+
+
+
+class _ConfirmMidSeasonPlacementsView(_ApproveView):
+    """The confirm button of `/season placements-review` in Ongoing, placements (#220).
+
+    Governed as every review button is; pressing it commits the new placements.
+    """
+
+    _review_command = "/season placements-review"
+
+    @discord.ui.button(label="✅ Confirm placements", style=discord.ButtonStyle.success)
+    async def approve(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if not await self._may_approve(interaction):
+            await interaction.response.send_message(
+                "⛔ Only the person who ran this review, or a league admin, can confirm "
+                "it. **Nothing has been confirmed.**",
+                ephemeral=True,
+            )
+            return
+
+        if self._fingerprint is not None and self._season_id is not None:
+            from services.season_fingerprint_service import take_fingerprint
+
+            current = await take_fingerprint(
+                self._cog.bot, self._server_id, self._season_id
+            )
+            changed = self._fingerprint.differs_from(current)
+            if changed:
+                bullets = "\n".join(f"• {area}" for area in changed)
+                await interaction.response.send_message(
+                    f"⛔ The season has changed since this review:\n{bullets}\n"
+                    f"Run `{self._review_command}` again and confirm from the fresh "
+                    f"report. **Nothing has been confirmed.**",
+                    ephemeral=True,
+                )
+                await self._expire_now()
+                return
+
+        await self._cog._do_confirm_mid_season_placements(interaction)
+        await self._forget()
+        await self._clear_report()
+        self._message = None
+        self.stop()
+
+
+class _ConfirmConfigurationView(_ApproveView):
+    """The confirm button of `/season config-review`.
+
+    Governed exactly as the placements review's approve button is — who may press it, how
+    long it stands, the evidence it is pressed upon — and differing only in what pressing
+    it does and what it says.
+    """
+
+    _review_command = "/season config-review"
+
+    @discord.ui.button(label="✅ Confirm configuration", style=discord.ButtonStyle.success)
+    async def approve(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if not await self._may_approve(interaction):
+            await interaction.response.send_message(
+                "⛔ Only the person who ran this review, or a league admin, can confirm "
+                "it. **Nothing has been confirmed.**",
+                ephemeral=True,
+            )
+            return
+
+        if self._fingerprint is not None and self._season_id is not None:
+            from services.season_fingerprint_service import take_fingerprint
+
+            current = await take_fingerprint(
+                self._cog.bot, self._server_id, self._season_id
+            )
+            changed = self._fingerprint.differs_from(current)
+            if changed:
+                bullets = "\n".join(f"• {area}" for area in changed)
+                await interaction.response.send_message(
+                    f"⛔ The season has changed since this review:\n{bullets}\n"
+                    f"Run `{self._review_command}` again and confirm from the fresh "
+                    f"report. **Nothing has been confirmed.**",
+                    ephemeral=True,
+                )
+                await self._expire_now()
+                return
+
+        await self._cog._do_confirm_configuration(interaction)
+        await self._forget()
+        await self._clear_report()
+        self._message = None
+        self.stop()
 
 
 class _ConfirmView(discord.ui.View):

@@ -54,20 +54,37 @@ def _division(div_id: int, name: str, status: str = "ACTIVE", channel: int | Non
     )
 
 
+@pytest.fixture(autouse=True)
+def _end_of_season_pass():
+    """The shared pass has tests of its own (test_season_completion_pass.py)."""
+    with patch(
+        "services.season_end_service.end_of_season_pass", new=AsyncMock(return_value={})
+    ) as mocked:
+        yield mocked
+
+
+def _ongoing():
+    from models.season import SeasonStage
+
+    return SimpleNamespace(id=SEASON_ID, season_number=3, stage=SeasonStage.ONGOING)
+
+
 def _make_cog(
     *,
-    season=SimpleNamespace(id=SEASON_ID, season_number=3),
+    season=...,
     mutable: bool = True,
     divisions=None,
     all_finished: bool = True,
     outstanding=None,
     order=None,
 ) -> SeasonCog:
+    if season is ...:
+        season = _ongoing()
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
 
     bot.season_service = MagicMock()
-    bot.season_service.get_active_season = AsyncMock(return_value=season)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
     bot.season_service.assert_season_mutable = AsyncMock(
         side_effect=None if mutable else SeasonImmutableError("archived")
     )
@@ -77,6 +94,11 @@ def _make_cog(
     bot.season_service.get_division_rounds = AsyncMock(return_value=[])
     bot.season_service.refresh_division_status = AsyncMock(return_value=True)
     bot.season_service.all_divisions_finished = AsyncMock(return_value=all_finished)
+    # The stage has tests of its own (test_pending_completion.py); here it never stands in the way.
+    from models.season import SeasonStage
+
+    bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
+    bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PENDING_COMPLETION)
     bot.season_service.get_outstanding_rounds = AsyncMock(
         return_value=outstanding if outstanding is not None else []
     )
@@ -86,6 +108,7 @@ def _make_cog(
             order.append("cascade")
 
     bot.season_service.cancel_season_cascade = AsyncMock(side_effect=_cascade)
+    bot.season_service.discard_uncommitted_placements = AsyncMock(return_value=0)
 
     bot.scheduler_service = MagicMock()
     bot.output_router = MagicMock()
@@ -184,19 +207,36 @@ async def test_cancelling_with_no_active_season_is_refused():
     with history, roles:
         await _cancel(cog, interaction)
 
-    assert "No active season" in _replied(interaction)
+    assert "No season is being raced" in _replied(interaction)
 
 
-async def test_cancelling_an_archived_season_is_refused():
-    cog = _make_cog(mutable=False)
+async def test_cancelling_a_season_pending_completion_is_refused():
+    """Issue #220: cancelled only while ongoing — a season that has run its course is
+    completed instead."""
+    from models.season import SeasonStage
+
+    cog = _make_cog(
+        season=SimpleNamespace(id=SEASON_ID, season_number=3, stage=SeasonStage.PENDING_COMPLETION)
+    )
     interaction = _interaction()
     history, roles = _season_end()
 
     with history, roles:
         await _cancel(cog, interaction)
 
-    assert "archived" in _replied(interaction)
+    assert "/season complete" in _replied(interaction)
     cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
+
+
+async def test_cancelling_discards_uncommitted_placements_and_runs_the_pass(_end_of_season_pass):
+    cog = _make_cog()
+    history, roles = _season_end()
+
+    with history, roles:
+        await _cancel(cog, _interaction())
+
+    cog.bot.season_service.discard_uncommitted_placements.assert_awaited_once_with(SEASON_ID)
+    _end_of_season_pass.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +377,7 @@ async def test_completing_with_no_active_season_is_refused():
 
     await _complete(cog, interaction)
 
-    assert "No active season" in _replied(interaction)
+    assert "No season is being raced" in _replied(interaction)
 
 
 async def test_division_statuses_are_refreshed_before_the_gate():

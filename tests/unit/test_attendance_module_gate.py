@@ -6,14 +6,14 @@ arrives at it — a scheduled job, a restart, or a command that amends work arra
 module was still enabled."
 
 `rsvp_service` carried no module check at all. The three RSVP jobs are booked once, by
-`/season approve`, and switching attendance off never touched them, so a league that turned
+the confirmation of placements, and switching attendance off never touched them, so a league that turned
 the module off mid-season still got every remaining round's check-in call, its reminder and
 its deadline — the last of which moves reserve drivers into seats. A restart made it worse:
 the recovery re-armed the buttons and ran any deadline it had missed without asking whether
 the module was on.
 
 The fix is a gate at each entry point rather than a job cancellation. Cancelling looks
-equivalent and is not: nothing short of `/season approve` recreates these jobs and it cannot
+equivalent and is not: nothing short of the confirmation of placements recreates these jobs and it cannot
 be run again on an active season, so a cancel loses the season's check-ins for good — the
 mistake issue #117 made for weather, in reverse.
 

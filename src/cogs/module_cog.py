@@ -120,6 +120,16 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
     # 4. Set window closed (persists closed_msg_id)
     await bot.signup_module_service.set_window_closed(server_id, closed_msg_id=closed_msg_id)
 
+    # 4b. Move the season on (issue #220). Every close reaches here — the command, the
+    #     close timer and the restart sweep — so every close moves the season alike. A
+    #     failure is logged and never undoes the close: the window is shut either way.
+    from services.season_lifecycle_service import advance_on_window_close
+
+    try:
+        await advance_on_window_close(bot.db_path, server_id)
+    except Exception:  # noqa: BLE001
+        log.exception("forced_close: could not move the season on for server %s", server_id)
+
     # 5. Audit entry
     now = datetime.now(timezone.utc).isoformat()
     async with get_connection(bot.db_path) as db:
@@ -172,7 +182,7 @@ def _results_disable_warning(*, season_active: bool, attendance: bool) -> str:
             "• every check-in call, reminder and deadline still to come will stop;\n"
             "• every division's check-in and attendance channels will be cleared, and you "
             "will have to set them again;\n"
-            "• Attendance cannot be switched back on while a season is active.\n"
+            "• Attendance cannot be switched back on once a season's placements are confirmed.\n"
             "Timings, penalties and thresholds are kept either way."
         )
 
@@ -267,6 +277,9 @@ class ModuleCog(commands.Cog):
     ) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
+        if await self._refuse_module_change(interaction, server_id, module_name.value, "enable"):
+            return
+
         if module_name.value == "weather":
             await self._enable_weather(interaction, server_id)
         elif module_name.value == "results":
@@ -294,6 +307,9 @@ class ModuleCog(commands.Cog):
     ) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
+        if await self._refuse_module_change(interaction, server_id, module_name.value, "disable"):
+            return
+
         if module_name.value == "weather":
             await self._disable_weather(interaction, server_id)
         elif module_name.value == "results":
@@ -304,6 +320,60 @@ class ModuleCog(commands.Cog):
             await self._disable_images(interaction, server_id)
         else:
             await self._disable_signup(interaction, server_id)
+
+    async def _refuse_module_change(
+        self,
+        interaction: discord.Interaction,
+        server_id: int,
+        module: str,
+        action: str,
+    ) -> bool:
+        """Refuse enabling or disabling a module where the season's stage forbids it.
+
+        Issue #220, in the order a league meets the rules:
+
+        - the signup module is enabled and disabled only with no active season, or while its
+          season is in Configuration;
+        - no other module is enabled once the season's placements have been confirmed;
+        - no module is disabled while the season is in Pending completion.
+
+        Checked here, before the module's own handler, so every module answers alike. Returns
+        True where the command was refused, having answered the interaction.
+        """
+        from services.season_lifecycle_service import (
+            modules_frozen_for_completion,
+            signup_configuration_fixed,
+        )
+
+        if module == "signup":
+            season_number = await signup_configuration_fixed(self.bot.db_path, server_id)
+            if season_number is not None:
+                await interaction.response.send_message(
+                    f"❌ The signup module is fixed for Season {season_number} now that its "
+                    f"configuration has been confirmed. It can be {action}d again once the "
+                    "season has ended, or while a new season is in configuration.",
+                    ephemeral=True,
+                )
+                return True
+        elif action == "enable":
+            if await self.bot.season_service.get_confirmed_season(server_id) is not None:
+                await interaction.response.send_message(
+                    "❌ A module cannot be enabled once the season's placements have been "
+                    "confirmed. Enable it before then, or once the season has ended.",
+                    ephemeral=True,
+                )
+                return True
+
+        if action == "disable" and await modules_frozen_for_completion(
+            self.bot.db_path, server_id
+        ):
+            await interaction.response.send_message(
+                "❌ No module can be disabled while the season is pending completion. "
+                "Complete it with `/season complete` first.",
+                ephemeral=True,
+            )
+            return True
+        return False
 
     # ── Weather enable (T011) ──────────────────────────────────────────
 
@@ -317,19 +387,9 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        # 2. Validate all active-season divisions have forecast_channel_id
-        season = await self.bot.season_service.get_active_season(server_id)
-        if season:
-            divisions = await self.bot.season_service.get_divisions(season.id)
-            missing = [d.name for d in divisions if not d.forecast_channel_id]
-            if missing:
-                names = ", ".join(f"**{n}**" for n in missing)
-                await interaction.response.send_message(
-                    f"❌ Weather module cannot be enabled — the following divisions are missing "
-                    f"a forecast channel: {names}. Add a forecast channel to each division first.",
-                    ephemeral=True,
-                )
-                return
+        # A season whose placements are confirmed refuses the enable before this handler is
+        # reached (issue #220), so there is never a running season to catch up on: its
+        # forecast channels are checked, and its phases armed, when placements are confirmed.
 
         await interaction.response.defer(ephemeral=True)
 
@@ -356,85 +416,12 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        # 4. Run catch-up phases and schedule future jobs
-        if season:
-            try:
-                await self._catchup_and_schedule_weather(server_id, season)
-            except Exception as exc:
-                log.exception("Weather enable catch-up failed for server %s", server_id)
-                # Rollback: cancel any partially-created jobs, reset flag
-                await self.bot.scheduler_service.cancel_all_weather_for_server(server_id)
-                async with get_connection(self.bot.db_path) as db:
-                    await db.execute(
-                        "UPDATE server_configs SET weather_module_enabled = 0 WHERE server_id = ?",
-                        (server_id,),
-                    )
-                    await db.commit()
-                await interaction.followup.send(
-                    f"❌ Weather module enable failed during phase execution: {exc}. "
-                    "Module remains disabled.",
-                    ephemeral=True,
-                )
-                return
-
         # 5. Post log channel confirmation
         await self.bot.output_router.post_log(
             server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable weather | Success",
         )
         await interaction.followup.send("✅ Weather module enabled.", ephemeral=True)
-
-    async def _catchup_and_schedule_weather(self, server_id: int, season: object) -> None:
-        """Run any overdue phase horizons and schedule future ones."""
-        from services.phase1_service import run_phase1
-        from services.phase2_service import run_phase2
-        from services.phase3_service import run_phase3
-        from services.weather_config_service import get_weather_pipeline_config
-        from models.round import RoundFormat
-
-        cfg = await get_weather_pipeline_config(self.bot.db_path, server_id)
-
-        now = datetime.now(timezone.utc)
-        divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[union-attr]
-        season_number: int = getattr(season, "season_number", 0)
-        div_meta: dict[int, tuple[int, int]] = {
-            div.id: (season_number, div.tier) for div in divisions
-        }
-        all_rounds = []
-        for div in divisions:
-            rounds = await self.bot.season_service.get_division_rounds(div.id)
-            all_rounds.extend(rounds)
-
-        for rnd in all_rounds:
-            scheduled_at = rnd.scheduled_at
-            if scheduled_at.tzinfo is None:
-                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-
-            # Catch-up phase execution only applies to non-mystery rounds
-            if rnd.format != RoundFormat.MYSTERY:
-                p1_horizon = scheduled_at - timedelta(days=cfg.phase_1_days)
-                p2_horizon = scheduled_at - timedelta(days=cfg.phase_2_days)
-                p3_horizon = scheduled_at - timedelta(hours=cfg.phase_3_hours)
-
-                if not rnd.phase1_done and now >= p1_horizon:
-                    log.info("Weather enable catch-up: Phase 1 for round %s", rnd.id)
-                    await run_phase1(rnd.id, self.bot)
-                if not rnd.phase2_done and now >= p2_horizon:
-                    log.info("Weather enable catch-up: Phase 2 for round %s", rnd.id)
-                    await run_phase2(rnd.id, self.bot)
-                if not rnd.phase3_done and now >= p3_horizon:
-                    log.info("Weather enable catch-up: Phase 3 for round %s", rnd.id)
-                    await run_phase3(rnd.id, self.bot)
-
-            s_num, d_tier = div_meta.get(rnd.division_id, (0, 0))
-            self.bot.scheduler_service.schedule_round(
-                rnd,
-                season_number=s_num,
-                division_tier=d_tier,
-                phase_1_days=cfg.phase_1_days,
-                phase_2_days=cfg.phase_2_days,
-                phase_3_hours=cfg.phase_3_hours,
-            )
 
     # ── Weather disable (T012) ─────────────────────────────────────────
 
@@ -485,10 +472,10 @@ class ModuleCog(commands.Cog):
             return
 
         # 2. Block if ACTIVE season exists (FR-003)
-        active_season = await self.bot.season_service.get_active_season(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season(server_id)
         if active_season is not None:
             await interaction.response.send_message(
-                "❌ Results & Standings module cannot be enabled while a season is active.",
+                "❌ Results & Standings module cannot be enabled once a season's placements are confirmed.",
                 ephemeral=True,
             )
             return
@@ -542,7 +529,7 @@ class ModuleCog(commands.Cog):
             return
 
         # Warn before anything irreversible, and write nothing until the league confirms it.
-        active_season = await self.bot.season_service.get_active_season(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season(server_id)
         attendance_on = await self.bot.module_service.is_attendance_enabled(server_id)
 
         if active_season is not None or attendance_on:
@@ -602,6 +589,13 @@ class ModuleCog(commands.Cog):
         closed = await self.bot.season_service.end_rounds_awaiting_results(
             server_id, interaction.user.id, str(interaction.user)
         )
+
+        # The division finishing may have been the season's last: a season with a window open or
+        # placements to confirm is wound down and moves to Pending completion at once (#220).
+        try:
+            await self.bot.season_service.wind_down_ongoing(self.bot, server_id)
+        except Exception:  # noqa: BLE001 — never fail the disabling on the season's next stage
+            log.exception("could not wind the season of server %s down", server_id)
 
         if purged["rounds"]:
             async with get_connection(self.bot.db_path) as db:
@@ -676,10 +670,10 @@ class ModuleCog(commands.Cog):
             return
 
         # 2. Guard: no ACTIVE season
-        active_season = await self.bot.season_service.get_active_season(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season(server_id)
         if active_season is not None:
             await interaction.response.send_message(
-                "❌ Attendance module cannot be enabled while a season is active.",
+                "❌ Attendance module cannot be enabled once a season's placements are confirmed.",
                 ephemeral=True,
             )
             return

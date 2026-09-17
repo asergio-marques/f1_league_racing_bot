@@ -155,7 +155,7 @@ async def test_no_unassigned_drivers_says_so(tmp_path):
 
     await _list(_make_cog(listed=[]), interaction)
 
-    assert "No Unassigned drivers found" in _sent(interaction)
+    assert "No unsettled signups found" in _sent(interaction)
 
 
 async def test_the_list_counts_the_drivers(tmp_path):
@@ -265,7 +265,7 @@ async def test_nothing_to_export_says_so(tmp_path):
 
     await _export(_make_cog(exportable=[]), interaction)
 
-    assert "No Unassigned drivers found" in _sent(interaction)
+    assert "No unsettled signups found" in _sent(interaction)
     assert "file" not in interaction.followup.send.await_args.kwargs
 
 
@@ -368,3 +368,36 @@ async def test_the_csv_carries_a_byte_order_mark(tmp_path):
     raw = file.fp.getvalue() if hasattr(file.fp, "getvalue") else file.fp.read()
     assert raw.startswith(b"\xef\xbb\xbf")
     assert "Pérez" in raw.decode("utf-8-sig")
+
+
+# ---------------------------------------------------------------------------
+# Signups still in review (issue #220)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_signup_in_review_is_listed_by_its_state_rather_than_a_seed(tmp_path):
+    in_review = dict(_seeded(2, "Max Verstappen"), seed=None, state="PENDING_ADMIN_APPROVAL")
+    cog = _make_cog(listed=[_seeded(1), in_review])
+    interaction = _interaction()
+
+    await undecorate(SignupCog.signup_unassigned_list)(cog, interaction)
+
+    sent = _sent(interaction)
+    assert "**#1** **Lewis Hamilton**" in sent
+    assert "**Awaiting approval** **Max Verstappen**" in sent
+
+
+async def test_a_signup_in_review_exports_with_no_seed(tmp_path):
+    import csv
+
+    in_review = dict(_exportable(2, "Max Verstappen"), seed=None, state="PENDING_DRIVER_CORRECTION")
+    cog = _make_cog(exportable=[_exportable(1), in_review])
+    interaction = _interaction()
+
+    await undecorate(SignupCog.signup_unassigned_export)(cog, interaction)
+
+    attachment = interaction.followup.send.await_args.kwargs["file"]
+    attachment.fp.seek(0)
+    rows = list(csv.reader(io.StringIO(attachment.fp.read().decode("utf-8-sig"))))
+    assert rows[1][0] == "1"
+    assert rows[2][0] == ""

@@ -9,7 +9,7 @@ Two ceilings, caught at two moments, as Constitution XIV.12 requires:
 * **A driver assignment** that would take a division past the drivers template's rows is
   refused with the change unapplied. That is the earliest moment the overflow exists — the
   posting is far too late, by which point the league has already lost a graphic.
-* **`/season review`** reports what either template could not draw for the season as a
+* **`/season placements-review`** reports what either template could not draw for the season as a
   whole: the drivers rows, the constructors rows, and each template's round columns against
   the longest calendar. It is the only moment the *constructors* ceiling can be caught at
   all, because seating a driver adds no team.

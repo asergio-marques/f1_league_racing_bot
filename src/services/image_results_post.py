@@ -116,17 +116,47 @@ async def _nationality_collected(db_path: str, server_id: int) -> bool:
     return bool(row["nationality_required"])
 
 
-async def _driver_names(bot, guild, user_ids: list[int]) -> dict[int, str]:
+#: The signup a graphic reads a driver's name and nationality from: their latest signup to
+#: the season being drawn (issue #220), falling back to their latest signup of all where that
+#: season holds none. A signup is kept, never overwritten, so a driver who has signed up in
+#: several seasons is drawn under what they gave for the season on the graphic.
+#:
+#: Takes two parameters, in order: the season's id (None to read the latest of all) and the
+#: server comes from the driver row it is joined to.
+SIGNUP_FOR_SEASON_SQL = (
+    "(SELECT id FROM signup_records "
+    " WHERE server_id = dp.server_id "
+    "   AND discord_user_id = CAST(dp.discord_user_id AS TEXT) "
+    " ORDER BY COALESCE(season_id = ?, 0) DESC, id DESC LIMIT 1)"
+)
+
+
+async def season_of_division(db_path: str, division_id: int | None) -> int | None:
+    """The season *division_id* belongs to, or None."""
+    if division_id is None:
+        return None
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
+        ).fetchone()
+    return int(row["season_id"]) if row is not None else None
+
+
+async def _driver_names(
+    bot, guild, user_ids: list[int], *, division_id: int | None = None
+) -> dict[int, str]:
     """The name each driver is drawn under (XIV.16, and the wip-spec's person-name rule).
 
     The display name of their Discord account on the server at the moment of generation,
-    falling through the names the league recorded for them, and ending at the user id. A
-    graphic carries no mention, so this is what stands in its place.
+    falling through the names the league recorded for them — in their signup to the season of
+    *division_id*, where one is named — and ending at the user id. A graphic carries no
+    mention, so this is what stands in its place.
     """
     names: dict[int, str] = {}
 
     recorded: dict[int, tuple] = {}
     if user_ids:
+        season_id = await season_of_division(bot.db_path, division_id)
         placeholders = ",".join("?" * len(user_ids))
         async with get_connection(bot.db_path) as db:
             rows = await (
@@ -134,11 +164,9 @@ async def _driver_names(bot, guild, user_ids: list[int]) -> dict[int, str]:
                     f"SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name, "
                     f"       sr.server_display_name, sr.discord_username "
                     f"FROM driver_profiles dp "
-                    f"LEFT JOIN signup_records sr "
-                    f"       ON sr.server_id = dp.server_id "
-                    f"      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
+                    f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
                     f"WHERE dp.discord_user_id IN ({placeholders})",
-                    [str(uid) for uid in user_ids],
+                    [season_id, *[str(uid) for uid in user_ids]],
                 )
             ).fetchall()
         for row in rows:
@@ -165,14 +193,18 @@ async def _driver_names(bot, guild, user_ids: list[int]) -> dict[int, str]:
     return names
 
 
-async def _nationalities(bot, user_ids: list[int]) -> dict[int, str | None]:
+async def _nationalities(
+    bot, user_ids: list[int], *, division_id: int | None = None
+) -> dict[int, str | None]:
     """Each driver's recorded nationality, or None where they stated none.
 
-    A mock driver has no signup record to hold one, and carries its own instead — the
-    same branch on is_test_driver the name is resolved by.
+    Read from their signup to the season of *division_id*, where one is named. A mock driver
+    has no signup record to hold one, and carries its own instead — the same branch on
+    is_test_driver the name is resolved by.
     """
     if not user_ids:
         return {}
+    season_id = await season_of_division(bot.db_path, division_id)
     placeholders = ",".join("?" * len(user_ids))
     async with get_connection(bot.db_path) as db:
         rows = await (
@@ -181,11 +213,9 @@ async def _nationalities(bot, user_ids: list[int]) -> dict[int, str | None]:
                 f"       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
                 f"            ELSE sr.nationality END AS nationality "
                 f"FROM driver_profiles dp "
-                f"LEFT JOIN signup_records sr "
-                    f"       ON sr.server_id = dp.server_id "
-                    f"      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
+                f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
                 f"WHERE dp.discord_user_id IN ({placeholders})",
-                [str(uid) for uid in user_ids],
+                [season_id, *[str(uid) for uid in user_ids]],
             )
         ).fetchall()
     return {int(row["discord_user_id"]): (row["nationality"] or None) for row in rows}
@@ -268,11 +298,15 @@ async def build_drawing(
         race_name=race_name,
         driver_rows=driver_rows,
         points_map=points_map,
-        driver_names=await _driver_names(bot, guild, user_ids),
+        driver_names=await _driver_names(
+            bot, guild, user_ids, division_id=session_result.division_id
+        ),
         team_names=await _team_names(
             bot, guild, server_id, session_result.division_id, role_ids
         ),
-        nationalities=await _nationalities(bot, user_ids),
+        nationalities=await _nationalities(
+            bot, user_ids, division_id=session_result.division_id
+        ),
         dsq_phase_map=dsq_phase_map or {},
         fastest_lap_colour=getattr(config, "fastest_lap_colour", None),
         nationality_collected=await _nationality_collected(bot.db_path, server_id),

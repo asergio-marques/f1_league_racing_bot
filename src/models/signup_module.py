@@ -116,7 +116,12 @@ class ConfigSnapshot:
 
 @dataclass
 class SignupRecord:
-    """Committed signup submission for a driver on a server."""
+    """One completed signup: kept permanently under its season and window (issue #220).
+
+    A driver who signs up more than once holds a record for each signup. ``id`` is -1 for a
+    record not yet stored; saving one inserts it, and saving a stored one updates it in place,
+    which is how a correction amends the signup it was asked of.
+    """
     id: int
     server_id: int
     discord_user_id: str
@@ -134,6 +139,8 @@ class SignupRecord:
     notes: str | None
     signup_channel_id: int | None
     total_lap_ms: int | None = None  # computed once at approval; NULL = no times
+    season_id: int | None = None
+    window_id: int | None = None
 
 
 @dataclass

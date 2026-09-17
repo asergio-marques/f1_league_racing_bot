@@ -72,6 +72,7 @@ async def _seed(
     close_at: str | None = None,
     test_mode: bool = False,
     in_progress: tuple[str, ...] = (),
+    stage: str | None = None,
 ) -> str:
     db_path = os.path.join(str(tmp_path), "signup_open.db")
     await run_migrations(db_path)
@@ -105,6 +106,18 @@ async def _seed(
                 "(server_id, day_of_week, time_hhmm) VALUES (?, 1, ?)",
                 (SERVER_ID, f"{19 + index}:00"),
             )
+        # The season the window belongs to (issue #220): awaiting its window unless told
+        # otherwise, or already in signups where the window stands open.
+        await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
+            "VALUES (?, '2026-09-17', ?, 1, ?)",
+            (
+                SERVER_ID,
+                "ACTIVE" if stage in ("ONGOING", "ONGOING_SIGNUPS", "ONGOING_PLACEMENTS",
+                                      "PENDING_COMPLETION") else "SETUP",
+                stage or ("SIGNUPS" if signups_open else "WAITING"),
+            ),
+        )
         for offset, state in enumerate(in_progress):
             await db.execute(
                 "INSERT INTO driver_profiles "
@@ -323,6 +336,53 @@ async def test_opening_signups_posts_the_button_and_records_the_window(tmp_path)
 
     interaction._signup_channel.send.assert_awaited_once()
     assert await _is_open(db_path)
+
+
+async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path):
+    """Issue #220: the window belongs to the season, and opening it moves the season on."""
+    from services.season_lifecycle_service import live_season_stage
+
+    db_path = await _seed(tmp_path)
+
+    await _open(_cog(db_path), _interaction())
+
+    assert (await live_season_stage(db_path, SERVER_ID))[1].value == "SIGNUPS"
+
+
+async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path):
+    from services.season_lifecycle_service import live_season_stage
+
+    db_path = await _seed(tmp_path, stage="ONGOING")
+
+    await _open(_cog(db_path), _interaction())
+
+    assert (await live_season_stage(db_path, SERVER_ID))[1].value == "ONGOING_SIGNUPS"
+
+
+@pytest.mark.parametrize(
+    "stage", ["CONFIGURATION", "PLACEMENTS", "ONGOING_PLACEMENTS", "PENDING_COMPLETION"]
+)
+async def test_signups_cannot_be_opened_outside_waiting_or_ongoing(tmp_path, stage):
+    db_path = await _seed(tmp_path, stage=stage)
+    interaction = _interaction()
+
+    await _open(_cog(db_path), interaction)
+
+    assert "can only be opened" in _replied(interaction)
+    interaction._signup_channel.send.assert_not_awaited()
+    assert not await _is_open(db_path)
+
+
+async def test_signups_cannot_be_opened_with_no_season(tmp_path):
+    db_path = await _seed(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM seasons")
+        await db.commit()
+    interaction = _interaction()
+
+    await _open(_cog(db_path), interaction)
+
+    assert "can only be opened" in _replied(interaction)
 
 
 async def test_the_posted_message_describes_what_a_driver_is_agreeing_to(tmp_path):

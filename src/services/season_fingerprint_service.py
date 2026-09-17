@@ -1,4 +1,4 @@
-"""A fingerprint of everything `/season review` reports, taken when it is posted.
+"""A fingerprint of everything `/season placements-review` reports, taken when it is posted.
 
 The review is the evidence a season is approved on, and the Approve button commits on the
 strength of it. A manager who moves a channel, reseats a driver or edits a round between
@@ -48,8 +48,11 @@ AREA_LABELS: dict[str, str] = {
     "rounds": "the rounds",
     "teams": "the teams and their seats",
     "drivers": "the seated drivers",
+    "unsettled signups": "the unsettled signups",
     "channels": "the channels",
     "modules": "which modules are enabled",
+    "test mode": "test mode",
+    "team list": "the team list and its roles",
     "points": "the points configurations",
     "signup": "the signup configuration",
     "attendance": "the attendance configuration",
@@ -127,7 +130,7 @@ def _directory_signature(directory: Path) -> list:
 
 
 async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerprint:
-    """Fingerprint everything `/season review` reports for *season_id*.
+    """Fingerprint everything `/season placements-review` reports for *season_id*.
 
     One connection for the lot. Never raises: a fingerprint that could not be taken is an
     empty one, and an empty fingerprint differs from every other, so a fault here refuses
@@ -193,6 +196,22 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                 )
             )
 
+            # Every signup still unsettled on the server (issue #220): the review names each, and
+            # confirming placements waits on them, so a signup approved, rejected or sent back
+            # after the report is a change to what would be confirmed.
+            from services.season_lifecycle_service import UNSETTLED_STATES
+
+            areas["unsettled signups"] = _digest(
+                await _rows(
+                    db,
+                    "SELECT id, discord_user_id, current_state FROM driver_profiles "
+                    f"WHERE server_id = ? AND current_state IN ({','.join('?' for _ in UNSETTLED_STATES)}) "
+                    "ORDER BY id",
+                    server_id,
+                    *UNSETTLED_STATES,
+                )
+            )
+
             # Every channel the season posts to: the three on the divisions row, the three
             # of the results config and the two of the attendance config.
             areas["channels"] = _digest(
@@ -249,6 +268,33 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     await _rows(
                         db,
                         "SELECT module_enabled FROM image_config WHERE server_id = ?",
+                        server_id,
+                    ),
+                ]
+            )
+
+            # Test mode and the server's team list are what confirming a configuration
+            # fixes for the season (issue #220), so a change to either after the report
+            # is a change to what would be confirmed.
+            areas["test mode"] = _digest(
+                await _rows(
+                    db,
+                    "SELECT test_mode_active FROM server_configs WHERE server_id = ?",
+                    server_id,
+                )
+            )
+            areas["team list"] = _digest(
+                [
+                    await _rows(
+                        db,
+                        "SELECT name, max_seats, is_reserve FROM default_teams "
+                        "WHERE server_id = ? ORDER BY name",
+                        server_id,
+                    ),
+                    await _rows(
+                        db,
+                        "SELECT team_name, role_id FROM team_role_configs "
+                        "WHERE server_id = ? ORDER BY team_name",
                         server_id,
                     ),
                 ]

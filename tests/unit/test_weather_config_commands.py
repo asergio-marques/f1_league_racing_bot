@@ -12,7 +12,7 @@ be written to the log channel."
 
 On the active-season rule: there is no separate `APPROVED` status — `SeasonStatus` is
 SETUP / ACTIVE / COMPLETED / CANCELLED and approval moves a season to ACTIVE — so the
-specification's "approved/active" is `get_active_season`, which is what the cog reads.
+specification's "approved/active" is `get_confirmed_season`, which is what the cog reads.
 
 **`spec=` is load-bearing here**, as it is in `test_attendance_config_commands.py`, whose
 shape this file follows. The bot's services are spec-bound doubles, so a cog calling a method
@@ -94,7 +94,7 @@ def _make_cog(*, weather_enabled: bool = True, season: Season | None = None) -> 
     bot.module_service = MagicMock()
     bot.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
     bot.season_service = AsyncMock(spec=SeasonService)
-    bot.season_service.get_active_season.return_value = season
+    bot.season_service.get_confirmed_season.return_value = season
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
     return WeatherCog(bot)
@@ -204,7 +204,7 @@ async def test_command_is_refused_while_a_season_is_active(command, setter, valu
             mocks[name].assert_not_awaited()
 
     interaction.response.send_message.assert_awaited_once()
-    assert "season is active" in _sent_text(interaction)
+    assert "placements are confirmed" in _sent_text(interaction)
     cog.bot.output_router.post_log.assert_not_awaited()
 
 

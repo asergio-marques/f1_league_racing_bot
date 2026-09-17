@@ -55,7 +55,7 @@ def test_the_tier_is_preferred_and_the_name_stands_in_for_it():
 def test_a_tier_that_says_nothing_falls_through_to_the_name(tier):
     """Nought is what an unset tier carries, and must not be named as a tier.
 
-    `/season review` already reads it that way — its tier tag is written only
+    `/season placements-review` already reads it that way — its tier tag is written only
     `if div.tier > 0` — so a graphic named `division0` would claim a tier the league
     never gave.
     """

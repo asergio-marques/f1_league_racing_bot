@@ -1,11 +1,9 @@
 """test_mode_service — Test mode state management and phase queue.
 
-Provides five async functions consumed by TestModeCog:
+Provides four async functions consumed by TestModeCog:
   - toggle_test_mode:             flip the test_mode_active flag in server_configs
   - toggle_test_mode_nationality: flip whether mock drivers carry a nationality
   - count_live_real_drivers:      how many real drivers stand in the way of enabling test mode
-  - count_test_drivers_in_a_started_season:
-                                  how many fake drivers stand in the way of disabling it
   - get_next_pending_phase:       find the earliest un-executed phase across all rounds
   - build_review_summary:         format a full season/division/round status string
 """
@@ -67,6 +65,51 @@ async def toggle_test_mode(server_id: int, db_path: str) -> bool:
     return bool(row["test_mode_active"])
 
 
+async def switch_test_mode_off(server_id: int, bot, *, discard_backup: bool = False) -> int:
+    """Switch test mode off for *server_id*, deleting every driver it created.
+
+    The one way test mode is left, by the toggle in Configuration or by the season it was chosen
+    for ending (issue #220). Pending forecast deletions are flushed first, as they were while a
+    season ran under test. Every fake driver is deleted and their history kept. A server not in
+    test mode is left as it is. Returns the count of fake drivers removed.
+
+    *discard_backup* deletes the saved test-mode backup as well, lock and all (decided
+    2026-09-17). The toggle and a season being **completed** pass it: nothing could restore
+    that state afterwards, the backup commands running in test mode alone. A season
+    **cancelled or aborted** does not — it was abandoned rather than run to its end, and the
+    state saved along the way is what a maintainer goes back to.
+    """
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT test_mode_active FROM server_configs WHERE server_id = ?", (server_id,)
+        )
+        row = await cursor.fetchone()
+    if row is None or not row["test_mode_active"]:
+        return 0
+
+    from services.forecast_cleanup_service import flush_pending_deletions
+    from services.test_roster_service import clear_all_test_drivers
+
+    try:
+        await flush_pending_deletions(server_id, bot)
+    except Exception:  # noqa: BLE001 — a stale forecast is not worth staying in test mode
+        log.exception("switch_test_mode_off: could not flush pending deletions")
+    removed = await clear_all_test_drivers(server_id, bot.db_path)
+    if discard_backup:
+        from services import backup_service
+
+        try:
+            backup_service.discard(bot.db_path, backup_service.jobstore_path_of(bot))
+        except Exception:  # noqa: BLE001 — a backup left behind is not worth the switch
+            log.exception("switch_test_mode_off: could not discard the saved backup")
+    async with get_connection(bot.db_path) as db:
+        await db.execute(
+            "UPDATE server_configs SET test_mode_active = 0 WHERE server_id = ?", (server_id,)
+        )
+        await db.commit()
+    return removed
+
+
 async def toggle_test_mode_nationality(server_id: int, db_path: str) -> bool:
     """Flip test_mode_nationality_required for *server_id* and return the NEW value.
 
@@ -116,32 +159,6 @@ async def count_live_real_drivers(server_id: int, db_path: str) -> int:
         cursor = await db.execute(
             "SELECT COUNT(*) AS n FROM driver_profiles "
             "WHERE server_id = ? AND is_test_driver = 0 AND current_state != 'NOT_SIGNED_UP'",
-            (server_id,),
-        )
-        row = await cursor.fetchone()
-
-    return int(row["n"]) if row is not None else 0
-
-
-async def count_test_drivers_in_a_started_season(server_id: int, db_path: str) -> int:
-    """Return how many fake drivers this server holds while a season is running.
-
-    Zero unless a season is ACTIVE: a season in SETUP has not started, and one that has
-    been completed is finished with. Both are safe to leave test mode from.
-
-    Disabling test mode deletes every fake driver, and a driver who has raced cannot be
-    deleted: the check-in writes a `driver_round_attendance` row for them, the standings
-    and the season's end write their own, and all three carry a foreign key to the profile.
-    The delete raised, after the flag had already been persisted, and left the server out
-    of test mode with its fake roster still seated and no reply sent. So a started season
-    holds test mode open until it is completed.
-    """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) AS n FROM driver_profiles dp "
-            "WHERE dp.server_id = ? AND dp.is_test_driver = 1 "
-            "  AND EXISTS (SELECT 1 FROM seasons s "
-            "              WHERE s.server_id = dp.server_id AND s.status = 'ACTIVE')",
             (server_id,),
         )
         row = await cursor.fetchone()

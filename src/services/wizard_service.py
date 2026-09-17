@@ -481,6 +481,11 @@ class WizardService:
             notes=d.get("notes"),
             signup_channel_id=wizard.signup_channel_id,
         )
+        if is_correction:
+            # A correction amends the signup it was asked of, and makes no new one (#220).
+            existing = await self._signup_svc.get_record(server_id, discord_user_id)
+            if existing is not None:
+                record.id = existing.id
         await self._signup_svc.save_record(record)
 
         # Transition driver

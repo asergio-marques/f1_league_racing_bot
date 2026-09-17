@@ -290,14 +290,14 @@ class TestResultsStandingsGate:
 
 class TestWeatherEnableGuardActiveSeason:
     async def test_is_weather_enabled_can_be_read_for_active_season_check(self, db_path):
-        """Verifies the data path that _enable_weather uses: get_active_season +
+        """Verifies the data path that _enable_weather uses: get_confirmed_season +
         get_divisions + check forecast_channel_id. Direct DB verification."""
         await _seed_server(db_path)
         svc = SeasonService(db_path)
         mod_svc = ModuleService(db_path)
 
         # No active season — weather can be enabled (no gate triggered)
-        active = await svc.get_active_season(1)
+        active = await svc.get_confirmed_season(1)
         assert active is None  # no season, gate won't fire
 
         # Seed an active season with a division missing a forecast channel
@@ -314,7 +314,7 @@ class TestWeatherEnableGuardActiveSeason:
             )
             await db.commit()
 
-        active = await svc.get_active_season(1)
+        active = await svc.get_confirmed_season(1)
         assert active is not None
 
         divisions = await svc.get_divisions(active.id)

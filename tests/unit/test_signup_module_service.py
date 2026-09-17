@@ -17,94 +17,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 @pytest.fixture
 async def db_path(tmp_path):
-    import aiosqlite
+    """The real schema, migrated. It was once built by hand here, and drifted from the
+    migrations the moment signups came to belong to a season (issue #220)."""
+    from db.database import get_connection, run_migrations
 
     path = str(tmp_path / "signup_test.db")
-    async with aiosqlite.connect(path) as db:
-        db.row_factory = aiosqlite.Row
-        await db.executescript(
-            """
-            CREATE TABLE server_configs (
-                server_id              INTEGER PRIMARY KEY,
-                interaction_role_id    INTEGER NOT NULL DEFAULT 0,
-                interaction_channel_id INTEGER NOT NULL DEFAULT 0,
-                log_channel_id         INTEGER NOT NULL DEFAULT 0,
-                test_mode_active       INTEGER NOT NULL DEFAULT 0,
-                previous_season_number INTEGER NOT NULL DEFAULT 0,
-                weather_module_enabled INTEGER NOT NULL DEFAULT 0,
-                signup_module_enabled  INTEGER NOT NULL DEFAULT 0
-            );
-            INSERT INTO server_configs (server_id) VALUES (1);
-
-            CREATE TABLE signup_module_config (
-                server_id                INTEGER PRIMARY KEY
-                                            REFERENCES server_configs(server_id)
-                                            ON DELETE CASCADE,
-                signup_channel_id        INTEGER NOT NULL,
-                base_role_id             INTEGER NOT NULL,
-                signed_up_role_id        INTEGER NOT NULL,
-                signups_open             INTEGER NOT NULL DEFAULT 0,
-                signup_button_message_id INTEGER,
-                selected_tracks_json     TEXT NOT NULL DEFAULT '[]',
-                signup_closed_message_id INTEGER,
-                close_at                 TEXT
-            );
-
-            CREATE TABLE signup_module_settings (
-                server_id            INTEGER PRIMARY KEY
-                                        REFERENCES server_configs(server_id)
-                                        ON DELETE CASCADE,
-                nationality_required INTEGER NOT NULL DEFAULT 1,
-                time_type            TEXT NOT NULL DEFAULT 'TIME_TRIAL',
-                time_image_required  INTEGER NOT NULL DEFAULT 1
-            );
-
-            CREATE TABLE signup_availability_slots (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id        INTEGER NOT NULL
-                                     REFERENCES server_configs(server_id)
-                                     ON DELETE CASCADE,
-                day_of_week      INTEGER NOT NULL,
-                time_hhmm        TEXT NOT NULL,
-                UNIQUE(server_id, day_of_week, time_hhmm)
-            );
-
-            CREATE TABLE signup_records (
-                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id            INTEGER NOT NULL,
-                discord_user_id      TEXT NOT NULL,
-                discord_username     TEXT,
-                server_display_name  TEXT,
-                nationality          TEXT,
-                platform             TEXT,
-                platform_id          TEXT,
-                availability_slot_ids TEXT,
-                driver_type          TEXT,
-                preferred_teams      TEXT,
-                preferred_teammate   TEXT,
-                lap_times_json       TEXT,
-                notes                TEXT,
-                signup_channel_id    INTEGER,
-                total_lap_ms         INTEGER,
-                created_at           TEXT,
-                updated_at           TEXT,
-                UNIQUE(server_id, discord_user_id)
-            );
-
-            CREATE TABLE signup_wizard_records (
-                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id               INTEGER NOT NULL,
-                discord_user_id         TEXT NOT NULL,
-                wizard_state            TEXT NOT NULL DEFAULT 'UNENGAGED',
-                signup_channel_id       INTEGER,
-                config_snapshot_json    TEXT,
-                draft_answers_json      TEXT NOT NULL DEFAULT '{}',
-                current_lap_track_index INTEGER NOT NULL DEFAULT 0,
-                last_activity_at        TEXT NOT NULL,
-                UNIQUE(server_id, discord_user_id)
-            );
-            """
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (1, 0, 0, 0)"
         )
+        await db.commit()
     return path
 
 
@@ -490,47 +414,37 @@ class TestSignupRecordCRUD:
         svc = SignupModuleService(db_path)
         assert await svc.get_record(1, "ghost") is None
 
-    async def test_save_upserts_existing_record(self, db_path):
-        from services.signup_module_service import SignupModuleService
-        svc = SignupModuleService(db_path)
-        rec = _make_record()
-        await svc.save_record(rec)
-        # Overwrite with updated platform
-        from models.signup_module import SignupRecord
-        updated = SignupRecord(
-            id=0,
-            server_id=1,
-            discord_user_id="u1",
-            discord_username="TestUser",
-            server_display_name="Test User",
-            nationality="gb",
-            platform="PSN",
-            platform_id="PSN_User",
-            availability_slot_ids=[],
-            driver_type="REALISTIC",
-            preferred_teams=[],
-            preferred_teammate=None,
-            lap_times={},
-            notes=None,
-            signup_channel_id=None,
-        )
-        await svc.save_record(updated)
-        fetched = await svc.get_record(1, "u1")
-        assert fetched is not None
-        assert fetched.platform == "PSN"
-
-    async def test_clear_nulls_fields_but_retains_row(self, db_path):
+    async def test_a_second_signup_is_kept_beside_the_first(self, db_path):
+        """Records are never overwritten (issue #220): the latest is what a review reads."""
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.save_record(_make_record())
-        await svc.clear_record(1, "u1")
+        second = _make_record()
+        second.platform = "PSN"
+        await svc.save_record(second)
+
         fetched = await svc.get_record(1, "u1")
-        assert fetched is not None  # row still exists
-        assert fetched.discord_username is None
-        assert fetched.platform is None
-        assert fetched.nationality is None
-        assert fetched.lap_times == {}
-        assert fetched.availability_slot_ids == []
+        assert fetched is not None
+        assert fetched.platform == "PSN"
+        from db.database import get_connection
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT COUNT(*) AS n FROM signup_records WHERE discord_user_id = 'u1'"
+            )
+            assert (await cursor.fetchone())["n"] == 2
+
+    async def test_saving_a_stored_record_updates_it_in_place(self, db_path):
+        """A correction amends the signup it was asked of."""
+        from services.signup_module_service import SignupModuleService
+        svc = SignupModuleService(db_path)
+        record_id = await svc.save_record(_make_record())
+        stored = await svc.get_record(1, "u1")
+        stored.platform = "PSN"
+
+        assert await svc.save_record(stored) == record_id
+        fetched = await svc.get_record(1, "u1")
+        assert fetched.id == record_id
+        assert fetched.platform == "PSN"
 
 
 # ---------------------------------------------------------------------------

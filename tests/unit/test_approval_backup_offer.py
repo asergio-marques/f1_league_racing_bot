@@ -322,7 +322,7 @@ async def test_a_refusal_names_the_way_back(answer):
     await _offer(cog, interaction, answer=answer)
 
     replied = _replied(interaction)
-    assert "/season review" in replied or "nothing has been saved" in replied
+    assert "/season placements-review" in replied or "nothing has been saved" in replied
 
 
 # ---------------------------------------------------------------------------

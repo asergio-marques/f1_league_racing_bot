@@ -1,6 +1,6 @@
 """The season a review described, and whether it is still that season at the button.
 
-`/season review` fingerprints everything it reports; the Approve button refuses unless the
+`/season placements-review` fingerprints everything it reports; the Approve button refuses unless the
 season still fingerprints the same. That is what lets the approval trust the review's own
 render instead of drawing every graphic a second time.
 
@@ -201,6 +201,52 @@ async def test_the_modules_area(season):
     await _assert_only(
         season, before, "modules",
         "UPDATE server_configs SET weather_module_enabled = 1 WHERE server_id = ?",
+        SERVER_ID,
+    )
+
+
+async def test_a_signup_settled_after_the_report_is_part_of_the_unsettled_signups_area(season):
+    """Issue #220: the review names every unsettled signup, and a change among them is a
+    change to what would be confirmed."""
+    await _change(
+        season,
+        "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
+        "VALUES (900, ?, '900', 'PENDING_ADMIN_APPROVAL')",
+        SERVER_ID,
+    )
+    before = await _take(season)
+    await _assert_only(
+        season, before, "unsettled signups",
+        "UPDATE driver_profiles SET current_state = 'UNASSIGNED' WHERE id = 900",
+    )
+
+
+async def test_the_test_mode_area(season):
+    """Confirming a configuration fixes test mode, so switching it after the report is a
+    change to what would be confirmed (issue #220)."""
+    before = await _take(season)
+    await _assert_only(
+        season, before, "test mode",
+        "UPDATE server_configs SET test_mode_active = 1 WHERE server_id = ?", SERVER_ID,
+    )
+
+
+async def test_a_team_added_to_the_server_list_is_part_of_the_team_list_area(season):
+    before = await _take(season)
+    await _assert_only(
+        season, before, "team list",
+        "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
+        "VALUES (?, 'Bluestreak', 2, 0)",
+        SERVER_ID,
+    )
+
+
+async def test_a_team_role_repointed_is_part_of_the_team_list_area(season):
+    before = await _take(season)
+    await _assert_only(
+        season, before, "team list",
+        "INSERT INTO team_role_configs (server_id, team_name, role_id, updated_at) "
+        "VALUES (?, 'Redline', 4242, '2026-09-17')",
         SERVER_ID,
     )
 

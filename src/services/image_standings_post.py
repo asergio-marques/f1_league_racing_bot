@@ -274,6 +274,7 @@ async def _seats(bot, division_id: int, team_names_by_role: dict[int, str]):
 
     name_to_role = {name: role_id for role_id, name in team_names_by_role.items()}
 
+    # A driver whose placement is not yet confirmed is not in the standings (issue #220).
     async with get_connection(bot.db_path) as db:
         rows = await (
             await db.execute(
@@ -284,6 +285,9 @@ async def _seats(bot, division_id: int, team_names_by_role: dict[int, str]):
                 "LEFT JOIN team_seats ts ON ts.team_instance_id = ti.id "
                 "LEFT JOIN driver_season_assignments dsa "
                 "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ti.division_id "
+                "      AND (dsa.committed = 1 OR NOT EXISTS ("
+                "          SELECT 1 FROM seasons s WHERE s.id = dsa.season_id "
+                "          AND s.status = 'ACTIVE')) "
                 "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
                 "WHERE ti.division_id = ?",
                 (division_id,),
@@ -348,8 +352,8 @@ async def build_drawings(
     driver_keys = [s.driver_user_id for s in driver_snapshots]
     team_keys = [s.team_role_id for s in team_snapshots]
 
-    names = await _driver_names(bot, guild, driver_keys)
-    nationalities = await _nationalities(bot, driver_keys)
+    names = await _driver_names(bot, guild, driver_keys, division_id=division_id)
+    nationalities = await _nationalities(bot, driver_keys, division_id=division_id)
     collected = await _nationality_collected(db_path, server_id)
 
     # A constructors row *is* a team, so that graphic's names are keyed by role. A drivers

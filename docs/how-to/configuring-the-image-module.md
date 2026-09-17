@@ -92,7 +92,7 @@ Turn a missing module on with `/module enable <name>`. Set each channel per divi
 
 **Two bits of data worth sorting early**, because they show up on several pictures:
 
-- **Driver nationalities**, which is where the little flags come from. The bot turns a nationality into a **country** and looks the flag up under that, so `British` draws `united_kingdom.svg`. A driver who answered the question with `other` gets the "Other" flag; a driver with no nationality recorded at all is drawn without a flag instead, and the picture is not faulty for it. Fake drivers made with `/test-mode roster add` carry a nationality of their own where you give the command one, so a test roster exercises the flags as a real league does — see [Testing with test mode](test-mode.md).
+- **Driver nationalities**, which is where the little flags come from. A driver's nationality — and the name they are drawn under when Discord cannot supply one — comes from the signup they made for the season the graphic belongs to, so a driver who changed either between seasons is drawn as they were that season. The bot turns a nationality into a **country** and looks the flag up under that, so `British` draws `united_kingdom.svg`. A driver who answered the question with `other` gets the "Other" flag; a driver with no nationality recorded at all is drawn without a flag instead, and the picture is not faulty for it. Fake drivers made with `/test-mode roster add` carry a nationality of their own where you give the command one, so a test roster exercises the flags as a real league does — see [Testing with test mode](test-mode.md).
 - **Your team list**, which the lineup picture is built around entirely. See the warning in step 5.
 
 ---
@@ -249,7 +249,7 @@ photo is fetched at any point.
 - **A driver who removes their Discord picture** loses the fetched photo too, and goes back to
   the placeholder at the next lineup.
 
-`/season review` shows all three settings, so you can confirm what is on before a season
+`/season placements-review` shows all three settings, so you can confirm what is on before a season
 starts.
 
 ### The stand-in picture, and where it comes from
@@ -296,7 +296,7 @@ That folder is `resources/defaults/templates`, and `/images config template-dire
 1. Put the drawing files in your new folder first — at least the ones your switched-on outputs need. Copying all sixteen is the simplest thing to do.
 2. *Then* run `/images config template-directory`.
 
-The command checks every drawing your switched-on outputs need before it stores anything, exactly as `/season review` does. If any is missing or unusable it **refuses** the change, tells you which ones and why, and leaves your existing folder in force. A drawing for an output you have switched **off** is not required — that output posts as text and draws nothing — and switching it on later checks its own drawings at that point. An empty artwork folder is harmless — the bot falls back to what it ships — but there is nothing behind a missing drawing file, so a half-filled folder would stop every picture being produced at all. That is why this one is checked and the other eight are not.
+The command checks every drawing your switched-on outputs need before it stores anything, exactly as `/season placements-review` does. If any is missing or unusable it **refuses** the change, tells you which ones and why, and leaves your existing folder in force. A drawing for an output you have switched **off** is not required — that output posts as text and draws nothing — and switching it on later checks its own drawings at that point. An empty artwork folder is harmless — the bot falls back to what it ships — but there is nothing behind a missing drawing file, so a half-filled folder would stop every picture being produced at all. That is why this one is checked and the other eight are not.
 
 It must still sit inside the bot's own project folder.
 
@@ -370,7 +370,7 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 
 > **The weather drawings have a minimum.** Phases 2 and 3 each have two versions — one for sprint weekends, one for everything else — because a sprint weekend has more sessions to show. If a file does not have room for enough sessions, the bot refuses it straight away and tells you how many it needs. Having room to spare is fine; the extra is simply hidden.
 >
-> **A forecast must have a blank for the grand prix name.** `race_name` is required on all five phase drawings; the circuit name, `track_name`, is optional beside it. A drawing that names only the circuit is refused when you name the file and again at `/season review` — a circuit that hosts two grand prix in one season does not tell your drivers which round they are looking at. The shipped files carry both, the grand prix on the headline and the circuit beneath it.
+> **A forecast must have a blank for the grand prix name.** `race_name` is required on all five phase drawings; the circuit name, `track_name`, is optional beside it. A drawing that names only the circuit is refused when you name the file and again at `/season placements-review` — a circuit that hosts two grand prix in one season does not tell your drivers which round they are looking at. The shipped files carry both, the grand prix on the headline and the circuit beneath it.
 
 > **You do not need a spare picture of your own.** When the bot cannot find the file for a particular team, circuit or flag, it uses a stand-in — yours if you put a `fallback.svg` in that folder, and otherwise the one that comes with the bot. So a folder holding eight of your ten team badges still draws every picture: the two without a badge get the stand-in, and the bot tells you which ones. Add a `fallback.svg` of your own only if you would rather your stand-in was used than ours.
 
@@ -543,7 +543,7 @@ Both tell you exactly what went in and what did not.
 
 It tells you straight away if any slot is still unset, and for which tier.
 
-> **A slot left unset stops the pictures that use it.** It is reported by `/images config view` and by `/season review`, counts against every output that uses that drawing, and will refuse the approval of a season. That is deliberate: the alternative is one tier quietly drawn in another's colours.
+> **A slot left unset stops the pictures that use it.** It is reported by `/images config view` and by `/season placements-review`, counts against every output that uses that drawing, and will refuse the approval of a season. That is deliberate: the alternative is one tier quietly drawn in another's colours.
 
 **Names, not divisions.** A colour is remembered against the division's *name*, so it survives into next season — but renaming a division loses its colours, exactly as it loses its logo.
 
@@ -583,13 +583,13 @@ It changes nothing by itself. It prints commands; you run the ones you want.
 /images config toggle aspect:<which output>
 ```
 
-Nine switches. `aspect` is a dropdown, so you pick rather than type; its nine entries are **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts**, **Verdicts** and **Verdict banner** — the same names `/images config view` and `/season review` use for them. All start off. Each one swaps that output between a picture and the text the bot has always posted.
+Nine switches. `aspect` is a dropdown, so you pick rather than type; its nine entries are **Calendar**, **Lineup**, **Session results**, **Standings**, **Attendance sheet**, **Check-in call**, **Weather forecasts**, **Verdicts** and **Verdict banner** — the same names `/images config view` and `/season placements-review` use for them. All start off. Each one swaps that output between a picture and the text the bot has always posted.
 
 It is a **toggle**, not an on/off setting: run it on something that is off and it comes on, run it again and it goes back to text.
 
 **Switching one on checks its drawings first, and refuses if they are not right.** You are told what is wrong and the output stays off. That is on purpose: an output switched on over a broken drawing posts *nothing* where your drivers would otherwise have read text, and it holds up your season's approval as well. Switching one **off** is never refused — text needs no drawing, so you can always go back to it.
 
-**What you leave switched off costs you nothing.** A missing or broken drawing behind an output you have not switched on does not stop a season being approved: nothing would ever post it. `/season review` still names it, as a ⚠️ rather than a ⛔, so you know it is there before you decide to switch that output on.
+**What you leave switched off costs you nothing.** A missing or broken drawing behind an output you have not switched on does not stop a season being approved: nothing would ever post it. `/season placements-review` still names it, as a ⚠️ rather than a ⛔, so you know it is there before you decide to switch that output on.
 
 This comes last on purpose. Switching something on before its drawing file is big enough is what causes problems; by now everything is in place.
 
@@ -633,7 +633,7 @@ When you switch something on, the bot tells you if it would not work as things s
 
 > **If a picture fails, only that picture fails.** The division falls back to its usual text post and the log channel explains why; other divisions still get their pictures. Nothing is ever held up waiting for a picture — results, penalties, forecasts and standings all happen exactly as they would with the module off, and the picture is drawn afterwards.
 
-**Drawing takes time, and the bot says so.** A picture takes a few seconds to draw, and several jobs draw a batch of them one after another — `/season review` draws a lineup and a calendar for every division, and closing a penalty review redraws every session's results, both championships, a verdict per penalty and the attendance sheet. Before a batch starts you get a short message saying the pictures are being drawn, and it disappears once they are all posted. You do not need to do anything with it, and nothing is lost when it goes: anything that went wrong is reported to you and to the log channel separately.
+**Drawing takes time, and the bot says so.** A picture takes a few seconds to draw, and several jobs draw a batch of them one after another — `/season placements-review` draws a lineup and a calendar for every division, and closing a penalty review redraws every session's results, both championships, a verdict per penalty and the attendance sheet. Before a batch starts you get a short message saying the pictures are being drawn, and it disappears once they are all posted. You do not need to do anything with it, and nothing is lost when it goes: anything that went wrong is reported to you and to the log channel separately.
 
 **The message appears where you gave the command**, not where the pictures land. A batch may post into your results, standings and verdicts channels at once, and putting the notice in each of them would tell three roomfuls of drivers something only you are waiting for. So a command you type is answered in the bot interaction channel, and the results flow — which you drive by pressing buttons in the round's results channel — is answered there.
 
@@ -655,7 +655,7 @@ Lists every setting and whether it is usable, and each of the eight outputs as �
 
 > **"The drawing is missing something the bot has to fill in" — but what?** Run the `/images template …` command it names, on the file you already have. That reply is the one place that still names the exact field, because you are looking at that one drawing at the moment you can fix it.
 
-> **It is written for you.** Both this report and `/season review` say what is wrong in terms of your drawings and your folders — you will not find a field id or a layer number in either, and the precise fault goes into the bot's log for whoever runs it. Both do print the folder paths you set yourself, under **Asset directories**, because that is your own configuration read back rather than a diagnostic. The one exception to the rest is naming a drawing file with an `/images template …` command: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
+> **It is written for you.** Both this report and `/season placements-review` say what is wrong in terms of your drawings and your folders — you will not find a field id or a layer number in either, and the precise fault goes into the bot's log for whoever runs it. Both do print the folder paths you set yourself, under **Asset directories**, because that is your own configuration read back rather than a diagnostic. The one exception to the rest is naming a drawing file with an `/images template …` command: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
 
 ```
 /images test calendar        division:<name>
@@ -681,13 +681,13 @@ Several kinds send more than one picture: the results send one per session of th
 
 **A cancelled division still previews.** It is offered in the division list and draws like any other, deliberately — a preview posts nothing where a driver can see it, so a division you have withdrawn is a perfectly good one to check a drawing against, and often the most convenient.
 
-`/season review` shows the same summary and names anything that would stop the season. **Pressing Approve refuses** while something is broken — review is where you spot it, approval is where it stops you.
+`/season placements-review` shows the same summary and names anything that would stop the season. **Pressing Approve refuses** while something is broken — review is where you spot it, approval is where it stops you.
 
 It also lists your eight **asset directories** with the path each is set to, and marks any it cannot read. This is the one place in the review those paths appear, and it is worth a glance: a folder that has been moved or renamed draws placeholders everywhere, which looks exactly like artwork you never supplied. `/images config view` says what is wrong with a folder it cannot read; the review only tells you which one.
 
 **The review draws the calendar and the lineup for real.** With `calendar` or `lineup` switched on, that division's block in the review carries the picture instead of the text — the same picture the season will post once you approve it. That is the point of looking: what you sign off is what your league gets. With the switch off you see the text, as before.
 
-> **A picture the review cannot draw takes the Approve button away.** You are told what is wrong, that block falls back to its text so you still see the whole season, and the review ends with a note that the image module is not correctly configured instead of the button. There is no command that approves around it, so there is nothing to type instead of pressing the button. Fix what the review names and run `/season review` again.
+> **A picture the review cannot draw takes the Approve button away.** You are told what is wrong, that block falls back to its text so you still see the whole season, and the review ends with a note that the image module is not correctly configured instead of the button. There is no command that approves around it, so there is nothing to type instead of pressing the button. Fix what the review names and run `/season placements-review` again.
 
 > **Judge the finished picture, not the drawing file in a web browser.** They disagree on exactly the things worth checking — wrapped text, typefaces and missing images. The previews send you the finished picture for this reason.
 
@@ -710,8 +710,8 @@ Worth running through just before you approve.
 - [ ] You have looked at each output with its `/images test` command, against a real division of your season, and been happy with it
 - [ ] Your artwork is on the bot's computer, correctly named
 - [ ] If you turned per-tier colours on, every slot your drawings mark has a colour for every division
-- [ ] If you are letting the bot fetch driver photos, `/season review` shows it switched on with at least one update method
-- [ ] `/season review` reports nothing blocking, and still offers the **Approve** button
+- [ ] If you are letting the bot fetch driver photos, `/season placements-review` shows it switched on with at least one update method
+- [ ] `/season placements-review` reports nothing blocking, and still offers the **Approve** button
 
 ---
 

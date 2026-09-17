@@ -1,6 +1,6 @@
-"""Running `/season review` end to end, and what decides whether Approve is offered.
+"""Running `/season placements-review` end to end, and what decides whether Approve is offered.
 
-Issue #208. The helpers `/season review` reads from each have tests of their own, but nothing
+Issue #208. The helpers `/season placements-review` reads from each have tests of their own, but nothing
 drove the command itself — some two hundred statements of report assembly that no test reached.
 This file runs it with the image module off, so the graphics helpers stay out of the way and
 what is under test is the report and the decision at the end of it.
@@ -22,9 +22,9 @@ and says why, at the bottom of the review where a manager scrolling down looks f
 reasons are posted privately: they are for the reviewer, and the public review is what the
 approval later clears from the channel.
 
-**Unassigned drivers are counted.** A season approved with drivers still waiting for a seat is
-one where somebody signed up and was never placed, and the review is the last point anyone looks
-before the calendar starts running.
+**Unsettled signups are named, publicly.** Every signup has to be placed or turned down before
+placements are confirmed (issue #220), and whoever reads the review is shown who is still waiting
+— not merely how many.
 
 **Test mode's automatic points configurations are announced, not hidden.** A test season with
 nothing attached is approved with two seeded configurations, and a maintainer reading the review
@@ -213,6 +213,15 @@ def _cog(
     cog._post_review_calendar_image = AsyncMock(return_value=calendar_state)
     cog._post_review_lineup_image = AsyncMock(return_value=REVIEW_IMAGE_TEXT)
     cog._post_approval_prompt = AsyncMock()
+    # In Placements with nothing unsettled (issue #220); those gates are tested in
+    # test_placements_confirmation.py.
+    from models.season import SeasonStage
+
+    bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
+    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    # A season with no division is refused on its own terms, pinned in test_placements_confirmation.py.
+    cog._season_has_divisions = AsyncMock(return_value=True)
     return cog
 
 
@@ -253,17 +262,6 @@ def _public(messages) -> str:
 
 def _private(messages) -> str:
     return "\n".join(text for text, ephemeral in messages if ephemeral)
-
-
-async def _seed_unassigned(db_path, count: int):
-    async with get_connection(db_path) as db:
-        for n in range(count):
-            await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, 'UNASSIGNED')",
-                (SERVER_ID, str(5000 + n)),
-            )
-        await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -505,21 +503,25 @@ async def test_the_prepared_graphics_are_discarded(db_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_unassigned_drivers_are_counted(db_path):
-    """Somebody signed up and was never placed; the review is the last point anyone
-    looks before the calendar starts running."""
-    await _seed_unassigned(db_path, 3)
+async def test_every_unsettled_signup_is_named_in_the_public_report(db_path):
+    """Whoever reads the review sees who is still to be placed or turned down (#220)."""
+    cog = _cog(db_path)
+    cog._placement_confirmation_faults = AsyncMock(
+        return_value=(["**Racer** — not yet placed", "**Rookie** — awaiting approval"], [])
+    )
+    messages = await _review(cog, _interaction())
+
+    public = _public(messages)
+    assert "Unsettled signups" in public
+    assert "**Racer** — not yet placed" in public
+    assert "**Rookie** — awaiting approval" in public
+
+
+async def test_no_unsettled_signup_means_no_listing(db_path):
     cog = _cog(db_path)
     messages = await _review(cog, _interaction())
 
-    assert "3 driver(s) UNASSIGNED" in _public(messages)
-
-
-async def test_no_unassigned_drivers_means_no_warning(db_path):
-    cog = _cog(db_path)
-    messages = await _review(cog, _interaction())
-
-    assert "UNASSIGNED" not in _public(messages)
+    assert "Unsettled signups" not in _public(messages)
 
 
 # ---------------------------------------------------------------------------
@@ -567,6 +569,42 @@ async def test_the_same_blocker_from_several_divisions_is_said_once(db_path):
     messages = await _review(cog, _interaction())
 
     assert _private(messages).count("could not be drawn") == 1
+
+
+async def test_a_season_with_no_division_withholds_approval(db_path):
+    cog = _cog(db_path)
+    cog._season_has_divisions = AsyncMock(return_value=False)
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "This season has no divisions" in _private(messages)
+
+
+async def test_an_unsettled_signup_withholds_approval_and_is_named(db_path):
+    """Every signup is placed or rejected before placements are confirmed (issue #220)."""
+    cog = _cog(db_path)
+    cog._placement_confirmation_faults = AsyncMock(
+        return_value=(["**Racer** — not yet placed"], [])
+    )
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "Every signup must be settled" in _private(messages)
+    assert "**Racer** — not yet placed" in _public(messages)
+    assert "`/driver reject`" in _private(messages)
+
+
+async def test_a_division_without_its_lineup_or_calendar_channel_withholds_approval(db_path):
+    """The two channels every division posts to are required at confirmation (issue #220)."""
+    cog = _cog(db_path)
+    cog._placement_confirmation_faults = AsyncMock(
+        return_value=([], ["**Pro** has no lineup channel and no calendar channel"])
+    )
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "Every division needs its lineup and calendar channels" in _private(messages)
+    assert "**Pro** has no lineup channel" in _private(messages)
 
 
 async def test_a_phantom_points_configuration_withholds_approval(db_path):

@@ -45,7 +45,7 @@ This guide covers the results & standings module only. Setting the bot up, creat
 | Reading the submission channel, pasting results into it, and every button in it | The **interaction role** |
 | Anything under `/images` | See the image guide |
 
-> **Three of these cannot be undone, and they ask for more.** Deleting a points configuration removes it outright, and detaches it from a season still in setup — the bot names that season and asks first, and the season then needs another configuration before it can be approved. A season already approved keeps its own copy and is unaffected. Approving a mid-season points amendment overwrites the season's points entire. Amending a round that has already gone final overwrites the classification your drivers raced — it does not keep the old one. Those three ask for the league admin role; the rest of `/results` asks for the interaction role, which is the role that actually runs your race weekends.
+> **Three of these cannot be undone, and they ask for more.** Deleting a points configuration removes it outright, and detaches it from a season whose placements are not yet confirmed — the bot names that season and asks first, and the season then needs another configuration before it can be approved. A season already approved keeps its own copy and is unaffected. Approving a mid-season points amendment overwrites the season's points entire. Amending a round that has already gone final overwrites the classification your drivers raced — it does not keep the old one. Those three ask for the league admin role; the rest of `/results` asks for the interaction role, which is the role that actually runs your race weekends.
 >
 > The submission channel is opened to both roles, and every button in it — including the one that applies your penalties and the one that closes the round — accepts either. Pick the interaction role accordingly.
 
@@ -57,7 +57,7 @@ This guide covers the results & standings module only. Setting the bot up, creat
 /module enable results
 ```
 
-It can only be done while **no season is active**, so this belongs alongside your other setup, before approval.
+It is refused once a season's **placements are confirmed**, so this belongs alongside your other setup — with no season, or before you confirm placements.
 
 > **Switching it off is not guarded the same way — it is worse than that.** Enabling is refused mid-season; disabling is not, and deliberately so: a league whose results have become unworkable must be able to stop running them. But **disabling mid-season deletes that season's results.** Every classification you have recorded goes, every standing computed from them goes, and every results and standings message already posted is removed from its channel. Every round still waiting on results, report verdicts or appeal verdicts is closed as having run without results — which is what lets you complete the season afterwards instead of being stuck with it for ever. Verdicts you have already announced stay in the verdicts channel; the bot keeps no record by which to delete them. Your points configurations and your division channels are kept, and a round whose date has not yet come is left alone until it passes.
 >
@@ -112,7 +112,7 @@ Reads a configuration back to you privately. Positions worth nothing at the bott
 
 > **A lower position may never be worth as much as the one above it.** Give second place more points than first and the bot takes the change, then tells you the table is out of order and names the positions. The edit is not refused, because filling a table in passes through states that are momentarily wrong — setting second place before first, or repairing a table from the bottom up — and refusing them would make ordinary ways of building a table impossible to follow.
 >
-> **Approval is where it is refused**, and `/season review` names it before you get there — the report lists every position at fault and the Approve button is withheld, so you are not offered an approval that would be turned down. Two positive values tying counts as out of order; positions worth nothing at the bottom of the table do not, being the ordinary shape of one.
+> **Approval is where it is refused**, and `/season placements-review` names it before you get there — the report lists every position at fault and the Approve button is withheld, so you are not offered an approval that would be turned down. Two positive values tying counts as out of order; positions worth nothing at the bottom of the table do not, being the ordinary shape of one.
 
 > **`/results config view` needs a season.** Between seasons there is none, and the command refuses — so a table you may want to check before starting your next season setup is unreachable until you have run `/season setup`. There is also no command that lists what configurations you hold, so keep a note of the names you chose.
 
@@ -125,7 +125,7 @@ Reads a configuration back to you privately. Positions worth nothing at the bott
 /results config append name: Half Points
 ```
 
-Building a table does **not** put it in your season. Attaching it does, and it can only be done while the season is in setup — once approved, both `append` and `detach` are refused.
+Building a table does **not** put it in your season. Attaching it does, and it can only be done before the season's placements are confirmed — once approved, both `append` and `detach` are refused.
 
 **Attach as many as you will need.** On race day the bot offers you the attached configurations as buttons and you pick one **per session**, which is how a race stopped at half distance gets scored differently from the qualifying session that preceded it. Attach one only, and the bot picks it for you without asking.
 
@@ -133,7 +133,7 @@ Building a table does **not** put it in your season. Attaching it does, and it c
 
 **At approval the season takes its own private copy of every attached table.** From that moment the season is sealed off: editing the server's `100%` afterwards changes nothing about the running championship, and the copy is what every round is scored against. Changing a running season's points is a separate job, described under [Correcting something afterwards](#the-points-system-itself-mid-season), and it is deliberately harder.
 
-> **A name you mistype is refused on the spot.** `/results config append` checks the configuration exists before attaching anything, so a typo is told to you at the moment you make it rather than becoming a season that cannot be approved. If you have an older season carrying such a name already, `/season review` names it and approval refuses on it, saying which one is missing and how to put it right.
+> **A name you mistype is refused on the spot.** `/results config append` checks the configuration exists before attaching anything, so a typo is told to you at the moment you make it rather than becoming a season that cannot be approved. If you have an older season carrying such a name already, `/season placements-review` names it and approval refuses on it, saying which one is missing and how to put it right.
 
 ---
 
@@ -174,7 +174,7 @@ Out of the box, everything this module posts is a text table. The image module t
 
 > **A results drawing file with fewer rows than your division needs falls back to text.** Nothing refuses a driver over it — the bot would rather post the full table as text than a picture quietly missing the last two drivers. Check the row count against your biggest division and your longest calendar.
 
-> **The standings drawing files are the exception: they refuse.** Like the attendance sheet, the driver standings file is counted before a driver is seated, and `/team assign` is turned away if the division would outgrow it — with the assignment unapplied, so nothing is half-done. The constructor standings file cannot be outgrown by seating a driver, so it is checked at `/season review` instead, alongside the round columns of both files against your longest calendar. Each file is named separately in what you are told; they are two drawings and only one of them may be the one to enlarge.
+> **The standings drawing files are the exception: they refuse.** Like the attendance sheet, the driver standings file is counted before a driver is seated, and `/team assign` is turned away if the division would outgrow it — with the assignment unapplied, so nothing is half-done. The constructor standings file cannot be outgrown by seating a driver, so it is checked at `/season placements-review` instead, alongside the round columns of both files against your longest calendar. Each file is named separately in what you are told; they are two drawings and only one of them may be the one to enlarge.
 
 ---
 
@@ -194,7 +194,7 @@ Two things about test mode matter here specifically. **Enabling it attaches poin
 
 See [Test mode](test-mode.md) for the whole picture.
 
-> **Test mode is only available before your league has real drivers.** The bot refuses to turn it on while any driver is signed up, unassigned, assigned or banned, or while your signup window is open, and while it is on no real driver may sign up or be placed. Former drivers from a finished season do not stand in the way. Do this step before you open signups — and note that once a season is running with fake drivers in it, test mode stays on until you `/season complete`.
+> **Test mode is chosen for a season, in its configuration.** `/test-mode toggle` works only while a season is in configuration, and is refused while any real driver is signed up, unassigned, assigned or banned — which, once a season has ended, nobody is. A season confirmed in test mode never opens a signup window, and while test mode is on no real driver may sign up or be placed. It stays on until that season is completed, cancelled or aborted, which switches it off and deletes the fake drivers — so test in a season of its own, and abort it with `/season abort` if you would rather not race it out. See [Setting up the bot for your league](configuring-the-core-bot.md) for the season's stages.
 
 > **A round that has been submitted but not settled blocks `/test-mode advance`.** Finish the penalty and appeals stages first; the refusal tells you which round is waiting.
 
@@ -369,7 +369,7 @@ Worth knowing so you do not go looking for the setting.
 - [ ] At least one points configuration exists and its tables are filled in for every session type your calendar uses
 - [ ] No position is worth the same as or more than the one above it — check this yourself with `/results config view`, because approval will not
 - [ ] The fastest-lap bonus and its position limit are set, or deliberately left at nothing
-- [ ] Every configuration you will need is attached, and `/season review` lists the names you expect — spelled exactly as you built them
+- [ ] Every configuration you will need is attached, and `/season placements-review` lists the names you expect — spelled exactly as you built them
 - [ ] Reserve visibility is what you want, per division
 - [ ] If you want pictures: the image module is on, the aspects are toggled, and both drawing files of each pair have rows enough for your biggest division — remembering that `standings` does not draw anything yet
 - [ ] You have taken one full round through submission, penalties and appeals with `/test-mode advance`
@@ -380,7 +380,7 @@ Worth knowing so you do not go looking for the setting.
 
 | What you see | Usually means |
 |---|---|
-| Pressing **Approve** never replies at all | Known: a configuration is attached under a name that does not exist — a typo, or one you removed. Check `/season review` against your real names |
+| Pressing **Approve** never replies at all | Known: a configuration is attached under a name that does not exist — a typo, or one you removed. Check `/season placements-review` against your real names |
 | Season refused for a missing channel | A division is short of its results, standings or verdicts channel. The reply names each one |
 | Season refused for a points table out of order | A position is worth as much as or more than the one above it. The refusal names each one; repair them with `/results config session` and approve again |
 | Season refused for having no points configuration | Nothing is attached. `/results config append` first |
@@ -388,7 +388,7 @@ Worth knowing so you do not go looking for the setting.
 | No submission channel when a round started | The module is off, the division has no results channel, or the round was cancelled. The log channel says which |
 | No submission channel for a round you moved | `/round amend` re-arms the round's submission whatever your modules. If one still does not open, check the round actually reached its scheduled time |
 | A submission rejected over a team role | The Reserve role in a team column, three lines under one team, or a driver under a different team from the one another session of the round already records |
-| A submission rejected over a driver | Not mentioned, or not seated in that division. A reserve also needs `/team reserve-role` set |
+| A submission rejected over a driver | Not mentioned, or not seated in that division — a driver placed mid-season whose placement is not yet confirmed counts as not seated. A reserve also needs `/team reserve-role` set |
 | Everything you pasted gone after a restart | Known: a part-finished submission is discarded and reopened from the first session. A part-finished *resubmission* is dropped too, but the round keeps the results it had |
 | Results posted but no standings | Every session of the round was cancelled, so there was nothing to score |
 | Points on the tables you did not expect | The session was scored against whichever configuration was chosen for it. `/results config view` shows what that configuration says |

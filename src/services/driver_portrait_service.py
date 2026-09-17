@@ -338,7 +338,7 @@ async def refresh_before_render(
     here.
 
     *ignore_trigger* pulls even where the league asked for daily updates rather than
-    pre-render ones. Only `/season approve` sets it, and only for the render it makes to
+    pre-render ones. Only the confirmation of placements sets it, and only for the render it makes to
     decide whether the season may be committed. ``use_pfp`` still governs: a league not
     taking portraits from Discord at all is never fetched for.
 
@@ -351,7 +351,7 @@ async def refresh_before_render(
     # off, which is the same answer the defaults give.
     if config is None or not getattr(config, "use_pfp", False):
         return 0
-    # `pfp_prerender` is the league's choice about *ordinary* postings. `/season approve`
+    # `pfp_prerender` is the league's choice about *ordinary* postings. The confirmation of placements
     # sets `ignore_trigger` and pulls whichever trigger is on: it is the one moment a
     # manager is watching, the season is being committed on the strength of a trial
     # render, and drawing yesterday's portraits there would misrepresent what the season

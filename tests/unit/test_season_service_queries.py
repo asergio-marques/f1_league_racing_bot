@@ -10,7 +10,7 @@ what makes the four lookups distinguishable, and it is seeded here rather than a
 tests put several COMPLETED seasons behind one live one, which is the arrangement a league is
 actually in from its second season onwards.
 
-`get_active_season`, `get_setup_season`, `get_setup_or_active_season` and
+`get_confirmed_season`, `get_setup_season`, `get_setup_or_active_season` and
 `get_season_for_server` each answer a different question about that data, and every command in
 the bot picks one of them — picking the wrong one is how a command comes to edit last season.
 Each is therefore checked against archived seasons being present, which is the case that tells
@@ -171,7 +171,7 @@ async def test_the_active_season_is_found_past_a_league_s_history(tmp_path):
     back last year's championship."""
     db_path = await _history_plus_live(tmp_path, "ACTIVE")
 
-    season = await SeasonService(db_path).get_active_season(SERVER_ID)
+    season = await SeasonService(db_path).get_confirmed_season(SERVER_ID)
 
     assert season is not None
     assert season.id == 3
@@ -179,11 +179,11 @@ async def test_the_active_season_is_found_past_a_league_s_history(tmp_path):
 
 
 async def test_a_league_between_seasons_has_no_active_season(tmp_path):
-    """Its live season is in SETUP, so `get_active_season` must be empty — commands
+    """Its live season is in SETUP, so `get_confirmed_season` must be empty — commands
     guarded on an active season are exactly the ones that must not run during setup."""
     db_path = await _history_plus_live(tmp_path, "SETUP")
 
-    assert await SeasonService(db_path).get_active_season(SERVER_ID) is None
+    assert await SeasonService(db_path).get_confirmed_season(SERVER_ID) is None
 
 
 async def test_the_setup_season_is_the_one_being_built(tmp_path):
@@ -225,7 +225,7 @@ async def test_a_server_with_no_season_reads_as_none(tmp_path):
     db_path = await _make_db(tmp_path)
     service = SeasonService(db_path)
 
-    assert await service.get_active_season(SERVER_ID) is None
+    assert await service.get_confirmed_season(SERVER_ID) is None
     assert await service.get_setup_season(SERVER_ID) is None
     assert await service.get_season_for_server(SERVER_ID) is None
 
@@ -235,7 +235,7 @@ async def test_another_server_s_seasons_are_never_returned(tmp_path):
     these `WHERE server_id` clauses exist to prevent."""
     service = SeasonService(await _history_plus_live(tmp_path, "ACTIVE"))
 
-    assert await service.get_active_season(OTHER_SERVER_ID) is None
+    assert await service.get_confirmed_season(OTHER_SERVER_ID) is None
     assert await service.get_setup_season(OTHER_SERVER_ID) is None
 
 
@@ -311,7 +311,7 @@ async def test_a_season_is_completed_in_place(tmp_path):
 
     await service.complete_season(1)
 
-    assert await service.get_active_season(SERVER_ID) is None
+    assert await service.get_confirmed_season(SERVER_ID) is None
     assert await service.has_active_or_completed_season(SERVER_ID) is True
 
 

@@ -32,10 +32,10 @@ from services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
     count_live_real_drivers,
-    count_test_drivers_in_a_started_season,
     get_next_pending_phase,
     build_review_summary,
 )
+from models.season import SeasonStage
 from services import backup_service
 from utils.channel_guard import league_admin_only
 from utils.message_builder import paginate_fenced
@@ -68,26 +68,29 @@ class TestModeCog(commands.Cog):
     )
     @league_admin_only
     async def toggle(self, interaction: discord.Interaction) -> None:
-        """Flip test mode, refusing to enable it while the server holds real drivers.
+        """Flip test mode for the season in configuration.
 
-        Test mode may not be switched on over a real league: disabling it again deletes
-        every fake driver on the server without confirmation, and while it is on the
-        signup and placement paths refuse real drivers outright, so a league that enabled
-        it mid-season would find itself unable to run.
-
-        Leaving is refused in one case only: a season that has started while holding fake
-        drivers keeps test mode on until it is completed. Disabling deletes every fake
-        driver, and one that has raced cannot be deleted — the check-in, the standings and
-        the season's end each write a row carrying a foreign key to the profile — so the
-        delete raised after the flag had already been flipped, stranding the server out of
-        test mode with its roster still seated and no reply sent.
-
-        An open signup window is refused for the same reason. `/signup open` will not run
-        under test mode, and it would be inconsistent to leave a window already open —
-        one whose button is posted and pinging the base role — silently rejecting every
-        driver who pressed it. The window is not closed here: that posts a public notice
-        in a channel a league reads, which is not something a flag flip should do.
+        Refused outside Configuration, and refused to enable while the server holds real
+        drivers: disabling it again deletes every fake driver on the server without
+        confirmation, and while it is on the signup and placement paths refuse real drivers
+        outright.
         """
+        # Test mode is chosen for a season, in its configuration (issue #220). Confirming
+        # the configuration fixes it, and the season's end switches it off. That is also what
+        # retired the two refusals this command used to make: no signup window is open in
+        # Configuration, and no season in Configuration has raced a fake driver.
+        from services.season_lifecycle_service import live_season_stage
+
+        live = await live_season_stage(self.bot.db_path, interaction.guild_id)  # type: ignore[attr-defined]
+        if live is None or live[1] is not SeasonStage.CONFIGURATION:
+            await interaction.response.send_message(
+                "⛔ Test mode can only be switched while a season is in configuration. "
+                "Start one with `/season setup`; a season whose configuration is confirmed "
+                "keeps test mode as it stands until the season ends.",
+                ephemeral=True,
+            )
+            return
+
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
             interaction.guild_id
         )
@@ -102,34 +105,6 @@ class TestModeCog(commands.Cog):
                     f"**{real_drivers}** real driver(s).\n"
                     "Test mode is for an empty league — disabling it deletes every fake "
                     "driver, and while it is on no real driver may sign up or be placed.",
-                    ephemeral=True,
-                )
-                return
-
-            signups_open = await self.bot.signup_module_service.get_window_state(  # type: ignore[attr-defined]
-                interaction.guild_id
-            )
-            if signups_open:
-                await interaction.response.send_message(
-                    "⛔ Test mode cannot be enabled while signups are open.\n"
-                    "No real driver may sign up under test mode, so the button would "
-                    "refuse everyone who pressed it. Close the window with "
-                    "`/signup close` first.",
-                    ephemeral=True,
-                )
-                return
-
-        if config is not None and config.test_mode_active:
-            seated = await count_test_drivers_in_a_started_season(
-                interaction.guild_id,
-                self.bot.db_path,  # type: ignore[attr-defined]
-            )
-            if seated:
-                await interaction.response.send_message(
-                    f"⛔ Test mode cannot be disabled while a running season holds "
-                    f"**{seated}** fake driver(s).\n"
-                    "Disabling deletes them, and a driver the season has raced cannot be "
-                    "deleted. Finish the season with `/season complete` first.",
                     ephemeral=True,
                 )
                 return
@@ -189,18 +164,30 @@ class TestModeCog(commands.Cog):
                     removed,
                     interaction.guild_id,
                 )
+            # The saved state goes with test mode (decided 2026-09-17): the backup commands
+            # run in test mode alone, so a state kept past it is one nothing could restore.
+            discarded = False
+            try:
+                discarded = backup_service.discard(
+                    self.bot.db_path, _jobstore_path(self.bot)  # type: ignore[attr-defined]
+                )
+            except Exception:  # noqa: BLE001 — a backup left behind is not worth the toggle
+                log.exception("test-mode toggle: could not discard the saved backup")
             msg = (
                 "✅ Test mode **disabled**. "
                 "The scheduler will resume normal operation for any remaining pending phases."
             )
             if removed:
                 msg += f"\n🗑️ Removed **{removed}** fake driver(s)."
+            if discarded:
+                msg += "\n🗑️ Deleted the saved test-mode backup."
             await interaction.followup.send(msg, ephemeral=True)
             await self.bot.output_router.post_log(
                 interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode toggle | Success\n"
                 f"  test_mode: disabled"
-                + (f"\n  removed_fake_drivers: {removed}" if removed else ""),
+                + (f"\n  removed_fake_drivers: {removed}" if removed else "")
+                + ("\n  backup: deleted" if discarded else ""),
             )
 
     # ------------------------------------------------------------------
@@ -643,6 +630,26 @@ class TestModeCog(commands.Cog):
         default_permissions=None,
     )
 
+    async def _refuse_roster_change_outside_placements(
+        self, interaction: discord.Interaction
+    ) -> bool:
+        """Reply and return True where the season is not in Placements (issue #220).
+
+        Fake drivers are seated, removed and cleared only while the season is in Placements,
+        which is where real drivers are placed too: test mode replicates the live flow rather
+        than inventing one. Listing the roster is left free.
+        """
+        from services.season_lifecycle_service import live_season_stage
+
+        live = await live_season_stage(self.bot.db_path, interaction.guild_id)  # type: ignore[attr-defined]
+        if live is not None and live[1] is SeasonStage.PLACEMENTS:
+            return False
+        await interaction.response.send_message(
+            "⛔ The test roster can only be changed while the season is in placements.",
+            ephemeral=True,
+        )
+        return True
+
     async def _refuse_outside_test_mode(self, interaction: discord.Interaction) -> bool:
         """Reply and return True where the server is not in test mode.
 
@@ -855,6 +862,8 @@ class TestModeCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        if await self._refuse_roster_change_outside_placements(interaction):
+            return
 
         # A nationality cannot be recorded while the switch is off, as the signup wizard
         # drops the question entirely rather than collecting an answer it will not keep.
@@ -929,6 +938,8 @@ class TestModeCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        if await self._refuse_roster_change_outside_placements(interaction):
+            return
 
         await interaction.response.send_modal(_RosterImportModal(self))
 
@@ -953,6 +964,8 @@ class TestModeCog(commands.Cog):
                 "⛔ This command is only available when test mode is enabled.",
                 ephemeral=True,
             )
+            return
+        if await self._refuse_roster_change_outside_placements(interaction):
             return
 
         try:
@@ -1074,6 +1087,8 @@ class TestModeCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        if await self._refuse_roster_change_outside_placements(interaction):
+            return
 
         from services.test_roster_service import clear_test_drivers
 
@@ -1154,23 +1169,27 @@ class TestModeCog(commands.Cog):
 
         from db.database import get_connection as _gc
 
-        # Validate division exists in the active season and has an active RSVP embed
+        # Validate the division is of a season being raced — one of the three ongoing stages,
+        # a check-in belonging to nothing else (issue #220) — and has an active RSVP embed.
+        from models.season import ONGOING_STAGES
+
+        ongoing = [stage.value for stage in ONGOING_STAGES]
         async with _gc(self.bot.db_path) as db:  # type: ignore[attr-defined]
             cur = await db.execute(
-                """
+                f"""
                 SELECT d.id AS division_id
                   FROM divisions d
                   JOIN seasons s ON s.id = d.season_id
-                 WHERE s.server_id = ? AND s.status = 'ACTIVE'
+                 WHERE s.server_id = ? AND s.stage IN ({",".join("?" for _ in ongoing)})
                    AND LOWER(d.name) = LOWER(?)
                 """,
-                (guild_id, division),
+                (guild_id, *ongoing, division),
             )
             div_row = await cur.fetchone()
 
         if div_row is None:
             await interaction.response.send_message(
-                f"❌ Division **{division}** not found in the active season.", ephemeral=True
+                f"❌ Division **{division}** not found in a season being raced.", ephemeral=True
             )
             return
         division_id: int = div_row["division_id"]

@@ -1,4 +1,4 @@
-"""The calendar faults `/season review` reports, and the windows it judges them against.
+"""The calendar faults `/season placements-review` reports, and the windows it judges them against.
 
 Issue #208. `season_cog.py` is the largest file in the bot. This file takes the two helpers that
 decide what a league is told is wrong with its calendar before it can approve a season.
@@ -13,7 +13,7 @@ calendar to move wholesale; a round inside its window is one date to push out, o
 shorten. Telling a manager the wrong one sends them to the wrong command, so each line names its
 own remedy — and a calendar with both faults gets both lines.
 
-**The verdict is taken rather than the rounds.** `/season review` and the approval reach this by
+**The verdict is taken rather than the rounds.** `/season placements-review` and the approval reach this by
 different routes and must not be able to reach different answers — a review that passed and an
 approval that refused would be the worst of both.
 

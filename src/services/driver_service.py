@@ -66,6 +66,36 @@ _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP: set[DriverState] = {
 }
 
 
+async def write_transition(
+    db,
+    profile_id: int,
+    current: DriverState,
+    new_state: DriverState,
+    *,
+    test_mode_active: bool = False,
+) -> None:
+    """Write *profile_id*'s move from *current* to *new_state*, within the caller's transaction.
+
+    The one place a driver's state is written (Constitution VIII: no code path sets a state
+    directly). A caller changing a state as part of a larger write — a sack freeing seats in
+    the same transaction, the driver pass ending a season — calls this rather than issuing
+    the UPDATE itself, so the transition table governs every route alike. Raises ValueError
+    for a transition the table does not allow, having written nothing. Does not commit.
+    """
+    allowed = set(ALLOWED_TRANSITIONS.get(current, set()))
+    if test_mode_active and current == DriverState.NOT_SIGNED_UP:
+        allowed |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
+    if new_state not in allowed:
+        raise ValueError(
+            f"Transition from {current.value} to {new_state.value} is not allowed. "
+            f"Allowed targets: {sorted(s.value for s in allowed) or 'none'}."
+        )
+    await db.execute(
+        "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
+        (new_state.value, profile_id),
+    )
+
+
 def _row_to_profile(row) -> DriverProfile:
     """Convert an aiosqlite Row from driver_profiles to a DriverProfile."""
     return DriverProfile(
@@ -146,59 +176,6 @@ class DriverService:
             league_ban_count=0,
         )
 
-    async def _update_state(self, profile_id: int, new_state: DriverState) -> None:
-        """Persist a state change."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
-                (new_state.value, profile_id),
-            )
-            await db.commit()
-
-    async def _clear_seat_references(self, profile_id: int) -> None:
-        """NULL-out any team_seats rows referencing this profile."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id = ?",
-                (profile_id,),
-            )
-            await db.commit()
-
-    async def _delete_profile(self, profile_id: int) -> None:
-        """Hard-delete the driver profile row."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "DELETE FROM driver_profiles WHERE id = ?",
-                (profile_id,),
-            )
-            await db.commit()
-
-    async def _clear_signup_record(self, server_id: int, discord_user_id: str) -> None:
-        """Null out all signup data fields for a former driver (FR-036).
-        The signup_channel_id is retained until the channel is pruned."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                UPDATE signup_records
-                SET discord_username     = NULL,
-                    server_display_name  = NULL,
-                    nationality          = NULL,
-                    platform             = NULL,
-                    platform_id          = NULL,
-                    availability_slot_ids = NULL,
-                    driver_type          = NULL,
-                    preferred_teams      = NULL,
-                    preferred_teammate   = NULL,
-                    lap_times_json       = NULL,
-                    total_lap_ms         = NULL,
-                    notes                = NULL,
-                    updated_at           = datetime('now')
-                WHERE server_id = ? AND discord_user_id = ?
-                """,
-                (server_id, discord_user_id),
-            )
-            await db.commit()
-
     # ------------------------------------------------------------------
     # State machine
     # ------------------------------------------------------------------
@@ -213,8 +190,9 @@ class DriverService:
     ) -> DriverProfile | None:
         """Transition a driver to *new_state*.
 
-        Returns the updated DriverProfile, or None if the profile was deleted
-        (NOT_SIGNED_UP transition for a non-former-driver).
+        Returns the updated DriverProfile. No transition deletes a profile (issue #220): a
+        driver without the former-driver flag who reaches NOT_SIGNED_UP is pending deletion,
+        and is deleted by the driver pass that ends the season.
 
         Raises ValueError for disallowed transitions.
         """
@@ -234,27 +212,15 @@ class DriverService:
                 )
             return await self._create_profile(server_id, discord_user_id, new_state)
 
-        current = profile.current_state
-        allowed = set(ALLOWED_TRANSITIONS.get(current, set()))
-        if test_mode_active and current == DriverState.NOT_SIGNED_UP:
-            allowed |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
-
-        if new_state not in allowed:
-            raise ValueError(
-                f"Transition from {current.value} to {new_state.value} is not allowed. "
-                f"Allowed targets: {sorted(s.value for s in allowed) or 'none'}."
+        # Reaching Not Signed Up deletes nothing and clears nothing (issue #220). A driver
+        # without the former-driver flag is pending deletion, deleted by the season's end;
+        # a former driver's signups are season history and are kept whole.
+        async with get_connection(self._db_path) as db:
+            await write_transition(
+                db, profile.id, profile.current_state, new_state,
+                test_mode_active=test_mode_active,
             )
-
-        if new_state == DriverState.NOT_SIGNED_UP:
-            if not profile.former_driver:
-                await self._clear_seat_references(profile.id)
-                await self._delete_profile(profile.id)
-                return None
-            else:
-                # Former driver: null out signup record fields (FR-036)
-                await self._clear_signup_record(profile.server_id, profile.discord_user_id)
-
-        await self._update_state(profile.id, new_state)
+            await db.commit()
         profile.current_state = new_state
         return profile
 
@@ -270,7 +236,7 @@ class DriverService:
         actor_id: int,
         actor_name: str,
     ) -> DriverProfile:
-        """Re-key an existing driver profile from old_user_id to new_user_id."""
+        """Re-key an existing driver profile, and its signups, from old_user_id to new_user_id."""
         existing_old = await self.get_profile(server_id, old_user_id)
         if existing_old is None:
             raise ValueError(
@@ -286,6 +252,13 @@ class DriverService:
             await db.execute(
                 "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
                 (new_user_id, existing_old.id),
+            )
+            # Every signup the profile made goes with it (issue #220): they are keyed by the
+            # account, and left on the old one they would belong to nobody's history.
+            await db.execute(
+                "UPDATE signup_records SET discord_user_id = ? "
+                "WHERE server_id = ? AND discord_user_id = ?",
+                (new_user_id, server_id, old_user_id),
             )
             await db.execute(
                 "INSERT INTO audit_entries "

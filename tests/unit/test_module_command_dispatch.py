@@ -42,6 +42,8 @@ def _cog():
     for verb in ("enable", "disable"):
         for module in HANDLED:
             setattr(cog, f"_{verb}_{module}", AsyncMock())
+    # The stage gate in front of the dispatch has tests of its own.
+    cog._refuse_module_change = AsyncMock(return_value=False)
     return cog
 
 

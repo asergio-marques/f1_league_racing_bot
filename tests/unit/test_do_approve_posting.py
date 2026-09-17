@@ -148,6 +148,14 @@ def _cog(
     cog.bot.db_path = db_path
     cog._pending = {USER_ID: _pending()}
     cog._get_pending_for_server = MagicMock(return_value=_pending())
+    # In Placements, every signup settled and every channel set (issue #220; tested in
+    # test_placements_confirmation.py).
+    from models.season import SeasonStage
+
+    cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
+    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    # A season with no division is refused on its own terms, pinned in test_placements_confirmation.py.
+    cog._season_has_divisions = AsyncMock(return_value=True)
     cog._team_name_problems = AsyncMock(return_value=[])
     cog._lineup_problems = AsyncMock(return_value=[])
 

@@ -42,7 +42,7 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     season_svc = bot.season_service  # type: ignore[attr-defined]
 
     # Idempotency guard: verify the season still exists and is active
-    season = await season_svc.get_active_season(server_id)
+    season = await season_svc.get_confirmed_season(server_id)
     if season is None:
         log.info(
             "execute_season_end: no active season for server %s — already archived.",
@@ -53,20 +53,15 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     # Cancel any pending season-end scheduler job (no-op if already fired)
     bot.scheduler_service.cancel_season_end(server_id)  # type: ignore[attr-defined]
 
-    # Revoke division, team, and signup roles from all assigned drivers
     guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
-    if guild is not None:
-        await _revoke_season_roles(server_id, season.id, guild, bot)
 
-    # Write DriverHistoryEntry records for every assigned driver before archiving
-    await _write_driver_history_entries(season, bot)
-
-    # ── The final classification, per division ────────────────────────────
-    # The season's last word: each division's standings and attendance record posted once
-    # more, headed `Final Classification`, as graphics with no text above them. Posted
-    # while the season is still ACTIVE, because everything downstream of here reads it as
-    # the live one. A failure never blocks the archival — the season completes either way,
-    # and a picture is not what the completion is for (XIV.7).
+    # The season's end, in the order the core specification sets (issue #220).
+    # 1. The final classification, per division. The season's last word: each division's
+    #    standings and attendance record posted once more, headed `Final Classification`, as
+    #    graphics with no text above them. Posted while the season is still active, because
+    #    everything downstream of here reads it as the live one. A failure never blocks the
+    #    archival — the season completes either way, and a picture is not what the completion
+    #    is for (XIV.7).
     if guild is not None:
         from services import season_classification_service as classification
 
@@ -97,7 +92,18 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
                     "execute_season_end: could not post the final classification report"
                 )
 
-    # Archive: flip status to COMPLETED (all data retained)
+    # 2. History entries, for every driver holding a committed placement.
+    await _write_driver_history_entries(season, bot)
+
+    # 3. The division, team and signup roles of the season's drivers.
+    if guild is not None:
+        await _revoke_season_roles(server_id, season.id, guild, bot)
+
+    # 4-6. The signup window, the driver pass and test mode, shared with cancelling. The
+    # saved test-mode backup goes too: the season it belonged to has been run to its end.
+    await end_of_season_pass(server_id, bot, guild, discard_backup=True)
+
+    # 7. Archive: flip status to COMPLETED (all data retained)
     await season_svc.complete_season(season.id)
 
     # Announce completion
@@ -113,10 +119,59 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     )
 
 
+async def end_of_season_pass(
+    server_id: int, bot: "Bot", guild, *, discard_backup: bool = False
+) -> dict:
+    """The driver pass, the signup window and test mode: what every end of a season does (#220).
+
+    Shared by completing, cancelling and aborting a season, in that order within each:
+
+    - the signup window closed, where one stands open — first, so that nobody begins a signup
+      the driver pass has already gone by;
+    - the driver pass, returning the season's drivers to Not Signed Up and deleting those
+      pending deletion;
+    - test mode switched off, deleting every driver it created and keeping their history.
+
+    Each step is fail-soft against the next: a window that cannot be closed does not keep a
+    server in test mode. Returns what the driver pass reported.
+
+    *discard_backup* deletes the saved test-mode backup with it, which **completing** a season
+    passes and cancelling or aborting one does not (decided 2026-09-17): a season run to its end
+    leaves a state nothing could restore, where an abandoned one leaves the state a maintainer
+    goes back to.
+    """
+    from services.season_lifecycle_service import run_driver_pass
+    from services.test_mode_service import switch_test_mode_off
+
+    try:
+        signup_cfg = await bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
+        if signup_cfg is not None and signup_cfg.signups_open:
+            from cogs.module_cog import execute_forced_close
+
+            await execute_forced_close(server_id, bot, audit_action="SIGNUP_SEASON_END_CLOSE")
+    except Exception:  # noqa: BLE001
+        log.exception("end_of_season_pass: could not close the signup window")
+
+    result = await run_driver_pass(bot.db_path, server_id, bot=bot, guild=guild)
+
+    try:
+        await switch_test_mode_off(server_id, bot, discard_backup=discard_backup)
+    except Exception:  # noqa: BLE001
+        log.exception("end_of_season_pass: could not switch test mode off")
+
+    return result
+
+
 async def _write_driver_history_entries(
     season: "Season", bot: "Bot", *, force_cancelled: bool = False
 ) -> None:
-    """Write a DriverHistoryEntry for every ASSIGNED driver at season end.
+    """Write a DriverHistoryEntry for every division each driver took part in during the season.
+
+    A driver took part in a division once a placement of theirs in it was committed, and
+    stays part of it whatever becomes of the placement afterwards: a driver moved, released
+    or sacked mid-season holds an entry for every division they raced in, as the season's
+    history lists them (issue #220). Read from ``driver_division_memberships``, which records
+    each committed placement as it is committed and is never cleared by a placement changing.
 
     Sources:
     - season_number, division_name, division_tier: from the season/division rows
@@ -140,17 +195,21 @@ async def _write_driver_history_entries(
     db_path: str = bot.db_path  # type: ignore[attr-defined]
 
     async with get_connection(db_path) as db:
-        # Load all ASSIGNED driver × division pairs for this season
+        # Every driver × division a committed placement was ever held in this season.
         cursor = await db.execute(
             """
-            SELECT dsa.driver_profile_id,
+            SELECT m.driver_profile_id,
+                   dp.server_id,
+                   dp.discord_user_id,
                    d.id     AS division_id,
                    d.name   AS division_name,
                    d.tier   AS division_tier,
                    d.status AS division_status
-            FROM driver_season_assignments dsa
-            JOIN divisions d ON d.id = dsa.division_id
-            WHERE d.season_id = ?
+            FROM driver_division_memberships m
+            JOIN divisions d ON d.id = m.division_id
+            JOIN driver_profiles dp ON dp.id = m.driver_profile_id
+            WHERE m.season_id = ?
+            ORDER BY m.id
             """,
             (season.id,),
         )
@@ -220,11 +279,14 @@ async def _write_driver_history_entries(
             await db.execute(
                 """
                 INSERT OR IGNORE INTO driver_history_entries
-                    (driver_profile_id, season_number, division_name, division_tier,
-                     final_position, final_points, points_gap_to_winner, cancelled)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (server_id, discord_user_id, driver_profile_id, season_number,
+                     division_name, division_tier, final_position, final_points,
+                     points_gap_to_winner, cancelled)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    asgn["server_id"],
+                    asgn["discord_user_id"],
                     driver_profile_id,
                     season.season_number,
                     div_name,

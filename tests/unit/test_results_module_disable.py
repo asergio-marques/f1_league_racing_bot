@@ -150,7 +150,7 @@ def _make_cog(
     bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
     bot.season_service = MagicMock()
-    bot.season_service.get_active_season = AsyncMock(return_value=season)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
     bot.season_service.end_rounds_awaiting_results = AsyncMock(return_value=[])
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)

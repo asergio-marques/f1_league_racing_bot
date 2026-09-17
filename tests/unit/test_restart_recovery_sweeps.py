@@ -356,7 +356,7 @@ async def test_the_reviewer_is_told_the_review_expired(tmp_path):
 
     posted = str(channel.send.await_args.args[0])
     assert f"<@{REVIEWER_ID}>" in posted
-    assert "/season review" in posted
+    assert "/season placements-review" in posted
 
 
 async def test_the_row_is_cleared(tmp_path):

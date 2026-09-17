@@ -271,7 +271,7 @@ def test_a_long_list_of_faults_is_capped():
 
 # ── The same rule in `/round add` ─────────────────────────────────────────
 #
-# Two rounds of one division may not share a moment. `/season approve` has always
+# Two rounds of one division may not share a moment. The confirmation of placements has always
 # refused such a season (Gate 0b), but only at approval — after the calendar may
 # already have been built and posted. The bulk commands catch it at import, and
 # `/round add` now catches it at the command, so all three agree.

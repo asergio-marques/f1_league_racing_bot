@@ -197,7 +197,7 @@ def test_the_attendance_reserve_distribution_does_not_refresh_the_lineup():
 
 
 def test_render_for_command_persists_no_message_id_and_deletes_nothing():
-    """FR-028 — `/team lineup` and `/season review` must not touch the record."""
+    """FR-028 — `/team lineup` and `/season placements-review` must not touch the record."""
     source = _function_source(
         SRC / "services" / "image_lineup_post.py", "render_for_command", code_only=True
     )
@@ -276,10 +276,10 @@ def test_season_review_subsections_do_not_share_a_list():
     source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
 
     for marker, expected in [
-        ("**Signup Config**", "signup_lines"),
-        ("**Attendance Config**", "attendance_lines"),
-        ("**Weather Config**", "weather_lines"),
-        ("**Points Configs:** " + chr(34), "points_lines"),
+        ("_signup_review_lines", "signup_lines"),
+        ("_attendance_review_lines", "attendance_lines"),
+        ("_weather_review_lines", "weather_lines"),
+        ("_points_names_review_lines", "points_lines"),
         ("_build_image_review_section", "image_lines"),
     ]:
         before = source[: source.index(marker)]

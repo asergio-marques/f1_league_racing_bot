@@ -132,22 +132,23 @@ async def test_another_server_s_driver_is_not_visible(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_an_ordinary_driver_s_profile_is_deleted_outright(tmp_path):
-    """They never raced, so there is nothing to keep — and a lingering profile would make
-    them look like a driver of the league."""
+async def test_an_ordinary_driver_is_kept_pending_deletion(tmp_path):
+    """Issue #220: nothing is deleted on reaching Not Signed Up. A driver who never raced is
+    pending deletion, and the season's end deletes them."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, state="UNASSIGNED", former=False)
     service = DriverService(db_path)
 
     result = await service.transition(SERVER_ID, OLD_USER, DriverState.NOT_SIGNED_UP)
 
-    assert result is None
-    assert await _profile_count(db_path) == 0
+    assert result is not None
+    assert result.current_state is DriverState.NOT_SIGNED_UP
+    assert await _profile_count(db_path) == 1
 
 
-async def test_a_former_driver_is_kept_and_their_signup_blanked(tmp_path):
-    """`former_driver` records that somebody raced in this league once. Deleting them
-    would lose that permanently, so the record is emptied instead."""
+async def test_a_former_driver_is_kept_with_their_signup(tmp_path):
+    """`former_driver` records that somebody raced in this league once, so the profile is
+    kept — and their signups with it, those being season history (issue #220)."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, state="UNASSIGNED", former=True)
     await _seed_signup_record(db_path)
@@ -163,40 +164,7 @@ async def test_a_former_driver_is_kept_and_their_signup_blanked(tmp_path):
             (SERVER_ID, OLD_USER),
         )
         row = await cursor.fetchone()
-    assert row is None or row["platform"] is None
-
-
-async def test_a_deleted_driver_leaves_no_seat_behind_them(tmp_path):
-    """The seat reference is cleared before the profile goes. Left dangling it would point
-    at a driver that no longer exists, and the lineup would draw an empty name."""
-    db_path = await _make_db(tmp_path)
-    profile_id = await _seed_profile(db_path, state="UNASSIGNED", former=False)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (1, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SERVER_ID,),
-        )
-        await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
-            "VALUES (1, 1, 'Division 1', 1, 555)"
-        )
-        await db.execute(
-            "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-            "VALUES (10, 1, 'Alpha', 2, 0)"
-        )
-        await db.execute(
-            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
-            "VALUES (20, 10, 1, ?)",
-            (profile_id,),
-        )
-        await db.commit()
-
-    await DriverService(db_path).transition(SERVER_ID, OLD_USER, DriverState.NOT_SIGNED_UP)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT driver_profile_id FROM team_seats WHERE id = 20")
-        assert (await cursor.fetchone())["driver_profile_id"] is None
+    assert row is not None and row["platform"] is not None
 
 
 async def test_a_transition_from_no_profile_creates_one(tmp_path):
@@ -241,6 +209,24 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
     assert profile.discord_user_id == NEW_USER
     assert await service.get_profile(SERVER_ID, NEW_USER) is not None
     assert await service.get_profile(SERVER_ID, OLD_USER) is None
+
+
+async def test_re_keying_carries_every_signup_to_the_new_account(tmp_path):
+    """Issue #220: signups are kept under the account, so they must move with the profile."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path)
+    await _seed_signup_record(db_path)
+    await _seed_signup_record(db_path)
+    service = DriverService(db_path)
+
+    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, COUNT(*) AS n FROM signup_records GROUP BY discord_user_id"
+        )
+        rows = {row["discord_user_id"]: row["n"] for row in await cursor.fetchall()}
+    assert rows == {NEW_USER: 2}
 
 
 async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):

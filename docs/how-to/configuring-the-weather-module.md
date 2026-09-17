@@ -39,7 +39,7 @@ This guide covers the weather module only. Setting the bot up, creating a season
 
 > **Every command in this guide is gated on the module being on.** Run one before step 1 and you are told the weather module is not enabled — not that you lack a permission. Step 1 genuinely has to come first.
 
-> **The timings can only be set before a season is running.** All three `/weather config` commands are refused while a season is active, and the timings in force are the ones the bot noted when the season was approved. If you are going to change them, change them now — see step 3.
+> **The timings can only be set before a season's placements are confirmed.** All three `/weather config` commands are refused from that moment until the season ends, and the timings in force are the ones the bot noted when the season was approved. If you are going to change them, change them now — see step 3.
 
 ---
 
@@ -93,7 +93,7 @@ Every reply also tells you where the other two stand, which saves setting one an
 
 **Do this before the season is approved.** The bot notes the timings at approval and works to those for the whole season. Afterwards the commands are refused outright, and there is no way to shift a running season's forecasts.
 
-> **They also decide how late you can approve.** A season holding a round whose phase 1, 2 or 3 deadline has already passed is named in `/season review`, which then offers no Approve button, and the approval refuses on the same finding — a first round three days away cannot honour a five-day phase 1. Approve earlier, shorten the deadline, or move the round with `/round amend`. Test mode is not exempt, so a test season needs its rounds set beyond all three.
+> **They also decide how late you can approve.** A season holding a round whose phase 1, 2 or 3 deadline has already passed is named in `/season placements-review`, which then offers no Approve button, and the approval refuses on the same finding — a first round three days away cannot honour a five-day phase 1. Approve earlier, shorten the deadline, or move the round with `/round amend`. Test mode is not exempt, so a test season needs its rounds set beyond all three.
 
 > **The wording of the posts does not follow these settings.** The messages say "5 days out", "2 days out" and "2 hours out" whatever you set. Change phase 1 to seven days and the forecast still arrives seven days ahead — but it will describe itself as five. Worth knowing before your drivers ask.
 
@@ -103,7 +103,7 @@ Every reply also tells you where the other two stand, which saves setting one an
 
 > **A round's circuit is fixed once its first forecast is out.** That forecast was drawn for that circuit and cannot be unsaid, so `/round amend` refuses a bare track change from then on — and refuses a format change once the second forecast is out, that one having been drawn for the round's sessions. Moving the round in the same change puts the forecasts back in question and lets both through, which is the way to correct a circuit late.
 
-To see what is currently set, run `/season review` — the weather block lists all three. There is no separate command for reading them back.
+To see what is currently set, run `/season placements-review` — the weather block lists all three. There is no separate command for reading them back.
 
 ---
 
@@ -154,9 +154,9 @@ You are not going to wait five days to find out whether any of this works.
 
 `advance` fires the next scheduled event due — often the next weather phase, but equally a results collection or a check-in call where those modules are on — straight away, and posts it to the real channels so you see exactly what your drivers will see. Run it again for the next one. `/test-mode review` shows what is still pending. [Testing with test mode](test-mode.md) covers the whole of it.
 
-> **Test mode is only available before your league has real drivers.** The bot refuses to turn it on while any driver is signed up, unassigned, assigned or banned, or while your signup window is open, and while it is on no real driver may sign up or be placed. Former drivers from a finished season do not stand in the way. Do this step before you open signups — and note that once a season is running with fake drivers in it, test mode stays on until you `/season complete`.
+> **Test mode is chosen for a season, in its configuration.** `/test-mode toggle` works only while a season is in configuration, and is refused while any real driver is signed up, unassigned, assigned or banned — which, once a season has ended, nobody is. A season confirmed in test mode never opens a signup window, and while test mode is on no real driver may sign up or be placed. It stays on until that season is completed, cancelled or aborted, which switches it off and deletes the fake drivers — so test in a season of its own, and abort it with `/season abort` if you would rather not race it out. See [Setting up the bot for your league](configuring-the-core-bot.md) for the season's stages.
 
-> **Turning test mode off clears out every forecast the bot is holding**, not only the ones it posted while you were testing, and it deletes every fake driver on the server at the same time. On a season that has not started that is exactly what you want. On a season already running it will take down forecasts your drivers were reading, and the bot will not put them back — only the next phase will. Do your testing before the season is approved.
+> **Leaving test mode clears out every forecast the bot is holding**, not only the ones it posted while you were testing, and it deletes every fake driver on the server at the same time. That happens when you toggle it off in configuration, or when the test season ends.
 
 ---
 
@@ -209,7 +209,7 @@ Worth running through before the season is approved.
 - [ ] Every division has a forecast channel, including any you created by copying another
 - [ ] Every division has the role you want pinged
 - [ ] The log channel is one you can read, since every calculation goes there
-- [ ] The three timings are what you want, and `/season review` shows them
+- [ ] The three timings are what you want, and `/season placements-review` shows them
 - [ ] The first round is far enough away to honour all three — the review withholds the Approve button if not
 - [ ] Every non-mystery round has a track
 - [ ] Rounds you meant to be mystery rounds are set as mystery, and the rest are not
@@ -223,10 +223,10 @@ Worth running through before the season is approved.
 | What you see | Usually means |
 |---|---|
 | No forecast at all for a division | No forecast channel set for it, or the module is off |
-| No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and nothing anywhere will tell you so: check the round with `/season review` |
+| No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and nothing anywhere will tell you so: check the round with `/season placements-review` |
 | A season that will not approve | A division is missing its forecast channel, or a round is already inside one of the three deadlines. The division's own calendar in the review names the latest such round, and the button is withheld |
 | The post says "5 days out" but arrived earlier or later | Known: the wording is fixed and does not follow your timing settings. The timing itself is correct |
-| `/weather config` refused | Either a season is running, or the value would put the phases out of order. The reply says which |
+| `/weather config` refused | Either the season's placements are confirmed, or the value would put the phases out of order. The reply says which |
 | Two invalidation notices for one change | Amending more than one thing at once posts one per change |
 | Text where you expected a picture | The forecast worked and the drawing did not. The log channel names the reason — most often a drawing file or the converter |
 | A forecast that seems too wet for the stated chance of rain | Normal. The chance of rain shifts the odds; it does not decide the outcome |

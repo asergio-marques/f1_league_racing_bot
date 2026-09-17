@@ -65,7 +65,7 @@ def _calls_within(node: ast.AST) -> set[str]:
     return names
 
 
-# ── `/season review` ──────────────────────────────────────────────────────
+# ── `/season placements-review` ──────────────────────────────────────────────────────
 
 
 def test_the_review_pre_render_is_wrapped():
@@ -74,7 +74,7 @@ def test_the_review_pre_render_is_wrapped():
     node = _function("cogs/season_cog.py", "season_review")
     blocks = _notices(node)
 
-    assert len(blocks) == 1, "expected exactly one notice in /season review"
+    assert len(blocks) == 1, "expected exactly one notice in /season placements-review"
     assert "_prerender_review_images" in _calls_within(blocks[0])
 
 
@@ -87,7 +87,7 @@ def test_the_review_posting_loop_is_not_wrapped():
     )
 
 
-# ── `/season approve` (the button) ────────────────────────────────────────
+# ── the confirmation of placements (the button) ────────────────────────────────────────
 
 
 def test_the_approve_lineup_and_calendar_posting_is_wrapped():

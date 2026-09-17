@@ -1,4 +1,4 @@
-"""`/season review` shows a manager what their league will actually see.
+"""`/season placements-review` shows a manager what their league will actually see.
 
 The rule this file pins, and it **reverses** 038 FR-027 (decided 2026-08-27): where an
 aspect is switched on, the graphic *replaces* that section's text rather than standing
@@ -259,7 +259,7 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
         "both graphics and the portrait settings must raise it"
     )
 
-    tail = source[source.index("Server-level UNASSIGNED"):]
+    tail = source[source.index("Server-level unsettled signups"):]
     assert "if approval_blockers:" in tail
 
     # Independent causes withhold the button, so the offer is guarded on every one of
@@ -277,6 +277,9 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
         "calendar_faults_found",
         "points_faults",
         "phantom_configs",
+        "unsettled",
+        "channel_faults",
+        "no_divisions",
     )
     offer = re.compile(
         r"if\s*\(?\s*"
@@ -752,7 +755,7 @@ def test_the_approval_gate_returns_rather_than_merely_reporting():
 # has reviewed — so the button stands for five minutes and is then deleted (2026-09-07).
 #
 # The message is public, which is what makes the access check load-bearing rather than
-# decorative: a league manager holding only the interaction role may run `/season review`,
+# decorative: a league manager holding only the interaction role may run `/season placements-review`,
 # and anyone who can read the channel can see the button they post.
 
 
@@ -904,7 +907,7 @@ async def test_the_expiry_notice_pings_the_reviewer():
 
     notice = message.channel.send.await_args.args[0]
     assert f"<@{REVIEWER}>" in notice
-    assert "/season review" in notice
+    assert "/season placements-review" in notice
 
 
 async def test_a_prompt_already_gone_still_posts_the_notice():

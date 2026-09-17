@@ -525,7 +525,7 @@ async def test_season_review_and_config_view_agree(
 
 
 def test_the_review_names_every_configured_asset_directory():
-    """`/season review` states where each asset class is read from.
+    """`/season placements-review` states where each asset class is read from.
 
     A manager sets these paths once and then has nowhere in the review to see them, so a
     graphic drawing placeholders because a folder was renamed looks exactly like one whose
@@ -1488,7 +1488,7 @@ from services.image_validity_service import describe as _describe  # noqa: E402
 
 
 async def _problem_lines(config_service, root, *, module_enabled=True):
-    """What both `/season review` and `/season approve` compute (FR-008a).
+    """What both `/season placements-review` and the confirmation of placements compute (FR-008a).
 
     One evaluation, two surfaces. Driven at the service layer so the assertion is about
     the findings, not about how a Discord embed renders them.

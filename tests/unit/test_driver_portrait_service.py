@@ -850,7 +850,7 @@ def test_a_wrapped_portrait_survives_the_whole_fill_and_render_path(tmp_path):
 
 # ── Approval overrides the update trigger ─────────────────────────────────
 #
-# `pfp_prerender` is the league's choice about ordinary postings. `/season approve`
+# `pfp_prerender` is the league's choice about ordinary postings. The confirmation of placements
 # decides whether to commit a season on the strength of a trial render, so it pulls
 # whichever trigger is on: judging the season on yesterday's portraits — or on the
 # placeholder for a driver seated since the last daily fetch — would be judging a

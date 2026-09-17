@@ -73,7 +73,7 @@ def _make_cog(*, cfg: AttendanceConfig | None = None) -> AttendanceCog:
     bot.module_service = MagicMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.season_service = MagicMock()
-    bot.season_service.get_active_season = AsyncMock(return_value=None)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     return AttendanceCog(bot)
 
 
@@ -235,13 +235,13 @@ async def test_a_penalty_of_zero_is_written():
 async def test_the_timing_commands_are_refused_while_a_season_is_active():
     """Timing cannot move mid-season; the penalties can, and are covered above."""
     cog = _make_cog()
-    cog.bot.season_service.get_active_season = AsyncMock(return_value=MagicMock())
+    cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=MagicMock())
     interaction = _interaction()
 
     await _invoke(AttendanceCog.config_rsvp_deadline, cog, interaction, 3)
 
     cog.bot.attendance_service.update_rsvp_deadline_hours.assert_not_awaited()
-    assert "active" in interaction.response.send_message.await_args.args[0]
+    assert "placements are confirmed" in interaction.response.send_message.await_args.args[0]
 
 
 async def test_a_timing_value_breaking_the_invariant_is_not_written():
@@ -443,3 +443,15 @@ async def test_show_is_refused_while_the_module_is_disabled():
     await _invoke(AttendanceCog.config_show, cog, interaction)
 
     cog.bot.attendance_service.get_config.assert_not_awaited()
+
+
+async def test_setting_autosack_says_it_reaches_every_division_and_names_autoreserve():
+    """Issue #220: a league wanting one division alone must be pointed at autoreserve."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _invoke(AttendanceCog.config_autosack, cog, interaction, 8)
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert "every seat in every division" in reply
+    assert "/attendance config autoreserve" in reply

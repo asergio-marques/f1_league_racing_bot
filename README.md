@@ -96,7 +96,7 @@ self-contained and can be restored by copying it back into place under the origi
 > **Upgrading from a version before the split.** The scheduler used to keep its jobs inside
 > `bot.db`. On the first start after upgrading it begins with an empty `scheduler.db`, and
 > the old jobs are **not** carried across — a season already under way therefore loses its
-> pending weather phases, RSVP notices and result submissions. Run `/season review` and
+> pending weather phases, RSVP notices and result submissions. Run `/season placements-review` and
 > approve again for each affected division to rebuild them. Upgrade between seasons and there is nothing
 > to do. The abandoned `apscheduler_jobs` table is left inside `bot.db`, unread; drop it or
 > leave it as you prefer.
@@ -240,7 +240,7 @@ Deletes the bot's `count` most recent messages in the interaction channel, newes
 
 > It looks back over the last 200 messages to find them. On a busy channel that may be fewer of the bot's than you asked for, and the reply tells you when it was.
 
-> An approved or expired `/season review` clears itself, so this is for the ones that did neither — a review you walked away from, or anything else the bot has left in the channel.
+> An approved or expired `/season placements-review` clears itself, so this is for the ones that did neither — a review you walked away from, or anything else the bot has left in the channel.
 
 > **Note:** Requires the bot to have **Manage Messages** in the channel (already a required bot permission).
 
@@ -264,7 +264,7 @@ Removes all season data for this server. Use `full:True` to also wipe the bot co
 
 ### Season Setup Workflow
 
-Season configuration is a multi-step flow: run `/season setup`, add divisions with `/division add`, add rounds with `/round add`, then review with `/season review` and press its **Approve** button.
+A season begins with `/season setup`, in **configuration**: settle the team list, the modules and their settings, and whether the season runs in test mode. `/season config-review` checks that configuration and posts a **✅ Confirm configuration** button. Once confirmed, the season moves on — to waiting for its signup window where the signup module is enabled, or straight to placements where it is not (or under test mode). In placements you add divisions with `/division add` and rounds with `/round add`, then review with `/season placements-review` and press its **Approve** button.
 
 > **A channel does one job.** Every command that sets a channel — the eight `/division …-channel` commands, `/bot-interaction-channel`, `/bot-log-channel` and `/signup channel` — refuses a channel already set as something else anywhere on this server, naming what holds it. Two divisions cannot share a results channel, and a calendar channel cannot double as a log.
 >
@@ -273,14 +273,30 @@ Season configuration is a multi-step flow: run `/season setup`, add divisions wi
 #### `/season setup` — Start season configuration
 *Access: League manager*
 
-Creates a pending season tied to today's date and enables the `/division` and `/round` setup commands. Refused if a season is already in setup or active for this server — a server holds **one** live season at a time, so finish the running one with `/season complete` (or approve or cancel the pending one) before starting another. Completed and cancelled seasons do not count and are kept indefinitely.
+Creates a season tied to today's date, in **configuration**. Its divisions and rounds are built later, once it reaches placements. Refused if a season is already live for this server, whatever its stage — a server holds **one** live season at a time, so end the running one with `/season complete` or `/season cancel`, or abandon an unconfirmed one with `/season abort`, before starting another. Completed and cancelled seasons do not count and are kept indefinitely.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `game_edition` | Integer | ✅ | Game edition year — `25` for F1 25. Range 1–9999 |
 
+#### `/season config-review` — Review and confirm the configuration
+*Access: League manager · Configuration only*
+
+No parameters. Posts a report of the season in configuration — test mode, the enabled modules, the team list with its roles (warning where the Reserve team has none), and the configuration of each enabled module in the words of `/season placements-review`: the signup settings, the attendance settings, the attached points configurations, the weather deadlines and the image outputs — and checks everything that can be checked before the season has divisions:
+
+- the signup module's channel, base role and complete role, where it is enabled;
+- every team name, as a filename;
+- where the results module is enabled, that a points configuration is attached, that each attached one exists, and that its tables are in order;
+- where the images module is enabled, that the rasteriser is installed, that every template an enabled output draws is valid, the per-tier colours and the driver portrait settings.
+
+With nothing at fault the report ends with a **✅ Confirm configuration** button, governed like the Approve button below: the reviewer or a league admin may press it, it stands for five minutes, and it refuses if the season changed after the report was posted. Every check is made again when you press it, and again at `/season placements-review`.
+
+> **Confirming fixes the configuration for the season.** From then until the season ends, the team list, the game edition, test mode and the signup module's settings cannot change.
+
 #### `/division add` — Add a division
-*Access: League manager · Requires active `/season setup` session*
+*Access: League manager · Placements only*
+
+Divisions are built once the season is in **placements** — after its configuration is confirmed and, where the signup module is enabled, its signup window has closed. You plan divisions around the drivers who actually signed up, so the command is refused in configuration, while waiting for the window, and while it is open.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -400,10 +416,16 @@ Unlike the other two commands, `<datetime>` is a **local** time in the zone `<ti
 
 Deletes the round and renumbers remaining rounds by date.
 
-#### `/season review` — Review pending configuration
-*Access: League manager*
+#### `/season placements-review` — Review pending configuration
+*Access: League manager · Placements only*
 
-No parameters. Displays the pending season configuration, ending with a message asking whether you accept it and carrying the **✅ Approve** button.
+No parameters. Displays the pending season configuration, ending with a message asking whether you accept it and carrying the **✅ Approve** button. Refused unless the season is in **placements** — a season still in configuration is reviewed with `/season config-review`.
+
+> **Three things hold the button back that the report does not otherwise show.** The season must hold at least one division that is not cancelled. Every signup must be settled: no driver may still be Unassigned, awaiting approval or correcting their signup — place them with `/driver assign`, turn them down with `/driver reject`, or finish reviewing their signup. And every division must have its **lineup** and **calendar** channels set. The review lists every unsettled signup by name in its public report, names each division at fault, and the approval refuses on the same reading.
+
+> **Approving commits every placement.** Until then a placement stands outside the championship; approving grants the division and team roles and posts the lineups, as described below.
+
+> **Mid-season, the review covers the new drivers only.** When a signup window closed mid-season leaves drivers to place, the season waits in *ongoing, placements* while you place them with `/driver assign`. `/season placements-review` then lists the drivers to confirm and each division's lineup as it will stand, and — once every signup is settled — offers **✅ Confirm placements**, governed like the Approve button. Confirming grants the new drivers their division and team roles, posts each affected lineup once, and returns the season to ongoing. Until then the new drivers are outside the championship: no roles, no lineup, no check-in, no results or standings, while the season's rounds carry on without them.
 
 The report arrives as **one message per subsection**, in this order: the season and its enabled modules; signup; attendance; points configurations; weather; image outputs. A subsection with nothing in it — a module you have not enabled — is not posted at all. The per-division blocks follow, as before. Each subsection is split further if it alone is too long for one Discord message, because an over-long message is refused whole rather than truncated.
 
@@ -411,12 +433,12 @@ The report arrives as **one message per subsection**, in this order: the season 
 
 The image subsection also lists the eight **asset directories** and the path each is set to, marking any the bot cannot read. A folder that has been moved or renamed produces pictures full of placeholders, which looks the same as artwork you never supplied — seeing the path is what tells the two apart. `/images config view` names the fault in full.
 
-> **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. There is no command that approves around it — the button is the only route — so fix the template or the artwork it names and run `/season review` again.
+> **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. There is no command that approves around it — the button is the only route — so fix the template or the artwork it names and run `/season placements-review` again.
 
-#### Approving — the button in `/season review`
+#### Approving — the button in `/season placements-review`
 *Access: the reviewer, or a league admin*
 
-**There is no `/season approve` command.** A season is approved by pressing **✅ Approve** on the report `/season review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
+**No command confirms placements.** A season is approved by pressing **✅ Approve** on the report `/season placements-review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
 
 > **A calendar with dates already behind you withholds the button.** Two things can be wrong with a season's dates, and each division's calendar in the review says which of them it has.
 >
@@ -428,7 +450,7 @@ The image subsection also lists the eight **asset directories** and the path eac
 >
 > The approval checks it again when the button *is* pressed, because the review stands for five minutes and a round can cross a window while it sits there. Then it is refused privately with **nothing committed**.
 >
-> Fix it by moving the round with [`/round amend`](#round-amend--amend-a-round-in-the-active-season) or, for a window, by shortening the window instead, then run `/season review` again. Both are your call, which is exactly why the bot will not choose for you: the alternatives are posting the call late, posting nothing, or running the round with no check-in at all — and that last one records **perfect attendance for the whole division** for a round nobody was asked about.
+> Fix it by moving the round with [`/round amend`](#round-amend--amend-a-round-in-the-active-season) or, for a window, by shortening the window instead, then run `/season placements-review` again. Both are your call, which is exactly why the bot will not choose for you: the alternatives are posting the call late, posting nothing, or running the round with no check-in at all — and that last one records **perfect attendance for the whole division** for a round nobody was asked about.
 >
 > Only the enabled modules' windows count — but the round's own moment is judged whichever modules are on. A cancelled round is ignored either way. **Test mode is not exempt**, so a test season has to be built with its rounds still to come and beyond every configured window.
 
@@ -440,7 +462,7 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 
 > **The button stands for five minutes**, and only for the season it was posted for. When they pass, the message is deleted and replaced by a notice mentioning whoever ran the review, saying it has expired and must be run again. The same happens if the bot restarts while a review is standing — the five minutes cannot have run while it was down, so the question is cleared at startup rather than left waiting for a press nothing would answer.
 >
-> Before it expires, the button refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a template file altered — and it names what changed. Nothing is approved, the message is cleared as an expiry clears it, and you are told to run `/season review` again.
+> Before it expires, the button refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a signup approved or turned down, test mode or the team list changed, a template file altered — and it names what changed. Nothing is approved, the message is cleared as an expiry clears it, and you are told to run `/season placements-review` again.
 >
 > That is what the report is for: **what you read is what you approve.** It is also why approving is quick — the review already drew your calendars and lineups, so if the season is provably the same one, the approval trusts those pictures rather than drawing them all over again.
 
@@ -450,13 +472,22 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 
 ### Active Season Commands
 
-#### `/season status` — Active season summary
+#### `/season status` — Summary of the season being raced
 *Access: League manager*
 
-No parameters. Shows active season overview: divisions, next scheduled round per division, and its track and datetime.
+No parameters. Shows an overview of the season being raced — one whose placements are confirmed: divisions, next scheduled round per division, and its track and datetime.
 
-#### `/season cancel` — Delete the active season
+#### `/season abort` — Abandon a season before its placements are confirmed
 *Access: League admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
+
+Abandons a season in configuration, waiting for its signup window, in signups, or in placements — before its placements are ever confirmed — as if it had never been. The season is **deleted** with every record of it, its signups included, and takes no season number. Its drivers return to Not Signed Up and those who never raced are deleted; any open signup window is closed and test mode is switched off. Use it to back out of a test-mode rehearsal, a signup setting that turned out wrong, or a season postponed for want of signups. An ongoing season is cancelled with `/season cancel` instead.
+
+#### `/season cancel` — Cancel the ongoing season
+*Access: League admin · Ongoing only*
 
 > ⚠️ **Irreversible.** A cancelled season cannot be reopened, and every command that would change one is refused from then on.
 
@@ -469,21 +500,32 @@ division of the season is cancelled, and with each one every round of it **not y
 that has been raced and scored keeps its results and its status — cancelling a season never
 discards a result. The season row is marked `CANCELLED` last.
 
-**Nothing is deleted.** The season, its divisions, rounds, results and standings all stay in the
-database and remain readable by the stats commands; what changes is that they become immutable and
-stop counting as the server's live season. Every placed driver gets a history entry just as they
-would on completion, **marked as cancelled** so a season that was called off can be told apart
-from one that ran to its end. Cancel a season that should never have existed — one
-that was raced should be completed instead.
+**The season is archived, not deleted.** Its divisions, rounds, results and standings stay in the
+database and remain readable by the stats commands; they become immutable and stop counting as
+the server's live season. Placements not yet confirmed are discarded first. Every driver gets
+a history entry for each division they took part in, **marked as cancelled** so a season that was
+called off can be told apart from one that ran to its end. Then, exactly as completing a season
+does, the season's roles are revoked, an open signup window is closed, every driver returns to Not
+Signed Up, drivers who never raced are deleted (their signups kept) and test mode is switched off.
+
+Available only while the season is **ongoing**. A season pending completion is completed instead,
+and one whose placements have never been confirmed is abandoned with `/season abort`.
 
 #### `/season complete` — Mark the active season as complete
 *Access: League admin*
 
 No parameters. Triggers the season-end flow manually. The bot refuses while any division of the
-season is neither finished nor cancelled, and lists the rounds still to be finalised. Once every
-division is done it archives the season: status becomes `COMPLETED`, a history entry is written for
-every assigned driver, each division's final classification is posted, and completion is announced
-in the log channel. **No data is deleted** — that is what distinguishes this from `/season cancel`.
+season is neither finished nor cancelled, and lists the rounds still to be finalised.
+
+> **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then the only things left are amending the results of a round already final, approving an amendment of the season's points, and completing the season — no module can be disabled. A season with a signup window open, or mid-season placements still to confirm, moves there too: there is no round left to place anyone into, so the window is closed, every placement not yet confirmed is discarded, and every driver still unplaced, unconfirmed, awaiting approval or mid-correction returns to Not Signed Up as `/driver reject` would. Once every
+division is done it ends the season, in this order: each division's final classification is posted;
+a history entry is written for every division each driver took part in, whether or not they still sit in it — a driver moved, released or sacked mid-season keeps an entry for every division they held a confirmed seat in; the division, team and
+signed-up roles are revoked; an open signup window is closed; every driver who was Unassigned, placed,
+signing up or in review returns to **Not Signed Up**, so they can sign up for the next season; every
+driver who never raced is then deleted, with their placements and history, though their signups stay
+with the season; test mode is switched off, deleting the drivers it created and keeping their
+history; and the season is archived as `COMPLETED`. Former drivers are kept, and banned drivers are
+left as they are.
 
 A **round** moves through six states, and the middle ones are named for what the round is waiting
 on: **not run** before its time comes, **awaiting results** once it has, **awaiting report
@@ -524,7 +566,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 > **A round cannot be moved inside its own check-in deadline.** With the default two-hour deadline, moving a round to less than two hours away is refused outright — the check-in would open and close in the same instant, and the round would read afterwards as perfect attendance for a division nobody asked. Move it further out, or shorten the deadline first.
 
 #### `/round cancel` — Cancel a round in the active season
-*Access: League admin*
+*Access: League admin · Ongoing only*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -535,7 +577,9 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and posts a notice to the division's forecast channel.
 
 #### `/division cancel` — Cancel a division in the active season
-*Access: League admin*
+*Access: League admin · Ongoing only*
+
+Available only while the season is ongoing. Cancelling the last division still running leaves the season pending completion.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -643,11 +687,9 @@ Test mode drives the season's scheduled events on demand, without waiting for th
 
 No parameters. Flips test mode on/off; state persists across bot restarts.
 
+**Test mode is chosen for a season, in its configuration.** The toggle is refused unless a season is in configuration — start one with `/season setup` first. Confirming the configuration with `/season config-review` fixes test mode for the rest of that season. A season in test mode never opens a signup window: confirming its configuration takes it straight to placements.
+
 **Test mode cannot be enabled while your league has real drivers.** A server is either running a real league or being tested, never both, and the command refuses — naming how many drivers stand in the way — if any driver profile is signed up, unassigned, assigned or banned. Former drivers who have left do not count.
-
-**And it cannot be turned off part-way through a season your fake drivers are racing.** Disabling deletes them, and a driver a season has raced cannot be deleted, so a running season holds test mode on until you finish it with `/season complete`. A season still in setup, and a completed one, both let go of it freely.
-
-**Nor while your signup window is open.** Nobody real may sign up under test mode, so the button would refuse everyone who pressed it; close the window with `/signup close` first. The command does not close it for you — that would post a public notice in your signup channel off the back of a flag flip.
 
 Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached, as ordinary server configurations that `/results config` can view and edit like any other. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**; the two configurations are kept, being configuration rather than scaffolding.
 
@@ -681,6 +723,8 @@ Manually sets the `former_driver` flag on a driver profile. Only available when 
 |-----------|------|----------|-------------|
 | `user` | Member | ✅ | The driver whose flag is being updated |
 | `value` | Boolean | ✅ | The new value for the `former_driver` flag (`True` / `False`) |
+
+> **The roster changes only in placements.** `/test-mode roster add`, `add-bulk`, `remove` and `clear` are refused unless the season is in placements — where real drivers are placed too. `/test-mode roster list` works in any state.
 
 #### `/test-mode roster add` — Add a fake driver
 *Access: League admin · Requires test mode active*
@@ -739,9 +783,9 @@ Opens a modal for setting the RSVP status of every test driver in the division's
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `division` | String | ✅ | Division name; the division must be in the active season and have an open RSVP |
+| `division` | String | ✅ | Division name; the division must be in the ongoing season and have an open RSVP |
 
-> Turning test mode **off** deletes every fake driver on the server, across all divisions, and is refused while a running season holds any of them. The seeded points configurations are **not** deleted with them — they are ordinary configurations of the server, and `/results config remove` takes them away if you do not want them. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers or its signup window is open.
+> Turning test mode **off** — by the toggle in configuration, or by the season ending — deletes every fake driver on the server, across all divisions, keeping their history. The seeded points configurations are **not** deleted with them — they are ordinary configurations of the server, and `/results config remove` takes them away if you do not want them. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers.
 
 > While test mode is on, no real driver may sign up or be placed: the Sign Up button, `/signup open` and `/driver assign` all refuse them. Fake drivers are unaffected.
 
@@ -764,6 +808,8 @@ Save the whole database and return to it later, so a state reached once while te
 
 > **A restore needs a restart.** The bot holds both databases open while it runs, so nothing can be swapped underneath it. `/test-mode backup restore` checks the backup, keeps a copy of what is live as `bot.prerestore.db`, and stages the swap — which happens the next time the bot starts. Under a service that is automatic; from a terminal, stop it and run it again.
 
+> **The saved backup does not outlive its test season.** It is deleted when you toggle test mode off, and when the season it was taken for is **completed** — a lock does not protect it, the lock being there to refuse a save rather than to keep a state past the run it belongs to. A season **cancelled or aborted** leaves the saved state alone, so that is the one to go back to. Restore before completing, or you will be starting again.
+
 > **This is not disaster recovery.** The backups sit beside the live files on the same disk. They protect against a test run you want to undo, and against nothing that happens to the disk itself.
 
 ---
@@ -785,10 +831,11 @@ Ordering and timing constraints:
 
 | Module | Constraint |
 |---|---|
-| `results` | Cannot be **enabled** while a season is **active**. It can be disabled at any time, but disabling it while a season is active destroys that season's results — see [`/module disable`](#module-disable--disable-a-bot-module) |
-| `attendance` | Requires `results` to be enabled first, and cannot be enabled while a season is **active** |
-| `weather` | If a season is active, every division must already have a forecast channel. Enabling runs any overdue phases immediately and schedules the rest |
-| `signup`, `images` | No constraint |
+| `signup` | Enabled and disabled only while no season is active, or while the season is still in **configuration**. Confirming the configuration fixes it for the season |
+| `weather`, `results`, `images` | Cannot be **enabled** once a season's placements have been confirmed. Enable them with no season, or at any point before that confirmation |
+| `attendance` | Requires `results` to be enabled first, and cannot be enabled once a season's placements have been confirmed |
+
+**No module can be disabled while a season is pending completion** — once every division has finished, the only thing left is `/season complete`. `results` can still be disabled while a season is ongoing, but doing so destroys that season's results — see [`/module disable`](#module-disable--disable-a-bot-module).
 
 #### `/module disable` — Disable a bot module
 *Access: League admin*
@@ -811,7 +858,7 @@ Historical data is always retained. How much configuration a disable actually cl
 
 > **Disabling `results` while a season is ACTIVE destroys that season's championship.** You are warned and must confirm before anything is written — whether or not attendance is on — and the warning names what goes. Afterwards the season can be completed normally: the rounds that were waiting on results are closed, so their divisions finish. The purge is recorded in the log channel and audited as `RESULTS_SEASON_PURGED`, and each round closed is audited as a `round.status` change of its own. With no season running, disabling clears nothing and asks nothing — it is the cheap command it looks like.
 
-Enabling is guarded where disabling is not: `results` and `attendance` both refuse to be enabled while a season is ACTIVE, and neither refuses to be disabled. Disabling mid-season is **not** safe, whichever you turn off, and it is one-way until the season ends. `attendance` stops every check-in still to come; `results` additionally deletes the season's results outright, as described above. Both ask you to confirm first.
+Enabling is guarded where disabling mostly is not: no module but signup can be enabled once a season's placements are confirmed, while every module but signup can still be disabled until the season is pending completion. Disabling mid-season is **not** safe, whichever you turn off, and it is one-way until the season ends. `attendance` stops every check-in still to come; `results` additionally deletes the season's results outright, as described above. Both ask you to confirm first.
 
 ---
 
@@ -824,7 +871,7 @@ The weather module's own configuration is these three commands and nothing else.
 All three commands share the same preconditions, checked in this order:
 
 1. The weather module must be enabled — otherwise `❌ The weather module is not enabled.`
-2. **No season may be active** — otherwise `❌ Phase deadline configuration cannot be changed while a season is active.` Deadlines are therefore set during setup, or between seasons.
+2. **No season's placements may be confirmed** — otherwise `❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.` Deadlines are therefore set with no season, or before placements are confirmed.
 3. The value must be at least 1.
 4. The ordering invariant below must hold.
 
@@ -832,7 +879,7 @@ All three commands share the same preconditions, checked in this order:
 
 **When they take effect.** The values in force for a season are those stored when it is approved. Changing a deadline never moves a forecast for a season already running.
 
-**They also decide how late a season can be approved.** A season holding a round whose Phase 1, 2 or 3 deadline has already passed is named in `/season review`, which then offers no Approve button — a first round three days away cannot honour a five-day Phase 1. See [Approving](#approving--the-button-in-season-review).
+**They also decide how late a season can be approved.** A season holding a round whose Phase 1, 2 or 3 deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day Phase 1. See [Approving](#approving--the-button-in-season-review).
 
 #### `/weather config phase-1-deadline` — Days before the round to publish Phase 1
 *Access: League manager · Weather module required · Setup only*
@@ -855,7 +902,7 @@ All three commands share the same preconditions, checked in this order:
 |-----------|------|----------|-------------|
 | `hours` | Integer | ✅ | Number of hours before the round. Minimum 1. Default **2** |
 
-Every successful reply echoes the other two deadlines, and the change is written to the log channel. There is no `/weather config view`: **`/season review`** is the only place the three values are read back.
+Every successful reply echoes the other two deadlines, and the change is written to the log channel. There is no `/weather config view`: **`/season placements-review`** is the only place the three values are read back.
 
 > **The posted forecasts do not describe your configured horizons.** The message text carries the fixed wording "(5 days out)", "(2 days out)" and "(2 hours out)" whatever the deadlines are set to. The forecast is published at the configured time; only its self-description is wrong.
 
@@ -868,7 +915,7 @@ Every successful reply echoes the other two deadlines, and the change is written
 #### `/driver reassign` — Re-key a driver profile to a new Discord account
 *Access: League manager*
 
-Transfers an existing driver profile from one Discord account to another. Provide either `old_user` (mention) or `old_user_id` (raw snowflake) for users who have left the server.
+Transfers an existing driver profile from one Discord account to another, with every signup the profile made. Provide either `old_user` (mention) or `old_user_id` (raw snowflake) for users who have left the server.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -879,9 +926,9 @@ Transfers an existing driver profile from one Discord account to another. Provid
 #### `/driver assign` — Assign a driver to a team and division
 *Access: League manager*
 
-Places an Unassigned driver into a specific team seat within a division. Requires a season in either **SETUP** or **ACTIVE** state — placement does not wait for approval.
+Places an Unassigned driver into a specific team seat within a division. Available only while the season is in **placements**, or mid-season while the drivers of a closed signup window are being placed — and then only for a driver who holds no confirmed placement. A driver whose placement is confirmed is moved or released instead.
 
-**When roles are granted depends on the season state.** For an **ACTIVE** season the division role and the team role (if configured via `/team add`) are granted immediately. For a **SETUP** season no roles are granted at assignment; they are granted in bulk to every placed driver at approval.
+**A placement stands outside the championship until placements are confirmed.** No role is granted and no lineup posted when you assign; the division and team roles are granted, and the lineups posted, when placements are confirmed from the review.
 
 A driver may hold at most one seat per division. Non-Reserve teams run out of seats; the Reserve team always has room.
 
@@ -896,19 +943,54 @@ Refused while test mode is active: a real driver is never seated in a division u
 #### `/driver unassign` — Remove a driver from a division
 *Access: League manager*
 
-Removes a driver's placement from one division. If this was their only assignment the driver reverts to Unassigned. Requires a season in **SETUP** or **ACTIVE** state.
-
-For an **ACTIVE** season this revokes the division role and, if no other seat mapping to it remains in any division, the team role. For a **SETUP** season no role is revoked, the driver never having held one.
+Removes a driver's placement from one division. If this was their only assignment the driver reverts to Unassigned. Available in the same stages as `/driver assign`, and only for a placement not yet confirmed — which held no role, so none is revoked and no lineup is posted.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `user` | Member | ✅ | The driver to unassign |
 | `division` | String | ✅ | Division tier number or name |
 
-#### `/driver sack` — Sack a driver
-*Access: League admin*
+#### `/driver move` — Move a confirmed driver to another seat
+*Access: League manager · Ongoing only*
 
-Revokes all placement roles, removes all season assignments, and transitions the driver back to Not Signed Up. For former drivers the profile row is retained; for others it is deleted.
+Moves a driver whose placement is confirmed from their seat in one division to a team of the same division or another — full-time to Reserve, one team to another, or a promotion or relegation — as **one change**. The seat left is freed and the seat taken filled together; the roles of the seat left are revoked where no other seat of the driver maps to them, the roles of the new seat are granted, and the lineup of each division touched is posted once. A driver moved to another division leaves the points they scored in the division they left.
+
+Available while the season is ongoing (including while a mid-season signup window is open or its drivers are being placed). Refused where the placement is not yet confirmed — change that with `/driver unassign` and `/driver assign` — where the driver already holds a seat in the other division, where they already sit in that team, and where the team has no seat free.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user` | Member | ✅ | The driver to move |
+| `from_division` | String | ✅ | Division tier number or name the driver is moved from |
+| `team` | String | ✅ | Exact team name the driver is moved into |
+| `to_division` | String | — | Division tier number or name moved into; omit to stay in the same division |
+
+#### `/driver release` — Release a confirmed driver from one division
+*Access: League manager · Ongoing only*
+
+Removes a driver whose placement is confirmed from **one** division, while they keep every other seat they hold. That division's role is revoked, and the team role only where no other seat of theirs maps to it; the division's lineup is posted again. Their points in that division stay where they were scored.
+
+Refused for a driver's **only** confirmed seat — a seat not yet confirmed in another division does not count — sack them with `/driver sack` or move them with `/driver move` — and for a placement not yet confirmed, which `/driver unassign` removes.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user` | Member | ✅ | The driver to release |
+| `division` | String | ✅ | Division tier number or name to release them from |
+
+#### `/driver reject` — Turn down an approved driver
+*Access: League manager · Placements only*
+
+Turns down a driver who was approved but has not been placed — one in the Unassigned state. They return to Not Signed Up and lose the signed-up role; their signup is kept with the season. Available while the season is in placements, or mid-season while the drivers of a closed signup window are placed — the moments every signup has to be settled before placements are confirmed. A signup still in review is rejected from its review panel instead, and a placed driver is unassigned first.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user` | Member | ✅ | The Unassigned driver to turn down |
+
+#### `/driver sack` — Sack a driver
+*Access: League admin · Ongoing only*
+
+Revokes all placement roles and the signed-up role, removes the driver's placements in the season, and returns them to Not Signed Up. Available only while the season is ongoing, and only for a driver whose placement is confirmed — an unconfirmed placement is removed with `/driver unassign`, and an Unassigned driver turned down with `/driver reject`.
+
+**Nobody is deleted by a sack.** The profile stays at Not Signed Up with its attendance, results and signups, and the driver may sign up again in a later window. A driver who has never raced is *pending deletion*, and is deleted when the season ends.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -921,7 +1003,9 @@ Revokes all placement roles, removes all season assignments, and transitions the
 #### `/team add` — Add a team to the server list
 *Access: League manager*
 
-Adds the team to the server's default team list and saves its role mapping (granted/revoked on driver placement). If a SETUP season is active the team is also seeded into every division with 2 seats.
+Adds the team to the server's default team list and saves its role mapping (granted/revoked on driver placement). Every division created afterwards is seeded with it, with 2 seats.
+
+> **The team list is fixed once a season's configuration is confirmed.** `/team add`, `/team remove` and `/team rename` work while no season is active, or while the active season is still in configuration, and are refused from confirmation until the season ends. The signup wizard offers this list as the preferred teams, and every division is built from it. A team's **role** is never fixed — see `/team role`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -943,7 +1027,7 @@ Adds the team to the server's default team list and saves its role mapping (gran
 #### `/team remove` — Remove a team from the server list
 *Access: League admin*
 
-Removes the team from the server's default list and clears its role mapping. If a SETUP season is active the team is also removed from every division in that season.
+Removes the team from the server's default list and clears its role mapping. Refused once a season's configuration is confirmed, until that season ends.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -952,22 +1036,34 @@ Removes the team from the server's default list and clears its role mapping. If 
 #### `/team rename` — Rename a team
 *Access: League manager*
 
-Renames the team in the server's default list and updates its role mapping key. If a SETUP season is active the name is also updated across every division in that season.
+Renames the team in the server's default list and updates its role mapping key. Refused once a season's configuration is confirmed, until that season ends.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `current_name` | String | ✅ | Exact current name of the team |
 | `new_name` | String | ✅ | Replacement name (max 50 chars) |
 
+#### `/team role` — Set a team's Discord role
+*Access: League manager*
+
+Points a team of the server list at a different Discord role. Unlike the list itself, a team's role can be changed **in any season state** — nothing stops a role being deleted from the server mid-season, and this is how you repair it. The Reserve team's role is set with `/team reserve-role`.
+
+**The team's drivers follow its role.** Every driver seated in the team whose placement is confirmed has the old role taken away — unless another team still maps to it — and the new one granted, in every division of the season being raced. The reply says how many drivers were moved.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Exact name of the team |
+| `role` | Role | ✅ | Discord role to grant drivers placed into this team |
+
 #### `/team list` — List all teams and their role mappings
 *Access: League manager*
 
 Displays all teams on the server's default list alongside their configured Discord roles. If a SETUP season is active and its team list differs from the server default, the divergence is shown with a warning.
 
-#### `/team lineup` — Show team lineups for the active season
+#### `/team lineup` — Show the confirmed team lineups of the season being raced
 *Access: League manager*
 
-Displays the placed drivers for each team seat in the active season. If a division name or tier number is provided only that division is shown; otherwise all divisions are listed. Requires an active season.
+Displays the placed drivers for each team seat in the active season. If a division name or tier number is provided only that division is shown; otherwise all divisions are listed. Requires a season being raced, its placements confirmed.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -977,7 +1073,7 @@ Displays the placed drivers for each team seat in the active season. If a divisi
 #### `/team reserve-role` — Set or clear the Reserve team's Discord role
 *Access: League manager*
 
-Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping.
+Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping. As with `/team role`, the drivers already seated in Reserve with a confirmed placement follow the change: the old role is taken and the new one, where given, granted.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -990,6 +1086,8 @@ Sets the Discord role granted to (and revoked from) drivers placed in the Reserv
 > **Setting the signup module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the signup module](docs/how-to/configuring-the-signup-module.md).
 
 All commands below require the signup module to be enabled (`/module enable signup`). Most commands also require being invoked from the configured interaction channel.
+
+> **Every completed signup is kept, under its season.** A signup that reaches review is stored as a record of the season and the window it came through, and nothing overwrites it — a driver who signs up again, in a later window or a later season, gains a second record beside the first. A correction amends the signup it was asked of. A former driver's signups are kept whole when they leave.
 
 #### `/signup channel` — Set the signup channel
 *Access: League manager*
@@ -1077,11 +1175,10 @@ No parameters.
 > never changes anyone's answer and the export always marks the times they actually chose. Remove a
 > slot and put it back at the same day and time, and the drivers who chose it are on it again.
 
-> **Slots cannot be edited while anyone is waiting to be placed.** Both `add` and `remove` are
-> refused while signups are open, and also while any driver holds a completed signup you have not
-> yet placed — the drivers `/signup unassigned list` shows you. The refusal says how many are
-> waiting. Removing a slot deletes the answers that named it, and either change renumbers the list
-> you are reading off while you place people by hand, so the block stays up until the queue is clear.
+> **The signup settings are fixed once a season's configuration is confirmed.** `add` and `remove`,
+> and every other signup setting — the channel, both roles, nationality, time type and time image —
+> work while no season is active or while the season is in configuration, and are refused from
+> confirmation until that season ends. The season's signups were made under those settings.
 
 #### `/signup open` — Open the signup window
 *Access: League manager*
@@ -1091,7 +1188,9 @@ No parameters.
 | `track_ids` | String | — | Space- or comma-separated track IDs for required lap times (e.g. `01 03 12`). Omit to require no specific tracks. |
 | `close_time` | String | — | Auto-close instant as an ISO 8601 UTC datetime (e.g. `2026-09-01T20:00:00`). Must be in the future; a value with no timezone is read as UTC. Omit to leave the window open until closed by hand. |
 
-Refused unless the signup channel, base role and completion role are all set and at least one availability time slot exists. Also refused while test mode is active — no real driver may sign up under test mode, so the window would be one nobody could use. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
+**A window belongs to a season.** It can be opened only while the season is **waiting** for its signup window (its configuration confirmed) or **ongoing** with no placements left to confirm; opening it moves the season to signups, or to ongoing with signups open. Refused in every other state, and with no season at all.
+
+Also refused unless the signup channel, base role and completion role are all set and at least one availability time slot exists. Also refused while test mode is active — no real driver may sign up under test mode, so the window would be one nobody could use. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
 
 #### `/signup close` — Close the signup window
 *Access: League manager*
@@ -1099,6 +1198,8 @@ Refused unless the signup channel, base role and completion role are all set and
 No parameters. If drivers are currently in progress you will be prompted to confirm; the confirmation lists everyone in `PENDING_SIGNUP_COMPLETION`, `PENDING_ADMIN_APPROVAL`, `AWAITING_CORRECTION_PARAMETER` and `PENDING_DRIVER_CORRECTION`, but only drivers in `PENDING_SIGNUP_COMPLETION` are transitioned to Not Signed Up. Drivers awaiting approval, awaiting a correction parameter, or correcting retain their state and may still be approved after the window has closed.
 
 Refused while an auto-close time is armed. The refusal names the armed time and sends you to `/signup close-time cancel` — clear the timer and the manual close goes through. Closing ahead of the time you set is deliberately two steps.
+
+**Closing moves the season on**, however the window closes — by this command, at its close time, or when the bot catches up on a close time that passed while it was stopped. A season in signups moves to placements. Mid-season, it moves to ongoing with placements to confirm where any signup is still unsettled (a driver Unassigned, awaiting approval or mid-correction), and straight back to ongoing where none is.
 
 #### `/signup close-time add` — Arm an auto-close time for the open signup window
 *Access: League manager*
@@ -1125,15 +1226,17 @@ Refused when nothing is armed — use `add` — and when signups are not open. A
 
 > **You can set the close time when you open, or after.** `/signup open close_time:` and `/signup close-time add` arm the same value and hold to the same rule, so use whichever suits. Mistyped the day or the year? `/signup close-time modify` puts it right without touching anything else.
 
-#### `/signup unassigned list` — List all Unassigned drivers seeded by lap time
+#### `/signup unassigned list` — List the unsettled signups, seeded by lap time
 *Access: League manager*
 
-No parameters. Displays all drivers in the Unassigned state, ordered by total lap time ascending (fastest first), in an ephemeral reply. Drivers with no lap time on record appear last; ties break on **submission** order — the moment the driver sent their form in or last corrected it, not the moment they were approved.
+No parameters. Displays every unsettled signup in an ephemeral reply. Drivers in the Unassigned state come first, ordered by total lap time ascending (fastest first) and numbered by seed. Drivers with no lap time on record appear last among them; ties break on **submission** order — the moment the driver sent their form in, not the moment they were approved, and not moved by a correction they made afterwards.
+
+After them come the drivers still in review — awaiting approval, or correcting an answer — marked with that state instead of a seed. They are listed because placements cannot be confirmed while any of them stands.
 
 #### `/signup unassigned export` — Export Unassigned drivers to CSV
 *Access: League manager*
 
-No parameters. Returns `unassigned_drivers.csv` in an ephemeral reply, with the columns `Seed`, `Display Name`, `Discord User ID`, `Driver Type`, `Lap Total`, one column per configured availability slot (marked `X` where the driver selected it), `Preferred Team 1`–`3`, `Platform` and `Platform ID`.
+No parameters. Returns `unassigned_drivers.csv` in an ephemeral reply, holding the same drivers in the same order as the list — a driver still in review has a blank `Seed` — with the columns `Seed`, `Display Name`, `Discord User ID`, `Driver Type`, `Lap Total`, one column per configured availability slot (marked `X` where the driver selected it), `Preferred Team 1`–`3`, `Platform` and `Platform ID`.
 
 > **The preferred teammate and the notes are not exported**, though `/signup unassigned list` displays both. Read them off the list where they bear on how you place someone.
 
@@ -1155,7 +1258,7 @@ Where it is enforced differs by what you are doing:
 |---------|--------------------------------------|
 | `/results config session`, `/results config bulk-session` | Applied, with a warning naming every position at fault |
 | `/results config xml-import` | Rejected outright; the configuration is left untouched |
-| `/season review` | Reported in the points section, naming every position at fault, and the Approve button is withheld |
+| `/season placements-review` | Reported in the points section, naming every position at fault, and the Approve button is withheld |
 | Pressing **Approve** | Refused, naming every position at fault |
 | `/results amend session`, `/results amend bulk-session` | Staged, with a warning naming every position at fault |
 | `/results amend review` | Refused; nothing is written and the staged changes are left to repair |
@@ -1601,7 +1704,7 @@ All commands below require the attendance module to be enabled (`/module enable 
 
 > **A check-in call that fails to post is reported in the log channel**, naming the season, the division and the round. This matters more than it sounds: when a call cannot be posted, the round's attendance rows are never opened, so nobody is asked to check in and nothing is ever counted against anyone — the round ends up recorded as perfect attendance for the whole division. The report tells you to post it again once the cause is cleared, though no command currently does so — a call that failed is lost with the round. It appears whether or not the images module is enabled, because the fault is in the call and not in any picture.
 
-> **The three lead times below also decide how late a season can be approved.** A season holding a round whose notice, last notice or deadline has already passed is named in `/season review`, which then offers no Approve button — a first round three days away cannot honour a five-day notice. See [Approving](#approving--the-button-in-season-review).
+> **The three lead times below also decide how late a season can be approved.** A season holding a round whose notice, last notice or deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day notice. See [Approving](#approving--the-button-in-season-review).
 
 #### `/attendance config rsvp-notice` — Set the RSVP notice lead time
 *Access: League manager · No active season*
@@ -1652,7 +1755,7 @@ All commands below require the attendance module to be enabled (`/module enable 
 |-----------|------|----------|-------------|
 | `points` | Integer | ✅ | Cumulative attendance-penalty threshold that triggers auto-reserve. Use `0` to disable. |
 
-When a driver's cumulative attendance-penalty total reaches this value they are automatically unassigned from their current full-time seat and moved to the reserve team of their division.
+When a driver's cumulative attendance-penalty total reaches this value they are automatically moved from their current full-time seat to the reserve team of their division — one move, as `/driver move` makes it: their team role is swapped for the Reserve team's and the lineup is posted once.
 
 > **Limitation:** Cannot be set to a non-zero value while auto-sack is active. Disable auto-sack first (`/attendance config autosack 0`). The two features are mutually exclusive.
 
@@ -1665,7 +1768,7 @@ When a driver's cumulative attendance-penalty total reaches this value they are 
 |-----------|------|----------|-------------|
 | `points` | Integer | ✅ | Cumulative attendance-penalty threshold that triggers auto-sack. Use `0` to disable. |
 
-When a driver's cumulative attendance-penalty total reaches this value they are automatically removed from all driving seats across all divisions and lose their driver role.
+When a driver's cumulative attendance-penalty total in a division reaches this value they are automatically removed from **every seat in every division** and lose their driver role — whichever division's points carried them over. The latest attendance sheet of each of those divisions is posted again. A league wanting a driver dropped to reserve only in the division where they missed rounds should use `/attendance config autoreserve` instead; the reply to setting a threshold says so.
 
 > **Limitation:** Cannot be set to a non-zero value while auto-reserve is active. Disable auto-reserve first (`/attendance config autoreserve 0`). The two features are mutually exclusive.
 
@@ -1688,13 +1791,13 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 > **Setting it up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, from a fresh clone to an approved season, follow [Configuring the image module](docs/how-to/configuring-the-image-module.md).
 
-**Prerequisite:** the machine running the bot must carry **Inkscape**, which converts the filled SVG to PNG. No Python dependency installs it — it is a separate program. Its absence is fatal to the whole module and is reported at `/season review`, at `/images config view` and by every `/images test` command. If Inkscape is installed somewhere unusual, set the `INKSCAPE` environment variable to the executable's full path.
+**Prerequisite:** the machine running the bot must carry **Inkscape**, which converts the filled SVG to PNG. No Python dependency installs it — it is a separate program. Its absence is fatal to the whole module and is reported at `/season placements-review`, at `/images config view` and by every `/images test` command. If Inkscape is installed somewhere unusual, set the `INKSCAPE` environment variable to the executable's full path.
 
 `lxml` and `fontTools` are ordinary Python dependencies and are already in `requirements.txt`.
 
 **What the files are called.** Every picture is named for what it shows rather than for the template that drew it, so a folder of them saved off Discord still makes sense: `season1_division1_round10_standings_drivers.png`, `season1_division1_round10_feature_qualifying_results.png`, `season1_division1_lineup.png`. The division is named by its tier where the graphic knows it and by its name otherwise (`season1_elite_calendar.png`); the season or round is left out where there is none, and the lineup and calendar carry no round because they stand for the whole season. `/images test` names its output the same way.
 
-**A batch of pictures announces itself.** Drawing takes a few seconds per picture, and some jobs draw a run of them — `/season review` draws a lineup and a calendar per division, and closing a penalty review redraws every session's results, both championships, one verdict per penalty and the attendance sheet. A short message saying the pictures are being drawn is posted before the batch starts and deleted once it has finished. It goes to the channel you gave the command in — the bot interaction channel for a command you type, the round's results channel for the button presses that drive the results flow — and never to the channels the pictures themselves land in. Nothing is lost when it disappears: a fault is reported to you and to the log channel in its own right.
+**A batch of pictures announces itself.** Drawing takes a few seconds per picture, and some jobs draw a run of them — `/season placements-review` draws a lineup and a calendar per division, and closing a penalty review redraws every session's results, both championships, one verdict per penalty and the attendance sheet. A short message saying the pictures are being drawn is posted before the batch starts and deleted once it has finished. It goes to the channel you gave the command in — the bot interaction channel for a command you type, the round's results channel for the button presses that drive the results flow — and never to the channels the pictures themselves land in. Nothing is lost when it disappears: a fault is reported to you and to the log channel in its own right.
 
 #### `/images config toggle` — Choose image or text, per kind of output
 *Access: League manager*
@@ -1707,9 +1810,9 @@ Flips that aspect between a generated image and the text the bot has always post
 
 **Switching one on checks its drawings first.** If any drawing that aspect needs is missing or unusable, the command is **refused** — it names each fault, and the aspect stays off. That is deliberate: an aspect switched on over a broken drawing posts nothing at all where your drivers would otherwise have read text, and it withholds your season's approval besides. Switching an aspect **off** is never refused, whatever state its drawings are in: text needs no drawing, so you can always retreat to it.
 
-**A broken drawing only blocks a season if the output that draws it is on.** `/season review` and approval apply the same rule — a fault under a switched-off output is shown as a ⚠️ warning and stops nothing, because nothing would ever post it. Fix it before you switch that output on; the review names it either way so it does not catch you out later.
+**A broken drawing only blocks a season if the output that draws it is on.** `/season placements-review` and approval apply the same rule — a fault under a switched-off output is shown as a ⚠️ warning and stops nothing, because nothing would ever post it. Fix it before you switch that output on; the review names it either way so it does not catch you out later.
 
-The choice names above are exactly the names `/images config view` and `/season review` print for the nine aspects, so a `❌` row in either report can hand you the command with the choice already named.
+The choice names above are exactly the names `/images config view` and `/season placements-review` print for the nine aspects, so a `❌` row in either report can hand you the command with the choice already named.
 
 > **All nine aspects post live.** Enabling one changes what the bot posts from its next posting onwards.
 >
@@ -1743,9 +1846,9 @@ The choice names above are exactly the names `/images config view` and `/season 
 > Neither can stop a season being approved or completed. If a division's sheet cannot be drawn or
 > posted, the log channel says so and the other divisions carry on.
 >
-> With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`, and `/season review` shows you that image in place of its text calendar. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
+> With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`, and `/season placements-review` shows you that image in place of its text calendar. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
 >
-> With `lineup` on, a division's lineup channel carries a drawn graphic instead of the text embed, redrawn on every occasion the text was redrawn before: season approval, a driver being assigned, unassigned or sacked, and the attendance module's auto-reserve and auto-sack. `/team lineup` answers with the graphic too, and `/season review` shows it *in place of* its text, so what you judge before approving is what your league will receive. The reserve distribution the attendance module does at each RSVP deadline does **not** redraw it — the graphic shows who is in which team for the season, not who is on the grid for one round.
+> With `lineup` on, a division's lineup channel carries a drawn graphic instead of the text embed, redrawn on every occasion the text was redrawn before: season approval, a driver being assigned, unassigned or sacked, and the attendance module's auto-reserve and auto-sack. `/team lineup` answers with the graphic too, and `/season placements-review` shows it *in place of* its text, so what you judge before approving is what your league will receive. The reserve distribution the attendance module does at each RSVP deadline does **not** redraw it — the graphic shows who is in which team for the season, not who is on the grid for one round.
 >
 > The image is built before the old message is deleted, so a lineup that cannot be drawn leaves the one already posted where it is; that division falls back to text and the log channel says why. With the toggle off, the lineup behaves in every respect as it did before this feature.
 >
@@ -1767,7 +1870,7 @@ The choice names above are exactly the names `/images config view` and `/season 
 >
 > With `rsvp` on, a check-in call carries a graphic naming the round, its sessions, its date and the moment check-in closes. The **grand prix** takes the headline and the **circuit** the line beneath it — Emilia Romagna Grand Prix over Autodromo Internazionale Enzo e Dino Ferrari — and the country is shown as its flag rather than written out beside it. A mystery round reads "Mystery Grand Prix" over "Mystery", and takes the mystery flag and map. **Everything else about the call is unchanged** — the same role mention, the same embed, the same roster, the same three buttons. The picture is drawn once, when the call is posted, and is never redrawn: it deliberately carries no driver, no team and no RSVP status, so it stays true no matter how many people answer. If it cannot be drawn, the call is posted without it and nothing else changes.
 >
-> **Both attendance templates are checked before a season depends on them.** With `attendance` on, a driver assignment that would push a division past the rows your sheet template declares is **refused**, and the driver is not assigned — enlarge the template first. `/season review` warns you where your sheet template draws fewer round columns than your longest division holds, or your check-in template names fewer sessions than a sprint round runs; both are warnings and neither blocks approval, because which division and which round are actually drawn is decided later.
+> **Both attendance templates are checked before a season depends on them.** With `attendance` on, a driver assignment that would push a division past the rows your sheet template declares is **refused**, and the driver is not assigned — enlarge the template first. `/season placements-review` warns you where your sheet template draws fewer round columns than your longest division holds, or your check-in template names fewer sessions than a sprint round runs; both are warnings and neither blocks approval, because which division and which round are actually drawn is decided later.
 >
 > With `weather` on, all three forecast phases are posted to a division's forecast channel as pictures instead of text, on a message carrying the division role mention and nothing besides. The heading the text carried is gone; the graphic says which phase it stands for in words. The **grand prix** takes the headline and the **circuit** the line beneath it, as on the check-in call, and the country is shown as its flag rather than written out beside it. It adds an icon for the type of weather drawn for each session and one for every concrete weather within it, in place of the emoji the text used, and it carries the likelihood of rain on all three phases though only the phase 1 message ever printed it.
 >
@@ -1777,9 +1880,9 @@ The choice names above are exactly the names `/images config view` and `/season 
 >
 > **A forecast that cannot be drawn never delays a draw.** Every random draw, every stored phase result and every calculation-log entry happens exactly as it would with the images module switched off; the picture is made afterwards, from what was stored.
 >
-> **Six weather templates, and each is checked before a season depends on it.** Phases 2 and 3 are drawn from two files apiece — one for sprint rounds, one for every other format — chosen by the round's format and by nothing else. Each must declare at least as much as the formats it serves can demand: four sessions for a sprint file and two for a plain one, and for phase 3, three weather slots per session on the sprint file and four on the plain one. Declaring **fewer is refused the moment you name the file**, naming what it declares and what it needs; declaring more is fine, and the surplus is simply removed when a round does not fill it. `/season review` names any weather template that falls short — which phase, and whether it is the sprint file, the plain file or the mystery notice — and approval is refused while one stands.
+> **Six weather templates, and each is checked before a season depends on it.** Phases 2 and 3 are drawn from two files apiece — one for sprint rounds, one for every other format — chosen by the round's format and by nothing else. Each must declare at least as much as the formats it serves can demand: four sessions for a sprint file and two for a plain one, and for phase 3, three weather slots per session on the sprint file and four on the plain one. Declaring **fewer is refused the moment you name the file**, naming what it declares and what it needs; declaring more is fine, and the surplus is simply removed when a round does not fill it. `/season placements-review` names any weather template that falls short — which phase, and whether it is the sprint file, the plain file or the mystery notice — and approval is refused while one stands.
 >
-> **A forecast must name the grand prix; naming the circuit is your option.** A weather drawing that carries `track_name` but no `race_name` is refused when you name the file and again at `/season review`. The grand prix is what identifies a round — a circuit hosting two of them in one season identifies neither — so that is the field the bot insists on. Add `race_name` and the file is accepted; keep `track_name` as well if you want both names, as the shipped files do.
+> **A forecast must name the grand prix; naming the circuit is your option.** A weather drawing that carries `track_name` but no `race_name` is refused when you name the file and again at `/season placements-review`. The grand prix is what identifies a round — a circuit hosting two of them in one season identifies neither — so that is the field the bot insists on. Add `race_name` and the file is accepted; keep `track_name` as well if you want both names, as the shipped files do.
 >
 > **`verdicts` replaces the announcement, keeping only the mention.** When the toggle is on, every verdict your stewards issue — a post-race penalty, an appeal correction, and the sacking or reserve move the bot enforces itself for attendance — is posted to the division's verdicts channel as a picture. The message beside it carries the driver's mention and nothing else: the heading, the sanction, the description and the justification are all on the canvas, and the driver's name stands there in place of a mention. The graphic adds the driver's flag and the team's badge, which the text announcement never carried.
 >
@@ -1904,7 +2007,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 >
 > Because a team's ordinal is its position in the division, **teams are ordered as you added them** — a team added later takes the next free block, so nothing you have already drawn moves. Renaming a team does not move it either.
 
-> **Divisions may differ however you like.** Different teams, different numbers of them, different seat counts — one lineup file serves them all, and `/season review` no longer asks a season to be uniform. It says something only when a division holds more teams, or a team more drivers, than your template has room for.
+> **Divisions may differ however you like.** Different teams, different numbers of them, different seat counts — one lineup file serves them all, and `/season placements-review` no longer asks a season to be uniform. It says something only when a division holds more teams, or a team more drivers, than your template has room for.
 
 > **The verdict banner is the smallest drawing the bot asks for.** It has to declare exactly two fields — `division_name` and `round_number` — and may declare `season_number`, `division_tier`, `race_name`, `country_name` and `track_flag` besides. It names no session, no driver, no team and no sanction: those are all on the verdict picture the banner stands above.
 >
@@ -1977,7 +2080,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 
 Every directory is a path relative to the project root, and one that resolves outside it is rejected.
 
-**`template-directory` is checked before it is stored; the other eight are not.** Name a folder for your templates and the bot looks in it for every drawing your **switched-on** outputs need, and checks each one, exactly as `/season review` does. If any is missing or unusable the command is **refused**, naming each one and why, and your existing folder stays in force — so put your templates in place first, then point the bot at the folder. Drawings for outputs you have switched off are not required: that output posts as text and draws nothing, and switching it on later checks its own drawings at that moment. The eight artwork directories are accepted whether or not anything is in them yet, because a missing picture falls back to what the bot ships and files added later are picked up with no further command. A missing *template* has nothing behind it, so it would stop every graphic being produced at all.
+**`template-directory` is checked before it is stored; the other eight are not.** Name a folder for your templates and the bot looks in it for every drawing your **switched-on** outputs need, and checks each one, exactly as `/season placements-review` does. If any is missing or unusable the command is **refused**, naming each one and why, and your existing folder stays in force — so put your templates in place first, then point the bot at the folder. Drawings for outputs you have switched off are not required: that output posts as text and draws nothing, and switching it on later checks its own drawings at that moment. The eight artwork directories are accepted whether or not anything is in them yet, because a missing picture falls back to what the bot ships and files added later are picked up with no further command. A missing *template* has nothing behind it, so it would stop every graphic being produced at all.
 
 | Subcommand | Default | Holds |
 |------------|---------|-------|
@@ -2051,7 +2154,7 @@ Either keep the literal on the element —
 
 The second form states each colour once rather than on every element that uses it, which is how the drawings shipped in `resources/league/templates` do it. Both draw identically in Inkscape and both are overridden the same way.
 
-> **Once it is on, every slot needs a colour for every division.** A slot left unset for any division is reported by `/images config view` and by `/season review`, stops the affected graphics posting, and refuses the approval of a season — the same way a lineup template that cannot draw does. Set the colour explicitly even where you want the tier drawn in the colour the template already carries; there is deliberately no command to clear one back to the default.
+> **Once it is on, every slot needs a colour for every division.** A slot left unset for any division is reported by `/images config view` and by `/season placements-review`, stops the affected graphics posting, and refuses the approval of a season — the same way a lineup template that cannot draw does. Set the colour explicitly even where you want the tier drawn in the colour the template already carries; there is deliberately no command to clear one back to the default.
 
 > **A colour is remembered by the division's *name*.** `Division 1` and `division_1` are the same tier, so your palette survives a new season — but renaming a division loses its colours, exactly as it loses its logo.
 
@@ -2149,7 +2252,7 @@ you need do nothing. Portraits you drew yourself are untouched by any of this.
 > portraits for some drivers and let the bot fetch the rest, and hand-drawn ones stay put.
 
 A driver who removes their Discord picture has the fetched portrait removed too, and their
-seat reverts to the placeholder. `/season review` states all three settings, and refuses to
+seat reverts to the placeholder. `/season placements-review` states all three settings, and refuses to
 offer the approve button while the configuration is one that could never fetch anything.
 
 #### `/images config` — Presentation
@@ -2183,11 +2286,11 @@ No parameters. Lists every setting with a validity status, and each aspect as �
 
 **Every fault names the command that fixes it.** A broken drawing names `/images template …` for *that* drawing, not for its group. A bad artwork folder names the `/images config …-directory` command that sets it. A source module that is off names `/module enable module_name:…`. The one exception is a missing rasteriser: no command of yours installs it, so the line says to ask whoever runs the bot rather than sending you after a command that will not help.
 
-> **Written for you, not for a developer.** Both this report and `/season review` say what is wrong in terms of your drawings and your folders — no field ids, no file paths, no layer numbers. The exact fault goes to the bot's log, where whoever runs the bot can read it. Naming a template file with an `/images template …` command is the exception: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
+> **Written for you, not for a developer.** Both this report and `/season placements-review` say what is wrong in terms of your drawings and your folders — no field ids, no file paths, no layer numbers. The exact fault goes to the bot's log, where whoever runs the bot can read it. Naming a template file with an `/images template …` command is the exception: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
 
 The report also states **how deeply templates were checked**. Layer 1 — the file resolves, parses as SVG, and declares a canvas — applies to all sixteen. Layer 2 checks that a template carries every field its image needs, and that it carries no field belonging to a different image type. Layer 3 checks that every wrapped field can actually be laid out: its rectangle exists, declares a width and a height, and the field has a line height. All three now apply to all sixteen types, the last of their field sets having been specified. A fourth layer — a trial render — is not yet in force and is reported as *not applied* rather than as passed. The report never claims a template was verified more deeply than it was.
 
-The same summary is appended to `/season review`, which additionally names each template that would block approval. **Pressing Approve refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
+The same summary is appended to `/season placements-review`, which additionally names each template that would block approval. **Pressing Approve refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
 
 #### `/images test` — Preview a kind against your own league
 *Access: League manager*

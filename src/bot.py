@@ -394,7 +394,7 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
 
     The horizons are the league's own, read from ``weather_pipeline_config``, not the packaged
     5 / 2 / 2 (issue #111). Every other path that decides whether a phase is overdue reads that
-    config — ``/season approve``, the catch-up ``/module enable weather`` runs, and
+    config — the confirmation of placements, the catch-up ``/module enable weather`` runs, and
     ``amend_round`` — and a restart judging by the defaults made the same league see one set of
     timings on an enable and another on a restart: a longer phase 1 was never published at all,
     a shorter one was published days early.
@@ -874,7 +874,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
 async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
     """Clear any season-review approve button left standing by a previous run.
 
-    The button expires five minutes after `/season review` posts it, and the timer that
+    The button expires five minutes after `/season placements-review` posts it, and the timer that
     does so is a `discord.ui.View` timeout — held in memory, and lost with the process. A
     bot restarted inside that window would otherwise leave a public message offering a
     button nothing is listening to, for ever.
@@ -932,9 +932,9 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
                 )
             try:
                 await channel.send(
-                    f"⏱️ <@{int(row['reviewer_id'])}> your season review expired while the "
-                    f"bot was restarting and can no longer be approved. Run "
-                    f"`/season review` again to approve the season."
+                    f"⏱️ <@{int(row['reviewer_id'])}> your review expired while the bot was "
+                    f"restarting and can no longer be answered. Run `/season config-review` "
+                    f"or `/season placements-review` again, whichever you were answering."
                 )
             except (discord.HTTPException, discord.Forbidden) as exc:
                 log.warning(

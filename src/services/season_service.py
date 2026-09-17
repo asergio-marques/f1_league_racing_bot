@@ -15,7 +15,14 @@ from models.round import (
     RoundFormat,
     RoundStatus,
 )
-from models.season import Season, SeasonStatus
+from models.season import (
+    ALLOWED_STAGE_TRANSITIONS,
+    InvalidStageTransition,
+    Season,
+    SeasonStage,
+    SeasonStatus,
+    status_of_stage,
+)
 from models.session import Session, SessionType, SESSIONS_BY_FORMAT
 
 #: Rendered from the model's sets so the queries below cannot drift from the rule they
@@ -71,11 +78,18 @@ class SeasonService:
             status=SeasonStatus.SETUP,
         )
 
-    async def get_active_season(self, server_id: int) -> Season | None:
-        """Return the ACTIVE season for *server_id*, or None."""
+    async def get_confirmed_season(self, server_id: int) -> Season | None:
+        """Return the ACTIVE season for *server_id*, or None.
+
+        ACTIVE is every stage from the first confirmation of placements to the season's
+        completion or cancellation: the three ongoing stages and Pending completion. This was
+        ``get_active_season``, renamed once the specification came to call a season *active*
+        from the moment it is set up (issue #220). Read ``Season.stage`` where the stage
+        within ACTIVE matters.
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
                 "WHERE server_id = ? AND status = ?",
                 (server_id, SeasonStatus.ACTIVE.value),
             )
@@ -93,7 +107,7 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
                 "WHERE server_id = ? ORDER BY id DESC LIMIT 1",
                 (server_id,),
             )
@@ -114,7 +128,7 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
                 "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
                 "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
                 (server_id,),
@@ -138,7 +152,7 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
                 "WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
                 "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
                 (server_id,),
@@ -173,7 +187,7 @@ class SeasonService:
         """Return the SETUP season for *server_id*, or None."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
                 "WHERE server_id = ? AND status = 'SETUP' LIMIT 1",
                 (server_id,),
             )
@@ -254,6 +268,44 @@ class SeasonService:
             )
             await db.commit()
 
+    async def get_stage(self, season_id: int) -> SeasonStage | None:
+        """The lifecycle stage of *season_id*, or None where no such season exists."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
+            row = await cursor.fetchone()
+        if row is None or row["stage"] is None:
+            return None
+        return SeasonStage(row["stage"])
+
+    async def set_stage(self, season_id: int, stage: SeasonStage) -> None:
+        """Move *season_id* to *stage*, carrying its coarse status with it.
+
+        The move must be one ``ALLOWED_STAGE_TRANSITIONS`` permits from the stage the season
+        stands in; anything else raises :class:`InvalidStageTransition` and writes nothing.
+        The write is conditioned on the stage that was read, so two callers racing to move
+        the same season cannot both succeed from a stage the first of them has already left.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
+            row = await cursor.fetchone()
+            if row is None or row["stage"] is None:
+                raise InvalidStageTransition(f"season {season_id} does not exist")
+            current = SeasonStage(row["stage"])
+            if stage not in ALLOWED_STAGE_TRANSITIONS[current]:
+                raise InvalidStageTransition(
+                    f"season {season_id} cannot move from {current.value} to {stage.value}"
+                )
+            cursor = await db.execute(
+                "UPDATE seasons SET status = ?, stage = ? WHERE id = ? AND stage = ?",
+                (status_of_stage(stage).value, stage.value, season_id, current.value),
+            )
+            await db.commit()
+            if cursor.rowcount == 0:
+                raise InvalidStageTransition(
+                    f"season {season_id} left {current.value} before it could move to "
+                    f"{stage.value}"
+                )
+
     async def assert_season_mutable(self, season: "Season") -> None:
         """Raise SeasonImmutableError if *season* is COMPLETED or CANCELLED."""
         if season.status in (SeasonStatus.COMPLETED, SeasonStatus.CANCELLED):
@@ -268,11 +320,14 @@ class SeasonService:
         existing_season_id: int,
         divisions: list[dict],
         game_edition: int = 0,
+        initial_stage: SeasonStage | None = None,
     ) -> tuple[int, int]:
         """Atomically replace the SETUP season snapshot for *server_id* in the DB.
 
-        Deletes the previous SETUP season (if *existing_season_id* is non-zero)
-        and re-inserts the full pending config.  Sessions are NOT created here —
+        Rebuilds everything beneath the season row (if *existing_season_id* is non-zero)
+        and re-inserts the full pending config. *initial_stage* is the stage a season
+        created by this call begins in; left unset it takes the default migration 057
+        gives a SETUP row. It is ignored for an existing season, which keeps its stage.  Sessions are NOT created here —
         they are created at approve time.
 
         **Everything not held in the PendingConfig must be carried across by hand.**
@@ -379,8 +434,8 @@ class SeasonService:
                     if did in saved_div_names
                 }
 
-                # Save attached points config names before the season row is deleted
-                # (season_points_links has ON DELETE CASCADE so they disappear with it).
+                # Save attached points config names. The season row is no longer deleted, so
+                # they survive in place; they are re-attached with INSERT OR IGNORE regardless.
                 cursor = await db.execute(
                     "SELECT config_name FROM season_points_links "
                     "WHERE season_id = ? ORDER BY config_name",
@@ -471,20 +526,34 @@ class SeasonService:
                 await db.execute(
                     "DELETE FROM divisions WHERE season_id = ?", (existing_season_id,)
                 )
-                await db.execute(
-                    "DELETE FROM seasons WHERE id = ?", (existing_season_id,)
-                )
             else:
                 channels_by_name = {}
                 saved_config_names = []
                 seats_by_division = {}
 
-            cursor = await db.execute(
-                "INSERT INTO seasons (server_id, start_date, status, season_number, game_edition) "
-                "VALUES (?, ?, 'SETUP', ?, ?)",
-                (server_id, start_date.isoformat(), season_number, game_edition),
-            )
-            new_season_id: int = cursor.lastrowid  # type: ignore[assignment]
+            # The season row itself is kept: only what hangs beneath it is rebuilt. A season
+            # in setup is referred to by more than its divisions — its stage, and from the
+            # Signups stage on the signups made to it — and a new id would orphan them all.
+            if existing_season_id != 0:
+                await db.execute(
+                    "UPDATE seasons SET start_date = ?, game_edition = ? WHERE id = ?",
+                    (start_date.isoformat(), game_edition, existing_season_id),
+                )
+                new_season_id: int = existing_season_id
+            else:
+                cursor = await db.execute(
+                    "INSERT INTO seasons "
+                    "(server_id, start_date, status, season_number, game_edition, stage) "
+                    "VALUES (?, ?, 'SETUP', ?, ?, ?)",
+                    (
+                        server_id,
+                        start_date.isoformat(),
+                        season_number,
+                        game_edition,
+                        initial_stage.value if initial_stage is not None else None,
+                    ),
+                )
+                new_season_id = cursor.lastrowid  # type: ignore[assignment]
 
             # Restore season-level points config attachments under the new season ID.
             for config_name in saved_config_names:
@@ -785,6 +854,23 @@ class SeasonService:
             row = await cursor.fetchone()
         return row is not None and row[0] == 0
 
+    async def advance_to_pending_completion(self, season_id: int) -> bool:
+        """Move *season_id* to Pending completion where every division is done (issue #220)."""
+        from services.season_lifecycle_service import advance_to_pending_completion
+
+        return await advance_to_pending_completion(self._db_path, season_id)
+
+    async def wind_down_ongoing(self, bot, server_id: int) -> bool:
+        """Take a season whose every division is done out of the ongoing stages (issue #220).
+
+        Its signup window closed, its pending placements turned down, and on to Pending
+        completion. A wrapper, so that a command reaches it through the service it already
+        holds; see :func:`services.season_lifecycle_service.wind_down_ongoing`.
+        """
+        from services.season_lifecycle_service import wind_down_ongoing
+
+        return await wind_down_ongoing(bot, server_id)
+
     async def refresh_division_status(self, division_id: int) -> bool:
         """Move a division ACTIVE -> FINISHED once none of its rounds is outstanding.
 
@@ -823,7 +909,18 @@ class SeasonService:
                 (division_id,),
             )
             await db.commit()
-            return cursor.rowcount > 0
+            moved = cursor.rowcount > 0
+            cursor = await db.execute(
+                "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
+            )
+            season_row = await cursor.fetchone()
+
+        # A division finishing may be the last one its season waited on (issue #220).
+        if moved and season_row is not None:
+            from services.season_lifecycle_service import advance_to_pending_completion
+
+            await advance_to_pending_completion(self._db_path, season_row["season_id"])
+        return moved
 
     async def end_rounds_awaiting_results(
         self,
@@ -965,6 +1062,42 @@ class SeasonService:
             rows = await cursor.fetchall()
         return [row[0] for row in rows]
 
+    async def discard_uncommitted_placements(self, season_id: int) -> int:
+        """Delete every placement of *season_id* not yet committed, freeing its seat.
+
+        Cancelling a season discards them (issue #220): the drivers placed stood outside the
+        championship and earn no history of it. Returns how many were discarded.
+        """
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE team_seats SET driver_profile_id = NULL WHERE id IN ("
+                "  SELECT team_seat_id FROM driver_season_assignments "
+                "  WHERE season_id = ? AND committed = 0 AND team_seat_id IS NOT NULL)",
+                (season_id,),
+            )
+            cursor = await db.execute(
+                "DELETE FROM driver_season_assignments WHERE season_id = ? AND committed = 0",
+                (season_id,),
+            )
+            await db.commit()
+            return cursor.rowcount
+
+    async def commit_placements(self, season_id: int) -> int:
+        """Commit every placement of *season_id* not yet committed; returns how many.
+
+        Called as placements are confirmed (issue #220). A committed placement is part of the
+        championship: it holds its roles, stands in its lineup, is called to check-in and
+        scored in results and standings.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "UPDATE driver_season_assignments SET committed = 1 "
+                "WHERE season_id = ? AND committed = 0",
+                (season_id,),
+            )
+            await db.commit()
+            return cursor.rowcount
+
     async def transition_to_active(self, season_id: int) -> None:
         """Set season status to ACTIVE, and its divisions with it.
 
@@ -986,7 +1119,11 @@ class SeasonService:
             await db.commit()
 
     async def delete_season(self, season_id: int) -> None:
-        """FK-safe cascade delete of one season and all its child records."""
+        """FK-safe cascade delete of one season and all its child records.
+
+        What `/season abort` leaves of a season whose placements were never confirmed: nothing
+        at all, its signups included (issue #220).
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id FROM divisions WHERE season_id = ?", (season_id,)
@@ -1069,7 +1206,9 @@ class SeasonService:
                     tph = ",".join("?" * len(test_profile_ids))
                     await db.execute(f"DELETE FROM driver_profiles WHERE id IN ({tph})", test_profile_ids)
 
+            await db.execute("DELETE FROM season_review_prompts WHERE season_id = ?", (season_id,))
             await db.execute("DELETE FROM divisions WHERE season_id = ?", (season_id,))
+            # The season's signups, windows and signup configuration go with it by cascade.
             await db.execute("DELETE FROM seasons WHERE id = ?", (season_id,))
             await db.commit()
 
@@ -1417,6 +1556,16 @@ class SeasonService:
                 db, division_id, server_id, actor_id, actor_name, now
             )
             await db.commit()
+            cursor = await db.execute(
+                "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
+            )
+            season_row = await cursor.fetchone()
+
+        # Cancelling the last division still running leaves the season pending completion.
+        if season_row is not None:
+            from services.season_lifecycle_service import advance_to_pending_completion
+
+            await advance_to_pending_completion(self._db_path, season_row["season_id"])
 
     async def cancel_season_cascade(
         self,
@@ -1762,6 +1911,11 @@ def _row_to_season(row: object) -> Season:
         status=SeasonStatus(row["status"]),
         season_number=row["season_number"] if "season_number" in row.keys() else 0,
         game_edition=row["game_edition"] if "game_edition" in row.keys() else 0,
+        stage=(
+            SeasonStage(row["stage"])
+            if "stage" in row.keys() and row["stage"] is not None
+            else None
+        ),
     )
 
 

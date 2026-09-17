@@ -81,7 +81,7 @@ async def _make_db(tmp_path, *, status: str = "SETUP", name: str = "division_add
 
 
 def _pending(*divisions: PendingDivision) -> PendingConfig:
-    return PendingConfig(server_id=SERVER_ID, divisions=list(divisions))
+    return PendingConfig(server_id=SERVER_ID, divisions=list(divisions), season_id=7)
 
 
 def _division(name="Pro", tier=1, *, id=11):
@@ -111,10 +111,16 @@ def _make_cog(
     divisions=None,
     rounds=None,
     duplicate_error: Exception | None = None,
+    stage=None,
 ) -> SeasonCog:
+    from models.season import SeasonStage
+
     bot = MagicMock()
     bot.db_path = db_path
     bot.season_service = MagicMock()
+    bot.season_service.get_stage = AsyncMock(
+        return_value=stage if stage is not None else SeasonStage.PLACEMENTS
+    )
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division()]
     )
@@ -258,6 +264,23 @@ async def test_the_first_empty_slot_is_the_one_filled(tmp_path):
 
     assert cfg.divisions[0].name == "Am"
     assert cfg.divisions[1].name == ""
+
+
+@pytest.mark.parametrize("stage_name", ["CONFIGURATION", "WAITING", "SIGNUPS"])
+async def test_adding_before_placements_is_refused(tmp_path, stage_name):
+    """Issue #220: divisions are built only once the signups are in."""
+    from models.season import SeasonStage
+
+    db_path = await _make_db(tmp_path)
+    cfg = _pending()
+    cog = _make_cog(db_path, cfg=cfg, stage=SeasonStage(stage_name))
+    interaction = _interaction()
+
+    await _add(cog, interaction)
+
+    assert "only be added while the season is in placements" in _replied(interaction)
+    assert not any(d.name == "Am" for d in cfg.divisions)
+    cog._snapshot_pending.assert_not_awaited()
 
 
 async def test_adding_without_a_setup_is_refused(tmp_path):
@@ -409,7 +432,7 @@ async def test_duplicating_outside_setup_is_refused(tmp_path):
 
     await _duplicate(cog, interaction)
 
-    assert "only be used during season setup" in _replied(interaction)
+    assert "only be used while the season is in placements" in _replied(interaction)
     cog.bot.season_service.duplicate_division.assert_not_awaited()
 
 
@@ -507,7 +530,7 @@ async def test_the_new_division_is_seeded_with_teams(tmp_path):
 
 async def test_the_pending_config_is_reloaded_from_what_was_written(tmp_path):
     """Duplicate writes to the database, not to the snapshot — without the reload the
-    manager's next `/season review` would not contain the division they just made."""
+    manager's next `/season placements-review` would not contain the division they just made."""
     db_path = await _make_db(tmp_path)
     cfg = _pending(PendingDivision(name="Pro", role_id=1, tier=1))
     cog = _make_cog(db_path, cfg=cfg)

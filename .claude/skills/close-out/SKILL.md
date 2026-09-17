@@ -137,11 +137,28 @@ league-facing guide changed.
    result. Every production change carries its unit tests with it; a change reported complete
    without a test run is not complete. Any failure is a real one until confirmed on a clean
    tree.
+6. **What did the change do to coverage?** Where production code changed, measure coverage
+   **before and after** — on the base branch (usually `main`) and on the finished branch — and
+   compare them per module and for `src/` as a whole. Take the base-branch figures from a
+   separate worktree, never by checking out over your work, and run the two measurements one
+   after the other, never at once (the suite's schema template is shared). The measured run
+   doubles as the suite run for the branch:
+
+   ```
+   COVERAGE_CORE=sysmon python3 -m coverage run -m pytest tests/ -q -m "not rasteriser"
+   python3 -m coverage json -q -o coverage.json
+   python3 tools/coverage_by_module.py coverage.json
+   ```
+
+   A refactor, test-only or documentation change has nothing to compare; say so rather than
+   measuring.
 
 ## Report what you did
 
 State plainly which documents you touched and which you deliberately did not, with the
-reason, and give the test suite result. Cover the wip-specs, the README **and** the how-to
+reason, and give the test suite result. Where production code changed, give coverage before
+and after as one table — a row per module and one for `src/`, with statements and percentage on
+each side and the change in points — and name any module that went down. Cover the wip-specs, the README **and** the how-to
 guides — naming each one you checked and left alone. "No README or how-to change — this was a
 refactor with no visible behaviour; `pytest tests/ -q` green" is a complete and useful
 answer. Silence is not.

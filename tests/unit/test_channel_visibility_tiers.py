@@ -198,6 +198,9 @@ async def test_the_signup_channel_is_open_to_both_roles(admin_role_id, expected,
     bot.output_router.post_log = AsyncMock()
     bot.db_path = await _seed(tmp_path, admin_role_id=admin_role_id)
     cog.bot = bot
+    # The seeded season is active, which fixes the signup settings (issue #220). That gate
+    # has tests of its own; this one is about the channel's permissions.
+    cog._refuse_while_configuration_fixed = AsyncMock(return_value=False)
 
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID

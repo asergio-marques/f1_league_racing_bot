@@ -543,7 +543,7 @@ class ResultsCog(commands.Cog):
         `points_config_service.remove_config` for why that is the season's only link to the
         points, and why an approved season's is left alone — so the season quietly stops
         being the season the manager built. Naming the season and waiting is the difference
-        between a deliberate teardown and a surprise found at the next `/season review`.
+        between a deliberate teardown and a surprise found at the next `/season placements-review`.
         With nothing attached there is nothing to lose and the command acts straight away,
         in the manner of `module_cog._ConfirmDisableResultsView`.
         """

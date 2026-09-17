@@ -817,6 +817,13 @@ async def finalize_appeals_review(
 
         await SeasonService(db_path).refresh_division_status(division_id)
 
+        # The division finishing may have been the season's last: a season with a window open or
+        # placements to confirm is wound down and moves to Pending completion at once (#220).
+        try:
+            await interaction.client.season_service.wind_down_ongoing(interaction.client, interaction.guild_id)
+        except Exception:  # noqa: BLE001 — never fail the approval on the season's next stage
+            log.exception("could not wind the season of server %s down", interaction.guild_id)
+
         # Audit log APPEALS_REVIEW_APPROVED
         old_val = _json.dumps({"status": RoundStatus.AWAITING_APPEAL_VERDICTS.value})
         new_val = _json.dumps(
@@ -2035,7 +2042,8 @@ async def _build_division_validation_data(
     reserve team.  They appear in ``division_driver_ids`` and ``driver_team_map`` but
     must be treated differently during submission validation.
     """
-    div_teams = await bot.team_service.get_division_teams(division_id)
+    # Only drivers whose placements are confirmed may be scored (issue #220).
+    div_teams = await bot.team_service.get_division_teams(division_id, committed_only=True)
     teams_with_roles = await bot.team_service.get_teams_with_roles(server_id)
 
     name_to_role: dict[str, int] = {
@@ -2496,6 +2504,13 @@ async def run_result_submission_job(round_id: int, bot) -> None:
         from services.season_service import SeasonService
 
         await SeasonService(db_path).refresh_division_status(division_id)
+
+        # The division finishing may have been the season's last: a season with a window open or
+        # placements to confirm is wound down and moves to Pending completion at once (#220).
+        try:
+            await bot.season_service.wind_down_ongoing(bot, server_id)
+        except Exception:  # noqa: BLE001 — never fail the job on the season's next stage
+            log.exception("could not wind the season of server %s down", server_id)
         log.info(
             "run_result_submission_job: results module disabled for server %s — round %s "
             "closed without results",

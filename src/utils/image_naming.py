@@ -91,7 +91,7 @@ def _counted(value) -> str:
     """A season, tier or round number, or "" where it is not set.
 
     Nought reads as **unset**, not as the number nought. That is already the bot's own
-    reading of both — `/season review` writes its tier tag only `if div.tier > 0`, and its
+    reading of both — `/season placements-review` writes its tier tag only `if div.tier > 0`, and its
     season heading only `if cfg.season_number > 0` — and a graphic named `division0` would
     claim a tier the league never gave.
     """
