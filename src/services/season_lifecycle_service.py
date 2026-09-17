@@ -1,0 +1,117 @@
+"""Moving a season through its lifecycle as the events that drive it happen (issue #220).
+
+``SeasonService.set_stage`` enforces which transitions are legal. This module decides which
+transition an event calls for — a signup window opening or closing, and later placements
+being confirmed and a season ending — so that every path reaching the event (a command, a
+timer, a restart) moves the season the same way.
+
+It reads the database directly rather than through a bot, so the signup window's forced
+close, which runs from a command, a scheduled job and the startup sweep alike, can call it
+with nothing but a path.
+"""
+from __future__ import annotations
+
+import logging
+
+from db.database import get_connection
+from models.season import InvalidStageTransition, SeasonStage, status_of_stage
+
+log = logging.getLogger(__name__)
+
+#: A signup is unsettled while its driver stands in one of these states: approved and not
+#: yet placed, or still being judged. Closing a mid-season window with any of them standing
+#: leaves placements to make.
+UNSETTLED_STATES: tuple[str, ...] = (
+    "UNASSIGNED",
+    "PENDING_ADMIN_APPROVAL",
+    "AWAITING_CORRECTION_PARAMETER",
+    "PENDING_DRIVER_CORRECTION",
+)
+
+#: The stages a signup window may be opened from, and the stage opening it moves to.
+WINDOW_OPENS_FROM: dict[SeasonStage, SeasonStage] = {
+    SeasonStage.WAITING: SeasonStage.SIGNUPS,
+    SeasonStage.ONGOING: SeasonStage.ONGOING_SIGNUPS,
+}
+
+
+async def live_season_stage(db_path: str, server_id: int) -> tuple[int, SeasonStage] | None:
+    """The server's active season and its stage, or None where it holds none."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, stage FROM seasons "
+            "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
+            "ORDER BY id DESC LIMIT 1",
+            (server_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None or row["stage"] is None:
+        return None
+    return int(row["id"]), SeasonStage(row["stage"])
+
+
+async def count_unsettled_signups(db_path: str, server_id: int) -> int:
+    """How many drivers of *server_id* hold a signup not yet placed or turned down."""
+    placeholders = ",".join("?" for _ in UNSETTLED_STATES)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT COUNT(*) AS n FROM driver_profiles "
+            f"WHERE server_id = ? AND current_state IN ({placeholders})",
+            (server_id, *UNSETTLED_STATES),
+        )
+        row = await cursor.fetchone()
+    return int(row["n"]) if row is not None else 0
+
+
+async def _move(db_path: str, season_id: int, current: SeasonStage, target: SeasonStage) -> None:
+    """Write the transition, conditioned on the stage that was read."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "UPDATE seasons SET status = ?, stage = ? WHERE id = ? AND stage = ?",
+            (status_of_stage(target).value, target.value, season_id, current.value),
+        )
+        await db.commit()
+    if cursor.rowcount == 0:
+        raise InvalidStageTransition(
+            f"season {season_id} left {current.value} before it could move to {target.value}"
+        )
+
+
+async def advance_on_window_open(db_path: str, server_id: int) -> SeasonStage | None:
+    """Move the active season on for a signup window just opened.
+
+    Waiting becomes Signups; Ongoing becomes Ongoing, signups open. Returns the new stage,
+    or None where the season stood in neither and nothing was moved.
+    """
+    found = await live_season_stage(db_path, server_id)
+    if found is None:
+        return None
+    season_id, stage = found
+    target = WINDOW_OPENS_FROM.get(stage)
+    if target is None:
+        return None
+    await _move(db_path, season_id, stage, target)
+    return target
+
+
+async def advance_on_window_close(db_path: str, server_id: int) -> SeasonStage | None:
+    """Move the active season on for a signup window just closed.
+
+    Signups becomes Placements. Ongoing, signups open becomes Ongoing, placements where any
+    signup remains unsettled, and Ongoing where none does. Returns the new stage, or None
+    where the season stood in neither and nothing was moved — a window force-closed by
+    disabling the module, for one, belongs to no stage.
+    """
+    found = await live_season_stage(db_path, server_id)
+    if found is None:
+        return None
+    season_id, stage = found
+    if stage is SeasonStage.SIGNUPS:
+        target = SeasonStage.PLACEMENTS
+    elif stage is SeasonStage.ONGOING_SIGNUPS:
+        unsettled = await count_unsettled_signups(db_path, server_id)
+        target = SeasonStage.ONGOING_PLACEMENTS if unsettled else SeasonStage.ONGOING
+    else:
+        return None
+    await _move(db_path, season_id, stage, target)
+    return target

@@ -1117,7 +1117,9 @@ No parameters.
 | `track_ids` | String | — | Space- or comma-separated track IDs for required lap times (e.g. `01 03 12`). Omit to require no specific tracks. |
 | `close_time` | String | — | Auto-close instant as an ISO 8601 UTC datetime (e.g. `2026-09-01T20:00:00`). Must be in the future; a value with no timezone is read as UTC. Omit to leave the window open until closed by hand. |
 
-Refused unless the signup channel, base role and completion role are all set and at least one availability time slot exists. Also refused while test mode is active — no real driver may sign up under test mode, so the window would be one nobody could use. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
+**A window belongs to a season.** It can be opened only while the season is **waiting** for its signup window (its configuration confirmed) or **ongoing** with no placements left to confirm; opening it moves the season to signups, or to ongoing with signups open. Refused in every other state, and with no season at all.
+
+Also refused unless the signup channel, base role and completion role are all set and at least one availability time slot exists. Also refused while test mode is active — no real driver may sign up under test mode, so the window would be one nobody could use. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
 
 #### `/signup close` — Close the signup window
 *Access: League manager*
@@ -1125,6 +1127,8 @@ Refused unless the signup channel, base role and completion role are all set and
 No parameters. If drivers are currently in progress you will be prompted to confirm; the confirmation lists everyone in `PENDING_SIGNUP_COMPLETION`, `PENDING_ADMIN_APPROVAL`, `AWAITING_CORRECTION_PARAMETER` and `PENDING_DRIVER_CORRECTION`, but only drivers in `PENDING_SIGNUP_COMPLETION` are transitioned to Not Signed Up. Drivers awaiting approval, awaiting a correction parameter, or correcting retain their state and may still be approved after the window has closed.
 
 Refused while an auto-close time is armed. The refusal names the armed time and sends you to `/signup close-time cancel` — clear the timer and the manual close goes through. Closing ahead of the time you set is deliberately two steps.
+
+**Closing moves the season on**, however the window closes — by this command, at its close time, or when the bot catches up on a close time that passed while it was stopped. A season in signups moves to placements. Mid-season, it moves to ongoing with placements to confirm where any signup is still unsettled (a driver Unassigned, awaiting approval or mid-correction), and straight back to ongoing where none is.
 
 #### `/signup close-time add` — Arm an auto-close time for the open signup window
 *Access: League manager*

@@ -1547,6 +1547,20 @@ class SignupCog(commands.Cog):
             )
             return
 
+        # A window opens only while the season waits for one, or while it is being raced
+        # with no window already run and unplaced (issue #220).
+        from services.season_lifecycle_service import WINDOW_OPENS_FROM, live_season_stage
+
+        live = await live_season_stage(self.bot.db_path, server_id)
+        if live is None or live[1] not in WINDOW_OPENS_FROM:
+            await interaction.response.send_message(
+                "❌ Signups can only be opened while the season is waiting for its signup "
+                "window, once its configuration is confirmed, or while it is ongoing with "
+                "no placements left to confirm.",
+                ephemeral=True,
+            )
+            return
+
         # Guard: all three config values must be set
         missing = []
         if cfg.signup_channel_id is None:
@@ -1667,6 +1681,9 @@ class SignupCog(commands.Cog):
         await self.bot.signup_module_service.set_window_open(
             server_id, posted_msg.id, track_list
         )
+        from services.season_lifecycle_service import advance_on_window_open
+
+        await advance_on_window_open(self.bot.db_path, server_id)
 
         if close_at_iso:
             await self.bot.signup_module_service.set_close_at(server_id, close_at_iso)

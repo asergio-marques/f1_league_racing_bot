@@ -120,6 +120,16 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
     # 4. Set window closed (persists closed_msg_id)
     await bot.signup_module_service.set_window_closed(server_id, closed_msg_id=closed_msg_id)
 
+    # 4b. Move the season on (issue #220). Every close reaches here — the command, the
+    #     close timer and the restart sweep — so every close moves the season alike. A
+    #     failure is logged and never undoes the close: the window is shut either way.
+    from services.season_lifecycle_service import advance_on_window_close
+
+    try:
+        await advance_on_window_close(bot.db_path, server_id)
+    except Exception:  # noqa: BLE001
+        log.exception("forced_close: could not move the season on for server %s", server_id)
+
     # 5. Audit entry
     now = datetime.now(timezone.utc).isoformat()
     async with get_connection(bot.db_path) as db:

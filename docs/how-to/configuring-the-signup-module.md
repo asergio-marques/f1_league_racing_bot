@@ -152,7 +152,9 @@ Both parameters are optional.
 
 **`close_time`** shuts the window automatically. It is UTC, in the format `2026-09-01T20:00:00`, and it must be in the future.
 
-The bot checks things in order and stops at the first problem: test mode must be off, the module must be configured, the window must not already be open, all three of channel and roles must be set, there must be at least one slot, the close time must parse and be in the future, and every track ID must exist.
+**The window belongs to a season.** You can open it once the season's configuration is confirmed and it is waiting for its signup window, or mid-season while it is ongoing with no placements left to confirm. Opening it moves the season on.
+
+The bot checks things in order and stops at the first problem: test mode must be off, the module must be configured, the window must not already be open, the season must be waiting or ongoing, all three of channel and roles must be set, there must be at least one slot, the close time must parse and be in the future, and every track ID must exist.
 
 > **Test mode blocks the window, and an open window blocks test mode.** No real driver may sign up while the server is in test mode — the Sign Up button refuses them too — so `/test-mode toggle` it off before you open. It will not go back on until you have closed the window again with `/signup close`, and not at all once a real driver has signed up. Do your testing first, as Step 9 describes.
 
@@ -226,6 +228,8 @@ If nobody is mid-signup it closes immediately. Otherwise you get a confirmation 
 Closing ahead of the time you set is two steps on purpose — the first is hard to do by accident. If you only want to move the deadline rather than close now, use `/signup close-time modify` with the new time and leave the window running.
 
 Closing deletes the Sign Up button, posts a **Signups are now closed** notice in the channel, and tells anyone still filling in the questionnaire that it is over.
+
+**Closing moves the season on**, whether you close it or its close time does. Before the season has started, it moves to placements, where you build divisions and place drivers. Mid-season, it moves to placements for the new drivers where anyone is still Unassigned, awaiting approval or mid-correction, and straight back to ongoing where nobody is.
 
 > **It drops fewer drivers than it warns you about.** The confirmation says every in-progress driver will be reset, and counts everyone still filling the form in *plus* everyone waiting on you. Only the ones still filling it in are actually dropped. Drivers waiting for your approval, fixing something you sent back, or sat with the field buttons up keep their place — you can still approve them after the window has shut, and you should. See [#128](https://github.com/asergio-marques/f1_league_racing_bot/issues/128).
 >
