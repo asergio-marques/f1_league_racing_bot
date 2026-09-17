@@ -42,6 +42,7 @@ from cogs.season_cog import SeasonCog  # noqa: E402
 from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus  # noqa: E402
 from services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
+from models.season import SeasonStage  # noqa: E402
 
 SERVER_ID = 10908
 SEASON_ID = 3
@@ -81,7 +82,10 @@ def _make_cog(
     *,
     setup_season_id: int | None = SEASON_ID,
     setup_season=SimpleNamespace(id=SEASON_ID, season_number=3),
-    active_season=SimpleNamespace(id=SEASON_ID, season_number=3),
+    active_season=SimpleNamespace(
+        id=SEASON_ID, season_number=3,
+        stage=SeasonStage.ONGOING,
+    ),
     mutable: bool = True,
     divisions=None,
     rounds=None,
@@ -291,7 +295,7 @@ async def test_cancelling_without_an_active_season_is_refused():
 
     await _cancel(cog, interaction)
 
-    assert "requires an active season" in _replied(interaction)
+    assert "only while the season is ongoing" in _replied(interaction)
 
 
 async def test_cancelling_in_an_archived_season_is_refused():

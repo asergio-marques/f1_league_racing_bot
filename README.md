@@ -557,7 +557,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 > **A round cannot be moved inside its own check-in deadline.** With the default two-hour deadline, moving a round to less than two hours away is refused outright — the check-in would open and close in the same instant, and the round would read afterwards as perfect attendance for a division nobody asked. Move it further out, or shorten the deadline first.
 
 #### `/round cancel` — Cancel a round in the active season
-*Access: League admin*
+*Access: League admin · Ongoing only*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -568,7 +568,9 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and posts a notice to the division's forecast channel.
 
 #### `/division cancel` — Cancel a division in the active season
-*Access: League admin*
+*Access: League admin · Ongoing only*
+
+Available only while the season is ongoing. Cancelling the last division still running leaves the season pending completion.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

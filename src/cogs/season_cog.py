@@ -3358,9 +3358,12 @@ class SeasonCog(commands.Cog):
             return
 
         season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
-        if season is None:
+        from models.season import ONGOING_STAGES
+
+        # Available only while the season is ongoing (issue #220).
+        if season is None or season.stage not in ONGOING_STAGES:
             await interaction.response.send_message(
-                "\u274c `/division cancel` requires an active season.",
+                "\u274c `/division cancel` is available only while the season is ongoing.",
                 ephemeral=True,
             )
             return
@@ -4645,9 +4648,12 @@ class SeasonCog(commands.Cog):
             return
 
         season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
-        if season is None:
+        from models.season import ONGOING_STAGES
+
+        # Available only while the season is ongoing (issue #220).
+        if season is None or season.stage not in ONGOING_STAGES:
             await interaction.response.send_message(
-                "\u274c `/round cancel` requires an active season.",
+                "\u274c `/round cancel` is available only while the season is ongoing.",
                 ephemeral=True,
             )
             return

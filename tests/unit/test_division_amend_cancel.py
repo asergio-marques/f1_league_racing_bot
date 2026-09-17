@@ -51,6 +51,7 @@ from cogs.season_cog import PendingConfig, PendingDivision, SeasonCog  # noqa: E
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
+from models.season import SeasonStage  # noqa: E402
 
 SERVER_ID = 10008
 SEASON_ID = 1
@@ -107,7 +108,7 @@ def _make_cog(
     cfg: PendingConfig | None = None,
     divisions=None,
     remaining=None,
-    season=SimpleNamespace(id=SEASON_ID, status="ACTIVE"),
+    season=SimpleNamespace(id=SEASON_ID, status="ACTIVE", stage=SeasonStage.ONGOING),
     immutable: bool = False,
     rounds=None,
 ) -> SeasonCog:
@@ -611,7 +612,7 @@ async def test_cancelling_needs_an_active_season(tmp_path):
 
     await _cancel(cog, interaction)
 
-    assert "requires an active season" in _replied(interaction)
+    assert "only while the season is ongoing" in _replied(interaction)
     cog.bot.season_service.cancel_division.assert_not_awaited()
 
 
@@ -731,3 +732,17 @@ async def test_the_cancellation_is_logged(tmp_path):
     logged = str(cog.bot.output_router.post_log.await_args.args[1])
     assert "/division cancel" in logged
     assert "Pro" in logged
+
+
+@pytest.mark.parametrize("stage_name", ["PLACEMENTS", "PENDING_COMPLETION"])
+async def test_a_division_is_cancelled_only_while_the_season_is_ongoing(tmp_path, stage_name):
+    """Issue #220: in Pending completion every division is already done."""
+    from types import SimpleNamespace as _NS
+
+    db_path = await _make_db(tmp_path, status="ACTIVE", name=f"cancel_{stage_name}")
+    cog = _make_cog(db_path, season=_NS(id=SEASON_ID, status="ACTIVE", stage=SeasonStage(stage_name)))
+    interaction = _interaction()
+
+    await _cancel(cog, interaction)
+
+    assert "only while the season is ongoing" in _replied(interaction)
