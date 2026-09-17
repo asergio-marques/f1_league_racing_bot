@@ -129,8 +129,9 @@ async def test_a_season_deleted_takes_its_signups_with_it(db_path):
     assert await svc.get_record(SERVER_ID, USER) is None
 
 
-async def test_a_deleted_driver_leaves_their_signups_under_the_season(db_path):
-    """Signups are keyed by the Discord account, with no profile behind them."""
+async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
+    """Signups are keyed by the Discord account, and survive the driver whatever becomes of
+    the profile — deleted at the season's end where they never raced."""
     from models.driver_profile import DriverState
     from services.driver_service import DriverService
 
@@ -140,6 +141,9 @@ async def test_a_deleted_driver_leaves_their_signups_under_the_season(db_path):
     drivers = DriverService(db_path)
     await drivers.transition(SERVER_ID, USER, DriverState.PENDING_SIGNUP_COMPLETION)
 
-    assert await drivers.transition(SERVER_ID, USER, DriverState.NOT_SIGNED_UP) is None
+    await drivers.transition(SERVER_ID, USER, DriverState.NOT_SIGNED_UP)
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM driver_profiles")
+        await db.commit()
 
     assert len(await svc.get_records(1)) == 1

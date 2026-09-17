@@ -155,24 +155,6 @@ class DriverService:
             )
             await db.commit()
 
-    async def _clear_seat_references(self, profile_id: int) -> None:
-        """NULL-out any team_seats rows referencing this profile."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id = ?",
-                (profile_id,),
-            )
-            await db.commit()
-
-    async def _delete_profile(self, profile_id: int) -> None:
-        """Hard-delete the driver profile row."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "DELETE FROM driver_profiles WHERE id = ?",
-                (profile_id,),
-            )
-            await db.commit()
-
     # ------------------------------------------------------------------
     # State machine
     # ------------------------------------------------------------------
@@ -187,8 +169,9 @@ class DriverService:
     ) -> DriverProfile | None:
         """Transition a driver to *new_state*.
 
-        Returns the updated DriverProfile, or None if the profile was deleted
-        (NOT_SIGNED_UP transition for a non-former-driver).
+        Returns the updated DriverProfile. No transition deletes a profile (issue #220): a
+        driver without the former-driver flag who reaches NOT_SIGNED_UP is pending deletion,
+        and is deleted by the driver pass that ends the season.
 
         Raises ValueError for disallowed transitions.
         """
@@ -219,13 +202,9 @@ class DriverService:
                 f"Allowed targets: {sorted(s.value for s in allowed) or 'none'}."
             )
 
-        # A former driver's signups are season history and are kept (issue #220); nothing
-        # of theirs is cleared on reaching Not Signed Up.
-        if new_state == DriverState.NOT_SIGNED_UP:
-            if not profile.former_driver:
-                await self._clear_seat_references(profile.id)
-                await self._delete_profile(profile.id)
-                return None
+        # Reaching Not Signed Up deletes nothing and clears nothing (issue #220). A driver
+        # without the former-driver flag is pending deletion, deleted by the season's end;
+        # a former driver's signups are season history and are kept whole.
 
         await self._update_state(profile.id, new_state)
         profile.current_state = new_state

@@ -135,8 +135,8 @@ class TestPendingSignupCompletionToNotSignedUp:
         await _seed_driver(db_path, "u1", "PENDING_SIGNUP_COMPLETION")
         svc = _make_svc(db_path)
         result = await svc.transition(1, "u1", DriverState.NOT_SIGNED_UP)
-        # Non-former-driver transitions to NOT_SIGNED_UP deletes the profile
-        assert result is None
+        # Nothing is deleted: the driver is pending deletion (issue #220)
+        assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP
 
     async def test_former_driver_retains_profile(self, db_path):
         import aiosqlite
@@ -172,7 +172,7 @@ class TestPendingDriverCorrectionToNotSignedUp:
         await _seed_driver(db_path, "u4", "PENDING_DRIVER_CORRECTION")
         svc = _make_svc(db_path)
         result = await svc.transition(1, "u4", DriverState.NOT_SIGNED_UP)
-        assert result is None  # non-former-driver deleted
+        assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP  # pending deletion (#220)
 
     async def test_existing_transitions_still_work(self, db_path):
         from models.driver_profile import DriverState
@@ -202,7 +202,7 @@ class TestPendingAdminApprovalToNotSignedUp:
         await _seed_driver(db_path, "u7", "PENDING_ADMIN_APPROVAL")
         svc = _make_svc(db_path)
         result = await svc.transition(1, "u7", DriverState.NOT_SIGNED_UP)
-        assert result is None  # non-former-driver deleted
+        assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP  # pending deletion (#220)
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +259,7 @@ class TestAwaitingCorrectionParameterTransitions:
         await _seed_driver(db_path, "acp6", "AWAITING_CORRECTION_PARAMETER")
         svc = _make_svc(db_path)
         result = await svc.transition(1, "acp6", DriverState.NOT_SIGNED_UP)
-        assert result is None  # non-former-driver deleted
+        assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP  # pending deletion (#220)
 
 
 # ---------------------------------------------------------------------------
@@ -404,8 +404,8 @@ class TestSignupDataClearing:
         assert row["platform"] == "Steam"
         assert row["platform_id"] == "SteamUser123"
 
-    async def test_non_former_driver_nsu_deletes_profile(self, db_with_signup):
-        """former_driver=False: NOT_SIGNED_UP deletes the driver profile."""
+    async def test_non_former_driver_nsu_keeps_profile_pending_deletion(self, db_with_signup):
+        """former_driver=False: NOT_SIGNED_UP keeps the profile, pending deletion (#220)."""
         from models.driver_profile import DriverState
         import aiosqlite
         async with aiosqlite.connect(db_with_signup) as db:
@@ -418,5 +418,5 @@ class TestSignupDataClearing:
             await db.commit()
         svc = _make_svc(db_with_signup)
         result = await svc.transition(1, "nfd1", DriverState.NOT_SIGNED_UP)
-        assert result is None  # profile deleted
+        assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP
 

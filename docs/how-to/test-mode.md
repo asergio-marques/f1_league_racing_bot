@@ -185,7 +185,7 @@ Driving a check-in through the buttons requires as many Discord accounts as ther
 /test-mode set-former-driver user:@someone value:True
 ```
 
-`former_driver` is otherwise only set by saving a session's results, at submission or amendment, for every driver in the classification who has a profile (`result_submission_service`). It decides what happens to a profile when the driver returns to Not Signed Up, by `/driver sack` or any other route: a former driver's profile is kept with their signup details blanked, and anyone else's is deleted. This sets it directly so both branches can be reached without submitting results first.
+`former_driver` is otherwise only set by saving a session's results, at submission or amendment, for every driver in the classification who has a profile (`result_submission_service`). It decides what becomes of a profile once the driver has returned to Not Signed Up, by `/driver sack` or any other route: nothing is deleted at that moment, but when the season ends its driver pass keeps a former driver's profile and deletes anyone else's — every signup is kept either way. This sets it directly so both branches can be reached without submitting results first.
 
 ---
 
