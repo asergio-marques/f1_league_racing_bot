@@ -1764,7 +1764,7 @@ When a driver's cumulative attendance-penalty total reaches this value they are 
 |-----------|------|----------|-------------|
 | `points` | Integer | ✅ | Cumulative attendance-penalty threshold that triggers auto-sack. Use `0` to disable. |
 
-When a driver's cumulative attendance-penalty total reaches this value they are automatically removed from all driving seats across all divisions and lose their driver role.
+When a driver's cumulative attendance-penalty total in a division reaches this value they are automatically removed from **every seat in every division** and lose their driver role — whichever division's points carried them over. The latest attendance sheet of each of those divisions is posted again. A league wanting a driver dropped to reserve only in the division where they missed rounds should use `/attendance config autoreserve` instead; the reply to setting a threshold says so.
 
 > **Limitation:** Cannot be set to a non-zero value while auto-reserve is active. Disable auto-reserve first (`/attendance config autoreserve 0`). The two features are mutually exclusive.
 

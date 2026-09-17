@@ -293,7 +293,15 @@ class AttendanceCog(commands.Cog):
         if value is None:
             msg = "\u2705 Auto-sack **disabled**."
         else:
-            msg = f"\u2705 Auto-sack threshold set to **{value}** point(s)."
+            # Autosack reaches every division, whichever one's points carried a driver over
+            # (issue #220); a league wanting one division alone is pointed at autoreserve.
+            msg = (
+                f"\u2705 Auto-sack threshold set to **{value}** point(s).\n"
+                "A driver who reaches it is removed from **every seat in every division**, "
+                "whichever division's points carried them over. To drop a driver to reserve "
+                "only in the division where they missed rounds, use "
+                "`/attendance config autoreserve` instead."
+            )
         await interaction.followup.send(msg, ephemeral=True)
 
     # ── /attendance config autoreserve ────────────────────────────────────

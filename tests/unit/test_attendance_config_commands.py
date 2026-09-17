@@ -443,3 +443,15 @@ async def test_show_is_refused_while_the_module_is_disabled():
     await _invoke(AttendanceCog.config_show, cog, interaction)
 
     cog.bot.attendance_service.get_config.assert_not_awaited()
+
+
+async def test_setting_autosack_says_it_reaches_every_division_and_names_autoreserve():
+    """Issue #220: a league wanting one division alone must be pointed at autoreserve."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _invoke(AttendanceCog.config_autosack, cog, interaction, 8)
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert "every seat in every division" in reply
+    assert "/attendance config autoreserve" in reply
