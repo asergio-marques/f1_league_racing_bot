@@ -252,3 +252,30 @@ async def test_a_status_the_lifecycle_does_not_know_is_left_without_a_stage(db_p
     """The triggers never refuse a row for a status they have no stage for."""
     season_id = await _insert(db_path, "ARCHIVED")
     assert await _row(db_path, season_id) == ("ARCHIVED", None)
+
+
+async def _freeze_stage(db_path):
+    """A trigger that silently drops every stage write — as if another caller got there first."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER freeze_stage BEFORE UPDATE OF stage ON seasons "
+            "BEGIN SELECT RAISE(IGNORE); END"
+        )
+        await db.commit()
+
+
+async def test_set_stage_refuses_a_season_that_left_its_stage_meanwhile(db_path):
+    """The write is conditioned on the stage read, so a lost race writes nothing and says so."""
+    season_id = await _insert(db_path, "SETUP", "CONFIGURATION")
+    await _freeze_stage(db_path)
+
+    with pytest.raises(InvalidStageTransition, match="left CONFIGURATION before it could move"):
+        await SeasonService(db_path).set_stage(season_id, SeasonStage.WAITING)
+
+
+async def test_get_stage_is_none_for_a_season_without_one_or_no_season_at_all(db_path):
+    svc = SeasonService(db_path)
+    season_id = await _insert(db_path, "ARCHIVED")
+
+    assert await svc.get_stage(season_id) is None
+    assert await svc.get_stage(9999) is None

@@ -184,6 +184,14 @@ class TestRefusedOnceConfigurationIsConfirmed:
             await undecorate(getattr(SignupCog, command))(cog, interaction, MagicMock())
             assert "fixed for Season 3" in _reply(interaction), command
 
+    async def test_the_deprecated_roles_command_is_refused_too(self, tmp_path):
+        db_path = await _seed(tmp_path, unassigned=0, stage="SIGNUPS")
+        interaction = _interaction()
+
+        await undecorate(SignupCog.config_roles)(_cog(db_path), interaction, MagicMock(), MagicMock())
+
+        assert "fixed for Season 3" in _reply(interaction)
+
 
 # ---------------------------------------------------------------------------
 # Free with no season, and in configuration

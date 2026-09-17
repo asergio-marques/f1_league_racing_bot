@@ -155,3 +155,26 @@ async def test_the_forced_close_moves_the_season_on(db_path):
     await execute_forced_close(SERVER_ID, bot, audit_action="SIGNUP_CLOSE")
 
     assert await _stage(db_path) is SeasonStage.PLACEMENTS
+
+
+async def test_a_season_that_cannot_move_on_does_not_undo_the_close(db_path):
+    """The window is shut either way; the season's move is logged and let go."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from cogs.module_cog import execute_forced_close
+
+    await _season(db_path, SeasonStage.SIGNUPS)
+    bot = MagicMock()
+    bot.db_path = db_path
+    cfg = MagicMock(signup_button_message_id=None, signup_channel_id=None)
+    bot.signup_module_service.get_config = AsyncMock(return_value=cfg)
+    bot.signup_module_service.set_window_closed = AsyncMock()
+    bot.get_guild = MagicMock(return_value=None)
+
+    with patch(
+        "services.season_lifecycle_service.advance_on_window_close",
+        new=AsyncMock(side_effect=RuntimeError("database is locked")),
+    ):
+        await execute_forced_close(SERVER_ID, bot, audit_action="SIGNUP_CLOSE")
+
+    bot.signup_module_service.set_window_closed.assert_awaited_once()

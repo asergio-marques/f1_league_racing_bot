@@ -144,3 +144,17 @@ async def test_completing_is_refused_while_a_window_or_placements_stand(tmp_path
 
     assert says in interaction.response.send_message.await_args.args[0]
     interaction.response.defer.assert_not_awaited()
+
+
+async def test_a_season_that_moves_on_meanwhile_is_not_made_pending_completion(tmp_path):
+    """The move is conditioned on Ongoing; losing that race moves nothing and says False."""
+    path = await _db(tmp_path, divisions=(("FINISHED", None),))
+    async with get_connection(path) as db:
+        await db.execute(
+            "CREATE TRIGGER freeze_stage BEFORE UPDATE OF stage ON seasons "
+            "BEGIN SELECT RAISE(IGNORE); END"
+        )
+        await db.commit()
+
+    assert await lifecycle.advance_to_pending_completion(path, SEASON_ID) is False
+    assert await _stage(path) is SeasonStage.ONGOING
