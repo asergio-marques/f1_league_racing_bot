@@ -73,8 +73,12 @@
     - Green checkmark emoji within the brackets if accepted (will race)
     - White question mark emoji within the brackets if tentative (uncertain)
     - Red cross mark emoji within the brackets if declined (won't show up)
+- Only a driver holding a confirmed placement in the division of the round may answer its check-in call. Anybody else pressing one of the buttons shall be told they are not a member of the division and nothing shall be recorded, whether they hold an unconfirmed placement, a seat in another division, or no driver profile at all.
+    - Who may see the channel a call is posted in is the league's own to set and the bot shall not manage it.
+- A driver of the division may answer a check-in call standing for one of its rounds whether or not they were of the division when it was posted, and their answer shall be recorded as any other driver's is. A driver assigned, moved or confirmed into a division after its call has gone out holds no attendance record for that round until they answer.
 - Full-time drivers will be allowed to change their chosen option until the RSVP deadline is met. After that point, the choices are locked.
 - Reserve drivers will be allowed to change their chosen option until the time of the round, provided they have NOT accepted the check-in. After that point, the choices are locked.
+- A driver shall never be told their answer was recorded where it was not.
 - RSVP status shall be persisted under the round data entries in the database, as they will be necessary later.
 
 ### Distribution of reserves
