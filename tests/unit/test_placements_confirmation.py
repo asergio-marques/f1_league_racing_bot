@@ -118,6 +118,7 @@ async def test_the_review_is_refused_outside_placements(db_path, stage):
     cog = _cog(db_path)
     cog._pending = {USER_ID: SimpleNamespace(server_id=SERVER_ID, season_id=SEASON_ID)}
     cog.bot.season_service.get_stage = AsyncMock(return_value=stage)
+    cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user.id = USER_ID

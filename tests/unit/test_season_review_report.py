@@ -218,6 +218,7 @@ def _cog(
     from models.season import SeasonStage
 
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
     return cog
 

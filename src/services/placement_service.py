@@ -277,6 +277,74 @@ class PlacementService:
         return total_ms
 
     # ------------------------------------------------------------------
+    # Confirming placements mid-season (issue #220)
+    # ------------------------------------------------------------------
+
+    async def uncommitted_placements(self, season_id: int) -> list[dict]:
+        """Every placement of *season_id* not yet committed, ordered by division and team.
+
+        Each row: driver_profile_id, discord_user_id, is_test_driver, test_display_name,
+        division_id, division_name, division_role_id, team_name.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT dsa.driver_profile_id, dp.discord_user_id, dp.is_test_driver,
+                       dp.test_display_name, d.id AS division_id, d.name AS division_name,
+                       d.mention_role_id AS division_role_id, ti.name AS team_name
+                FROM driver_season_assignments dsa
+                JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+                JOIN divisions d ON d.id = dsa.division_id
+                LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
+                WHERE dsa.season_id = ? AND dsa.committed = 0
+                ORDER BY d.tier, ti.is_reserve, ti.name, dp.discord_user_id
+                """,
+                (season_id,),
+            )
+            return [dict(row) for row in await cursor.fetchall()]
+
+    async def commit_mid_season_placements(
+        self, server_id: int, season_id: int, guild: discord.Guild | None
+    ) -> list[dict]:
+        """Commit the season's uncommitted placements, granting their roles and posting lineups.
+
+        Each driver committed is granted their division's role and their team's role; the
+        lineup of each division holding such a driver is posted once, however many of them
+        it holds. Returns the placements committed, as ``uncommitted_placements`` reads them.
+        """
+        placements = await self.uncommitted_placements(season_id)
+        if not placements:
+            return []
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE driver_season_assignments SET committed = 1 "
+                "WHERE season_id = ? AND committed = 0",
+                (season_id,),
+            )
+            await db.commit()
+
+        if guild is not None:
+            for placement in placements:
+                if placement["is_test_driver"]:
+                    continue
+                member = guild.get_member(int(placement["discord_user_id"]))
+                if member is None:
+                    try:
+                        member = await guild.fetch_member(int(placement["discord_user_id"]))
+                    except discord.HTTPException:
+                        continue
+                role_ids = [placement["division_role_id"]]
+                if placement["team_name"]:
+                    team_cfg = await self.get_team_role_config(server_id, placement["team_name"])
+                    if team_cfg is not None:
+                        role_ids.append(team_cfg.role_id)
+                await self._grant_roles(member, *role_ids)
+            for division_id in dict.fromkeys(p["division_id"] for p in placements):
+                await self._refresh_lineup_post(guild, division_id)
+        return placements
+
+    # ------------------------------------------------------------------
     # Seeded unassigned listing (T008)
     # ------------------------------------------------------------------
 

@@ -1562,6 +1562,19 @@ class SeasonCog(commands.Cog):
     # the narrower right, and `_ApproveView` is where that is enforced.
     @league_manager_only
     async def season_review(self, interaction: discord.Interaction) -> None:
+        confirmed = await self.bot.season_service.get_confirmed_season(interaction.guild_id)  # type: ignore[attr-defined]
+        if confirmed is not None:
+            # Mid-season, the review covers the drivers of the window just closed (#220).
+            if confirmed.stage is SeasonStage.ONGOING_PLACEMENTS:
+                await self._review_mid_season_placements(interaction, confirmed)
+            else:
+                await interaction.response.send_message(
+                    "\u26d4 Placements can only be reviewed while the season is in placements, "
+                    "or mid-season while the drivers of a closed signup window are placed.",
+                    ephemeral=True,
+                )
+            return
+
         cfg = self._pending.get(interaction.user.id) or self._get_pending_for_server(interaction.guild_id)
         if cfg is None:
             await interaction.response.send_message(
@@ -2250,6 +2263,125 @@ class SeasonCog(commands.Cog):
             if missing:
                 channels.append(f"**{row['name']}** has no {' and no '.join(missing)}")
         return unsettled, channels
+
+    # ------------------------------------------------------------------
+    # /season placements-review mid-season — Ongoing, placements (issue #220)
+    # ------------------------------------------------------------------
+
+    async def _review_mid_season_placements(self, interaction: discord.Interaction, season) -> None:
+        """Report the lineups as they will stand, and offer to confirm the new placements.
+
+        Mid-season placements only affect lineups — no division or round can be added — so
+        the review reports the drivers of the window just closed, each division's lineup with
+        them in it, and every signup still unsettled.
+        """
+        await interaction.response.defer(ephemeral=False)
+        server_id = interaction.guild_id
+        posted_messages: list = []
+        original_followup = self._recording_followup(interaction, posted_messages)
+        try:
+            placements = await self.bot.placement_service.uncommitted_placements(season.id)  # type: ignore[attr-defined]
+            lines = [
+                f"**Placements Review (Season #{season.season_number}) — mid-season**",
+                "",
+            ]
+            if placements:
+                lines.append("**Drivers to confirm**")
+                for p in placements:
+                    who = p["test_display_name"] or f"<@{p['discord_user_id']}>"
+                    lines.append(f"  {who} → **{p['team_name']}** in **{p['division_name']}**")
+            else:
+                lines.append("*No new placement to confirm.*")
+            lines.append("")
+            for chunk in _chunk_message("\n".join(lines)):
+                await interaction.followup.send(chunk, ephemeral=False)
+
+            for division in await self.bot.season_service.get_divisions(season.id):  # type: ignore[attr-defined]
+                if division.status == "CANCELLED":
+                    continue
+                teams = await self.bot.team_service.get_division_teams(division.id)  # type: ignore[attr-defined]
+                block = [f"\U0001f4c2 **{division.name}** — lineup once confirmed"]
+                for team in teams:
+                    seated = [
+                        f"<@{seat['discord_user_id']}>"
+                        for seat in team["seats"]
+                        if seat["discord_user_id"] is not None
+                    ]
+                    block.append(f"  **{team['name']}**: {', '.join(seated) or '*(empty)*'}")
+                for chunk in _chunk_message("\n".join(block)):
+                    await interaction.followup.send(chunk, ephemeral=False)
+
+            unsettled, _ = await self._placement_confirmation_faults(server_id, season.id)
+            if unsettled:
+                body = "\n".join(f"\u2022 {line}" for line in unsettled)
+                for chunk in _chunk_message(
+                    "\u26d4 **Every signup must be settled before placements are confirmed.**\n"
+                    f"{body}\n"
+                    "Place each driver with `/driver assign`, turn them down with "
+                    "`/driver reject`, or finish reviewing their signup — then run "
+                    "`/season placements-review` again."
+                ):
+                    await interaction.followup.send(chunk, ephemeral=True)
+                return
+
+            view = _ConfirmMidSeasonPlacementsView(self, interaction.user.id)
+            await view.record_fingerprint(server_id, season.id)
+            message = await interaction.followup.send(
+                "\U0001f4cb **Do you confirm these placements?**\n"
+                f"Reviewed by <@{interaction.user.id}>. Confirmation is open to them or to a "
+                f"league admin for the next {APPROVAL_WINDOW_SECONDS // 60} minutes. Confirming "
+                "grants the new drivers their roles and posts each affected lineup.",
+                view=view,
+                ephemeral=False,
+                wait=True,
+            )
+            view.carries(posted_messages)
+            await view.bind(message)
+        finally:
+            interaction.followup.send = original_followup
+
+    async def _do_confirm_mid_season_placements(self, interaction: discord.Interaction) -> None:
+        """Commit the new placements and return the season to Ongoing."""
+        from models.season import InvalidStageTransition
+
+        await interaction.response.defer(ephemeral=True)
+        server_id = interaction.guild_id
+        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        if season is None or season.stage is not SeasonStage.ONGOING_PLACEMENTS:
+            await interaction.followup.send(
+                "\u26d4 The season is no longer placing drivers. **Nothing has been confirmed.**",
+                ephemeral=True,
+            )
+            return
+        unsettled, _ = await self._placement_confirmation_faults(server_id, season.id)
+        if unsettled:
+            bullets = "\n".join(f"\u2022 {line}" for line in unsettled)
+            for chunk in _chunk_message(
+                f"\u26d4 Every signup must be settled first:\n{bullets}\n"
+                "**Nothing has been confirmed.**"
+            ):
+                await interaction.followup.send(chunk, ephemeral=True)
+            return
+
+        committed = await self.bot.placement_service.commit_mid_season_placements(  # type: ignore[attr-defined]
+            server_id, season.id, interaction.guild
+        )
+        try:
+            await self.bot.season_service.set_stage(season.id, SeasonStage.ONGOING)  # type: ignore[attr-defined]
+        except InvalidStageTransition:
+            log.warning("mid-season placements: season %s had already moved on", season.id)
+
+        await interaction.followup.send(
+            f"\u2705 {len(committed)} placement(s) confirmed. The season is ongoing again.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+            f"/season placements-review | Confirmed\n"
+            f"  season: Season #{season.season_number}\n"
+            f"  placements: {len(committed)}",
+        )
 
     # ------------------------------------------------------------------
     # /season config-review — confirming the configuration (issue #220)
@@ -6245,6 +6377,51 @@ async def _judge_round_amendment(
         rnd, dict(amendments), now=now, attendance=attendance, weather=weather
     )
 
+
+
+class _ConfirmMidSeasonPlacementsView(_ApproveView):
+    """The confirm button of `/season placements-review` in Ongoing, placements (#220).
+
+    Governed as every review button is; pressing it commits the new placements.
+    """
+
+    _review_command = "/season placements-review"
+
+    @discord.ui.button(label="✅ Confirm placements", style=discord.ButtonStyle.success)
+    async def approve(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if not await self._may_approve(interaction):
+            await interaction.response.send_message(
+                "⛔ Only the person who ran this review, or a league admin, can confirm "
+                "it. **Nothing has been confirmed.**",
+                ephemeral=True,
+            )
+            return
+
+        if self._fingerprint is not None and self._season_id is not None:
+            from services.season_fingerprint_service import take_fingerprint
+
+            current = await take_fingerprint(
+                self._cog.bot, self._server_id, self._season_id
+            )
+            changed = self._fingerprint.differs_from(current)
+            if changed:
+                bullets = "\n".join(f"• {area}" for area in changed)
+                await interaction.response.send_message(
+                    f"⛔ The season has changed since this review:\n{bullets}\n"
+                    f"Run `{self._review_command}` again and confirm from the fresh "
+                    f"report. **Nothing has been confirmed.**",
+                    ephemeral=True,
+                )
+                await self._expire_now()
+                return
+
+        await self._cog._do_confirm_mid_season_placements(interaction)
+        await self._forget()
+        await self._clear_report()
+        self._message = None
+        self.stop()
 
 
 class _ConfirmConfigurationView(_ApproveView):
