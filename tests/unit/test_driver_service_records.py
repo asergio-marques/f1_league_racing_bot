@@ -1,27 +1,31 @@
-"""`DriverService` — re-keying a profile, the former-driver flag, and what a departure destroys.
+"""`DriverService` — re-keying a profile, the former-driver flag, and what a departure leaves.
 
 Issue #208. `tests/unit/test_driver_service_transitions.py` covers which transitions the state
 machine allows. What it does not cover is what the allowed ones actually *do* to the database,
 nor `reassign_user_id` and `set_former_driver` at all.
 
-**The `NOT_SIGNED_UP` transition is destructive, and which of two things it does turns on one
-flag.** An ordinary driver's profile is *deleted* outright, seat references cleared first so
-nothing dangles. A **former driver** is kept, and their signup record blanked instead —
-`former_driver` is what records that somebody raced in this league once, and deleting them
-would lose that permanently. The two branches are pinned separately because they share a call
-site and a reader could easily make one do the other's work.
+**Reaching `NOT_SIGNED_UP` destroys nothing** (issue #220, which reversed the deletion this
+file was first written against). A driver without the former-driver flag is *pending
+deletion* and is deleted by the pass that ends the season, not by the transition; a former
+driver is kept outright, their signups kept whole as the season's history. The two branches
+are pinned separately because they share a call site and a reader could easily make one do
+the other's work.
 
-**Re-keying is how a driver who lost their Discord account keeps their history.** It refuses
-in both directions — no profile at the old id, or a profile already at the new one — and the
-second refusal matters most: re-keying onto an occupied id would leave two profiles sharing a
-Discord user, and every lookup in the bot is by that id.
+**Re-keying is how a driver who lost their Discord account keeps their history**, so every
+record naming that driver by their account is carried with the profile: their signups, their
+session results, their standings, a session's fastest-lap override and their history entries
+(issue #222). Each is pinned on its own, and `_DRIVER_COLUMNS` at the foot of this file
+guards the set against a table added later. Three things refuse it — no profile at the old
+account, a profile already at the new one, or racing records of its own at the new one — and
+each refusal leaves everything as it was.
 
 **Both write audit entries carrying the old and the new value.** They are the league's only
 record of a manager re-keying or re-flagging a driver, which are the two commands that can
 quietly rewrite who somebody is.
 
-Everything runs against a real migrated database: the deletions cross three tables and the
-audit inserts are raw SQL, neither of which a double would check.
+Everything runs against a real migrated database: the re-key crosses seven tables and reaches
+the results through their division, and the audit inserts are raw SQL — none of which a
+double would check.
 """
 from __future__ import annotations
 
