@@ -62,7 +62,7 @@ existing whether or not this module is enabled.
     - Once the signup button is pressed by someone in the "not signed up" state, the bot will create a new channel titled "username-signup", in which the signup wizard shall be engaged. This channel shall be visible only to the user who engaged the signup wizard, the holders of the interaction role and the holders of the league admin role.
     - A league manager and a league admin alike shall be able to type at will in the signup channels of all drivers.
     - The start of the signup wizard shall change the state of the driver from "not signed up" to "pending signup completion".
-    - Pressing the signup wizard button by a driver in any other state will yield an appropriate error message visible only to them (already signed up, banned from signing up due to a league/season ban).
+    - Pressing the signup wizard button by a driver in any other state will yield an appropriate error message visible only to them, naming what stands in the way: a signup already in progress, or a signup already approved.
     - During the wizard, the bot shall request the following information from the user one-by-one and in this order, recording their answers:
         - Nationality - accepts a nationality adjective ("British"), a country name ("United Kingdom"), or the string "other", case insensitive. A two-letter country code is not accepted. The vocabulary covers every UN member state, together with Palestine and Taiwan; a value outside it is rejected and the answer re-requested.
         - Platform (Steam/EA/Xbox/Playstation) - single choice (buttons)

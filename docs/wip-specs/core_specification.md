@@ -263,7 +263,6 @@ it only to place it; the rules governing it belong to its own specification.
 - It shall then delete every real driver at Not Signed Up whose former-driver flag is false, with their placements and history entries. Their signups shall remain with the season.
 - A driver created by test mode shall not be deleted by the driver pass. Test mode deletes such drivers when it is switched off, and keeps their history entries, as set out under Test mode.
 - A driver whose former-driver flag is true shall be retained.
-- A driver who is Season Banned or League Banned shall be left untouched.
 
 #### Cancelling a season
 - Cancelling a season shall be a league admin's, shall require the word `CONFIRM`, and shall be refused in any state but the three ongoing states. A season is cancelled where it should not go on; a season that was raced to its end is completed.
@@ -388,7 +387,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ### The driver profile
 - A driver profile shall be held at server scope and shall belong to one Discord account. A person shall hold at most one profile upon a server.
-- A profile shall carry the driver's state, a former-driver flag, and the counts of race, season and league bans they have taken.
+- A profile shall carry the driver's state and a former-driver flag.
 - A profile shall carry, for each division the driver currently races in, that division's name and tier alongside the driver's standing in it: their position, their points, and their gap to the leader of that division.
 - A profile shall carry, for each division the driver has raced in before, that division's name and tier alongside the season's number and the driver's final position, final points and gap to the winner of that division.
 - A member holding no profile shall be treated as Not Signed Up.
@@ -396,7 +395,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Every change of a driver's state shall be persisted.
 
 ### The states of a driver
-- A driver shall stand in one of nine states:
+- A driver shall stand in one of seven states:
     - Not Signed Up: inactive, and able to begin a signup.
     - Pending Signup Completion: working through their signup.
     - Pending Admin Approval: their signup awaits a league manager.
@@ -404,8 +403,7 @@ it only to place it; the rules governing it belong to its own specification.
     - Pending Driver Correction: the driver has been asked to amend a named answer.
     - Unassigned: approved, and not yet placed in a division and team.
     - Assigned: placed in at least one team.
-    - Season Banned: inactive, and unable to begin a signup for the length of the season they were banned for.
-    - League Banned: inactive, and unable to begin a signup indefinitely.
+- No state shall bar a driver from signing up. A driver shall not be banned: sanctions belong to the stewarding module, which shall bring the bar together with the commands that impose and lift it.
 - The permitted transitions shall be:
     - Not Signed Up to Pending Signup Completion.
     - Pending Signup Completion to Pending Admin Approval, or to Not Signed Up.
@@ -414,9 +412,6 @@ it only to place it; the rules governing it belong to its own specification.
     - Pending Driver Correction to Pending Admin Approval, or to Not Signed Up.
     - Unassigned to Assigned, or to Not Signed Up.
     - Assigned to Unassigned, or to Not Signed Up.
-    - Pending Admin Approval, Pending Driver Correction, Unassigned and Assigned to Season Banned or to League Banned. A driver still working through their signup, or awaiting the naming of an answer to correct, shall not be banned from where they stand.
-    - Season Banned to League Banned.
-    - Season Banned to Not Signed Up, and League Banned to Not Signed Up.
     - Not Signed Up to Unassigned, and Not Signed Up to Assigned, under test mode alone.
 
 ### Leaving the league
