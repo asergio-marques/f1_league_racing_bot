@@ -50,6 +50,8 @@ AREA_LABELS: dict[str, str] = {
     "drivers": "the seated drivers",
     "channels": "the channels",
     "modules": "which modules are enabled",
+    "test mode": "test mode",
+    "team list": "the team list and its roles",
     "points": "the points configurations",
     "signup": "the signup configuration",
     "attendance": "the attendance configuration",
@@ -249,6 +251,33 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     await _rows(
                         db,
                         "SELECT module_enabled FROM image_config WHERE server_id = ?",
+                        server_id,
+                    ),
+                ]
+            )
+
+            # Test mode and the server's team list are what confirming a configuration
+            # fixes for the season (issue #220), so a change to either after the report
+            # is a change to what would be confirmed.
+            areas["test mode"] = _digest(
+                await _rows(
+                    db,
+                    "SELECT test_mode_active FROM server_configs WHERE server_id = ?",
+                    server_id,
+                )
+            )
+            areas["team list"] = _digest(
+                [
+                    await _rows(
+                        db,
+                        "SELECT name, max_seats, is_reserve FROM default_teams "
+                        "WHERE server_id = ? ORDER BY name",
+                        server_id,
+                    ),
+                    await _rows(
+                        db,
+                        "SELECT team_name, role_id FROM team_role_configs "
+                        "WHERE server_id = ? ORDER BY team_name",
                         server_id,
                     ),
                 ]

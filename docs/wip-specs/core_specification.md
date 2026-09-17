@@ -192,7 +192,7 @@ it only to place it; the rules governing it belong to its own specification.
 - The button shall be withheld altogether where the review found something that would prevent the placements being confirmed.
 
 #### The evidence placements are confirmed upon
-- The review shall record the state of the season at the moment its report is posted, over the whole of what that report describes: the season, its divisions, its rounds, its teams and seats, its seated drivers, its unsettled signups, its channels, the modules enabled upon it, its points configurations, the configuration of each module, and the template and artwork files its graphics are drawn from.
+- The review shall record the state of the season at the moment its report is posted, over the whole of what that report describes: the season, its divisions, its rounds, its teams and seats, its seated drivers, its unsettled signups, its channels, the modules enabled upon it, whether it runs in test mode, the server's team list and each team's role, its points configurations, the configuration of each module, and the template and artwork files its graphics are drawn from.
 - The button shall refuse where that state has changed since the report was posted, shall name the parts of it that changed, and shall confirm nothing. The report read is the report confirmed.
 - The state shall be compared before the season is validated and before anything is drawn, and after the member pressing has been found entitled to confirm.
 - A review refused upon a changed state shall end as an expired one does.

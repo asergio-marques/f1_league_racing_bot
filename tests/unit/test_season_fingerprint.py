@@ -205,6 +205,36 @@ async def test_the_modules_area(season):
     )
 
 
+async def test_the_test_mode_area(season):
+    """Confirming a configuration fixes test mode, so switching it after the report is a
+    change to what would be confirmed (issue #220)."""
+    before = await _take(season)
+    await _assert_only(
+        season, before, "test mode",
+        "UPDATE server_configs SET test_mode_active = 1 WHERE server_id = ?", SERVER_ID,
+    )
+
+
+async def test_a_team_added_to_the_server_list_is_part_of_the_team_list_area(season):
+    before = await _take(season)
+    await _assert_only(
+        season, before, "team list",
+        "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
+        "VALUES (?, 'Bluestreak', 2, 0)",
+        SERVER_ID,
+    )
+
+
+async def test_a_team_role_repointed_is_part_of_the_team_list_area(season):
+    before = await _take(season)
+    await _assert_only(
+        season, before, "team list",
+        "INSERT INTO team_role_configs (server_id, team_name, role_id, updated_at) "
+        "VALUES (?, 'Redline', 4242, '2026-09-17')",
+        SERVER_ID,
+    )
+
+
 async def test_the_points_area(season):
     before = await _take(season)
     await _assert_only(
