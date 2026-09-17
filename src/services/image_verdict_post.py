@@ -103,7 +103,7 @@ async def _round_context(db_path: str, round_id: int) -> dict:
 
 
 async def _driver_nationality(
-    db_path: str, server_id: int, discord_user_id: int
+    db_path: str, server_id: int, discord_user_id: int, round_id: int | None = None
 ) -> str | None:
     """The nationality recorded for the driver — the datum a flag is resolved from.
 
@@ -113,24 +113,34 @@ async def _driver_nationality(
     flag. It now joins as the other posting paths join.
 
     A mock driver has no signup record to hold a nationality and carries its own, read by
-    the same branch on is_test_driver the name is.
+    the same branch on is_test_driver the name is. A real driver's is read from their signup
+    to the season of *round_id*, where one is named (issue #220).
     """
+    from services.image_results_post import SIGNUP_FOR_SEASON_SQL
+
     try:
         async with get_connection(db_path) as db:
+            season_row = None
+            if round_id is not None:
+                season_row = await (
+                    await db.execute(
+                        "SELECT d.season_id FROM rounds r "
+                        "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+                        (round_id,),
+                    )
+                ).fetchone()
+            season_id = season_row["season_id"] if season_row is not None else None
             cursor = await db.execute(
                 """
                 SELECT CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality
                             ELSE sr.nationality END AS nationality
                 FROM driver_profiles dp
-                LEFT JOIN signup_records sr
-                       ON sr.id = (SELECT MAX(id) FROM signup_records
-                                   WHERE server_id = dp.server_id
-                                     AND discord_user_id = CAST(dp.discord_user_id AS TEXT))
+                LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL}
                 WHERE dp.server_id = ?
                   AND CAST(dp.discord_user_id AS INTEGER) = ?
                 ORDER BY dp.id DESC LIMIT 1
-                """,
-                (server_id, discord_user_id),
+                """.format(SIGNUP_FOR_SEASON_SQL=SIGNUP_FOR_SEASON_SQL),
+                (season_id, server_id, discord_user_id),
             )
             row = await cursor.fetchone()
     except Exception:  # noqa: BLE001
@@ -245,7 +255,7 @@ async def build_drawing(
     from services.image_verdict_service import resolve_mentions
 
     context = await _round_context(db_path, round_id)
-    nationality = await _driver_nationality(db_path, server_id, driver_discord_id)
+    nationality = await _driver_nationality(db_path, server_id, driver_discord_id, round_id)
 
     # Whether the league collects nationality at all. A league that switched it off draws no
     # flag and is told nothing (XIV.4's configured absence); one that collects it and holds

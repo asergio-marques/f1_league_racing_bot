@@ -92,7 +92,7 @@ Turn a missing module on with `/module enable <name>`. Set each channel per divi
 
 **Two bits of data worth sorting early**, because they show up on several pictures:
 
-- **Driver nationalities**, which is where the little flags come from. The bot turns a nationality into a **country** and looks the flag up under that, so `British` draws `united_kingdom.svg`. A driver who answered the question with `other` gets the "Other" flag; a driver with no nationality recorded at all is drawn without a flag instead, and the picture is not faulty for it. Fake drivers made with `/test-mode roster add` carry a nationality of their own where you give the command one, so a test roster exercises the flags as a real league does — see [Testing with test mode](test-mode.md).
+- **Driver nationalities**, which is where the little flags come from. A driver's nationality — and the name they are drawn under when Discord cannot supply one — comes from the signup they made for the season the graphic belongs to, so a driver who changed either between seasons is drawn as they were that season. The bot turns a nationality into a **country** and looks the flag up under that, so `British` draws `united_kingdom.svg`. A driver who answered the question with `other` gets the "Other" flag; a driver with no nationality recorded at all is drawn without a flag instead, and the picture is not faulty for it. Fake drivers made with `/test-mode roster add` carry a nationality of their own where you give the command one, so a test roster exercises the flags as a real league does — see [Testing with test mode](test-mode.md).
 - **Your team list**, which the lineup picture is built around entirely. See the warning in step 5.
 
 ---

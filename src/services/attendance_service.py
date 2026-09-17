@@ -1170,8 +1170,8 @@ async def _sheet_attachment(
 
         # The name each driver is drawn under, and their flag — both through the conventions
         # every graphic shares, called rather than restated (wip-spec § "The name of a person").
-        display_names = await _driver_names(bot, guild, user_ids)
-        nationalities = await _nationalities(bot, user_ids)
+        display_names = await _driver_names(bot, guild, user_ids, division_id=division_id)
+        nationalities = await _nationalities(bot, user_ids, division_id=division_id)
         collected = await _nationality_collected(db_path, server_id)
 
         # The team of a row is the team of the division seating the driver **at the moment of

@@ -63,7 +63,10 @@ async def post_opening_classifications(
             # in it; the second is the one that counts.
             roster = await standings_service.opening_driver_standings(db_path, division.id)
             names = await _driver_names(
-                bot, guild, [snapshot.driver_user_id for snapshot in roster]
+                bot,
+                guild,
+                [snapshot.driver_user_id for snapshot in roster],
+                division_id=division.id,
             )
             driver_snaps = await standings_service.opening_driver_standings(
                 db_path, division.id, names

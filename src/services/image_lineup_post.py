@@ -104,11 +104,12 @@ def seated_members(guild, teams) -> dict[str, object]:
 async def build_drawing(bot, guild, division_id: int):
     """Resolve the division into a LineupDrawing, or raise LineupDataError."""
     from services.image_lineup_service import resolve_drawing
+    from services.image_results_post import SIGNUP_FOR_SEASON_SQL
 
     async with get_connection(bot.db_path) as db:
         division = await (
             await db.execute(
-                "SELECT d.id, d.name, d.tier, s.server_id, s.season_number "
+                "SELECT d.id, d.name, d.tier, s.id AS season_id, s.server_id, s.season_number "
                 "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                 (division_id,),
             )
@@ -117,6 +118,7 @@ async def build_drawing(bot, guild, division_id: int):
             from services.image_lineup_service import LineupDataError
 
             raise LineupDataError(f"division {division_id} no longer exists")
+        season_id = division["season_id"]
 
         instances = await (
             await db.execute(
@@ -141,12 +143,9 @@ async def build_drawing(bot, guild, division_id: int):
                     "LEFT JOIN driver_season_assignments dsa "
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
                     "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
-                    "LEFT JOIN signup_records sr "
-                    "       ON sr.id = (SELECT MAX(id) FROM signup_records "
-                    "                   WHERE server_id = dp.server_id "
-                    "                     AND discord_user_id = CAST(dp.discord_user_id AS TEXT)) "
+                    f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
                     "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
-                    (division_id, instance["id"]),
+                    (division_id, season_id, instance["id"]),
                 )
             ).fetchall()
             teams.append(

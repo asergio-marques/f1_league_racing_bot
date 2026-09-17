@@ -348,8 +348,8 @@ async def build_drawings(
     driver_keys = [s.driver_user_id for s in driver_snapshots]
     team_keys = [s.team_role_id for s in team_snapshots]
 
-    names = await _driver_names(bot, guild, driver_keys)
-    nationalities = await _nationalities(bot, driver_keys)
+    names = await _driver_names(bot, guild, driver_keys, division_id=division_id)
+    nationalities = await _nationalities(bot, driver_keys, division_id=division_id)
     collected = await _nationality_collected(db_path, server_id)
 
     # A constructors row *is* a team, so that graphic's names are keyed by role. A drivers

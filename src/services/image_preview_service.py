@@ -362,6 +362,9 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
     ``resolve_drawing``, so the preview and the posting path hand the same thing to the
     same function.
     """
+    from services.image_results_post import SIGNUP_FOR_SEASON_SQL, season_of_division
+
+    season_id = await season_of_division(bot.db_path, context.division_id)
     async with get_connection(bot.db_path) as db:
         instances = await (
             await db.execute(
@@ -391,12 +394,9 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
                     "LEFT JOIN driver_season_assignments dsa "
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
                     "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
-                    "LEFT JOIN signup_records sr "
-                    "       ON sr.id = (SELECT MAX(id) FROM signup_records "
-                    "                   WHERE server_id = dp.server_id "
-                    "                     AND discord_user_id = CAST(dp.discord_user_id AS TEXT)) "
+                    f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
                     "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
-                    (context.division_id, instance["id"]),
+                    (context.division_id, season_id, instance["id"]),
                 )
             ).fetchall()
             teams.append(
