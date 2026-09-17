@@ -28,9 +28,21 @@ from models.season import (  # noqa: E402
 from services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 2200
-_MIGRATION_057 = os.path.join(
-    os.path.dirname(__file__), "..", "..", "src", "db", "migrations", "057_season_stage.sql"
-)
+_MIGRATIONS = os.path.join(os.path.dirname(__file__), "..", "..", "src", "db", "migrations")
+_MIGRATION_057 = os.path.join(_MIGRATIONS, "057_season_lifecycle.sql")
+
+
+async def _schema_before_057(db) -> None:
+    """Raise the schema as it stood before the lifecycle migration, applied by hand.
+
+    Deliberately not `run_migrations`: the point is to hold seasons written before 057 and
+    watch 057 alone backfill them, which the schema template cannot stop short of.
+    """
+    for name in sorted(f for f in os.listdir(_MIGRATIONS) if f.endswith(".sql") and f < "057"):
+        with open(os.path.join(_MIGRATIONS, name), encoding="utf-8") as fh:
+            await db.executescript(fh.read())
+    # Migration 001 turns foreign keys on; the rows seeded here stand alone.
+    await db.execute("PRAGMA foreign_keys = OFF")
 
 
 @pytest.fixture
@@ -94,14 +106,9 @@ async def test_migration_backfills_the_stage_of_existing_seasons(tmp_path):
     """Seasons already stored take the stage their status implies."""
     path = str(tmp_path / "pre_057.db")
     async with aiosqlite.connect(path) as db:
+        await _schema_before_057(db)
         await db.executescript(
             """
-            CREATE TABLE seasons (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id INTEGER NOT NULL,
-                start_date TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'SETUP'
-            );
             INSERT INTO seasons (server_id, start_date, status) VALUES
                 (1, '2026-01-01', 'SETUP'),
                 (2, '2026-01-01', 'ACTIVE'),

@@ -230,7 +230,7 @@ async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bo
     Discord account and are never touched.
 
     *keep_history* keeps the driver's history entries, which name them by identifier and let
-    go of the profile themselves (migration 061) — how test mode keeps its drivers' history.
+    go of the profile themselves (migration 057) — how test mode keeps its drivers' history.
     Otherwise the entries are deleted with the driver, as the driver pass deletes a real driver
     who never raced: the archive keeps no placement and no history of them.
     """
