@@ -877,6 +877,10 @@ async def _seed_division_with_rounds(path: str, season_id: int):
     return division_id, raced, unraced_round_id
 
 
+#: The stub bot's own Discord user id. The pre-flight looks its member up by it (#187).
+_BOT_USER_ID = 4242
+
+
 def _bot_recording_reposts(reposted: list[tuple], *, missing: tuple[int, ...] = ()):
     """A bot stub whose guild is real enough for the repost path to run.
 
@@ -904,7 +908,10 @@ def _bot_recording_reposts(reposted: list[tuple], *, missing: tuple[int, ...] = 
 
     guild = MagicMock()
     guild.id = 1
-    guild.get_member.return_value = None
+    # The bot's own member resolves — the pre-flight reads its permissions through it — and
+    # nobody else's does, which is what makes the postings below fall back to plain ids for
+    # the drivers. Two different questions asked of one cache (#187).
+    guild.get_member = lambda user_id: MagicMock() if user_id == _BOT_USER_ID else None
     guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
 
     def get_channel(channel_id):
@@ -927,6 +934,7 @@ def _bot_recording_reposts(reposted: list[tuple], *, missing: tuple[int, ...] = 
     guild.get_channel = get_channel
 
     bot = MagicMock()
+    bot.user.id = _BOT_USER_ID
     bot.get_guild.return_value = guild
     bot.output_router.post_log = AsyncMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)

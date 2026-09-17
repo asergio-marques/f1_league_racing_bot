@@ -1074,6 +1074,25 @@ async def _image_aspect_on(bot, server_id: int, aspect: str) -> bool:
         return False
 
 
+def _bot_member(guild: "discord.Guild", bot):
+    """The bot's own member object in *guild*, or ``None`` where it cannot be resolved.
+
+    **``guild.me`` is deliberately not used here** (#187). It is a property reading
+    ``self._state.user.id``, so where the client has no user yet it raises
+    ``AttributeError`` rather than returning ``None`` — an exception thrown out of a
+    pre-flight check whose whole purpose is to refuse cleanly, which is the one thing it
+    must not do. ``signup_cog`` already takes this guarded form before it does permission
+    arithmetic (``src/cogs/signup_cog.py:870``), and it is the form this check follows.
+
+    Resolving it is not optional: without a member there is no permission arithmetic to do,
+    and both callers treat ``None`` as a fault rather than as leave to assume.
+    """
+    bot_user = getattr(bot, "user", None) if bot is not None else None
+    if bot_user is None:
+        return None
+    return guild.get_member(bot_user.id)
+
+
 def _channel_fault(
     guild: discord.Guild,
     bot_member,
@@ -1145,11 +1164,7 @@ async def repost_channel_faults(
             "Check that it is still a member and try again."
         ]
 
-    bot_member = guild.me
-    if bot_member is None and bot is not None:
-        bot_user = getattr(bot, "user", None)
-        if bot_user is not None:
-            bot_member = guild.get_member(bot_user.id)
+    bot_member = _bot_member(guild, bot)
     if bot_member is None:
         return [
             "The bot cannot read its own permissions in this server, so it cannot tell "

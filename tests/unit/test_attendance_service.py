@@ -481,9 +481,14 @@ async def _seed_attendance_season(
 
 
 def _attendance_guild(present=(601, 602)):
+    """A guild holding *present* as text channels the bot may post in.
+
+    The bot's own member comes from ``get_member`` rather than ``guild.me``, which is what
+    the pre-flight reads (#187).
+    """
     guild = MagicMock()
     guild.id = 1
-    guild.me = object()
+    guild.get_member = lambda _user_id: object()
 
     def get_channel(channel_id):
         if channel_id not in present:
@@ -499,6 +504,7 @@ def _attendance_guild(present=(601, 602)):
 
 def _plain_bot():
     bot = MagicMock()
+    bot.user.id = 4242
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     bot.image_config_service.get_toggles = AsyncMock(return_value={})
     return bot

@@ -786,11 +786,17 @@ def _permissions(**denied):
     return permissions
 
 
-def _guild_for_faults(present=(501, 502), *, permissions=None, me=object()):
-    """A guild holding *present* as text channels, each answering *permissions*."""
+def _guild_for_faults(present=(501, 502), *, permissions=None, member=object()):
+    """A guild holding *present* as text channels, each answering *permissions*.
+
+    The bot's own member is stubbed on ``get_member`` rather than on ``guild.me``: the
+    pre-flight resolves it through the member cache, because ``Guild.me`` reads
+    ``self._state.user.id`` and so raises rather than returning ``None`` when the client
+    has no user yet (#187).
+    """
     guild = MagicMock()
     guild.id = 1
-    guild.me = me
+    guild.get_member = lambda _user_id: member
 
     def get_channel(channel_id):
         if channel_id not in present:
@@ -805,8 +811,13 @@ def _guild_for_faults(present=(501, 502), *, permissions=None, me=object()):
 
 
 def _bot_with_images(*, enabled=False, toggles=None):
-    """A bot whose image module is off by default, so no fault asks for Attach Files."""
+    """A bot whose image module is off by default, so no fault asks for Attach Files.
+
+    ``user.id`` is set explicitly because the pre-flight looks the bot's own member up by
+    it; a test that means to withhold the member sets ``bot.user`` to ``None``.
+    """
     bot = MagicMock()
+    bot.user.id = 4242
     bot.module_service.is_images_enabled = AsyncMock(return_value=enabled)
     bot.image_config_service.get_toggles = AsyncMock(return_value=toggles or {})
     return bot
@@ -937,7 +948,7 @@ async def test_repost_channel_faults_refuses_a_channel_that_is_not_text(tmp_path
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
     guild = MagicMock()
     guild.id = 1
-    guild.me = object()
+    guild.get_member = lambda _user_id: object()
     guild.get_channel = lambda channel_id: MagicMock(spec=discord.CategoryChannel)
 
     faults = await repost_channel_faults(db_path, season_id, guild, _bot_with_images())
@@ -966,30 +977,38 @@ async def test_repost_channel_faults_refuses_when_the_bot_member_is_unknown(tmp_
     from services.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
-    guild = _guild_for_faults(me=None)
+
+    # Not in the member cache.
+    faults = await repost_channel_faults(
+        db_path, season_id, _guild_for_faults(member=None), _bot_with_images()
+    )
+    assert len(faults) == 1, faults
+    assert "own permissions" in faults[0]
+
+    # And the other way it can be unresolvable: the client has no user of its own yet.
     bot = _bot_with_images()
     bot.user = None
-
-    faults = await repost_channel_faults(db_path, season_id, guild, bot)
-
+    faults = await repost_channel_faults(db_path, season_id, _guild_for_faults(), bot)
     assert len(faults) == 1, faults
     assert "own permissions" in faults[0]
 
 
 @pytest.mark.asyncio
-async def test_repost_channel_faults_falls_back_to_the_member_cache(tmp_path):
-    """``guild.me`` is not always populated; the bot's own member is looked up instead."""
+async def test_repost_channel_faults_resolves_the_bot_member_from_the_cache(tmp_path):
+    """The bot's own member is looked up by id, never taken from ``guild.me`` (#187)."""
     from services.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
-    guild = _guild_for_faults(me=None)
-    guild.get_member = lambda _user_id: object()
+    guild = _guild_for_faults()
+    looked_up: list[int] = []
+    guild.get_member = lambda user_id: looked_up.append(user_id) or object()
     bot = _bot_with_images()
     bot.user.id = 4242
 
     faults = await repost_channel_faults(db_path, season_id, guild, bot)
 
     assert faults == []
+    assert looked_up == [4242], "the member was not resolved through the cache by id"
 
 
 @pytest.mark.asyncio

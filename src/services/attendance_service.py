@@ -1773,19 +1773,21 @@ async def recalculation_faults(
     autoreserve thresholds are unset, so a league using neither must not be refused for a
     channel it will never post to.
     """
-    from services.results_post_service import _channel_fault, _image_aspect_on
+    from services.results_post_service import (
+        _bot_member,
+        _channel_fault,
+        _image_aspect_on,
+    )
 
     if guild is None:
         # The results half already reports an absent guild; saying it twice would have a
         # manager repairing one thing from two lines.
         return []
 
-    bot_member = guild.me
-    if bot_member is None and bot is not None:
-        bot_user = getattr(bot, "user", None)
-        if bot_user is not None:
-            bot_member = guild.get_member(bot_user.id)
+    bot_member = _bot_member(guild, bot)
     if bot_member is None:
+        # The results half already refuses on an unresolvable bot member; saying it twice
+        # would have a manager repairing one thing from two lines.
         return []
 
     async with get_connection(db_path) as db:
