@@ -107,7 +107,10 @@ module, never a substitute for the full run the paragraph above asks for.
 **Never run two pytest sessions at once.** They race on the shared schema template described
 below, and the loser reads a half-built database — which surfaces as a mass failure scattered
 across unrelated modules, not as a lock error. If a run is already going, wait for it rather
-than opening a second terminal to check one thing.
+than opening a second terminal to check one thing. Where several agents are at work in parallel
+— see the `fix-issues` skill — waiting is mechanised rather than left to judgement: every run
+goes behind `flock -w 3600 /tmp/f1-pytest.lock`. The rule is unchanged; the lock is only how it
+is kept when nobody is watching the clock.
 
 **Every change to production code carries its unit tests with it.** Update or add the tests in
 the same change as the code, then run the suite — a production change reported complete without
