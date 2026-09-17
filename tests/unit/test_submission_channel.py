@@ -94,13 +94,14 @@ async def _seed_channel_row(
     channel_id: int = CHANNEL_ID,
     closed: int = 0,
     in_penalty_review: int = 0,
+    resubmitting: int = 0,
 ) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO round_submission_channels "
-            "(round_id, channel_id, created_at, closed, in_penalty_review) "
-            "VALUES (?, ?, '2026-06-01T00:00:00+00:00', ?, ?)",
-            (ROUND_ID, channel_id, closed, in_penalty_review),
+            "(round_id, channel_id, created_at, closed, in_penalty_review, resubmitting) "
+            "VALUES (?, ?, '2026-06-01T00:00:00+00:00', ?, ?, ?)",
+            (ROUND_ID, channel_id, closed, in_penalty_review, resubmitting),
         )
         await db.commit()
 
@@ -413,6 +414,15 @@ async def test_a_channel_not_yet_in_penalty_review_is_not(tmp_path):
     """Results are still being typed in; the review has not begun."""
     db_path = await _make_db(tmp_path)
     await _seed_channel_row(db_path, closed=0, in_penalty_review=0)
+
+    assert await is_channel_in_penalty_review(db_path, CHANNEL_ID) is False
+
+
+async def test_pastes_are_not_deleted_while_resubmitting(tmp_path):
+    """Issue #210. The round is still in review, but the manager has pressed Resubmit and is
+    pasting its results again. Answering True here has the message guard delete every paste."""
+    db_path = await _make_db(tmp_path)
+    await _seed_channel_row(db_path, closed=0, in_penalty_review=1, resubmitting=1)
 
     assert await is_channel_in_penalty_review(db_path, CHANNEL_ID) is False
 

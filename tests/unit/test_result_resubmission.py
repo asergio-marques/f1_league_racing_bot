@@ -1,9 +1,8 @@
 """Restarting a round's result submission after the results turned out to be wrong.
 
 Issue #208. `enter_resubmit_flow` is what a league manager reaches by pressing **Resubmit** in
-the penalty review, and it was unexecuted. It is the most destructive button in the results
-module: it throws away a round's submitted results and every penalty staged against them, and
-asks the division to submit again.
+the penalty review, and it was unexecuted. It throws away every penalty staged against the
+round's results and asks for the results again.
 
 **Everything discarded is logged before it is discarded.** The staged penalties are written
 into the calculation log with the driver, session, type and seconds of each — because once they
@@ -17,13 +16,16 @@ the log channel may be missing or unreachable and a manager who has decided the 
 wrong must still be able to replace them. The alternative — refusing to resubmit because the
 audit failed — would leave the round stuck with results the league knows to be wrong.
 
-**The old results are deleted, not superseded in place.** `session_results` rows for the round
-go entirely, and the submission channel's `in_penalty_review` and `results_posted` flags are
-cleared, so the round is returned to the state it was in before anything was submitted. Leaving
-either flag set would make the channel refuse the new submission it has just asked for.
+**The old results are superseded, not deleted** (issue #210). Pressing the button deleted the
+round's results on the spot, and the collection that should have replaced them never ran. The
+results now stand, published and counted, until every session has been entered again;
+`test_pressing_resubmit_keeps_the_round_s_results` holds that. The round stays in penalty review
+and the channel is flagged `resubmitting`, which lets the pastes past the review channel's
+message guard. The review prompt is taken down, so nobody can approve the results being
+replaced or start a second resubmission over the first.
 
-The collection loop itself is started as a background task and is not exercised here — it needs
-a live Discord channel to read messages from, which `CLAUDE.md` puts outside this suite.
+The collection loop itself is started as a background task and is stubbed here. It is driven
+with a fake `wait_for` in `test_resubmission_collection.py`.
 """
 from __future__ import annotations
 
@@ -35,6 +37,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -110,7 +113,7 @@ async def _make_db(tmp_path, *, results: int = 2) -> str:
     return db_path
 
 
-def _state(db_path: str, *, staged=(), channel=None):
+def _state(db_path: str, *, staged=(), channel=None, prompt_message_id=None):
     bot = MagicMock()
     bot.db_path = db_path
     bot.output_router = MagicMock()
@@ -123,6 +126,7 @@ def _state(db_path: str, *, staged=(), channel=None):
         division_name="Division 1",
         submission_channel_id=SUBMISSION_CHANNEL_ID,
         staged=list(staged),
+        prompt_message_id=prompt_message_id,
     )
 
 
@@ -135,9 +139,16 @@ def _interaction():
     return interaction
 
 
-def _channel():
+def _channel(*, prompt_gone: bool = False):
     channel = MagicMock()
     channel.send = AsyncMock(return_value=None)
+    prompt = MagicMock()
+    prompt.delete = AsyncMock()
+    channel.fetch_message = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404), "gone") if prompt_gone else None,
+        return_value=prompt,
+    )
+    channel._prompt = prompt
     return channel
 
 
@@ -171,15 +182,15 @@ async def _session_result_count(db_path: str) -> int:
         return (await cursor.fetchone())["n"]
 
 
-async def _flags(db_path: str) -> tuple[int, int]:
+async def _flags(db_path: str) -> tuple[int, int, int]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT in_penalty_review, results_posted FROM round_submission_channels "
-            "WHERE round_id = ?",
+            "SELECT in_penalty_review, results_posted, resubmitting "
+            "FROM round_submission_channels WHERE round_id = ?",
             (ROUND_ID,),
         )
         row = await cursor.fetchone()
-    return row["in_penalty_review"], row["results_posted"]
+    return row["in_penalty_review"], row["results_posted"], row["resubmitting"]
 
 
 def _penalty(seconds: int = 5, penalty_type: str = "TIME") -> StagedPenalty:
@@ -192,30 +203,52 @@ def _penalty(seconds: int = 5, penalty_type: str = "TIME") -> StagedPenalty:
 
 
 # ---------------------------------------------------------------------------
-# What is thrown away
+# What is kept, and what is thrown away
 # ---------------------------------------------------------------------------
 
 
-async def test_the_round_s_results_are_deleted(tmp_path):
-    """Deleted rather than superseded in place — the round goes back to the state it was
-    in before anything was submitted."""
+async def test_pressing_resubmit_keeps_the_round_s_results(tmp_path):
+    """Issue #210. They stand until every session has been entered again. Deleting them here
+    left the round with no results at all, and nothing to put them back."""
     db_path = await _make_db(tmp_path, results=2)
     state = _state(db_path, channel=_channel())
 
     await _run(state, _interaction())
 
-    assert await _session_result_count(db_path) == 0
+    assert await _session_result_count(db_path) == 2
 
 
-async def test_the_submission_channel_is_reopened(tmp_path):
-    """Both flags are cleared. Either left set would make the channel refuse the new
-    submission it has just asked the division for."""
+async def test_resubmitting_flags_the_channel(tmp_path):
+    """The round is still in review with its results posted; `resubmitting` is what lets the
+    pastes through the review channel's guard."""
     db_path = await _make_db(tmp_path)
     state = _state(db_path, channel=_channel())
 
     await _run(state, _interaction())
 
-    assert await _flags(db_path) == (0, 0)
+    assert await _flags(db_path) == (1, 1, 1)
+
+
+async def test_the_penalty_prompt_is_taken_down_when_resubmission_starts(tmp_path):
+    """Left up, its Approve would finalise the results being replaced, and its Resubmit would
+    start a second collector reading the same channel."""
+    db_path = await _make_db(tmp_path)
+    channel = _channel()
+    state = _state(db_path, channel=channel, prompt_message_id=4242)
+
+    await _run(state, _interaction())
+
+    channel.fetch_message.assert_awaited_once_with(4242)
+    channel._prompt.delete.assert_awaited_once()
+
+
+async def test_a_prompt_already_gone_does_not_stop_the_resubmission(tmp_path):
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, channel=_channel(prompt_gone=True), prompt_message_id=4242)
+
+    await _run(state, _interaction())
+
+    assert await _flags(db_path) == (1, 1, 1)
 
 
 async def test_the_staged_penalties_are_discarded(tmp_path):
@@ -295,8 +328,8 @@ async def test_a_failing_log_does_not_block_the_resubmission(tmp_path):
 
     await _run(state, _interaction())
 
-    assert await _session_result_count(db_path) == 0
-    assert await _flags(db_path) == (0, 0)
+    assert await _session_result_count(db_path) == 2
+    assert await _flags(db_path) == (1, 1, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +347,9 @@ async def test_the_division_is_told_in_the_submission_channel(tmp_path):
     await _run(state, _interaction())
 
     channel.send.assert_awaited_once()
-    assert "resubmission started" in channel.send.await_args.args[0].lower()
+    announcement = channel.send.await_args.args[0]
+    assert "resubmission started" in announcement.lower()
+    assert "stand until every session has been entered again" in announcement
 
 
 async def test_the_manager_is_told_privately_what_to_do_next(tmp_path):
@@ -328,13 +363,19 @@ async def test_the_manager_is_told_privately_what_to_do_next(tmp_path):
     assert "Resubmission started" in interaction.followup.send.await_args.args[0]
 
 
-async def test_a_missing_submission_channel_does_not_stop_the_reset(tmp_path):
-    """The channel may have been deleted by hand. The results still have to go, or the
-    round is left holding results nobody can replace."""
+async def test_a_missing_submission_channel_refuses_and_changes_nothing(tmp_path):
+    """The channel may have been deleted by hand. With nowhere to collect in, the review is all
+    the round has — so its staged penalties are kept and the manager is told why."""
     db_path = await _make_db(tmp_path)
-    state = _state(db_path, channel=None)
+    state = _state(db_path, staged=[_penalty()], channel=None)
+    interaction = _interaction()
 
-    await _run(state, _interaction())
+    with patch(
+        "services.result_submission_service._resubmit_collection_task", new=AsyncMock()
+    ) as task:
+        await enter_resubmit_flow(interaction, state)
 
-    assert await _session_result_count(db_path) == 0
-    assert await _flags(db_path) == (0, 0)
+    assert len(state.staged) == 1
+    assert await _flags(db_path) == (1, 1, 0)
+    assert "submission channel could not be found" in interaction.followup.send.await_args.args[0]
+    task.assert_not_called()

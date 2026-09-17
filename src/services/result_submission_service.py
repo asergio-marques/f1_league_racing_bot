@@ -176,6 +176,9 @@ async def is_submission_open(db_path: str, round_id: int) -> bool:
 async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
     """Return True if *channel_id* belongs to an open submission channel in
     penalty-review state (all sessions submitted/cancelled, round not yet finalized).
+
+    A channel resubmitting is not: the round is still in review, but the manager is pasting
+    its results again and the guard would delete every paste.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -186,6 +189,7 @@ async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
             WHERE rsc.channel_id = ?
               AND rsc.closed = 0
               AND rsc.in_penalty_review = 1
+              AND rsc.resubmitting = 0
               AND r.status != 'FINAL'
             """,
             (channel_id,),
@@ -2866,9 +2870,19 @@ async def enter_resubmit_flow(
     interaction: discord.Interaction,
     state,
 ) -> None:
-    """Discard staged penalties, supersede existing results, and restart collection.
+    """Discard staged penalties and restart collection over the round's existing results.
 
     Called from the pw_resubmit button callback in PenaltyReviewView.
+
+    Nothing is deleted here. A resubmission supersedes the round's results: they stand until
+    every session has been entered again, and `replace_round_results` swaps them out then
+    (issue #210). What changes now is the channel. `resubmitting` is set, which lets the
+    manager's pastes through the review channel's message guard and tells a restart what was
+    lost, and the penalty review prompt is taken down, so that nobody can approve the results
+    being replaced or press Resubmit a second time and start a second collector.
+
+    A submission channel that cannot be found refuses the resubmission before anything is
+    discarded: with nowhere to collect in, the review is all the round has.
     """
     import asyncio
     import json as _json
@@ -2878,6 +2892,14 @@ async def enter_resubmit_flow(
     round_id = state.round_id
     division_id = state.division_id
     actor_id: int = interaction.user.id
+
+    sub_channel = bot.get_channel(state.submission_channel_id)
+    if sub_channel is None:
+        await interaction.followup.send(
+            "❌ The submission channel could not be found, so the results cannot be resubmitted.",
+            ephemeral=True,
+        )
+        return
 
     discarded_count = len(state.staged)
     discarded_detail = [
@@ -2912,19 +2934,23 @@ async def enter_resubmit_flow(
     state.staged.clear()
 
     async with get_connection(db_path) as db:
-        await db.execute("DELETE FROM session_results WHERE round_id = ?", (round_id,))
         await db.execute(
-            "UPDATE round_submission_channels SET in_penalty_review = 0, results_posted = 0 WHERE round_id = ?",
+            "UPDATE round_submission_channels SET resubmitting = 1 WHERE round_id = ?",
             (round_id,),
         )
         await db.commit()
 
-    sub_channel = bot.get_channel(state.submission_channel_id)
-    if sub_channel is not None:
-        await sub_channel.send(
-            "⚠️ **Results resubmission started.** "
-            "Previous provisional results will be replaced once new results are submitted."
-        )
+    if state.prompt_message_id is not None:
+        try:
+            prompt = await sub_channel.fetch_message(state.prompt_message_id)
+            await prompt.delete()
+        except (discord.NotFound, discord.HTTPException):
+            pass  # Already gone; the collection does not depend on it
+
+    await sub_channel.send(
+        "⚠️ **Results resubmission started.** "
+        "The results already submitted stand until every session has been entered again."
+    )
 
     asyncio.create_task(
         _resubmit_collection_task(round_id, division_id, bot, sub_channel),
