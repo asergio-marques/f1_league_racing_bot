@@ -17,6 +17,7 @@ from models.session_result import (
 )
 from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 from services import standings_service
+from services.channel_registry_service import missing_channel_fault
 from utils import results_formatter
 
 log = logging.getLogger(__name__)
@@ -1025,8 +1026,11 @@ async def repost_round_results(
     label: str | None = None,
     *,
     bot=None,
-) -> None:
+) -> list[str]:
     """Load the division's channels and repost/edit round results and standings.
+
+    Returns the faults it met, as lines a league can read, and an empty list where
+    everything it was asked to do was done.
 
     **The label is derived from the round, not demanded of the caller** (#130). Every
     caller reposts rounds it does not choose — the amendment cascade walks a whole
@@ -1040,11 +1044,28 @@ async def repost_round_results(
     this way but ``post_standings`` does not, and the amendment cascade walks every
     non-cancelled round of the division — future ones included. Without this guard,
     approving an amendment would post standings for rounds that have not been raced.
+
+    **A configured channel that has gone missing is a fault, not a silence** (#187). The
+    two channel guards below used to be bare truthiness tests, which conflated a channel
+    the league never configured with one it configured and has since deleted. The first
+    is no business of this function's — a division with no standings channel has nothing
+    posted for it and is right to be skipped without a word. The second is a fault, and
+    swallowing it is what let a failed amendment cascade report success: no exception is
+    raised by a channel that simply is not there, so the caller's ``except`` never ran
+    and not even the host's log file recorded anything. ``repost_results_for_division``
+    already warns in exactly this case; this function was the outlier.
+
+    A caller that does not care may ignore the return, which is why the missing channel
+    is reported this way rather than raised: ``penalty_service`` reposts one round after
+    applying a penalty and has nowhere to put a fault, and making this raise would turn a
+    stale channel into a failed penalty.
     """
+    faults: list[str] = []
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT d.season_id, drc.results_channel_id, drc.standings_channel_id,
+            SELECT d.season_id, d.name AS division_name,
+                   drc.results_channel_id, drc.standings_channel_id,
                    r.round_number, r.track_name, r.status
             FROM divisions d
             LEFT JOIN division_results_config drc ON drc.division_id = d.id
@@ -1057,8 +1078,9 @@ async def repost_round_results(
 
     if row is None:
         log.warning("repost_round_results: division %s not found", division_id)
-        return
+        return faults
 
+    division_name: str = row["division_name"] or f"division {division_id}"
     results_ch_id: int | None = row["results_channel_id"]
     standings_ch_id: int | None = row["standings_channel_id"]
     round_number: int = row["round_number"]
@@ -1072,16 +1094,26 @@ async def repost_round_results(
             "repost_round_results: round %s has no ACTIVE session results — nothing to repost",
             round_id,
         )
-        return
+        return faults
 
     if results_ch_id:
         rc = guild.get_channel(results_ch_id)
-        if rc:
+        if rc is None:
+            log.warning(
+                "repost_round_results: results channel %s not found in guild", results_ch_id
+            )
+            faults.append(missing_channel_fault(division_name, "results", results_ch_id))
+        else:
             await post_round_results(db_path, round_id, division_id, rc, guild, label, bot=bot)
 
     if standings_ch_id:
         sc = guild.get_channel(standings_ch_id)
-        if sc:
+        if sc is None:
+            log.warning(
+                "repost_round_results: standings channel %s not found in guild", standings_ch_id
+            )
+            faults.append(missing_channel_fault(division_name, "standings", standings_ch_id))
+        else:
             driver_snaps = await driver_standings_for_display(
                 db_path, division_id, round_id, guild, bot
             )
@@ -1094,6 +1126,8 @@ async def repost_round_results(
                 db_path, division_id, round_id, round_number, track_name, sc,
                 driver_snaps, team_snaps, guild, show_reserves, label, bot=bot,
             )
+
+    return faults
 
 
 async def _round_has_posted_results(db_path: str, round_id: int) -> bool:

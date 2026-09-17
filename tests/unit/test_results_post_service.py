@@ -401,10 +401,16 @@ async def _seed_division_for_repost(
     *,
     round_status: str,
     with_session_results: bool = True,
+    results_channel_id: int | None = 501,
+    standings_channel_id: int | None = 502,
 ):
     """A season, a division with both channels configured, and one round.
 
     Returns ``(db_path, division_id, round_id)``.
+
+    Either channel id may be passed as None to seed a division that never configured it,
+    which is a different thing from one whose configured channel has since been deleted
+    (#187) and must not be reported as a fault.
     """
     from db.database import run_migrations, get_connection
 
@@ -428,8 +434,8 @@ async def _seed_division_for_repost(
         division_id = cursor.lastrowid
         await db.execute(
             "INSERT INTO division_results_config "
-            "(division_id, results_channel_id, standings_channel_id) VALUES (?, 501, 502)",
-            (division_id,),
+            "(division_id, results_channel_id, standings_channel_id) VALUES (?, ?, ?)",
+            (division_id, results_channel_id, standings_channel_id),
         )
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
@@ -559,6 +565,158 @@ async def test_repost_round_results_skips_a_round_with_no_results(tmp_path):
     )
 
     assert captured == []
+
+
+# ---------------------------------------------------------------------------
+# repost_round_results — a configured channel that has gone missing is a fault
+# and not a silence (#187)
+# ---------------------------------------------------------------------------
+
+
+def _guild_losing_channels(captured: list[str], *, missing: tuple[int, ...]):
+    """A guild in which the channels named by *missing* are no longer present.
+
+    ``guild.get_channel`` returns None for a deleted channel, which is the whole of the
+    reproduction: nothing raises, so a caller's ``except`` never runs.
+    """
+    guild = _guild_capturing_sends(captured)
+    working = guild.get_channel
+
+    def get_channel(channel_id):
+        if channel_id in missing:
+            return None
+        return working(channel_id)
+
+    guild.get_channel = get_channel
+    return guild
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_a_deleted_results_channel(tmp_path):
+    """A results channel the league configured and has since deleted is named (#187).
+
+    Before the fix the bare ``if rc:`` guard skipped it without raising and without a
+    word in any log, which is how a failed amendment cascade reported success.
+    """
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL"
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id,
+        _guild_losing_channels(captured, missing=(501,)),
+    )
+
+    assert len(faults) == 1, faults
+    assert "results channel" in faults[0]
+    assert "501" in faults[0]
+    assert "Alpha" in faults[0]
+    # The standings half is untouched by the results half's fault.
+    assert captured, "the standings were not reposted despite their channel being fine"
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_a_deleted_standings_channel(tmp_path):
+    """The standings channel is guarded the same way, and reported the same way (#187)."""
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL"
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id,
+        _guild_losing_channels(captured, missing=(502,)),
+    )
+
+    assert len(faults) == 1, faults
+    assert "standings channel" in faults[0]
+    assert "502" in faults[0]
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_both_channels_when_both_are_gone(tmp_path):
+    """Neither channel's fault hides the other's — a manager repairs both at once."""
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL"
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id,
+        _guild_losing_channels(captured, missing=(501, 502)),
+    )
+
+    assert len(faults) == 2, faults
+    assert captured == []
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_nothing_when_it_succeeds(tmp_path):
+    """The honest empty answer: everything asked for was done (#187)."""
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL"
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id, _guild_capturing_sends(captured)
+    )
+
+    assert faults == []
+    assert captured
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_nothing_for_an_unconfigured_channel(tmp_path):
+    """A division that never configured a channel has nothing posted for it (#187).
+
+    This is the guard against over-reporting. A channel left unset is an ordinary
+    configuration and is right to be skipped in silence; only a channel the league
+    *did* configure and the server no longer holds is a fault. Without this
+    distinction the validation built on top of it would refuse correctly configured
+    leagues.
+    """
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL",
+        results_channel_id=None, standings_channel_id=None,
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id, _guild_capturing_sends(captured)
+    )
+
+    assert faults == []
+    assert captured == []
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_nothing_for_an_unraced_round(tmp_path):
+    """A round with nothing posted for it raises no fault however its channels stand."""
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="NOT_RUN", with_session_results=False
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id,
+        _guild_losing_channels(captured, missing=(501, 502)),
+    )
+
+    assert faults == []
 
 
 # ---------------------------------------------------------------------------
