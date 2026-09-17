@@ -2,7 +2,7 @@
 
 Turn the signup module on and your drivers enrol themselves. You post one button; each driver who presses it gets a private channel, works through a short questionnaire, and lands in a queue for you to approve or turn away. What comes out the other end is a list of approved drivers ranked by lap time, ready to be put into teams.
 
-This guide is the **order to do things in**, from switching the module on to a division lineup posted in its channel. It sends you to the reference for the fine print:
+This guide is the **order to do things in**, from switching the module on to a season's placements confirmed and its lineups posted. It sends you to the reference for the fine print:
 
 - **[Signup Module Commands](../../README.md#signup-module-commands)** in the main README — every `/signup` command in full.
 - **[Driver Commands](../../README.md#driver-commands)** — the commands that place an approved driver into a team.
@@ -11,7 +11,7 @@ This guide is the **order to do things in**, from switching the module on to a d
 
 You do not need to read those first. Start here.
 
-This guide covers the signup module only. Setting the bot up, creating a season, adding divisions, adding rounds and naming a division's lineup channel are a job of their own — follow **[Setting up the bot for your league](configuring-the-core-bot.md)** for those. Where signups depend on one of them, it is named and linked, not explained.
+This guide covers the signup module only. Setting the bot up, creating a season and moving it through its stages, adding divisions, adding rounds and naming a division's lineup channel are a job of their own — follow **[Setting up the bot for your league](configuring-the-core-bot.md)** for those. Where signups depend on one of them, it is named and linked, not explained.
 
 ---
 
@@ -35,7 +35,7 @@ A driver's status lives on the driver, not on their signup form. "Reserve" is an
 
 **Both privileged intents must be on.** The signup module is the one part of the bot that needs both. Without **Server Members** it cannot grant or revoke a single role; without **Message Content** the wizard never sees a word your drivers type, and every signup stalls on question one. See [Privileged Gateway Intents](../../README.md#privileged-gateway-intents).
 
-**You do not need a season to run signups.** Opening the window, collecting entries and approving drivers all work with no season at all. A season is needed only at the last step, when you start putting drivers into teams.
+**Signups belong to a season.** Drivers sign up for each season, not once for the league: when a season ends, every driver returns to Not Signed Up and signs up again for the next. You can switch the module on and configure it with no season at all, but a window opens only for a season whose configuration is confirmed — see steps 5 to 7 of [the core guide](configuring-the-core-bot.md#step-5--start-the-season) for the stages a season passes through.
 
 **Who is allowed to run what.** Every command below also has to be run in the bot's usual command channel by someone with the usual bot role.
 
@@ -44,11 +44,11 @@ A driver's status lives on the driver, not on their signup form. "Reserve" is an
 | `/module enable signup` and `/module disable signup` | The **league admin role** |
 | `/driver sack` | The **league admin role** |
 | Everything under `/signup`, including `/signup channel`, `/signup base-role` and `/signup complete-role` | The **interaction role** |
-| `/driver assign`, `/driver unassign`, `/driver reassign` | The **interaction role** |
+| `/driver assign`, `/driver unassign`, `/driver reject`, `/driver move`, `/driver release`, `/driver reassign` | The **interaction role** |
 
 > **Both tiers are roles, and Discord's permissions are not one of them.** Someone holding Administrator but neither role is refused every command here, and so is anyone running one outside the interaction channel. Being the server owner does not get you past it — give yourself one of the two roles instead.
 >
-> The league admin role carries the interaction role's tier within it, so a league admin needs only the one role. Note the asymmetry in the table above: unassigning a driver is a league manager's, because assigning them again puts it back; sacking one is a league admin's, because nothing does.
+> The league admin role carries the interaction role's tier within it, so a league admin needs only the one role. Note the asymmetry in the table above: unassigning a driver is a league manager's, because assigning them again puts it back; sacking one is a league admin's, because nothing does. Releasing a driver from one division is the deliberate exception — it is a league manager's, because it is part of running a lineup from week to week.
 
 ---
 
@@ -58,7 +58,7 @@ A driver's status lives on the driver, not on their signup form. "Reserve" is an
 /module enable signup
 ```
 
-The signup module can be switched on or off whenever you like — unlike weather, it is not tied to whether a season is running.
+The signup module can be switched on or off only while no season is live, or while the season is in configuration. Confirming the season's configuration fixes it, on or off, until that season ends — so decide before then.
 
 Nothing is configured yet. The bot creates an empty configuration record and tells you the three commands to run next, which are step 2. The question settings are not written at this point at all — until you change one, the bot simply falls back to its defaults.
 
@@ -90,7 +90,7 @@ Three things, and the module does nothing at all until it has all three. They as
 
 > **Do not use `/signup config channel`.** The old command is broken and fails with an error whatever you pass it. `/signup channel` is the one that works. `/signup config roles` still works and sets both roles at once, but it does not fix up the channel's permissions, so prefer the separate commands.
 
-**These three block a season.** While the signup module is on, approval is refused until all three are set, and names the ones that are missing. If you are not going to use signups this season, turn the module off rather than leaving it half-configured.
+**These three block a season.** While the signup module is on, `/season config-review` withholds its button until all three are set, and names the ones that are missing. If you are not going to use signups this season, turn the module off rather than leaving it half-configured.
 
 ---
 
@@ -112,7 +112,7 @@ Turning nationality off removes that question from the wizard entirely. While te
 
 That reads all of it back — channel, both roles, whether the window is open, and all three settings. It is the only signup command that still works while the module is switched off, which makes it a good way to check what you had before you turn it back on.
 
-> **A driver already part-way through keeps the settings they started with.** The wizard takes a copy of your settings the moment a driver presses the button. Change something while people are mid-signup and the change applies to the next driver, not to anyone already going. Nobody gets asked a question that was not there when they began.
+> **Every driver of a season is asked the same questions.** These settings, like everything in steps 2 to 4, are fixed from the moment the season's configuration is confirmed until it ends, and the bot keeps a copy with the season — so a signup read back a season later still shows what it was asked under.
 
 ---
 
@@ -136,7 +136,18 @@ Times go in as `20:00` or as `8:00pm`; both work. The list numbers them in day-a
 
 ---
 
-## Step 5 — Open the window
+## Step 5 — Confirm the season's configuration
+
+```
+/season setup game_edition:25
+/season config-review
+```
+
+The window opens for a season, so a season has to be started and its configuration confirmed first. That is core setup, covered in [the core guide](configuring-the-core-bot.md#step-6--confirm-the-configuration); what matters here is that confirming it fixes every setting in steps 1 to 4, and that the season then **waits for its signup window**.
+
+---
+
+## Step 6 — Open the window
 
 ```
 /signup open
@@ -150,23 +161,23 @@ Both parameters are optional.
 
 **`close_time`** shuts the window automatically. It is UTC, in the format `2026-09-01T20:00:00`, and it must be in the future.
 
-**The window belongs to a season.** You can open it once the season's configuration is confirmed and it is waiting for its signup window, or mid-season while it is ongoing with no placements left to confirm. Opening it moves the season on.
+**The window belongs to a season.** You can open it once the season's configuration is confirmed and it is waiting for its signup window, or mid-season while it is ongoing with no placements left to confirm. Opening it moves the season on — to signups, or mid-season to ongoing, signups.
 
 The bot checks things in order and stops at the first problem: test mode must be off, the module must be configured, the window must not already be open, the season must be waiting or ongoing, all three of channel and roles must be set, there must be at least one slot, the close time must parse and be in the future, and every track ID must exist.
 
-> **Test mode blocks the window, and an open window blocks test mode.** No real driver may sign up while the server is in test mode — the Sign Up button refuses them too — so `/test-mode toggle` it off before you open. It will not go back on until you have closed the window again with `/signup close`, and not at all once a real driver has signed up. Do your testing first, as Step 9 describes.
+> **A test-mode season never opens a window.** No real driver may sign up while the server is in test mode — the Sign Up button refuses them too — and a season confirmed in test mode goes straight to placements. Test mode is set in configuration and switched off when the season ends; see Step 10.
 
 When it goes through, the bot posts a green **Driver Signups Are Open!** message in your signup channel listing your slots, the tracks, the time type, whether a screenshot is needed, whether nationality is asked, and the auto-close time if you set one. Underneath is the **Sign Up** button, and the message pings your base role.
 
-> **A close time is not a commitment.** Set one here if you like, or leave `close_time` off and add it later with `/signup close-time add`. Either way you can move it with `/signup close-time modify` or clear it outright with `/signup close-time cancel` — Step 7 covers both. Mistyping the day or the year costs you one command, not your configuration.
+> **A close time is not a commitment.** Set one here if you like, or leave `close_time` off and add it later with `/signup close-time add`. Either way you can move it with `/signup close-time modify` or clear it outright with `/signup close-time cancel` — Step 8 covers both. Mistyping the day or the year costs you one command, not your configuration.
 
 > **No tracks means no seeding.** Open the window without `track_ids` and nobody submits a lap time, so every approved driver has no total to sort on and the queue falls back to the order you approved people in. That is fine if you never intended to rank by pace — just know that the seed numbers then mean nothing.
 
-Only one window exists per server, and it is not tied to a season or a round. Opening a second one later overwrites the first: there is no signup history, and drivers who signed up before are still signed up.
+**Every signup is kept.** Each belongs to the season and the window it came through, with the tracks that window asked for and its close time, and nothing overwrites it — not a second window, and not the next season. A season deleted with `/season abort` takes its signups with it; a completed or cancelled season keeps them.
 
 ---
 
-## Step 6 — Approve the drivers who come in
+## Step 7 — Approve the drivers who come in
 
 You do not have to do anything to keep the window running. Drivers press the button, the bot makes them a private channel called after their name, and it asks them nine questions in order.
 
@@ -182,11 +193,11 @@ You do not have to do anything to keep the window running. Drivers press the but
 | 8 | A lap time per track | Typing, plus a screenshot if required | You opened with no tracks |
 | 9 | Notes, 50 characters | Typing, or a No Notes button | — |
 
-Question 6 offers your team list, so **add your teams before anyone presses the button** or drivers will be given nothing to choose from. The list is read when a driver starts their signup, not when the window opens, so a team added after `/signup open` still reaches everyone who has not started yet. Teams are core setup — see [Team Commands](../../README.md#team-commands).
+Question 6 offers your team list, so **add your teams before you confirm the season's configuration** — the list is fixed from then until the season ends, and drivers would otherwise be given nothing to choose from. Teams are core setup — see [Team Commands](../../README.md#team-commands).
 
 When a driver finishes, the bot posts a **Signup Review** panel in their channel summarising every answer, tells them to wait for an admin, and gives you three buttons.
 
-**Approve** grants the complete role, adds up their lap times, and moves them to Unassigned. They are now in the queue for step 8.
+**Approve** grants the complete role, adds up their lap times, and moves them to Unassigned. They are now in the queue for step 9.
 
 **Request Changes** sends them back for one field. You type a reason, then pick which of the nine answers they should redo, and only that question is asked again. When they answer, they come straight back to you.
 
@@ -208,7 +219,7 @@ There are no reminders. The bot never chases a driver who has not signed up, and
 
 ---
 
-## Step 7 — Close the window
+## Step 8 — Close the window
 
 ```
 /signup close
@@ -237,14 +248,14 @@ Closing deletes the Sign Up button, posts a **Signups are now closed** notice in
 
 ---
 
-## Step 8 — Seed and place your drivers
+## Step 9 — Seed and place your drivers
 
 ```
 /signup unassigned list
 /signup unassigned export
 ```
 
-`list` shows the queue privately, to you alone: seed number, name, platform, driver type, lap total, preferred teams and teammate, and any notes. `export` sends a CSV you can open in a spreadsheet, also privately — one row per driver, one column per time slot marked `X` where they said they were free, plus their three team preferences and platform details. The CSV is the one to use for anything more than a glance, because availability across a dozen slots is unreadable as text.
+Both read the season's signups: every driver still to be settled — Unassigned, awaiting approval, or correcting their signup — with what they entered this season. `list` shows the queue privately, to you alone: seed number, name, platform, driver type, lap total, preferred teams and teammate, and any notes. `export` sends a CSV you can open in a spreadsheet, also privately — one row per driver, one column per time slot marked `X` where they said they were free, plus their three team preferences and platform details. The CSV is the one to use for anything more than a glance, because availability across a dozen slots is unreadable as text.
 
 > **The CSV is not quite everything `list` shows.** The preferred teammate and the notes are missing from it. If either matters to how you place people, read them off `list` — the export will not carry them.
 
@@ -252,40 +263,35 @@ Seeding adds up the lap times a driver submitted; the lowest total is seed 1. Dr
 
 > **A driver's total is worked out once, when you approve them, and never again.** There is no way to send an approved driver back for changes, and no command to re-time them. If someone's lap time is wrong, catch it on the review panel with **Request Changes** before you approve.
 
-Then place them:
+Then settle every one of them:
 
 ```
 /driver assign user:@Alice division:1 team:Ferrari
 /driver unassign user:@Alice division:1
-/driver sack user:@Alice
+/driver reject user:@Bob
 ```
 
-`division` takes either the tier number or the division name; `team` must match the team name exactly. **This is the first step that needs a season** — one in setup or already running. Divisions, teams and seasons are core setup; see [Setting up the bot for your league](configuring-the-core-bot.md).
+`division` takes either the tier number or the division name; `team` must match the team name exactly. These work only while the season is **in placements**, or mid-season while the drivers of a closed window are placed — the divisions have to exist first, and building them is core setup; see [Setting up the bot for your league](configuring-the-core-bot.md#step-8--build-the-season).
+
+**Every signup must be settled before placements are confirmed.** Place each Unassigned driver with `/driver assign`, or turn them down with `/driver reject`, which returns them to Not Signed Up and takes the complete role back; their signup stays with the season. A signup still in review is settled from its review panel. `/season placements-review` names anyone left, and withholds its button until nobody is.
 
 A driver can hold one seat per division, and a team runs out of seats. The Reserve team is the exception: it has room for everyone.
 
 `/driver assign` is refused while test mode is active — a real driver is never seated under test. Fake drivers are placed by `/test-mode roster add` and are unaffected.
 
-`/driver unassign` takes someone out of a division and returns them to the queue. `/driver sack` removes them from the league altogether, takes back their roles, and returns them to Not Signed Up.
+**Nothing is granted or posted when you assign.** A placement stands outside the championship until placements are confirmed from `/season placements-review`: that is when every placed driver is granted their division and team roles, and every lineup is posted. Until then `/driver unassign` takes a placement back without trace, returning the driver to the queue. The complete role is not part of this — it is granted when you approve the signup.
 
-**When roles are granted depends on the season.** This catches people out:
+**Once placements are confirmed, the lineup changes differently.** `/driver move` moves a driver to another team or division, `/driver release` takes them out of one division while they keep their others, and `/driver sack` removes them from the season. Each takes effect at once, roles and lineup included. Sacking deletes nobody: a sacked driver may sign up again in a later window.
 
-| The season is | Assigning a driver | Unassigning a driver |
-|---|---|---|
-| In setup | No roles change yet — everything is granted in one go when you approve the season | No roles change, because none were granted |
-| Already running | Division and team roles are granted immediately | They are taken back immediately |
-
-The complete role is not part of that. It is granted when you approve the signup, and is not affected by placement either way.
-
-Every assignment and removal deletes the division's lineup message and posts a fresh one, so the channel always holds one current lineup and no history. The lineup channel is set per division with `/division lineup-channel` — see step 6 of the [core guide](configuring-the-core-bot.md). Set it, or the lineup is worked out and posted nowhere.
+The lineup channel is set per division with `/division lineup-channel` — see step 9 of the [core guide](configuring-the-core-bot.md). Confirming placements refuses a division without one.
 
 ---
 
-## Step 9 — Try it without real drivers
+## Step 10 — Try it without real drivers
 
 You will want to see the wizard before your league does. Test mode lets you seat fake drivers and walk the flow without waiting on anybody — see [Test mode](test-mode.md).
 
-**Do this before Step 5, not after.** Test mode and a real league cannot share a server: the bot refuses to turn test mode on while your signup window is open, or once you hold a real driver — anyone signed up, unassigned, assigned or banned — and while it is on, nobody real can sign up or be placed. Former drivers from a finished season do not stand in the way, so you can test again between seasons. Turning test mode off deletes every fake driver, which is the tidy-up you want before opening the real window.
+**A test belongs to a season of its own.** Test mode can be switched on only while a season is in configuration, and a season confirmed with it on never opens a signup window — it goes straight to placements, where fake drivers are seated. While it is on, nobody real can sign up or be placed. It switches itself off when that season is completed, cancelled or aborted, and every fake driver is deleted with it; abort the test season with `/season abort` and start the real one.
 
 The one thing you cannot fake is a second person pressing the button, so it is worth asking one other admin to run a signup through end to end before you announce it.
 
@@ -301,7 +307,9 @@ The one thing you cannot fake is a second person pressing the button, so it is w
 
 **One of three endings.** Approved, and they get the complete role and are told so. Sent back for one answer, with your reason. Or rejected, with your reason. In every case the channel disappears a day later.
 
-**A lineup post**, once you have placed them, in whichever channel that division uses.
+**A lineup post**, once placements are confirmed, in whichever channel that division uses.
+
+**The same button next season.** When a season ends they return to Not Signed Up, lose the complete role, and sign up again for the next one.
 
 They never see the queue, their seed, or anyone else's lap times.
 
@@ -323,13 +331,14 @@ Worth knowing so you do not go looking for the setting.
 | Reminders to drivers who have not signed up | There are none, and no way to re-post the button other than closing and opening again |
 | Keeping drivers' lap time screenshots | The bot checks one is attached and never stores it. Save any you want to keep before the channel goes |
 | Sending an approved driver back for corrections | There is no route back. Corrections happen before approval or not at all |
-| Running two signup windows, or one per round or per season | There is one window per server. Opening a new one writes over the old answers |
+| Running two signup windows at once | One window is open at a time. A season may run several in turn — one before it starts and any number mid-season — and every signup from each is kept |
+| Signing up once for every season | Drivers sign up for each season. When one ends, every driver returns to Not Signed Up |
 
 ---
 
 ## Checklist before a season
 
-Worth running through before you open the window.
+Worth running through before you confirm the season's configuration, which fixes everything on it.
 
 - [ ] `/module enable signup` has been run
 - [ ] Both privileged intents are on, Message Content especially
@@ -339,9 +348,8 @@ Worth running through before you open the window.
 - [ ] Every slot you might race in is on the list, in UTC, and you are happy with it — because the list is fixed once the season's configuration is confirmed
 - [ ] You have decided about lap times, and have the track IDs to hand if you want them
 - [ ] `/signup config view` shows what you expect
-- [ ] You have run one signup end to end yourself
 - [ ] `close_time` is the date you meant, if you are setting one — `/signup close-time modify` moves it later if not
-- [ ] Each division has a lineup channel, or the lineups go nowhere
+- [ ] Once the window closes: each division has a lineup channel, and every signup is settled before you confirm placements
 
 ---
 
@@ -350,8 +358,9 @@ Worth running through before you open the window.
 | What you see | Usually means |
 |---|---|
 | Every `/signup` command refused | You are outside the interaction channel, or you hold neither of the league's two roles. Discord's Administrator permission does not get you past either |
-| `/signup open` refused | Something in the chain is missing — the channel, one of the roles, or any time slot at all. The reply names it |
-| A season that will not approve | The signup module is on but missing its channel or a role. The bot names which |
+| `/signup open` refused | Something in the chain is missing — the channel, one of the roles, or any time slot at all — or the season is not waiting for a window: its configuration is unconfirmed, or it is mid-way through placements. The reply names it |
+| `/season config-review` offers no button | The signup module is on but missing its channel or a role. The review names which |
+| `/season placements-review` offers no button, naming drivers | Those signups are unsettled. Place or reject each driver, or finish reviewing their signup |
 | Drivers press the button and nothing happens after | The Message Content intent is off, so the bot cannot see anything they type |
 | The preferred-team question offers nothing but "No Preference" | No teams have been added yet |
 | `/signup config channel` errors out | Known: that command is broken. Use `/signup channel` |
@@ -360,6 +369,7 @@ Worth running through before you open the window.
 | `/signup time-slot add`, `remove` or another signup setting refused, naming a season | That season's configuration is confirmed, so its signup settings are fixed until it ends |
 | Your time slots came back after disabling the module | Known: disabling clears the channel and roles only, whatever the message says |
 | A driver went back to waiting for approval on their own | The five-minute field window lapsed, or the bot restarted while it was open. The ping in their channel says which. Press **Request Changes** again |
-| Roles not granted after `/driver assign` | The season is still in setup. They are all granted at approval |
-| No lineup posted anywhere | That division has no lineup channel set |
+| Roles not granted after `/driver assign` | Placements are not confirmed yet. They are all granted when you confirm them from `/season placements-review` |
+| A driver cannot sign up, saying they are already approved | They are still Unassigned or placed this season. They sign up again once the season ends |
+| No lineup posted after an assignment | Lineups are posted when placements are confirmed, not when a driver is assigned |
 | Seeds that look meaningless | The window was opened with no tracks, so there are no lap times to sort on |
