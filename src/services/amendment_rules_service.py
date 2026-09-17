@@ -8,7 +8,7 @@ nothing and posts nothing. `amendment_service` carries the answer out.
 
 **Pure by design**: no database, no Discord, and ``now`` passed in rather than read from the wall
 clock, so the tests can pin a date and a moment together. Modelled on `approval_window_service`,
-which answers the neighbouring question at `/season approve`, and which owns the window offsets
+which answers the neighbouring question at the confirmation of placements, and which owns the window offsets
 both modules read — the two must not drift, and `test_the_window_offsets_match_the_scheduler`
 already pins those offsets against the scheduler.
 

@@ -462,8 +462,8 @@ class TestTheReplyNamesTheSeason:
         )
 
         message = interaction.followup.messages[0]
-        assert "pending approval" in message
-        assert "/season approve" in message
+        assert "placements are yet to be confirmed" in message
+        assert "/season approve" not in message
 
     async def test_an_approved_season_says_nothing_about_approval(self, cog):
         interaction = _Interaction()

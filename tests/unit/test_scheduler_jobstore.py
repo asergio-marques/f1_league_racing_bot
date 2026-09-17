@@ -120,7 +120,7 @@ def test_the_jobstore_keeps_full_durability(workspace):
     """FULL here too: a scheduled job lost to a power cut is worse than a slower commit.
 
     The job store carries pending weather phases, RSVP notices and result submissions, and
-    only `/season approve` can rebuild them. Same trade as the league database, declined for
+    only the confirmation of placements can rebuild them. Same trade as the league database, declined for
     the same reason on 2026-08-27.
     """
     _db_path, build = workspace

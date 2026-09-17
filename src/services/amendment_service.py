@@ -322,7 +322,7 @@ class AmendmentService:
         #
         # ``cancel_round`` above takes all eight of the round's jobs, the three the check-in runs
         # on included, and until now only the weather ones were put back. Nothing else arms them:
-        # ``schedule_attendance_round`` is called from ``/season approve`` and nowhere else, and
+        # ``schedule_attendance_round`` is called from the confirmation of placements and nowhere else, and
         # that cannot be run again on an active season. So an amended round asked nobody whether
         # they were racing, opened no attendance records, distributed no reserves and charged
         # nobody — and was recorded afterwards as perfect attendance for the whole division.
@@ -766,7 +766,7 @@ async def approve_amendment(
     with the new numbers, and nothing would look wrong until somebody read the
     championship and found second place ahead of first.
 
-    It is the mid-season half of the same rule `/season approve` holds at the start of
+    It is the mid-season half of the same rule the confirmation of placements holds at the start of
     one. A rule that bound only the approval would be a rule a league could step around
     by approving a good table and amending it afterwards.
     """

@@ -3,7 +3,7 @@
 Commands:
   /season setup    — start season configuration (admin only)
   /season placements-review   — view pending config with Approve/Amend actions
-  (approval is the button `/season placements-review` posts; there is no `/season approve`)
+  (placements are confirmed from the button `/season placements-review` posts, and by no command)
   /season status   — read-only summary of active season
   /season cancel   — delete the active season (admin only, destructive)
 
@@ -144,7 +144,7 @@ def _duplicate_datetime_errors(
 ) -> list[str]:
     """Every incoming round whose datetime is already taken, within the batch or before it.
 
-    `/season approve` refuses a season holding two rounds of one division at the same
+    the confirmation of placements refuses a season holding two rounds of one division at the same
     moment (Gate 0b), and it does so long after the calendar has been built and possibly
     posted. A repeated line is the likeliest fault in a pasted calendar, so it is caught
     here instead — at the first moment the whole batch can be seen.
@@ -902,7 +902,7 @@ class SeasonCog(commands.Cog):
         The counterpart of :meth:`_post_review_lineup_image`, and it reads the same three
         states. Renders through ``calendar_post_service.render_for_command``, which posts
         to no channel and writes no ``calendar_message_id`` — the calendar of record is
-        `/season approve`'s to place, not the review's.
+        the confirmation's to place, not the review's.
 
         *prepared* carries a graphic :meth:`_prerender_review_images` already drew, on the
         same terms as the lineup's.
@@ -1371,7 +1371,7 @@ class SeasonCog(commands.Cog):
         # same findings, so seeing them here is what lets them act first.
         #
         # Split by whether the aspect drawing the template is switched on, because that
-        # is what decides whether the fault stops the season. `/season approve` blocks on
+        # is what decides whether the fault stops the season. the confirmation of placements blocks on
         # exactly the first list, so the heading is a promise the gate keeps rather than
         # a guess. A template beneath a switched-off aspect is still named: it is a real
         # fault a manager will meet the moment they switch that aspect on, and finding it
@@ -1440,7 +1440,7 @@ class SeasonCog(commands.Cog):
     async def _portrait_configuration_blocker(self, server_id: int) -> str | None:
         """The portrait-settings reason approval must be withheld, or None.
 
-        Read by `/season placements-review` and by `/season approve` alike, so the two cannot disagree
+        Read by `/season placements-review` and by the confirmation of placements alike, so the two cannot disagree
         about whether a season may be approved.
         """
         from services.image_config_service import portrait_configuration_fault
@@ -1734,7 +1734,7 @@ class SeasonCog(commands.Cog):
 
             # ── Points ordering ───────────────────────────────────────
             # Reported here rather than left to the approval. The refusal at
-            # `/season approve` is the one that matters, but a review whose whole purpose
+            # the confirmation of placements is the one that matters, but a review whose whole purpose
             # is to show a manager what stands in the way of approving is a review that
             # must look at this too — read through the same helper the gate reads, so
             # the report and the refusal cannot drift.
@@ -2699,11 +2699,11 @@ class SeasonCog(commands.Cog):
             f"  stage: {target.value}",
         )
 
-    # `/season approve` is withdrawn (2026-09-07). A season is approved from the button
+    # No command confirms placements (decided 2026-09-07). They are confirmed from the button
     # `/season placements-review` posts and from nowhere else: the review is the evidence the
-    # approval rests on, and a command that could be run without one let a manager commit
+    # confirmation rests on, and a command that could be run without one let a manager commit
     # a season they had not looked at. The button carries its own five-minute window, so
-    # what is approved is always a season someone has just read.
+    # what is confirmed is always a season someone has just read.
 
     @season.command(
         name="status",
@@ -4290,7 +4290,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # Two rounds of one division may not share a moment. `/season approve` refuses a
+        # Two rounds of one division may not share a moment. the confirmation of placements refuses a
         # season that holds such a pair (Gate 0b), and on the same reasoning as the
         # overflow guard below it is refused here instead — at the command that would
         # cause it, rather than at an approval days later, with a calendar possibly
@@ -4553,7 +4553,7 @@ class SeasonCog(commands.Cog):
             ]
             await interaction.followup.send(
                 f"\u2705 Round {round_number} in **{pend_div.name}** updated in pending setup "
-                f"(no DB write \u2014 use `/season approve` to commit).\n\n"
+                f"(no DB write \u2014 it is committed when placements are confirmed from `/season placements-review`).\n\n"
                 + format_round_list(round_models),
                 ephemeral=True,
             )
@@ -6074,7 +6074,7 @@ class SeasonCog(commands.Cog):
                 for _line in _calendar_problems:
                     log.error("_do_approve: calendar fell back to text - %s", _line)
                 if _calendar_problems or _calendar_notices:
-                    _report = ["/season approve | Calendar image generation"]
+                    _report = ["/season placements-review | Calendar image generation"]
                     if _calendar_problems:
                         _report.append("  Fell back to the textual calendar:")
                         _report += [f"    - {line}" for line in _calendar_problems]
@@ -6107,7 +6107,7 @@ class SeasonCog(commands.Cog):
 
                 if _opening_problems:
                     _opening_report = "\n".join(
-                        ["/season approve | Opening classification", *(
+                        ["/season placements-review | Opening classification", *(
                             f"    - {line}" for line in _opening_problems
                         )]
                     )
@@ -6146,7 +6146,7 @@ class SeasonCog(commands.Cog):
 
         await self.bot.output_router.post_log(
             cfg.server_id,
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season approve | Success\n"
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season placements-review | Placements confirmed\n"
             f"  season: {cfg.season_number}\n"
             f"  season_id: {cfg.season_id}",
         )

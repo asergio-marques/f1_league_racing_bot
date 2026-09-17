@@ -87,7 +87,7 @@ def test_the_review_posting_loop_is_not_wrapped():
     )
 
 
-# ── `/season approve` (the button) ────────────────────────────────────────
+# ── the confirmation of placements (the button) ────────────────────────────────────────
 
 
 def test_the_approve_lineup_and_calendar_posting_is_wrapped():

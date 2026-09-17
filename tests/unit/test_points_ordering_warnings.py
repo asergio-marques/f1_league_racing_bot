@@ -1,6 +1,6 @@
 """A points edit that breaks the ordering warns, and still applies.
 
-The decision this pins (2026-09-14): the refusal belongs at `/season approve` and
+The decision this pins (2026-09-14): the refusal belongs at the confirmation of placements and
 `/results amend review`, not at the edit. A manager filling a table in passes through
 states that are momentarily out of order — second place set before first, a table
 repaired from the bottom up — and a write that refused them would make ordinary ways of

@@ -394,7 +394,7 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
 
     The horizons are the league's own, read from ``weather_pipeline_config``, not the packaged
     5 / 2 / 2 (issue #111). Every other path that decides whether a phase is overdue reads that
-    config — ``/season approve``, the catch-up ``/module enable weather`` runs, and
+    config — the confirmation of placements, the catch-up ``/module enable weather`` runs, and
     ``amend_round`` — and a restart judging by the defaults made the same league see one set of
     timings on an enable and another on a restart: a longer phase 1 was never published at all,
     a shorter one was published days early.

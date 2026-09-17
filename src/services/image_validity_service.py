@@ -790,7 +790,7 @@ def check_all_templates(
 ) -> list[Problem]:
     """FR-007 — every template, each with its own problem. Never a group, never a count.
 
-    Serves both `/season placements-review`, which reports these, and `/season approve`, which
+    Serves both `/season placements-review`, which reports these, and the confirmation of placements, which
     blocks on them, from one evaluation so the two surfaces cannot disagree (FR-008a).
     """
     reports = evaluate_all_templates(config, root=root)
@@ -1120,7 +1120,7 @@ def blocking_template_problems(
 ) -> list[Problem]:
     """The template faults that must stop a season, given what is switched on.
 
-    One rule, applied by `/season placements-review` and `/season approve` alike so the two cannot
+    One rule, applied by `/season placements-review` and the confirmation of placements alike so the two cannot
     disagree: **a broken template blocks only where the aspect drawing it is on.** A
     league that never switched verdicts on is not stopped by a verdicts template it has
     no use for, and used to be — `check_all_templates` surveys all sixteen regardless,

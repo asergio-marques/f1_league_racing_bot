@@ -1488,7 +1488,7 @@ from services.image_validity_service import describe as _describe  # noqa: E402
 
 
 async def _problem_lines(config_service, root, *, module_enabled=True):
-    """What both `/season placements-review` and `/season approve` compute (FR-008a).
+    """What both `/season placements-review` and the confirmation of placements compute (FR-008a).
 
     One evaluation, two surfaces. Driven at the service layer so the assertion is about
     the findings, not about how a Discord embed renders them.

@@ -438,7 +438,7 @@ The image subsection also lists the eight **asset directories** and the path eac
 #### Approving — the button in `/season placements-review`
 *Access: the reviewer, or a league admin*
 
-**There is no `/season approve` command.** A season is approved by pressing **✅ Approve** on the report `/season placements-review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
+**No command confirms placements.** A season is approved by pressing **✅ Approve** on the report `/season placements-review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
 
 > **A calendar with dates already behind you withholds the button.** Two things can be wrong with a season's dates, and each division's calendar in the review says which of them it has.
 >

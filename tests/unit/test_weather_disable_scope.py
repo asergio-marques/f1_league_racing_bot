@@ -11,7 +11,7 @@ league was told that only weather jobs had been cancelled.
 The result-submission job is the worse of the two losses. ``run_result_submission_job`` is
 the round's one clock-driven status transition and runs whatever the modules, so without it
 a round never leaves NOT_RUN and its season can never be completed. The three RSVP jobs are
-the more permanent: only ``/season approve`` creates them, and it cannot be run again on an
+the more permanent: only the confirmation of placements creates them, and it cannot be run again on an
 active season.
 
 These tests hold the cancel to the weather prefixes, hold the round sweep that must not
@@ -187,7 +187,7 @@ async def test_disable_leaves_the_result_submission_job(tmp_path):
 
 async def test_disable_leaves_the_three_rsvp_jobs(tmp_path):
     """The check-in call, its reminder and its deadline survive — nothing short of
-    ``/season approve`` would put them back."""
+    the confirmation of placements would put them back."""
     removed = await _disable_weather(tmp_path, _all_seeded_jobs)
 
     for prefix in ATTENDANCE_PREFIXES:

@@ -178,7 +178,7 @@ async def ordering_warnings(
     setting second place before first, or repairing a table from the bottom up — and
     refusing the write would make ordinary ways of building a table impossible to
     follow. The refusal belongs at the two moments a table is committed to a season,
-    `/season approve` and `/results amend review`, where there is nothing transient
+    the confirmation of placements and `/results amend review`, where there is nothing transient
     left about it.
 
     Returns an empty list for a config that does not exist: the caller has just been

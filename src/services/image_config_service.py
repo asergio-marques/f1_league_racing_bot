@@ -345,7 +345,7 @@ def portrait_configuration_fault(config) -> str | None:
     make this state unreachable -- both sub-toggles refuse while portraits are disabled, and
     `pfp_prerender` defaults on -- so this is defence in depth against a hand-edited database
     or a future path that writes the columns directly, and is what `/season placements-review` and
-    `/season approve` read.
+    the confirmation of placements read.
 
     Total, and tolerant of a configuration object predating migration 047: a missing field
     reads as off, which is what its default says.

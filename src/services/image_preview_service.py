@@ -136,7 +136,7 @@ class PreviewContext:
     #: withdrawn along with the optional ``division`` and ``round`` parameters that made
     #: it reachable.
     fabricated_drivers: bool = False
-    #: The season drawn is still awaiting ``/season approve``.
+    #: The season drawn is still awaiting the confirmation of placements.
     season_pending_approval: bool = False
     #: Seated drivers drawn with no flag where the league collects nationality. A test-mode
     #: mock driver records none, and a manager reading the reply should be told why the

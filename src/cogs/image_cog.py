@@ -597,7 +597,7 @@ class ImageCog(commands.Cog):
             )
             return
 
-        # The FR-007 survey, which also backs `/season placements-review` and `/season approve`, so
+        # The FR-007 survey, which also backs `/season placements-review` and the confirmation of placements, so
         # the three surfaces cannot disagree about whether a template is usable.
         #
         # Scoped to the aspects that are switched on, as those two are: a folder holding
@@ -1656,7 +1656,7 @@ class ImageCog(commands.Cog):
         """The divisions of whichever season a preview draws (FR-003).
 
         The approved season where there is one, the season pending approval otherwise —
-        so a league can complete on its divisions before `/season approve` has been run.
+        so a league can complete on its divisions before its placements are confirmed.
         A division of a completed or cancelled season is deliberately absent: a preview is
         a check on what the league is running or about to run.
 
@@ -2150,8 +2150,8 @@ class ImageCog(commands.Cog):
 
         if getattr(context, "season_pending_approval", False):
             lines.append(
-                "_This season is still pending approval. It is drawn exactly as it will "
-                "be once `/season approve` has run._"
+                "_This season's placements are yet to be confirmed. It is drawn exactly as it will "
+                "be once its placements are confirmed._"
             )
 
         all_notices = []

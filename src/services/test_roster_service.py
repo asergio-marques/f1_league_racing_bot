@@ -689,7 +689,7 @@ async def _ensure_single_config(
     ``points_config_store``/``points_config_entries``/``points_config_fl`` — the same
     three tables `/results config` writes — and then attached to the season through
     ``season_points_links``. It is a real config of the server from that moment: it is
-    listed, viewed and edited exactly as a hand-built one, and `/season approve` copies
+    listed, viewed and edited exactly as a hand-built one, and the confirmation of placements copies
     it into the season's own store through the ordinary snapshot.
 
     This used to write the points straight into ``season_points_entries`` while leaving

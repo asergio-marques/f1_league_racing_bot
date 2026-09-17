@@ -208,7 +208,7 @@ def test_a_missing_template_directory_reads_plainly(tmp_path):
 
 
 def test_the_problem_a_league_reads_carries_the_plain_sentence(tmp_path):
-    """`/season approve` refuses through `Problem.detail`, so it must be plain too."""
+    """the confirmation of placements refuses through `Problem.detail`, so it must be plain too."""
     directory = tmp_path / "templates"
     directory.mkdir()
     for filename in TEMPLATE_COLUMNS.values():

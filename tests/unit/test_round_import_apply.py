@@ -296,7 +296,7 @@ async def test_two_imported_rounds_may_not_share_a_moment(db_path):
 
 
 async def test_an_imported_round_may_not_land_on_an_existing_one(db_path):
-    """`/season approve` refuses such a season; catching it here saves finding out later."""
+    """the confirmation of placements refuses such a season; catching it here saves finding out later."""
     cfg = _cfg(_existing(14, 1))
 
     _, errors = await apply_round_import(

@@ -440,7 +440,7 @@ One warning it raises that is easy to skim past: **"Reserve team has no role ass
 
 ## Step 12 — Confirm the placements
 
-The review ends by asking whether you accept the season, with a **✅ Approve** button beneath it. Press it. **There is no `/season approve` command** — approving commits your season, and the review is the evidence it is committed on, so the two are deliberately one action.
+The review ends by asking whether you accept the season, with a **✅ Approve** button beneath it. Press it. **No command does it for you** — approving commits your season, and the review is the evidence it is committed on, so the two are deliberately one action.
 
 **You can press it if you ran the review, or if you hold the league admin role.** Anybody else who presses is told privately that they cannot, and nothing is approved. Running the review needs only the interaction role, so you may well be able to review a season you cannot approve — that is why the question is posted where everyone can see it rather than to you alone. Show it to a league admin and they can answer it from the same message.
 
