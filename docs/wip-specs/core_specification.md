@@ -42,7 +42,8 @@ it only to place it; the rules governing it belong to its own specification.
 - A driver shall need no role and no channel. A driver reaches the bot through the buttons it posts and through their own channels.
 - Two tiers of authority shall govern every command, and every command shall sit in one of them and no other.
     - **A league admin** shall hold the league admin role. A league admin governs what the bot is upon the server, and everything that may undo a league entire: initialising the bot and repairing its four settings, enabling and disabling a module, starting over, and every command of test mode.
-        - A command destroying what a league is built from shall be a league admin's, where nothing puts it back: deleting or cancelling a division, a round or a season, completing a season, removing a team, sacking a driver, deleting the bot's own messages, amending the results of a round already final, approving an amendment of a season's points, and deleting a points configuration. A command whose undoing is another command — closing a signup window that may be opened again, unassigning a driver who may be assigned again, discarding an amendment not yet approved — is a league manager's.
+        - A command destroying what a league is built from shall be a league admin's, where nothing puts it back: deleting or cancelling a division, a round or a season, completing or aborting a season, removing a team, sacking a driver, deleting the bot's own messages, amending the results of a round already final, approving an amendment of a season's points, and deleting a points configuration. A command whose undoing is another command — closing a signup window that may be opened again, unassigning a driver who may be assigned again, rejecting a driver who may sign up again, discarding an amendment not yet approved — is a league manager's.
+        - Moving a driver and releasing a driver from a division shall be a league manager's, though a release is not put back by any command. Both are the running of a championship already under way.
     - **A league manager** shall hold the interaction role and shall command the bot in the interaction channel. A league manager runs the league: its seasons, divisions, rounds, tracks, teams, drivers and seats; the configuration of every module and the templates and artwork it draws from; the channels each division posts to; and the results, standings, verdicts, check-ins and signups that follow.
 - Where this specification does not state a tier, the command is a league manager's.
 - **Both tiers shall be roles the league configures, and a permission of the server shall be a route to neither.** A permission is a property of the Discord server and is given for reasons that have nothing to do with a league; a tier is a property of the league. A member may run a championship without being trusted to restructure the server, and may administer the server without being anywhere near the championship.
@@ -409,26 +410,43 @@ it only to place it; the rules governing it belong to its own specification.
     - A driver shall be held to have raced a round only once that round is final, and only by its final results. Results still awaiting report or appeal verdicts shall mark nobody.
     - An entry recording that the driver did not start shall not count as having raced. A driver whose only entries in a round are did-not-start entries has not raced that round.
     - An amendment of a final round's results that leaves a driver no longer having raced that round shall clear the flag, unless another final round marks them.
-- A driver returning to Not Signed Up shall be deleted where the flag is false, and shall be retained with their personal details cleared where it is true, so that the results they raced for remain attributed.
-- A driver may be sacked from Unassigned or Assigned. Sacking shall free every seat they hold, revoke every division, team and signup role, and return them to Not Signed Up.
+- A driver whose flag is false and who reaches Not Signed Up, by any route — a sack, a rejection of their signup, a withdrawal, a signup cancelled or timed out, or the reject command — shall be **pending deletion**.
+    - A driver pending deletion shall not be deleted at once. They shall be deleted by the driver pass of the season's completion, cancellation or abort.
+    - Until then the profile shall stand at Not Signed Up and may sign up again. Whether to accept them is the league's to decide.
+- A driver whose flag is true and who reaches Not Signed Up shall be retained, with nothing of their profile or their signups cleared, so that the results they raced for remain attributed.
+- A driver may be sacked from Unassigned or Assigned, only while the season is in one of the three ongoing states. Sacking shall free every seat they hold, revoke every division, team and signup role, and return them to Not Signed Up.
 
 ### Placement into a division and team
+- A placement shall be **committed** once placements have been confirmed with it standing, and uncommitted until then. A driver holding a committed placement is a **committed driver**; a driver placed or awaiting placement who holds none is an **uncommitted driver**.
+- No placement command shall post a lineup, nor grant a role, for a placement that is uncommitted. The lineups are posted and the roles granted when placements are confirmed.
 - A command shall place a driver, taking the driver, a division named by its tier or by its name, and a team of that division.
     - The driver shall be Unassigned or Assigned.
+    - The season shall stand in Placements, or in Ongoing, placements where the driver is uncommitted.
     - The driver shall hold at most one seat in any one division, and may hold a seat in more than one division.
     - The team shall have a seat free. The Reserve team shall always have one.
-    - A season shall stand in setup or active. Placement shall not require the season to be active.
     - A driver who was Unassigned shall become Assigned.
-    - Where the season is active the division's role and the team's role shall be granted at once. Where it is in setup no role shall be granted until the season is approved.
-- A placement shall be refused where it would carry a division beyond what its lineup, its attendance sheet or its standings graphic can draw, and nothing shall be changed by the refusal.
 - A command shall remove a driver from a division.
     - The driver shall be Assigned and shall hold a seat in the division named.
+    - The season shall stand in Placements, or in Ongoing, placements where the placement is uncommitted.
     - A driver holding no other placement shall return to Unassigned.
-    - The division's role shall be revoked. The team's role shall be revoked only where the driver holds no other seat, across all divisions, mapping to that role.
-- Every successful placement, removal and sacking shall cause the division's lineup to be deleted and posted again in its lineup channel.
+- A command shall move a committed driver from their seat in one division to a team of the same division or of another: from a full-time seat to Reserve, from one team to another, or from one division to another.
+    - The season shall stand in one of the three ongoing states.
+    - A driver shall not be moved into a division other than the one they leave where they already hold a seat.
+    - The team shall have a seat free. The Reserve team shall always have one.
+    - The move shall be made as one change. The roles of the seat left shall be revoked where no other seat of the driver maps to them, the roles of the seat taken shall be granted, and the lineup of each division it touches shall be posted once.
+    - A driver moved to another division shall leave the points they scored in the division they left.
+- A command shall release a committed driver from one division, while they keep every other seat they hold.
+    - The season shall stand in one of the three ongoing states.
+    - The command shall be refused for a driver's only seat. Sacking or moving the driver applies there.
+    - The division's role shall be revoked. The team's role shall be revoked only where the driver holds no other seat, across all divisions, mapping to that role. The division's lineup shall be posted again.
+- A command shall reject a driver who is Unassigned.
+    - The season shall stand in Placements or in Ongoing, placements.
+    - The driver shall return to Not Signed Up and lose the signed-up role.
+- A placement or a move shall be refused where it would carry a division beyond what its lineup, its attendance sheet or its standings graphic can draw, and nothing shall be changed by the refusal.
+- Every successful move, release and sacking shall cause the lineup of each division it touches to be deleted and posted again in its lineup channel, once.
 
 ### Changing the account behind a profile
-- A league admin shall be able to re-key a driver profile onto another Discord account, so that a person changing account keeps their history.
+- A league admin shall be able to re-key a driver profile onto another Discord account, so that a person changing account keeps their history. Every signup the profile made shall be carried to the new account with it.
 - The new account shall be accepted whether or not it is still a member of the server.
 - A profile shall not be re-keyed onto an account that already holds one.
 
