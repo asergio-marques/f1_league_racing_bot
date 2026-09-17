@@ -372,7 +372,7 @@ The other six belong to modules. Set the ones whose module you turned on in step
 
 **Confirming placements will refuse a season that is missing any of these** — the calendar and lineup channels for every division, and the six for every enabled module — so it is cheaper to do them all now than to discover it at step 12.
 
-> **A channel can be repointed at any stage.** If one is deleted mid-season, run the same command with its replacement; nothing about the season has to be undone.
+> **A channel can be repointed at any stage of the season.** If one is deleted mid-season, run the same command with its replacement; nothing about the season has to be undone. The channels belong to that season: once it ends they no longer count, and the next season's divisions are given their own.
 
 > **A channel does one job.** Every one of these commands refuses a channel that is already set as something else — including your `/bot-init` command and log channels, your signup channel, and the same kind of channel in another division. A two-division league therefore needs its own results channel for each, its own calendar channel for each, and so on.
 >
