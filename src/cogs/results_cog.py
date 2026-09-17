@@ -1237,7 +1237,9 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         from services.amendment_service import (
+            AmendmentNotDeliverableError,
             NonMonotonicAmendmentError,
+            approval_faults,
             approve_amendment,
             get_amendment_state,
             get_modification_store_diff,
@@ -1268,6 +1270,22 @@ class ResultsCog(commands.Cog):
                 f"out of order:**\n\u2022 {bullet_list}\n"
                 f"A lower position cannot be worth as much as the one above it. Repair the "
                 f"staged table, or `/results amend revert` to start again from the season's own."
+            )
+
+        # Shown in the panel for the same reason the ordering is, and read again at the
+        # press: an approval that cannot be published is refused entire rather than
+        # half-made (#187), and a manager should meet that while deciding rather than
+        # after pressing Approve.
+        channel_faults = await approval_faults(self.bot.db_path, season.id, self.bot)
+        if channel_faults:
+            bullet_list = "\n• ".join(channel_faults)
+            diff += (
+                f"\n\n⛔ **These changes cannot be approved — the result could not "
+                f"be published:**\n• {bullet_list}\n"
+                f"Approving rescores every round of every division and reposts each one, so "
+                f"it is refused entire while any of that cannot be done — nothing would "
+                f"be changed. Repair the channels with `/division results-channel` and "
+                f"`/division standings-channel`, then run `/results amend review` again."
             )
 
         class _ReviewView(discord.ui.View):
@@ -1326,6 +1344,24 @@ class ResultsCog(commands.Cog):
                     f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                     f"| /results amend review | Refused (points out of order)\n"
                     f"  {'; '.join(exc.errors)}",
+                )
+                return
+            except AmendmentNotDeliverableError as exc:
+                bullet_list = "\n• ".join(exc.faults)
+                await interaction.followup.send(
+                    f"⛔ Amendment not approved — the result could not be "
+                    f"published:\n• {bullet_list}\n"
+                    f"**Nothing has been changed** — not the season's points, not the "
+                    f"staged changes, not amendment mode. Approving rescores and reposts "
+                    f"every round of every division, so it is refused entire rather than "
+                    f"left half-published. Repair the channels above and review again.",
+                    ephemeral=True,
+                )
+                await self.bot.output_router.post_log(
+                    interaction.guild_id,
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+                    f"| /results amend review | Refused (channels not reachable)\n"
+                    f"  {'; '.join(exc.faults)}",
                 )
                 return
             await interaction.followup.send(

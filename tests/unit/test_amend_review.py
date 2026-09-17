@@ -40,7 +40,10 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.results_cog import ResultsCog  # noqa: E402
-from services.amendment_service import NonMonotonicAmendmentError  # noqa: E402
+from services.amendment_service import (  # noqa: E402
+    AmendmentNotDeliverableError,
+    NonMonotonicAmendmentError,
+)
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 12108
@@ -107,8 +110,15 @@ async def _review(
     diff: str = "P1: 25 → 26",
     panel_errors=None,
     approve_error=None,
+    panel_faults=None,
 ):
-    """Run the command, answering the panel with *press* ("approve", "reject" or None)."""
+    """Run the command, answering the panel with *press* ("approve", "reject" or None).
+
+    *panel_faults* is what `approval_faults` reports while the panel is drawn — the
+    channels the approval would have to post to (#187). It is separate from
+    *approve_error*, so a test can drive the panel's warning and the press's refusal
+    independently, exactly as the ordering's two halves already are.
+    """
     original = discord.ui.View.wait
 
     async def _answer(self):
@@ -132,13 +142,16 @@ async def _review(
             "services.amendment_service.validate_modification_ordering",
             new=AsyncMock(return_value=panel_errors or []),
         ) as validate, patch(
+            "services.amendment_service.approval_faults",
+            new=AsyncMock(return_value=panel_faults or []),
+        ) as faults, patch(
             "services.amendment_service.approve_amendment",
             new=AsyncMock(side_effect=approve_error),
         ) as approve:
             await undecorate(ResultsCog.amend_review)(cog, interaction)
     finally:
         discord.ui.View.wait = original  # type: ignore[assignment]
-    return {"approve": approve, "validate": validate}
+    return {"approve": approve, "validate": validate, "faults": faults}
 
 
 def _logged(cog) -> str:
@@ -479,3 +492,147 @@ async def test_a_panel_nobody_answers_changes_nothing():
     stubs["approve"].assert_not_awaited()
     assert "rejected" not in _replied(interaction)
     cog.bot.output_router.post_log.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# An amendment that could not be published is refused entire (#187)
+#
+# Either everything succeeds or everything fails. The approval used to overwrite the
+# season's points, discover afterwards that it could not repost them, swallow that into
+# the host's log file, and tell the manager the championship had been republished.
+# ---------------------------------------------------------------------------
+
+CHANNEL_FAULT = "**Alpha** — the standings channel (id 502) is not in the server."
+
+
+async def test_the_panel_names_a_channel_that_has_gone_missing():
+    """The fault is shown while the decision is being taken, as the ordering's is."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _review(cog, interaction, panel_faults=[CHANNEL_FAULT])
+
+    panel = _panel(interaction)
+    assert "could not" in panel and "published" in panel
+    assert CHANNEL_FAULT in panel
+
+
+async def test_the_panel_says_which_command_repairs_the_channel():
+    """A refusal that does not say what to do next sends a manager hunting."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _review(cog, interaction, panel_faults=[CHANNEL_FAULT])
+
+    panel = _panel(interaction)
+    assert "/division standings-channel" in panel
+    assert "/results amend review" in panel
+
+
+async def test_the_panel_says_nothing_would_be_changed():
+    """The whole point of refusing before the write is that nothing is lost."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _review(cog, interaction, panel_faults=[CHANNEL_FAULT])
+
+    assert "nothing would" in _panel(interaction).lower()
+
+
+async def test_a_sound_season_earns_no_channel_warning():
+    """The guard against crying wolf at a correctly configured league."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _review(cog, interaction)
+
+    assert "could not be published" not in _panel(interaction)
+
+
+async def test_the_channels_are_checked_again_at_the_press():
+    """The panel has no timeout, so a channel can be deleted between the diff being
+    drawn and the button being pressed. The service reads them again for that reason."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    stubs = await _review(cog, interaction, press="approve")
+
+    # Once for the panel; the second reading is the service's own, inside approve_amendment.
+    stubs["faults"].assert_awaited_once()
+    stubs["approve"].assert_awaited_once()
+
+
+async def test_an_undeliverable_amendment_is_refused_at_the_press():
+    """The service raises and the command says so, rather than claiming success (#187)."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _review(
+        cog, interaction, press="approve",
+        approve_error=AmendmentNotDeliverableError([CHANNEL_FAULT]),
+    )
+
+    replied = _replied(interaction)
+    assert "not approved" in replied
+    assert CHANNEL_FAULT in replied
+    assert "recomputed and reposted" not in replied
+
+
+async def test_a_refused_amendment_says_nothing_was_changed():
+    """A manager must know the season still holds its own points, and the staged
+    changes are still there to approve once the channel is repaired."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _review(
+        cog, interaction, press="approve",
+        approve_error=AmendmentNotDeliverableError([CHANNEL_FAULT]),
+    )
+
+    replied = _replied(interaction)
+    assert "Nothing has been changed" in replied
+    assert "staged changes" in replied
+
+
+async def test_an_undeliverable_amendment_is_not_logged_as_a_success():
+    """The defect in one line: the log said Success for a cascade that never ran (#187)."""
+    cog = _make_cog()
+
+    await _review(
+        cog, _interaction(), press="approve",
+        approve_error=AmendmentNotDeliverableError([CHANNEL_FAULT]),
+    )
+
+    logged = _logged(cog)
+    assert "| Success" not in logged, logged
+
+
+async def test_the_refusal_is_logged_with_its_reason():
+    """The bot declining what an admin asked is worth a record, and the reason is what
+    makes the record useful — as the ordering refusal's already is."""
+    cog = _make_cog()
+
+    await _review(
+        cog, _interaction(), press="approve",
+        approve_error=AmendmentNotDeliverableError([CHANNEL_FAULT]),
+    )
+
+    logged = _logged(cog)
+    assert "/results amend review | Refused (channels not reachable)" in logged
+    assert CHANNEL_FAULT in logged
+    assert "Admin" in logged
+
+
+async def test_the_two_refusals_are_told_apart():
+    """A table out of order and an unreachable channel name different repairs; a log
+    that called both the same would send a manager to the wrong one."""
+    cog = _make_cog()
+
+    await _review(
+        cog, _interaction(), press="approve",
+        approve_error=NonMonotonicAmendmentError(["P2 pays as much as P1"]),
+    )
+
+    logged = _logged(cog)
+    assert "Refused (points out of order)" in logged
+    assert "channels not reachable" not in logged
