@@ -117,7 +117,7 @@ def _make_cog(
     bot = MagicMock()
     bot.db_path = db_path
     bot.season_service = MagicMock()
-    bot.season_service.get_season_for_server = AsyncMock(return_value=season)
+    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division()]
     )
@@ -242,7 +242,7 @@ async def test_a_server_with_no_season_is_refused(tmp_path, which):
 
     await _run(cog, which, interaction)
 
-    assert "No season found" in _replied(interaction)
+    assert "No season is live" in _replied(interaction)
     assert await _audit_rows(db_path) == []
 
 

@@ -3597,11 +3597,11 @@ class SeasonCog(commands.Cog):
         import json as _json
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
-        # 1. Find current season (any state)
-        season = await self.bot.season_service.get_season_for_server(server_id)
+        # 1. The live season: a division's channels belong to it, and an archived one's no longer matter (#220)
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)
         if season is None:
             await interaction.response.send_message(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -3755,10 +3755,10 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_season_for_server(server_id)
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)
         if season is None:
             await interaction.followup.send(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -3840,10 +3840,10 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_season_for_server(server_id)
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)
         if season is None:
             await interaction.followup.send(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -3927,10 +3927,10 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_season_for_server(server_id)
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)
         if season is None:
             await interaction.followup.send(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -3998,10 +3998,10 @@ class SeasonCog(commands.Cog):
     ) -> None:
         import json as _json
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        season = await self.bot.season_service.get_season_for_server(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
         if season is None:
             await interaction.response.send_message(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -4063,10 +4063,10 @@ class SeasonCog(commands.Cog):
     ) -> None:
         import json as _json
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        season = await self.bot.season_service.get_season_for_server(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
         if season is None:
             await interaction.response.send_message(
-                "\u274c No season found. Set up a season before assigning channels.",
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
@@ -4138,9 +4138,9 @@ class SeasonCog(commands.Cog):
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
         if season is None:
-            await interaction.followup.send("❌ No season found.", ephemeral=True)
+            await interaction.followup.send("❌ No season is live, so there is no calendar to sync.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]

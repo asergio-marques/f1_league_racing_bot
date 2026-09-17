@@ -162,7 +162,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ### Building a season
 - Divisions shall be created and deleted, and rounds added and deleted, only while the season is in Placements. What may be amended once placements are confirmed is set out under Divisions and Rounds below.
-- The channels of each division may be set while the season is in Placements, and at any time after, so that a channel lost may be repaired.
+- The channels of each division may be set while the season is in Placements, and at any time after until the season ends, so that a channel lost may be repaired. A division's channels belong to its season: once the season is completed, cancelled or aborted they are no longer set, repaired or read as holding a channel, and a command setting a channel with no season active shall be refused.
 - Drivers shall be placed and removed while the season is in Placements, as set out under Drivers below. No role shall be granted for a placement until placements are confirmed.
 - Once placements are first confirmed, nothing shall be added to a season and nothing deleted from it. Rounds and divisions may only be amended and cancelled.
 

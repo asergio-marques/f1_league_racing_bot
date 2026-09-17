@@ -91,7 +91,7 @@ def _make_cog(
     bot = MagicMock()
     bot.db_path = db_path
     bot.season_service = MagicMock()
-    bot.season_service.get_season_for_server = AsyncMock(return_value=season)
+    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division()]
     )
@@ -166,6 +166,23 @@ def _in_use(monkeypatch, use: ChannelUse):
 # ---------------------------------------------------------------------------
 
 
+async def test_the_live_season_is_the_one_whose_channels_are_set(tmp_path, monkeypatch):
+    """A division's channels belong to the season being built or raced; an archived season's
+    no longer matter, and are never reached (issue #220)."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, season=None)
+    cog.bot.season_service.get_season_for_server = AsyncMock(
+        side_effect=AssertionError("the latest season, archived or not, is not the target")
+    )
+    interaction = _interaction()
+
+    await cog._set_division_channel(interaction, "Division 1", _channel(), "weather")
+
+    cog.bot.season_service.get_setup_or_active_season.assert_awaited_once()
+    assert "No season is live" in _replied(interaction)
+
+
 async def test_a_server_with_no_season_is_refused(tmp_path, monkeypatch):
     """Channels hang off divisions, which hang off a season."""
     _free(monkeypatch)
@@ -175,7 +192,7 @@ async def test_a_server_with_no_season_is_refused(tmp_path, monkeypatch):
 
     await cog._set_division_channel(interaction, "Division 1", _channel(), "weather")
 
-    assert "No season found" in _replied(interaction)
+    assert "No season is live" in _replied(interaction)
 
 
 async def test_an_unknown_division_is_refused_by_name(tmp_path, monkeypatch):
