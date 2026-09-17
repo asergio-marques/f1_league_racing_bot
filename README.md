@@ -921,7 +921,9 @@ Revokes all placement roles, removes all season assignments, and transitions the
 #### `/team add` — Add a team to the server list
 *Access: League manager*
 
-Adds the team to the server's default team list and saves its role mapping (granted/revoked on driver placement). If a SETUP season is active the team is also seeded into every division with 2 seats.
+Adds the team to the server's default team list and saves its role mapping (granted/revoked on driver placement). Every division created afterwards is seeded with it, with 2 seats.
+
+> **The team list is fixed once a season's configuration is confirmed.** `/team add`, `/team remove` and `/team rename` work while no season is active, or while the active season is still in configuration, and are refused from confirmation until the season ends. The signup wizard offers this list as the preferred teams, and every division is built from it. A team's **role** is never fixed — see `/team role`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -943,7 +945,7 @@ Adds the team to the server's default team list and saves its role mapping (gran
 #### `/team remove` — Remove a team from the server list
 *Access: League admin*
 
-Removes the team from the server's default list and clears its role mapping. If a SETUP season is active the team is also removed from every division in that season.
+Removes the team from the server's default list and clears its role mapping. Refused once a season's configuration is confirmed, until that season ends.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -952,12 +954,22 @@ Removes the team from the server's default list and clears its role mapping. If 
 #### `/team rename` — Rename a team
 *Access: League manager*
 
-Renames the team in the server's default list and updates its role mapping key. If a SETUP season is active the name is also updated across every division in that season.
+Renames the team in the server's default list and updates its role mapping key. Refused once a season's configuration is confirmed, until that season ends.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `current_name` | String | ✅ | Exact current name of the team |
 | `new_name` | String | ✅ | Replacement name (max 50 chars) |
+
+#### `/team role` — Set a team's Discord role
+*Access: League manager*
+
+Points a team of the server list at a different Discord role. Unlike the list itself, a team's role can be changed **in any season state** — nothing stops a role being deleted from the server mid-season, and this is how you repair it. The Reserve team's role is set with `/team reserve-role`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Exact name of the team |
+| `role` | Role | ✅ | Discord role to grant drivers placed into this team |
 
 #### `/team list` — List all teams and their role mappings
 *Access: League manager*

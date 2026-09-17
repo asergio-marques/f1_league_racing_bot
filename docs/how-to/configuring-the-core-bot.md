@@ -173,7 +173,7 @@ The rules for a team's **name** are checked the moment you set it, and are liste
 
 This is easy to forget and the bot warns you about it at every season review, because a driver sitting in Reserve without it will be rejected when results are submitted.
 
-Adding a team while a season is in setup also seats it in every division of that season, with **two seats** each. Use `/team list` to see the whole list with its roles, and `/team lineup` once drivers are placed.
+Every division you create later is built from this list, each team with **two seats**. Build the list before you confirm a season's configuration: from that moment until the season ends, `/team add`, `/team remove` and `/team rename` are refused. A team's role is the exception — if a role is deleted from the server, point the team at its replacement with `/team role`, in any state. Use `/team list` to see the whole list with its roles, and `/team lineup` once drivers are placed.
 
 ---
 
