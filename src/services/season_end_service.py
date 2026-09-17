@@ -157,7 +157,13 @@ async def end_of_season_pass(server_id: int, bot: "Bot", guild) -> dict:
 async def _write_driver_history_entries(
     season: "Season", bot: "Bot", *, force_cancelled: bool = False
 ) -> None:
-    """Write a DriverHistoryEntry for every ASSIGNED driver at season end.
+    """Write a DriverHistoryEntry for every division each driver took part in during the season.
+
+    A driver took part in a division once a placement of theirs in it was committed, and
+    stays part of it whatever becomes of the placement afterwards: a driver moved, released
+    or sacked mid-season holds an entry for every division they raced in, as the season's
+    history lists them (issue #220). Read from ``driver_division_memberships``, which records
+    each committed placement as it is committed and is never cleared by a placement changing.
 
     Sources:
     - season_number, division_name, division_tier: from the season/division rows
@@ -181,22 +187,21 @@ async def _write_driver_history_entries(
     db_path: str = bot.db_path  # type: ignore[attr-defined]
 
     async with get_connection(db_path) as db:
-        # Load all ASSIGNED driver × division pairs for this season
+        # Every driver × division a committed placement was ever held in this season.
         cursor = await db.execute(
             """
-            SELECT dsa.driver_profile_id,
+            SELECT m.driver_profile_id,
                    dp.server_id,
                    dp.discord_user_id,
                    d.id     AS division_id,
                    d.name   AS division_name,
                    d.tier   AS division_tier,
                    d.status AS division_status
-            FROM driver_season_assignments dsa
-            JOIN divisions d ON d.id = dsa.division_id
-            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-            WHERE d.season_id = ?
-              -- Only a committed placement earns a history entry (issue #220).
-              AND dsa.committed = 1
+            FROM driver_division_memberships m
+            JOIN divisions d ON d.id = m.division_id
+            JOIN driver_profiles dp ON dp.id = m.driver_profile_id
+            WHERE m.season_id = ?
+            ORDER BY m.id
             """,
             (season.id,),
         )

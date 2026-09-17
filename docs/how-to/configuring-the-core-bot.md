@@ -529,7 +529,7 @@ Where the window closes with nobody left to settle, the season goes straight bac
 /season complete
 ```
 
-**Nothing ends a season by itself.** Once every division is finished or cancelled, the season moves to **pending completion** on its own, and `/season complete` is what ends it. Before then the bot refuses, listing the outstanding rounds. A mid-season signup window does not hold it up: with every division done there is no round left to place anyone into, so the window is closed and every pending placement turned down — each unplaced or unconfirmed driver returns to Not Signed Up, as `/driver reject` would. From pending completion no module can be turned off, and the last round's results can still be amended. Completing then ends the season: each division's **final classification** is posted, a history entry is written for every driver whose placement was confirmed, the season's roles are revoked, and every driver returns to **Not Signed Up** — ready to sign up for the next season. Drivers who never raced are deleted at this point, their signups kept with the season; former drivers are kept. An open signup window is closed, test mode is switched off, and the season is archived and announced in the log channel.
+**Nothing ends a season by itself.** Once every division is finished or cancelled, the season moves to **pending completion** on its own, and `/season complete` is what ends it. Before then the bot refuses, listing the outstanding rounds. A mid-season signup window does not hold it up: with every division done there is no round left to place anyone into, so the window is closed and every pending placement turned down — each unplaced or unconfirmed driver returns to Not Signed Up, as `/driver reject` would. From pending completion no module can be turned off, and the last round's results can still be amended. Completing then ends the season: each division's **final classification** is posted, a history entry is written for every division each driver took part in — one they were moved or released from included, the season's roles are revoked, and every driver returns to **Not Signed Up** — ready to sign up for the next season. Drivers who never raced are deleted at this point, their signups kept with the season; former drivers are kept. An open signup window is closed, test mode is switched off, and the season is archived and announced in the log channel.
 
 > **What "finalised" means here.** A round is finished once its **appeals review is approved** —
 > not when you submit its results, and not when you approve its penalties. Each stage in between
@@ -565,8 +565,8 @@ If you need to stop a season rather than finish it, which command depends on whe
 > ⚠️ **`/season cancel` is irreversible, and it is not `/season complete` with a different name.**
 > It cascades: every division is cancelled, and with each one every round you have not yet raced.
 > Rounds you *have* raced keep their results — cancelling never throws a result away — and the
-> season is archived rather than deleted. Every driver whose placement was confirmed still gets a
-> history entry — a cancelled season is league history, marked as cancelled so it can be told apart
+> season is archived rather than deleted. Every driver still gets a history entry for each division
+> they took part in — a cancelled season is league history, marked as cancelled so it can be told apart
 > from one that ran to its end — and then, as on completion, every driver returns to Not Signed Up
 > and those who never raced are deleted. What you lose is the ending: no final classification is
 > posted. It is available only while the season is ongoing.

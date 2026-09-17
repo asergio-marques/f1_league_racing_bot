@@ -249,7 +249,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Completing a season shall be a league admin's, and shall be refused in any state but Pending completion.
 - Completing a season shall, in this order:
     1. post each division's final classification;
-    2. record a history entry for every driver holding a committed placement;
+    2. record a history entry for every division each driver took part in;
     3. revoke the division, team and signup roles of the season's drivers;
     4. close the signup window, where one is open, so that no signup begins after the driver pass has gone by;
     5. run the driver pass;
@@ -267,7 +267,7 @@ it only to place it; the rules governing it belong to its own specification.
 #### Cancelling a season
 - Cancelling a season shall be a league admin's, shall require the word `CONFIRM`, and shall be refused in any state but the three ongoing states. A season is cancelled where it should not go on; a season that was raced to its end is completed.
 - Cancelling a season shall post a notice to each division still running, shall cancel every piece of scheduled work, shall cancel every division of it that is not already cancelled, and shall discard every placement not yet committed.
-- It shall then record a history entry for every driver holding a committed placement, as completing one does, revoke the same roles, close the signup window where one is open, run the driver pass, switch test mode off, and only then mark the season cancelled. A season that was cancelled is league history: it happened, and its drivers raced in it.
+- It shall then record a history entry for every division each driver took part in, as completing one does, revoke the same roles, close the signup window where one is open, run the driver pass, switch test mode off, and only then mark the season cancelled. A season that was cancelled is league history: it happened, and its drivers raced in it.
 - A cancellation shall never discard a result. Only a round not yet run, or run but with its results not yet entered, may be cancelled — by itself, or by the cancelling of the division or season above it. A round further along shall keep its place and its results.
 
 #### Aborting a season
@@ -280,7 +280,8 @@ it only to place it; the rules governing it belong to its own specification.
 - A completed or cancelled season and everything belonging to it shall be retained permanently and shall never be changed or deleted: its divisions, its rounds and their amendments, its weather, its results, its standings, its placements, its points configurations, its signups and the signup configuration and windows they were made under, and its record of changes.
 - A driver deleted by the driver pass shall leave no placement and no history entry in the archive. Their signups shall remain.
 - The archive shall be the source from which season history and statistics are drawn.
-- Each driver holding a committed placement in a season that has ended, and retained by the driver pass, shall keep a history entry stating the season's number, the division's name and tier, and the driver's final position, final points and gap to the winner of that division.
+- A driver shall have taken part in a division once a placement of theirs in it has been committed, and shall remain part of it whatever becomes of that placement: a driver moved, released or sacked during the season was part of every division they held a committed placement in.
+- Each driver retained by the driver pass shall keep, for every division of a season that has ended which they took part in, a history entry stating the season's number, the division's name and tier, and the driver's final position, final points and gap to the winner of that division. A driver who took part in two divisions of one season holds an entry for each, and both divisions stand in their history.
     - The entry shall record whether the driver's division was cancelled. Cancellation reaches a driver only through their division, so a season cancelled outright marks every one of its entries.
     - A driver created by test mode shall gain a history entry as any other driver does, and shall keep it after test mode deletes them.
 

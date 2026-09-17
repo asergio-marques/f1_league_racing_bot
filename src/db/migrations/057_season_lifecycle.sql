@@ -8,6 +8,7 @@
 --   3. signup_records per season — every completed signup kept, under its season and window.
 --   4. driver_season_assignments.committed — whether a placement has been confirmed.
 --   5. driver_history_entries by identifier — history that outlives a deleted profile.
+--   6. driver_division_memberships — every division a driver held a confirmed seat in.
 
 -- ─────────────────────────────────────────────────────────────────────────────────────────────
 -- Part 1: the lifecycle stage of a season.
@@ -291,3 +292,45 @@ CREATE INDEX IF NOT EXISTS idx_driver_history_identity
     ON driver_history_entries(server_id, discord_user_id);
 
 PRAGMA foreign_keys = ON;
+
+-- ─────────────────────────────────────────────────────────────────────────────────────────────
+-- Part 6: every division a driver held a confirmed seat in during a season.
+--
+-- A driver moved, released or sacked mid-season no longer holds the placement they raced
+-- under, yet took part in that division all the same. The season's history lists every
+-- division a driver was part of, and so a row is kept here the moment a placement is
+-- committed in a division, and never removed by the placement changing afterwards.
+--
+-- Written by triggers, so that every path committing a placement — confirming placements,
+-- a move, a placement written into a season already being raced — records it alike. A
+-- driver deleted takes their rows with them (ON DELETE CASCADE), as does a division or
+-- season deleted.
+
+CREATE TABLE IF NOT EXISTS driver_division_memberships (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_id         INTEGER NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+    division_id       INTEGER NOT NULL REFERENCES divisions(id) ON DELETE CASCADE,
+    driver_profile_id INTEGER NOT NULL REFERENCES driver_profiles(id) ON DELETE CASCADE,
+    UNIQUE (season_id, division_id, driver_profile_id)
+);
+
+INSERT OR IGNORE INTO driver_division_memberships (season_id, division_id, driver_profile_id)
+SELECT season_id, division_id, driver_profile_id
+FROM driver_season_assignments
+WHERE committed = 1;
+
+CREATE TRIGGER IF NOT EXISTS driver_division_membership_on_insert
+AFTER INSERT ON driver_season_assignments
+WHEN NEW.committed = 1
+BEGIN
+    INSERT OR IGNORE INTO driver_division_memberships (season_id, division_id, driver_profile_id)
+    VALUES (NEW.season_id, NEW.division_id, NEW.driver_profile_id);
+END;
+
+CREATE TRIGGER IF NOT EXISTS driver_division_membership_on_update
+AFTER UPDATE OF committed, division_id ON driver_season_assignments
+WHEN NEW.committed = 1
+BEGIN
+    INSERT OR IGNORE INTO driver_division_memberships (season_id, division_id, driver_profile_id)
+    VALUES (NEW.season_id, NEW.division_id, NEW.driver_profile_id);
+END;

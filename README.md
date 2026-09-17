@@ -502,11 +502,11 @@ discards a result. The season row is marked `CANCELLED` last.
 
 **The season is archived, not deleted.** Its divisions, rounds, results and standings stay in the
 database and remain readable by the stats commands; they become immutable and stop counting as
-the server's live season. Placements not yet confirmed are discarded first. Every driver whose
-placement was confirmed gets a history entry, **marked as cancelled** so a season that was called
-off can be told apart from one that ran to its end. Then, exactly as completing a season does, the
-season's roles are revoked, every driver returns to Not Signed Up, drivers who never raced are
-deleted (their signups kept), an open signup window is closed and test mode is switched off.
+the server's live season. Placements not yet confirmed are discarded first. Every driver gets
+a history entry for each division they took part in, **marked as cancelled** so a season that was
+called off can be told apart from one that ran to its end. Then, exactly as completing a season
+does, the season's roles are revoked, an open signup window is closed, every driver returns to Not
+Signed Up, drivers who never raced are deleted (their signups kept) and test mode is switched off.
 
 Available only while the season is **ongoing**. A season pending completion is completed instead,
 and one whose placements have never been confirmed is abandoned with `/season abort`.
@@ -519,7 +519,7 @@ season is neither finished nor cancelled, and lists the rounds still to be final
 
 > **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then the only things left are amending the results of a round already final, approving an amendment of the season's points, and completing the season — no module can be disabled. A season with a signup window open, or mid-season placements still to confirm, moves there too: there is no round left to place anyone into, so the window is closed, every placement not yet confirmed is discarded, and every driver still unplaced, unconfirmed, awaiting approval or mid-correction returns to Not Signed Up as `/driver reject` would. Once every
 division is done it ends the season, in this order: each division's final classification is posted;
-a history entry is written for every driver whose placement was confirmed; the division, team and
+a history entry is written for every division each driver took part in, whether or not they still sit in it — a driver moved, released or sacked mid-season keeps an entry for every division they held a confirmed seat in; the division, team and
 signed-up roles are revoked; every driver who was Unassigned, placed, signing up or in review returns
 to **Not Signed Up**, so they can sign up for the next season; every driver who never raced is then
 deleted, with their placements and history, though their signups stay with the season; an open
