@@ -417,9 +417,13 @@ Unlike the other two commands, `<datetime>` is a **local** time in the zone `<ti
 Deletes the round and renumbers remaining rounds by date.
 
 #### `/season placements-review` — Review pending configuration
-*Access: League manager*
+*Access: League manager · Placements only*
 
-No parameters. Displays the pending season configuration, ending with a message asking whether you accept it and carrying the **✅ Approve** button.
+No parameters. Displays the pending season configuration, ending with a message asking whether you accept it and carrying the **✅ Approve** button. Refused unless the season is in **placements** — a season still in configuration is reviewed with `/season config-review`.
+
+> **Two things hold the button back that the report does not otherwise show.** Every signup must be settled: no driver may still be Unassigned, awaiting approval or correcting their signup — place them with `/driver assign`, or finish reviewing them. And every division must have its **lineup** and **calendar** channels set. The review names each driver and each division at fault, and the approval refuses on the same reading.
+
+> **Approving commits every placement.** Until then a placement stands outside the championship; approving grants the division and team roles and posts the lineups, as described below.
 
 The report arrives as **one message per subsection**, in this order: the season and its enabled modules; signup; attendance; points configurations; weather; image outputs. A subsection with nothing in it — a module you have not enabled — is not posted at all. The per-division blocks follow, as before. Each subsection is split further if it alone is too long for one Discord message, because an over-long message is refused whole rather than truncated.
 

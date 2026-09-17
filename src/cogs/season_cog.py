@@ -1570,6 +1570,17 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        # Placements are reviewed only once the season is in Placements (issue #220).
+        if cfg.season_id and (
+            await self.bot.season_service.get_stage(cfg.season_id)  # type: ignore[attr-defined]
+        ) is not SeasonStage.PLACEMENTS:
+            await interaction.response.send_message(
+                "\u26d4 Placements can only be reviewed while the season is in placements. "
+                "A season in configuration is reviewed with `/season config-review`.",
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.defer(ephemeral=False)
 
         # Everything the review posts publicly is collected, so that approving the season
@@ -2124,11 +2135,35 @@ class SeasonCog(commands.Cog):
                     "again.",
                     ephemeral=True,
                 )
+            unsettled, channel_faults = await self._placement_confirmation_faults(
+                interaction.guild_id, cfg.season_id
+            )
+            if unsettled:
+                body = "\n".join(f"\u2022 {line}" for line in unsettled)
+                for chunk in _chunk_message(
+                    "\u26d4 **Every signup must be settled before placements are confirmed.**\n"
+                    f"{body}\n"
+                    "Place each driver with `/driver assign`, turn them down with "
+                    "`/driver reject`, or finish reviewing their signup — then run "
+                    "`/season placements-review` again."
+                ):
+                    await interaction.followup.send(chunk, ephemeral=True)
+            if channel_faults:
+                body = "\n".join(f"\u2022 {line}" for line in channel_faults)
+                await interaction.followup.send(
+                    "\u26d4 **Every division needs its lineup and calendar channels.**\n"
+                    f"{body}\n"
+                    "Set them with `/division lineup-channel` and `/division calendar-channel`, "
+                    "then run `/season placements-review` again.",
+                    ephemeral=True,
+                )
             if (
                 not approval_blockers
                 and not calendar_faults_found
                 and not points_faults
                 and not phantom_configs
+                and not unsettled
+                and not channel_faults
             ):
                 # Taken here rather than at the top of the command: the fingerprint must
                 # describe the season as the report just described it, and the report is
@@ -2159,6 +2194,62 @@ class SeasonCog(commands.Cog):
             )
 
         interaction.followup.send = original_followup
+
+    async def _placement_confirmation_faults(
+        self, server_id: int, season_id: int
+    ) -> tuple[list[str], list[str]]:
+        """What stops placements being confirmed that no older gate checks (issue #220).
+
+        Returns ``(unsettled, channels)``: the unsettled signups, named, and each division
+        missing its lineup or calendar channel. The review withholds its button on either,
+        and the confirmation refuses on either, from this one reading.
+        """
+        from services.season_lifecycle_service import UNSETTLED_STATES
+
+        placeholders = ",".join("?" for _ in UNSETTLED_STATES)
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            cursor = await db.execute(
+                f"SELECT dp.discord_user_id, dp.current_state, sr.server_display_name "
+                f"FROM driver_profiles dp "
+                f"LEFT JOIN signup_records sr ON sr.id = ("
+                f"    SELECT MAX(id) FROM signup_records "
+                f"    WHERE server_id = dp.server_id AND discord_user_id = dp.discord_user_id) "
+                f"WHERE dp.server_id = ? AND dp.current_state IN ({placeholders}) "
+                f"ORDER BY dp.current_state, dp.discord_user_id",
+                (server_id, *UNSETTLED_STATES),
+            )
+            unsettled_rows = await cursor.fetchall()
+            cursor = await db.execute(
+                "SELECT name, lineup_channel_id, calendar_channel_id FROM divisions "
+                "WHERE season_id = ? AND status != 'CANCELLED' ORDER BY tier",
+                (season_id,),
+            )
+            division_rows = await cursor.fetchall()
+
+        state_labels = {
+            "UNASSIGNED": "not yet placed",
+            "PENDING_ADMIN_APPROVAL": "awaiting approval",
+            "AWAITING_CORRECTION_PARAMETER": "awaiting approval",
+            "PENDING_DRIVER_CORRECTION": "correcting their signup",
+        }
+        unsettled = [
+            f"**{row['server_display_name'] or row['discord_user_id']}** — "
+            f"{state_labels.get(row['current_state'], row['current_state'])}"
+            for row in unsettled_rows
+        ]
+        channels: list[str] = []
+        for row in division_rows:
+            missing = [
+                label
+                for label, value in (
+                    ("lineup channel", row["lineup_channel_id"]),
+                    ("calendar channel", row["calendar_channel_id"]),
+                )
+                if not value
+            ]
+            if missing:
+                channels.append(f"**{row['name']}** has no {' and no '.join(missing)}")
+        return unsettled, channels
 
     # ------------------------------------------------------------------
     # /season config-review — confirming the configuration (issue #220)
@@ -5157,6 +5248,25 @@ class SeasonCog(commands.Cog):
 
         season_svc = self.bot.season_service
 
+        if await season_svc.get_stage(cfg.season_id) is not SeasonStage.PLACEMENTS:
+            await interaction.followup.send(
+                "\u26d4 The season is no longer in placements. **Nothing has been approved.**",
+                ephemeral=True,
+            )
+            return
+
+        # ── Gate S: every signup settled, every division's own channels set (#220) ──
+        unsettled, channel_faults = await self._placement_confirmation_faults(
+            cfg.server_id, cfg.season_id
+        )
+        if unsettled or channel_faults:
+            bullets = "\n".join(f"\u2022 {line}" for line in [*unsettled, *channel_faults])
+            for chunk in _chunk_message(
+                f"\u26d4 Season cannot be approved:\n{bullets}"
+            ):
+                await interaction.followup.send(chunk, ephemeral=True)
+            return
+
         # Validate tier sequential integrity before committing
         try:
             await season_svc.validate_division_tiers(cfg.season_id)
@@ -5558,6 +5668,8 @@ class SeasonCog(commands.Cog):
                 )
 
         # Only transition to ACTIVE after scheduling succeeds
+        # Every placement made in Placements is committed with the season (issue #220).
+        await season_svc.commit_placements(cfg.season_id)
         await season_svc.transition_to_active(cfg.season_id)
 
         # ── T015: Bulk role grant for all ASSIGNED drivers (FR-006) ──────────

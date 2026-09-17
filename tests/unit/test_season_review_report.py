@@ -213,6 +213,12 @@ def _cog(
     cog._post_review_calendar_image = AsyncMock(return_value=calendar_state)
     cog._post_review_lineup_image = AsyncMock(return_value=REVIEW_IMAGE_TEXT)
     cog._post_approval_prompt = AsyncMock()
+    # In Placements with nothing unsettled (issue #220); those gates are tested in
+    # test_placements_confirmation.py.
+    from models.season import SeasonStage
+
+    bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
+    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
     return cog
 
 

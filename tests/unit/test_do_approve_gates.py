@@ -106,6 +106,12 @@ def _cog(db_path, **overrides):
     cog._team_name_problems = AsyncMock(return_value=[])
     cog._lineup_problems = AsyncMock(return_value=[])
     cog._get_pending_for_server = MagicMock(return_value=_pending())
+    # The season is in Placements with every signup settled and every channel set; the
+    # gates of issue #220 have tests of their own in test_placements_confirmation.py.
+    from models.season import SeasonStage
+
+    season_svc.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
+    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
 
     for name, value in overrides.items():
         setattr(cog, name, value)

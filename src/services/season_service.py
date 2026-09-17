@@ -1034,6 +1034,22 @@ class SeasonService:
             rows = await cursor.fetchall()
         return [row[0] for row in rows]
 
+    async def commit_placements(self, season_id: int) -> int:
+        """Commit every placement of *season_id* not yet committed; returns how many.
+
+        Called as placements are confirmed (issue #220). A committed placement is part of the
+        championship: it holds its roles, stands in its lineup, is called to check-in and
+        scored in results and standings.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "UPDATE driver_season_assignments SET committed = 1 "
+                "WHERE season_id = ? AND committed = 0",
+                (season_id,),
+            )
+            await db.commit()
+            return cursor.rowcount
+
     async def transition_to_active(self, season_id: int) -> None:
         """Set season status to ACTIVE, and its divisions with it.
 
