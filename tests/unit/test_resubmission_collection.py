@@ -204,6 +204,20 @@ async def test_no_channel_means_nothing_to_collect_in(tmp_path):
     bot.wait_for.assert_not_awaited()
 
 
+async def test_an_unknown_round_tells_the_channel_resubmission_failed(tmp_path):
+    """The round was deleted between the press and the task starting. Raising here would be
+    swallowed by the background task, leaving the manager pasting into a channel nothing
+    reads."""
+    db_path = await _make_db(tmp_path, name="resubmit_noround")
+    bot = _bot(db_path, [])
+    channel = _channel()
+
+    await _resubmit_collection_task(ROUND_ID + 1, DIVISION_ID, bot, channel)  # must not raise
+
+    assert "Resubmission failed: this round could not be found" in _said(channel)
+    bot.wait_for.assert_not_awaited()
+
+
 async def test_a_guild_the_bot_is_not_in_collects_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="resubmit_noguild")
     bot = _bot(db_path, [], guild=False)

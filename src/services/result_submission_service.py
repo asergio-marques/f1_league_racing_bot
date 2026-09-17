@@ -2866,9 +2866,14 @@ async def _resubmit_collection_task(
         return
 
     db_path: str = bot.db_path
-    ctx = await _get_round_context(db_path, round_id)
-    if ctx is None:
-        log.error("_resubmit_collection_task: round %s not found", round_id)
+    # `_get_round_context` raises rather than returning None. Uncaught, that is one more
+    # exception inside a background task nobody awaits, and the manager who has just been told
+    # to paste the results again would be left pasting into a channel nothing reads.
+    try:
+        ctx = await _get_round_context(db_path, round_id)
+    except ValueError:
+        log.exception("_resubmit_collection_task: round %s not found", round_id)
+        await sub_channel.send("❌ Resubmission failed: this round could not be found.")
         return
 
     server_id: int = ctx["server_id"]
