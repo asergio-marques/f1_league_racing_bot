@@ -187,7 +187,7 @@ Driving a check-in through the buttons requires as many Discord accounts as ther
 /test-mode set-former-driver user:@someone value:True
 ```
 
-`former_driver` is otherwise only set by the code paths that sack or retire a driver, and it changes what signup and placement will let you do with that profile. This sets it directly so those branches can be reached without walking a driver through a full season first.
+`former_driver` is otherwise only set by saving a session's results, at submission or amendment, for every driver in the classification who has a profile (`result_submission_service`). It decides what happens to a profile when the driver returns to Not Signed Up, by `/driver sack` or any other route: a former driver's profile is kept with their signup details blanked, and anyone else's is deleted. This sets it directly so both branches can be reached without submitting results first.
 
 ---
 
