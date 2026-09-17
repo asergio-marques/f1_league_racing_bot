@@ -15,7 +15,14 @@ from models.round import (
     RoundFormat,
     RoundStatus,
 )
-from models.season import Season, SeasonStatus
+from models.season import (
+    ALLOWED_STAGE_TRANSITIONS,
+    InvalidStageTransition,
+    Season,
+    SeasonStage,
+    SeasonStatus,
+    status_of_stage,
+)
 from models.session import Session, SessionType, SESSIONS_BY_FORMAT
 
 #: Rendered from the model's sets so the queries below cannot drift from the rule they
@@ -75,7 +82,7 @@ class SeasonService:
         """Return the ACTIVE season for *server_id*, or None."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
                 "WHERE server_id = ? AND status = ?",
                 (server_id, SeasonStatus.ACTIVE.value),
             )
@@ -93,7 +100,7 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
                 "WHERE server_id = ? ORDER BY id DESC LIMIT 1",
                 (server_id,),
             )
@@ -114,7 +121,7 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
                 "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
                 "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
                 (server_id,),
@@ -138,7 +145,7 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
                 "WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
                 "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
                 (server_id,),
@@ -173,7 +180,7 @@ class SeasonService:
         """Return the SETUP season for *server_id*, or None."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number FROM seasons "
+                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
                 "WHERE server_id = ? AND status = 'SETUP' LIMIT 1",
                 (server_id,),
             )
@@ -253,6 +260,44 @@ class SeasonService:
                 (season_id,),
             )
             await db.commit()
+
+    async def get_stage(self, season_id: int) -> SeasonStage | None:
+        """The lifecycle stage of *season_id*, or None where no such season exists."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
+            row = await cursor.fetchone()
+        if row is None or row["stage"] is None:
+            return None
+        return SeasonStage(row["stage"])
+
+    async def set_stage(self, season_id: int, stage: SeasonStage) -> None:
+        """Move *season_id* to *stage*, carrying its coarse status with it.
+
+        The move must be one ``ALLOWED_STAGE_TRANSITIONS`` permits from the stage the season
+        stands in; anything else raises :class:`InvalidStageTransition` and writes nothing.
+        The write is conditioned on the stage that was read, so two callers racing to move
+        the same season cannot both succeed from a stage the first of them has already left.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
+            row = await cursor.fetchone()
+            if row is None or row["stage"] is None:
+                raise InvalidStageTransition(f"season {season_id} does not exist")
+            current = SeasonStage(row["stage"])
+            if stage not in ALLOWED_STAGE_TRANSITIONS[current]:
+                raise InvalidStageTransition(
+                    f"season {season_id} cannot move from {current.value} to {stage.value}"
+                )
+            cursor = await db.execute(
+                "UPDATE seasons SET status = ?, stage = ? WHERE id = ? AND stage = ?",
+                (status_of_stage(stage).value, stage.value, season_id, current.value),
+            )
+            await db.commit()
+            if cursor.rowcount == 0:
+                raise InvalidStageTransition(
+                    f"season {season_id} left {current.value} before it could move to "
+                    f"{stage.value}"
+                )
 
     async def assert_season_mutable(self, season: "Season") -> None:
         """Raise SeasonImmutableError if *season* is COMPLETED or CANCELLED."""
@@ -1762,6 +1807,11 @@ def _row_to_season(row: object) -> Season:
         status=SeasonStatus(row["status"]),
         season_number=row["season_number"] if "season_number" in row.keys() else 0,
         game_edition=row["game_edition"] if "game_edition" in row.keys() else 0,
+        stage=(
+            SeasonStage(row["stage"])
+            if "stage" in row.keys() and row["stage"] is not None
+            else None
+        ),
     )
 
 
