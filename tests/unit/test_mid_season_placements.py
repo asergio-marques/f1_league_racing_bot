@@ -348,3 +348,49 @@ async def test_mid_season_placements_changed_since_the_review_are_not_confirmed(
     assert "• the seated drivers" in reply
     assert "`/season placements-review`" in reply
     view._expire_now.assert_awaited_once()
+
+
+# ── Committing mid-season: who gets roles ─────────────────────────────────────────
+
+
+async def test_a_test_driver_is_committed_without_roles(db_path):
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE driver_profiles SET is_test_driver = 1 WHERE id = 2")
+        await db.commit()
+    service = _service(db_path)
+
+    committed = await service.commit_mid_season_placements(SERVER_ID, 1, _guild())
+
+    assert len(committed) == 1
+    service._grant_roles.assert_not_awaited()
+    service._refresh_lineup_post.assert_awaited_once()
+
+
+async def test_a_member_not_cached_is_fetched_for_their_roles(db_path):
+    service = _service(db_path)
+    member = MagicMock()
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=None)
+    guild.fetch_member = AsyncMock(return_value=member)
+
+    await service.commit_mid_season_placements(SERVER_ID, 1, guild)
+
+    assert service._grant_roles.await_args.args[0] is member
+
+
+async def test_a_member_who_left_is_committed_and_the_lineup_still_posted(db_path):
+    import discord
+
+    service = _service(db_path)
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=None)
+    guild.fetch_member = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Member")
+    )
+
+    committed = await service.commit_mid_season_placements(SERVER_ID, 1, guild)
+
+    assert len(committed) == 1
+    assert await service.uncommitted_placements(1) == []
+    service._grant_roles.assert_not_awaited()
+    service._refresh_lineup_post.assert_awaited_once()

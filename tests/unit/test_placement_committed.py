@@ -211,3 +211,30 @@ async def test_the_placement_commands_are_refused_outside_the_placing_stages(com
     )
     cog.bot.placement_service.assign_driver.assert_not_awaited()
     cog.bot.placement_service.unassign_driver.assert_not_awaited()
+
+
+async def test_a_committed_placement_of_a_member_who_left_grants_nothing(tmp_path):
+    """The placement is recorded; a member Discord cannot find has no role to be granted."""
+    import discord
+
+    db_path = await _make_db(tmp_path)
+    service = _service(db_path)
+    service._refresh_lineup_post = AsyncMock(return_value=None)
+    service._grant_roles = AsyncMock(return_value=None)
+    service.get_team_role_config = AsyncMock(return_value=None)
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=None)
+    guild.fetch_member = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Member")
+    )
+
+    with patch.object(PlacementService, "_guard_test_mode", new=AsyncMock(return_value=None)):
+        result = await service.assign_driver(
+            server_id=SERVER_ID, driver_profile_id=PROFILE_ID, division_id=DIVISION_ID,
+            team_name="Alpha", season_id=SEASON_ID, acting_user_id=1,
+            acting_user_name="Manager", guild=guild, discord_user_id="4242",
+        )
+
+    assert result["committed"] is True
+    service._grant_roles.assert_not_awaited()
+    service._refresh_lineup_post.assert_awaited_once()

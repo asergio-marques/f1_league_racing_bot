@@ -235,3 +235,64 @@ async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
 
     assert "only while the season is ongoing" in interaction.followup.send.await_args.args[0]
     cog.bot.placement_service.move_driver.assert_not_awaited()
+
+
+async def test_a_move_for_a_profile_that_does_not_exist_is_refused(db_path):
+    service = _service(db_path)
+
+    with pytest.raises(ValueError, match="Driver profile not found"):
+        await service.move_driver(
+            server_id=SERVER_ID, driver_profile_id=999, season_id=SEASON_ID,
+            from_division_id=PRO, to_division_id=PRO, team_name="Reserve",
+            acting_user_id=1, acting_user_name="Manager", guild=_guild(),
+            discord_user_id="4242",
+        )
+
+
+async def test_a_move_from_a_division_the_driver_does_not_sit_in_is_refused(db_path):
+    await _seat(db_path, AM, "Alpha")
+
+    with pytest.raises(ValueError, match="holds no seat in the division they are moved from"):
+        await _move(_service(db_path), PRO, "Reserve", from_division=PRO)
+
+
+async def test_a_member_not_cached_is_fetched_to_swap_their_roles(db_path):
+    await _seat(db_path, PRO, "Alpha")
+    service = _service(db_path)
+    member = MagicMock()
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=None)
+    guild.fetch_member = AsyncMock(return_value=member)
+
+    await service.move_driver(
+        server_id=SERVER_ID, driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
+        from_division_id=PRO, to_division_id=PRO, team_name="Reserve",
+        acting_user_id=1, acting_user_name="Manager", guild=guild, discord_user_id="4242",
+    )
+
+    guild.fetch_member.assert_awaited_once_with(4242)
+    assert service._grant_roles.await_args.args[0] is member
+
+
+async def test_a_member_who_left_the_server_is_moved_without_roles(db_path):
+    """The move is the league's record; a member Discord cannot find has no roles to swap."""
+    import discord
+
+    await _seat(db_path, PRO, "Alpha")
+    service = _service(db_path)
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=None)
+    guild.fetch_member = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Member")
+    )
+
+    await service.move_driver(
+        server_id=SERVER_ID, driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
+        from_division_id=PRO, to_division_id=PRO, team_name="Reserve",
+        acting_user_id=1, acting_user_name="Manager", guild=guild, discord_user_id="4242",
+    )
+
+    assert await _where(db_path) == [(PRO, "Reserve")]
+    service._grant_roles.assert_not_awaited()
+    service._revoke_roles.assert_not_awaited()
+    service._refresh_lineup_post.assert_awaited_once()
