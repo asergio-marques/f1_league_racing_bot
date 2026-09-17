@@ -435,3 +435,41 @@ def test_a_real_migrated_database_survives_the_round_trip(tmp_path):
     finally:
         restored.close()
     assert row is not None, "the restored database lost a committed row"
+
+
+# ── Discarding ────────────────────────────────────────────────────────────
+
+
+def test_discard_deletes_both_backups_and_the_lock(tmp_path):
+    """A saved state belongs to its test season: nothing restores it once test mode is off."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live)
+    _database(jobs, wal=False, rows=1)
+    bs.save(live, jobs)
+    bs.set_lock(live, who="Manager")
+
+    assert bs.discard(live, jobs) is True
+
+    assert not bs.backup_path(live).exists()
+    assert not bs.backup_path(jobs).exists()
+    assert not bs.lock_path(live).exists()
+    assert live.is_file(), "the live database is untouched"
+
+
+def test_discard_with_nothing_saved_says_so(tmp_path):
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live)
+
+    assert bs.discard(live, jobs) is False
+
+
+def test_discard_leaves_a_pre_restore_copy_alone(tmp_path):
+    """That copy is the way back from a restore nobody wanted, not the saved state."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live)
+    bs.save(live, jobs)
+    bs.prerestore_path(live).write_bytes(b"kept")
+
+    bs.discard(live, jobs)
+
+    assert bs.prerestore_path(live).read_bytes() == b"kept"

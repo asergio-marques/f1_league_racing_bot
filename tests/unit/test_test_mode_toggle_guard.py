@@ -315,3 +315,37 @@ class TestTheSeasonsStage:
 
         assert "**disabled**" in interaction.reply
         assert await _flag(db_path) is False
+
+
+# ── The saved backup goes with test mode ──────────────────────────────────
+
+
+async def test_toggling_off_deletes_the_saved_backup(cog, db_path):
+    """Decided 2026-09-17: the backup commands run in test mode alone, so a state kept past
+    it is one nothing could restore. The lock does not protect it."""
+    from pathlib import Path
+
+    from services import backup_service
+
+    await _toggle(cog)  # on
+    jobstore = Path(db_path).with_name("scheduler.db")
+    jobstore.write_bytes(b"")
+    backup_service.backup_path(db_path).write_bytes(b"saved")
+    backup_service.backup_path(jobstore).write_bytes(b"saved jobs")
+    backup_service.set_lock(db_path, who="Maintainer")
+
+    interaction = await _toggle(cog)  # off
+
+    assert not backup_service.backup_path(db_path).exists()
+    assert not backup_service.backup_path(jobstore).exists()
+    assert not backup_service.lock_path(db_path).exists()
+    assert "Deleted the saved test-mode backup" in interaction.reply
+    assert "backup: deleted" in cog.bot.output_router.post_log.await_args.args[1]
+
+
+async def test_toggling_off_with_nothing_saved_says_nothing_about_a_backup(cog, db_path):
+    await _toggle(cog)  # on
+
+    interaction = await _toggle(cog)  # off
+
+    assert "backup" not in interaction.reply.lower()

@@ -808,6 +808,8 @@ Save the whole database and return to it later, so a state reached once while te
 
 > **A restore needs a restart.** The bot holds both databases open while it runs, so nothing can be swapped underneath it. `/test-mode backup restore` checks the backup, keeps a copy of what is live as `bot.prerestore.db`, and stages the swap — which happens the next time the bot starts. Under a service that is automatic; from a terminal, stop it and run it again.
 
+> **The saved backup does not outlive its test season.** It is deleted when you toggle test mode off, and when the season it was taken for is **completed** — a lock does not protect it, the lock being there to refuse a save rather than to keep a state past the run it belongs to. A season **cancelled or aborted** leaves the saved state alone, so that is the one to go back to. Restore before completing, or you will be starting again.
+
 > **This is not disaster recovery.** The backups sit beside the live files on the same disk. They protect against a test run you want to undo, and against nothing that happens to the disk itself.
 
 ---

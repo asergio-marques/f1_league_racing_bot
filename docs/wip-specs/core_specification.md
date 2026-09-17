@@ -495,7 +495,7 @@ section states the rules it holds to.
     - The season shall pass from Configuration straight to Placements, and shall never open a signup window.
 - Enabling test mode shall create and attach two ordinary points configurations, "Standard" and "Half Points", to the season in Configuration, unless a configuration of that name is already attached to it. They shall be created as ordinary configurations of the server and shall be indistinguishable from ones a league made itself, so that a test season passes the points requirement of confirming placements without one being built by hand.
 - Test mode shall not relax any requirement of confirming placements beyond the points configurations above. In particular, a season holding a round whose moment has passed, or a round already inside one of its enabled modules' configured windows, shall be refused under test mode exactly as it is refused otherwise, so a test season built in the past shall not be confirmable — and the first of those shall refuse it with every module switched off. A test season that quietly lost its check-ins would misreport attendance precisely as a real one does, and is a worse thing to be testing against than a calendar that has to be moved forward.
-- Switching test mode off, by the toggle or at the end of its season, shall delete every driver created by test mode upon the server, across every division.
+- Switching test mode off, by the toggle or at the end of its season, shall delete every driver created by test mode upon the server, across every division, and shall delete the saved state as set out under Saving a state and returning to it.
     - The history entries of a driver so deleted shall be kept, identified by the driver's identifier, whether or not the driver had raced. A driver created by test mode in a later season under the same identifier shall hold that history as its own.
 
 ### Fake drivers and rosters
@@ -516,6 +516,7 @@ section states the rules it holds to.
 - Every one of them shall be refused unless the server is in test mode, and unless the member holds the league admin role.
 - Saving shall copy both the league database and the database of the scheduler, so that the jobs of a season are restored beside the season itself.
 - Saving shall replace whatever was saved before, save where the saved state has been locked.
+- The saved state shall be deleted when test mode is switched off by the toggle, and when the season it was taken for is completed. A locked state shall be deleted with it, the lock refusing a save rather than outliving the run it was taken in. A season cancelled or aborted shall leave the saved state as it stands, being a season abandoned rather than run to its end.
 - The lock shall be set and unset by the same command. A state locked shall refuse to be overwritten by a save, and the lock shall record the member who set it and the moment they did.
 - Restoring shall be confirmed before anything is done, and shall be confirmed by the member who commanded it and by no other.
 - Restoring shall refuse a saved state that cannot be read as a database, and shall refuse before anything of the live state is disturbed.

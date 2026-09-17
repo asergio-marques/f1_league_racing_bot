@@ -134,3 +134,34 @@ async def test_an_abort_goes_ahead_when_the_close_timer_cannot_be_cancelled():
 
     the_pass.assert_awaited_once()
     cog.bot.season_service.delete_season.assert_awaited_once_with(7)
+
+
+async def test_aborting_keeps_the_saved_test_mode_backup(tmp_path):
+    """A season abandoned rather than run to its end leaves the state a maintainer goes back
+    to (decided 2026-09-17); only completing, and the toggle, delete it."""
+    from pathlib import Path
+
+    from services import backup_service
+    from services.season_end_service import end_of_season_pass
+
+    db_path = str(tmp_path / "abort_backup.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, "
+            "log_channel_id, test_mode_active) VALUES (?, 1, 2, 3, 1)",
+            (SERVER_ID,),
+        )
+        await db.commit()
+    jobstore = Path(db_path).with_name("scheduler.db")
+    jobstore.write_bytes(b"")
+    backup_service.backup_path(db_path).write_bytes(b"saved")
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.signup_module_service.get_config = AsyncMock(return_value=None)
+    bot.scheduler_service._jobstore_path = str(jobstore)
+
+    with patch("services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()):
+        await end_of_season_pass(SERVER_ID, bot, None)
+
+    assert backup_service.backup_path(db_path).read_bytes() == b"saved"

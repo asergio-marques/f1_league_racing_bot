@@ -212,3 +212,22 @@ async def test_the_window_is_closed_before_the_driver_pass(db_path):
         await _complete(db_path)
 
     assert order == ["window", "driver pass"]
+
+
+async def test_completing_deletes_the_saved_test_mode_backup(db_path):
+    """Decided 2026-09-17: a season run to its end leaves a state nothing could restore."""
+    from pathlib import Path
+
+    from services import backup_service
+
+    jobstore = Path(db_path).with_name("scheduler.db")
+    jobstore.write_bytes(b"")
+    backup_service.backup_path(db_path).write_bytes(b"saved")
+    backup_service.backup_path(jobstore).write_bytes(b"saved jobs")
+    backup_service.set_lock(db_path, who="Maintainer")
+
+    await _complete(db_path)
+
+    assert not backup_service.backup_path(db_path).exists()
+    assert not backup_service.backup_path(jobstore).exists()
+    assert not backup_service.lock_path(db_path).exists()

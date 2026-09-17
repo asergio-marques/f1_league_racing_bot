@@ -99,8 +99,9 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     if guild is not None:
         await _revoke_season_roles(server_id, season.id, guild, bot)
 
-    # 4-6. The signup window, the driver pass and test mode, shared with cancelling.
-    await end_of_season_pass(server_id, bot, guild)
+    # 4-6. The signup window, the driver pass and test mode, shared with cancelling. The
+    # saved test-mode backup goes too: the season it belonged to has been run to its end.
+    await end_of_season_pass(server_id, bot, guild, discard_backup=True)
 
     # 7. Archive: flip status to COMPLETED (all data retained)
     await season_svc.complete_season(season.id)
@@ -118,7 +119,9 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     )
 
 
-async def end_of_season_pass(server_id: int, bot: "Bot", guild) -> dict:
+async def end_of_season_pass(
+    server_id: int, bot: "Bot", guild, *, discard_backup: bool = False
+) -> dict:
     """The driver pass, the signup window and test mode: what every end of a season does (#220).
 
     Shared by completing, cancelling and aborting a season, in that order within each:
@@ -131,6 +134,11 @@ async def end_of_season_pass(server_id: int, bot: "Bot", guild) -> dict:
 
     Each step is fail-soft against the next: a window that cannot be closed does not keep a
     server in test mode. Returns what the driver pass reported.
+
+    *discard_backup* deletes the saved test-mode backup with it, which **completing** a season
+    passes and cancelling or aborting one does not (decided 2026-09-17): a season run to its end
+    leaves a state nothing could restore, where an abandoned one leaves the state a maintainer
+    goes back to.
     """
     from services.season_lifecycle_service import run_driver_pass
     from services.test_mode_service import switch_test_mode_off
@@ -147,7 +155,7 @@ async def end_of_season_pass(server_id: int, bot: "Bot", guild) -> dict:
     result = await run_driver_pass(bot.db_path, server_id, bot=bot, guild=guild)
 
     try:
-        await switch_test_mode_off(server_id, bot)
+        await switch_test_mode_off(server_id, bot, discard_backup=discard_backup)
     except Exception:  # noqa: BLE001
         log.exception("end_of_season_pass: could not switch test mode off")
 

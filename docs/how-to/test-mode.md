@@ -36,6 +36,7 @@ Two side effects on **enable**, both aimed at getting to a testable season quick
 
 - Pending forecast-message deletions are flushed.
 - **Every fake driver on the server is deleted**, across all divisions, with no confirmation.
+- **The saved backup is deleted**, the lock with it, when you toggle test mode off and when the season is completed. The backup commands run in test mode alone, so a state kept past it is one nothing could restore. A season **cancelled or aborted** keeps its saved state: that is the one you go back to.
 - **Their history is kept.** A completed or cancelled season has already written a history entry for every division each fake driver took part in, and the entry is kept by the driver's synthetic ID rather than by the profile. A fake driver created later under the same ID — which the roster generator's CSV does, run after run — holds that history again, so career statistics can be tested across seasons.
 
 **The two seeded points configurations are kept** (decided 2026-09-04). "Standard" and "Half Points" are ordinary configurations of the server from the moment they are seeded — they sit in the same tables a hand-built one does, and `/results config` lists, views and edits them identically — so disabling test mode leaves them alone. A mock driver is scaffolding and goes; a points ladder is configuration and stays. The consequence is that a server which has ever had test mode enabled keeps both configurations permanently, and they appear in `/results config list` and in the season review. Remove them with `/results config remove` if a real season should not offer them — and note that where the season is still in setup and holds them, the removal names that season and asks first, then detaches as well as deletes, leaving the season needing a configuration of its own before it can be approved (#132).
@@ -234,6 +235,8 @@ Building a season to test one thing is slow, and testing the next thing usually 
 **The approval offers to save for you.** Under test mode, pressing Approve on `/season placements-review` pauses just before it commits anything and asks whether to save first — after every check has passed, and before the schedule is armed or a single lineup posted. That is the moment worth returning to, so you need not remember to save beforehand.
 
 > The question inherits what is left of the review's five minutes rather than getting its own. Leave it unanswered and the review expires and nothing is approved, exactly as if you had never pressed the button. If the save itself fails, you are told and the season is approved anyway — it was a convenience, not a condition.
+
+**They do not outlive their test season.** Completing the season deletes the saved state, and so does toggling test mode off — the lock included, since it refuses a save rather than keeping a state past the run it belongs to. Restore before you complete, or abandon the season with `/season cancel` or `/season abort`, which leave the state alone.
 
 **What it is not.** The backups sit beside the live files, on the same disk — the same SD card, on a Pi. They protect you from a test run that went somewhere unhelpful or a migration worth undoing. They protect you from nothing that happens to the card. If you want a copy that survives the machine, copy `bot.bkup.db` off it yourself.
 

@@ -164,18 +164,30 @@ class TestModeCog(commands.Cog):
                     removed,
                     interaction.guild_id,
                 )
+            # The saved state goes with test mode (decided 2026-09-17): the backup commands
+            # run in test mode alone, so a state kept past it is one nothing could restore.
+            discarded = False
+            try:
+                discarded = backup_service.discard(
+                    self.bot.db_path, _jobstore_path(self.bot)  # type: ignore[attr-defined]
+                )
+            except Exception:  # noqa: BLE001 — a backup left behind is not worth the toggle
+                log.exception("test-mode toggle: could not discard the saved backup")
             msg = (
                 "✅ Test mode **disabled**. "
                 "The scheduler will resume normal operation for any remaining pending phases."
             )
             if removed:
                 msg += f"\n🗑️ Removed **{removed}** fake driver(s)."
+            if discarded:
+                msg += "\n🗑️ Deleted the saved test-mode backup."
             await interaction.followup.send(msg, ephemeral=True)
             await self.bot.output_router.post_log(
                 interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode toggle | Success\n"
                 f"  test_mode: disabled"
-                + (f"\n  removed_fake_drivers: {removed}" if removed else ""),
+                + (f"\n  removed_fake_drivers: {removed}" if removed else "")
+                + ("\n  backup: deleted" if discarded else ""),
             )
 
     # ------------------------------------------------------------------
