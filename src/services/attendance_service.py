@@ -1086,8 +1086,10 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
     round does — seated, non-reserve — and carries the team name besides, which is what the
     opening order is taken on.
     """
+    from services.season_lifecycle_service import uncommitted_seat_excluded
+
     cursor = await db.execute(
-        """
+        f"""
         SELECT dp.id AS driver_profile_id, dp.discord_user_id, dp.test_display_name,
                ti.name AS team_name
         FROM team_seats ts
@@ -1096,6 +1098,7 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
         WHERE ti.division_id = ?
           AND ti.is_reserve = 0
           AND ts.driver_profile_id IS NOT NULL
+          AND {uncommitted_seat_excluded("ts")}
         """,
         (division_id,),
     )

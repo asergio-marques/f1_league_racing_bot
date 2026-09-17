@@ -35,6 +35,27 @@ WINDOW_OPENS_FROM: dict[SeasonStage, SeasonStage] = {
 }
 
 
+def uncommitted_seat_excluded(seat_alias: str = "ts") -> str:
+    """SQL predicate: the seat *seat_alias* is not held by an uncommitted driver mid-season.
+
+    A driver placed in Ongoing, placements stands outside the championship until placements
+    are confirmed (issue #220): no check-in, no attendance, no results, no standings, no
+    lineup. Every reader of the championship that walks the seats adds this predicate.
+
+    Written as the absence of an *uncommitted* placement in a confirmed season, rather than
+    the presence of a committed one, so a seat whose occupant holds no placement row reads as
+    it always did. In a season still in Placements every placement is uncommitted and nothing
+    is being raced, so the predicate leaves those seats alone.
+    """
+    return (
+        "NOT EXISTS (SELECT 1 FROM driver_season_assignments uc "
+        "JOIN seasons ucs ON ucs.id = uc.season_id "
+        f"WHERE uc.team_seat_id = {seat_alias}.id "
+        f"AND uc.driver_profile_id = {seat_alias}.driver_profile_id "
+        "AND uc.committed = 0 AND ucs.status = 'ACTIVE')"
+    )
+
+
 async def live_season_stage(db_path: str, server_id: int) -> tuple[int, SeasonStage] | None:
     """The server's active season and its stage, or None where it holds none."""
     async with get_connection(db_path) as db:

@@ -155,7 +155,9 @@ async def sheet_db(tmp_path):
             );
             CREATE TABLE driver_season_assignments (
                 driver_profile_id INTEGER,
-                team_seat_id      INTEGER
+                team_seat_id      INTEGER,
+                season_id         INTEGER,
+                committed         INTEGER
             );
             CREATE TABLE team_seats (
                 id                INTEGER PRIMARY KEY,
@@ -178,7 +180,7 @@ async def sheet_db(tmp_path):
                 autoreserve_threshold INTEGER,
                 autosack_threshold    INTEGER
             );
-            CREATE TABLE seasons  (id INTEGER PRIMARY KEY, server_id INTEGER);
+            CREATE TABLE seasons  (id INTEGER PRIMARY KEY, server_id INTEGER, status TEXT);
             CREATE TABLE divisions(id INTEGER PRIMARY KEY, season_id INTEGER, name TEXT);
             CREATE TABLE rounds (
                 id           INTEGER PRIMARY KEY,
@@ -189,7 +191,7 @@ async def sheet_db(tmp_path):
                 status       TEXT DEFAULT 'ACTIVE'
             );
 
-            INSERT INTO seasons  VALUES (1, 1);
+            INSERT INTO seasons  VALUES (1, 1, 'ACTIVE');
             INSERT INTO divisions VALUES (7, 1, 'Division 1');
             INSERT INTO rounds VALUES (3, 7, 3, 'NORMAL', 'Silverstone Circuit', 'NOT_RUN');
             INSERT INTO rounds VALUES (9, 7, 9, 'NORMAL', 'Circuit Zandvoort', 'CANCELLED');
@@ -197,7 +199,7 @@ async def sheet_db(tmp_path):
             INSERT INTO team_instances VALUES (100, 7, 0, 'Apex Racing');
             INSERT INTO team_seats     VALUES (200, 100, 1);
             INSERT INTO driver_profiles VALUES (1, '111', NULL);
-            INSERT INTO driver_season_assignments VALUES (1, 200);
+            INSERT INTO driver_season_assignments VALUES (1, 200, 1, 1);
             INSERT INTO driver_round_attendance
                 (round_id, division_id, driver_profile_id, assigned_team_id, total_points_after)
                 VALUES (3, 7, 1, NULL, 4);
