@@ -2,10 +2,9 @@
 - The weather module may be enabled via a "module enable" command akin to other modules. May only be used by league admins.
 - The weather module may be disabled via a "module disable" command akin to other modules. May only be used by league admins.
 - The weather module is disabled by default.
-- The weather module may be enabled while a season is active, provided every division of that season already has a forecast channel configured. If any division lacks one, the command shall be rejected and the offending divisions named.
-- Upon being enabled, the bot shall immediately perform any phase whose horizon has already passed for every round of the active season, and schedule the remainder. Should any such phase fail, the enable shall be rolled back in full and the module left disabled.
+- The weather module shall not be enabled once the season's placements have been confirmed. It may be enabled while the server holds no active season, or while its season's placements are yet to be first confirmed.
 - Upon being disabled, all scheduled weather jobs for the server shall be cancelled. Forecast messages already posted, phase results already recorded, division forecast channels and the configured phase deadlines shall all be retained.
-- Weather module activation status shall be displayed in the season review.
+- Weather module activation status shall be displayed in the configuration review and the placements review.
 - This module must work with the fake driver rosters used in test mode.
 
 ## Concepts
@@ -18,8 +17,8 @@
 ## Configuring the weather module
 ### Channels
 - A "division weather-channel" command shall be available to league managers, which shall have as input a division name and a channel on which weather forecasts for that division shall be posted by the bot.
-    - If a forecast channel is not configured for a division while the weather module is enabled, then the season shall fail validation and approval shall be refused, the offending divisions being named.
-    - Each division's forecast channel shall be displayed in the season review much alike other division channels like results, standings, attendance, etc.
+    - If a forecast channel is not configured for a division while the weather module is enabled, then the season shall fail validation and confirming its placements shall be refused, the offending divisions being named.
+    - Each division's forecast channel shall be displayed in the placements review much alike other division channels like results, standings, attendance, etc.
     - A division created by duplicating another shall not inherit the source division's forecast channel.
 - The bot shall output weather forecasts only in the forecast channel configured for the division of the round, and shall record the calculations behind each phase only in the server log channel.
 - Every forecast shall mention the division's configured role. The mystery round notice is the sole exception.
@@ -34,16 +33,16 @@
 - All three commands shall be rejected while the weather module is disabled.
 - All three commands shall reject any value below 1.
 - The input from all commands shall be validated against the current settings so that Phase 1 always precedes Phase 2, and Phase 2 always precedes Phase 3. Ergo, the configuration shall follow the rule Phase1\*24 > Phase2\*24 > Phase3. A rejection shall state both offending values converted to hours.
-- If there is an ongoing season (read: season approved/active), all three commands must be rejected.
+- If the season's placements have been confirmed, all three commands must be rejected.
 - Each successful command shall report the resulting values of all three deadlines, and shall be written to the log channel.
-- The deadlines in force for a season shall be those stored at the moment the season was approved.
-- A season holding a round whose Phase 1, Phase 2 or Phase 3 deadline has already passed shall fail validation. The season review shall report it and shall withhold the button approving the season; the approval shall refuse it again, with nothing committed.
+- The deadlines in force for a season shall be those stored at the moment the season's placements were first confirmed.
+- A season holding a round whose Phase 1, Phase 2 or Phase 3 deadline has already passed shall fail validation. The placements review shall report it and shall withhold the button confirming placements; the confirmation shall refuse it again, with nothing committed.
     - The report shall name the latest offending round of a division and the earliest-due of that round's elapsed deadlines, and shall say when it was due. It shall not name every offending round, nor every deadline of the round it names: the round named bounds the division's calendar, and the deadline named bounds how far that round must move.
-    - Both shall read one and the same evaluation, so that the review and the approval cannot disagree. The approval shall evaluate it afresh rather than trust the review, a round being able to cross a window while the review stands.
-    - A deadline falling exactly at the moment of approval counts as having passed.
+    - Both shall read one and the same evaluation, so that the review and the confirmation cannot disagree. The confirmation shall evaluate it afresh rather than trust the review, a round being able to cross a window while the review stands.
+    - A deadline falling exactly at the moment of confirmation counts as having passed.
     - A cancelled round shall not be considered, holding no work to lose.
     - The league's remedy is to reschedule the round or to shorten the deadline, both being decisions only the league can make.
-- The three deadlines shall be displayed in the season review. No dedicated command to read them back shall be provided.
+- The three deadlines shall be displayed in the configuration review and the placements review. No dedicated command to read them back shall be provided.
 
 ### Track parameters
 - Each circuit carries a mean rain probability (μ) and a dispersion (σ), both packaged with the bot and identical on every server.
@@ -52,7 +51,7 @@
 
 ## Generation of weather
 - Weather shall be generated per round and posted per division. The three phases shall fire automatically; no command to generate a forecast on demand shall be provided.
-- Nothing shall be generated before the season is approved.
+- Nothing shall be generated before the season's placements are first confirmed.
 - Each phase shall be performed at most once per round. A phase already performed shall be skipped.
 - A round of the Mystery format shall be treated as set out under Mystery rounds below.
 
@@ -143,7 +142,7 @@
 - Where a round is cancelled, all scheduled phases for it shall be cancelled and the division informed that no forecast shall be posted for that round. Forecasts already posted shall not be deleted.
 
 ## Recovery
-- Upon starting, the bot shall perform any phase of any round of an active season whose horizon has passed and which has not yet been performed.
+- Upon starting, the bot shall perform any phase of any round of a season whose placements have been confirmed, and which is not yet completed or cancelled, whose horizon has passed and which has not yet been performed.
 - The horizons it shall judge those phases by are the league's own configured ones, not the packaged ones, so that a restart and the catch-up performed when the module is enabled cannot disagree about a round.
 
 ## Image generation

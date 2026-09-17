@@ -5,17 +5,16 @@
 
 ## Assigning channels to divisions
 - <COMMAND CHANGE AND NEW COMMAND> When adding a division, the command shall no longer intake a weather forecast channel. Instead, there will be a new "weather channel" command that has as input a division name and a channel, which serves a similar purpose.
-- If there is not an active season, it shall not be possible to approve the season if the weather module is enabled and not all divisions have a weather forecast channel configured.
-- If there is an active season, it shall not be possible to enable the weather module if not all divisions have a weather forecast channel configured.
+- It shall not be possible to confirm a season's placements if the weather module is enabled and not all divisions have a weather forecast channel configured.
 - <NEW COMMAND> There will be a new "results channel" command that has as input a division name and a channel on which race results shall be posted by the bot, formatted.
 - <NEW COMMAND> There will be a new "standings channel" command that has as input a division name and a channel on which standings shall be posted by the bot, formatted.
 - There shall be a "verdicts channel" command that has as input a division name and a channel on which penalty and appeal verdicts shall be posted by the bot. Automatic attendance sanctions are announced in the same channel.
-- If the results & standings module is enabled, the approval of a season setup shall fail if any division lacks a results channel, a standings channel or a verdicts channel, or if no points configuration is attached to the season. Each missing item shall be named individually.
-    - The approval shall also fail if a points configuration attached to the season no longer exists in the server points schema store, naming each such configuration and saying how to put it right. A season shall never be left unapprovable without being told why.
-- If there is an active season, it shall not be possible to enable the results & standings module.
-- Disabling the results & standings module shall remain possible while a season is active. A league that finds its results unworkable part-way through a championship shall be able to stop running them, and shall not be held to the module until the season ends.
-- Disabling the results & standings module while a season is active shall destroy that season's results entire: every classification recorded, every standing computed from them, and every results and standings message already posted shall be deleted. The module's configuration shall be kept — the points configurations, the season's own copy of them, and each division's results, standings and verdicts channels — those being settings rather than output. Penalty and appeal verdicts already announced shall remain where they were posted, the bot holding no record by which to delete them.
-- Disabling the results & standings module while a season is active shall end every round of that season still awaiting results, report verdicts or appeal verdicts, each round being closed as having run without results. Nothing else could ever move such a round once the module is gone, and a round left waiting would hold its division open and its season uncompletable for ever. A round whose moment has not yet come shall be left alone, being closed in its own time by the passage of that moment.
+- If the results & standings module is enabled, confirming a season's placements shall fail if any division lacks a results channel, a standings channel or a verdicts channel, or if no points configuration is attached to the season. Each missing item shall be named individually.
+    - The confirmation shall also fail if a points configuration attached to the season no longer exists in the server points schema store, naming each such configuration and saying how to put it right. A season shall never be left unconfirmable without being told why.
+- It shall not be possible to enable the results & standings module once the season's placements have been confirmed.
+- Disabling the results & standings module shall remain possible once the season's placements have been confirmed. A league that finds its results unworkable part-way through a championship shall be able to stop running them, and shall not be held to the module until the season ends.
+- Disabling the results & standings module once the season's placements have been confirmed shall destroy that season's results entire: every classification recorded, every standing computed from them, and every results and standings message already posted shall be deleted. The module's configuration shall be kept — the points configurations, the season's own copy of them, and each division's results, standings and verdicts channels — those being settings rather than output. Penalty and appeal verdicts already announced shall remain where they were posted, the bot holding no record by which to delete them.
+- Disabling the results & standings module once the season's placements have been confirmed shall end every round of that season still awaiting results, report verdicts or appeal verdicts, each round being closed as having run without results. Nothing else could ever move such a round once the module is gone, and a round left waiting would hold its division open and its season uncompletable for ever. A round whose moment has not yet come shall be left alone, being closed in its own time by the passage of that moment.
 - Disabling the results & standings module shall first tell the league what the disable will destroy and what it will keep, and shall write nothing until the league confirms. This shall be so whether or not the attendance module is enabled.
 - Disabling the results & standings module shall disable the attendance module with it.
 
@@ -66,9 +65,9 @@
             --> Modification schema store
 
     END
-- The design shall follow the idea that a league manager may add, remove or modify the configurations in the schema store, then attach and detach them from a season being setup via a "weak link". Once a season configuration is approved during "season review", the attached configurations' settings are copied over to the season's points schema store and remain completely independent of the server's configuration.
-    - In practice, this means that any changes done while there is no season, or while a season is being setup, will be valid to any season that is approved in the future, regardless of whether the modified configuration is attached or not.
-    - However, if there is an ongoing approved season, the modifications done to the configurations in the server points schema store are NOT applied to the season's own configuration of the same name.
+- The design shall follow the idea that a league manager may add, remove or modify the configurations in the schema store, then attach and detach them from a season whose placements are yet to be first confirmed via a "weak link". Once the season's placements are first confirmed from the "placements review", the attached configurations' settings are copied over to the season's points schema store and remain completely independent of the server's configuration.
+    - In practice, this means that any changes done while there is no season, or before a season's placements are first confirmed, will be valid to any season whose placements are confirmed in the future, regardless of whether the modified configuration is attached or not.
+    - However, once the season's placements have been confirmed, the modifications done to the configurations in the server points schema store are NOT applied to the season's own configuration of the same name.
 - There shall be the possibility to amend a points system mid-season, but it will require higher permissions. Once an amending session is started (by enabling amending), a copy of the season's current points schema store will be made and placed in a "modification schema store". Any changes made will be done to this "modification store". Only upon review and approval will the settings in the modification store overwrite the points schema store of the season completely. After they are overwritten, all results and standings posted after every round of every division shall be reposted taking into consideration the new values.
     - The higher permission is the league admin's tier, and it is asked of the review command that carries the approval. Starting an amending session, making changes to the modification store and discarding them are a league manager's; reviewing them is not, the review and the approval being one command. Approval overwrites the season's points entire and nothing undoes it.
 
@@ -159,16 +158,16 @@
 
 #### Adding, removing, modifying point configurations
 - <NEW COMMAND> A "results config add" command will intake a string which shall be the name of the points configuration to be saved in the server points schema store. The string will serve as the ID of the configuration.
-    - Adding a points config to the server points schema store does not automatically append it to a season being setup.
+    - Adding a points config to the server points schema store does not automatically append it to a season whose placements are yet to be confirmed.
 - <NEW COMMAND> A "results config remove" command will intake a string which is the ID of the points configuration to be removed from the server points schema store. It is a league admin's: the configuration is deleted outright and nothing puts one back.
-    - Removing a points config shall also detach it from any season **being setup**, so that no season is left attached to a configuration that does not exist. A season already approved shall keep its attachment: it holds its own copy of the points, taken at approval, and that copy is what its results are scored and chosen from.
-    - Where a season being setup stands on the configuration, the command shall name that season, state that the season will be left needing another configuration before it can be approved, and shall delete nothing until the manager confirms. Where no season being setup is attached, it shall remove the configuration without asking.
+    - Removing a points config shall also detach it from any season **whose placements are yet to be first confirmed**, so that no season is left attached to a configuration that does not exist. A season whose placements have been confirmed shall keep its attachment: it holds its own copy of the points, taken at that confirmation, and that copy is what its results are scored and chosen from.
+    - Where a season whose placements are yet to be first confirmed stands on the configuration, the command shall name that season, state that the season will be left needing another configuration before its placements can be confirmed, and shall delete nothing until the manager confirms. Where no such season is attached, it shall remove the configuration without asking.
 - <NEW COMMAND> A "results config session" command will intake the string that IDs the points configuration in the server points schema store to be changed, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race), an integer signifying position, and an integer signifying the number of points gained.
 - <NEW COMMAND> A "results config fl" command will intake the string that IDs the points configuration to be changed in the server points schema store, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race) and an integer signifying the number of points gained for having the shortest lap time in a session. The session types "Sprint Quali" and "Feature Quali" are invalid for this command.
 - <NEW COMMAND> A "results config fl-plimit" command will intake the string that IDs the points configuration to be changed in the server points schema store, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race) and an integer signifying the lowest valid position for which a driver is eligible for fastest-lap points (e.g. if this is configured to 10, then if the 11th place driver gets the fastest lap, then they get no points). The session types "Sprint Quali" and "Feature Quali" are invalid for this command.
 - For a given configuration and a given session type, a lower finishing position shall never be worth as much as or more than the position above it. Two positive values tying is a violation of this; positions worth nothing below the points-paying places are not.
     - A command that sets points shall apply the change and then report that the table is out of order, naming every position at fault. It shall not refuse the change. Filling a table in passes through states that are momentarily out of order — a position set before the one above it, a table repaired from the bottom up — and refusing them would put ordinary ways of building a table out of reach.
-    - The refusal falls where a table stops being a draft: the approval of a season, and the approval of a mid-season amendment.
+    - The refusal falls where a table stops being a draft: the first confirmation of a season's placements, and the approval of a mid-season amendment.
 
 #### Setting many positions at once
 - There shall be a "results config bulk-session" command that intakes the configuration name and a session type and opens a form in which many positions are given at once, one "position, points" pair per line. Blank lines are skipped; a position must be a positive integer and its points non-negative; where a position appears more than once the last value given wins and the override is reported. Every valid pair is applied and every rejected line is reported back, so a partly-wrong input still applies what was right.
@@ -180,18 +179,18 @@
     - Both the success and the failure of an import shall be logged in the server's log channel.
 
 #### Linking configs to seasons
-- <NEW COMMAND> A "results config append" command will intake the string that IDs the points configuration to be applied to the current season. The command is only valid if there is a season being setup; if there is no season or if there is an active (approved) season, this command fails.
+- <NEW COMMAND> A "results config append" command will intake the string that IDs the points configuration to be applied to the current season. The command is only valid if there is a season whose placements are yet to be first confirmed; if there is no season, or once the season's placements have been confirmed, this command fails.
     - The command shall fail if no configuration of that name exists in the server points schema store, and shall say so. A name that was mistyped shall never be reported as attached.
     - There may be multiple points configurations attached to one season.
     - If the configuration input in "results config append" already exists in the current season, then the current season's configuration will be overwritten.
-- <NEW COMMAND> A "results config detach" command will intake the string that IDs the points configuration to be removed from the current season. The command is only valid if there is a season being setup; if there is no season or if there is an active (approved) season, this command fails.
+- <NEW COMMAND> A "results config detach" command will intake the string that IDs the points configuration to be removed from the current season. The command is only valid if there is a season whose placements are yet to be first confirmed; if there is no season, or once the season's placements have been confirmed, this command fails.
 
-#### Season approval and points configs
-- <MODIFY COMMAND> All points configurations shall be listed when the "season review" command is invoked, identifying them by name.
-    - Any of them that no longer exists in the server points schema store shall be named as such and reported as blocking approval, and the review shall not offer the season for approval while one stands. The review and the approval shall judge this identically.
-- For a given configuration and a given session type, if a higher position is configured to yield less or the same points as a lower position (e.g. 1st = 25, 2nd = 0, 3rd = 15), the approval of a season setup will fail, and the bot shall post a text message informing as to why.
-    - This shall be judged on the configurations attached to the season as they stand at the moment of approval, and shall hold on a season's first approval as on any later one.
-    - The "season review" command shall report the same fault, naming every position at fault, and shall not offer the season for approval while one stands. The review and the approval shall judge this identically.
+#### Confirming placements and points configs
+- <MODIFY COMMAND> All points configurations shall be listed when the "season placements-review" command is invoked, identifying them by name.
+    - Any of them that no longer exists in the server points schema store shall be named as such and reported as blocking confirmation, and the review shall not offer the placements for confirmation while one stands. The review and the confirmation shall judge this identically.
+- For a given configuration and a given session type, if a higher position is configured to yield less or the same points as a lower position (e.g. 1st = 25, 2nd = 0, 3rd = 15), confirming a season's placements will fail, and the bot shall post a text message informing as to why.
+    - This shall be judged on the configurations attached to the season as they stand at the moment of the first confirmation of the season's placements.
+    - The "season placements-review" command shall report the same fault, naming every position at fault, and shall not offer the placements for confirmation while one stands. The review and the confirmation shall judge this identically.
 
 #### Changing points system mid-season
 - There will be a flag denoted the modified flag that is false by default.
@@ -205,7 +204,7 @@
 - There shall be a "results amend bulk-session" command that intakes the configuration name and a session type and opens a form taking many positions at once, on the same terms as "results config bulk-session". It writes to the modification store, and is invalid if "results amend" is toggled off.
 - Once one of "results amend session", "results amend fl", "results amend fl-plimit" and "results amend bulk-session" is run successfully, the modified flag is set to true.
 - <NEW COMMAND> A "results amend review" command shall be a league admin's, and will display the contents of the configurations stored in the modification store via the bot, alongside a button to approve or reject. It is seen by the member who ran it alone.
-- An amendment whose staged tables are out of order shall not be approved. The rule is the one the approval of a season holds, in the same words: within one configuration and one session type, a lower position shall never be worth as much as or more than the position above it.
+- An amendment whose staged tables are out of order shall not be approved. The rule is the one confirming a season's placements holds, in the same words: within one configuration and one session type, a lower position shall never be worth as much as or more than the position above it.
     - "results amend review" shall show the offending positions alongside the staged changes, so the fault is visible while the decision is being taken.
     - Approving such an amendment shall change nothing at all — not the season's points, not the modification store, not the amending mode — and shall say why. The staged changes remain, to be repaired.
 - If approved, then the contents of the season points schema store will be overwritten by the modification store. All round results, and standings after each round result, shall be recalculated and reposted in the appropriate channels for each division. The modified flag will then be set to false, the modification store cleared, and amending mode switched off.
@@ -213,9 +212,9 @@
     - Each round shall be reposted under the state that round has reached, as the "results standings sync" and "results rounds sync" commands do. Amending the points of a season shall not move a round to a different state nor label it as though it had.
 - If rejected, nothing happens. The modification store will remain as it is, and the amending mode will remain active.
 
-#### Viewing configs after season approval
+#### Viewing configs after placements are confirmed
 - <NEW COMMAND> A "results config view" will view the many points configurations applied to the current season. There is one mandatory input, the name/ID of the points configuration, and one optional input, the session type whose points configuration is to be posted; if this optional parameter is omitted, then the configuration for all sessions pertaining to the input name/ID shall be posted.
-- While the season is in setup, the command reads the server points schema store; once the season is approved, it reads the season's own store.
+- Until the season's placements are first confirmed, the command reads the server points schema store; once they are, it reads the season's own store.
 - When listing points configuration for any session, if all positions beyond a certain point yield 0 points, then they shall all be listed as "xth+" to prevent repetition.
 
 ### Submitting round results
@@ -223,7 +222,7 @@
     - If the round type is not Sprint, then Sprint Quali and Sprint Race will be omitted.
     - Each round will be requested in order; i.e. the user will have to first input the Sprint Quali's results exclusively, then Sprint Race, etc.
 - The bot shall read the inputs of the league manager to create the data entry for the results of the session. The expected format depends on the type of session, but will always require Position, Driver, and Team.
-- For the driver column, a driver that is assigned to that division must be tagged. If the driver is not assigned to the division, or if there is no driver tagged at all, then the input will fail.
+- For the driver column, a driver holding a committed placement in that division must be tagged. If the driver holds no committed placement in the division, or if there is no driver tagged at all, then the input will fail.
 - For the team column, a team role must be tagged as well. This will allow easy identification of the team.
 - The team tagged in the Team column shall never be the reserve team. A reserve stands in for a team's car and is recorded under that team; the reserve team fields no cars of its own.
 - No more than two drivers shall be recorded under any one team within a single session, counting a reserve standing in for that team against its two.
@@ -401,12 +400,12 @@ Approving stage two shall apply any staged corrections, republish the round's re
     - This means that, in the case of Reserve drivers who may drive for Team A in one round and Team B in another, will have their points and finishes in the first go to Team A in the standings, and to Team B in the latter.
 - Both standings are recalculated after the results of each round are submitted and validated, with the points obtained in that round added to the total.
 - Beyond the postings after each round, both standings shall be posted on the two occasions that bracket a season:
-    - Upon the season being approved, an **opening classification** shall be posted to the standings channel of each division, holding every driver and every team upon nought points. It is the grid as it stands before a round has been run.
+    - Upon the season's placements being first confirmed, an **opening classification** shall be posted to the standings channel of each division, holding every driver and every team upon nought points. It is the grid as it stands before a round has been run.
         - Nothing has been scored, so the countback above separates nobody: it is ordered by the final tiebreak alone, which is the rule stated rather than derived.
     - Upon the season completing, a **final classification** shall be posted to the same channel, holding the classification of the last round of the division for which results were posted. A division which ran no round publishes none.
 - Neither posting carries message text where it is drawn as a graphic; where it is written out as text, it is headed by the phrase naming the occasion — "Opening Classification" or "Final Classification".
 - Neither posting replaces a standings message nor has its ID recorded: a standings message belongs to the round it was posted for, and neither of these stands after a round. Both are posted beside the standings of the rounds, and "results standings sync" reaches neither.
-- The failure of either shall never prevent a season from being approved nor from completing, and the failure of one division shall not prevent the others.
+- The failure of either shall never prevent a season's placements from being confirmed nor the season from completing, and the failure of one division shall not prevent the others.
 - When the results of a session are amended or when penalties are applied, the standings of all rounds after the one modified (including) shall be recalculated by the bot.
 - A driver's results are specific to one division. Assuming a driver participates in two different divisions, the points gained by driving in Division X are accounted for in the standings for Division X only, and their standing in Division Y is unaffected.
 - Driver and Team standings are to be saved at round-scope: this makes it easier to organize information and to trace the progress of a championship. As such, the following information shall be saved for each driver and team within the standings table recorded in each round (which pertains to the state after a round):
@@ -421,8 +420,9 @@ Approving stage two shall apply any staged corrections, republish the round's re
 - <NEW COMMAND> A "results reserves toggle" command takes the name of a division and applies to that division alone. When toggled on, drivers belonging to the Reserve team will be relevant for the driver standings, and will therefore show up in the classification. When toggled off, drivers belonging to the Reserve team will accrue points all the same, but will not show up in the driver standings. Reserves shall be shown by default.
 - <NEW COMMAND> A "results standings sync" command will take as input the name of a division. It shall delete every standings message the bot holds for that division and post the standings of each round that has results afresh, in round order, each under the state that round has reached.
 - <NEW COMMAND> A "results rounds sync" command will take as input the name of a division. It shall delete every session results message the bot holds for that division and post the results of every session of every round afresh, in round order, each under the state that round has reached.
-- Every driver seated in a non-reserve seat of a division shall appear in the driver standings from the outset, on zero points, whether or not they have taken part in a round. Every non-reserve team of the division shall likewise appear in the team standings.
-- If a driver that was assigned only to the reserve team in a given division is then assigned to a configurable team, the points they have accrued as a driver will stand all-the-same, and will be reflected on their position on the standings.
+- A driver whose placement is not yet committed shall not appear in any results or standings, and shall accrue nothing from a round run before it is.
+- Every driver holding a committed non-reserve seat of a division shall appear in the driver standings from the outset, on zero points, whether or not they have taken part in a round. Every non-reserve team of the division shall likewise appear in the team standings.
+- If a driver that was assigned only to the reserve team in a given division is then moved to a configurable team, the points they have accrued as a driver will stand all-the-same, and will be reflected on their position on the standings.
 
 
 Name of commands is not mandatory, a better one may be used instead.

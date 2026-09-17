@@ -2,13 +2,13 @@
 - <COMMAND CHANGE> The attendance module may be enabled via a "module enable" command akin to other modules. May only be used by league admins.
 - <COMMAND CHANGE> The attendance module may be disabled via a "module disable" command akin to other modules. May only be used by league admins.
 - The attendance module is disabled by default.
-- The attendance module may not be enabled once the season is approved.
+- The attendance module may not be enabled once the season's placements have been confirmed.
 - Due to being dependent on the results module, the attendance module cannot be enabled while the results & standings module is disabled.
 - If the results & standings module is disabled, then the attendance module shall be disabled as well. Where the attendance module is enabled, disabling the results & standings module shall first warn the league that attendance will go with it and what that costs, and shall write nothing until the league confirms; the reply that follows shall name both modules as disabled. Where the attendance module is already disabled, no warning of the cascade shall be given — the results & standings module's own specification governs what it warns of in its own right.
 - Disabling the attendance module shall stop every check-in call, reminder, deadline and reserve distribution still to come, for the remainder of the season, however that work is reached — a scheduled job, a restart, a button on a check-in call already posted, or a test mode command.
     - A check-in call already posted shall not be withdrawn, but its buttons shall record no further answer.
-    - The season's scheduled work shall not be destroyed by the disabling, so that nothing is lost that only approving a season could create again.
-- Attendance module activation status shall be displayed in the season review.
+    - The season's scheduled work shall not be destroyed by the disabling, so that nothing is lost that only confirming a season's placements could create again.
+- Attendance module activation status shall be displayed in the configuration review and the placements review.
 - This module must work with the fake driver rosters used in test mode.
 
 ## Concepts
@@ -18,11 +18,11 @@
 ## Configuring the attendance module
 ### Channels
 - <NEW COMMAND> A "division rsvp-channel" command will be made available to league managers, which shall have as input a division name and a channel on which RSVP polls shall be posted by the bot.
-    - If a RSVP channel is not configured for a division in the season review, then the season will fail validation.
-    - Each division's RSVP channel will be displayed in the season review much alike other division channels like results, standings, weather, etc.
+    - If a RSVP channel is not configured for a division in the placements review, then the season will fail validation.
+    - Each division's RSVP channel will be displayed in the placements review much alike other division channels like results, standings, weather, etc.
 - <NEW COMMAND> A "division attendance-channel" command will be made available to league managers, which shall have as input a division name and a channel on which attendance for each one of the rounds will be posted by the bot.
-    - If an attendance channel is not configured for a division in the season review, then the season will fail validation.
-    - Each division's attendance channel will be displayed in the season review much alike other division channels like results, standings, weather, etc.
+    - If an attendance channel is not configured for a division in the placements review, then the season will fail validation.
+    - Each division's attendance channel will be displayed in the placements review much alike other division channels like results, standings, weather, etc.
 
 ### RSVP notices
 - <NEW COMMAND> An "attendance config rsvp-notice" command will be made available to league managers, which shall have as input an integer standing for a number of days. This command configures the number of days before a round at which point RSVP notices will be sent out too all drivers of a division to mark their attendance for that round.
@@ -32,13 +32,13 @@
 - <NEW COMMAND> An "attendance config rsvp-deadline" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the number of hours before a round at which point users can no longer alter their RSVP status. A value of 0 means that the deadline lasts up until the scheduled time of the round, which no alterations permitted beyond that point.
     - By default, this value will be set to 2.
 - The input from all commands shall be validated against the current settings so that the RSVP Deadline always happens after the RSVP Notice and the RSVP Last Notice, and the RSVP Last Notice always happens after RSVP Notice. Ergo, the configuration shall follow the rule Notice\*24 > LastNotice\*24 > Deadline.
-- If there is an ongoing season (read: season approved/active), all three commands must be rejected.
-- A season holding a round whose RSVP Notice, RSVP Last Notice or RSVP Deadline has already passed shall fail validation. The season review shall report it and shall withhold the button approving the season; the approval shall refuse it again, with nothing committed.
+- If the season's placements have been confirmed, all three commands must be rejected.
+- A season holding a round whose RSVP Notice, RSVP Last Notice or RSVP Deadline has already passed shall fail validation. The placements review shall report it and shall withhold the button confirming placements; the confirmation shall refuse it again, with nothing committed.
     - The report shall name the latest offending round of a division and the earliest-due of that round's elapsed windows, and shall say when it was due. It shall not name every offending round, nor every window of the round it names: the round named bounds the division's calendar, and the window named bounds how far that round must move.
-    - Both shall read one and the same evaluation, so that the review and the approval cannot disagree. The approval shall evaluate it afresh rather than trust the review, a round being able to cross a window while the review stands.
-    - A window falling exactly at the moment of approval counts as having passed.
+    - Both shall read one and the same evaluation, so that the review and the confirmation cannot disagree. The confirmation shall evaluate it afresh rather than trust the review, a round being able to cross a window while the review stands.
+    - A window falling exactly at the moment of confirmation counts as having passed.
     - A cancelled round shall not be considered, holding no work to lose.
-    - The league's remedy is to reschedule the round or to shorten the window, both being decisions only the league can make. The bot shall not post the notice late, nor approve the season without it.
+    - The league's remedy is to reschedule the round or to shorten the window, both being decisions only the league can make. The bot shall not post the notice late, nor confirm the placements without it.
 
 ### Attendance points
 - <NEW COMMAND> An "attendance config no-rsvp-penalty" command will be made available to league managers, which shall have as input an integer standing for the number of attendance points gained upon failing to RSVP up for a round.
@@ -55,6 +55,7 @@
     - The autoreserve functionality is only applied to drivers not in the reserve team.
 
 ## RSVPing
+- A driver whose placement is not yet committed shall receive no check-in call, shall not be listed upon one, shall not be distributed as a reserve, and shall accrue no attendance points.
 - Days before a round is scheduled to happen, the exact number of which configured via the "attendance config rsvp-notice", the bot shall post an announcement via an embed, in the configured RSVP channel for the division of the round, asking drivers if they are attending the round.
     - The embed shall be titled "Season <X> Round <X> - <Grand Prix Name of track>
     - The text of the embed shall contain:
@@ -127,18 +128,18 @@
     - The end of the post will always have the following text: "Drivers who reach <attendance config autoreserve> points will be moved to reserve.\nDrivers who reach <attendance config autosack> points will be removed from all driving roles in all divisions." (the \n stands for a line break)
 - To prevent misunderstandings, once a new attendance total is posted on the channel, the message containing the previous one shall be deleted.
 - Beyond the postings after each round, the sheet shall be posted on the two occasions that bracket a season:
-    - Upon the season being approved, an **opening sheet** shall be posted, holding every driver seated in the division upon nought attendance points. It is read from the seats of the division, the attendance record holding nothing at that moment, and is ordered alphabetically by the name of the team and alphabetically by the name of the driver within a team.
+    - Upon the season's placements being first confirmed, an **opening sheet** shall be posted, holding every driver holding a committed seat in the division upon nought attendance points. It is read from the seats of the division, the attendance record holding nothing at that moment, and is ordered alphabetically by the name of the team and alphabetically by the name of the driver within a team.
     - Upon the season completing, a **final sheet** shall be posted, holding the attendance record as it stands at the last round of the division for which results were posted.
 - Neither sheet is about a round, so neither is prevented by a round recorded as cancelled. Where either is written out as text rather than drawn, it is headed by the phrase naming the occasion — "Attendance — Opening Classification" or "Attendance — Final Classification".
 - The opening sheet takes the place of the previous sheet in the ordinary way, so that the sheet of the first round replaces it and the division is never left holding a stale opening sheet beside a live one. The **final sheet does not**: it is posted beside the sheet of the last round and both stand. This is the one exception to the rule above that only one attendance total stands in the channel at a time.
-- The failure of either shall never prevent a season from being approved nor from completing, and the failure of one division shall not prevent the others.
+- The failure of either shall never prevent a season's placements from being confirmed nor the season from completing, and the failure of one division shall not prevent the others.
 - The attendance sheet for a round must be recalculated in the case "round results amend" is used. The pardons handed out previously will be taken in considerations as well.
 - After the attendance total is posted, it shall be verified whether any driver has crossed the autoreserve limits; if they are deemed to have done so, they will be unassigned from their team role and assigned to the reserve team.
 - After the attendance total is posted, it shall be verified whether any driver has crossed the autosack limits; if they are deemed to have done so, they will be unassigned from all their driving roles in all divisions, full-time or otherwise, and lose their driver role (the one automatically given out when a signup is approved)
 
 ## Test mode
 - A "test-mode rsvp set-status" command shall be available to league managers, which will take as its parameter the name of a division (mandatory). This will serve to set the RSVP status of fake drivers in test mode.
-    - The command shall require the division to belong to the active season and to have a check-in call currently posted; it shall be refused otherwise.
+    - The command shall require the division to belong to a season in one of the three ongoing states and to have a check-in call currently posted; it shall be refused otherwise.
     - The statuses shall be given in bulk through a modal, one entry per line in the form "<user ID>, <status>", the status being one of "accept", "tentative" or "decline".
     - A driver omitted from the entries shall keep the status they hold. No entry shall return a driver to not having checked in.
     - An entry naming a driver without a profile, or without an attendance record for the round, or carrying a status that cannot be read, shall be reported and passed over; the remaining entries shall still be applied.
