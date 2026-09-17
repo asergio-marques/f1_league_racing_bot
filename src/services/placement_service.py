@@ -187,6 +187,68 @@ class PlacementService:
             for r in rows
         ]
 
+    async def swap_team_role(
+        self,
+        server_id: int,
+        team_name: str,
+        old_role_id: int | None,
+        new_role_id: int | None,
+        guild: discord.Guild | None,
+    ) -> int:
+        """Move every driver seated in *team_name* from its old role to its new one.
+
+        The team's role is never fixed (issue #220): a league repoints it when the role is
+        deleted or replaced, and the drivers already seated in the team — in any division of
+        the season being raced, their placements confirmed — follow it. The old role is taken
+        from each where one was mapped and no other team still maps to it; the new one is
+        granted where one is given. A driver created by test mode holds no roles and is left
+        alone. Returns how many drivers were reached.
+        """
+        from services.season_lifecycle_service import uncommitted_seat_excluded
+
+        if guild is None or old_role_id == new_role_id:
+            return 0
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                f"""
+                SELECT DISTINCT dp.discord_user_id
+                FROM team_seats ts
+                JOIN team_instances ti ON ti.id = ts.team_instance_id
+                JOIN divisions d ON d.id = ti.division_id
+                JOIN seasons s ON s.id = d.season_id
+                JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
+                WHERE s.server_id = ? AND s.status = 'ACTIVE' AND ti.name = ?
+                  AND dp.is_test_driver = 0
+                  AND {uncommitted_seat_excluded("ts")}
+                ORDER BY dp.discord_user_id
+                """,
+                (server_id, team_name),
+            )
+            user_ids = [row["discord_user_id"] for row in await cursor.fetchall()]
+            still_mapped = False
+            if old_role_id is not None:
+                cursor = await db.execute(
+                    "SELECT 1 FROM team_role_configs WHERE server_id = ? AND role_id = ? "
+                    "AND team_name != ? LIMIT 1",
+                    (server_id, old_role_id, team_name),
+                )
+                still_mapped = await cursor.fetchone() is not None
+
+        reached = 0
+        for user_id in user_ids:
+            member = guild.get_member(int(user_id))
+            if member is None:
+                try:
+                    member = await guild.fetch_member(int(user_id))
+                except discord.HTTPException:
+                    continue
+            if old_role_id is not None and not still_mapped:
+                await self._revoke_roles(member, old_role_id)
+            if new_role_id is not None:
+                await self._grant_roles(member, new_role_id)
+            reached += 1
+        return reached
+
     async def delete_team_role_config(
         self, server_id: int, team_name: str,
         actor_id: int = 0, actor_name: str = "system",

@@ -216,18 +216,26 @@ class TeamCog(commands.Cog):
             )
             return
 
+        await interaction.response.defer(ephemeral=True)
         await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
             interaction.guild_id, match["name"], role.id,
             actor_id=interaction.user.id, actor_name=str(interaction.user),
         )
-        await interaction.response.send_message(
-            f'✅ Team "{match["name"]}" now maps to {role.mention}.', ephemeral=True
+        # The drivers already seated in the team follow its role (issue #220).
+        moved = await self.bot.placement_service.swap_team_role(  # type: ignore[attr-defined]
+            interaction.guild_id, match["name"], match["role_id"], role.id, interaction.guild
+        )
+        await interaction.followup.send(
+            f'✅ Team "{match["name"]}" now maps to {role.mention}.'
+            + (f" {moved} seated driver(s) moved to the new role." if moved else ""),
+            ephemeral=True,
         )
         await self.bot.output_router.post_log(
             interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team role | Success\n"
             f"  team: {match['name']}\n"
-            f"  role: {role.name} (<@&{role.id}>)",
+            f"  role: {role.name} (<@&{role.id}>)\n"
+            f"  seated drivers moved: {moved}",
         )
 
     # ------------------------------------------------------------------
@@ -432,6 +440,9 @@ class TeamCog(commands.Cog):
         interaction: discord.Interaction,
         role: discord.Role | None = None,
     ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        teams = await self.bot.team_service.get_teams_with_roles(interaction.guild_id)  # type: ignore[attr-defined]
+        old_role_id = next((t["role_id"] for t in teams if t["is_reserve"]), None)
         if role is not None:
             await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
                 interaction.guild_id, "Reserve", role.id,
@@ -445,7 +456,14 @@ class TeamCog(commands.Cog):
             )
             msg = "✅ Reserve team role cleared."
 
-        await interaction.response.send_message(msg, ephemeral=True)
+        # The drivers already seated in Reserve follow its role (issue #220).
+        moved = await self.bot.placement_service.swap_team_role(  # type: ignore[attr-defined]
+            interaction.guild_id, "Reserve", old_role_id, role.id if role else None,
+            interaction.guild,
+        )
+        if moved:
+            msg += f" {moved} seated driver(s) moved to the new role."
+        await interaction.followup.send(msg, ephemeral=True)
         await self.bot.output_router.post_log(
             interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team reserve-role | Success\n"

@@ -60,6 +60,7 @@ def _make_bot(
     bot.placement_service.set_team_role_config = AsyncMock()
     bot.placement_service.delete_team_role_config = AsyncMock()
     bot.placement_service.rename_team_role_config = AsyncMock()
+    bot.placement_service.swap_team_role = AsyncMock(return_value=0)
     bot.season_service.get_setup_season = AsyncMock(return_value=setup_season)
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=live_season)
     bot.output_router.post_log = AsyncMock()
@@ -371,10 +372,29 @@ class TestTeamRole:
         bot.placement_service.set_team_role_config.assert_awaited_once()
         call_args = bot.placement_service.set_team_role_config.call_args
         assert call_args.args[1:3] == ("Ferrari", 222)
-        args, kwargs = interaction.response.send_message.call_args
+        args, kwargs = interaction.followup.send.call_args
         content = args[0] if args else kwargs["content"]
         assert "✅" in content
         assert "<@&222>" in content
+
+    async def test_the_drivers_seated_in_the_team_follow_its_new_role(self):
+        """Issue #220: every driver of the team has the old role taken and the new granted."""
+        from cogs.team_cog import TeamCog
+        bot = _make_bot(teams_with_roles=self._TEAMS)
+        bot.placement_service.swap_team_role = AsyncMock(return_value=3)
+        cog = TeamCog(bot)
+        interaction = _make_interaction()
+        role = MagicMock()
+        role.id = 222
+        role.mention = "<@&222>"
+
+        await _unwrap(cog.team_role)(cog, interaction, name="Ferrari", role=role)
+
+        bot.placement_service.swap_team_role.assert_awaited_once_with(
+            1, "Ferrari", 111, 222, interaction.guild
+        )
+        assert "3 seated driver(s) moved to the new role" in interaction.followup.send.call_args.args[0]
+        assert "seated drivers moved: 3" in bot.output_router.post_log.call_args.args[1]
 
     async def test_refuses_a_team_not_in_the_list(self):
         from cogs.team_cog import TeamCog
@@ -421,7 +441,7 @@ class TestTeamReserveRole:
         call_args = bot.placement_service.set_team_role_config.call_args
         assert call_args.args[1] == "Reserve"
         assert call_args.args[2] == 999
-        args, kwargs = interaction.response.send_message.call_args
+        args, kwargs = interaction.followup.send.call_args
         content = args[0] if args else kwargs["content"]
         assert "✅" in content
         assert "<@&999>" in content
@@ -438,9 +458,26 @@ class TestTeamReserveRole:
         call_args = bot.placement_service.delete_team_role_config.call_args
         assert call_args.args[1] == "Reserve"
         bot.placement_service.set_team_role_config.assert_not_awaited()
-        args, kwargs = interaction.response.send_message.call_args
+        args, kwargs = interaction.followup.send.call_args
         content = args[0] if args else kwargs["content"]
         assert "cleared" in content
+
+    async def test_the_drivers_seated_in_reserve_follow_its_new_role(self):
+        from cogs.team_cog import TeamCog
+        bot = _make_bot(teams_with_roles=[
+            {"name": "Reserve", "max_seats": 0, "is_reserve": True, "role_id": 555},
+        ])
+        cog = TeamCog(bot)
+        interaction = _make_interaction()
+        role = MagicMock()
+        role.id = 999
+        role.mention = "<@&999>"
+
+        await _unwrap(cog.team_reserve_role)(cog, interaction, role=role)
+
+        bot.placement_service.swap_team_role.assert_awaited_once_with(
+            1, "Reserve", 555, 999, interaction.guild
+        )
 
 
 # ---------------------------------------------------------------------------

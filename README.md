@@ -1046,6 +1046,8 @@ Renames the team in the server's default list and updates its role mapping key. 
 
 Points a team of the server list at a different Discord role. Unlike the list itself, a team's role can be changed **in any season state** — nothing stops a role being deleted from the server mid-season, and this is how you repair it. The Reserve team's role is set with `/team reserve-role`.
 
+**The team's drivers follow its role.** Every driver seated in the team whose placement is confirmed has the old role taken away — unless another team still maps to it — and the new one granted, in every division of the season being raced. The reply says how many drivers were moved.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Exact name of the team |
@@ -1069,7 +1071,7 @@ Displays the placed drivers for each team seat in the active season. If a divisi
 #### `/team reserve-role` — Set or clear the Reserve team's Discord role
 *Access: League manager*
 
-Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping.
+Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping. As with `/team role`, the drivers already seated in Reserve with a confirmed placement follow the change: the old role is taken and the new one, where given, granted.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

@@ -296,3 +296,76 @@ async def test_a_member_who_left_the_server_is_moved_without_roles(db_path):
     service._grant_roles.assert_not_awaited()
     service._revoke_roles.assert_not_awaited()
     service._refresh_lineup_post.assert_awaited_once()
+
+
+# ── A team's role repointed: its seated drivers follow ────────────────────────────
+
+
+def _role_guild(members: dict):
+    guild = MagicMock()
+    guild.get_member = MagicMock(side_effect=lambda uid: members.get(uid))
+    guild.fetch_member = AsyncMock(side_effect=lambda uid: members.get(uid))
+    return guild
+
+
+async def test_every_confirmed_driver_of_the_team_has_the_old_role_swapped_for_the_new(db_path):
+    """Issue #220: a team's role is repointed in any stage, and its drivers follow."""
+    await _seat(db_path, PRO, "Alpha")
+    service = _service(db_path)
+    member = MagicMock()
+
+    reached = await service.swap_team_role(
+        SERVER_ID, "Alpha", ROLES["Alpha"], 777, _role_guild({4242: member})
+    )
+
+    assert reached == 1
+    service._revoke_roles.assert_awaited_once_with(member, ROLES["Alpha"])
+    service._grant_roles.assert_awaited_once_with(member, 777)
+
+
+async def test_an_unconfirmed_driver_of_the_team_is_left_alone(db_path):
+    """They hold no role until placements are confirmed."""
+    await _seat(db_path, PRO, "Alpha", committed=0)
+    service = _service(db_path)
+
+    assert await service.swap_team_role(
+        SERVER_ID, "Alpha", ROLES["Alpha"], 777, _role_guild({4242: MagicMock()})
+    ) == 0
+    service._grant_roles.assert_not_awaited()
+
+
+async def test_a_role_another_team_still_maps_to_is_not_taken(db_path):
+    await _seat(db_path, PRO, "Alpha")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE team_role_configs SET role_id = ? WHERE team_name = 'Bravo'", (ROLES["Alpha"],)
+        )
+        await db.commit()
+    service = _service(db_path)
+
+    await service.swap_team_role(
+        SERVER_ID, "Alpha", ROLES["Alpha"], 777, _role_guild({4242: MagicMock()})
+    )
+
+    service._revoke_roles.assert_not_awaited()
+    service._grant_roles.assert_awaited_once()
+
+
+async def test_a_role_cleared_is_taken_and_nothing_granted(db_path):
+    await _seat(db_path, PRO, "Reserve")
+    service = _service(db_path)
+
+    await service.swap_team_role(
+        SERVER_ID, "Reserve", ROLES["Reserve"], None, _role_guild({4242: MagicMock()})
+    )
+
+    service._revoke_roles.assert_awaited_once()
+    service._grant_roles.assert_not_awaited()
+
+
+async def test_the_same_role_or_no_guild_changes_nothing(db_path):
+    await _seat(db_path, PRO, "Alpha")
+    service = _service(db_path)
+
+    assert await service.swap_team_role(SERVER_ID, "Alpha", 5, 5, _role_guild({})) == 0
+    assert await service.swap_team_role(SERVER_ID, "Alpha", 5, 6, None) == 0
