@@ -1108,7 +1108,11 @@ class SeasonService:
             await db.commit()
 
     async def delete_season(self, season_id: int) -> None:
-        """FK-safe cascade delete of one season and all its child records."""
+        """FK-safe cascade delete of one season and all its child records.
+
+        What `/season abort` leaves of a season whose placements were never confirmed: nothing
+        at all, its signups included (issue #220).
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id FROM divisions WHERE season_id = ?", (season_id,)
@@ -1191,7 +1195,9 @@ class SeasonService:
                     tph = ",".join("?" * len(test_profile_ids))
                     await db.execute(f"DELETE FROM driver_profiles WHERE id IN ({tph})", test_profile_ids)
 
+            await db.execute("DELETE FROM season_review_prompts WHERE season_id = ?", (season_id,))
             await db.execute("DELETE FROM divisions WHERE season_id = ?", (season_id,))
+            # The season's signups, windows and signup configuration go with it by cascade.
             await db.execute("DELETE FROM seasons WHERE id = ?", (season_id,))
             await db.commit()
 

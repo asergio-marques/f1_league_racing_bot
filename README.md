@@ -477,6 +477,15 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 
 No parameters. Shows active season overview: divisions, next scheduled round per division, and its track and datetime.
 
+#### `/season abort` — Abandon a season before its placements are confirmed
+*Access: League admin*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
+
+Abandons a season in configuration, waiting for its signup window, in signups, or in placements — before its placements are ever confirmed — as if it had never been. The season is **deleted** with every record of it, its signups included, and takes no season number. Its drivers return to Not Signed Up and those who never raced are deleted; any open signup window is closed and test mode is switched off. Use it to back out of a test-mode rehearsal, a signup setting that turned out wrong, or a season postponed for want of signups. An ongoing season is cancelled with `/season cancel` instead.
+
 #### `/season cancel` — Cancel the ongoing season
 *Access: League admin · Ongoing only*
 

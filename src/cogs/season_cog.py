@@ -2801,6 +2801,71 @@ class SeasonCog(commands.Cog):
         )
 
     @season.command(
+        name="abort",
+        description="Abandon a season whose placements were never confirmed, leaving nothing of it.",
+    )
+    @app_commands.describe(confirm='Type "CONFIRM" to abort the season.')
+    @league_admin_only
+    async def season_abort(self, interaction: discord.Interaction, confirm: str) -> None:
+        """Abort the active season before its placements are first confirmed (issue #220).
+
+        The season is deleted with every record of it, its signups included, and takes no
+        number. Its drivers go through the driver pass — no history is written, the season
+        having none — its signup window is closed and test mode is switched off. The way out
+        of a test-mode rehearsal, a wrong signup setting, or a season postponed for want of
+        signups.
+        """
+        if confirm != "CONFIRM":
+            await interaction.response.send_message(
+                "\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
+                ephemeral=True,
+            )
+            return
+
+        server_id = interaction.guild_id
+        season = await self.bot.season_service.get_setup_or_active_season(server_id)
+        pre_confirmation = {
+            SeasonStage.CONFIGURATION,
+            SeasonStage.WAITING,
+            SeasonStage.SIGNUPS,
+            SeasonStage.PLACEMENTS,
+        }
+        if season is None or season.stage not in pre_confirmation:
+            await interaction.response.send_message(
+                "\u274c `/season abort` is available only before a season's placements are "
+                "first confirmed. An ongoing season is cancelled with `/season cancel`.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        from services.season_end_service import end_of_season_pass
+
+        try:
+            self.bot.scheduler_service.cancel_signup_close_timer(server_id)
+        except Exception:  # noqa: BLE001 — a timer already gone is the aim
+            log.exception("season abort: could not cancel the signup close timer")
+        result = await end_of_season_pass(server_id, self.bot, interaction.guild)
+        await self.bot.season_service.delete_season(season.id)
+
+        # The setup held in memory goes with the season it described.
+        for key in [k for k, cfg in self._pending.items() if cfg.server_id == server_id]:
+            del self._pending[key]
+
+        await interaction.followup.send(
+            "\u2705 The season has been aborted. Nothing of it remains, and a new season may "
+            "be set up with `/season setup`.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            server_id,
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season abort | Success\n"
+            f"  drivers returned to Not Signed Up: {result.get('reset', 0)}\n"
+            f"  drivers deleted: {result.get('deleted', 0)}",
+        )
+
+    @season.command(
         name="complete",
         description="Manually mark the current season as complete (requires all rounds finalized).",
     )

@@ -1,0 +1,120 @@
+"""`/season abort` — a season whose placements were never confirmed, left as if it never was (#220).
+
+Available only in Configuration, Waiting, Signups and Placements. The season is deleted with every
+record of it, its signups included, and takes no number; its drivers go through the driver pass,
+its window is closed and test mode is switched off.
+"""
+from __future__ import annotations
+
+import os
+import sys
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+
+from cogs.season_cog import PendingConfig, SeasonCog  # noqa: E402
+from db.database import get_connection, run_migrations  # noqa: E402
+from models.season import SeasonStage  # noqa: E402
+from services.season_service import SeasonService  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
+
+SERVER_ID = 22160
+
+
+def _cog(stage: SeasonStage | None) -> SeasonCog:
+    cog = SeasonCog.__new__(SeasonCog)
+    cog.bot = MagicMock()
+    cog.bot.season_service.get_setup_or_active_season = AsyncMock(
+        return_value=None if stage is None else SimpleNamespace(id=7, stage=stage)
+    )
+    cog.bot.season_service.delete_season = AsyncMock()
+    cog.bot.output_router.post_log = AsyncMock()
+    cog._pending = {42: PendingConfig(server_id=SERVER_ID, season_id=7)}
+    return cog
+
+
+def _interaction():
+    interaction = MagicMock()
+    interaction.guild_id = SERVER_ID
+    interaction.user.id = 42
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+@pytest.mark.parametrize(
+    "stage",
+    [SeasonStage.CONFIGURATION, SeasonStage.WAITING, SeasonStage.SIGNUPS, SeasonStage.PLACEMENTS],
+)
+async def test_a_season_is_aborted_before_its_placements_are_confirmed(stage):
+    cog = _cog(stage)
+
+    with patch(
+        "services.season_end_service.end_of_season_pass", new=AsyncMock(return_value={})
+    ) as the_pass:
+        await undecorate(SeasonCog.season_abort)(cog, _interaction(), "CONFIRM")
+
+    the_pass.assert_awaited_once()
+    cog.bot.season_service.delete_season.assert_awaited_once_with(7)
+    assert cog._pending == {}
+
+
+@pytest.mark.parametrize(
+    "stage", [None, SeasonStage.ONGOING, SeasonStage.ONGOING_PLACEMENTS, SeasonStage.PENDING_COMPLETION]
+)
+async def test_abort_is_refused_once_placements_are_confirmed(stage):
+    cog = _cog(stage)
+    interaction = _interaction()
+
+    await undecorate(SeasonCog.season_abort)(cog, interaction, "CONFIRM")
+
+    assert "only before a season's placements" in interaction.response.send_message.await_args.args[0]
+    cog.bot.season_service.delete_season.assert_not_awaited()
+
+
+async def test_abort_needs_the_exact_confirmation_word():
+    cog = _cog(SeasonStage.CONFIGURATION)
+    interaction = _interaction()
+
+    await undecorate(SeasonCog.season_abort)(cog, interaction, "confirm")
+
+    cog.bot.season_service.delete_season.assert_not_awaited()
+
+
+async def test_deleting_the_season_takes_its_signups_windows_and_configuration(tmp_path):
+    path = str(tmp_path / "abort.db")
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 1, 2, 3)",
+            (SERVER_ID,),
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
+            "VALUES (7, ?, '2026-09-17', 'SETUP', 1, 'PLACEMENTS')",
+            (SERVER_ID,),
+        )
+        await db.execute(
+            "INSERT INTO signup_windows (server_id, season_id) VALUES (?, 7)", (SERVER_ID,)
+        )
+        await db.execute(
+            "INSERT INTO season_signup_config (season_id, nationality_required, time_type, "
+            "time_image_required) VALUES (7, 1, 'TIME_TRIAL', 1)"
+        )
+        await db.execute(
+            "INSERT INTO signup_records (server_id, season_id, discord_user_id) VALUES (?, 7, '1')",
+            (SERVER_ID,),
+        )
+        await db.commit()
+
+    await SeasonService(path).delete_season(7)
+
+    async with get_connection(path) as db:
+        for table in ("seasons", "signup_windows", "season_signup_config", "signup_records"):
+            cursor = await db.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
+            assert (await cursor.fetchone())[0] == 0, table
