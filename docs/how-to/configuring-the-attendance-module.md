@@ -65,13 +65,13 @@ That dependency runs both ways. **Turning results & standings off turns attendan
 /module enable attendance
 ```
 
-It can only be done while no season is active, so this belongs alongside your other setup, before approval. The reply is immediate but nothing happens yet: the bot needs channels to post in and an approved season to work through, which are the next steps.
+It is refused once a season's placements are confirmed, so this belongs alongside your other setup — with no season, or before you confirm placements. The reply is immediate but nothing happens yet: the bot needs channels to post in and an approved season to work through, which are the next steps.
 
 Switching it on gives you a starting configuration you can leave alone if it suits you — a call five days out, a reminder a day out, check-in closing two hours before the race, one point for each of the three ways of missing it, and no automatic sanctions at all. Step 4 onwards is about changing those.
 
 > **Turning attendance off forgets your channels.** The timings, the penalties and the thresholds all survive being switched off and come back as you left them. The per-division check-in and attendance channels do not — they are deleted, and you will be setting all of them again. That includes the case where the module goes off because you turned results & standings off — which, if a season is running, also deletes that season's results; see [Setting up the results & standings module](configuring-the-results-module.md).
 
-> **Turning it off mid-season stops check-in for the rest of that season, and you cannot undo it.** Every call, reminder and deadline still to come stops at once — no more check-ins posted, no reserves distributed into seats, no attendance points charged. A call already posted stays in the channel, but its buttons stop recording answers. Because the module can only be switched on while no season is active, you will not get check-in back before the season ends. Turn it off mid-season only if you mean to run the rest of that season without it.
+> **Turning it off mid-season stops check-in for the rest of that season, and you cannot undo it.** Every call, reminder and deadline still to come stops at once — no more check-ins posted, no reserves distributed into seats, no attendance points charged. A call already posted stays in the channel, but its buttons stop recording answers. Because the module cannot be switched on once placements are confirmed, you will not get check-in back before the season ends. Turn it off mid-season only if you mean to run the rest of that season without it.
 
 ---
 
@@ -210,9 +210,9 @@ You are not going to wait five days to find out whether any of this works, and y
 
 See [Test mode](test-mode.md) for the whole picture, including the synthetic drivers you will need first.
 
-> **Test mode is only available before your league has real drivers.** The bot refuses to turn it on while any driver is signed up, unassigned, assigned or banned, or while your signup window is open, and while it is on no real driver may sign up or be placed. Former drivers from a finished season do not stand in the way. Do this step before you open signups — and note that once a season is running with fake drivers in it, test mode stays on until you `/season complete`.
+> **Test mode is chosen for a season, in its configuration.** `/test-mode toggle` works only while a season is in configuration, and is refused while any real driver is signed up, unassigned, assigned or banned — which, once a season has ended, nobody is. A season confirmed in test mode never opens a signup window, and while test mode is on no real driver may sign up or be placed. It stays on until that season is completed, cancelled or aborted, which switches it off and deletes the fake drivers — so test in a season of its own, and abort it with `/season abort` if you would rather not race it out. See [Setting up the bot for your league](configuring-the-core-bot.md) for the season's stages.
 
-> **Turning test mode off deletes every fake driver on the server**, across all divisions, without asking. Build your test roster expecting to lose it.
+> **Leaving test mode deletes every fake driver on the server**, across all divisions, without asking — when you toggle it off in configuration, or when the test season ends. Build your test roster expecting to lose it.
 
 ---
 

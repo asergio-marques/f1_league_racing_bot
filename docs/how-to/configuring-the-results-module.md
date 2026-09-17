@@ -57,7 +57,7 @@ This guide covers the results & standings module only. Setting the bot up, creat
 /module enable results
 ```
 
-It can only be done while **no season is active**, so this belongs alongside your other setup, before approval.
+It is refused once a season's **placements are confirmed**, so this belongs alongside your other setup — with no season, or before you confirm placements.
 
 > **Switching it off is not guarded the same way — it is worse than that.** Enabling is refused mid-season; disabling is not, and deliberately so: a league whose results have become unworkable must be able to stop running them. But **disabling mid-season deletes that season's results.** Every classification you have recorded goes, every standing computed from them goes, and every results and standings message already posted is removed from its channel. Every round still waiting on results, report verdicts or appeal verdicts is closed as having run without results — which is what lets you complete the season afterwards instead of being stuck with it for ever. Verdicts you have already announced stay in the verdicts channel; the bot keeps no record by which to delete them. Your points configurations and your division channels are kept, and a round whose date has not yet come is left alone until it passes.
 >
@@ -194,7 +194,7 @@ Two things about test mode matter here specifically. **Enabling it attaches poin
 
 See [Test mode](test-mode.md) for the whole picture.
 
-> **Test mode is only available before your league has real drivers.** The bot refuses to turn it on while any driver is signed up, unassigned, assigned or banned, or while your signup window is open, and while it is on no real driver may sign up or be placed. Former drivers from a finished season do not stand in the way. Do this step before you open signups — and note that once a season is running with fake drivers in it, test mode stays on until you `/season complete`.
+> **Test mode is chosen for a season, in its configuration.** `/test-mode toggle` works only while a season is in configuration, and is refused while any real driver is signed up, unassigned, assigned or banned — which, once a season has ended, nobody is. A season confirmed in test mode never opens a signup window, and while test mode is on no real driver may sign up or be placed. It stays on until that season is completed, cancelled or aborted, which switches it off and deletes the fake drivers — so test in a season of its own, and abort it with `/season abort` if you would rather not race it out. See [Setting up the bot for your league](configuring-the-core-bot.md) for the season's stages.
 
 > **A round that has been submitted but not settled blocks `/test-mode advance`.** Finish the penalty and appeals stages first; the refusal tells you which round is waiting.
 

@@ -783,9 +783,9 @@ Opens a modal for setting the RSVP status of every test driver in the division's
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `division` | String | ✅ | Division name; the division must be in the active season and have an open RSVP |
+| `division` | String | ✅ | Division name; the division must be in the ongoing season and have an open RSVP |
 
-> Turning test mode **off** deletes every fake driver on the server, across all divisions, and is refused while a running season holds any of them. The seeded points configurations are **not** deleted with them — they are ordinary configurations of the server, and `/results config remove` takes them away if you do not want them. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers or its signup window is open.
+> Turning test mode **off** — by the toggle in configuration, or by the season ending — deletes every fake driver on the server, across all divisions, keeping their history. The seeded points configurations are **not** deleted with them — they are ordinary configurations of the server, and `/results config remove` takes them away if you do not want them. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers.
 
 > While test mode is on, no real driver may sign up or be placed: the Sign Up button, `/signup open` and `/driver assign` all refuse them. Fake drivers are unaffected.
 
