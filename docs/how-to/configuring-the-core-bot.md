@@ -462,11 +462,13 @@ If you need to abandon a season rather than finish it:
 
 > ⚠️ **`/season cancel` is irreversible, and it is not `/season complete` with a different name.**
 > It cascades: every division is cancelled, and with each one every round you have not yet raced.
-> Rounds you *have* raced keep their results — cancelling never throws a result away — and nothing
-> is deleted from the database. Every driver still gets a history entry — a cancelled season is
-> league history, and it is marked as cancelled so it can be told apart from one that ran to its
-> end. What you lose is the ending: no final classification is posted. Use it only for a season
-> that should never have existed. A season that was raced should be completed.
+> Rounds you *have* raced keep their results — cancelling never throws a result away — and the
+> season is archived rather than deleted. Every driver whose placement was confirmed still gets a
+> history entry — a cancelled season is league history, marked as cancelled so it can be told apart
+> from one that ran to its end — and then, as on completion, every driver returns to Not Signed Up
+> and those who never raced are deleted. What you lose is the ending: no final classification is
+> posted. It is available only while the season is ongoing; a season whose placements were never
+> confirmed is abandoned with `/season abort` instead.
 
 ---
 

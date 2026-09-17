@@ -2717,16 +2717,20 @@ class SeasonCog(commands.Cog):
         season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
         if season is None:
             await interaction.response.send_message(
-                "\u274c No active season to cancel.",
+                "\u274c No active season to cancel. A season whose placements are yet to be "
+                "confirmed is abandoned with `/season abort`.",
                 ephemeral=True,
             )
             return
 
-        try:
-            await self.bot.season_service.assert_season_mutable(season)
-        except SeasonImmutableError:
+        # Cancelled only while ongoing (issue #220): a season pending completion has run its
+        # course and is completed instead.
+        from models.season import ONGOING_STAGES
+
+        if season.stage not in ONGOING_STAGES:
             await interaction.response.send_message(
-                "\u274c This season is archived (COMPLETED) and cannot be modified.",
+                "\u274c Every division of this season is done. Complete it with "
+                "`/season complete` instead.",
                 ephemeral=True,
             )
             return
@@ -2760,8 +2764,25 @@ class SeasonCog(commands.Cog):
         # with no way to put them back. Before the cascade, the season is still ACTIVE and the
         # whole command can simply be run again; the write is idempotent, so running it again
         # adds nothing.
-        from services.season_end_service import _write_driver_history_entries
+        #
+        # A placement not yet confirmed never entered the championship, and is discarded first so
+        # that it earns no history entry and holds no seat (issue #220).
+        await self.bot.season_service.discard_uncommitted_placements(season.id)
+
+        from services.season_end_service import (
+            _revoke_season_roles,
+            _write_driver_history_entries,
+            end_of_season_pass,
+        )
+
         await _write_driver_history_entries(season, self.bot, force_cancelled=True)
+
+        # The roles, the driver pass, the window and test mode — as completing a season does.
+        if interaction.guild is not None:
+            await _revoke_season_roles(
+                interaction.guild_id, season.id, interaction.guild, self.bot
+            )
+        await end_of_season_pass(interaction.guild_id, self.bot, interaction.guild)
 
         await self.bot.season_service.cancel_season_cascade(
             season_id=season.id,
@@ -2769,13 +2790,6 @@ class SeasonCog(commands.Cog):
             actor_id=interaction.user.id,
             actor_name=str(interaction.user),
         )
-
-        # Revoke division, team, and signup roles from all assigned drivers
-        if interaction.guild is not None:
-            from services.season_end_service import _revoke_season_roles
-            await _revoke_season_roles(
-                interaction.guild_id, season.id, interaction.guild, self.bot
-            )
 
         await interaction.followup.send(
             "\u2705 Season cancelled.",

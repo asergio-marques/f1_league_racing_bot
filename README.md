@@ -477,8 +477,8 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 
 No parameters. Shows active season overview: divisions, next scheduled round per division, and its track and datetime.
 
-#### `/season cancel` — Delete the active season
-*Access: League admin*
+#### `/season cancel` — Cancel the ongoing season
+*Access: League admin · Ongoing only*
 
 > ⚠️ **Irreversible.** A cancelled season cannot be reopened, and every command that would change one is refused from then on.
 
@@ -491,12 +491,16 @@ division of the season is cancelled, and with each one every round of it **not y
 that has been raced and scored keeps its results and its status — cancelling a season never
 discards a result. The season row is marked `CANCELLED` last.
 
-**Nothing is deleted.** The season, its divisions, rounds, results and standings all stay in the
-database and remain readable by the stats commands; what changes is that they become immutable and
-stop counting as the server's live season. Every placed driver gets a history entry just as they
-would on completion, **marked as cancelled** so a season that was called off can be told apart
-from one that ran to its end. Cancel a season that should never have existed — one
-that was raced should be completed instead.
+**The season is archived, not deleted.** Its divisions, rounds, results and standings stay in the
+database and remain readable by the stats commands; they become immutable and stop counting as
+the server's live season. Placements not yet confirmed are discarded first. Every driver whose
+placement was confirmed gets a history entry, **marked as cancelled** so a season that was called
+off can be told apart from one that ran to its end. Then, exactly as completing a season does, the
+season's roles are revoked, every driver returns to Not Signed Up, drivers who never raced are
+deleted (their signups kept), an open signup window is closed and test mode is switched off.
+
+Available only while the season is **ongoing**. A season pending completion is completed instead,
+and one whose placements have never been confirmed is abandoned with `/season abort`.
 
 #### `/season complete` — Mark the active season as complete
 *Access: League admin*

@@ -147,3 +147,16 @@ async def test_confirming_a_season_no_longer_placing_confirms_nothing(db_path):
     await cog._do_confirm_mid_season_placements(interaction)
 
     cog.bot.placement_service.commit_mid_season_placements.assert_not_awaited()
+
+
+async def test_cancelling_discards_the_uncommitted_placements_and_frees_their_seats(db_path):
+    from services.season_service import SeasonService
+
+    assert await SeasonService(db_path).discard_uncommitted_placements(1) == 1
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM team_seats WHERE driver_profile_id = 2"
+        )
+        assert (await cursor.fetchone())[0] == 0
+    assert await _service(db_path).uncommitted_placements(1) == []

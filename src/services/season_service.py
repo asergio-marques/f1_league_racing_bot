@@ -1051,6 +1051,26 @@ class SeasonService:
             rows = await cursor.fetchall()
         return [row[0] for row in rows]
 
+    async def discard_uncommitted_placements(self, season_id: int) -> int:
+        """Delete every placement of *season_id* not yet committed, freeing its seat.
+
+        Cancelling a season discards them (issue #220): the drivers placed stood outside the
+        championship and earn no history of it. Returns how many were discarded.
+        """
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE team_seats SET driver_profile_id = NULL WHERE id IN ("
+                "  SELECT team_seat_id FROM driver_season_assignments "
+                "  WHERE season_id = ? AND committed = 0 AND team_seat_id IS NOT NULL)",
+                (season_id,),
+            )
+            cursor = await db.execute(
+                "DELETE FROM driver_season_assignments WHERE season_id = ? AND committed = 0",
+                (season_id,),
+            )
+            await db.commit()
+            return cursor.rowcount
+
     async def commit_placements(self, season_id: int) -> int:
         """Commit every placement of *season_id* not yet committed; returns how many.
 
