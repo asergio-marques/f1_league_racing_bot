@@ -273,7 +273,7 @@ A season begins with `/season setup`, in **configuration**: settle the team list
 #### `/season setup` — Start season configuration
 *Access: League manager*
 
-Creates a pending season tied to today's date and enables the `/division` and `/round` setup commands. Refused if a season is already in setup or active for this server — a server holds **one** live season at a time, so finish the running one with `/season complete` (or approve or cancel the pending one) before starting another. Completed and cancelled seasons do not count and are kept indefinitely.
+Creates a season tied to today's date, in **configuration**. Its divisions and rounds are built later, once it reaches placements. Refused if a season is already live for this server, whatever its stage — a server holds **one** live season at a time, so end the running one with `/season complete` or `/season cancel`, or abandon an unconfirmed one with `/season abort`, before starting another. Completed and cancelled seasons do not count and are kept indefinitely.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -421,7 +421,7 @@ Deletes the round and renumbers remaining rounds by date.
 
 No parameters. Displays the pending season configuration, ending with a message asking whether you accept it and carrying the **✅ Approve** button. Refused unless the season is in **placements** — a season still in configuration is reviewed with `/season config-review`.
 
-> **Two things hold the button back that the report does not otherwise show.** Every signup must be settled: no driver may still be Unassigned, awaiting approval or correcting their signup — place them with `/driver assign`, or finish reviewing them. And every division must have its **lineup** and **calendar** channels set. The review names each driver and each division at fault, and the approval refuses on the same reading.
+> **Two things hold the button back that the report does not otherwise show.** Every signup must be settled: no driver may still be Unassigned, awaiting approval or correcting their signup — place them with `/driver assign`, turn them down with `/driver reject`, or finish reviewing their signup. And every division must have its **lineup** and **calendar** channels set. The review names each driver and each division at fault, and the approval refuses on the same reading.
 
 > **Approving commits every placement.** Until then a placement stands outside the championship; approving grants the division and team roles and posts the lineups, as described below.
 
