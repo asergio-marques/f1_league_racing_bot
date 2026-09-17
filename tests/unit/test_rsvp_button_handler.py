@@ -87,8 +87,10 @@ async def _make_db(
 
     *call_posted* seeds the `NO_RSVP` rows that posting the check-in call creates —
     `run_rsvp_notice` calls `bulk_insert_attendance_rows` for the whole roster before any
-    button exists to press, so a row is always there in production. It matters because
-    `upsert_rsvp_status` is an UPDATE despite its name and writes nothing without one.
+    button exists to press. Passing False is the driver who has **no** such row: placed into
+    the division after the call went out, since nothing outside `run_rsvp_notice` opens one.
+    That is issue #209, and the tests below exercise both, because the two answer paths part
+    company at the row's existence and nowhere else.
     """
     db_path = os.path.join(str(tmp_path), "rsvp_button.db")
     await run_migrations(db_path)
@@ -198,6 +200,18 @@ async def _status(db_path: str, profile_id: int) -> str | None:
         )
         row = await cursor.fetchone()
     return row["rsvp_status"] if row else None
+
+
+async def _accepted_at(db_path: str, profile_id: int) -> str | None:
+    """The driver's `accepted_at`, which is also None where they hold no row at all."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT accepted_at FROM driver_round_attendance "
+            "WHERE round_id = ? AND driver_profile_id = ?",
+            (ROUND_ID, profile_id),
+        )
+        row = await cursor.fetchone()
+    return row["accepted_at"] if row else None
 
 
 def _make_interaction(db_path: str, profile_id: int) -> MagicMock:
@@ -406,8 +420,14 @@ async def test_a_reserve_who_has_not_accepted_may_still_step_in_after_the_deadli
 
 async def test_a_reserve_with_no_answer_at_all_may_step_in_after_the_deadline(tmp_path):
     """The same rule reached with no `driver_round_attendance` row, where the status falls
-    back to `NO_RSVP` rather than being read."""
-    db_path = await _make_db(tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS - 1))
+    back to `NO_RSVP` rather than being read.
+
+    Issue #209: this said so and seeded a row anyway, which made it a duplicate of the test
+    above and left the no-row path — the reserve moved into the division after the call went
+    out, then called upon when somebody dropped — unexecuted."""
+    db_path = await _make_db(
+        tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS - 1), call_posted=False
+    )
     interaction = _make_interaction(db_path, RESERVE_PROFILE)
 
     await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
@@ -425,6 +445,62 @@ async def test_a_reserve_is_locked_out_once_the_round_has_started(tmp_path):
 
     assert "round has started" in _reply(interaction)
     assert await _status(db_path, RESERVE_PROFILE) == "NO_RSVP"
+
+
+# ---------------------------------------------------------------------------
+# A driver placed into the division after the call went out — issue #209
+#
+# `run_rsvp_notice` opens a `driver_round_attendance` row per driver of the division *at that
+# moment*, and nothing else in the bot opens one: not `assign_driver`, not `move_driver`, not
+# `commit_mid_season_placements`. So a driver who arrives while the call is standing has none
+# — and they are asked anyway, because the embed is rebuilt from the current roster on every
+# press and lists them with an empty bracket.
+#
+# The lock rules above are unaffected and must stay so: all three checks run before the write,
+# so a row is never created for an answer that was refused.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_driver_placed_after_the_call_has_their_answer_recorded(tmp_path):
+    """The defect itself. The answer was discarded in silence and the driver thanked for it,
+    leaving the call showing them as never having replied."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3), call_posted=False)
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+
+    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
+    assert await _accepted_at(db_path, FULL_TIME_PROFILE) is not None
+    assert "has been updated" in _reply(interaction)
+
+
+async def test_an_answer_recorded_for_a_late_joiner_leaves_accepted_at_null_when_declined(
+    tmp_path,
+):
+    """A row created at answer time takes the ordinary `accepted_at` rule and not a special
+    case of it. The reserve distribution orders by that column, so a row born carrying a
+    timestamp it never earned would jump a queue it should be at the back of."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3), call_posted=False)
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+
+    await handle_rsvp_button(interaction, f"rsvp_decline_r{ROUND_ID}")
+
+    assert await _status(db_path, FULL_TIME_PROFILE) == "DECLINED"
+    assert await _accepted_at(db_path, FULL_TIME_PROFILE) is None
+
+
+async def test_a_driver_placed_after_the_deadline_is_locked_out_and_gets_no_row(tmp_path):
+    """The insert must not move in front of the locks. A full-time driver placed once the
+    deadline has gone by is refused as any other would be, and refusing has to leave the
+    round's attendance record alone — a row saying ACCEPTED for an answer the bot would not
+    take is worse than the silence it replaced."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(hours=1), call_posted=False)
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+
+    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert "deadline has passed" in _reply(interaction)
+    assert await _status(db_path, FULL_TIME_PROFILE) is None
 
 
 # ---------------------------------------------------------------------------
