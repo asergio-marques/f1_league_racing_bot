@@ -200,3 +200,146 @@ async def advance_to_pending_completion(db_path: str, season_id: int) -> bool:
     log.info("season %s is pending completion", season_id)
     return True
 
+
+#: The states the driver pass returns to Not Signed Up (issue #220). Season Banned and League
+#: Banned are left untouched: bans are to be specified on their own.
+DRIVER_PASS_STATES: tuple[str, ...] = (
+    "UNASSIGNED",
+    "ASSIGNED",
+    "PENDING_SIGNUP_COMPLETION",
+    "PENDING_ADMIN_APPROVAL",
+    "AWAITING_CORRECTION_PARAMETER",
+    "PENDING_DRIVER_CORRECTION",
+)
+
+#: The states of a driver whose signup is still in progress or in review.
+_SIGNUP_IN_PROGRESS: frozenset[str] = frozenset({
+    "PENDING_SIGNUP_COMPLETION",
+    "PENDING_ADMIN_APPROVAL",
+    "AWAITING_CORRECTION_PARAMETER",
+    "PENDING_DRIVER_CORRECTION",
+})
+
+
+async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bool) -> None:
+    """Delete *profile_ids* and everything that holds them, within the caller's transaction.
+
+    Every reference to a profile without a cascade has to go, or let go, first: seats are
+    vacated, placements and attendance rows deleted, and result and standings rows let go of
+    the profile while naming the driver by user id still. A driver's signups are keyed by the
+    Discord account and are never touched.
+
+    *keep_history* keeps the driver's history entries, which name them by identifier and let
+    go of the profile themselves (migration 061) — how test mode keeps its drivers' history.
+    Otherwise the entries are deleted with the driver, as the driver pass deletes a real driver
+    who never raced: the archive keeps no placement and no history of them.
+    """
+    if not profile_ids:
+        return
+    placeholders = ",".join("?" for _ in profile_ids)
+    ids = list(profile_ids)
+    await db.execute(
+        f"UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id IN ({placeholders})",
+        ids,
+    )
+    await db.execute(
+        f"DELETE FROM driver_season_assignments WHERE driver_profile_id IN ({placeholders})", ids
+    )
+    if not keep_history:
+        await db.execute(
+            f"DELETE FROM driver_history_entries WHERE driver_profile_id IN ({placeholders})", ids
+        )
+    await db.execute(
+        f"DELETE FROM driver_round_attendance WHERE driver_profile_id IN ({placeholders})", ids
+    )
+    for table in ("race_session_results", "qualifying_session_results", "driver_standings_snapshots"):
+        await db.execute(
+            f"UPDATE {table} SET driver_profile_id = NULL WHERE driver_profile_id IN ({placeholders})",
+            ids,
+        )
+    await db.execute(f"DELETE FROM driver_profiles WHERE id IN ({placeholders})", ids)
+
+
+async def run_driver_pass(db_path: str, server_id: int, *, bot=None, guild=None) -> dict:
+    """The driver pass that ends a season: completion, cancellation and abort alike (#220).
+
+    1. Every driver Unassigned, Assigned, mid-signup or in review returns to Not Signed Up. A
+       signup still in progress or in review is cancelled: its inactivity timeout is cancelled
+       and, where a guild is to hand, its channel is told and set to be deleted.
+    2. The signed-up role is revoked from every such real driver, where a guild is to hand.
+    3. Every real driver at Not Signed Up without the former-driver flag — pending deletion —
+       is deleted, with their placements and history entries. Their signups remain.
+
+    A former driver is kept. A driver created by test mode is not deleted here: switching test
+    mode off does that, and keeps their history. Season Banned and League Banned drivers are
+    left untouched. Returns ``{"reset": n, "deleted": m}``.
+    """
+    placeholders = ",".join("?" for _ in DRIVER_PASS_STATES)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
+            f"WHERE server_id = ? AND current_state IN ({placeholders})",
+            (server_id, *DRIVER_PASS_STATES),
+        )
+        to_reset = [dict(r) for r in await cursor.fetchall()]
+        cursor = await db.execute(
+            "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
+            (server_id,),
+        )
+        cfg_row = await cursor.fetchone()
+    signed_up_role_id = cfg_row["signed_up_role_id"] if cfg_row else None
+
+    for driver in to_reset:
+        uid = driver["discord_user_id"]
+        if driver["current_state"] in _SIGNUP_IN_PROGRESS and bot is not None:
+            try:
+                if guild is not None:
+                    await bot.wizard_service._trigger_channel_hold(
+                        server_id, uid, guild,
+                        "🔒 This season has ended. This channel will be automatically "
+                        "deleted in 24 hours.",
+                    )
+                # The channel's own deletion job stays armed, and reads the wizard record
+                # when it fires; only the inactivity timeout is cancelled.
+                try:
+                    bot.scheduler_service._scheduler.remove_job(
+                        f"wizard_inactivity_{server_id}_{uid}"
+                    )
+                except Exception:  # noqa: BLE001 — a job already gone is the aim
+                    pass
+            except Exception:  # noqa: BLE001 — a signup channel is never worth the pass
+                log.exception("driver pass: could not close the signup of %s", uid)
+        if (
+            guild is not None
+            and signed_up_role_id
+            and not driver["is_test_driver"]
+            and driver["current_state"] in ("UNASSIGNED", "ASSIGNED")
+        ):
+            member = guild.get_member(int(uid))
+            role = guild.get_role(signed_up_role_id)
+            if member is not None and role is not None and role in member.roles:
+                try:
+                    await member.remove_roles(role, reason="Season ended")
+                except Exception:  # noqa: BLE001 — a role is never worth the pass
+                    log.warning("driver pass: could not revoke the signed-up role of %s", uid)
+
+    async with get_connection(db_path) as db:
+        if to_reset:
+            reset_ids = [d["id"] for d in to_reset]
+            id_placeholders = ",".join("?" for _ in reset_ids)
+            await db.execute(
+                f"UPDATE driver_profiles SET current_state = 'NOT_SIGNED_UP' "
+                f"WHERE id IN ({id_placeholders})",
+                reset_ids,
+            )
+        cursor = await db.execute(
+            "SELECT id FROM driver_profiles WHERE server_id = ? AND is_test_driver = 0 "
+            "AND former_driver = 0 AND current_state = 'NOT_SIGNED_UP'",
+            (server_id,),
+        )
+        pending_deletion = [r["id"] for r in await cursor.fetchall()]
+        await delete_driver_profiles(db, pending_deletion, keep_history=False)
+        await db.commit()
+
+    return {"reset": len(to_reset), "deleted": len(pending_deletion)}
+
