@@ -58,6 +58,14 @@ _EXEMPT_COMMANDS = {"view"}
 _MAX_SLOTS = 25
 
 
+#: How an unsettled signup that holds no seed is marked in `/signup unassigned list`.
+_REVIEW_LABELS = {
+    "PENDING_ADMIN_APPROVAL": "Awaiting approval",
+    "AWAITING_CORRECTION_PARAMETER": "Awaiting approval",
+    "PENDING_DRIVER_CORRECTION": "Correcting",
+}
+
+
 def _parse_time(raw: str) -> str | None:
     """Parse a time of day to a normalised ``HH:MM``. Returns None on failure.
 
@@ -1802,13 +1810,13 @@ class SignupCog(commands.Cog):
 
     unassigned_group = app_commands.Group(
         name="unassigned",
-        description="Commands for listing and exporting Unassigned drivers.",
+        description="Commands for listing and exporting the unsettled signups.",
         parent=signup,
     )
 
     @unassigned_group.command(
         name="list",
-        description="List all Unassigned drivers, seeded by total lap time.",
+        description="List the unsettled signups: Unassigned drivers by seed, then those still in review.",
     )
     @league_manager_only
     async def signup_unassigned_list(self, interaction: discord.Interaction) -> None:
@@ -1817,16 +1825,19 @@ class SignupCog(commands.Cog):
         drivers = await self.bot.placement_service.get_unassigned_drivers_seeded(server_id)  # type: ignore[attr-defined]
         if not drivers:
             await interaction.followup.send(
-                "No Unassigned drivers found.", ephemeral=True
+                "No unsettled signups found.", ephemeral=True
             )
             return
 
-        lines: list[str] = [f"**Unassigned Drivers — Seeded** ({len(drivers)} total)\n"]
+        lines: list[str] = [f"**Unsettled Signups — Seeded** ({len(drivers)} total)\n"]
         for d in drivers:
             preferred = ", ".join(d["preferred_teams"]) if d["preferred_teams"] else "—"
             teammate = d["preferred_teammate"] or "—"
+            marker = f"#{d['seed']}" if d["seed"] is not None else _REVIEW_LABELS.get(
+                d["state"], "In review"
+            )
             lines.append(
-                f"**#{d['seed']}** **{d['server_display_name']}** (`{d['discord_user_id']}`)\n"
+                f"**{marker}** **{d['server_display_name']}** (`{d['discord_user_id']}`)\n"
                 f"  Platform: {d['platform']} | Type: {d['driver_type']} | Lap total: {d['total_lap_fmt']}\n"
                 f"  Teams: {preferred} | Teammate: {teammate}"
             )
@@ -1855,7 +1866,7 @@ class SignupCog(commands.Cog):
 
     @unassigned_group.command(
         name="export",
-        description="Export all Unassigned drivers to a CSV file.",
+        description="Export the unsettled signups to a CSV file.",
     )
     @league_manager_only
     async def signup_unassigned_export(self, interaction: discord.Interaction) -> None:
@@ -1869,7 +1880,7 @@ class SignupCog(commands.Cog):
             server_id, slots_ordered
         )
         if not drivers:
-            await interaction.followup.send("No Unassigned drivers found.", ephemeral=True)
+            await interaction.followup.send("No unsettled signups found.", ephemeral=True)
             return
 
         # Build CSV in memory
@@ -1889,7 +1900,7 @@ class SignupCog(commands.Cog):
             slot_cols = ["X" if d["slot_presence"].get(s.slot_sequence_id) else "" for s in slots_ordered]
             writer.writerow(
                 [
-                    d["seed"],
+                    d["seed"] if d["seed"] is not None else "",
                     d["display_name"],
                     d["discord_user_id"],
                     d["driver_type"],

@@ -1159,15 +1159,17 @@ Refused when nothing is armed — use `add` — and when signups are not open. A
 
 > **You can set the close time when you open, or after.** `/signup open close_time:` and `/signup close-time add` arm the same value and hold to the same rule, so use whichever suits. Mistyped the day or the year? `/signup close-time modify` puts it right without touching anything else.
 
-#### `/signup unassigned list` — List all Unassigned drivers seeded by lap time
+#### `/signup unassigned list` — List the unsettled signups, seeded by lap time
 *Access: League manager*
 
-No parameters. Displays all drivers in the Unassigned state, ordered by total lap time ascending (fastest first), in an ephemeral reply. Drivers with no lap time on record appear last; ties break on **submission** order — the moment the driver sent their form in or last corrected it, not the moment they were approved.
+No parameters. Displays every unsettled signup in an ephemeral reply. Drivers in the Unassigned state come first, ordered by total lap time ascending (fastest first) and numbered by seed. Drivers with no lap time on record appear last among them; ties break on **submission** order — the moment the driver sent their form in or last corrected it, not the moment they were approved.
+
+After them come the drivers still in review — awaiting approval, or correcting an answer — marked with that state instead of a seed. They are listed because placements cannot be confirmed while any of them stands.
 
 #### `/signup unassigned export` — Export Unassigned drivers to CSV
 *Access: League manager*
 
-No parameters. Returns `unassigned_drivers.csv` in an ephemeral reply, with the columns `Seed`, `Display Name`, `Discord User ID`, `Driver Type`, `Lap Total`, one column per configured availability slot (marked `X` where the driver selected it), `Preferred Team 1`–`3`, `Platform` and `Platform ID`.
+No parameters. Returns `unassigned_drivers.csv` in an ephemeral reply, holding the same drivers in the same order as the list — a driver still in review has a blank `Seed` — with the columns `Seed`, `Display Name`, `Discord User ID`, `Driver Type`, `Lap Total`, one column per configured availability slot (marked `X` where the driver selected it), `Preferred Team 1`–`3`, `Platform` and `Platform ID`.
 
 > **The preferred teammate and the notes are not exported**, though `/signup unassigned list` displays both. Read them off the list where they bear on how you place someone.
 

@@ -48,8 +48,8 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
             uid = d.get("discord_user_id", str(9000 + i))
             await db.execute(
                 "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?, 'UNASSIGNED')",
-                (i, SERVER_ID, uid),
+                "VALUES (?, ?, ?, ?)",
+                (i, SERVER_ID, uid, d.get("state", "UNASSIGNED")),
             )
             await db.execute(
                 "INSERT INTO signup_records (server_id, discord_user_id, discord_username, "
@@ -243,3 +243,49 @@ class TestExportRow:
         )
         rows, _ = await _export(db_path)
         assert rows[0]["display_name"] == "999"
+
+
+# ---------------------------------------------------------------------------
+# Every unsettled signup is listed (issue #220)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "state", ["PENDING_ADMIN_APPROVAL", "AWAITING_CORRECTION_PARAMETER", "PENDING_DRIVER_CORRECTION"]
+)
+async def test_a_signup_still_in_review_follows_the_seeded_drivers_unseeded(tmp_path, state):
+    from services.placement_service import PlacementService
+
+    db_path = await _seed(
+        tmp_path,
+        [
+            {"discord_user_id": "1001", "state": state, "total_lap_ms": 1},
+            {"discord_user_id": "1002", "total_lap_ms": 90_000},
+        ],
+    )
+    service = PlacementService(db_path, bot=MagicMock())
+
+    for rows in (
+        await service.get_unassigned_drivers_seeded(SERVER_ID),
+        await service.get_unassigned_drivers_for_export(SERVER_ID, []),
+    ):
+        assert [r["discord_user_id"] for r in rows] == ["1002", "1001"]
+        assert [r["seed"] for r in rows] == [1, None]
+        assert rows[1]["state"] == state
+
+
+async def test_a_placed_or_departed_driver_is_not_listed(tmp_path):
+    from services.placement_service import PlacementService
+
+    db_path = await _seed(
+        tmp_path,
+        [
+            {"discord_user_id": "2001", "state": "ASSIGNED"},
+            {"discord_user_id": "2002", "state": "NOT_SIGNED_UP"},
+        ],
+    )
+
+    assert await PlacementService(db_path, bot=MagicMock()).get_unassigned_drivers_seeded(
+        SERVER_ID
+    ) == []
+

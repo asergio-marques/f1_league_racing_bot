@@ -14,6 +14,18 @@ from models.team import TeamRoleConfig
 
 log = logging.getLogger(__name__)
 
+#: The driver states a signup is unsettled in: approved and unplaced, or still being judged.
+#: The unassigned listing reports every one of them (issue #220).
+_UNSETTLED_SQL = ", ".join(
+    f"'{state}'"
+    for state in (
+        "UNASSIGNED",
+        "PENDING_ADMIN_APPROVAL",
+        "AWAITING_CORRECTION_PARAMETER",
+        "PENDING_DRIVER_CORRECTION",
+    )
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -269,14 +281,20 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def get_unassigned_drivers_seeded(self, server_id: int) -> list[dict]:
-        """Return all Unassigned drivers ordered by seed (total_lap_ms ASC NULLS LAST,
-        then earliest approval timestamp)."""
+        """Return every unsettled signup: Unassigned drivers in seed order, then the rest.
+
+        Unassigned drivers are seeded by total_lap_ms ASC NULLS LAST, then earliest approval
+        timestamp. A driver still awaiting approval or correction follows them, holding no
+        seed (``seed`` is None) — they are listed because confirming placements waits on them
+        too (issue #220).
+        """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 """
                 SELECT
                     dp.id                   AS profile_id,
                     dp.discord_user_id,
+                    dp.current_state,
                     sr.server_display_name,
                     sr.platform,
                     sr.availability_slot_ids,
@@ -295,11 +313,12 @@ class PlacementService:
                           AND discord_user_id = dp.discord_user_id
                     )
                 WHERE dp.server_id = ?
-                  AND dp.current_state = 'UNASSIGNED'
+                  AND dp.current_state IN ({unsettled})
                 ORDER BY
+                    dp.current_state = 'UNASSIGNED' DESC,
                     sr.total_lap_ms ASC NULLS LAST,
                     sr.updated_at ASC
-                """,
+                """.format(unsettled=_UNSETTLED_SQL),
                 (server_id,),
             )
             rows = await cursor.fetchall()
@@ -308,7 +327,8 @@ class PlacementService:
         for i, row in enumerate(rows, start=1):
             total_ms = row["total_lap_ms"]
             results.append({
-                "seed": i,
+                "seed": i if row["current_state"] == "UNASSIGNED" else None,
+                "state": row["current_state"],
                 "discord_user_id": row["discord_user_id"],
                 "server_display_name": row["server_display_name"] or row["discord_user_id"],
                 "platform": row["platform"] or "—",
@@ -329,7 +349,7 @@ class PlacementService:
     async def get_unassigned_drivers_for_export(
         self, server_id: int, slots: list[AvailabilitySlot]
     ) -> list[dict]:
-        """Return all Unassigned drivers seeded, each row enriched for CSV export.
+        """Return every unsettled signup, as the seeded listing orders it, enriched for CSV.
 
         Each row dict contains:
           seed, display_name, discord_user_id, driver_type, total_lap_fmt,
@@ -348,6 +368,7 @@ class PlacementService:
                 """
                 SELECT
                     dp.discord_user_id,
+                    dp.current_state,
                     sr.server_display_name,
                     sr.discord_username,
                     sr.platform,
@@ -366,11 +387,12 @@ class PlacementService:
                           AND discord_user_id = dp.discord_user_id
                     )
                 WHERE dp.server_id = ?
-                  AND dp.current_state = 'UNASSIGNED'
+                  AND dp.current_state IN ({unsettled})
                 ORDER BY
+                    dp.current_state = 'UNASSIGNED' DESC,
                     sr.total_lap_ms ASC NULLS LAST,
                     sr.updated_at ASC
-                """,
+                """.format(unsettled=_UNSETTLED_SQL),
                 (server_id,),
             )
             rows = await cursor.fetchall()
@@ -389,7 +411,8 @@ class PlacementService:
 
             display_name = row["server_display_name"] or row["discord_username"] or row["discord_user_id"]
             results.append({
-                "seed": i,
+                "seed": i if row["current_state"] == "UNASSIGNED" else None,
+                "state": row["current_state"],
                 "display_name": display_name,
                 "discord_user_id": row["discord_user_id"],
                 "driver_type": row["driver_type"] or "",
