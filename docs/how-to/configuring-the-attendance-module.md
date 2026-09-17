@@ -39,7 +39,7 @@ This guide covers the attendance module only. Setting the bot up, creating a sea
 | `/module enable results` and `/module enable attendance` | The **league admin role** |
 | `/attendance config` — all of them | The **interaction role** |
 | `/division rsvp-channel` and `/division attendance-channel` | The **interaction role** |
-| The check-in buttons | Nothing. Any driver seated in that division can press them |
+| The check-in buttons | No role. A confirmed placement in that division, full-time or reserve — anybody else is told they are not a member of it |
 | The pardon button on a penalty review | Whoever runs your penalty reviews |
 | Anything under `/images` | See the image guide |
 
@@ -91,6 +91,8 @@ The check-in call **pings the division's role**, the one set when the division w
 > **The bot must be able to post in both channels, and it checks at the time you set them.** If it cannot, the command is refused there and then rather than failing silently three days before a race.
 
 > **A division copied from another does not inherit either channel.** The copy starts with none and nothing warns you at the time — it surfaces later as a season that will not approve. Set them explicitly.
+
+> **Who can see the check-in channel is yours to set, not the bot's.** The bot posts to the channel you give it and never touches its permissions, so restrict it to the division's role yourself if you would rather only that division's drivers could press its buttons. Nothing breaks if you do not: anybody without a confirmed placement in the division is told they are not a member of it and nothing is recorded. Restricting the channel just saves them finding that out.
 
 ---
 
@@ -226,7 +228,11 @@ Pressing one updates the roster in the message itself, so the division can see a
 
 **The close**, at the deadline. The buttons disappear from the call, and the bot posts what the reserves did — each one placed into a named team, or told they are on standby because there was no seat for them. If nobody in the Reserve team accepted, or every seat was already filled, it posts a line saying no reserves were placed and all seats are filled. That single message covers both cases, so it appears even when seats were in fact empty and nobody volunteered.
 
-> **A driver placed mid-season is not called until their placement is confirmed.** The drivers of a signup window opened during the season stand outside the championship until `/season placements-review` confirms them: no check-in call, no attendance points, and no reserve seat. Rounds that run meanwhile run without them.
+> **A driver placed mid-season is not called until their placement is confirmed.** The drivers of a signup window opened during the season stand outside the championship until `/season placements-review` confirms them: no check-in call, no attendance points, and no reserve seat. Rounds that run meanwhile run without them. If one of them can see a check-in channel and presses a button anyway, they are told they are not a member of the division and nothing is recorded — the same answer anyone else without a seat in it gets, including you if you do not race.
+
+**A driver who joins a division while a call is standing can answer it.** Confirm a new driver, or move somebody in with `/driver move`, and the call already sitting in the channel picks them up: it is redrawn from the current roster on every press, so they appear on it with an empty bracket and their answer counts like everybody else's. Until they answer they have no attendance record for that round at all, which is worth knowing if you are reading the call to work out who is still silent — a name that has only just arrived has not been ignoring you.
+
+The ordinary locks still decide whether they are in time. Move a full-time driver in after the deadline has gone by and they are told it has passed, exactly as a driver who sat on their hands would be. A reserve who has not accepted can still step in right up to the scheduled start — but the reserves were distributed into their seats at the deadline, so a late yes from one arrives after the grid was settled and will not place them in a team. It is still worth recording: it tells you who volunteered if somebody no-shows.
 
 **The sheet**, after a round's post-race penalties are approved. It goes to the attendance channel, sorted worst first, one line per driver with their total. If you have set a threshold, the footer says what happens at it — and with the images module on, the drawn sheet marks the drivers who are closing on it. Each new sheet replaces the last, so the channel always holds exactly one.
 
