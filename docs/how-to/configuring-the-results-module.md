@@ -45,7 +45,7 @@ This guide covers the results & standings module only. Setting the bot up, creat
 | Reading the submission channel, pasting results into it, and every button in it | The **interaction role** |
 | Anything under `/images` | See the image guide |
 
-> **Three of these cannot be undone, and they ask for more.** Deleting a points configuration removes it outright, and detaches it from a season still in setup — the bot names that season and asks first, and the season then needs another configuration before it can be approved. A season already approved keeps its own copy and is unaffected. Approving a mid-season points amendment overwrites the season's points entire. Amending a round that has already gone final overwrites the classification your drivers raced — it does not keep the old one. Those three ask for the league admin role; the rest of `/results` asks for the interaction role, which is the role that actually runs your race weekends.
+> **Three of these cannot be undone, and they ask for more.** Deleting a points configuration removes it outright, and detaches it from a season whose placements are not yet confirmed — the bot names that season and asks first, and the season then needs another configuration before it can be approved. A season already approved keeps its own copy and is unaffected. Approving a mid-season points amendment overwrites the season's points entire. Amending a round that has already gone final overwrites the classification your drivers raced — it does not keep the old one. Those three ask for the league admin role; the rest of `/results` asks for the interaction role, which is the role that actually runs your race weekends.
 >
 > The submission channel is opened to both roles, and every button in it — including the one that applies your penalties and the one that closes the round — accepts either. Pick the interaction role accordingly.
 
@@ -125,7 +125,7 @@ Reads a configuration back to you privately. Positions worth nothing at the bott
 /results config append name: Half Points
 ```
 
-Building a table does **not** put it in your season. Attaching it does, and it can only be done while the season is in setup — once approved, both `append` and `detach` are refused.
+Building a table does **not** put it in your season. Attaching it does, and it can only be done before the season's placements are confirmed — once approved, both `append` and `detach` are refused.
 
 **Attach as many as you will need.** On race day the bot offers you the attached configurations as buttons and you pick one **per session**, which is how a race stopped at half distance gets scored differently from the qualifying session that preceded it. Attach one only, and the bot picks it for you without asking.
 
@@ -388,7 +388,7 @@ Worth knowing so you do not go looking for the setting.
 | No submission channel when a round started | The module is off, the division has no results channel, or the round was cancelled. The log channel says which |
 | No submission channel for a round you moved | `/round amend` re-arms the round's submission whatever your modules. If one still does not open, check the round actually reached its scheduled time |
 | A submission rejected over a team role | The Reserve role in a team column, three lines under one team, or a driver under a different team from the one another session of the round already records |
-| A submission rejected over a driver | Not mentioned, or not seated in that division. A reserve also needs `/team reserve-role` set |
+| A submission rejected over a driver | Not mentioned, or not seated in that division — a driver placed mid-season whose placement is not yet confirmed counts as not seated. A reserve also needs `/team reserve-role` set |
 | Everything you pasted gone after a restart | Known: a part-finished submission is discarded and reopened from the first session. A part-finished *resubmission* is dropped too, but the round keeps the results it had |
 | Results posted but no standings | Every session of the round was cancelled, so there was nothing to score |
 | Points on the tables you did not expect | The session was scored against whichever configuration was chosen for it. `/results config view` shows what that configuration says |

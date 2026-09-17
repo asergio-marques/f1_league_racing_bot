@@ -43,7 +43,7 @@ This guide covers the attendance module only. Setting the bot up, creating a sea
 | The pardon button on a penalty review | Whoever runs your penalty reviews |
 | Anything under `/images` | See the image guide |
 
-> **The timings can only be set before a season is running.** The three that decide when a check-in happens — the notice, the last reminder and the deadline — are refused while a season is active, and the timings in force are the ones the bot noted when the season was approved. Changing them mid-season is not possible, and would not move a check-in that is already scheduled even if it were. Decide before you approve.
+> **The timings can only be set before a season's placements are confirmed.** The three that decide when a check-in happens — the notice, the last reminder and the deadline — are refused from that moment until the season ends, and the timings in force are the ones the bot noted when the season was approved. Changing them mid-season is not possible, and would not move a check-in that is already scheduled even if it were. Decide before you approve.
 
 ---
 
@@ -168,7 +168,7 @@ Either action is announced in the division's verdicts channel, the same place yo
 
 **Auto-reserve needs somewhere to put them.** If a division has no Reserve team, the sanction is skipped **silently** — nothing is posted to the verdicts channel, nothing to the log channel, nothing anywhere you can see; it reaches only the bot's own log file on the host. A driver already in the Reserve team is left alone, equally silently.
 
-> **This is the one part of the module that changes your grid without being asked.** Try it in test mode before a real season depends on it, and pick numbers you would be comfortable defending — the bot does not ask twice and there is no undo beyond re-seating the driver by hand.
+> **This is the one part of the module that changes your grid without being asked.** Try it in test mode before a real season depends on it, and pick numbers you would be comfortable defending — the bot does not ask twice and there is no undo. An auto-reserved driver can be moved back with `/driver move`; an auto-sacked one is back at Not Signed Up, and has to sign up again in a later window and be placed from it.
 
 ---
 
@@ -225,6 +225,8 @@ Pressing one updates the roster in the message itself, so the division can see a
 **The reminder**, at the last-notice moment. If anyone full-time is still silent, the bot pings exactly those people and says how long is left. If everybody has answered, it says so instead and asks them to check nothing has changed.
 
 **The close**, at the deadline. The buttons disappear from the call, and the bot posts what the reserves did — each one placed into a named team, or told they are on standby because there was no seat for them. If nobody in the Reserve team accepted, or every seat was already filled, it posts a line saying no reserves were placed and all seats are filled. That single message covers both cases, so it appears even when seats were in fact empty and nobody volunteered.
+
+> **A driver placed mid-season is not called until their placement is confirmed.** The drivers of a signup window opened during the season stand outside the championship until `/season placements-review` confirms them: no check-in call, no attendance points, and no reserve seat. Rounds that run meanwhile run without them.
 
 **The sheet**, after a round's post-race penalties are approved. It goes to the attendance channel, sorted worst first, one line per driver with their total. If you have set a threshold, the footer says what happens at it — and with the images module on, the drawn sheet marks the drivers who are closing on it. Each new sheet replaces the last, so the channel always holds exactly one.
 
@@ -314,7 +316,7 @@ Worth running through before the season is approved.
 | `/module enable attendance` refused | Results & standings is off, or a season is already running |
 | Attendance switched off by itself, and the channels gone | Results & standings was turned off and the cascade warning confirmed, which takes attendance with it and deletes every division's channels |
 | Check-in stopped mid-season and will not come back | Attendance was switched off, directly or by turning results & standings off. It stays off until the season ends |
-| `/attendance config` on a timing refused | Either a season is running, or the value would put the three out of order. The reply says which |
+| `/attendance config` on a timing refused | Either the season's placements are confirmed, or the value would put the three out of order. The reply says which |
 | Auto-reserve or auto-sack refused | The other one is set. Set it to `0` first |
 | A driver over the threshold who was not sanctioned | Auto-reserve with no Reserve team in that division, or the driver is in it already. Nothing is posted either way — check the division's Reserve team yourself |
 | Points charged later than you expected | They are charged when post-race penalties are approved, never at provisional results |

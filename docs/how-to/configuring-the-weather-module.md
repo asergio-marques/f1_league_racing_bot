@@ -39,7 +39,7 @@ This guide covers the weather module only. Setting the bot up, creating a season
 
 > **Every command in this guide is gated on the module being on.** Run one before step 1 and you are told the weather module is not enabled — not that you lack a permission. Step 1 genuinely has to come first.
 
-> **The timings can only be set before a season is running.** All three `/weather config` commands are refused while a season is active, and the timings in force are the ones the bot noted when the season was approved. If you are going to change them, change them now — see step 3.
+> **The timings can only be set before a season's placements are confirmed.** All three `/weather config` commands are refused from that moment until the season ends, and the timings in force are the ones the bot noted when the season was approved. If you are going to change them, change them now — see step 3.
 
 ---
 
@@ -226,7 +226,7 @@ Worth running through before the season is approved.
 | No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and nothing anywhere will tell you so: check the round with `/season placements-review` |
 | A season that will not approve | A division is missing its forecast channel, or a round is already inside one of the three deadlines. The division's own calendar in the review names the latest such round, and the button is withheld |
 | The post says "5 days out" but arrived earlier or later | Known: the wording is fixed and does not follow your timing settings. The timing itself is correct |
-| `/weather config` refused | Either a season is running, or the value would put the phases out of order. The reply says which |
+| `/weather config` refused | Either the season's placements are confirmed, or the value would put the phases out of order. The reply says which |
 | Two invalidation notices for one change | Amending more than one thing at once posts one per change |
 | Text where you expected a picture | The forecast worked and the drawing did not. The log channel names the reason — most often a drawing file or the converter |
 | A forecast that seems too wet for the stated chance of rain | Normal. The chance of rain shifts the odds; it does not decide the outcome |

@@ -171,7 +171,7 @@ When it goes through, the bot posts a green **Driver Signups Are Open!** message
 
 > **A close time is not a commitment.** Set one here if you like, or leave `close_time` off and add it later with `/signup close-time add`. Either way you can move it with `/signup close-time modify` or clear it outright with `/signup close-time cancel` — Step 8 covers both. Mistyping the day or the year costs you one command, not your configuration.
 
-> **No tracks means no seeding.** Open the window without `track_ids` and nobody submits a lap time, so every approved driver has no total to sort on and the queue falls back to the order you approved people in. That is fine if you never intended to rank by pace — just know that the seed numbers then mean nothing.
+> **No tracks means no seeding.** Open the window without `track_ids` and nobody submits a lap time, so every approved driver has no total to sort on and the queue falls back to the order they sent their signups in. That is fine if you never intended to rank by pace — just know that the seed numbers then mean nothing.
 
 **Every signup is kept.** Each belongs to the season and the window it came through, with the tracks that window asked for and its close time, and nothing overwrites it — not a second window, and not the next season. A season deleted with `/season abort` takes its signups with it; a completed or cancelled season keeps them.
 

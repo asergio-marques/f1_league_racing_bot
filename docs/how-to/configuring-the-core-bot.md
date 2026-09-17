@@ -513,7 +513,7 @@ Things change. While the season is ongoing:
 | `/driver release` | Take a driver out of one division while they keep their other seats |
 | `/driver sack` | Remove a driver from the season altogether. A league admin's |
 
-Each takes effect at once, roles and lineup posts included, because the placement it changes is already confirmed.
+Each takes effect at once, roles and lineup posts included, because the placement it changes is already confirmed. A driver moved, released or sacked keeps their place in the season's history: when the season ends they get an entry for every division they took part in, the ones they left included. `/driver release` is refused for a driver's only confirmed seat — a placement not yet confirmed elsewhere does not count — so move or sack them instead.
 
 ### Signing up drivers mid-season
 
@@ -529,7 +529,7 @@ Where the window closes with nobody left to settle, the season goes straight bac
 /season complete
 ```
 
-**Nothing ends a season by itself.** Once every division is finished or cancelled, the season moves to **pending completion** on its own, and `/season complete` is what ends it. Before then the bot refuses, listing the outstanding rounds. A mid-season signup window does not hold it up: with every division done there is no round left to place anyone into, so the window is closed and every pending placement turned down — each unplaced or unconfirmed driver returns to Not Signed Up, as `/driver reject` would. From pending completion no module can be turned off, and the last round's results can still be amended. Completing then ends the season: each division's **final classification** is posted, a history entry is written for every division each driver took part in — one they were moved or released from included, the season's roles are revoked, an open signup window is closed, and every driver returns to **Not Signed Up** — ready to sign up for the next season. Drivers who never raced are deleted at this point, their signups kept with the season; former drivers are kept. Test mode is switched off, and the season is archived and announced in the log channel.
+**Nothing ends a season by itself.** Once every division is finished or cancelled, the season moves to **pending completion** on its own, and `/season complete` is what ends it. Before then the bot refuses, listing the outstanding rounds. A mid-season signup window does not hold it up: with every division done there is no round left to place anyone into, so the window is closed and every pending placement turned down — each unplaced or unconfirmed driver returns to Not Signed Up, as `/driver reject` would. From pending completion no module can be turned off, and the last round's results can still be amended. Completing then ends the season: each division's **final classification** is posted, a history entry is written for every division each driver took part in (one they were moved or released from included), the season's roles are revoked, an open signup window is closed, and every driver returns to **Not Signed Up** — ready to sign up for the next season. Drivers who never raced are deleted at this point, their signups kept with the season; former drivers are kept. Test mode is switched off, and the season is archived and announced in the log channel.
 
 > **What "finalised" means here.** A round is finished once its **appeals review is approved** —
 > not when you submit its results, and not when you approve its penalties. Each stage in between
@@ -623,6 +623,7 @@ Deletes every season, division, round and result, and keeps your `/bot-init` set
 | `/division add` or `/season placements-review` refused, naming placements | The season is not in placements yet. Confirm its configuration with `/season config-review`, and close its signup window if it has one |
 | `/team add` or a signup setting refused, naming the season | The season's configuration is confirmed, which fixes them until it ends |
 | Confirmation refuses over tiers | A division was deleted and left a gap. `/division amend` something into it |
+| A `/division …-channel` command says no season is live | A division's channels belong to the season being built or raced. Once a season ends they no longer count; set the next season's up once its divisions exist |
 | "Unknown track" | The circuit name has to match exactly. Use the ID instead, or `/track list` to see the spellings |
 | A round appears at the wrong time to your drivers | You entered local time, not UTC. `/round amend` it |
 | The calendar in the channel is out of date | It only changes when you run `/division calendar-sync` |
