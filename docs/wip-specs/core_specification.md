@@ -455,9 +455,12 @@ it only to place it; the rules governing it belong to its own specification.
 - Every successful move, release and sacking shall cause the lineup of each division it touches to be deleted and posted again in its lineup channel, once.
 
 ### Changing the account behind a profile
-- A league manager shall be able to re-key a driver profile onto another Discord account, so that a person changing account keeps their history. Every signup the profile made shall be carried to the new account with it.
+- A league manager shall be able to re-key a driver profile onto another Discord account, so that a person changing account keeps their history.
+- Everything the league holds of that driver shall be carried to the new account with the profile: every signup they made, their results in every session they raced, their standings in every division, the fastest lap of a session where theirs was named, and their history of every season that has ended. Their standings, their results and their history shall read after the change exactly as they read before it, and shall name the new account.
+- A re-key shall touch nothing of any other league upon the bot. A person who holds a profile in two leagues shall carry only the one whose manager commanded it.
+- A driver's portrait shall not be carried, a portrait being the picture of the account itself. The one obtained for the account left behind shall be discarded, and the new account's own shall be obtained as any driver's is.
 - The new account shall be accepted whether or not it is still a member of the server.
-- A profile shall not be re-keyed onto an account that already holds one.
+- A profile shall not be re-keyed onto an account that already holds one, nor onto an account that holds results, standings or history of its own in the league — which would merge two drivers' records into one. Either refusal shall change nothing.
 
 ## When the bot stops
 - The bot is a program somebody shall keep running. While it is stopped nothing happens.
