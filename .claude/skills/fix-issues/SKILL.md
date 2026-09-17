@@ -187,6 +187,22 @@ If the link is missing, do not carry on down an unlinked branch — say so and s
 
 Agents implement their approved plans concurrently and commit at the points their plans named.
 
+**Stage every path by name. `git add -A`, `git add .` and `git commit -a` are forbidden in this
+workflow** (decided 2026-09-17). Three separate things here are ignored or untracked and a blanket
+stage sweeps up all of them: the league's own artwork under `resources/league/`, the worktrees under
+`.claude/worktrees/` — each a full checkout carrying its own `.git`, which commits as a bare gitlink
+pointing at a commit in a repository nobody else can reach — and whatever the other agents have in
+flight. The hazard is worst precisely here, because a blanket stage cannot tell an agent's own change
+from its neighbour's, and the resulting commit is on the wrong branch by the time anyone notices.
+Name the files:
+
+```bash
+git add src/services/driver_service.py tests/unit/test_driver_service.py
+```
+
+`git status --porcelain` before each commit, and stage from what it shows. An agent that cannot name
+every path it is committing does not yet know what it changed.
+
 **Every pytest invocation is wrapped in the lock**, targeted subsets while iterating as much as the
 full run at the end:
 

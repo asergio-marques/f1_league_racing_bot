@@ -83,6 +83,13 @@ later polish phase.
   `resources/league/` is where a league puts its own — a folder per class, kept by `.gitkeep`
   and otherwise **gitignored**, so an update to the bot cannot overwrite it and its contents
   never reach a diff. See [resources/README.md](resources/README.md).
+- **Stage paths by name. Never `git add -A`, `git add .` or `git commit -a`** (decided
+  2026-09-17). Too much here is ignored or untracked for a blanket stage to be safe: the
+  league's artwork above, `poc/` below, and the worktrees under `.claude/worktrees/` — each a
+  full checkout carrying its own `.git`, which commits as a bare gitlink pointing at a commit
+  nobody else can reach. Run `git status --porcelain` and stage from what it shows. The rule
+  binds hardest when several agents work in parallel, where a blanket stage cannot tell one
+  agent's change from another's; see the `fix-issues` skill.
 - `poc/` is **gitignored scratch** — the proof of concept, plus the sample assets and the
   earlier template copies. Not a design input, and never something to port code from. The
   one exception is a *rule* it already encodes: `normalize()` in `poc/build_poc.py` calls
