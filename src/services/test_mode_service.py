@@ -65,6 +65,38 @@ async def toggle_test_mode(server_id: int, db_path: str) -> bool:
     return bool(row["test_mode_active"])
 
 
+async def switch_test_mode_off(server_id: int, bot) -> int:
+    """Switch test mode off for *server_id*, deleting every driver it created.
+
+    The one way test mode is left, by the toggle in Configuration or by the season it was chosen
+    for ending (issue #220). Pending forecast deletions are flushed first, as they were while a
+    season ran under test. Every fake driver is deleted and their history kept. A server not in
+    test mode is left as it is. Returns the count of fake drivers removed.
+    """
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT test_mode_active FROM server_configs WHERE server_id = ?", (server_id,)
+        )
+        row = await cursor.fetchone()
+    if row is None or not row["test_mode_active"]:
+        return 0
+
+    from services.forecast_cleanup_service import flush_pending_deletions
+    from services.test_roster_service import clear_all_test_drivers
+
+    try:
+        await flush_pending_deletions(server_id, bot)
+    except Exception:  # noqa: BLE001 — a stale forecast is not worth staying in test mode
+        log.exception("switch_test_mode_off: could not flush pending deletions")
+    removed = await clear_all_test_drivers(server_id, bot.db_path)
+    async with get_connection(bot.db_path) as db:
+        await db.execute(
+            "UPDATE server_configs SET test_mode_active = 0 WHERE server_id = ?", (server_id,)
+        )
+        await db.commit()
+    return removed
+
+
 async def toggle_test_mode_nationality(server_id: int, db_path: str) -> bool:
     """Flip test_mode_nationality_required for *server_id* and return the NEW value.
 

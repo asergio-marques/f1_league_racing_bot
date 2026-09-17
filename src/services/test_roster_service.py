@@ -577,35 +577,32 @@ async def remove_test_driver(
 
 
 async def clear_all_test_drivers(server_id: int, db_path: str) -> int:
-    """Remove all fake drivers from all divisions in the active season.
+    """Remove every driver created by test mode on the server, keeping their history.
 
-    Returns the total count removed. Safe to call even if no active season exists.
+    Every one of them, seated or not and in whatever season — switching test mode off deletes
+    every fake driver on the server. Their history entries are kept, naming them by identifier,
+    so a driver created again under the same identifier holds that history (issue #220).
+
+    Returns the count removed.
     """
-    season_id = await _get_active_season_id(server_id, db_path)
-    if season_id is None:
-        return 0
+    from services.season_lifecycle_service import delete_driver_profiles
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM divisions WHERE season_id = ? AND status != 'CANCELLED'",
-            (season_id,),
+            "SELECT id FROM driver_profiles WHERE server_id = ? AND is_test_driver = 1",
+            (server_id,),
         )
-        division_rows = await cursor.fetchall()
-
-    total = 0
-    for row in division_rows:
-        total += await _delete_test_drivers_in_division(row["id"], db_path)
-    return total
+        profile_ids = [r["id"] for r in await cursor.fetchall()]
+        await delete_driver_profiles(db, profile_ids, keep_history=True)
+        await db.commit()
+    return len(profile_ids)
 
 
 async def _delete_test_drivers_in_division(division_id: int, db_path: str) -> int:
-    """Delete all fake driver profiles (and related rows) from *division_id*.
+    """Delete every fake driver seated in *division_id*, keeping their history."""
+    from services.season_lifecycle_service import delete_driver_profiles
 
-    Cascades handle season_assignments; we also vacate the occupied seats manually
-    since team_seats.driver_profile_id is a nullable FK without ON DELETE SET NULL.
-    """
     async with get_connection(db_path) as db:
-        # Collect fake driver profile IDs in this division
         cursor = await db.execute(
             """
             SELECT dp.id AS profile_id
@@ -617,37 +614,9 @@ async def _delete_test_drivers_in_division(division_id: int, db_path: str) -> in
             """,
             (division_id,),
         )
-        profile_rows = await cursor.fetchall()
-
-        if not profile_rows:
-            return 0
-
-        profile_ids = [r["profile_id"] for r in profile_rows]
-        placeholders = ",".join("?" * len(profile_ids))
-
-        # Vacate team seats (nullable FK — no cascade)
-        await db.execute(
-            f"UPDATE team_seats SET driver_profile_id = NULL "
-            f"WHERE driver_profile_id IN ({placeholders})",
-            profile_ids,
-        )
-
-        # Delete season assignments (FK cascade would handle this if defined,
-        # but we do it explicitly for clarity)
-        await db.execute(
-            f"DELETE FROM driver_season_assignments "
-            f"WHERE driver_profile_id IN ({placeholders})",
-            profile_ids,
-        )
-
-        # Delete the profiles
-        await db.execute(
-            f"DELETE FROM driver_profiles WHERE id IN ({placeholders})",
-            profile_ids,
-        )
-
+        profile_ids = [r["profile_id"] for r in await cursor.fetchall()]
+        await delete_driver_profiles(db, profile_ids, keep_history=True)
         await db.commit()
-
     return len(profile_ids)
 
 
