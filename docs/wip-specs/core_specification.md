@@ -169,14 +169,14 @@ it only to place it; the rules governing it belong to its own specification.
 ### Reviewing placements
 - The placements review shall be run by any holder of the interaction role. Reading what a season is configured to be is not an administrative act.
 - Run while the season is in Placements, the review shall post its report publicly, as one message per subsection and not as one message carrying them all. The subsections are, in this order: the season and the modules enabled upon it; the signup configuration; the attendance configuration; the points configurations; the weather configuration; and the image outputs. The blocks describing each division follow them.
-- Run while the season is in Ongoing, placements, the review shall report the lineups alone: every division's lineup as it will stand once placements are confirmed, and every signup still unsettled.
+- Run while the season is in Ongoing, placements, the review shall report the lineups alone: every division's lineup as it will stand once placements are confirmed, and, publicly, every signup still unsettled.
 - A subsection holding nothing shall not be posted.
 - Each subsection shall further be divided across as many messages as its own length requires.
 - The validations that belong to the season rather than to a module shall be posted with the first subsection, whatever modules are enabled.
 - Each division's block shall state its role and every channel configured for it, and shall show its calendar and its lineup as the league will actually receive them.
 - A division's calendar shall carry the faults of its own dates, whichever form the calendar takes. A calendar drawn as a graphic is drawn from the very rounds that are wrong and cannot show which of them have gone by, so the finding shall be posted beside it.
 - Those faults shall be reduced to the latest round of each kind: the last round whose moment has passed, and the last round holding an elapsed window where that is a later round than the first. A round whose moment has passed shall not also be named for the windows it missed, every one of which has elapsed too. Every earlier round is implied by the round named, a calendar moved past it having been moved past them all.
-- The report shall name every signup still unsettled.
+- The report shall name every signup still unsettled, publicly, among its own messages; the reason the question is withheld shall refer to them.
 - The report shall end with the question confirming placements.
 - The placements review command shall be refused in any state but Placements and Ongoing, placements. The configuration review command shall be refused in any state but Configuration.
 

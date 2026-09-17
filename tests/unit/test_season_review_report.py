@@ -22,9 +22,9 @@ and says why, at the bottom of the review where a manager scrolling down looks f
 reasons are posted privately: they are for the reviewer, and the public review is what the
 approval later clears from the channel.
 
-**Unassigned drivers are counted.** A season approved with drivers still waiting for a seat is
-one where somebody signed up and was never placed, and the review is the last point anyone looks
-before the calendar starts running.
+**Unsettled signups are named, publicly.** Every signup has to be placed or turned down before
+placements are confirmed (issue #220), and whoever reads the review is shown who is still waiting
+— not merely how many.
 
 **Test mode's automatic points configurations are announced, not hidden.** A test season with
 nothing attached is approved with two seeded configurations, and a maintainer reading the review
@@ -262,17 +262,6 @@ def _public(messages) -> str:
 
 def _private(messages) -> str:
     return "\n".join(text for text, ephemeral in messages if ephemeral)
-
-
-async def _seed_unassigned(db_path, count: int):
-    async with get_connection(db_path) as db:
-        for n in range(count):
-            await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, 'UNASSIGNED')",
-                (SERVER_ID, str(5000 + n)),
-            )
-        await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -514,21 +503,25 @@ async def test_the_prepared_graphics_are_discarded(db_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_unassigned_drivers_are_counted(db_path):
-    """Somebody signed up and was never placed; the review is the last point anyone
-    looks before the calendar starts running."""
-    await _seed_unassigned(db_path, 3)
+async def test_every_unsettled_signup_is_named_in_the_public_report(db_path):
+    """Whoever reads the review sees who is still to be placed or turned down (#220)."""
+    cog = _cog(db_path)
+    cog._placement_confirmation_faults = AsyncMock(
+        return_value=(["**Racer** — not yet placed", "**Rookie** — awaiting approval"], [])
+    )
+    messages = await _review(cog, _interaction())
+
+    public = _public(messages)
+    assert "Unsettled signups" in public
+    assert "**Racer** — not yet placed" in public
+    assert "**Rookie** — awaiting approval" in public
+
+
+async def test_no_unsettled_signup_means_no_listing(db_path):
     cog = _cog(db_path)
     messages = await _review(cog, _interaction())
 
-    assert "3 driver(s) UNASSIGNED" in _public(messages)
-
-
-async def test_no_unassigned_drivers_means_no_warning(db_path):
-    cog = _cog(db_path)
-    messages = await _review(cog, _interaction())
-
-    assert "UNASSIGNED" not in _public(messages)
+    assert "Unsettled signups" not in _public(messages)
 
 
 # ---------------------------------------------------------------------------
@@ -597,7 +590,7 @@ async def test_an_unsettled_signup_withholds_approval_and_is_named(db_path):
 
     cog._post_approval_prompt.assert_not_awaited()
     assert "Every signup must be settled" in _private(messages)
-    assert "**Racer** — not yet placed" in _private(messages)
+    assert "**Racer** — not yet placed" in _public(messages)
     assert "`/driver reject`" in _private(messages)
 
 

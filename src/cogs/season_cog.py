@@ -2017,18 +2017,19 @@ class SeasonCog(commands.Cog):
                 # one of them if it raised — must not be left on a tmpfs.
                 self._discard_prepared_review_images(prepared)
 
-            # ── Server-level UNASSIGNED warning ──────────────────────
-            async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
-                _cur = await _db.execute(
-                    "SELECT COUNT(*) AS cnt FROM driver_profiles WHERE server_id = ? AND current_state = 'UNASSIGNED'",
-                    (interaction.guild_id,),
-                )
-                _unassigned_row = await _cur.fetchone()
-            if _unassigned_row and _unassigned_row["cnt"] > 0:
-                await interaction.followup.send(
-                    f"⚠️ {_unassigned_row['cnt']} driver(s) UNASSIGNED — placement incomplete",
-                    ephemeral=False,
-                )
+            # ── Server-level unsettled signups (issue #220) ──────────
+            # Named in the public report, every one of them, so that whoever reads the review
+            # sees who is still to be placed or turned down — not merely how many.
+            unsettled, channel_faults = await self._placement_confirmation_faults(
+                interaction.guild_id, cfg.season_id
+            )
+            if unsettled:
+                for chunk in _chunk_message(
+                    "\u26a0\ufe0f **Unsettled signups** — each is to be placed with "
+                    "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
+                    + "\n".join(f"\u2022 {line}" for line in unsettled)
+                ):
+                    await interaction.followup.send(chunk, ephemeral=False)
             # The season-wide report of rounds already inside a configured window is
             # withdrawn (#181, decided 2026-09-14). It named every round against every
             # window it had missed, capped at eight rounds — sixty lines where two would do,
@@ -2083,19 +2084,15 @@ class SeasonCog(commands.Cog):
                     "again.",
                     ephemeral=True,
                 )
-            unsettled, channel_faults = await self._placement_confirmation_faults(
-                interaction.guild_id, cfg.season_id
-            )
             if unsettled:
-                body = "\n".join(f"\u2022 {line}" for line in unsettled)
-                for chunk in _chunk_message(
-                    "\u26d4 **Every signup must be settled before placements are confirmed.**\n"
-                    f"{body}\n"
+                await interaction.followup.send(
+                    "\u26d4 **Every signup must be settled before placements are confirmed.** "
+                    f"{len(unsettled)} signup(s) are not, each named in the review above. "
                     "Place each driver with `/driver assign`, turn them down with "
                     "`/driver reject`, or finish reviewing their signup — then run "
-                    "`/season placements-review` again."
-                ):
-                    await interaction.followup.send(chunk, ephemeral=True)
+                    "`/season placements-review` again.",
+                    ephemeral=True,
+                )
             if channel_faults:
                 body = "\n".join(f"\u2022 {line}" for line in channel_faults)
                 await interaction.followup.send(
@@ -2264,15 +2261,18 @@ class SeasonCog(commands.Cog):
 
             unsettled, _ = await self._placement_confirmation_faults(server_id, season.id)
             if unsettled:
-                body = "\n".join(f"\u2022 {line}" for line in unsettled)
                 for chunk in _chunk_message(
-                    "\u26d4 **Every signup must be settled before placements are confirmed.**\n"
-                    f"{body}\n"
-                    "Place each driver with `/driver assign`, turn them down with "
-                    "`/driver reject`, or finish reviewing their signup — then run "
-                    "`/season placements-review` again."
+                    "\u26a0\ufe0f **Unsettled signups** — each is to be placed with "
+                    "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
+                    + "\n".join(f"\u2022 {line}" for line in unsettled)
                 ):
-                    await interaction.followup.send(chunk, ephemeral=True)
+                    await interaction.followup.send(chunk, ephemeral=False)
+                await interaction.followup.send(
+                    "\u26d4 **Every signup must be settled before placements are confirmed.** "
+                    f"{len(unsettled)} signup(s) are not, each named in the review above. "
+                    "Settle them, then run `/season placements-review` again.",
+                    ephemeral=True,
+                )
                 return
 
             view = _ConfirmMidSeasonPlacementsView(self, interaction.user.id)

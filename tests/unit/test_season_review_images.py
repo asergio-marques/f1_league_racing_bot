@@ -259,7 +259,7 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
         "both graphics and the portrait settings must raise it"
     )
 
-    tail = source[source.index("Server-level UNASSIGNED"):]
+    tail = source[source.index("Server-level unsettled signups"):]
     assert "if approval_blockers:" in tail
 
     # Independent causes withhold the button, so the offer is guarded on every one of

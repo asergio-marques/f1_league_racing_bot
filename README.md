@@ -421,7 +421,7 @@ Deletes the round and renumbers remaining rounds by date.
 
 No parameters. Displays the pending season configuration, ending with a message asking whether you accept it and carrying the **✅ Approve** button. Refused unless the season is in **placements** — a season still in configuration is reviewed with `/season config-review`.
 
-> **Three things hold the button back that the report does not otherwise show.** The season must hold at least one division that is not cancelled. Every signup must be settled: no driver may still be Unassigned, awaiting approval or correcting their signup — place them with `/driver assign`, turn them down with `/driver reject`, or finish reviewing their signup. And every division must have its **lineup** and **calendar** channels set. The review names each driver and each division at fault, and the approval refuses on the same reading.
+> **Three things hold the button back that the report does not otherwise show.** The season must hold at least one division that is not cancelled. Every signup must be settled: no driver may still be Unassigned, awaiting approval or correcting their signup — place them with `/driver assign`, turn them down with `/driver reject`, or finish reviewing their signup. And every division must have its **lineup** and **calendar** channels set. The review lists every unsettled signup by name in its public report, names each division at fault, and the approval refuses on the same reading.
 
 > **Approving commits every placement.** Until then a placement stands outside the championship; approving grants the division and team roles and posts the lineups, as described below.
 

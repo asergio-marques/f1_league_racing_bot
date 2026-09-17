@@ -247,7 +247,8 @@ async def test_an_unsettled_signup_withholds_the_mid_season_button(monkeypatch):
     refusal, ephemeral = messages[-1]
     assert ephemeral
     assert "Every signup must be settled" in refusal
-    assert "**Racer** — awaiting approval" in refusal
+    listing = [text for text, private in messages if not private and "Unsettled signups" in text]
+    assert listing and "**Racer** — awaiting approval" in listing[0]
     assert _RecordedView.made == []
 
 

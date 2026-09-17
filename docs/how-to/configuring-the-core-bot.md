@@ -434,7 +434,7 @@ Read it properly. It is the last look you get at the season as a whole before it
 
 One warning it raises that is easy to skim past: **"Reserve team has no role assigned"** — go back to step 3.
 
-**And every signup must be settled.** A driver still Unassigned, awaiting approval or correcting their signup takes the button away, and the review names each of them — go back to step 10.
+**And every signup must be settled.** A driver still Unassigned, awaiting approval or correcting their signup takes the button away. The review lists each of them by name, in its public report, so that anyone reading it can see who is still waiting — go back to step 10.
 
 ---
 
