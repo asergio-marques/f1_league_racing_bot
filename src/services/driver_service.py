@@ -107,6 +107,57 @@ async def resolve_driver_profile_id(server_id: int, discord_user_id: int, db) ->
     return row[0] if row else None
 
 
+#: The divisions of one server, for re-keying rows that carry no server of their own.
+#:
+#: `driver_standings_snapshots` and the two session-result tables name their driver by Discord
+#: account but hold no `server_id`, so an unscoped re-key would move the same person's results
+#: in every other league this bot serves. They reach their server through their division.
+_DIVISIONS_OF_SERVER_SQL = (
+    "SELECT d.id FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE s.server_id = ?"
+)
+
+#: The sessions of one server, scoped exactly as `_DIVISIONS_OF_SERVER_SQL` is.
+_SESSIONS_OF_SERVER_SQL = (
+    f"SELECT sr.id FROM session_results sr WHERE sr.division_id IN ({_DIVISIONS_OF_SERVER_SQL})"
+)
+
+
+async def account_holds_racing_records(db, server_id: int, discord_user_id: str) -> bool:
+    """Whether *discord_user_id* holds results, standings or history of its own on *server_id*.
+
+    Asked of the account a profile is about to be re-keyed onto, which by then is known to
+    hold no profile — so any such rows belong to a driver whose profile was deleted, a driver
+    who never raced a round in full but may well have been entered as a did-not-start. Moving
+    a second person's racing onto them would merge two people's records into one history with
+    nothing to separate them again, which is a worse outcome than refusing.
+    """
+    cursor = await db.execute(
+        f"""
+        SELECT EXISTS (
+            SELECT 1 FROM driver_standings_snapshots
+            WHERE driver_user_id = ? AND division_id IN ({_DIVISIONS_OF_SERVER_SQL})
+        ) OR EXISTS (
+            SELECT 1 FROM race_session_results
+            WHERE driver_user_id = ? AND session_result_id IN ({_SESSIONS_OF_SERVER_SQL})
+        ) OR EXISTS (
+            SELECT 1 FROM qualifying_session_results
+            WHERE driver_user_id = ? AND session_result_id IN ({_SESSIONS_OF_SERVER_SQL})
+        ) OR EXISTS (
+            SELECT 1 FROM driver_history_entries
+            WHERE server_id = ? AND discord_user_id = ?
+        )
+        """,
+        (
+            discord_user_id, server_id,
+            discord_user_id, server_id,
+            discord_user_id, server_id,
+            server_id, discord_user_id,
+        ),
+    )
+    row = await cursor.fetchone()
+    return bool(row[0])
+
+
 class DriverService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -212,7 +263,26 @@ class DriverService:
         actor_id: int,
         actor_name: str,
     ) -> DriverProfile:
-        """Re-key an existing driver profile, and its signups, from old_user_id to new_user_id."""
+        """Re-key a driver profile, and everything naming the driver, onto another account.
+
+        A re-key exists so that a person changing Discord account keeps their history (core
+        specification, *Changing the account behind a profile*), so every record naming the
+        driver by their account is carried with the profile: their signups, their session
+        results and their standings. Left on the old account, as they were until issue #222,
+        the driver's standings line is drawn as a **raw snowflake** — a name is resolved by
+        joining `driver_profiles` on the account, and the old one no longer holds a profile —
+        and the season's end reads their final standing as zero points and no position.
+
+        Refused, with nothing changed, in three cases: no profile stands at the old account,
+        a profile already stands at the new one, or the new account holds racing records of
+        its own — see `account_holds_racing_records`.
+
+        **The ids bind as TEXT against the INTEGER columns on purpose.** `driver_profiles`
+        holds the account as TEXT where the results tables hold it as INTEGER, and SQLite's
+        column affinity converts a TEXT parameter on both sides: `driver_user_id = '4242'`
+        matches `4242`, and the `SET` stores an integer. Casting in Python instead would
+        raise on an account id that is not a number, where affinity simply matches nothing.
+        """
         existing_old = await self.get_profile(server_id, old_user_id)
         if existing_old is None:
             raise ValueError(
@@ -225,6 +295,13 @@ class DriverService:
                 "Reassignment is not permitted."
             )
         async with get_connection(self._db_path) as db:
+            if await account_holds_racing_records(db, server_id, new_user_id):
+                raise ValueError(
+                    f"User {new_user_id} already holds results, standings or history of "
+                    "their own in this league. Re-keying onto that account would merge two "
+                    "drivers' records, and is not permitted."
+                )
+        async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
                 (new_user_id, existing_old.id),
@@ -235,6 +312,46 @@ class DriverService:
                 "UPDATE signup_records SET discord_user_id = ? "
                 "WHERE server_id = ? AND discord_user_id = ?",
                 (new_user_id, server_id, old_user_id),
+            )
+            # Their history of every season that has ended, which names them by identifier so
+            # that it outlives the profile (issue #220), and the signup they are part-way
+            # through. An abandoned wizard record standing on the new account is dropped
+            # first: a wizard record is the transient state of one signup in progress, the
+            # new account holds no profile, and so nothing of a driver's can be lost with it.
+            await db.execute(
+                "UPDATE driver_history_entries SET discord_user_id = ? "
+                "WHERE server_id = ? AND discord_user_id = ?",
+                (new_user_id, server_id, old_user_id),
+            )
+            await db.execute(
+                "DELETE FROM signup_wizard_records WHERE server_id = ? AND discord_user_id = ?",
+                (server_id, new_user_id),
+            )
+            await db.execute(
+                "UPDATE signup_wizard_records SET discord_user_id = ? "
+                "WHERE server_id = ? AND discord_user_id = ?",
+                (new_user_id, server_id, old_user_id),
+            )
+            # Their standings, and their results in every session they raced (issue #222).
+            await db.execute(
+                f"UPDATE driver_standings_snapshots SET driver_user_id = ? "
+                f"WHERE driver_user_id = ? AND division_id IN ({_DIVISIONS_OF_SERVER_SQL})",
+                (new_user_id, old_user_id, server_id),
+            )
+            for table in ("race_session_results", "qualifying_session_results"):
+                await db.execute(
+                    f"UPDATE {table} SET driver_user_id = ? WHERE driver_user_id = ? "
+                    f"AND session_result_id IN ({_SESSIONS_OF_SERVER_SQL})",
+                    (new_user_id, old_user_id, server_id),
+                )
+            # A session's fastest-lap override names its driver by account too, and the
+            # points are recomputed from it whenever a penalty, an appeal verdict or an
+            # amendment lands. Left behind it would match nobody, and the bonus a driver was
+            # awarded on the day would quietly go to no one at all.
+            await db.execute(
+                f"UPDATE session_results SET fl_driver_override = ? "
+                f"WHERE fl_driver_override = ? AND division_id IN ({_DIVISIONS_OF_SERVER_SQL})",
+                (new_user_id, old_user_id, server_id),
             )
             await db.execute(
                 "INSERT INTO audit_entries "
