@@ -81,6 +81,28 @@ async def _make_db(tmp_path, *, name="resubmit", fmt="NORMAL"):
     return db_path
 
 
+async def _seed_old_results(db_path, *, team_role=TEAM_ROLE):
+    """The round's results as first submitted: a race won by driver 101."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO session_results (id, round_id, division_id, session_type, status) "
+            "VALUES (500, ?, ?, 'FEATURE_RACE', 'ACTIVE')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_role_id, "
+            "finishing_position) VALUES (500, 101, ?, 1)",
+            (team_role,),
+        )
+        await db.execute(
+            "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
+            "in_penalty_review, results_posted, resubmitting) "
+            "VALUES (?, ?, '2026-02-01T00:00:00+00:00', 1, 1, 1)",
+            (ROUND_ID, SUB_CHANNEL),
+        )
+        await db.commit()
+
+
 def _message(content, *, bot_author=False, channel_id=SUB_CHANNEL):
     msg = MagicMock()
     msg.content = content
@@ -117,6 +139,7 @@ async def _run(
     configs=("Standard",),
     selected="Half",
     validation_error=None,
+    validation=None,
 ):
     channel = channel if channel is not None else _channel()
 
@@ -131,7 +154,8 @@ async def _run(
         "validation": patch(
             "services.result_submission_service._build_division_validation_data",
             new=AsyncMock(
-                return_value=({101, 102}, {TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set()),
+                return_value=validation
+                or ({101, 102}, {TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set()),
                 side_effect=validation_error,
             ),
         ),
@@ -141,7 +165,8 @@ async def _run(
         ),
         "select": patch("services.result_submission_service._ConfigSelectView", new=_FakeSelect),
         "points": patch(
-            "services.result_submission_service._apply_points_from_config", new=AsyncMock()
+            "services.result_submission_service._apply_points_in_tx",
+            new=AsyncMock(return_value=True),
         ),
         "penalty": patch(
             "services.result_submission_service.enter_penalty_state", new=AsyncMock()
@@ -379,3 +404,76 @@ async def test_no_configuration_saves_without_one(tmp_path):
 
     assert {s[2] for s in await _sessions(db_path)} == {None}
     stubs["points"].assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# The earlier results stand until the new ones replace them
+# ---------------------------------------------------------------------------
+
+
+async def test_the_earlier_results_stand_until_the_last_session_is_in(tmp_path):
+    """Issue #210: a resubmission supersedes the round's results rather than deleting them
+    first. Midway through, the round still holds exactly what it held before."""
+    db_path = await _make_db(tmp_path, name="resubmit_stand")
+    await _seed_old_results(db_path)
+    seen_midway: list = []
+    pastes = iter([QUALI_PASTE, RACE_PASTE])
+
+    async def _wait_for(event, check):
+        if not seen_midway and bot.wait_for.await_count == 2:
+            seen_midway.append(await _sessions(db_path))
+        return _message(next(pastes))
+
+    bot = _bot(db_path, [])
+    bot.wait_for = AsyncMock(side_effect=_wait_for)
+
+    await _run(bot)
+
+    assert seen_midway == [[("FEATURE_RACE", "ACTIVE", None)]]
+    assert await _sessions(db_path) == [
+        ("FEATURE_QUALIFYING", "ACTIVE", "Standard"),
+        ("FEATURE_RACE", "ACTIVE", "Standard"),
+    ]
+
+
+async def test_team_agreement_is_checked_against_the_resubmission_not_the_old_results(tmp_path):
+    """The stored results are the ones being replaced, and may carry exactly the wrong team
+    that made the manager resubmit. Checking against them would refuse the correction."""
+    db_path = await _make_db(tmp_path, name="resubmit_team_old")
+    await _seed_old_results(db_path, team_role=9999)
+
+    stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
+
+    assert "Validation failed" not in _said(stubs["channel"])
+    stubs["penalty"].assert_awaited_once()
+
+
+async def test_a_team_disagreement_within_the_resubmission_is_refused(tmp_path):
+    """Driver 101 is a reserve, so no seat pins their team — only the qualifying session just
+    entered does. Entering them under another team in the race is refused, and the race asked
+    for again."""
+    db_path = await _make_db(tmp_path, name="resubmit_team_new")
+    other_team = RACE_PASTE.replace("<@101>, <@&3001>", "<@101>, <@&3002>")
+    bot = _bot(db_path, [QUALI_PASTE, other_team, RACE_PASTE])
+
+    stubs = await _run(
+        bot, validation=({101, 102}, {TEAM_ROLE, 3002}, None, {102: TEAM_ROLE}, {101})
+    )
+
+    assert "was recorded under <@&3001> in Feature Qualifying" in _said(stubs["channel"])
+    assert bot.wait_for.await_count == 3
+
+
+async def test_a_failed_swap_says_the_earlier_results_still_stand(tmp_path):
+    db_path = await _make_db(tmp_path, name="resubmit_swap_fails")
+    await _seed_old_results(db_path)
+
+    with patch(
+        "services.result_submission_service.replace_round_results",
+        new=AsyncMock(side_effect=RuntimeError("disk")),
+    ):
+        stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
+
+    assert "The earlier results still stand" in _said(stubs["channel"])
+    stubs["penalty"].assert_not_awaited()
+    assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]

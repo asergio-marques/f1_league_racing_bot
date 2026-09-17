@@ -2948,6 +2948,26 @@ async def enter_resubmit_flow(
     )
 
 
+def _collected_team_assignments(
+    collected: list[CollectedSession],
+    exclude_session_type: SessionType,
+) -> dict[int, tuple[int, str]]:
+    """What `other_active_team_assignments` answers, read from a resubmission in progress.
+
+    driver_user_id -> (team_role_id, session_type value) from every ACTIVE session collected so
+    far other than *exclude_session_type*.
+    """
+    result: dict[int, tuple[int, str]] = {}
+    for session in collected:
+        if session.status != "ACTIVE" or session.session_type is exclude_session_type:
+            continue
+        for row in session.driver_rows:
+            result.setdefault(
+                row["driver_user_id"], (row["team_role_id"], session.session_type.value)
+            )
+    return result
+
+
 async def _resubmit_collection_task(
     round_id: int,
     division_id: int,
@@ -2956,8 +2976,11 @@ async def _resubmit_collection_task(
 ) -> None:
     """Re-run the session collection loop against an existing submission channel.
 
-    Mirrors run_result_submission_job but skips channel creation.
-    On completion calls enter_penalty_state(..., is_resubmission=True).
+    Mirrors run_result_submission_job but skips channel creation, and writes nothing until
+    the last session is in: each validated session is held as a `CollectedSession`, and
+    `replace_round_results` swaps the lot for the round's existing results in one transaction.
+    The earlier results stand until then (issue #210). On completion calls
+    enter_penalty_state(..., is_resubmission=True).
     """
     if sub_channel is None:
         log.error("_resubmit_collection_task: sub_channel not found for round %s", round_id)
@@ -3016,6 +3039,7 @@ async def _resubmit_collection_task(
     )
 
     cancelled_sessions: set[SessionType] = set()
+    collected: list[CollectedSession] = []
     for session_type in sessions:
         label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
         if session_type.is_qualifying:
@@ -3041,10 +3065,8 @@ async def _resubmit_collection_task(
             content = msg.content.strip()
 
             if content.upper() == "CANCELLED":
-                await save_session_result(
-                    db_path=db_path, round_id=round_id, division_id=division_id,
-                    session_type=session_type, status="CANCELLED", config_name=None,
-                    submitted_by=msg.author.id, driver_rows=[],
+                collected.append(
+                    CollectedSession(session_type, "CANCELLED", None, msg.author.id)
                 )
                 await sub_channel.send(f"✅ **{label}** marked as CANCELLED.")
                 cancelled_sessions.add(session_type)
@@ -3054,9 +3076,10 @@ async def _resubmit_collection_task(
             fl_override: int | None = None
             if not session_type.is_qualifying:
                 fl_override, lines = extract_fl_override(lines)
-            other_assignments = await other_active_team_assignments(
-                db_path, round_id, session_type
-            )
+            # Checked against the sessions of this resubmission, not the round's stored
+            # results: those are the ones being replaced, and may be wrong in exactly the way
+            # that made the manager resubmit.
+            other_assignments = _collected_team_assignments(collected, session_type)
             result = validate_submission_block(
                 lines, session_type, division_driver_ids, team_role_ids,
                 reserve_team_role_id, driver_team_map, reserve_driver_ids,
@@ -3096,25 +3119,24 @@ async def _resubmit_collection_task(
             else:
                 driver_rows_data = [_row_dict_from_race(r) for r in parsed_rows]  # type: ignore[arg-type]
 
-            await save_session_result(
-                db_path=db_path, round_id=round_id, division_id=division_id,
-                session_type=session_type, status="ACTIVE", config_name=selected_config,
-                submitted_by=msg.author.id, driver_rows=driver_rows_data,
-                fl_driver_override=fl_override,
+            collected.append(
+                CollectedSession(
+                    session_type, "ACTIVE", selected_config, msg.author.id,
+                    driver_rows_data, fl_override,
+                )
             )
-
-            if selected_config is not None:
-                async with get_connection(db_path) as _db:
-                    _cur = await _db.execute(
-                        "SELECT id FROM session_results WHERE round_id = ? AND session_type = ?",
-                        (round_id, session_type.value),
-                    )
-                    _sr = await _cur.fetchone()
-                if _sr is not None:
-                    await _apply_points_from_config(db_path, _sr["id"], season_id, selected_config, session_type)
-
-            await sub_channel.send(f"✅ **{label}** results saved.")
+            await sub_channel.send(f"✅ **{label}** results received.")
             break
+
+    try:
+        await replace_round_results(db_path, round_id, division_id, season_id, collected)
+    except Exception:
+        log.exception("_resubmit_collection_task: failed to replace results for round %s", round_id)
+        await sub_channel.send(
+            "❌ Resubmission failed: the new results could not be saved. "
+            "The earlier results still stand."
+        )
+        return
 
     if cancelled_sessions == set(sessions):
         await sub_channel.send("⏭️ All sessions were cancelled — no penalty review required.")
