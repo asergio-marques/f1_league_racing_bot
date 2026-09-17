@@ -1968,11 +1968,18 @@ async def _get_server_id_for_round(db_path: str, round_id: int) -> int:
 
 
 async def _get_round_context(db_path: str, round_id: int) -> dict:
-    """Return server_id, season_number, round_number, division_name for a round."""
+    """Return server_id, season_id, season_number, round_number, round_format and
+    division_name for a round.
+
+    `_resubmit_collection_task` reads `season_id` and `round_format`, and neither was selected
+    until issue #210: the task raised `KeyError` on its first line, inside a background task
+    nobody awaited, so a resubmission never collected anything.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT s.server_id, s.season_number, r.round_number, d.name AS division_name
+            SELECT s.server_id, s.id AS season_id, s.season_number, r.round_number,
+                   r.format AS round_format, d.name AS division_name
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id

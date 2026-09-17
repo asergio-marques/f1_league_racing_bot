@@ -411,6 +411,18 @@ async def test_a_round_resolves_to_its_season_and_division(tmp_path):
     assert ctx["division_name"] == "Pro Division"
 
 
+async def test_a_round_resolves_to_what_resubmission_collects_with(tmp_path):
+    """A resubmission needs the season to score against and the format to know which sessions
+    to ask for. Neither was selected, so resubmitting raised before asking for anything
+    (issue #210)."""
+    db_path = await _make_db(tmp_path, name="validation_context_resubmit")
+
+    ctx = await _get_round_context(db_path, ROUND_ID)
+
+    assert ctx["season_id"] == SEASON_ID
+    assert ctx["round_format"] == "NORMAL"
+
+
 async def test_an_unknown_round_is_refused_rather_than_posted_empty(tmp_path):
     """A result titled after nothing is worse than a failure a maintainer can read."""
     db_path = await _make_db(tmp_path, name="validation_noround")

@@ -148,10 +148,6 @@ async def _run(
             return None
 
     patches = {
-        "context": patch(
-            "services.result_submission_service._get_round_context",
-            new=AsyncMock(return_value=context(fmt) if callable(context) else context),
-        ),
         "validation": patch(
             "services.result_submission_service._build_division_validation_data",
             new=AsyncMock(
@@ -174,6 +170,11 @@ async def _run(
             "services.result_submission_service.close_submission_channel", new=AsyncMock()
         ),
     }
+    if context is not None:
+        patches["context"] = patch(
+            "services.result_submission_service._get_round_context",
+            new=AsyncMock(return_value=context(fmt) if callable(context) else context),
+        )
     started = {k: p.start() for k, p in patches.items()}
     try:
         await _resubmit_collection_task(ROUND_ID, DIVISION_ID, bot, channel)
@@ -197,24 +198,22 @@ async def _sessions(db_path):
 
 
 # ---------------------------------------------------------------------------
-# The fault, as it stands
+# Issue #210
 # ---------------------------------------------------------------------------
 
 
-async def test_resubmitting_fails_before_asking_for_anything_today(tmp_path):
-    """**A defect, pinned as it stands.** The real `_get_round_context` selects neither
-    `season_id` nor `round_format`, so the task raises on its first read — inside a
-    background task nobody awaits — and never asks for the results the button has just
-    deleted. Written to fail when the read is fixed."""
-    db_path = await _make_db(tmp_path, name="resubmit_today")
-    bot = _bot(db_path, [QUALI_PASTE, RACE_PASTE])
-    channel = _channel()
+async def test_resubmitting_reads_its_round_from_the_database(tmp_path):
+    """**Issue #210.** The real `_get_round_context` selected neither `season_id` nor
+    `round_format`, so the task raised on its first read — inside a background task nobody
+    awaits — and never asked for the results the button had just deleted. Run here against
+    the database rather than a patched context, so the read is what is under test."""
+    db_path = await _make_db(tmp_path, name="resubmit_real_context")
 
-    with pytest.raises(KeyError, match="season_id"):
-        await _resubmit_collection_task(ROUND_ID, DIVISION_ID, bot, channel)
+    stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]), context=None)
 
-    channel.send.assert_not_awaited()
-    bot.wait_for.assert_not_awaited()
+    assert "Resubmitting results for **Round 3** (Pro)" in _said(stubs["channel"])
+    assert [s[0] for s in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
+    assert stubs["penalty"].await_args.kwargs["season_id"] == SEASON_ID
 
 
 # ---------------------------------------------------------------------------
