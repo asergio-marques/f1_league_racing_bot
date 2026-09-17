@@ -144,7 +144,7 @@ def _duplicate_datetime_errors(
 ) -> list[str]:
     """Every incoming round whose datetime is already taken, within the batch or before it.
 
-    the confirmation of placements refuses a season holding two rounds of one division at the same
+    The confirmation of placements refuses a season holding two rounds of one division at the same
     moment (Gate 0b), and it does so long after the calendar has been built and possibly
     posted. A repeated line is the likeliest fault in a pasted calendar, so it is caught
     here instead — at the first moment the whole batch can be seen.
@@ -1371,7 +1371,7 @@ class SeasonCog(commands.Cog):
         # same findings, so seeing them here is what lets them act first.
         #
         # Split by whether the aspect drawing the template is switched on, because that
-        # is what decides whether the fault stops the season. the confirmation of placements blocks on
+        # is what decides whether the fault stops the season. The confirmation of placements blocks on
         # exactly the first list, so the heading is a promise the gate keeps rather than
         # a guess. A template beneath a switched-off aspect is still named: it is a real
         # fault a manager will meet the moment they switch that aspect on, and finding it
@@ -4290,7 +4290,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # Two rounds of one division may not share a moment. the confirmation of placements refuses a
+        # Two rounds of one division may not share a moment. The confirmation of placements refuses a
         # season that holds such a pair (Gate 0b), and on the same reasoning as the
         # overflow guard below it is refused here instead — at the command that would
         # cause it, rather than at an approval days later, with a calendar possibly

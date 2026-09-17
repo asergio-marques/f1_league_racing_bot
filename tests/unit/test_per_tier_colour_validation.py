@@ -243,7 +243,7 @@ def test_the_aspect_toggle_passes_the_shortfall_through():
 # ── The season approval gate ──────────────────────────────────────────────
 
 async def test_the_approval_gate_flattens_the_same_shortfall():
-    """the confirmation of placements reads `colour_shortfall`, not a rule of its own."""
+    """The confirmation of placements reads `colour_shortfall`, not a rule of its own."""
     from cogs.season_cog import SeasonCog
 
     cog = MagicMock(spec=SeasonCog)

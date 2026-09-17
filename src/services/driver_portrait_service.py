@@ -351,7 +351,7 @@ async def refresh_before_render(
     # off, which is the same answer the defaults give.
     if config is None or not getattr(config, "use_pfp", False):
         return 0
-    # `pfp_prerender` is the league's choice about *ordinary* postings. the confirmation of placements
+    # `pfp_prerender` is the league's choice about *ordinary* postings. The confirmation of placements
     # sets `ignore_trigger` and pulls whichever trigger is on: it is the one moment a
     # manager is watching, the season is being committed on the strength of a trial
     # render, and drawing yesterday's portraits there would misrepresent what the season

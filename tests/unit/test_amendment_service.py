@@ -990,7 +990,7 @@ async def test_approve_amendment_still_overwrites_the_points(db_path):
 # ---------------------------------------------------------------------------
 # The ordering rule holds at the mid-season end too
 #
-# the confirmation of placements refuses a points table that is out of order. Approving an amendment
+# The confirmation of placements refuses a points table that is out of order. Approving an amendment
 # installed one without a word — deleting the season's points and refilling them from
 # the modification store, then rescoring and reposting every round of every division
 # against the new numbers. A rule that bound only the approval was a rule a league could
