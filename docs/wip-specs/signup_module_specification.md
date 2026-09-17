@@ -109,7 +109,7 @@ existing whether or not this module is enabled.
         - Sum of all signup times
         - Signup notes
     - An easier, quicker way to implement the above command will be to have an "unassigned" driver list that is indexed by seeding number, holding only the "discord user ID" and the sum of all signup times. This last parameter shall determine the seeding; drivers with lower signup time sum shall be seeded higher (e.g. 3:40.055 would be seed 1, 3:40.097 seed 2, 3:41.423 seed 3, etc). This way, the seeding is always kept up to date.
-        - The sum of signup times shall be computed at the transition to "unassigned" and shall not be recomputed thereafter. Drivers with no recorded time shall be seeded last, and ties shall be broken by order of approval.
+        - The sum of signup times shall be computed at the transition to "unassigned" and shall not be recomputed thereafter. Drivers with no recorded time shall be seeded last, and ties shall be broken by the order in which the signups were submitted — the moment each reached "pending admin approval" for the first time — which neither approval nor a correction shall move.
     - A "signup unassigned export" command shall return the same drivers as a CSV file, in the same order. The columns shall be: seed, display name, Discord user ID, driver type, time sum, one column per configured availability slot marking those the driver selected, three preferred team columns, platform and platform ID.
     - The placement of a driver into a division and team, and the rejection of an Unassigned driver by the "driver reject" command, are specified in [the core specification](core_specification.md).
 

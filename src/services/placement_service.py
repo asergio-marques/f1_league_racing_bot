@@ -414,10 +414,10 @@ class PlacementService:
     async def get_unassigned_drivers_seeded(self, server_id: int) -> list[dict]:
         """Return every unsettled signup: Unassigned drivers in seed order, then the rest.
 
-        Unassigned drivers are seeded by total_lap_ms ASC NULLS LAST, then earliest approval
-        timestamp. A driver still awaiting approval or correction follows them, holding no
-        seed (``seed`` is None) — they are listed because confirming placements waits on them
-        too (issue #220).
+        Unassigned drivers are seeded by total_lap_ms ASC NULLS LAST, then by the moment their
+        signup was submitted — not approved, and not last corrected. A driver still awaiting
+        approval or correction follows them, holding no seed (``seed`` is None) — they are
+        listed because confirming placements waits on them too (issue #220).
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -434,7 +434,7 @@ class PlacementService:
                     sr.preferred_teammate,
                     sr.notes,
                     sr.total_lap_ms,
-                    sr.updated_at           AS approved_at
+                    sr.created_at           AS submitted_at
                 FROM driver_profiles dp
                 -- The driver's latest signup: records are kept, never overwritten (#220).
                 LEFT JOIN signup_records sr
@@ -448,7 +448,10 @@ class PlacementService:
                 ORDER BY
                     dp.current_state = 'UNASSIGNED' DESC,
                     sr.total_lap_ms ASC NULLS LAST,
-                    sr.updated_at ASC
+                    -- A tie goes to whoever sent their signup in first: the moment the record
+                    -- was made, which a correction never moves.
+                    sr.created_at ASC,
+                    sr.id ASC
                 """.format(unsettled=_UNSETTLED_SQL),
                 (server_id,),
             )
@@ -508,7 +511,7 @@ class PlacementService:
                     sr.driver_type,
                     sr.preferred_teams,
                     sr.total_lap_ms,
-                    sr.updated_at           AS approved_at
+                    sr.created_at           AS submitted_at
                 FROM driver_profiles dp
                 -- The driver's latest signup: records are kept, never overwritten (#220).
                 LEFT JOIN signup_records sr
@@ -522,7 +525,10 @@ class PlacementService:
                 ORDER BY
                     dp.current_state = 'UNASSIGNED' DESC,
                     sr.total_lap_ms ASC NULLS LAST,
-                    sr.updated_at ASC
+                    -- A tie goes to whoever sent their signup in first: the moment the record
+                    -- was made, which a correction never moves.
+                    sr.created_at ASC,
+                    sr.id ASC
                 """.format(unsettled=_UNSETTLED_SQL),
                 (server_id,),
             )

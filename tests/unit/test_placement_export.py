@@ -54,8 +54,8 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
             await db.execute(
                 "INSERT INTO signup_records (server_id, discord_user_id, discord_username, "
                 "server_display_name, platform, platform_id, availability_slot_ids, "
-                "driver_type, preferred_teams, total_lap_ms, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "driver_type, preferred_teams, total_lap_ms, updated_at, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     SERVER_ID,
                     uid,
@@ -68,6 +68,7 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
                     json.dumps(d.get("preferred_teams", [])),
                     d.get("total_lap_ms"),
                     d.get("updated_at", f"2026-01-0{i}T00:00:00+00:00"),
+                    d.get("created_at", f"2026-01-0{i}T00:00:00+00:00"),
                 ),
             )
         await db.commit()
@@ -218,6 +219,34 @@ class TestExportRow:
         assert [r["discord_user_id"] for r in rows] == ["fast", "slow"]
         assert [r["seed"] for r in rows] == [1, 2]
         assert rows[0]["total_lap_fmt"] == _fmt_ms(83456)
+
+    async def test_a_tie_goes_to_whoever_submitted_first_not_whoever_was_corrected_last(
+        self, tmp_path
+    ):
+        """The seed tiebreak reads the moment a signup was sent in. A correction amends the
+        record and moves its last update, and must not cost the driver their place."""
+        db_path = await _seed(
+            tmp_path,
+            [
+                {
+                    "discord_user_id": "later",
+                    "total_lap_ms": 85000,
+                    "created_at": "2026-01-05T00:00:00+00:00",
+                    "updated_at": "2026-01-05T00:00:00+00:00",
+                },
+                {
+                    "discord_user_id": "earlier_but_corrected",
+                    "total_lap_ms": 85000,
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-09T00:00:00+00:00",
+                },
+            ],
+        )
+        rows, _ = await _export(db_path)
+        listed = await _service(db_path).get_unassigned_drivers_seeded(SERVER_ID)
+
+        assert [r["discord_user_id"] for r in rows] == ["earlier_but_corrected", "later"]
+        assert [r["discord_user_id"] for r in listed] == ["earlier_but_corrected", "later"]
 
     async def test_total_lap_ms_none_becomes_empty_string(self, tmp_path):
         db_path = await _seed(tmp_path, [{"total_lap_ms": None}])

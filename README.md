@@ -1227,7 +1227,7 @@ Refused when nothing is armed — use `add` — and when signups are not open. A
 #### `/signup unassigned list` — List the unsettled signups, seeded by lap time
 *Access: League manager*
 
-No parameters. Displays every unsettled signup in an ephemeral reply. Drivers in the Unassigned state come first, ordered by total lap time ascending (fastest first) and numbered by seed. Drivers with no lap time on record appear last among them; ties break on **submission** order — the moment the driver sent their form in or last corrected it, not the moment they were approved.
+No parameters. Displays every unsettled signup in an ephemeral reply. Drivers in the Unassigned state come first, ordered by total lap time ascending (fastest first) and numbered by seed. Drivers with no lap time on record appear last among them; ties break on **submission** order — the moment the driver sent their form in, not the moment they were approved, and not moved by a correction they made afterwards.
 
 After them come the drivers still in review — awaiting approval, or correcting an answer — marked with that state instead of a seed. They are listed because placements cannot be confirmed while any of them stands.
 
