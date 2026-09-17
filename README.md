@@ -282,7 +282,7 @@ Creates a season tied to today's date, in **configuration**. Its divisions and r
 #### `/season config-review` — Review and confirm the configuration
 *Access: League manager · Configuration only*
 
-No parameters. Posts a report of the season in configuration — test mode, the enabled modules, the team list with its roles and, where the images module is on, its outputs — and checks everything that can be checked before the season has divisions:
+No parameters. Posts a report of the season in configuration — test mode, the enabled modules, the team list with its roles (warning where the Reserve team has none), and the configuration of each enabled module in the words of `/season placements-review`: the signup settings, the attendance settings, the attached points configurations, the weather deadlines and the image outputs — and checks everything that can be checked before the season has divisions:
 
 - the signup module's channel, base role and complete role, where it is enabled;
 - every team name, as a filename;

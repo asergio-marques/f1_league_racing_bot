@@ -1719,83 +1719,18 @@ class SeasonCog(commands.Cog):
                 header_lines += [f"  • {problem}" for problem in name_problems]
                 header_lines.append("")
 
-            # ── Weather config ────────────────────────────────────────
+            # ── Each module's own configuration ───────────────────────
+            # Built by the helpers `/season config-review` reads too, so the two reviews
+            # report a module's configuration in the same words.
             if weather_on:
-                from services.weather_config_service import get_weather_pipeline_config as _gwpc
-                _wcfg = await _gwpc(self.bot.db_path, interaction.guild_id)  # type: ignore[attr-defined]
-                weather_lines += [
-                    "**Weather Config**",
-                    f"  • Phase 1 deadline: {_wcfg.phase_1_days} day(s) before race",
-                    f"  • Phase 2 deadline: {_wcfg.phase_2_days} day(s) before race",
-                    f"  • Phase 3 deadline: {_wcfg.phase_3_hours}h before race",
-                    "",
-                ]
-
-            # ── Signup config ─────────────────────────────────────────
+                weather_lines += await self._weather_review_lines(interaction.guild_id)
             if signup_on:
-                _s_cfg = await self.bot.signup_module_service.get_config(interaction.guild_id)  # type: ignore[attr-defined]
-                _s_settings = await self.bot.signup_module_service.get_settings(interaction.guild_id)  # type: ignore[attr-defined]
-                _s_slots = await self.bot.signup_module_service.get_slots(interaction.guild_id)  # type: ignore[attr-defined]
-                _signup_ch = f"<#{_s_cfg.signup_channel_id}>" if _s_cfg and _s_cfg.signup_channel_id else "*(not configured)*"
-                _signup_br = f"<@&{_s_cfg.base_role_id}>" if _s_cfg and _s_cfg.base_role_id else "*(not configured)*"
-                _signup_cr = f"<@&{_s_cfg.signed_up_role_id}>" if _s_cfg and _s_cfg.signed_up_role_id else "*(not configured)*"
-                _time_type = _s_settings.time_type.replace("_", " ").title()
-                _time_img = "Required" if _s_settings.time_image_required else "Not required"
-                _nationality = "Required" if _s_settings.nationality_required else "Not required"
-                _slot_labels = [s.display_label for s in _s_slots] if _s_slots else ["*(none configured)*"]
-                signup_lines += [
-                    "**Signup Config**",
-                    f"  • Channel: {_signup_ch}",
-                    f"  • Base role: {_signup_br}",
-                    f"  • Sign-up role: {_signup_cr}",
-                    f"  • Time type: {_time_type}",
-                    f"  • Time image: {_time_img}",
-                    f"  • Nationality: {_nationality}",
-                    f"  • Available slots: {', '.join(_slot_labels)}",
-                    "",
-                ]
-
-            # ── Attendance server-level config ────────────────────────
+                signup_lines += await self._signup_review_lines(interaction.guild_id)
             if attendance_on:
-                att_cfg = await self.bot.attendance_service.get_config(interaction.guild_id)  # type: ignore[attr-defined]
-                if att_cfg:
-                    ar = att_cfg.autoreserve_threshold
-                    as_ = att_cfg.autosack_threshold
-                    ar_str = f"{ar} pts" if ar is not None else "*(not set)*"
-                    as_str = f"{as_} pts" if as_ is not None else "*(not set)*"
-                    ln_last = (
-                        f"{att_cfg.rsvp_last_notice_hours}h before deadline"
-                        if att_cfg.rsvp_last_notice_hours
-                        else "*(disabled)*"
-                    )
-                    attendance_lines += [
-                        "**Attendance Config**",
-                        f"  • RSVP notice: {att_cfg.rsvp_notice_days} day(s) before race",
-                        f"  • Last notice: {ln_last}",
-                        f"  • Deadline: {att_cfg.rsvp_deadline_hours}h before race",
-                        f"  • No-RSVP penalty: {att_cfg.no_rsvp_penalty} pt(s)",
-                        f"  • Absent penalty: {att_cfg.absent_penalty} pt(s)",
-                        f"  • No-show penalty: {att_cfg.no_show_penalty} pt(s)",
-                        f"  • Auto-reserve threshold: {ar_str}",
-                        f"  • Auto-sack threshold: {as_str}",
-                        "",
-                    ]
-
-            # ── Points configs (names only) ───────────────────────────
-            config_names = await season_points_service.get_season_config_names(self.bot.db_path, cfg.season_id)  # type: ignore[attr-defined]
-            if config_names:
-                points_lines.append("**Points Configs:** " + ", ".join(config_names))
-            elif results_on:
-                server_config_tm = await self.bot.config_service.get_server_config(interaction.guild_id)  # type: ignore[attr-defined]
-                if server_config_tm is not None and server_config_tm.test_mode_active:
-                    points_lines.append(
-                        "**Points Configs:** *(none attached)* "
-                        "\u26a0\ufe0f Test mode active \u2014 Standard & Half Points will be auto-seeded on approval."
-                    )
-                else:
-                    points_lines.append("**Points Configs:** *(none attached)*")
-            else:
-                points_lines.append("**Points Configs:** *(none attached)*")
+                attendance_lines += await self._attendance_review_lines(interaction.guild_id)
+            points_lines += await self._points_names_review_lines(
+                interaction.guild_id, cfg.season_id, results_on
+            )
 
             # ── Points ordering ───────────────────────────────────────
             # Reported here rather than left to the approval. The refusal at
@@ -2471,6 +2406,87 @@ class SeasonCog(commands.Cog):
 
         return faults
 
+    async def _weather_review_lines(self, server_id: int) -> list[str]:
+        """The weather deadlines, as both reviews report them."""
+        from services.weather_config_service import get_weather_pipeline_config as _gwpc
+
+        _wcfg = await _gwpc(self.bot.db_path, server_id)  # type: ignore[attr-defined]
+        return [
+            "**Weather Config**",
+            f"  • Phase 1 deadline: {_wcfg.phase_1_days} day(s) before race",
+            f"  • Phase 2 deadline: {_wcfg.phase_2_days} day(s) before race",
+            f"  • Phase 3 deadline: {_wcfg.phase_3_hours}h before race",
+            "",
+        ]
+
+    async def _signup_review_lines(self, server_id: int) -> list[str]:
+        """The signup module's configuration, as both reviews report it."""
+        _s_cfg = await self.bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
+        _s_settings = await self.bot.signup_module_service.get_settings(server_id)  # type: ignore[attr-defined]
+        _s_slots = await self.bot.signup_module_service.get_slots(server_id)  # type: ignore[attr-defined]
+        _signup_ch = f"<#{_s_cfg.signup_channel_id}>" if _s_cfg and _s_cfg.signup_channel_id else "*(not configured)*"
+        _signup_br = f"<@&{_s_cfg.base_role_id}>" if _s_cfg and _s_cfg.base_role_id else "*(not configured)*"
+        _signup_cr = f"<@&{_s_cfg.signed_up_role_id}>" if _s_cfg and _s_cfg.signed_up_role_id else "*(not configured)*"
+        _time_type = _s_settings.time_type.replace("_", " ").title()
+        _time_img = "Required" if _s_settings.time_image_required else "Not required"
+        _nationality = "Required" if _s_settings.nationality_required else "Not required"
+        _slot_labels = [s.display_label for s in _s_slots] if _s_slots else ["*(none configured)*"]
+        return [
+            "**Signup Config**",
+            f"  • Channel: {_signup_ch}",
+            f"  • Base role: {_signup_br}",
+            f"  • Sign-up role: {_signup_cr}",
+            f"  • Time type: {_time_type}",
+            f"  • Time image: {_time_img}",
+            f"  • Nationality: {_nationality}",
+            f"  • Available slots: {', '.join(_slot_labels)}",
+            "",
+        ]
+
+    async def _attendance_review_lines(self, server_id: int) -> list[str]:
+        """The attendance module's configuration, as both reviews report it."""
+        att_cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+        if not att_cfg:
+            return []
+        ar = att_cfg.autoreserve_threshold
+        as_ = att_cfg.autosack_threshold
+        ar_str = f"{ar} pts" if ar is not None else "*(not set)*"
+        as_str = f"{as_} pts" if as_ is not None else "*(not set)*"
+        ln_last = (
+            f"{att_cfg.rsvp_last_notice_hours}h before deadline"
+            if att_cfg.rsvp_last_notice_hours
+            else "*(disabled)*"
+        )
+        return [
+            "**Attendance Config**",
+            f"  • RSVP notice: {att_cfg.rsvp_notice_days} day(s) before race",
+            f"  • Last notice: {ln_last}",
+            f"  • Deadline: {att_cfg.rsvp_deadline_hours}h before race",
+            f"  • No-RSVP penalty: {att_cfg.no_rsvp_penalty} pt(s)",
+            f"  • Absent penalty: {att_cfg.absent_penalty} pt(s)",
+            f"  • No-show penalty: {att_cfg.no_show_penalty} pt(s)",
+            f"  • Auto-reserve threshold: {ar_str}",
+            f"  • Auto-sack threshold: {as_str}",
+            "",
+        ]
+
+    async def _points_names_review_lines(
+        self, server_id: int, season_id: int, results_on: bool
+    ) -> list[str]:
+        """The names of the points configurations attached to the season, as both reviews
+        report them. The faults of those configurations are reported beside them by each."""
+        config_names = await season_points_service.get_season_config_names(self.bot.db_path, season_id)  # type: ignore[attr-defined]
+        if config_names:
+            return ["**Points Configs:** " + ", ".join(config_names)]
+        if results_on:
+            server_config_tm = await self.bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+            if server_config_tm is not None and server_config_tm.test_mode_active:
+                return [
+                    "**Points Configs:** *(none attached)* "
+                    "\u26a0\ufe0f Test mode active \u2014 Standard & Half Points will be auto-seeded on approval."
+                ]
+        return ["**Points Configs:** *(none attached)*"]
+
     async def _image_configuration_faults(self, server_id: int) -> list[str]:
         """The image module's faults that need no division, round, lineup or calendar."""
         from models.image_constants import TEMPLATE_LABELS
@@ -2559,11 +2575,34 @@ class SeasonCog(commands.Cog):
                 role = f"<@&{team['role_id']}>" if team["role_id"] else "no role"
                 lines.append(f"  {team['name']} → {role}")
             lines.append("")
-            await interaction.followup.send("\n".join(lines), ephemeral=False)
+            if not any(team["is_reserve"] and team["role_id"] for team in teams):
+                lines += [
+                    "⚠️ **Reserve team has no role assigned** — use `/team reserve-role`. "
+                    "Drivers on the reserve team will fail result validation.",
+                    "",
+                ]
 
+            # Every module's configuration, subsection by subsection, in the words and the
+            # order of the placements review — save the divisions, which do not exist yet.
+            results_on = await module.is_results_enabled(server_id)
+            sections: list[list[str]] = [lines]
+            if await module.is_signup_enabled(server_id):
+                sections.append(await self._signup_review_lines(server_id))
+            if await module.is_attendance_enabled(server_id):
+                sections.append(await self._attendance_review_lines(server_id))
+            if results_on:
+                sections.append(
+                    await self._points_names_review_lines(server_id, cfg.season_id, results_on)
+                )
+            if await module.is_weather_enabled(server_id):
+                sections.append(await self._weather_review_lines(server_id))
             if await module.is_images_enabled(server_id):
-                image_lines = await self._build_image_review_section(server_id)
-                for chunk in _chunk_message("\n".join(image_lines)):
+                sections.append(await self._build_image_review_section(server_id))
+            for section in sections:
+                body = "\n".join(section).strip()
+                if not body:
+                    continue
+                for chunk in _chunk_message(body):
                     await interaction.followup.send(chunk, ephemeral=False)
 
             faults = await self._configuration_faults(server_id, cfg.season_id)

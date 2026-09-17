@@ -229,7 +229,7 @@ The other modules' settings stay open after confirmation, but none of them can b
 /season config-review
 ```
 
-The bot posts the configuration to the channel: test mode, which modules are on, the team list with its roles, and — with the image module on — the image outputs. Then it checks everything that can be checked before the season has any divisions:
+The bot posts the configuration to the channel, a message per subject: test mode, which modules are on, the team list with its roles, and the settings of each module you turned on — signup, attendance, the points configurations attached, the weather deadlines and the image outputs — in the same words the placements review uses later. Then it checks everything that can be checked before the season has any divisions:
 
 | The check | Only with |
 |---|---|

@@ -317,9 +317,17 @@ def _report_bot(**kwargs) -> MagicMock:
     bot = _bot(**kwargs)
     bot.team_service.get_teams_with_roles = AsyncMock(
         return_value=[
-            {"name": "Alpha", "role_id": 3001},
-            {"name": "Reserve", "role_id": None},
+            {"name": "Alpha", "role_id": 3001, "is_reserve": False},
+            {"name": "Reserve", "role_id": None, "is_reserve": True},
         ]
+    )
+    bot.signup_module_service.get_settings = AsyncMock(
+        return_value=SimpleNamespace(
+            time_type="TIME_TRIAL", time_image_required=True, nationality_required=False
+        )
+    )
+    bot.signup_module_service.get_slots = AsyncMock(
+        return_value=[SimpleNamespace(display_label="Sunday 20:00")]
     )
     return bot
 
@@ -349,12 +357,57 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert "Results: ❌ Disabled" in report
     assert "Alpha → <@&3001>" in report
     assert "Reserve → no role" in report
+    assert "Reserve team has no role assigned" in report
     assert "Do you confirm this season's configuration?" in messages[-1]
 
     (view,) = _RecordedView.made
     view.record_fingerprint.assert_awaited_once_with(SERVER_ID, SEASON_ID)
     view.bind.assert_awaited_once()
     view.carries.assert_called_once()
+
+
+async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
+    """The placements review's subsections, save the divisions, in the same words (#220)."""
+    import cogs.season_cog as season_cog
+    from services import weather_config_service
+
+    bot = _report_bot(signup=True, results=True)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    bot.attendance_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(
+            rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2,
+            no_rsvp_penalty=1, absent_penalty=2, no_show_penalty=3,
+            autoreserve_threshold=None, autosack_threshold=10,
+        )
+    )
+    monkeypatch.setattr(
+        season_cog.season_points_service, "get_season_config_names",
+        AsyncMock(return_value=["Standard", "Sprint"]),
+    )
+    monkeypatch.setattr(
+        weather_config_service, "get_weather_pipeline_config",
+        AsyncMock(return_value=SimpleNamespace(phase_1_days=5, phase_2_days=2, phase_3_hours=2)),
+    )
+    cog = _cog(bot)
+    # The faults are pinned above; here only what is reported.
+    cog._configuration_faults = AsyncMock(return_value=[])
+
+    text = "\n".join(await _report(cog, _interaction(), monkeypatch))
+
+    assert "**Signup Config**" in text and "Available slots: Sunday 20:00" in text
+    assert "**Attendance Config**" in text and "Auto-sack threshold: 10 pts" in text
+    assert "**Points Configs:** Standard, Sprint" in text
+    assert "**Weather Config**" in text and "Phase 3 deadline: 2h before race" in text
+
+
+async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
+    cog = _cog(_report_bot())
+
+    text = "\n".join(await _report(cog, _interaction(), monkeypatch))
+
+    for heading in ("Signup Config", "Attendance Config", "Points Configs", "Weather Config"):
+        assert heading not in text
 
 
 async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch):
