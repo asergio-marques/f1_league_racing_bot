@@ -961,28 +961,91 @@ async def test_amendment_recalculation_preserves_pardons(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def _make_two_round_db(tmp_path) -> str:
-    """One full-time driver with attendance rows in two finalised rounds."""
+async def _make_two_round_db(tmp_path):
+    """One full-time driver with attendance rows in two finalised rounds.
+
+    **Built from the production migrations**, not from a hand-written ``CREATE TABLE``.
+    The migrated ``driver_round_attendance`` declares
+    ``UNIQUE (round_id, division_id, driver_profile_id)`` and foreign keys to ``rounds``,
+    ``divisions``, ``driver_profiles`` and ``team_instances`` — none of which the hand-built
+    copy in this file carries — so every parent row below has to exist and be seeded in
+    order. That is the point: a fixture that did not enforce them could hold data
+    production would refuse.
+
+    Penalties are set explicitly rather than left to the schema's defaults, which are 1/1/1.
+    The cases above are written against 2/1/3 and the hand-built table encoded those as its
+    defaults; reading them from the real schema would have silently changed what every
+    expected value meant.
+
+    Returns ``(db_path, division_id, round_ids)``.
+    """
+    from db.database import get_connection, run_migrations
+
     db_file = str(tmp_path / "two_rounds.db")
-    async with aiosqlite.connect(db_file) as db:
-        await _create_schema(db)
-        await _setup_division(db)
-        for round_id, round_number in ((1, 1), (2, 2)):
-            await db.execute(
-                "INSERT INTO rounds (id, division_id, round_number, status) "
-                "VALUES (?, 10, ?, 'AWAITING_APPEAL_VERDICTS')",
-                (round_id, round_number),
+    await run_migrations(db_file)
+
+    async with get_connection(db_file) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
+        )
+        await db.execute(
+            "INSERT INTO attendance_config "
+            "(server_id, no_rsvp_penalty, absent_penalty, no_show_penalty) "
+            "VALUES (1, 2, 1, 3)"
+        )
+        cursor = await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+        )
+        season_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id) "
+            "VALUES (?, 'Alpha', 777)",
+            (season_id,),
+        )
+        division_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO team_instances (division_id, name, is_reserve) "
+            "VALUES (?, 'Full Team', 0)",
+            (division_id,),
+        )
+        team_instance_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
+            "VALUES (1, '1001', 'ASSIGNED')"
+        )
+        profile_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (?, 1, ?)",
+            (team_instance_id, profile_id),
+        )
+        seat_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id) VALUES (?, ?, ?, ?)",
+            (profile_id, season_id, division_id, seat_id),
+        )
+
+        round_ids = []
+        for round_number in (1, 2):
+            cursor = await db.execute(
+                "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+                "VALUES (?, ?, 'STANDARD', 'AWAITING_APPEAL_VERDICTS', '2026-06-01T18:00:00')",
+                (division_id, round_number),
             )
-        await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
-        for round_id in (1, 2):
+            round_id = cursor.lastrowid
+            round_ids.append(round_id)
             await db.execute(
                 "INSERT INTO driver_round_attendance "
                 "(round_id, division_id, driver_profile_id, rsvp_status, attended) "
-                "VALUES (?, 10, 1, 'NO_RSVP', 0)",
-                (round_id,),
+                "VALUES (?, ?, ?, 'NO_RSVP', 0)",
+                (round_id, division_id, profile_id),
             )
         await db.commit()
-    return db_file
+
+    return db_file, division_id, round_ids
 
 
 async def _awarded(db_file: str, round_id: int):
@@ -1008,8 +1071,8 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
 
     from services import attendance_service
 
-    db_file = await _make_two_round_db(tmp_path)
-    assert await _awarded(db_file, 1) is None
+    db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
+    assert await _awarded(db_file, round_ids[0]) is None
 
     real = attendance_service.distribute_attendance_points
     calls: list[int] = []
@@ -1033,11 +1096,11 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
     with pytest.raises(RuntimeError):
         await attendance_service.recalculate_attendance_for_round(
             bot=None, guild=None, db_path=db_file,
-            round_id=1, division_id=10, server_id=1, season_id=1,
+            round_id=round_ids[0], division_id=division_id, server_id=1, season_id=1,
         )
 
     assert len(calls) == 2, "the propagation did not reach a second round"
-    assert await _awarded(db_file, 1) is None, (
+    assert await _awarded(db_file, round_ids[0]) is None, (
         "the first round's points were committed despite the recalculation failing"
     )
 
@@ -1049,29 +1112,31 @@ async def test_a_whole_recalculation_still_lands(tmp_path, monkeypatch):
 
     from services import attendance_service
 
-    db_file = await _make_two_round_db(tmp_path)
+    db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 
     monkeypatch.setattr(attendance_service, "post_attendance_sheet", AsyncMock())
     monkeypatch.setattr(attendance_service, "enforce_attendance_sanctions", AsyncMock())
 
     await attendance_service.recalculate_attendance_for_round(
         bot=None, guild=None, db_path=db_file,
-        round_id=1, division_id=10, server_id=1, season_id=1,
+        round_id=round_ids[0], division_id=division_id, server_id=1, season_id=1,
     )
 
     # NO_RSVP and did not attend: no_rsvp_penalty + absent_penalty (2 + 1).
-    assert await _awarded(db_file, 1) == 3
-    assert await _awarded(db_file, 2) == 3
+    assert await _awarded(db_file, round_ids[0]) == 3
+    assert await _awarded(db_file, round_ids[1]) == 3
 
 
 @pytest.mark.asyncio
 async def test_distribute_attendance_points_still_commits_on_its_own(tmp_path):
     """Every other caller passes no connection and must keep working unchanged."""
-    db_file = await _make_two_round_db(tmp_path)
+    db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 
-    await distribute_attendance_points(db_file, round_id=1, division_id=10)
+    await distribute_attendance_points(
+        db_file, round_id=round_ids[0], division_id=division_id
+    )
 
-    assert await _awarded(db_file, 1) == 3
+    assert await _awarded(db_file, round_ids[0]) == 3
 
 
 @pytest.mark.asyncio
@@ -1079,10 +1144,12 @@ async def test_a_shared_connection_is_not_committed_by_the_callee(tmp_path):
     """A function handed a connection is one step of somebody else's transaction."""
     from db.database import get_connection
 
-    db_file = await _make_two_round_db(tmp_path)
+    db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 
     async with get_connection(db_file) as db:
-        await distribute_attendance_points(db_file, round_id=1, division_id=10, db=db)
+        await distribute_attendance_points(
+            db_file, round_id=round_ids[0], division_id=division_id, db=db
+        )
         # Deliberately not committed: the caller owns it and is abandoning it.
 
-    assert await _awarded(db_file, 1) is None
+    assert await _awarded(db_file, round_ids[0]) is None
