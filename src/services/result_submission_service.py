@@ -2856,14 +2856,125 @@ async def replace_round_results(
                         session.session_type,
                     )
             await db.execute(
-                "UPDATE round_submission_channels SET resubmitting = 0, results_posted = 0 "
-                "WHERE round_id = ?",
+                "UPDATE round_submission_channels SET resubmitting = 0, results_posted = 0, "
+                "resubmit_prompt_message_id = NULL WHERE round_id = ?",
                 (round_id,),
             )
             await db.commit()
         except BaseException:
             await db.rollback()
             raise
+
+
+class ResubmissionCancelView(discord.ui.View):
+    """The **Cancel** button on a resubmission's announcement.
+
+    Pressing it ends the resubmission and keeps the round's earlier results, which were never
+    touched: nothing is written until the last session is in. Not persistent — a restart ends
+    the resubmission itself, and the restart sweep takes the button down.
+    """
+
+    def __init__(self, state) -> None:
+        import asyncio
+
+        super().__init__(timeout=None)
+        self.state = state
+        self.cancelled_by: int | None = None
+        self.message: discord.Message | None = None
+        # Waited on instead of `View.wait()`. Every paste cancels the wait it lost the race
+        # to, and cancelling a task parked in `View.wait()` cancels the view's own stopped
+        # future with it, after which every later wait raises at once. Cancelling a wait on
+        # an Event leaves the Event as it was.
+        self.pressed = asyncio.Event()
+
+    @property
+    def cancelled(self) -> bool:
+        return self.cancelled_by is not None
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        from services.penalty_wizard import _require_lm
+
+        if not await _require_lm(interaction, self.state):
+            return
+        self.cancelled_by = interaction.user.id
+        self.pressed.set()
+        await interaction.response.send_message(
+            "Resubmission cancelled. The earlier results stand.", ephemeral=True
+        )
+        self.stop()
+
+
+async def _next_paste(bot, sub_channel, cancel_view: ResubmissionCancelView | None):
+    """The next message pasted into *sub_channel*, or None if Cancel was pressed first.
+
+    Races the paste against the button, as the amend channel does. Where both land together
+    the cancel wins: the manager has said to stop.
+    """
+    import asyncio
+
+    paste = asyncio.ensure_future(
+        bot.wait_for(
+            "message",
+            check=lambda m, ch=sub_channel: (m.channel.id == ch.id and not m.author.bot),
+        )
+    )
+    if cancel_view is None:
+        return await paste
+    if cancel_view.cancelled:
+        paste.cancel()
+        return None
+    pressed = asyncio.ensure_future(cancel_view.pressed.wait())
+    await asyncio.wait({paste, pressed}, return_when=asyncio.FIRST_COMPLETED)
+    for pending in (paste, pressed):
+        if not pending.done():
+            pending.cancel()
+    if cancel_view.cancelled or not paste.done() or paste.cancelled():
+        return None
+    return paste.result()
+
+
+async def _take_down_cancel_button(cancel_view: ResubmissionCancelView | None) -> None:
+    if cancel_view is None:
+        return
+    cancel_view.stop()
+    if cancel_view.message is None:
+        return
+    try:
+        await cancel_view.message.edit(view=None)
+    except (discord.NotFound, discord.HTTPException):
+        pass
+
+
+async def _return_to_review(
+    bot,
+    guild: discord.Guild,
+    round_id: int,
+    division_id: int,
+    sub_channel,
+    season_id: int,
+    cancel_view: ResubmissionCancelView | None,
+) -> None:
+    """End a resubmission without replacing anything, and put the penalty review back.
+
+    Used when the manager cancels and when the resubmission fails before the swap. Either way
+    the round's results are the ones it held before Resubmit was pressed, and they are already
+    posted, so the prompt comes back without reposting them.
+    """
+    async with get_connection(bot.db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels "
+            "SET resubmitting = 0, resubmit_prompt_message_id = NULL WHERE round_id = ?",
+            (round_id,),
+        )
+        await db.commit()
+    await _take_down_cancel_button(cancel_view)
+    await enter_penalty_state(
+        bot, guild, round_id, division_id, sub_channel,
+        season_id=season_id, skip_results_post=True,
+    )
 
 
 async def enter_resubmit_flow(
@@ -2947,13 +3058,28 @@ async def enter_resubmit_flow(
         except (discord.NotFound, discord.HTTPException):
             pass  # Already gone; the collection does not depend on it
 
-    await sub_channel.send(
+    cancel_view = ResubmissionCancelView(state)
+    announcement = await sub_channel.send(
         "⚠️ **Results resubmission started.** "
-        "The results already submitted stand until every session has been entered again."
+        "The results already submitted stand until every session has been entered again. "
+        "Press **Cancel** to stop and keep them.",
+        view=cancel_view,
     )
+    cancel_view.message = announcement
+    try:
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE round_submission_channels SET resubmit_prompt_message_id = ? "
+                "WHERE round_id = ?",
+                (announcement.id, round_id),
+            )
+            await db.commit()
+    except Exception:
+        # Only the restart sweep reads it, to take the button down.
+        log.exception("enter_resubmit_flow: could not record the announcement (round %s)", round_id)
 
     asyncio.create_task(
-        _resubmit_collection_task(round_id, division_id, bot, sub_channel),
+        _resubmit_collection_task(round_id, division_id, bot, sub_channel, cancel_view),
         name=f"resubmit_r{round_id}",
     )
 
@@ -2999,6 +3125,7 @@ async def _resubmit_collection_task(
     division_id: int,
     bot,
     sub_channel: discord.TextChannel | None,
+    cancel_view: ResubmissionCancelView | None = None,
 ) -> None:
     """Re-run the session collection loop against an existing submission channel.
 
@@ -3007,6 +3134,9 @@ async def _resubmit_collection_task(
     `replace_round_results` swaps the lot for the round's existing results in one transaction.
     The earlier results stand until then (issue #210). On completion calls
     enter_penalty_state(..., is_resubmission=True).
+
+    *cancel_view* is the announcement's Cancel button. Pressed, or where the resubmission fails
+    before the swap, the round goes back to penalty review with the results it had.
     """
     if sub_channel is None:
         log.error("_resubmit_collection_task: sub_channel not found for round %s", round_id)
@@ -3037,6 +3167,21 @@ async def _resubmit_collection_task(
         log.error("_resubmit_collection_task: guild %s not found for round %s", server_id, round_id)
         return
 
+    async def _cancelled() -> None:
+        actor = cancel_view.cancelled_by if cancel_view is not None else None
+        await sub_channel.send("↩️ **Resubmission cancelled.** The earlier results stand.")
+        try:
+            await bot.output_router.post_log(
+                server_id,
+                f"<@{actor}> | RESULTS_RESUBMISSION | Cancelled\n"
+                f"  round_id: {round_id} ({division_name})",
+            )
+        except Exception:
+            log.exception("_resubmit_collection_task: error logging the cancel (round %s)", round_id)
+        await _return_to_review(
+            bot, guild, round_id, division_id, sub_channel, season_id, cancel_view
+        )
+
     try:
         (
             division_driver_ids,
@@ -3047,7 +3192,12 @@ async def _resubmit_collection_task(
         ) = await _build_division_validation_data(division_id, server_id, bot)
     except Exception:
         log.exception("_resubmit_collection_task: failed to build validation data for round %s", round_id)
-        await sub_channel.send("❌ Resubmission failed: could not load division data.")
+        await sub_channel.send(
+            "❌ Resubmission failed: could not load division data. The earlier results still stand."
+        )
+        await _return_to_review(
+            bot, guild, round_id, division_id, sub_channel, season_id, cancel_view
+        )
         return
 
     from services import season_points_service
@@ -3084,10 +3234,10 @@ async def _resubmit_collection_task(
         )
 
         while True:
-            msg = await bot.wait_for(
-                "message",
-                check=lambda m, ch=sub_channel: (m.channel.id == ch.id and not m.author.bot),
-            )
+            msg = await _next_paste(bot, sub_channel, cancel_view)
+            if msg is None:
+                await _cancelled()
+                return
             content = msg.content.strip()
 
             if content.upper() == "CANCELLED":
@@ -3154,6 +3304,11 @@ async def _resubmit_collection_task(
             await sub_channel.send(f"✅ **{label}** results received.")
             break
 
+    # The points configuration may have been chosen while Cancel was pressed.
+    if cancel_view is not None and cancel_view.cancelled:
+        await _cancelled()
+        return
+
     try:
         await replace_round_results(db_path, round_id, division_id, season_id, collected)
     except Exception:
@@ -3162,7 +3317,11 @@ async def _resubmit_collection_task(
             "❌ Resubmission failed: the new results could not be saved. "
             "The earlier results still stand."
         )
+        await _return_to_review(
+            bot, guild, round_id, division_id, sub_channel, season_id, cancel_view
+        )
         return
+    await _take_down_cancel_button(cancel_view)
 
     if cancelled_sessions == set(sessions):
         await sub_channel.send("⏭️ All sessions were cancelled — no penalty review required.")

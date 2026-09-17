@@ -48,7 +48,10 @@ from db.database import get_connection, run_migrations  # noqa: E402
 # `session_results.session_type` actually holds.
 from models.points_config import SessionType  # noqa: E402
 from services.penalty_service import StagedPenalty  # noqa: E402
-from services.result_submission_service import enter_resubmit_flow  # noqa: E402
+from services.result_submission_service import (  # noqa: E402
+    ResubmissionCancelView,
+    enter_resubmit_flow,
+)
 
 SERVER_ID = 9908
 SEASON_ID = 1
@@ -57,6 +60,7 @@ ROUND_ID = 5
 SUBMISSION_CHANNEL_ID = 770501
 ACTOR_ID = 77
 DRIVER_A = 4001
+ANNOUNCEMENT_ID = 880210
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +145,9 @@ def _interaction():
 
 def _channel(*, prompt_gone: bool = False):
     channel = MagicMock()
-    channel.send = AsyncMock(return_value=None)
+    announcement = MagicMock()
+    announcement.id = ANNOUNCEMENT_ID
+    channel.send = AsyncMock(return_value=announcement)
     prompt = MagicMock()
     prompt.delete = AsyncMock()
     channel.fetch_message = AsyncMock(
@@ -350,6 +356,34 @@ async def test_the_division_is_told_in_the_submission_channel(tmp_path):
     announcement = channel.send.await_args.args[0]
     assert "resubmission started" in announcement.lower()
     assert "stand until every session has been entered again" in announcement
+
+
+async def test_the_announcement_carries_the_cancel_button(tmp_path):
+    db_path = await _make_db(tmp_path)
+    channel = _channel()
+    state = _state(db_path, channel=channel)
+
+    await _run(state, _interaction())
+
+    view = channel.send.await_args.kwargs["view"]
+    assert isinstance(view, ResubmissionCancelView)
+    assert view.message is channel.send.return_value
+
+
+async def test_the_announcement_is_recorded_for_the_restart_sweep(tmp_path):
+    """A restart ends the resubmission, and the sweep needs the message to take the button
+    down — nothing is listening for it any more."""
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, channel=_channel())
+
+    await _run(state, _interaction())
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT resubmit_prompt_message_id FROM round_submission_channels WHERE round_id = ?",
+            (ROUND_ID,),
+        )
+        assert (await cursor.fetchone())[0] == ANNOUNCEMENT_ID
 
 
 async def test_the_manager_is_told_privately_what_to_do_next(tmp_path):

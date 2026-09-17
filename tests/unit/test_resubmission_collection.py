@@ -24,17 +24,23 @@ submission in two ways, and both are deliberate:
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
-from services.result_submission_service import _resubmit_collection_task  # noqa: E402
+import services.penalty_wizard as pw  # noqa: E402
+from services.result_submission_service import (  # noqa: E402
+    ResubmissionCancelView,
+    _resubmit_collection_task,
+)
 
 SERVER_ID = 14108
 SEASON_ID = 1
@@ -125,6 +131,8 @@ def _channel():
 def _bot(db_path, pastes, *, guild=True):
     bot = MagicMock()
     bot.db_path = db_path
+    bot.output_router = MagicMock()
+    bot.output_router.post_log = AsyncMock(return_value=None)
     bot.config_service = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=SimpleNamespace())
     bot.wait_for = AsyncMock(side_effect=[_message(p) for p in pastes])
@@ -140,6 +148,8 @@ async def _run(
     selected="Half",
     validation_error=None,
     validation=None,
+    cancel_view=None,
+    on_select=None,
 ):
     channel = channel if channel is not None else _channel()
 
@@ -148,6 +158,8 @@ async def _run(
             self.selected = selected
 
         async def wait(self):
+            if on_select is not None:
+                on_select()
             return None
 
     patches = {
@@ -177,7 +189,7 @@ async def _run(
     }
     started = {k: p.start() for k, p in patches.items()}
     try:
-        await _resubmit_collection_task(ROUND_ID, DIVISION_ID, bot, channel)
+        await _resubmit_collection_task(ROUND_ID, DIVISION_ID, bot, channel, cancel_view)
     finally:
         for p in patches.values():
             p.stop()
@@ -187,6 +199,14 @@ async def _run(
 
 def _said(channel) -> str:
     return "\n".join(str(c.args[0]) for c in channel.send.await_args_list if c.args)
+
+
+async def _resubmitting(db_path) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT resubmitting FROM round_submission_channels WHERE round_id = ?", (ROUND_ID,)
+        )
+        return (await cursor.fetchone())[0]
 
 
 async def _sessions(db_path):
@@ -259,10 +279,15 @@ async def test_failing_to_load_the_division_says_so_in_the_channel(tmp_path):
     db_path = await _make_db(tmp_path, name="resubmit_novalid")
     bot = _bot(db_path, [])
 
+    await _seed_old_results(db_path)
+
     stubs = await _run(bot, validation_error=RuntimeError("team service down"))
 
     assert "Resubmission failed: could not load division data" in _said(stubs["channel"])
     bot.wait_for.assert_not_awaited()
+    # Nothing to collect with, so the round goes back to the review it came from.
+    assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
+    assert await _resubmitting(db_path) == 0
 
 
 async def test_the_existing_channel_is_reused_and_the_resubmission_announced(tmp_path):
@@ -475,5 +500,168 @@ async def test_a_failed_swap_says_the_earlier_results_still_stand(tmp_path):
         stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
 
     assert "The earlier results still stand" in _said(stubs["channel"])
-    stubs["penalty"].assert_not_awaited()
     assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
+    stubs["penalty"].assert_awaited_once()
+    assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
+    assert await _resubmitting(db_path) == 0
+
+
+# ---------------------------------------------------------------------------
+# Cancelling the resubmission
+# ---------------------------------------------------------------------------
+
+
+def _cancel_view():
+    view = ResubmissionCancelView(SimpleNamespace(db_path="", bot=MagicMock()))
+    view.message = MagicMock()
+    view.message.edit = AsyncMock()
+    return view
+
+
+def _press_cancel(view, actor=MANAGER):
+    view.cancelled_by = actor
+    view.pressed.set()
+
+
+def _cancelled_on_second_wait(db_path, view):
+    """A bot whose manager pastes the qualifying session, then presses Cancel."""
+    bot = _bot(db_path, [])
+    calls = []
+
+    async def _wait_for(event, check):
+        calls.append(event)
+        if len(calls) == 1:
+            return _message(QUALI_PASTE)
+        _press_cancel(view)
+        await asyncio.Event().wait()  # no paste ever comes
+
+    bot.wait_for = AsyncMock(side_effect=_wait_for)
+    return bot
+
+
+async def test_the_button_is_labelled_cancel():
+    view = _cancel_view()
+
+    assert [child.label for child in view.children] == ["Cancel"]
+
+
+async def test_cancelling_the_resubmission_keeps_the_earlier_results(tmp_path):
+    db_path = await _make_db(tmp_path, name="resubmit_cancel_keep")
+    await _seed_old_results(db_path)
+    view = _cancel_view()
+
+    await _run(_cancelled_on_second_wait(db_path, view), cancel_view=view)
+
+    assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
+    assert await _resubmitting(db_path) == 0
+
+
+async def test_cancelling_the_resubmission_returns_the_round_to_penalty_review(tmp_path):
+    """The results were never touched and are already posted, so the prompt comes back
+    without them being posted a second time."""
+    db_path = await _make_db(tmp_path, name="resubmit_cancel_review")
+    await _seed_old_results(db_path)
+    view = _cancel_view()
+
+    stubs = await _run(_cancelled_on_second_wait(db_path, view), cancel_view=view)
+
+    stubs["penalty"].assert_awaited_once()
+    assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
+    assert "is_resubmission" not in stubs["penalty"].await_args.kwargs
+    assert "Resubmission cancelled" in _said(stubs["channel"])
+    view.message.edit.assert_awaited_once_with(view=None)
+
+
+async def test_cancelling_the_resubmission_is_logged(tmp_path):
+    db_path = await _make_db(tmp_path, name="resubmit_cancel_log")
+    await _seed_old_results(db_path)
+    view = _cancel_view()
+    bot = _cancelled_on_second_wait(db_path, view)
+
+    await _run(bot, cancel_view=view)
+
+    logged = "\n".join(str(c.args[1]) for c in bot.output_router.post_log.await_args_list)
+    assert f"<@{MANAGER}> | RESULTS_RESUBMISSION | Cancelled" in logged
+
+
+async def test_cancel_pressed_while_choosing_the_configuration_replaces_nothing(tmp_path):
+    """The last session's configuration menu is its own wait. A cancel landing there must
+    still stop the swap that would otherwise follow it."""
+    db_path = await _make_db(tmp_path, name="resubmit_cancel_select")
+    await _seed_old_results(db_path)
+    view = _cancel_view()
+    presses = []
+
+    def _on_select():
+        presses.append(1)
+        if len(presses) == 2:
+            _press_cancel(view)
+
+    stubs = await _run(
+        _bot(db_path, [QUALI_PASTE, RACE_PASTE]),
+        configs=("Standard", "Half"),
+        cancel_view=view,
+        on_select=_on_select,
+    )
+
+    assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
+    assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
+
+
+async def test_a_completed_resubmission_takes_down_the_cancel_button(tmp_path):
+    """Once the swap has landed there is nothing left to cancel."""
+    db_path = await _make_db(tmp_path, name="resubmit_cancel_done")
+    await _seed_old_results(db_path)
+    view = _cancel_view()
+
+    stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]), cancel_view=view)
+
+    view.message.edit.assert_awaited_once_with(view=None)
+    assert stubs["penalty"].await_args.kwargs["is_resubmission"] is True
+
+
+async def test_a_paste_is_still_collected_when_nobody_presses_cancel(tmp_path):
+    """Each paste wins its race against the button; losing that race must not spoil the
+    next one."""
+    db_path = await _make_db(tmp_path, name="resubmit_cancel_idle")
+    await _seed_old_results(db_path)
+    view = _cancel_view()
+
+    await _run(_bot(db_path, ["garbage", QUALI_PASTE, RACE_PASTE]), cancel_view=view)
+
+    assert [s[0] for s in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
+
+
+async def test_cancel_refuses_somebody_without_the_tier(monkeypatch):
+    monkeypatch.setattr(pw, "is_league_manager", lambda config, member: False)
+    bot = MagicMock()
+    bot.config_service = MagicMock()
+    bot.config_service.get_server_config = AsyncMock(return_value=MagicMock())
+    view = ResubmissionCancelView(SimpleNamespace(db_path="", bot=bot))
+    interaction = MagicMock()
+    interaction.user = MagicMock(spec=discord.Member)
+    interaction.user.id = 5
+    interaction.response.send_message = AsyncMock()
+
+    await type(view).cancel_btn(view, interaction, MagicMock())
+
+    assert view.cancelled is False
+    assert not view.pressed.is_set()
+    assert "Only league managers" in interaction.response.send_message.await_args.args[0]
+
+
+async def test_cancel_pressed_by_a_league_manager_stops_the_resubmission(monkeypatch):
+    monkeypatch.setattr(pw, "is_league_manager", lambda config, member: True)
+    bot = MagicMock()
+    bot.config_service = MagicMock()
+    bot.config_service.get_server_config = AsyncMock(return_value=MagicMock())
+    view = ResubmissionCancelView(SimpleNamespace(db_path="", bot=bot))
+    interaction = MagicMock()
+    interaction.user = MagicMock(spec=discord.Member)
+    interaction.user.id = MANAGER
+    interaction.response.send_message = AsyncMock()
+
+    await type(view).cancel_btn(view, interaction, MagicMock())
+
+    assert view.cancelled_by == MANAGER
+    assert view.pressed.is_set()
