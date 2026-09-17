@@ -364,7 +364,7 @@ async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
     driver — the autosack's usual target. Their sack raised something other than
     `ValueError`, which escaped this loop, and every driver after them in the round went
     unsanctioned with nothing reported. Two such drivers are past the threshold here, so a
-    failure on the first leaves the second's profile standing whichever is read first.
+    failure on the first leaves the second unsacked whichever is read first.
     """
     from services.placement_service import PlacementService
 
@@ -401,12 +401,14 @@ async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
 
     await _run(bot, db_path)
 
+    # Both are sacked. Neither is deleted: a driver who never raced is pending deletion
+    # until the season's end (issue #220).
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT COUNT(*) FROM driver_profiles WHERE id IN (?, ?)",
+            "SELECT current_state FROM driver_profiles WHERE id IN (?, ?)",
             (FULL_TIME_PROFILE, second_profile),
         )
-        assert (await cursor.fetchone())[0] == 0
+        assert [r[0] for r in await cursor.fetchall()] == ["NOT_SIGNED_UP", "NOT_SIGNED_UP"]
     assert _logged(bot).count("ATTENDANCE_AUTOSACK") == 2
 
 

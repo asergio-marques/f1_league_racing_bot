@@ -1508,24 +1508,25 @@ class PlacementService:
         self,
         server_id: int,
         driver_profile_id: int,
-        season_id: int | None,
+        season_id: int,
         acting_user_id: int,
         acting_user_name: str,
         guild: discord.Guild,
         discord_user_id: str,
     ) -> None:
-        """Sack a driver: revoke all roles, clear all assignments, transition to
-        Not Signed Up. Applies former_driver rules for record retention.
+        """Sack a committed driver: revoke every role, free every seat, return to Not Signed Up.
 
-        A former driver's profile is kept, with their signup details blanked. Anyone else's
-        is deleted, together with every row that references it with no cascade (their
-        assignments and history entries from every season, and their attendance), while
-        the result and standings rows they appear in are kept and let go of the profile.
+        Issue #220. Sacking is for a driver whose placement is confirmed — an uncommitted one
+        is unassigned or rejected instead — and is available only while the season is
+        ongoing, which the command checks. The profile is **never deleted here**: a driver
+        without the former-driver flag who reaches Not Signed Up is pending deletion, and is
+        deleted by the driver pass that ends the season. Their attendance, results and
+        standings rows are therefore kept, and so is every signup they made.
 
-        Raises ValueError for blocking conditions.
+        The season's placements are removed, so the driver holds no seat and gains no history
+        entry for the season. Raises ValueError for blocking conditions.
         """
         async with get_connection(self._db_path) as db:
-            # Validate state
             cursor = await db.execute(
                 "SELECT current_state, former_driver, is_test_driver FROM driver_profiles "
                 "WHERE id = ? AND server_id = ?",
@@ -1543,21 +1544,22 @@ class PlacementService:
                     f"(current state: {current_state.value})."
                 )
 
+            cursor = await db.execute(
+                "SELECT division_id, committed FROM driver_season_assignments "
+                "WHERE driver_profile_id = ? AND season_id = ?",
+                (driver_profile_id, season_id),
+            )
+            asgn_rows = await cursor.fetchall()
+            if not any(r["committed"] for r in asgn_rows):
+                raise ValueError(
+                    "Only a driver whose placement is confirmed can be sacked. Remove an "
+                    "unconfirmed placement with `/driver unassign`, and turn down an "
+                    "Unassigned driver with `/driver reject`."
+                )
+            division_ids = [r["division_id"] for r in asgn_rows]
             now = datetime.now(timezone.utc).isoformat()
 
-            # Fetch current division assignments for the audit log
-            if season_id is not None:
-                cursor = await db.execute(
-                    "SELECT division_id FROM driver_season_assignments "
-                    "WHERE driver_profile_id = ? AND season_id = ?",
-                    (driver_profile_id, season_id),
-                )
-                asgn_rows = await cursor.fetchall()
-                division_ids = [r["division_id"] for r in asgn_rows]
-            else:
-                division_ids = []
-
-        # Revoke all roles before DB mutation (needs guild lookup)
+        # Revoke all roles before DB mutation: the placements are what they are computed from.
         member = guild.get_member(int(discord_user_id))
         if member is None:
             try:
@@ -1566,8 +1568,7 @@ class PlacementService:
                 member = None
 
         if member is not None and not is_test_driver:
-            if season_id is not None:
-                await self.revoke_all_placement_roles(server_id, driver_profile_id, season_id, member)
+            await self.revoke_all_placement_roles(server_id, driver_profile_id, season_id, member)
             # Revoke the signed-up role granted at approval
             async with get_connection(self._db_path) as db:
                 cur = await db.execute(
@@ -1581,69 +1582,19 @@ class PlacementService:
                     await self._revoke_roles(member, signed_up_role.id)
 
         async with get_connection(self._db_path) as db:
-            # Free all occupied seats
             await db.execute(
-                "UPDATE team_seats SET driver_profile_id = NULL "
-                "WHERE driver_profile_id = ?",
+                "UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id = ?",
                 (driver_profile_id,),
             )
-            # Delete all season assignments
-            if season_id is not None:
-                await db.execute(
-                    "DELETE FROM driver_season_assignments "
-                    "WHERE driver_profile_id = ? AND season_id = ?",
-                    (driver_profile_id, season_id),
-                )
-            # Transition to NOT_SIGNED_UP per constitution rules
-            if former_driver:
-                # Retain the profile, and its signups with it: they are season history
-                # (issue #220), so nothing of them is cleared.
-                await db.execute(
-                    "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
-                    (DriverState.NOT_SIGNED_UP.value, driver_profile_id),
-                )
-            else:
-                # Everything below references the profile with no ON DELETE CASCADE, so it
-                # must go (or let go) first or the deletion is refused on a foreign key.
-                # Assignments and history entries go for *every* season, not only the one
-                # being sacked from: completing a season keeps its assignments and writes
-                # a history entry for each assigned driver, raced or not, so a driver who
-                # sat a season out and stayed on the roster carries both (issue #211).
-                await db.execute(
-                    "DELETE FROM driver_season_assignments WHERE driver_profile_id = ?",
-                    (driver_profile_id,),
-                )
-                await db.execute(
-                    "DELETE FROM driver_history_entries WHERE driver_profile_id = ?",
-                    (driver_profile_id,),
-                )
-                # Attendance history rows (NOT NULL FK).
-                await db.execute(
-                    "DELETE FROM driver_round_attendance WHERE driver_profile_id = ?",
-                    (driver_profile_id,),
-                )
-                # NULL-out soft FK references in historical result/standings rows so the
-                # profile row itself can be removed without violating FK constraints.
-                await db.execute(
-                    "UPDATE race_session_results SET driver_profile_id = NULL "
-                    "WHERE driver_profile_id = ?",
-                    (driver_profile_id,),
-                )
-                await db.execute(
-                    "UPDATE qualifying_session_results SET driver_profile_id = NULL "
-                    "WHERE driver_profile_id = ?",
-                    (driver_profile_id,),
-                )
-                await db.execute(
-                    "UPDATE driver_standings_snapshots SET driver_profile_id = NULL "
-                    "WHERE driver_profile_id = ?",
-                    (driver_profile_id,),
-                )
-                # Delete profile atomically
-                await db.execute(
-                    "DELETE FROM driver_profiles WHERE id = ?", (driver_profile_id,)
-                )
-
+            await db.execute(
+                "DELETE FROM driver_season_assignments "
+                "WHERE driver_profile_id = ? AND season_id = ?",
+                (driver_profile_id, season_id),
+            )
+            await db.execute(
+                "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
+                (DriverState.NOT_SIGNED_UP.value, driver_profile_id),
+            )
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
@@ -1662,7 +1613,6 @@ class PlacementService:
             )
             await db.commit()
 
-        # Refresh lineup post for each division the driver was removed from
         if guild is not None:
             for _div_id in division_ids:
                 await self._refresh_lineup_post(guild, _div_id)

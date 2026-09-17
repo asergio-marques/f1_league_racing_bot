@@ -12,11 +12,9 @@ where one command quietly loses a rung. A single parametrised sweep would not do
 take different arguments and stop at different rungs (`sack` has no division, and tolerates
 there being no season at all).
 
-**`sack` tolerating no season is the rule most easily lost.** A driver can be sacked between
-seasons — that is when a league clears out drivers who have left — so `season` being `None` is
-a legitimate state, passed to `sack_driver` as a `None` season id. The other two commands
-refuse outright. `test_a_driver_can_be_sacked_with_no_season_at_all` holds it; a reader
-making the four commands consistent would break it and no other test would object.
+**Each command answers to the season's stage** (issue #220): assign and unassign to the
+placing stages, sack to the ongoing ones. Between seasons nothing is sacked — the season's end
+has already returned every driver to Not Signed Up.
 
 The archived-season refusal is pinned for all three mutating commands together, because
 `SeasonImmutableError` is what stops a completed season being edited after the fact — the
@@ -149,6 +147,14 @@ async def _unassign(cog, interaction, *, division: str = "Division 1"):
 
 
 async def _sack(cog, interaction):
+    """Sack, with the season ongoing — the only stage a sack is available in (issue #220)."""
+    from models.season import SeasonStage
+
+    season = cog.bot.season_service.get_confirmed_season.return_value
+    if season is not None:
+        cog.bot.season_service.get_confirmed_season.return_value = SimpleNamespace(
+            **{**vars(season), "stage": SeasonStage.ONGOING}
+        )
     await undecorate(DriverCog.sack)(cog, interaction, _member(1, "Driver"))
 
 
@@ -244,7 +250,8 @@ async def test_no_season_refuses_a_placement_change(command):
     cog.bot.placement_service.unassign_driver.assert_not_awaited()
 
 
-@pytest.mark.parametrize("command", MUTATING)
+@pytest.mark.parametrize("command", [pytest.param(_assign, id="assign"),
+                                     pytest.param(_unassign, id="unassign")])
 async def test_an_archived_season_refuses_every_change(command):
     """A COMPLETED season is the championship's record. Editing it would move drivers
     under results already published."""
@@ -416,28 +423,29 @@ async def test_a_driver_is_sacked(tmp_path):
     assert "has been sacked" in _replied(interaction)
 
 
-async def test_a_driver_can_be_sacked_with_no_season_at_all(tmp_path):
-    """Between seasons is when a league clears out drivers who have left, so no season is
-    a legitimate state here — unlike assign and unassign, which refuse. The season id
-    passed through is `None`, and a reader making the four commands consistent would take
-    this away."""
+async def test_a_sack_is_refused_with_no_season(tmp_path):
+    """Issue #220: sacking is for the ongoing stages. Between seasons the season's end has
+    already returned every driver to Not Signed Up."""
     cog = _make_cog(season=None)
     interaction = _interaction()
 
-    await _sack(cog, interaction)
+    await undecorate(DriverCog.sack)(cog, interaction, _member(1, "Driver"))
 
-    cog.bot.placement_service.sack_driver.assert_awaited_once()
-    assert cog.bot.placement_service.sack_driver.await_args.kwargs["season_id"] is None
+    assert "only while the season is ongoing" in _replied(interaction)
+    cog.bot.placement_service.sack_driver.assert_not_awaited()
 
 
-async def test_the_mutability_check_is_skipped_when_there_is_no_season(tmp_path):
-    """There is nothing to assert mutability of. Calling it with `None` would raise."""
-    cog = _make_cog(season=None)
+@pytest.mark.parametrize("stage", ["PLACEMENTS", "PENDING_COMPLETION"])
+async def test_a_sack_is_refused_outside_the_ongoing_stages(tmp_path, stage):
+    """Before placements are confirmed nobody is committed; in Pending completion only the
+    season's completion remains."""
+    cog = _make_cog(season=_season(stage=stage))
     interaction = _interaction()
 
-    await _sack(cog, interaction)
+    await undecorate(DriverCog.sack)(cog, interaction, _member(1, "Driver"))
 
-    cog.bot.season_service.assert_season_mutable.assert_not_awaited()
+    assert "only while the season is ongoing" in _replied(interaction)
+    cog.bot.placement_service.sack_driver.assert_not_awaited()
 
 
 async def test_a_refused_sacking_is_reported_not_raised(tmp_path):

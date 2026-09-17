@@ -548,17 +548,16 @@ class DriverCog(commands.Cog):
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
+        # Sacking is available only while the season is ongoing (issue #220). Between seasons
+        # every driver has already been returned to Not Signed Up by the season's end, and a
+        # season still being built has no confirmed placement to sack anyone from.
         season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
-
-        if season is not None:
-            try:
-                await self.bot.season_service.assert_season_mutable(season)  # type: ignore[attr-defined]
-            except SeasonImmutableError:
-                await interaction.followup.send(
-                    "❌ This season is archived (COMPLETED) and cannot be modified.",
-                    ephemeral=True,
-                )
-                return
+        if season is None or season.stage not in ONGOING_STAGES:
+            await interaction.followup.send(
+                "⛔ `/driver sack` is available only while the season is ongoing.",
+                ephemeral=True,
+            )
+            return
 
         profile = await self.bot.driver_service.get_profile(  # type: ignore[attr-defined]
             server_id, str(user.id)
@@ -573,7 +572,7 @@ class DriverCog(commands.Cog):
             await self.bot.placement_service.sack_driver(  # type: ignore[attr-defined]
                 server_id=server_id,
                 driver_profile_id=profile.id,
-                season_id=season.id if season is not None else None,
+                season_id=season.id,
                 acting_user_id=actor_id,
                 acting_user_name=actor_name,
                 guild=interaction.guild,
