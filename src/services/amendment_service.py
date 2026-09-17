@@ -450,6 +450,24 @@ class NonMonotonicAmendmentError(Exception):
         self.errors = errors
 
 
+class AmendmentNotDeliverableError(Exception):
+    """Raised when an amendment could not be published, having written nothing (#187).
+
+    Carries the faults as ``faults``, as lines a league can read, so the caller can hand
+    them to a manager unchanged.
+
+    **A second exception rather than a second kind of** :class:`NonMonotonicAmendmentError`.
+    The two refusals answer different questions — one about the table being installed, one
+    about the league being able to see the result — and they name different repairs. Folding
+    them together would make one message serve both badly, and would churn the ordering
+    rule's own tests and its own line in the specification for no gain.
+    """
+
+    def __init__(self, faults: list[str]) -> None:
+        super().__init__("; ".join(faults))
+        self.faults = faults
+
+
 async def validate_modification_ordering(db_path: str, season_id: int) -> list[str]:
     """Return ordering errors in the modification store, in approval's own words.
 
@@ -746,6 +764,46 @@ async def get_modification_store_diff(db_path: str, season_id: int) -> str:
     return header + "\n" + "\n".join(lines)
 
 
+async def _server_id_of_season(db_path: str, season_id: int) -> int | None:
+    """The server a season belongs to, read before the approval writes anything."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT server_id FROM seasons WHERE id = ?", (season_id,)
+        )
+        row = await cursor.fetchone()
+    return int(row["server_id"]) if row else None
+
+
+async def approval_faults(db_path: str, season_id: int, bot) -> list[str]:
+    """Everything that would stop an approved amendment being published (#187).
+
+    Returns the faults as lines a league can read, and an empty list where the whole
+    cascade could be carried out.
+
+    **Called twice, from one reading.** `/results amend review` calls it to draw its panel,
+    so a manager sees what is wrong while deciding rather than after pressing Approve, and
+    :func:`approve_amendment` calls it again at the press, before it writes anything, so the
+    refusal cannot be stepped around by a panel drawn when the channels were still sound.
+    This is how `validate_modification_ordering` is already used, and how
+    `_placement_confirmation_faults` serves the season's own review and confirmation — the
+    report and the refusal are the same reading, so they cannot drift.
+
+    **Each module answers for its own channels.** The results module knows what its repost
+    needs and the attendance module knows what its recalculation needs; this function only
+    composes them, and reaches into neither's configuration itself.
+    """
+    from services import results_post_service
+
+    server_id = await _server_id_of_season(db_path, season_id)
+    if server_id is None:
+        return ["The season could not be read, so nothing was changed."]
+
+    guild = bot.get_guild(server_id) if bot is not None else None
+    return await results_post_service.repost_channel_faults(
+        db_path, season_id, guild, bot
+    )
+
+
 async def approve_amendment(
     db_path: str,
     season_id: int,
@@ -755,7 +813,16 @@ async def approve_amendment(
     """Atomically overwrite season points from the modification store, then recompute all standings.
 
     Raises :class:`NonMonotonicAmendmentError` if the staged tables are out of order,
-    having written nothing.
+    having written nothing, and :class:`AmendmentNotDeliverableError` if the result could
+    not be published, likewise having written nothing.
+
+    **Either everything succeeds or everything fails** (decided 2026-09-17, issue #187).
+    Everything the approval will need is established before the first row is deleted, and
+    an approval that could not be carried out in full is refused entire: not the season's
+    points, not the modification store, not the amending mode. There is no partial
+    outcome, and there is deliberately no vocabulary for one — a cascade that reposted four
+    divisions of six used to be reported to the league as a success, which is the defect
+    this rule exists to make impossible rather than merely to describe accurately.
 
     **Why the guard is here and not only in the command.** This function's first act is
     to delete the season's points, and its second is to refill them from the
@@ -773,6 +840,12 @@ async def approve_amendment(
     ordering_errors = await validate_modification_ordering(db_path, season_id)
     if ordering_errors:
         raise NonMonotonicAmendmentError(ordering_errors)
+
+    # Established before the first DELETE below, which is the whole point of it: after that
+    # line the season's points are gone and no refusal can put them back (#187).
+    faults = await approval_faults(db_path, season_id, bot)
+    if faults:
+        raise AmendmentNotDeliverableError(faults)
 
     async with get_connection(db_path) as db:
         # Overwrite season_points_entries
