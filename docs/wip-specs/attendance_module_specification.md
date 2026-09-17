@@ -48,6 +48,8 @@
 - <NEW COMMAND> An "attendance config no-show-penalty" command will be made available to league managers, which shall have as input an integer standing for the number of attendance points gained upon failing to show up for a round after having accepted the check-in.
     - By default, this value will be 1.
 - <NEW COMMAND> An "attendance config autosack" command will be made available to league managers, which shall have as input an integer standing for the number of attendance points upon which a driver will be automatically sacked from all team seats. A value of 0 means that the autosack functionality is disabled.
+    - Autosack shall remove a driver from every seat they hold in every division, whichever division's points carried them over the threshold. A league wanting a driver dropped to reserve only in the division where they missed rounds shall use autoreserve.
+    - The reply to setting a threshold other than 0 shall state that autosack removes a driver from every seat in every division, and shall name autoreserve as the setting that acts upon one division alone.
     - It is a league manager's though sacking a driver by command is a league admin's, the setting being the configuration of a module and undone by setting it back. What follows from it is a sanction the league has published in advance and which a driver earns by their own absences, and not a command destroying what a league is built from.
     - By default, this value will be false (disabled).
 - <NEW COMMAND> An "attendance config autoreserve" command will be made available to league managers, which shall have as input an integer standing for the number of attendance points upon which a driver will be unassigned from their current seat and assigned to the reserve team of the same division. A value of 0 means that the autoreserve functionality is disabled.
@@ -107,6 +109,7 @@
 ## Attendance
 - Once the initial round results are submitted, the attendance sheet of the round will be filled. Being listed in any of the sessions of the round will be enough to count as having attended.
 - Drivers who are reserving for that division are ignored.
+- A driver's attendance points shall be counted separately in each division they race in.
 - Attendance points shall only be distributed once the post-race penalties results are finalized, to prevent erroneous automatic sackings due to omitting a driver on the results accidentally.
 - Attendance points will be distributed as follows:
     - Failure to check-in, attended: no-rsvp-penalty points gained.
@@ -126,6 +129,7 @@
 - Once the post-race penalties are approved and posted, the updated attendance total shall be posted in the configured attendance channel for the division.
     - The post will be a list of drivers in descending order from most attendance points to least, mentioning each one in the form "@user - x attendance points".
     - The end of the post will always have the following text: "Drivers who reach <attendance config autoreserve> points will be moved to reserve.\nDrivers who reach <attendance config autosack> points will be removed from all driving roles in all divisions." (the \n stands for a line break)
+- The sheet of a division shall list every driver currently seated in the division, and every driver who has held a seat in it during the present season, full-time or Reserve, whether or not they still hold it. A Reserve driver shall be listed from the round they were first placed into a seat for, and shall stay listed thereafter.
 - To prevent misunderstandings, once a new attendance total is posted on the channel, the message containing the previous one shall be deleted.
 - Beyond the postings after each round, the sheet shall be posted on the two occasions that bracket a season:
     - Upon the season's placements being first confirmed, an **opening sheet** shall be posted, holding every driver holding a committed seat in the division upon nought attendance points. It is read from the seats of the division, the attendance record holding nothing at that moment, and is ordered alphabetically by the name of the team and alphabetically by the name of the driver within a team.
@@ -134,8 +138,8 @@
 - The opening sheet takes the place of the previous sheet in the ordinary way, so that the sheet of the first round replaces it and the division is never left holding a stale opening sheet beside a live one. The **final sheet does not**: it is posted beside the sheet of the last round and both stand. This is the one exception to the rule above that only one attendance total stands in the channel at a time.
 - The failure of either shall never prevent a season's placements from being confirmed nor the season from completing, and the failure of one division shall not prevent the others.
 - The attendance sheet for a round must be recalculated in the case "round results amend" is used. The pardons handed out previously will be taken in considerations as well.
-- After the attendance total is posted, it shall be verified whether any driver has crossed the autoreserve limits; if they are deemed to have done so, they will be unassigned from their team role and assigned to the reserve team.
-- After the attendance total is posted, it shall be verified whether any driver has crossed the autosack limits; if they are deemed to have done so, they will be unassigned from all their driving roles in all divisions, full-time or otherwise, and lose their driver role (the one automatically given out when a signup is approved)
+- After the attendance total is posted, it shall be verified whether any driver has crossed the autoreserve limits; if they are deemed to have done so, they will be moved to the reserve team of the same division, as the command moving a driver moves them.
+- After the attendance total is posted, it shall be verified whether any driver has crossed the autosack limits; if they are deemed to have done so, they will be sacked: removed from all their driving roles in all divisions, full-time or otherwise, losing their driver role (the one automatically given out when a signup is approved). The sheet of every division they held a seat in shall then be posted again.
 
 ## Test mode
 - A "test-mode rsvp set-status" command shall be available to league managers, which will take as its parameter the name of a division (mandatory). This will serve to set the RSVP status of fake drivers in test mode.

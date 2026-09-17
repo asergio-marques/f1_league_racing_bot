@@ -122,5 +122,6 @@ existing whether or not this module is enabled.
 - The season's signup configuration — its time slots, its time type, and which questions were asked — shall be kept with the season as it stood when the configuration was confirmed, and each window's tracks and close time shall be kept with the window, so that a signup kept remains readable. A driver's availability names the season's slots, and their times name the window's tracks.
 - The signups of an aborted season shall be deleted with it.
 - The "driver reassign" command shall carry every signup of the profile to its new account.
+- Wherever the bot names a driver from their signup, or reads the nationality they gave in it, it shall read the driver's signup to the season concerned: the graphics of a season, and the notice that a driver has left the server, alike. A driver created by test mode holds no signup, and their nationality shall be read from the driver profile as before.
 
 The name of the commands is an example and only tentative. If further commands are required, please inform.
