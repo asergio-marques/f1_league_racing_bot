@@ -153,7 +153,7 @@ The only line that stacks two penalties is the driver who ignored the call and t
 /attendance config autosack  points: 8
 ```
 
-Both are **off to begin with**, and both work on a driver's running total across the season, checked every time a round's points are charged. Reach the number and the bot acts immediately.
+Both are **off to begin with**, and both work on a driver's running total **in one division** — points are counted per division, not across the season — checked every time a round's points are charged. Reach the number and the bot acts immediately.
 
 | Command | What the bot does when a driver reaches the number |
 |---|---|
@@ -164,7 +164,7 @@ Set either to `0` to switch it off.
 
 > **You can only have one of them.** Setting auto-reserve while auto-sack is active is refused, and the other way round. If you want to swap, set the one you have to `0` first — the refusal tells you which command to run.
 
-Either action is announced in the division's verdicts channel, the same place your penalty decisions go, so your league sees why a driver moved. The lineup post is redrawn to match, and the sheet for that same round is reposted straight away with the driver marked as having reached the limit. Where the image module's `Verdict banner` switch is on, these are headed like any other verdict. If the sanction came out of approving a penalty review, it falls under that approval's banner alongside the penalties; if it fired on its own — a clean round, or a pardon that made the bot re-check attendance — it gets a banner of its own.
+Either action is announced in the division's verdicts channel, the same place your penalty decisions go, so your league sees why a driver moved. The lineup post is redrawn to match, and the sheet for that same round is reposted straight away with the driver still listed and marked as having reached the limit — a sheet lists everyone who held a seat in the division this season, not only those who still do. An auto-sack also reposts the latest sheet of every **other** division the driver sat in, since they lose those seats too. Where the image module's `Verdict banner` switch is on, these are headed like any other verdict. If the sanction came out of approving a penalty review, it falls under that approval's banner alongside the penalties; if it fired on its own — a clean round, or a pardon that made the bot re-check attendance — it gets a banner of its own.
 
 **Auto-reserve needs somewhere to put them.** If a division has no Reserve team, the sanction is skipped **silently** — nothing is posted to the verdicts channel, nothing to the log channel, nothing anywhere you can see; it reaches only the bot's own log file on the host. A driver already in the Reserve team is left alone, equally silently.
 

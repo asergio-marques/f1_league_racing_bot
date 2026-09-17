@@ -881,41 +881,7 @@ async def post_attendance_sheet(
 
     # Build sheet content.
     async with get_connection(db_path) as db:
-        # Full-time drivers + allocated reserves (who can accrue no-show points).
-        cursor = await db.execute(
-            """
-            SELECT dra.driver_profile_id, dra.total_points_after,
-                   dp.discord_user_id, dp.test_display_name
-            FROM driver_round_attendance dra
-            JOIN driver_season_assignments dsa
-                ON dsa.driver_profile_id = dra.driver_profile_id
-            JOIN team_seats ts ON ts.id = dsa.team_seat_id
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
-            WHERE dra.round_id = ?
-              AND dra.division_id = ?
-              AND ti.division_id = ?
-              AND ti.is_reserve = 0
-              AND dra.total_points_after IS NOT NULL
-            UNION
-            SELECT dra.driver_profile_id, dra.total_points_after,
-                   dp.discord_user_id, dp.test_display_name
-            FROM driver_round_attendance dra
-            JOIN driver_season_assignments dsa
-                ON dsa.driver_profile_id = dra.driver_profile_id
-            JOIN team_seats ts ON ts.id = dsa.team_seat_id
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
-            WHERE dra.round_id = ?
-              AND dra.division_id = ?
-              AND ti.division_id = ?
-              AND ti.is_reserve = 1
-              AND dra.assigned_team_id IS NOT NULL
-              AND dra.total_points_after IS NOT NULL
-            """,
-            (round_id, division_id, division_id, round_id, division_id, division_id),
-        )
-        driver_rows = await cursor.fetchall()
+        driver_rows = await _sheet_rows(db, round_id, division_id)
 
         # The opening sheet stands before any round has been attended, so
         # `driver_round_attendance` holds nothing to read and the query above returns
@@ -1077,6 +1043,63 @@ async def post_attendance_sheet(
             pass  # already gone — skip silently
         except discord.HTTPException as exc:
             log.warning("post_attendance_sheet: failed to delete prior message: %s", exc)
+
+
+async def _sheet_rows(db, round_id: int, division_id: int) -> list:
+    """The drivers a division's attendance sheet after *round_id* lists, with their totals.
+
+    Issue #220: every driver currently seated full-time in the division, and every driver who
+    has held a seat in it during the season — full-time, or as a Reserve placed into a seat for
+    a round — whether or not they still hold it. A driver sanctioned upon this posting, sacked
+    at an earlier round, or moved to Reserve therefore stays on the sheet, which is what lets
+    the sheet say they reached the limit.
+
+    Having held a seat for a round is read from the attendance record itself: a round scores
+    the full-time drivers and the Reserves placed into a seat, and nobody else, so a total
+    recorded for the driver in this division is the evidence. Each driver's total is the one
+    recorded at their latest scored round up to this one, and nought where none is.
+    """
+    from services.season_lifecycle_service import uncommitted_seat_excluded
+
+    cursor = await db.execute(
+        f"""
+        WITH current_round AS (
+            SELECT round_number FROM rounds WHERE id = ?
+        ),
+        listed AS (
+            SELECT dra.driver_profile_id
+            FROM driver_round_attendance dra
+            JOIN rounds r ON r.id = dra.round_id
+            WHERE dra.division_id = ?
+              AND dra.total_points_after IS NOT NULL
+              AND r.round_number <= (SELECT round_number FROM current_round)
+            UNION
+            SELECT ts.driver_profile_id
+            FROM team_seats ts
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            WHERE ti.division_id = ?
+              AND ti.is_reserve = 0
+              AND ts.driver_profile_id IS NOT NULL
+              AND {uncommitted_seat_excluded("ts")}
+        )
+        SELECT dp.id AS driver_profile_id, dp.discord_user_id, dp.test_display_name,
+               COALESCE((
+                   SELECT dra2.total_points_after
+                   FROM driver_round_attendance dra2
+                   JOIN rounds r2 ON r2.id = dra2.round_id
+                   WHERE dra2.driver_profile_id = dp.id
+                     AND dra2.division_id = ?
+                     AND dra2.total_points_after IS NOT NULL
+                     AND r2.round_number <= (SELECT round_number FROM current_round)
+                   ORDER BY r2.round_number DESC
+                   LIMIT 1
+               ), 0) AS total_points_after
+        FROM driver_profiles dp
+        WHERE dp.id IN (SELECT driver_profile_id FROM listed)
+        """,
+        (round_id, division_id, division_id, division_id),
+    )
+    return await cursor.fetchall()
 
 
 async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
@@ -1453,6 +1476,8 @@ async def enforce_attendance_sanctions(
 
     # Track which profiles were actually sanctioned for the attendance sheet re-post.
     sanctioned_profile_ids: set[int] = set()
+    # Other divisions an autosacked driver sat in, and who of theirs was sacked from them.
+    other_divisions: dict[int, set[int]] = {}
 
     for row in driver_rows:
         profile_id = row["driver_profile_id"]
@@ -1466,6 +1491,16 @@ async def enforce_attendance_sanctions(
 
         # Autosack supersedes autoreserve (FR-025).
         if autosack_threshold and total >= autosack_threshold:
+            # Autosack takes every seat in every division (issue #220), so every division
+            # the driver sits in has its sheet posted again, not only this one.
+            async with get_connection(db_path) as db:
+                cursor = await db.execute(
+                    "SELECT division_id FROM driver_season_assignments "
+                    "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ?",
+                    (profile_id, season_id, division_id),
+                )
+                for other in await cursor.fetchall():
+                    other_divisions.setdefault(other["division_id"], set()).add(profile_id)
             try:
                 await placement.sack_driver(
                     server_id=server_id,
@@ -1581,6 +1616,31 @@ async def enforce_attendance_sanctions(
             bot, guild, db_path, round_id, division_id,
             sanctioned_profile_ids=sanctioned_profile_ids,
         )
+        for other_division_id, profile_ids in other_divisions.items():
+            sacked_here = profile_ids & sanctioned_profile_ids
+            if not sacked_here:
+                continue
+            async with get_connection(db_path) as db:
+                cursor = await db.execute(
+                    "SELECT r.id FROM rounds r "
+                    "JOIN driver_round_attendance dra ON dra.round_id = r.id "
+                    "WHERE r.division_id = ? AND dra.total_points_after IS NOT NULL "
+                    "ORDER BY r.round_number DESC LIMIT 1",
+                    (other_division_id,),
+                )
+                latest = await cursor.fetchone()
+            if latest is None:
+                continue  # the division has posted no sheet yet, so there is none to correct
+            try:
+                await post_attendance_sheet(
+                    bot, guild, db_path, latest["id"], other_division_id,
+                    sanctioned_profile_ids=sacked_here,
+                )
+            except Exception:  # noqa: BLE001 — one division's sheet is not worth the others
+                log.exception(
+                    "enforce_attendance_sanctions: could not repost the sheet of division %s",
+                    other_division_id,
+                )
 
 
 async def recalculate_attendance_for_round(
