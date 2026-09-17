@@ -2948,6 +2948,13 @@ class SeasonCog(commands.Cog):
         # can be what moves it there — a season still holding a window open or placements to
         # confirm is wound down on the way, its signups closed and its pending placements
         # turned down, there being no round left to place anyone into.
+        #
+        # That wind-down posts to Discord — closing the window, closing review channels,
+        # taking roles back — and can outlast the three seconds an interaction has to answer,
+        # so the reply is deferred first wherever there is one to do.
+        deferred = season.stage in (SeasonStage.ONGOING_SIGNUPS, SeasonStage.ONGOING_PLACEMENTS)
+        if deferred:
+            await interaction.response.defer(ephemeral=True)
         await self.bot.season_service.wind_down_ongoing(self.bot, interaction.guild_id)  # type: ignore[attr-defined]
 
         all_done = await self.bot.season_service.all_divisions_finished(interaction.guild_id)
@@ -2977,10 +2984,14 @@ class SeasonCog(commands.Cog):
                     f"divisions have not finished: {unfinished}. Cancel a division that will "
                     "never run, or report this."
                 )
-            await interaction.response.send_message(message, ephemeral=True)
+            if deferred:
+                await interaction.followup.send(message, ephemeral=True)
+            else:
+                await interaction.response.send_message(message, ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True)
+        if not deferred:
+            await interaction.response.defer(ephemeral=True)
         from services.season_end_service import execute_season_end
         await execute_season_end(interaction.guild_id, season.id, self.bot)
         await interaction.followup.send("\u2705 Season marked as complete.", ephemeral=True)

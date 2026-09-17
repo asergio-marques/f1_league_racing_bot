@@ -266,11 +266,55 @@ async def test_completing_winds_a_finished_season_down_first(tmp_path):
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
 
+    order: list[str] = []
+    interaction.response.defer = AsyncMock(side_effect=lambda **kw: order.append("deferred"))
+    real_wind_down = service.wind_down_ongoing
+
+    async def winding(*args):
+        order.append("wound down")
+        return await real_wind_down(*args)
+
+    service.wind_down_ongoing = winding
+
     with patch("services.season_end_service.execute_season_end", new=AsyncMock()) as ended:
         await undecorate(SeasonCog.season_complete)(cog, interaction)
 
     assert await _stage(path) is SeasonStage.PENDING_COMPLETION
     ended.assert_awaited_once()
+    # Deferred before the wind-down, which posts to Discord and can outlast three seconds.
+    assert order == ["deferred", "wound down"]
+    interaction.followup.send.assert_awaited()
+
+
+async def test_a_wound_down_season_with_rounds_outstanding_is_refused_through_the_followup(tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from cogs.season_cog import SeasonCog
+    from tests.support.undecorate import undecorate
+
+    path = await _db(tmp_path, stage=SeasonStage.ONGOING_PLACEMENTS)
+    cog = SeasonCog.__new__(SeasonCog)
+    cog.bot = _wind_down_bot(path)
+    service = SeasonService(path)
+    cog.bot.season_service = service
+    service.get_confirmed_season = AsyncMock(
+        return_value=SimpleNamespace(id=SEASON_ID, stage=SeasonStage.ONGOING_PLACEMENTS)
+    )
+    service.all_divisions_finished = AsyncMock(return_value=False)
+    service.get_outstanding_rounds = AsyncMock(
+        return_value=[{"division": "D1", "round_number": 1, "track_name": None}]
+    )
+    interaction = MagicMock()
+    interaction.guild_id = SERVER_ID
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+
+    await undecorate(SeasonCog.season_complete)(cog, interaction)
+
+    interaction.response.send_message.assert_not_awaited()
+    assert "not yet finalised" in interaction.followup.send.await_args.args[0]
 
 
 async def test_a_season_that_moves_on_meanwhile_is_not_made_pending_completion(tmp_path):
