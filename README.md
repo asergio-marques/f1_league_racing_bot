@@ -659,11 +659,9 @@ Test mode drives the season's scheduled events on demand, without waiting for th
 
 No parameters. Flips test mode on/off; state persists across bot restarts.
 
+**Test mode is chosen for a season, in its configuration.** The toggle is refused unless a season is in configuration — start one with `/season setup` first. Confirming the configuration with `/season config-review` fixes test mode for the rest of that season. A season in test mode never opens a signup window: confirming its configuration takes it straight to placements.
+
 **Test mode cannot be enabled while your league has real drivers.** A server is either running a real league or being tested, never both, and the command refuses — naming how many drivers stand in the way — if any driver profile is signed up, unassigned, assigned or banned. Former drivers who have left do not count.
-
-**And it cannot be turned off part-way through a season your fake drivers are racing.** Disabling deletes them, and a driver a season has raced cannot be deleted, so a running season holds test mode on until you finish it with `/season complete`. A season still in setup, and a completed one, both let go of it freely.
-
-**Nor while your signup window is open.** Nobody real may sign up under test mode, so the button would refuse everyone who pressed it; close the window with `/signup close` first. The command does not close it for you — that would post a public notice in your signup channel off the back of a flag flip.
 
 Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached, as ordinary server configurations that `/results config` can view and edit like any other. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**; the two configurations are kept, being configuration rather than scaffolding.
 
@@ -697,6 +695,8 @@ Manually sets the `former_driver` flag on a driver profile. Only available when 
 |-----------|------|----------|-------------|
 | `user` | Member | ✅ | The driver whose flag is being updated |
 | `value` | Boolean | ✅ | The new value for the `former_driver` flag (`True` / `False`) |
+
+> **The roster changes only in placements.** `/test-mode roster add`, `add-bulk`, `remove` and `clear` are refused unless the season is in placements — where real drivers are placed too. `/test-mode roster list` works in any state.
 
 #### `/test-mode roster add` — Add a fake driver
 *Access: League admin · Requires test mode active*

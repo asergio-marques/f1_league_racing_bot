@@ -21,17 +21,15 @@ This is a developer and maintainer document. For configuring a league, see [Conf
 
 There is no on/off parameter — it flips, and the new state is persisted to `server_configs.test_mode_active`, so it survives a restart. Every command below refuses unless the flag is set.
 
+**Test mode belongs to a season's configuration.** The toggle is refused unless the server holds a season in Configuration, so run `/season setup` first. `/season config-review` fixes test mode for the season once its button is pressed, and a test-mode season goes straight from Configuration to Placements — it never opens a signup window. The roster commands that change fake drivers (`roster add`, `add-bulk`, `remove`, `clear`) are refused outside Placements, which is where a real league places its drivers.
+
 **A server holding real drivers cannot enter test mode.** Enabling is refused, naming the count, while any real driver profile stands at anything other than Not Signed Up — mid-signup, unassigned, assigned or banned. A profile retained at Not Signed Up is a former driver who has left, and does not stand in the way, so a league between seasons can still test.
-
-**A running season holding fake drivers holds test mode on.** Disabling is refused, naming the count, while a season is ACTIVE and any fake driver exists; `/season complete` releases it. This is not a nicety: disabling deletes every fake driver, and a driver the season has raced cannot be deleted — the check-in, the standings and the season's end each write a row carrying a foreign key to the profile. Before the guard, the delete raised *after* the flag had been persisted, leaving the server out of test mode with its roster still seated and the command replying nothing at all. A season in SETUP has raced nobody and lets go freely; a COMPLETED season deletes nothing, so its fake drivers stay in the database until `/bot-reset`.
-
-**An open signup window is refused too**, on the same footing as `/signup open` refusing under test mode: a window left open would have its button posted and pinging the base role while rejecting every driver who pressed it. Close it with `/signup close` first. The toggle does not close it for you — that posts a public notice in a channel a league reads, which is not something a flag flip should do.
 
 **And while test mode is on, no real driver may join.** The Sign Up button and `/signup open` both refuse, and `assign_driver` — the single choke point every placement passes through, so `/driver assign` and attendance's autoreserve alike — refuses any driver that is not a fake one. The two rules together keep a real roster and a test roster from ever mixing, which matters because leaving test mode deletes the fake half without asking.
 
 Two side effects on **enable**, both aimed at getting to a testable season quickly:
 
-- Where a season is in SETUP or ACTIVE, **Standard** and **Half Points** are created and attached unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone. They are created as ordinary server configurations, in the same place `/results config create` puts one, so `/results config view` shows their full ladder while the season is still in setup and approval copies them into the season by the ordinary route.
+- **Standard** and **Half Points** are created and attached to the season in Configuration unless a config of that exact name is already linked. This runs unconditionally — a season already carrying configurations of its own gains these two on top of them, rather than being left alone. They are created as ordinary server configurations, in the same place `/results config create` puts one, so `/results config view` shows their full ladder while the season is still in setup and approval copies them into the season by the ordinary route.
 - Approval performs the same seeding, so a season approved under test mode will not fail its points-configuration gate — but that path seeds only when nothing at all is attached, which the toggle path does not check.
 
 Two on **disable**:
@@ -242,14 +240,13 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 ## A workable order
 
-1. `/test-mode toggle` — before you approve the season, so the points configurations get seeded, and before any real driver signs up, since a server holding one is refused.
-2. Build and approve a season as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md). **Keep every round still to come, and beyond the configured windows**: a round whose moment has passed is refused at approval whatever the modules, and a first round inside the check-in notice or a weather phase deadline is refused as well, test mode included. The generator's own dates, in the year after the run, clear them all.
+1. `/season setup`, then `/test-mode toggle` while the season is in configuration — so the points configurations get seeded — and `/season config-review` to confirm it, which takes the season straight to placements.
+2. Build and approve the season as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md). **Keep every round still to come, and beyond the configured windows**: a round whose moment has passed is refused at approval whatever the modules, and a first round inside the check-in notice or a weather phase deadline is refused as well, test mode included. The generator's own dates, in the year after the run, clear them all.
 3. `/test-mode roster add` until each division is seated — with a `nationality` on each if you mean to look at the graphics. `/test-mode roster list` to collect the mention strings.
 4. `/test-mode advance` repeatedly, checking each posted message as it appears.
 5. For attendance rounds, `/test-mode rsvp set-status` once the check-in has been advanced into existence.
 6. `/season complete` when `advance` reports nothing left.
-7. `/test-mode toggle` off — which is refused until step 6 is done, and takes the fake drivers with it where the season never started.
-8. `/bot-reset confirm:CONFIRM` to clear the season and go again.
+7. `/bot-reset confirm:CONFIRM` to clear the season and go again.
 
 ---
 

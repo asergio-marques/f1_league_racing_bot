@@ -63,6 +63,8 @@ def _make_cog(*, test_mode: bool = True, config_missing: bool = False) -> _Cog:
 
     cog = _Cog.__new__(_Cog)
     cog.bot = bot
+    # The stage the roster may change in has tests of its own (test_test_mode_roster_stage).
+    cog._refuse_roster_change_outside_placements = AsyncMock(return_value=False)
     return cog
 
 
