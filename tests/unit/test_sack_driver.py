@@ -4,7 +4,7 @@ Issue #208. `PlacementService.sack_driver` is ninety statements and was uncovere
 most destructive thing a league manager can do to one person's record, and what it destroys
 depends on a single flag.
 
-**A former driver keeps their profile; anyone else loses it.** `former_driver` marks
+**A former driver keeps their profile.** `former_driver` marks
 someone who has raced in this league before, and their profile row is what every historical
 result points at — deleting it would either fail on a foreign key or rewrite a season's results
 to name nobody. So a former driver is transitioned to Not Signed Up with their signup record
@@ -13,7 +13,8 @@ blanked. That path works and is covered here in full.
 **Anyone else loses their profile.** A driver who has never raced has no results the league
 needs attributed to them, so the profile is deleted, and everything pointing at it has to go
 or let go first or the foreign keys refuse the deletion. Their attendance history goes with
-them. The result and standings rows they appear in stay, naming nobody by profile, because
+them, and so do their assignments and history entries from *every* season — a driver who sat
+out a completed season and stayed on the roster carries both. The result and standings rows they appear in stay, naming nobody by profile, because
 those belong to the round rather than to the driver. Issue #211: this path once cleared a
 column `signup_records` has never had, so every such sack raised and rolled back, leaving the
 driver stripped of their roles but still seated. Nothing had ever run it.
@@ -58,7 +59,9 @@ from services.placement_service import PlacementService  # noqa: E402
 
 SERVER_ID = 10708
 SEASON_ID = 1
+PRIOR_SEASON_ID = 2
 DIVISION_ID = 11
+PRIOR_DIVISION_ID = 12
 ROUND_ID = 21
 PROFILE_ID = 31
 DISCORD_USER_ID = "4242"
@@ -366,6 +369,62 @@ async def test_a_deleted_drivers_deletion_is_audited_as_such(tmp_path):
     assert json.loads(row["new_value"])["former_driver"] is False
 
 
+async def _carry_over_from_a_completed_season(db_path) -> None:
+    """Give the driver a season they sat through without racing: completing a season keeps
+    its assignments and writes a history entry for every driver assigned in it, whether or
+    not they ever turned up."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
+            "VALUES (?, ?, 0, '2025-01-01', 'COMPLETED')",
+            (PRIOR_SEASON_ID, SERVER_ID),
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (?, ?, 'Pro', 1, 999)",
+            (PRIOR_DIVISION_ID, PRIOR_SEASON_ID),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
+            "division_id) VALUES (?, ?, ?)",
+            (PROFILE_ID, PRIOR_SEASON_ID, PRIOR_DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO driver_history_entries (driver_profile_id, season_number, "
+            "division_name, division_tier, final_position, final_points, "
+            "points_gap_to_winner, cancelled) VALUES (?, 0, 'Pro', 1, 0, 0, 0, 0)",
+            (PROFILE_ID,),
+        )
+        await db.commit()
+
+
+async def test_a_driver_carried_over_from_a_completed_season_who_never_raced_is_deleted(
+    tmp_path,
+):
+    """Last season's assignment and history entry both reference the profile with no
+    cascade. Clearing only this season's assignment left the deletion refused on a foreign
+    key, for every driver who sat out a whole season and stayed on the roster."""
+    db_path = await _make_db(tmp_path, name="sack_carried_over", former_driver=False)
+    await _carry_over_from_a_completed_season(db_path)
+
+    await _sack(_service(db_path), _guild())
+
+    assert await _profile_state(db_path) is None
+    assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 0
+    assert await _count(db_path, "SELECT COUNT(*) FROM driver_history_entries") == 0
+
+
+async def test_a_driver_who_never_raced_is_deleted_between_seasons(tmp_path):
+    """With no season to scope to, the assignments are left alone for a former driver — but
+    a profile being deleted cannot keep any."""
+    db_path = await _make_db(tmp_path, name="sack_delete_noseason", former_driver=False)
+
+    await _sack(_service(db_path), _guild(), season_id=None)
+
+    assert await _profile_state(db_path) is None
+    assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 0
+
+
 # ---------------------------------------------------------------------------
 # A former driver: the profile stays
 # ---------------------------------------------------------------------------
@@ -570,8 +629,8 @@ async def test_a_member_not_in_cache_is_fetched(tmp_path):
 
 
 async def test_a_sack_with_no_season_leaves_the_assignments_alone(tmp_path):
-    """A driver may be sacked between seasons, when there is no season to unassign them
-    from — and deleting every assignment they ever had would erase last season's record."""
+    """A former driver may be sacked between seasons, when there is no season to unassign
+    them from — and deleting every assignment they ever had would erase last season's record."""
     db_path = await _make_db(tmp_path, name="sack_noseason")
 
     await _sack(_service(db_path), _guild(), season_id=None)

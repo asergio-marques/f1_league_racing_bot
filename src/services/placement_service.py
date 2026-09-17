@@ -1167,6 +1167,11 @@ class PlacementService:
         """Sack a driver: revoke all roles, clear all assignments, transition to
         Not Signed Up. Applies former_driver rules for record retention.
 
+        A former driver's profile is kept, with their signup details blanked. Anyone else's
+        is deleted, together with every row that references it with no cascade (their
+        assignments and history entries from every season, and their attendance), while
+        the result and standings rows they appear in are kept and let go of the profile.
+
         Raises ValueError for blocking conditions.
         """
         async with get_connection(self._db_path) as db:
@@ -1260,8 +1265,21 @@ class PlacementService:
                     (server_id, discord_user_id),
                 )
             else:
-                # Delete attendance history rows (driver_round_attendance has a NOT NULL
-                # FK to driver_profiles with no ON DELETE CASCADE — must clean up first).
+                # Everything below references the profile with no ON DELETE CASCADE, so it
+                # must go (or let go) first or the deletion is refused on a foreign key.
+                # Assignments and history entries go for *every* season, not only the one
+                # being sacked from: completing a season keeps its assignments and writes
+                # a history entry for each assigned driver, raced or not, so a driver who
+                # sat a season out and stayed on the roster carries both (issue #211).
+                await db.execute(
+                    "DELETE FROM driver_season_assignments WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
+                await db.execute(
+                    "DELETE FROM driver_history_entries WHERE driver_profile_id = ?",
+                    (driver_profile_id,),
+                )
+                # Attendance history rows (NOT NULL FK).
                 await db.execute(
                     "DELETE FROM driver_round_attendance WHERE driver_profile_id = ?",
                     (driver_profile_id,),
