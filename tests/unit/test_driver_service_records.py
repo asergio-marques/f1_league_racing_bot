@@ -508,6 +508,71 @@ async def test_re_keying_onto_an_occupied_account_is_refused(tmp_path):
         )
 
 
+async def test_a_re_key_onto_an_account_that_raced_is_refused(tmp_path):
+    """The new account holds no profile but holds racing of its own — a driver deleted for
+    never having raced a round in full. Carrying a second person's results onto it would
+    merge two drivers' records with nothing to separate them again."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path, user_id=OLD_USER)
+    await _seed_results(db_path, user_id=NEW_USER)
+    service = DriverService(db_path)
+
+    with pytest.raises(ValueError, match="results, standings or history of their own"):
+        await service.reassign_user_id(
+            SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        )
+
+
+async def test_a_re_key_onto_an_account_holding_history_is_refused(tmp_path):
+    """History outlives the profile, so an account with none may still hold seasons of it."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path, user_id=OLD_USER)
+    await _seed_history(db_path, NEW_USER)
+    service = DriverService(db_path)
+
+    with pytest.raises(ValueError, match="results, standings or history of their own"):
+        await service.reassign_user_id(
+            SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        )
+
+
+async def test_another_league_s_racing_does_not_refuse_a_re_key(tmp_path):
+    """The refusal is the league's own: a person who races in another league on this bot is
+    still free to be re-keyed here."""
+    db_path = await _make_db(tmp_path)
+    await _seed_league(db_path, OTHER_SERVER, OTHER_LEAGUE)
+    await _seed_profile(db_path, user_id=OLD_USER)
+    await _seed_results(db_path, user_id=NEW_USER, league=OTHER_LEAGUE)
+    await _seed_history(db_path, NEW_USER, server_id=OTHER_SERVER)
+    service = DriverService(db_path)
+
+    profile = await service.reassign_user_id(
+        SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+    )
+
+    assert profile.discord_user_id == NEW_USER
+
+
+async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path, user_id=OLD_USER)
+    await _seed_snapshot(db_path, user_id=NEW_USER)
+    await _seed_snapshot(db_path)
+    service = DriverService(db_path)
+
+    with pytest.raises(ValueError):
+        await service.reassign_user_id(
+            SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        )
+
+    assert await service.get_profile(SERVER_ID, OLD_USER) is not None
+    assert await _standings_users(db_path) == [
+        (LEAGUE, int(OLD_USER)),
+        (LEAGUE, int(NEW_USER)),
+    ]
+    assert await _audit(db_path) == []
+
+
 async def test_a_refused_re_key_changes_nothing(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)

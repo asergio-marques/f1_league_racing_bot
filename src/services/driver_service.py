@@ -122,6 +122,42 @@ _SESSIONS_OF_SERVER_SQL = (
 )
 
 
+async def account_holds_racing_records(db, server_id: int, discord_user_id: str) -> bool:
+    """Whether *discord_user_id* holds results, standings or history of its own on *server_id*.
+
+    Asked of the account a profile is about to be re-keyed onto, which by then is known to
+    hold no profile — so any such rows belong to a driver whose profile was deleted, a driver
+    who never raced a round in full but may well have been entered as a did-not-start. Moving
+    a second person's racing onto them would merge two people's records into one history with
+    nothing to separate them again, which is a worse outcome than refusing.
+    """
+    cursor = await db.execute(
+        f"""
+        SELECT EXISTS (
+            SELECT 1 FROM driver_standings_snapshots
+            WHERE driver_user_id = ? AND division_id IN ({_DIVISIONS_OF_SERVER_SQL})
+        ) OR EXISTS (
+            SELECT 1 FROM race_session_results
+            WHERE driver_user_id = ? AND session_result_id IN ({_SESSIONS_OF_SERVER_SQL})
+        ) OR EXISTS (
+            SELECT 1 FROM qualifying_session_results
+            WHERE driver_user_id = ? AND session_result_id IN ({_SESSIONS_OF_SERVER_SQL})
+        ) OR EXISTS (
+            SELECT 1 FROM driver_history_entries
+            WHERE server_id = ? AND discord_user_id = ?
+        )
+        """,
+        (
+            discord_user_id, server_id,
+            discord_user_id, server_id,
+            discord_user_id, server_id,
+            server_id, discord_user_id,
+        ),
+    )
+    row = await cursor.fetchone()
+    return bool(row[0])
+
+
 class DriverService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -237,6 +273,10 @@ class DriverService:
         joining `driver_profiles` on the account, and the old one no longer holds a profile —
         and the season's end reads their final standing as zero points and no position.
 
+        Refused, with nothing changed, in three cases: no profile stands at the old account,
+        a profile already stands at the new one, or the new account holds racing records of
+        its own — see `account_holds_racing_records`.
+
         **The ids bind as TEXT against the INTEGER columns on purpose.** `driver_profiles`
         holds the account as TEXT where the results tables hold it as INTEGER, and SQLite's
         column affinity converts a TEXT parameter on both sides: `driver_user_id = '4242'`
@@ -254,6 +294,13 @@ class DriverService:
                 f"User {new_user_id} already has a driver profile on this server. "
                 "Reassignment is not permitted."
             )
+        async with get_connection(self._db_path) as db:
+            if await account_holds_racing_records(db, server_id, new_user_id):
+                raise ValueError(
+                    f"User {new_user_id} already holds results, standings or history of "
+                    "their own in this league. Re-keying onto that account would merge two "
+                    "drivers' records, and is not permitted."
+                )
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
