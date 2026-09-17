@@ -462,7 +462,7 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 
 > **The button stands for five minutes**, and only for the season it was posted for. When they pass, the message is deleted and replaced by a notice mentioning whoever ran the review, saying it has expired and must be run again. The same happens if the bot restarts while a review is standing — the five minutes cannot have run while it was down, so the question is cleared at startup rather than left waiting for a press nothing would answer.
 >
-> Before it expires, the button refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a template file altered — and it names what changed. Nothing is approved, the message is cleared as an expiry clears it, and you are told to run `/season placements-review` again.
+> Before it expires, the button refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a signup approved or turned down, test mode or the team list changed, a template file altered — and it names what changed. Nothing is approved, the message is cleared as an expiry clears it, and you are told to run `/season placements-review` again.
 >
 > That is what the report is for: **what you read is what you approve.** It is also why approving is quick — the review already drew your calendars and lineups, so if the season is provably the same one, the approval trusts those pictures rather than drawing them all over again.
 

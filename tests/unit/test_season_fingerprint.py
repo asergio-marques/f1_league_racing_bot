@@ -205,6 +205,22 @@ async def test_the_modules_area(season):
     )
 
 
+async def test_a_signup_settled_after_the_report_is_part_of_the_unsettled_signups_area(season):
+    """Issue #220: the review names every unsettled signup, and a change among them is a
+    change to what would be confirmed."""
+    await _change(
+        season,
+        "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
+        "VALUES (900, ?, '900', 'PENDING_ADMIN_APPROVAL')",
+        SERVER_ID,
+    )
+    before = await _take(season)
+    await _assert_only(
+        season, before, "unsettled signups",
+        "UPDATE driver_profiles SET current_state = 'UNASSIGNED' WHERE id = 900",
+    )
+
+
 async def test_the_test_mode_area(season):
     """Confirming a configuration fixes test mode, so switching it after the report is a
     change to what would be confirmed (issue #220)."""

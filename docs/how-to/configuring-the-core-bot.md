@@ -446,7 +446,7 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 
 > **The button stands for five minutes, and only for the season it was posted for.** When they pass, the message is deleted and replaced by one mentioning you to say the review has expired — run `/season placements-review` again. If the bot restarts while a review is waiting, the same thing happens as soon as it comes back up, because the five minutes cannot have run while it was off.
 >
-> Before it expires, the button still refuses if anything has changed since the report was drawn up — and it tells you what: the rounds, the channels, the seated drivers, even a drawing file edited on the bot's computer. Nothing is approved, and the question is cleared away just as an expiry clears it.
+> Before it expires, the button still refuses if anything has changed since the report was drawn up — and it tells you what: the rounds, the channels, the seated drivers, the signups still waiting, test mode, the team list and its roles, even a drawing file edited on the bot's computer. Nothing is approved, and the question is cleared away just as an expiry clears it.
 >
 > The rule is simply that **what you read is what you approve**. A report describing a season you have since changed is not something anyone can approve from, so it stops being offered.
 

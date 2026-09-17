@@ -48,6 +48,7 @@ AREA_LABELS: dict[str, str] = {
     "rounds": "the rounds",
     "teams": "the teams and their seats",
     "drivers": "the seated drivers",
+    "unsettled signups": "the unsettled signups",
     "channels": "the channels",
     "modules": "which modules are enabled",
     "test mode": "test mode",
@@ -192,6 +193,22 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     "WHERE dsa.season_id = ? "
                     "ORDER BY dsa.division_id, dsa.driver_profile_id",
                     season_id,
+                )
+            )
+
+            # Every signup still unsettled on the server (issue #220): the review names each, and
+            # confirming placements waits on them, so a signup approved, rejected or sent back
+            # after the report is a change to what would be confirmed.
+            from services.season_lifecycle_service import UNSETTLED_STATES
+
+            areas["unsettled signups"] = _digest(
+                await _rows(
+                    db,
+                    "SELECT id, discord_user_id, current_state FROM driver_profiles "
+                    f"WHERE server_id = ? AND current_state IN ({','.join('?' for _ in UNSETTLED_STATES)}) "
+                    "ORDER BY id",
+                    server_id,
+                    *UNSETTLED_STATES,
                 )
             )
 
