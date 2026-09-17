@@ -264,7 +264,7 @@ Removes all season data for this server. Use `full:True` to also wipe the bot co
 
 ### Season Setup Workflow
 
-Season configuration is a multi-step flow: run `/season setup`, add divisions with `/division add`, add rounds with `/round add`, then review with `/season review` and press its **Approve** button.
+A season begins with `/season setup`, in **configuration**: settle the team list, the modules and their settings, and whether the season runs in test mode. `/season config-review` checks that configuration and posts a **✅ Confirm configuration** button. Once confirmed, the season moves on — to waiting for its signup window where the signup module is enabled, or straight to placements where it is not (or under test mode). In placements you add divisions with `/division add` and rounds with `/round add`, then review with `/season review` and press its **Approve** button.
 
 > **A channel does one job.** Every command that sets a channel — the eight `/division …-channel` commands, `/bot-interaction-channel`, `/bot-log-channel` and `/signup channel` — refuses a channel already set as something else anywhere on this server, naming what holds it. Two divisions cannot share a results channel, and a calendar channel cannot double as a log.
 >
@@ -278,6 +278,20 @@ Creates a pending season tied to today's date and enables the `/division` and `/
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `game_edition` | Integer | ✅ | Game edition year — `25` for F1 25. Range 1–9999 |
+
+#### `/season config-review` — Review and confirm the configuration
+*Access: League manager · Configuration only*
+
+No parameters. Posts a report of the season in configuration — test mode, the enabled modules, the team list with its roles and, where the images module is on, its outputs — and checks everything that can be checked before the season has divisions:
+
+- the signup module's channel, base role and complete role, where it is enabled;
+- every team name, as a filename;
+- where the results module is enabled, that a points configuration is attached, that each attached one exists, and that its tables are in order;
+- where the images module is enabled, that the rasteriser is installed, that every template an enabled output draws is valid, the per-tier colours and the driver portrait settings.
+
+With nothing at fault the report ends with a **✅ Confirm configuration** button, governed like the Approve button below: the reviewer or a league admin may press it, it stands for five minutes, and it refuses if the season changed after the report was posted. Every check is made again when you press it, and again at `/season review`.
+
+> **Confirming fixes the configuration for the season.** From then until the season ends, the team list, the game edition, test mode and the signup module's settings cannot change.
 
 #### `/division add` — Add a division
 *Access: League manager · Requires active `/season setup` session*

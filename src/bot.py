@@ -932,9 +932,9 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
                 )
             try:
                 await channel.send(
-                    f"⏱️ <@{int(row['reviewer_id'])}> your season review expired while the "
-                    f"bot was restarting and can no longer be approved. Run "
-                    f"`/season review` again to approve the season."
+                    f"⏱️ <@{int(row['reviewer_id'])}> your review expired while the bot was "
+                    f"restarting and can no longer be answered. Run `/season config-review` "
+                    f"or `/season review` again, whichever you were answering."
                 )
             except (discord.HTTPException, discord.Forbidden) as exc:
                 log.warning(
