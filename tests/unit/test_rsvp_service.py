@@ -725,6 +725,49 @@ class TestAttendanceServiceCrud:
         assert row.accepted_at is None
 
     @pytest.mark.asyncio
+    async def test_upsert_creates_the_row_when_none_exists(self, tmp_path):
+        """No `bulk_insert_attendance_rows` first, which is issue #209 exactly: only
+        `run_rsvp_notice` opens those rows, and only for the roster as it stood when the call
+        was posted. A driver placed into the division afterwards answers a call with no row of
+        their own, and this used to be two bare UPDATEs that discarded the answer in silence."""
+        db_path = await _make_attendance_db(tmp_path)
+        from services.attendance_service import AttendanceService
+        svc = AttendanceService(db_path)
+
+        await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED")
+        row = await svc.get_attendance_row_for_driver(1, 10, 100)
+        assert row is not None
+        assert row.rsvp_status == "ACCEPTED"
+        assert row.accepted_at is not None
+
+    @pytest.mark.asyncio
+    async def test_upsert_creating_a_declined_row_leaves_accepted_at_null(self, tmp_path):
+        """A row created at answer time takes the ordinary `accepted_at` rule, not a special
+        case of it — the reserve distribution orders by that column and a row born with a
+        timestamp it never earned would jump the queue."""
+        db_path = await _make_attendance_db(tmp_path)
+        from services.attendance_service import AttendanceService
+        svc = AttendanceService(db_path)
+
+        await svc.upsert_rsvp_status(1, 10, 100, "DECLINED")
+        row = await svc.get_attendance_row_for_driver(1, 10, 100)
+        assert row is not None
+        assert row.rsvp_status == "DECLINED"
+        assert row.accepted_at is None
+
+    @pytest.mark.asyncio
+    async def test_upsert_reports_whether_it_wrote(self, tmp_path):
+        """Both paths report True. The return value exists so `handle_rsvp_button` can tell a
+        driver the truth instead of assuming, which is the half of issue #209 that let a
+        success message stand over a write that changed nothing."""
+        db_path = await _make_attendance_db(tmp_path)
+        from services.attendance_service import AttendanceService
+        svc = AttendanceService(db_path)
+
+        assert await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED") is True   # inserted
+        assert await svc.upsert_rsvp_status(1, 10, 100, "DECLINED") is True   # updated
+
+    @pytest.mark.asyncio
     async def test_get_attendance_row_for_driver_returns_none_when_missing(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
         from services.attendance_service import AttendanceService
