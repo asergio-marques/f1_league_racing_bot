@@ -1,6 +1,39 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-17 — v10.0.0 → v10.1.0: MINOR — pending placements turned down when every division is done]
+  Version change    : 10.0.0 → 10.1.0
+  Bump rationale    : MINOR. A new permitted transition is added — pending placements are turned
+                      down when every division of a season still taking or placing signups is
+                      done — and the state-machine rule is materially expanded to bind states
+                      written inside a larger transaction. The reassignment tier is widened to
+                      league managers, which relaxes rather than redefines who may act. No
+                      transition is removed and no existing trigger is redefined, so MAJOR is not
+                      owed; PATCH was weighed and rejected because two of the three changes bind
+                      paths the document had not named.
+
+  Modified sections :
+    - Principle VIII, State machine enforcement — a state written within a larger transaction
+      (a sack, the driver pass, the turning down of pending placements) goes through the same
+      transition table.
+    - Principle VIII, Permitted Transitions — a new row: a season in Ongoing, signups open or
+      Ongoing, placements whose every division is finished or cancelled closes its window, turns
+      down every pending placement, and moves straight to Pending completion.
+    - Principle VIII, User ID reassignment — a league manager may change the Discord User ID.
+
+  Why the constitution is the document that moved:
+    - Decided in conversation on 2026-09-17 while reviewing the #220 implementation, and written
+      into docs/wip-specs/core_specification.md on feature/220-season-lifecycle.
+
+  Deferred items    : none.
+
+  Templates         : no template reads the driver state machine or the reassignment tier; none
+                      required changes.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-17 — v9.4.0 → v10.0.0: MAJOR — drivers sign up for each season (issue #220)]
   Version change    : 9.4.0 → 10.0.0
   Bump rationale    : MAJOR. Two rules of Principle VIII are redefined incompatibly: the
@@ -4590,7 +4623,10 @@ their Discord User ID in server scope. The following rules are non-negotiable:
 
 - **State machine enforcement**: A driver's current state MUST only change via the transitions
   in the table below. Any transition not in the approved list MUST be rejected with a clear
-  error. No code path may bypass the state machine to set state directly.
+  error. No code path may bypass the state machine to set state directly. A state changed
+  inside a larger write — a sack freeing seats in the same transaction, the driver pass that
+  ends a season, the turning down of pending placements — MUST be written through the same
+  transition table, and refused where the table refuses it.
 
 #### Driver States
 
@@ -4625,6 +4661,7 @@ their Discord User ID in server scope. The following rules are non-negotiable:
 | Unassigned | Not Signed Up | `/driver reject`, while the season is in Placements or Ongoing, placements |
 | Assigned | Not Signed Up | `/driver sack`, while the season is in an ongoing stage, of a driver whose placement is confirmed |
 | Unassigned, Assigned, Pending Signup Completion, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction | Not Signed Up | The season's end: its completion, cancellation or abort |
+| Unassigned, Assigned, Pending Admin Approval, Awaiting Correction Parameter, Pending Driver Correction | Not Signed Up | Every division of a season in Ongoing, signups open or Ongoing, placements is finished or cancelled: the season's signup window is closed, every unsettled signup and every driver whose placements are all uncommitted is turned down, and the season moves straight to Pending completion |
 | Any (except League Banned, Season Banned) | Season Banned | Ban command issued |
 | Any (except League Banned) | League Banned | Ban command issued by a league admin |
 | Season Banned | Not Signed Up | `ban_races_remaining` decrements to 0 |
@@ -4653,7 +4690,7 @@ their Discord User ID in server scope. The following rules are non-negotiable:
   signups are kept. The driver pass MUST NOT delete a test driver; test drivers are deleted
   when test mode is switched off, their history entries kept by their identifier, so that a
   test driver created again under the same identifier holds them.
-- **User ID reassignment**: Only a league admin may change the Discord User ID.
+- **User ID reassignment**: A league manager may change the Discord User ID.
   Both old and new IDs MUST be logged as an audit event (Principle V). Upon reassignment,
   the stored Discord username and server display name MUST be overwritten by those of the
   new account, and every signup record of the profile MUST be carried to the new account.
@@ -7687,4 +7724,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 10.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-17
+**Version**: 10.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-17

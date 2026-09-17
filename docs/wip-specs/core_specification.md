@@ -460,7 +460,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Every successful move, release and sacking shall cause the lineup of each division it touches to be deleted and posted again in its lineup channel, once.
 
 ### Changing the account behind a profile
-- A league admin shall be able to re-key a driver profile onto another Discord account, so that a person changing account keeps their history. Every signup the profile made shall be carried to the new account with it.
+- A league manager shall be able to re-key a driver profile onto another Discord account, so that a person changing account keeps their history. Every signup the profile made shall be carried to the new account with it.
 - The new account shall be accepted whether or not it is still a member of the server.
 - A profile shall not be re-keyed onto an account that already holds one.
 
