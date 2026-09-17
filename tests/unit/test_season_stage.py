@@ -239,3 +239,9 @@ async def test_a_season_read_carries_its_stage(db_path):
     season = await svc.get_confirmed_season(SERVER_ID)
     assert season is not None
     assert season.stage is SeasonStage.ONGOING_PLACEMENTS
+
+
+async def test_a_status_the_lifecycle_does_not_know_is_left_without_a_stage(db_path):
+    """The triggers never refuse a row for a status they have no stage for."""
+    season_id = await _insert(db_path, "ARCHIVED")
+    assert await _row(db_path, season_id) == ("ARCHIVED", None)

@@ -36,7 +36,7 @@ END;
 
 CREATE TRIGGER IF NOT EXISTS seasons_stage_fill_on_insert
 AFTER INSERT ON seasons
-WHEN NEW.stage IS NULL
+WHEN NEW.stage IS NULL AND NEW.status IN ('SETUP', 'ACTIVE', 'COMPLETED', 'CANCELLED')
 BEGIN
     UPDATE seasons SET stage = CASE NEW.status
         WHEN 'SETUP'     THEN 'PLACEMENTS'
@@ -68,7 +68,7 @@ END;
 
 CREATE TRIGGER IF NOT EXISTS seasons_stage_matches_status
 BEFORE UPDATE OF stage ON seasons
-WHEN NOT (
+WHEN NEW.stage IS NOT NULL AND NOT (
        (NEW.status = 'SETUP'
         AND NEW.stage IN ('CONFIGURATION', 'WAITING', 'SIGNUPS', 'PLACEMENTS'))
     OR (NEW.status = 'ACTIVE'
