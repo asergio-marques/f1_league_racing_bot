@@ -589,13 +589,28 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         )
         return
 
-    # Upsert status
-    await bot.attendance_service.upsert_rsvp_status(  # type: ignore[attr-defined]
+    # Upsert status. Reported on rather than assumed: issue #209 was a success message
+    # standing over a write that changed nothing, and a driver told their answer was recorded
+    # has no way of discovering otherwise until the round is scored against them. The embed
+    # is not rebuilt either — it is a view of the answers, and redrawing it here would show
+    # the division a state the database does not hold.
+    recorded = await bot.attendance_service.upsert_rsvp_status(  # type: ignore[attr-defined]
         round_id=round_id,
         division_id=division_id,
         driver_profile_id=driver_profile_id,
         status=new_status,
     )
+    if not recorded:
+        log.error(
+            "handle_rsvp_button: recorded no answer for driver %s on round %s / division %s",
+            driver_profile_id, round_id, division_id,
+        )
+        await interaction.response.send_message(
+            "❌ Your answer could not be recorded. Please tell a league manager, and do "
+            "not assume you are signed up for this round.",
+            ephemeral=True,
+        )
+        return
 
     # Rebuild and edit embed in-place (FR-010 / FR-012)
     from services.rsvp_service import _rebuild_embed_for_round, RsvpView

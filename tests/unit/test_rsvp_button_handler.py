@@ -544,6 +544,23 @@ async def test_a_driver_placed_after_the_deadline_is_locked_out_and_gets_no_row(
     assert await _status(db_path, FULL_TIME_PROFILE) is None
 
 
+async def test_an_answer_that_writes_nothing_is_not_reported_as_recorded(tmp_path):
+    """The other half of issue #209, and the half no upsert can settle on its own.
+
+    A write that changes no rows and a write that succeeded were indistinguishable here: the
+    thanks went out either way. The service is stubbed rather than driven to failure because
+    there is no longer a way to make it fail honestly — which is the point. The branch has to
+    hold for whatever makes the write a no-op next, or the silence comes back."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction.client.attendance_service.upsert_rsvp_status = AsyncMock(return_value=False)
+
+    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert "could not be recorded" in _reply(interaction)
+    assert "has been updated" not in _reply(interaction)
+
+
 # ---------------------------------------------------------------------------
 # The embed refresh
 # ---------------------------------------------------------------------------
