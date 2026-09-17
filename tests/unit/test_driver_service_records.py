@@ -352,6 +352,28 @@ async def test_re_keying_carries_both_session_result_tables_to_the_new_account(t
     ]
 
 
+async def test_re_keying_carries_the_fastest_lap_override_to_the_new_account(tmp_path):
+    """The bonus is recomputed from the override whenever a penalty, an appeal verdict or an
+    amendment lands, so an override left on the old account awards it to nobody."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE session_results SET fl_driver_override = ? WHERE id = ?",
+            (OLD_USER, LEAGUE),
+        )
+        await db.commit()
+    service = DriverService(db_path)
+
+    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT fl_driver_override FROM session_results WHERE id = ?", (LEAGUE,)
+        )
+        assert (await cursor.fetchone())["fl_driver_override"] == int(NEW_USER)
+
+
 async def test_re_keying_leaves_another_league_s_racing_alone(tmp_path):
     """Neither table holds a server of its own, so an unscoped re-key would move the same
     person's results in every other league this bot serves."""

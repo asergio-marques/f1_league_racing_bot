@@ -278,6 +278,15 @@ class DriverService:
                     f"AND session_result_id IN ({_SESSIONS_OF_SERVER_SQL})",
                     (new_user_id, old_user_id, server_id),
                 )
+            # A session's fastest-lap override names its driver by account too, and the
+            # points are recomputed from it whenever a penalty, an appeal verdict or an
+            # amendment lands. Left behind it would match nobody, and the bonus a driver was
+            # awarded on the day would quietly go to no one at all.
+            await db.execute(
+                f"UPDATE session_results SET fl_driver_override = ? "
+                f"WHERE fl_driver_override = ? AND division_id IN ({_DIVISIONS_OF_SERVER_SQL})",
+                (new_user_id, old_user_id, server_id),
+            )
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
