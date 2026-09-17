@@ -799,9 +799,26 @@ async def approval_faults(db_path: str, season_id: int, bot) -> list[str]:
         return ["The season could not be read, so nothing was changed."]
 
     guild = bot.get_guild(server_id) if bot is not None else None
-    return await results_post_service.repost_channel_faults(
+    faults = await results_post_service.repost_channel_faults(
         db_path, season_id, guild, bot
     )
+
+    # The attendance module recalculates as part of the same cascade, so its channels are
+    # part of the same question. Asked only where it is switched on: a league without it
+    # must not be refused for an attendance channel it has never configured (#187).
+    attendance_on = False
+    try:
+        attendance_on = await bot.module_service.is_attendance_enabled(server_id)
+    except Exception:  # noqa: BLE001 — never refuse an amendment on this reader
+        log.exception("approval_faults: could not read the attendance module's state")
+    if attendance_on:
+        from services import attendance_service
+
+        faults += await attendance_service.recalculation_faults(
+            db_path, season_id, guild, bot
+        )
+
+    return faults
 
 
 async def approve_amendment(

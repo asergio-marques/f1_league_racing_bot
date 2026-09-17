@@ -1240,6 +1240,71 @@ async def test_a_division_with_no_channels_does_not_refuse_the_amendment(db_path
 
 
 @pytest.mark.asyncio
+async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_path):
+    """The approval recalculates attendance too, so its channels are part of the gate."""
+    from unittest.mock import AsyncMock
+
+    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO attendance_config (server_id, autosack_threshold) VALUES (1, 3)"
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, server_id, "
+            "attendance_channel_id) VALUES (?, 1, 601)",
+            (division_id,),
+        )
+        await db.commit()
+    await _staged_amendment(path, season_id)
+
+    bot = _bot_recording_reposts([], missing=(601,))
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+
+    with pytest.raises(AmendmentNotDeliverableError) as excinfo:
+        await approve_amendment(path, season_id, 99, bot)
+
+    assert "attendance channel" in "; ".join(excinfo.value.faults)
+
+
+@pytest.mark.asyncio
+async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(db_path):
+    """A league without the attendance module must not be refused for a channel it has
+    never configured — the same gate the cascade's own recalculation holds to."""
+    from services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO attendance_config (server_id, autosack_threshold) VALUES (1, 3)"
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, server_id, "
+            "attendance_channel_id) VALUES (?, 1, 601)",
+            (division_id,),
+        )
+        await db.commit()
+    await _staged_amendment(path, season_id)
+
+    # 601 is absent, but the module is off, so nothing asks after it.
+    await approve_amendment(path, season_id, 99, _bot_recording_reposts([], missing=(601,)))
+
+    async with get_connection(path) as db:
+        row = await (
+            await db.execute(
+                "SELECT points FROM season_points_entries WHERE season_id = ? AND position = 1",
+                (season_id,),
+            )
+        ).fetchone()
+    assert row is not None and row["points"] == 30, "a sound amendment was refused"
+
+
+@pytest.mark.asyncio
 async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
     """The log records the approval once the reposting it claims has been done (#187).
 
