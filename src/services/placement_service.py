@@ -1582,9 +1582,14 @@ class PlacementService:
                     await self._revoke_roles(member, signed_up_role.id)
 
         async with get_connection(self._db_path) as db:
+            # The seats of this season alone: a former driver's seats in a completed season
+            # are the archive, which a sack never changes.
             await db.execute(
-                "UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id = ?",
-                (driver_profile_id,),
+                "UPDATE team_seats SET driver_profile_id = NULL "
+                "WHERE driver_profile_id = ? AND team_instance_id IN ("
+                "    SELECT ti.id FROM team_instances ti "
+                "    JOIN divisions d ON d.id = ti.division_id WHERE d.season_id = ?)",
+                (driver_profile_id, season_id),
             )
             await db.execute(
                 "DELETE FROM driver_season_assignments "

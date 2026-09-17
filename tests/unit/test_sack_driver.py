@@ -384,6 +384,47 @@ async def test_every_seat_is_freed(tmp_path):
     )
 
 
+async def test_a_seat_in_a_completed_season_is_left_as_the_archive_holds_it(tmp_path):
+    """Issue #220: a sack reaches the season being raced, and never the archive."""
+    db_path = await _make_db(tmp_path, name="sack_archive_seat")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
+            "VALUES (?, ?, 0, '2025-01-01', 'COMPLETED')",
+            (PRIOR_SEASON_ID, SERVER_ID),
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (?, ?, 'Pro', 1, 998)",
+            (PRIOR_DIVISION_ID, PRIOR_SEASON_ID),
+        )
+        cursor = await db.execute(
+            "INSERT INTO team_instances (division_id, name, is_reserve) VALUES (?, 'Red', 0)",
+            (PRIOR_DIVISION_ID,),
+        )
+        await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (?, 1, ?)",
+            (cursor.lastrowid, PROFILE_ID),
+        )
+        await db.commit()
+
+    await _sack(_service(db_path), _guild())
+
+    assert await _count(
+        db_path,
+        "SELECT COUNT(*) FROM team_seats ts JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE ti.division_id = ? AND ts.driver_profile_id = ?",
+        (PRIOR_DIVISION_ID, PROFILE_ID),
+    ) == 1
+    assert await _count(
+        db_path,
+        "SELECT COUNT(*) FROM team_seats ts JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE ti.division_id = ? AND ts.driver_profile_id IS NOT NULL",
+        (DIVISION_ID,),
+    ) == 0
+
+
 async def test_the_season_assignments_are_removed(tmp_path):
     db_path = await _make_db(tmp_path, name="sack_assignments")
 
