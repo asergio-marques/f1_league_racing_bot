@@ -1,4 +1,4 @@
-"""`/season review` looks at the points ordering, and looks at it the same way approval does.
+"""`/season placements-review` looks at the points ordering, and looks at it the same way approval does.
 
 The review's job is to tell a manager what stands between their season and an approval.
 It collected every other blocker and not this one — which was harmless only while the gate

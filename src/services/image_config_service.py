@@ -285,7 +285,7 @@ class ImageConfigService:
         """The divisions the per-tier colour check measures against, by tier.
 
         The season a league is working on: ACTIVE if there is one, else SETUP — the same
-        choice `SeasonService.get_previewable_divisions` makes, so what `/season review`
+        choice `SeasonService.get_previewable_divisions` makes, so what `/season placements-review`
         validates is what `/images test` would draw.
 
         It sits on **this** service, though it reads season data, because this is the
@@ -344,7 +344,7 @@ def portrait_configuration_fault(config) -> str | None:
     The standing form of the rule `pfp_change_refusal` enforces on each change. The commands
     make this state unreachable -- both sub-toggles refuse while portraits are disabled, and
     `pfp_prerender` defaults on -- so this is defence in depth against a hand-edited database
-    or a future path that writes the columns directly, and is what `/season review` and
+    or a future path that writes the columns directly, and is what `/season placements-review` and
     `/season approve` read.
 
     Total, and tolerant of a configuration object predating migration 047: a missing field

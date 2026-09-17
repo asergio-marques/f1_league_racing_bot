@@ -39,7 +39,7 @@ async def attach_config(
     Raises :class:`points_config_service.ConfigNotFoundError` for a name the server's store
     does not hold. **The check is here because nothing below it can make one** (#132):
     ``season_points_links.config_name`` is bare ``TEXT`` with no foreign key, so a mistyped
-    name inserts as happily as a real one and is reported as attached by `/season review`.
+    name inserts as happily as a real one and is reported as attached by `/season placements-review`.
     The first thing that ever noticed was the snapshot at approval, which raised in the
     middle of a deferred command — and with no error handler on the tree, said nothing at
     all. Refusing at the moment the name is typed is the only place the manager still knows

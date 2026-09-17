@@ -874,7 +874,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
 async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
     """Clear any season-review approve button left standing by a previous run.
 
-    The button expires five minutes after `/season review` posts it, and the timer that
+    The button expires five minutes after `/season placements-review` posts it, and the timer that
     does so is a `discord.ui.View` timeout — held in memory, and lost with the process. A
     bot restarted inside that window would otherwise leave a public message offering a
     button nothing is listening to, for ever.
@@ -934,7 +934,7 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
                 await channel.send(
                     f"⏱️ <@{int(row['reviewer_id'])}> your review expired while the bot was "
                     f"restarting and can no longer be answered. Run `/season config-review` "
-                    f"or `/season review` again, whichever you were answering."
+                    f"or `/season placements-review` again, whichever you were answering."
                 )
             except (discord.HTTPException, discord.Forbidden) as exc:
                 log.warning(

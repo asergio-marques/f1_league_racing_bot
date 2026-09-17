@@ -91,7 +91,7 @@ async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
     The ordering is written in regardless, because it costs nothing and the query used to
     be a bare ``LIMIT 1`` over both states. Which row that returned was uncontracted, and
     on a server that held two it seated a mock driver in one season's divisions while
-    `/season review` drew the other's: a full `roster list` beside an empty lineup, with
+    `/season placements-review` drew the other's: a full `roster list` beside an empty lineup, with
     neither command reporting a fault.
     """
     async with get_connection(db_path) as db:

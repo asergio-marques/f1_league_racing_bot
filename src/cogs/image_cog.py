@@ -597,7 +597,7 @@ class ImageCog(commands.Cog):
             )
             return
 
-        # The FR-007 survey, which also backs `/season review` and `/season approve`, so
+        # The FR-007 survey, which also backs `/season placements-review` and `/season approve`, so
         # the three surfaces cannot disagree about whether a template is usable.
         #
         # Scoped to the aspects that are switched on, as those two are: a folder holding
@@ -1503,7 +1503,7 @@ class ImageCog(commands.Cog):
     async def build_configuration_report(self, server_id: int) -> str:
         """Render the configuration and its validity.
 
-        `/season review` renders the aspect section from the same `AspectStatus` list, so
+        `/season placements-review` renders the aspect section from the same `AspectStatus` list, so
         the two surfaces cannot drift (FR-033).
         """
         from services.image_render_service import (
@@ -1585,7 +1585,7 @@ class ImageCog(commands.Cog):
         per-tier command would spend one of the eight left to say what this section already
         says. What is *missing* is not repeated here: a shortfall is a reason against the
         aspect it would stop, and the aspect section below prints it in the same words
-        `/season review` uses.
+        `/season placements-review` uses.
         """
         palettes = await self._config_service.get_all_tier_colours(server_id)
         state = "on" if config.per_tier_colour_enabled else "off"

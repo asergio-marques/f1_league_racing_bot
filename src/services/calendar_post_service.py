@@ -166,7 +166,7 @@ async def render_calendar_image(
 
     # Every other posting path reaches the log channel through `render_for_posting`, which
     # this one cannot use: its two callers differ in origin — the calendar of record is
-    # scheduled and falls back to text, `/season review`'s copy is commanded and rejects —
+    # scheduled and falls back to text, `/season placements-review`'s copy is commanded and rejects —
     # and both read a `RenderOutcome` rather than a `PostingDecision`. So the report is
     # made here instead, because a notice that is not reported reaches nobody at all — the
     # log channel and a commanding command's output are the only places one is seen, and
@@ -221,7 +221,7 @@ async def render_for_command(
     """Produce a division's calendar PNG as **command output**, posting it nowhere.
 
     The counterpart of :func:`image_lineup_post.render_for_command`, and it exists for the
-    same reason: `/season review` shows a manager what their league will see, and that is
+    same reason: `/season placements-review` shows a manager what their league will see, and that is
     not the calendar *of record*. This function writes no ``calendar_message_id``, deletes
     nothing from the calendar channel and touches no channel at all — which
     :func:`post_division_calendar` necessarily does, and is why a flag on it would not

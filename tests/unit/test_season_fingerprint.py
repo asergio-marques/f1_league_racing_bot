@@ -1,6 +1,6 @@
 """The season a review described, and whether it is still that season at the button.
 
-`/season review` fingerprints everything it reports; the Approve button refuses unless the
+`/season placements-review` fingerprints everything it reports; the Approve button refuses unless the
 season still fingerprints the same. That is what lets the approval trust the review's own
 render instead of drawing every graphic a second time.
 

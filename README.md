@@ -96,7 +96,7 @@ self-contained and can be restored by copying it back into place under the origi
 > **Upgrading from a version before the split.** The scheduler used to keep its jobs inside
 > `bot.db`. On the first start after upgrading it begins with an empty `scheduler.db`, and
 > the old jobs are **not** carried across — a season already under way therefore loses its
-> pending weather phases, RSVP notices and result submissions. Run `/season review` and
+> pending weather phases, RSVP notices and result submissions. Run `/season placements-review` and
 > approve again for each affected division to rebuild them. Upgrade between seasons and there is nothing
 > to do. The abandoned `apscheduler_jobs` table is left inside `bot.db`, unread; drop it or
 > leave it as you prefer.
@@ -240,7 +240,7 @@ Deletes the bot's `count` most recent messages in the interaction channel, newes
 
 > It looks back over the last 200 messages to find them. On a busy channel that may be fewer of the bot's than you asked for, and the reply tells you when it was.
 
-> An approved or expired `/season review` clears itself, so this is for the ones that did neither — a review you walked away from, or anything else the bot has left in the channel.
+> An approved or expired `/season placements-review` clears itself, so this is for the ones that did neither — a review you walked away from, or anything else the bot has left in the channel.
 
 > **Note:** Requires the bot to have **Manage Messages** in the channel (already a required bot permission).
 
@@ -264,7 +264,7 @@ Removes all season data for this server. Use `full:True` to also wipe the bot co
 
 ### Season Setup Workflow
 
-A season begins with `/season setup`, in **configuration**: settle the team list, the modules and their settings, and whether the season runs in test mode. `/season config-review` checks that configuration and posts a **✅ Confirm configuration** button. Once confirmed, the season moves on — to waiting for its signup window where the signup module is enabled, or straight to placements where it is not (or under test mode). In placements you add divisions with `/division add` and rounds with `/round add`, then review with `/season review` and press its **Approve** button.
+A season begins with `/season setup`, in **configuration**: settle the team list, the modules and their settings, and whether the season runs in test mode. `/season config-review` checks that configuration and posts a **✅ Confirm configuration** button. Once confirmed, the season moves on — to waiting for its signup window where the signup module is enabled, or straight to placements where it is not (or under test mode). In placements you add divisions with `/division add` and rounds with `/round add`, then review with `/season placements-review` and press its **Approve** button.
 
 > **A channel does one job.** Every command that sets a channel — the eight `/division …-channel` commands, `/bot-interaction-channel`, `/bot-log-channel` and `/signup channel` — refuses a channel already set as something else anywhere on this server, naming what holds it. Two divisions cannot share a results channel, and a calendar channel cannot double as a log.
 >
@@ -289,7 +289,7 @@ No parameters. Posts a report of the season in configuration — test mode, the 
 - where the results module is enabled, that a points configuration is attached, that each attached one exists, and that its tables are in order;
 - where the images module is enabled, that the rasteriser is installed, that every template an enabled output draws is valid, the per-tier colours and the driver portrait settings.
 
-With nothing at fault the report ends with a **✅ Confirm configuration** button, governed like the Approve button below: the reviewer or a league admin may press it, it stands for five minutes, and it refuses if the season changed after the report was posted. Every check is made again when you press it, and again at `/season review`.
+With nothing at fault the report ends with a **✅ Confirm configuration** button, governed like the Approve button below: the reviewer or a league admin may press it, it stands for five minutes, and it refuses if the season changed after the report was posted. Every check is made again when you press it, and again at `/season placements-review`.
 
 > **Confirming fixes the configuration for the season.** From then until the season ends, the team list, the game edition, test mode and the signup module's settings cannot change.
 
@@ -416,7 +416,7 @@ Unlike the other two commands, `<datetime>` is a **local** time in the zone `<ti
 
 Deletes the round and renumbers remaining rounds by date.
 
-#### `/season review` — Review pending configuration
+#### `/season placements-review` — Review pending configuration
 *Access: League manager*
 
 No parameters. Displays the pending season configuration, ending with a message asking whether you accept it and carrying the **✅ Approve** button.
@@ -427,12 +427,12 @@ The report arrives as **one message per subsection**, in this order: the season 
 
 The image subsection also lists the eight **asset directories** and the path each is set to, marking any the bot cannot read. A folder that has been moved or renamed produces pictures full of placeholders, which looks the same as artwork you never supplied — seeing the path is what tells the two apart. `/images config view` names the fault in full.
 
-> **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. There is no command that approves around it — the button is the only route — so fix the template or the artwork it names and run `/season review` again.
+> **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. There is no command that approves around it — the button is the only route — so fix the template or the artwork it names and run `/season placements-review` again.
 
-#### Approving — the button in `/season review`
+#### Approving — the button in `/season placements-review`
 *Access: the reviewer, or a league admin*
 
-**There is no `/season approve` command.** A season is approved by pressing **✅ Approve** on the report `/season review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
+**There is no `/season approve` command.** A season is approved by pressing **✅ Approve** on the report `/season placements-review` posts, and from nowhere else. Approving commits a season, and the review is the evidence it is committed on — a command that could be run without one let a manager commit a season they had not looked at.
 
 > **A calendar with dates already behind you withholds the button.** Two things can be wrong with a season's dates, and each division's calendar in the review says which of them it has.
 >
@@ -444,7 +444,7 @@ The image subsection also lists the eight **asset directories** and the path eac
 >
 > The approval checks it again when the button *is* pressed, because the review stands for five minutes and a round can cross a window while it sits there. Then it is refused privately with **nothing committed**.
 >
-> Fix it by moving the round with [`/round amend`](#round-amend--amend-a-round-in-the-active-season) or, for a window, by shortening the window instead, then run `/season review` again. Both are your call, which is exactly why the bot will not choose for you: the alternatives are posting the call late, posting nothing, or running the round with no check-in at all — and that last one records **perfect attendance for the whole division** for a round nobody was asked about.
+> Fix it by moving the round with [`/round amend`](#round-amend--amend-a-round-in-the-active-season) or, for a window, by shortening the window instead, then run `/season placements-review` again. Both are your call, which is exactly why the bot will not choose for you: the alternatives are posting the call late, posting nothing, or running the round with no check-in at all — and that last one records **perfect attendance for the whole division** for a round nobody was asked about.
 >
 > Only the enabled modules' windows count — but the round's own moment is judged whichever modules are on. A cancelled round is ignored either way. **Test mode is not exempt**, so a test season has to be built with its rounds still to come and beyond every configured window.
 
@@ -456,7 +456,7 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 
 > **The button stands for five minutes**, and only for the season it was posted for. When they pass, the message is deleted and replaced by a notice mentioning whoever ran the review, saying it has expired and must be run again. The same happens if the bot restarts while a review is standing — the five minutes cannot have run while it was down, so the question is cleared at startup rather than left waiting for a press nothing would answer.
 >
-> Before it expires, the button refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a template file altered — and it names what changed. Nothing is approved, the message is cleared as an expiry clears it, and you are told to run `/season review` again.
+> Before it expires, the button refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a template file altered — and it names what changed. Nothing is approved, the message is cleared as an expiry clears it, and you are told to run `/season placements-review` again.
 >
 > That is what the report is for: **what you read is what you approve.** It is also why approving is quick — the review already drew your calendars and lineups, so if the season is provably the same one, the approval trusts those pictures rather than drawing them all over again.
 
@@ -849,7 +849,7 @@ All three commands share the same preconditions, checked in this order:
 
 **When they take effect.** The values in force for a season are those stored when it is approved. Changing a deadline never moves a forecast for a season already running.
 
-**They also decide how late a season can be approved.** A season holding a round whose Phase 1, 2 or 3 deadline has already passed is named in `/season review`, which then offers no Approve button — a first round three days away cannot honour a five-day Phase 1. See [Approving](#approving--the-button-in-season-review).
+**They also decide how late a season can be approved.** A season holding a round whose Phase 1, 2 or 3 deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day Phase 1. See [Approving](#approving--the-button-in-season-review).
 
 #### `/weather config phase-1-deadline` — Days before the round to publish Phase 1
 *Access: League manager · Weather module required · Setup only*
@@ -872,7 +872,7 @@ All three commands share the same preconditions, checked in this order:
 |-----------|------|----------|-------------|
 | `hours` | Integer | ✅ | Number of hours before the round. Minimum 1. Default **2** |
 
-Every successful reply echoes the other two deadlines, and the change is written to the log channel. There is no `/weather config view`: **`/season review`** is the only place the three values are read back.
+Every successful reply echoes the other two deadlines, and the change is written to the log channel. There is no `/weather config view`: **`/season placements-review`** is the only place the three values are read back.
 
 > **The posted forecasts do not describe your configured horizons.** The message text carries the fixed wording "(5 days out)", "(2 days out)" and "(2 hours out)" whatever the deadlines are set to. The forecast is published at the configured time; only its self-description is wrong.
 
@@ -1189,7 +1189,7 @@ Where it is enforced differs by what you are doing:
 |---------|--------------------------------------|
 | `/results config session`, `/results config bulk-session` | Applied, with a warning naming every position at fault |
 | `/results config xml-import` | Rejected outright; the configuration is left untouched |
-| `/season review` | Reported in the points section, naming every position at fault, and the Approve button is withheld |
+| `/season placements-review` | Reported in the points section, naming every position at fault, and the Approve button is withheld |
 | Pressing **Approve** | Refused, naming every position at fault |
 | `/results amend session`, `/results amend bulk-session` | Staged, with a warning naming every position at fault |
 | `/results amend review` | Refused; nothing is written and the staged changes are left to repair |
@@ -1635,7 +1635,7 @@ All commands below require the attendance module to be enabled (`/module enable 
 
 > **A check-in call that fails to post is reported in the log channel**, naming the season, the division and the round. This matters more than it sounds: when a call cannot be posted, the round's attendance rows are never opened, so nobody is asked to check in and nothing is ever counted against anyone — the round ends up recorded as perfect attendance for the whole division. The report tells you to post it again once the cause is cleared, though no command currently does so — a call that failed is lost with the round. It appears whether or not the images module is enabled, because the fault is in the call and not in any picture.
 
-> **The three lead times below also decide how late a season can be approved.** A season holding a round whose notice, last notice or deadline has already passed is named in `/season review`, which then offers no Approve button — a first round three days away cannot honour a five-day notice. See [Approving](#approving--the-button-in-season-review).
+> **The three lead times below also decide how late a season can be approved.** A season holding a round whose notice, last notice or deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day notice. See [Approving](#approving--the-button-in-season-review).
 
 #### `/attendance config rsvp-notice` — Set the RSVP notice lead time
 *Access: League manager · No active season*
@@ -1722,13 +1722,13 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 > **Setting it up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, from a fresh clone to an approved season, follow [Configuring the image module](docs/how-to/configuring-the-image-module.md).
 
-**Prerequisite:** the machine running the bot must carry **Inkscape**, which converts the filled SVG to PNG. No Python dependency installs it — it is a separate program. Its absence is fatal to the whole module and is reported at `/season review`, at `/images config view` and by every `/images test` command. If Inkscape is installed somewhere unusual, set the `INKSCAPE` environment variable to the executable's full path.
+**Prerequisite:** the machine running the bot must carry **Inkscape**, which converts the filled SVG to PNG. No Python dependency installs it — it is a separate program. Its absence is fatal to the whole module and is reported at `/season placements-review`, at `/images config view` and by every `/images test` command. If Inkscape is installed somewhere unusual, set the `INKSCAPE` environment variable to the executable's full path.
 
 `lxml` and `fontTools` are ordinary Python dependencies and are already in `requirements.txt`.
 
 **What the files are called.** Every picture is named for what it shows rather than for the template that drew it, so a folder of them saved off Discord still makes sense: `season1_division1_round10_standings_drivers.png`, `season1_division1_round10_feature_qualifying_results.png`, `season1_division1_lineup.png`. The division is named by its tier where the graphic knows it and by its name otherwise (`season1_elite_calendar.png`); the season or round is left out where there is none, and the lineup and calendar carry no round because they stand for the whole season. `/images test` names its output the same way.
 
-**A batch of pictures announces itself.** Drawing takes a few seconds per picture, and some jobs draw a run of them — `/season review` draws a lineup and a calendar per division, and closing a penalty review redraws every session's results, both championships, one verdict per penalty and the attendance sheet. A short message saying the pictures are being drawn is posted before the batch starts and deleted once it has finished. It goes to the channel you gave the command in — the bot interaction channel for a command you type, the round's results channel for the button presses that drive the results flow — and never to the channels the pictures themselves land in. Nothing is lost when it disappears: a fault is reported to you and to the log channel in its own right.
+**A batch of pictures announces itself.** Drawing takes a few seconds per picture, and some jobs draw a run of them — `/season placements-review` draws a lineup and a calendar per division, and closing a penalty review redraws every session's results, both championships, one verdict per penalty and the attendance sheet. A short message saying the pictures are being drawn is posted before the batch starts and deleted once it has finished. It goes to the channel you gave the command in — the bot interaction channel for a command you type, the round's results channel for the button presses that drive the results flow — and never to the channels the pictures themselves land in. Nothing is lost when it disappears: a fault is reported to you and to the log channel in its own right.
 
 #### `/images config toggle` — Choose image or text, per kind of output
 *Access: League manager*
@@ -1741,9 +1741,9 @@ Flips that aspect between a generated image and the text the bot has always post
 
 **Switching one on checks its drawings first.** If any drawing that aspect needs is missing or unusable, the command is **refused** — it names each fault, and the aspect stays off. That is deliberate: an aspect switched on over a broken drawing posts nothing at all where your drivers would otherwise have read text, and it withholds your season's approval besides. Switching an aspect **off** is never refused, whatever state its drawings are in: text needs no drawing, so you can always retreat to it.
 
-**A broken drawing only blocks a season if the output that draws it is on.** `/season review` and approval apply the same rule — a fault under a switched-off output is shown as a ⚠️ warning and stops nothing, because nothing would ever post it. Fix it before you switch that output on; the review names it either way so it does not catch you out later.
+**A broken drawing only blocks a season if the output that draws it is on.** `/season placements-review` and approval apply the same rule — a fault under a switched-off output is shown as a ⚠️ warning and stops nothing, because nothing would ever post it. Fix it before you switch that output on; the review names it either way so it does not catch you out later.
 
-The choice names above are exactly the names `/images config view` and `/season review` print for the nine aspects, so a `❌` row in either report can hand you the command with the choice already named.
+The choice names above are exactly the names `/images config view` and `/season placements-review` print for the nine aspects, so a `❌` row in either report can hand you the command with the choice already named.
 
 > **All nine aspects post live.** Enabling one changes what the bot posts from its next posting onwards.
 >
@@ -1777,9 +1777,9 @@ The choice names above are exactly the names `/images config view` and `/season 
 > Neither can stop a season being approved or completed. If a division's sheet cannot be drawn or
 > posted, the log channel says so and the other divisions carry on.
 >
-> With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`, and `/season review` shows you that image in place of its text calendar. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
+> With `calendar` on (and the images module enabled), a division's calendar is posted as a generated image at season approval and by `/division calendar-sync`, and `/season placements-review` shows you that image in place of its text calendar. With it off, the calendar is posted as text exactly as it always has been. If a calendar cannot be drawn — a template missing a field, a track with no image and no fallback — that division falls back to the text and you are told why in the log channel; the other divisions are still posted as images.
 >
-> With `lineup` on, a division's lineup channel carries a drawn graphic instead of the text embed, redrawn on every occasion the text was redrawn before: season approval, a driver being assigned, unassigned or sacked, and the attendance module's auto-reserve and auto-sack. `/team lineup` answers with the graphic too, and `/season review` shows it *in place of* its text, so what you judge before approving is what your league will receive. The reserve distribution the attendance module does at each RSVP deadline does **not** redraw it — the graphic shows who is in which team for the season, not who is on the grid for one round.
+> With `lineup` on, a division's lineup channel carries a drawn graphic instead of the text embed, redrawn on every occasion the text was redrawn before: season approval, a driver being assigned, unassigned or sacked, and the attendance module's auto-reserve and auto-sack. `/team lineup` answers with the graphic too, and `/season placements-review` shows it *in place of* its text, so what you judge before approving is what your league will receive. The reserve distribution the attendance module does at each RSVP deadline does **not** redraw it — the graphic shows who is in which team for the season, not who is on the grid for one round.
 >
 > The image is built before the old message is deleted, so a lineup that cannot be drawn leaves the one already posted where it is; that division falls back to text and the log channel says why. With the toggle off, the lineup behaves in every respect as it did before this feature.
 >
@@ -1801,7 +1801,7 @@ The choice names above are exactly the names `/images config view` and `/season 
 >
 > With `rsvp` on, a check-in call carries a graphic naming the round, its sessions, its date and the moment check-in closes. The **grand prix** takes the headline and the **circuit** the line beneath it — Emilia Romagna Grand Prix over Autodromo Internazionale Enzo e Dino Ferrari — and the country is shown as its flag rather than written out beside it. A mystery round reads "Mystery Grand Prix" over "Mystery", and takes the mystery flag and map. **Everything else about the call is unchanged** — the same role mention, the same embed, the same roster, the same three buttons. The picture is drawn once, when the call is posted, and is never redrawn: it deliberately carries no driver, no team and no RSVP status, so it stays true no matter how many people answer. If it cannot be drawn, the call is posted without it and nothing else changes.
 >
-> **Both attendance templates are checked before a season depends on them.** With `attendance` on, a driver assignment that would push a division past the rows your sheet template declares is **refused**, and the driver is not assigned — enlarge the template first. `/season review` warns you where your sheet template draws fewer round columns than your longest division holds, or your check-in template names fewer sessions than a sprint round runs; both are warnings and neither blocks approval, because which division and which round are actually drawn is decided later.
+> **Both attendance templates are checked before a season depends on them.** With `attendance` on, a driver assignment that would push a division past the rows your sheet template declares is **refused**, and the driver is not assigned — enlarge the template first. `/season placements-review` warns you where your sheet template draws fewer round columns than your longest division holds, or your check-in template names fewer sessions than a sprint round runs; both are warnings and neither blocks approval, because which division and which round are actually drawn is decided later.
 >
 > With `weather` on, all three forecast phases are posted to a division's forecast channel as pictures instead of text, on a message carrying the division role mention and nothing besides. The heading the text carried is gone; the graphic says which phase it stands for in words. The **grand prix** takes the headline and the **circuit** the line beneath it, as on the check-in call, and the country is shown as its flag rather than written out beside it. It adds an icon for the type of weather drawn for each session and one for every concrete weather within it, in place of the emoji the text used, and it carries the likelihood of rain on all three phases though only the phase 1 message ever printed it.
 >
@@ -1811,9 +1811,9 @@ The choice names above are exactly the names `/images config view` and `/season 
 >
 > **A forecast that cannot be drawn never delays a draw.** Every random draw, every stored phase result and every calculation-log entry happens exactly as it would with the images module switched off; the picture is made afterwards, from what was stored.
 >
-> **Six weather templates, and each is checked before a season depends on it.** Phases 2 and 3 are drawn from two files apiece — one for sprint rounds, one for every other format — chosen by the round's format and by nothing else. Each must declare at least as much as the formats it serves can demand: four sessions for a sprint file and two for a plain one, and for phase 3, three weather slots per session on the sprint file and four on the plain one. Declaring **fewer is refused the moment you name the file**, naming what it declares and what it needs; declaring more is fine, and the surplus is simply removed when a round does not fill it. `/season review` names any weather template that falls short — which phase, and whether it is the sprint file, the plain file or the mystery notice — and approval is refused while one stands.
+> **Six weather templates, and each is checked before a season depends on it.** Phases 2 and 3 are drawn from two files apiece — one for sprint rounds, one for every other format — chosen by the round's format and by nothing else. Each must declare at least as much as the formats it serves can demand: four sessions for a sprint file and two for a plain one, and for phase 3, three weather slots per session on the sprint file and four on the plain one. Declaring **fewer is refused the moment you name the file**, naming what it declares and what it needs; declaring more is fine, and the surplus is simply removed when a round does not fill it. `/season placements-review` names any weather template that falls short — which phase, and whether it is the sprint file, the plain file or the mystery notice — and approval is refused while one stands.
 >
-> **A forecast must name the grand prix; naming the circuit is your option.** A weather drawing that carries `track_name` but no `race_name` is refused when you name the file and again at `/season review`. The grand prix is what identifies a round — a circuit hosting two of them in one season identifies neither — so that is the field the bot insists on. Add `race_name` and the file is accepted; keep `track_name` as well if you want both names, as the shipped files do.
+> **A forecast must name the grand prix; naming the circuit is your option.** A weather drawing that carries `track_name` but no `race_name` is refused when you name the file and again at `/season placements-review`. The grand prix is what identifies a round — a circuit hosting two of them in one season identifies neither — so that is the field the bot insists on. Add `race_name` and the file is accepted; keep `track_name` as well if you want both names, as the shipped files do.
 >
 > **`verdicts` replaces the announcement, keeping only the mention.** When the toggle is on, every verdict your stewards issue — a post-race penalty, an appeal correction, and the sacking or reserve move the bot enforces itself for attendance — is posted to the division's verdicts channel as a picture. The message beside it carries the driver's mention and nothing else: the heading, the sanction, the description and the justification are all on the canvas, and the driver's name stands there in place of a mention. The graphic adds the driver's flag and the team's badge, which the text announcement never carried.
 >
@@ -1938,7 +1938,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 >
 > Because a team's ordinal is its position in the division, **teams are ordered as you added them** — a team added later takes the next free block, so nothing you have already drawn moves. Renaming a team does not move it either.
 
-> **Divisions may differ however you like.** Different teams, different numbers of them, different seat counts — one lineup file serves them all, and `/season review` no longer asks a season to be uniform. It says something only when a division holds more teams, or a team more drivers, than your template has room for.
+> **Divisions may differ however you like.** Different teams, different numbers of them, different seat counts — one lineup file serves them all, and `/season placements-review` no longer asks a season to be uniform. It says something only when a division holds more teams, or a team more drivers, than your template has room for.
 
 > **The verdict banner is the smallest drawing the bot asks for.** It has to declare exactly two fields — `division_name` and `round_number` — and may declare `season_number`, `division_tier`, `race_name`, `country_name` and `track_flag` besides. It names no session, no driver, no team and no sanction: those are all on the verdict picture the banner stands above.
 >
@@ -2011,7 +2011,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 
 Every directory is a path relative to the project root, and one that resolves outside it is rejected.
 
-**`template-directory` is checked before it is stored; the other eight are not.** Name a folder for your templates and the bot looks in it for every drawing your **switched-on** outputs need, and checks each one, exactly as `/season review` does. If any is missing or unusable the command is **refused**, naming each one and why, and your existing folder stays in force — so put your templates in place first, then point the bot at the folder. Drawings for outputs you have switched off are not required: that output posts as text and draws nothing, and switching it on later checks its own drawings at that moment. The eight artwork directories are accepted whether or not anything is in them yet, because a missing picture falls back to what the bot ships and files added later are picked up with no further command. A missing *template* has nothing behind it, so it would stop every graphic being produced at all.
+**`template-directory` is checked before it is stored; the other eight are not.** Name a folder for your templates and the bot looks in it for every drawing your **switched-on** outputs need, and checks each one, exactly as `/season placements-review` does. If any is missing or unusable the command is **refused**, naming each one and why, and your existing folder stays in force — so put your templates in place first, then point the bot at the folder. Drawings for outputs you have switched off are not required: that output posts as text and draws nothing, and switching it on later checks its own drawings at that moment. The eight artwork directories are accepted whether or not anything is in them yet, because a missing picture falls back to what the bot ships and files added later are picked up with no further command. A missing *template* has nothing behind it, so it would stop every graphic being produced at all.
 
 | Subcommand | Default | Holds |
 |------------|---------|-------|
@@ -2085,7 +2085,7 @@ Either keep the literal on the element —
 
 The second form states each colour once rather than on every element that uses it, which is how the drawings shipped in `resources/league/templates` do it. Both draw identically in Inkscape and both are overridden the same way.
 
-> **Once it is on, every slot needs a colour for every division.** A slot left unset for any division is reported by `/images config view` and by `/season review`, stops the affected graphics posting, and refuses the approval of a season — the same way a lineup template that cannot draw does. Set the colour explicitly even where you want the tier drawn in the colour the template already carries; there is deliberately no command to clear one back to the default.
+> **Once it is on, every slot needs a colour for every division.** A slot left unset for any division is reported by `/images config view` and by `/season placements-review`, stops the affected graphics posting, and refuses the approval of a season — the same way a lineup template that cannot draw does. Set the colour explicitly even where you want the tier drawn in the colour the template already carries; there is deliberately no command to clear one back to the default.
 
 > **A colour is remembered by the division's *name*.** `Division 1` and `division_1` are the same tier, so your palette survives a new season — but renaming a division loses its colours, exactly as it loses its logo.
 
@@ -2183,7 +2183,7 @@ you need do nothing. Portraits you drew yourself are untouched by any of this.
 > portraits for some drivers and let the bot fetch the rest, and hand-drawn ones stay put.
 
 A driver who removes their Discord picture has the fetched portrait removed too, and their
-seat reverts to the placeholder. `/season review` states all three settings, and refuses to
+seat reverts to the placeholder. `/season placements-review` states all three settings, and refuses to
 offer the approve button while the configuration is one that could never fetch anything.
 
 #### `/images config` — Presentation
@@ -2217,11 +2217,11 @@ No parameters. Lists every setting with a validity status, and each aspect as �
 
 **Every fault names the command that fixes it.** A broken drawing names `/images template …` for *that* drawing, not for its group. A bad artwork folder names the `/images config …-directory` command that sets it. A source module that is off names `/module enable module_name:…`. The one exception is a missing rasteriser: no command of yours installs it, so the line says to ask whoever runs the bot rather than sending you after a command that will not help.
 
-> **Written for you, not for a developer.** Both this report and `/season review` say what is wrong in terms of your drawings and your folders — no field ids, no file paths, no layer numbers. The exact fault goes to the bot's log, where whoever runs the bot can read it. Naming a template file with an `/images template …` command is the exception: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
+> **Written for you, not for a developer.** Both this report and `/season placements-review` say what is wrong in terms of your drawings and your folders — no field ids, no file paths, no layer numbers. The exact fault goes to the bot's log, where whoever runs the bot can read it. Naming a template file with an `/images template …` command is the exception: that reply *does* name the field or the path, because you are looking at that one file at the moment you can fix it.
 
 The report also states **how deeply templates were checked**. Layer 1 — the file resolves, parses as SVG, and declares a canvas — applies to all sixteen. Layer 2 checks that a template carries every field its image needs, and that it carries no field belonging to a different image type. Layer 3 checks that every wrapped field can actually be laid out: its rectangle exists, declares a width and a height, and the field has a line height. All three now apply to all sixteen types, the last of their field sets having been specified. A fourth layer — a trial render — is not yet in force and is reported as *not applied* rather than as passed. The report never claims a template was verified more deeply than it was.
 
-The same summary is appended to `/season review`, which additionally names each template that would block approval. **Pressing Approve refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
+The same summary is appended to `/season placements-review`, which additionally names each template that would block approval. **Pressing Approve refuses** while any of them is unusable — the review is where you see the problem, the approval is where the season stops.
 
 #### `/images test` — Preview a kind against your own league
 *Access: League manager*

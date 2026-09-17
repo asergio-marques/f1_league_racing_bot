@@ -76,7 +76,7 @@ Run it anywhere, and run it as a server administrator: until it has run there is
 |---|---|
 | Most commands in this guide | The **interaction role** |
 | Anything that cannot be undone: `/bot-reset`, `/clean-bot`, `/module enable` and `/module disable`, cancelling or deleting a season, division or round, completing a season, `/team remove`, `/driver sack`, and every `/test-mode` command | The **league admin role** |
-| Approving a season, on the button `/season review` posts | Whoever ran that review, or the league admin role |
+| Approving a season, on the button `/season placements-review` posts | Whoever ran that review, or the league admin role |
 | `/bot-init` and the four commands that change one setting | The league admin role **or** Discord's **Administrator** permission, from any channel |
 
 The league admin role covers everything the interaction role does, so whoever holds it can
@@ -319,7 +319,7 @@ The other six belong to modules. Set the ones whose module you turned on in step
 ## Step 7 — Review what you have built
 
 ```
-/season review
+/season placements-review
 ```
 
 The bot posts the whole configuration to the channel, **as several messages rather than one**:
@@ -361,7 +361,7 @@ The review ends by asking whether you accept the configuration, with a **✅ App
 
 **You can press it if you ran the review, or if you hold the league admin role.** Anybody else who presses is told privately that they cannot, and nothing is approved. Running the review needs only the interaction role, so you may well be able to review a season you cannot approve — that is why the question is posted where everyone can see it rather than to you alone. Show it to a league admin and they can answer it from the same message.
 
-> **The button stands for five minutes, and only for the season it was posted for.** When they pass, the message is deleted and replaced by one mentioning you to say the review has expired — run `/season review` again. If the bot restarts while a review is waiting, the same thing happens as soon as it comes back up, because the five minutes cannot have run while it was off.
+> **The button stands for five minutes, and only for the season it was posted for.** When they pass, the message is deleted and replaced by one mentioning you to say the review has expired — run `/season placements-review` again. If the bot restarts while a review is waiting, the same thing happens as soon as it comes back up, because the five minutes cannot have run while it was off.
 >
 > Before it expires, the button still refuses if anything has changed since the report was drawn up — and it tells you what: the rounds, the channels, the seated drivers, even a drawing file edited on the bot's computer. Nothing is approved, and the question is cleared away just as an expiry clears it.
 >
@@ -378,7 +378,7 @@ The review ends by asking whether you accept the configuration, with a **✅ App
 | Two rounds in a division share a date and time | Reschedule one |
 | A team name cannot be used | Rename it — the message names every offender at once |
 
-**And more, depending on what you turned on** — a missing channel for any enabled module, a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. Each is named individually with the command that fixes it. `/season review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
+**And more, depending on what you turned on** — a missing channel for any enabled module, a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
 
 When it goes through, the bot:
 
@@ -492,7 +492,7 @@ Deletes every season, division, round and result, and keeps your `/bot-init` set
 - [ ] Mystery rounds have no track; every other round has one
 - [ ] Every division has a calendar channel and a lineup channel
 - [ ] Every division has the channels each enabled module needs
-- [ ] `/season review` reports nothing blocking
+- [ ] `/season placements-review` reports nothing blocking
 
 ---
 

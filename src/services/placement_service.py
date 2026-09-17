@@ -591,7 +591,7 @@ class PlacementService:
         the books, and refused a reserve outright once the classified drivers filled the rows.
 
         The **constructors** ceiling is not checked here. Seating a driver adds no team, so no
-        driver assignment can breach it; it is checked at ``/season review``, which is where a
+        driver assignment can breach it; it is checked at ``/season placements-review``, which is where a
         division's team count is settled.
 
         Never raises for its own reasons: a fault in this check must not block a placement,

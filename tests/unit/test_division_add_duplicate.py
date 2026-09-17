@@ -530,7 +530,7 @@ async def test_the_new_division_is_seeded_with_teams(tmp_path):
 
 async def test_the_pending_config_is_reloaded_from_what_was_written(tmp_path):
     """Duplicate writes to the database, not to the snapshot — without the reload the
-    manager's next `/season review` would not contain the division they just made."""
+    manager's next `/season placements-review` would not contain the division they just made."""
     db_path = await _make_db(tmp_path)
     cfg = _pending(PendingDivision(name="Pro", role_id=1, tier=1))
     cog = _make_cog(db_path, cfg=cfg)

@@ -5,7 +5,7 @@ second one, but nothing below that command enforced it, and a good deal of code 
 it: `_get_active_season_id` and `get_setup_or_active_season` each selected
 `WHERE status IN ('ACTIVE','SETUP')` and took a row with no ordering. On a server holding
 two, those returned an arbitrary one — `/test-mode roster add` seated mock drivers in one
-season's divisions while `/season review` drew the other's, giving a full roster listing
+season's divisions while `/season placements-review` drew the other's, giving a full roster listing
 beside an empty lineup with neither command reporting a fault.
 
 Migration 049 makes the state impossible rather than teaching each reader a precedence.

@@ -1,4 +1,4 @@
-"""`/season review` names a points configuration that is attached and does not exist.
+"""`/season placements-review` names a points configuration that is attached and does not exist.
 
 Issue #132. The review prints the attached names from `season_points_links` alone, and a
 link is a bare string with no foreign key beneath it — so a name that was mistyped into

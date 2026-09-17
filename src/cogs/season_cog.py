@@ -2,8 +2,8 @@
 
 Commands:
   /season setup    — start season configuration (admin only)
-  /season review   — view pending config with Approve/Amend actions
-  (approval is the button `/season review` posts; there is no `/season approve`)
+  /season placements-review   — view pending config with Approve/Amend actions
+  (approval is the button `/season placements-review` posts; there is no `/season approve`)
   /season status   — read-only summary of active season
   /season cancel   — delete the active season (admin only, destructive)
 
@@ -427,7 +427,7 @@ async def _overflow_for(cog, guild_id: int, _division_name: str, would_hold: int
 # ---------------------------------------------------------------------------
 
 
-#: What a graphic did in `/season review`, and what the text around it must therefore do.
+#: What a graphic did in `/season placements-review`, and what the text around it must therefore do.
 #:
 #: The review shows a manager what their league will actually see, so a graphic
 #: **replaces** the section's text rather than standing beside it. Three states and not
@@ -480,7 +480,7 @@ class SeasonCog(commands.Cog):
         if self._get_pending_for_server(server_id) is not None:
             await interaction.followup.send(
                 "\u274c A season setup is already in progress for this server. "
-                "Use `/season review` to approve, or `/bot-reset` to cancel it first.",
+                "Use `/season placements-review` to approve, or `/bot-reset` to cancel it first.",
                 ephemeral=True,
             )
             return
@@ -496,7 +496,7 @@ class SeasonCog(commands.Cog):
         if await self.bot.season_service.get_setup_season(server_id) is not None:
             await interaction.followup.send(
                 "\u274c A season setup is already in progress for this server. "
-                "Use `/season review` to continue, or cancel it first.",
+                "Use `/season placements-review` to continue, or cancel it first.",
                 ephemeral=True,
             )
             return
@@ -508,7 +508,7 @@ class SeasonCog(commands.Cog):
         await interaction.followup.send(
             f"\u2705 Season setup started. **Season #{cfg.season_number} (F1 {cfg.game_edition})** is being configured.\n\n"
             "Use `/division add` for each division, then `/round add` for each round.\n"
-            "When done, run `/season review` to review and approve.",
+            "When done, run `/season placements-review` to review and approve.",
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
@@ -542,7 +542,7 @@ class SeasonCog(commands.Cog):
     async def _points_ordering_problems(self, server_id: int, season_id: int) -> list[str]:
         """Every place this season's points would score a lower position above a higher one.
 
-        **One helper because two surfaces ask the same question.** `/season review` reports
+        **One helper because two surfaces ask the same question.** `/season placements-review` reports
         what would block an approval and `_do_approve` refuses on it; a review that promised
         to surface the blockers and did not look for this one sent a manager to an approval
         that then refused, for a fault the report had just told them nothing about.
@@ -573,7 +573,7 @@ class SeasonCog(commands.Cog):
         """Every points configuration this season is attached to that no longer exists.
 
         **One helper because two surfaces ask the same question**, in the manner of
-        `_points_ordering_problems`: `/season review` reports what would block an approval
+        `_points_ordering_problems`: `/season placements-review` reports what would block an approval
         and `_do_approve` refuses on it, and a review that listed the name as attached while
         the approval choked on it is what made #132 unreadable.
 
@@ -672,7 +672,7 @@ class SeasonCog(commands.Cog):
     async def _prerender_review_images(
         self, interaction, divisions, rounds_by_division, season_number
     ) -> dict:
-        """Draw every graphic `/season review` will post, before it posts any of them.
+        """Draw every graphic `/season placements-review` will post, before it posts any of them.
 
         Returns ``{(division id, "calendar" | "lineup"): outcome}``. A key is absent where
         the aspect is off, where the render failed, or where the budget above stopped the
@@ -790,7 +790,7 @@ class SeasonCog(commands.Cog):
         prepared.clear()
 
     async def _post_review_lineup_image(self, interaction, division, *, prepared=None) -> str:
-        """Post the lineup graphic for `/season review`, **in place of** the text lineup.
+        """Post the lineup graphic for `/season placements-review`, **in place of** the text lineup.
 
         Returns one of :data:`REVIEW_IMAGE_DREW`, :data:`REVIEW_IMAGE_TEXT` or
         :data:`REVIEW_IMAGE_FAULT`, which is what tells the caller whether to post the
@@ -897,7 +897,7 @@ class SeasonCog(commands.Cog):
     async def _post_review_calendar_image(
         self, interaction, division, rounds, season_number, *, prepared=None
     ) -> str:
-        """Post the calendar graphic for `/season review`, **in place of** the text.
+        """Post the calendar graphic for `/season placements-review`, **in place of** the text.
 
         The counterpart of :meth:`_post_review_lineup_image`, and it reads the same three
         states. Renders through ``calendar_post_service.render_for_command``, which posts
@@ -1318,7 +1318,7 @@ class SeasonCog(commands.Cog):
         return lines
 
     async def _build_image_review_section(self, server_id: int) -> list[str]:
-        """The image module's addendum to `/season review` (FR-033).
+        """The image module's addendum to `/season placements-review` (FR-033).
 
         Built from the same `AspectStatus` list `/images config view` renders, so a
         divergence between the two surfaces is impossible by construction. Template
@@ -1440,7 +1440,7 @@ class SeasonCog(commands.Cog):
     async def _portrait_configuration_blocker(self, server_id: int) -> str | None:
         """The portrait-settings reason approval must be withheld, or None.
 
-        Read by `/season review` and by `/season approve` alike, so the two cannot disagree
+        Read by `/season placements-review` and by `/season approve` alike, so the two cannot disagree
         about whether a season may be approved.
         """
         from services.image_config_service import portrait_configuration_fault
@@ -1455,7 +1455,7 @@ class SeasonCog(commands.Cog):
         return portrait_configuration_fault(config)
 
     async def _portrait_review_lines(self, server_id: int) -> list[str]:
-        """How driver portraits are being obtained, for `/season review`.
+        """How driver portraits are being obtained, for `/season placements-review`.
 
         Always stated, including when the feature is off: a manager reading the review is
         deciding whether the season is configured, and "the bot is not obtaining portraits"
@@ -1528,7 +1528,7 @@ class SeasonCog(commands.Cog):
         one window to shorten. Both name the **latest** round of their kind, which is the one
         that bounds the remedy — clear that round and every earlier one is cleared with it.
 
-        Takes the verdict rather than the rounds, because `/season review` and the approval
+        Takes the verdict rather than the rounds, because `/season placements-review` and the approval
         reach it by different routes and must not be able to reach different answers.
         """
         if fault is None:
@@ -1554,8 +1554,8 @@ class SeasonCog(commands.Cog):
         return lines
 
     @season.command(
-        name="review",
-        description="Review pending season configuration before approving.",
+        name="placements-review",
+        description="Review the season's divisions, calendar and lineups before confirming placements.",
     )
     # A league manager's, deliberately (2026-09-07). Reading what a season is configured to
     # be is not an administrative act: the report is what the review is for. Approving it is
@@ -2085,7 +2085,7 @@ class SeasonCog(commands.Cog):
                     "⛔ **This season's calendar holds dates that have already gone by.**"
                     "\nEach division's calendar above names the round. The season is "
                     "**not** offered for approval while that stands — put the dates right "
-                    "with `/round amend`, then run `/season review` again.",
+                    "with `/round amend`, then run `/season placements-review` again.",
                     ephemeral=True,
                 )
             if approval_blockers:
@@ -2097,7 +2097,7 @@ class SeasonCog(commands.Cog):
                     "\u26d4 **The image module is not correctly configured.**\n"
                     f"{body}\n"
                     "The season is **not** offered for approval while that stands. "
-                    "Put it right, then run `/season review` again.",
+                    "Put it right, then run `/season placements-review` again.",
                     ephemeral=True,
                 )
             if phantom_configs:
@@ -2109,7 +2109,7 @@ class SeasonCog(commands.Cog):
                     "Nothing of that name is in the server's points store, so there is "
                     "nothing for the approval to copy. The season is **not** offered for "
                     "approval while that stands \u2014 build it with `/results config add`, or "
-                    "drop it with `/results config detach`, then run `/season review` "
+                    "drop it with `/results config detach`, then run `/season placements-review` "
                     "again.",
                     ephemeral=True,
                 )
@@ -2120,7 +2120,7 @@ class SeasonCog(commands.Cog):
                     f"{body}\n"
                     "A lower position cannot be worth as much as the one above it. The "
                     "season is **not** offered for approval while that stands — repair "
-                    "the tables with `/results config session`, then run `/season review` "
+                    "the tables with `/results config session`, then run `/season placements-review` "
                     "again.",
                     ephemeral=True,
                 )
@@ -2282,7 +2282,7 @@ class SeasonCog(commands.Cog):
         if stage is not SeasonStage.CONFIGURATION:
             await interaction.response.send_message(
                 "⛔ There is no season in configuration. `/season setup` begins one; a "
-                "season whose configuration is confirmed is reviewed with `/season review`.",
+                "season whose configuration is confirmed is reviewed with `/season placements-review`.",
                 ephemeral=True,
             )
             return
@@ -2402,7 +2402,7 @@ class SeasonCog(commands.Cog):
         else:
             next_step = (
                 "The season is now in placements — build its divisions and calendar, place "
-                "its drivers, then run `/season review`."
+                "its drivers, then run `/season placements-review`."
             )
         await interaction.followup.send(
             f"✅ Season #{cfg.season_number}'s configuration is confirmed. {next_step}",
@@ -2417,7 +2417,7 @@ class SeasonCog(commands.Cog):
         )
 
     # `/season approve` is withdrawn (2026-09-07). A season is approved from the button
-    # `/season review` posts and from nowhere else: the review is the evidence the
+    # `/season placements-review` posts and from nowhere else: the review is the evidence the
     # approval rests on, and a command that could be run without one let a manager commit
     # a season they had not looked at. The button carries its own five-minute window, so
     # what is approved is always a season someone has just read.
@@ -5085,7 +5085,7 @@ class SeasonCog(commands.Cog):
         if remaining <= 0:
             await interaction.followup.send(
                 "⏱️ This review expired before the season could be approved. Run "
-                "`/season review` again. **Nothing has been approved.**",
+                "`/season placements-review` again. **Nothing has been approved.**",
                 ephemeral=True,
             )
             return False
@@ -5116,7 +5116,7 @@ class SeasonCog(commands.Cog):
         if view.answer is None:
             await interaction.followup.send(
                 "⏱️ This review expired while the backup question went "
-                "unanswered. Run `/season review` again. **Nothing has been approved.**",
+                "unanswered. Run `/season placements-review` again. **Nothing has been approved.**",
                 ephemeral=True,
             )
             return False
@@ -5281,7 +5281,7 @@ class SeasonCog(commands.Cog):
 
             # ── Gate 2a: monotonic ordering check (FR-008) ───────────────────
             #
-            # Through the same helper `/season review` reports from, so the report a
+            # Through the same helper `/season placements-review` reports from, so the report a
             # manager was given and the refusal they then meet cannot disagree.
             mono_errors = await self._points_ordering_problems(cfg.server_id, cfg.season_id)
             if mono_errors:
@@ -5361,7 +5361,7 @@ class SeasonCog(commands.Cog):
         # window, and choosing between posting late, posting nothing, and losing the round's
         # records is the league's decision, not the bot's.
         #
-        # Checked again here although `/season review` reports it and withholds its button:
+        # Checked again here although `/season placements-review` reports it and withholds its button:
         # the review stands for five minutes, and a round on the right side of a window when
         # the report was drawn can be the wrong side of it by the time Approve is pressed.
         #
@@ -5408,7 +5408,7 @@ class SeasonCog(commands.Cog):
                 f"❌ Season cannot be approved — its calendar holds dates that have "
                 f"already gone by:\n{_body}\n"
                 f"Move those rounds with `/round amend`, or shorten the windows, then run "
-                f"`/season review` again. **Nothing has been approved.**",
+                f"`/season placements-review` again. **Nothing has been approved.**",
                 ephemeral=True,
             )
             return
@@ -5434,7 +5434,7 @@ class SeasonCog(commands.Cog):
             return
 
         # Gate 4 — every unusable template — is withdrawn (2026-09-07), with the render
-        # pass it belonged to. `/season review` draws every graphic and withholds its own
+        # pass it belonged to. `/season placements-review` draws every graphic and withholds its own
         # button where one will not draw; the fingerprint then proves the season is the one
         # that review described. A template broken here is therefore impossible: it was
         # broken at the review, and there was no button, or it has changed since, and the
@@ -5463,7 +5463,7 @@ class SeasonCog(commands.Cog):
         # on and marked a template with a slot has said that slot matters, and approving a
         # season with one unset would draw that tier in whatever the template happened to
         # be authored in — silently, and differently from its siblings. Read through the
-        # same `colour_shortfall` `/season review` and `/images config view` report, so the
+        # same `colour_shortfall` `/season placements-review` and `/images config view` report, so the
         # three cannot disagree about what is missing.
         colour_problems = await self._colour_shortfall_problems(cfg.server_id)
         if colour_problems:
@@ -5482,7 +5482,7 @@ class SeasonCog(commands.Cog):
         # no portrait
         # would ever be fetched, and the season would run drawing the placeholder for every
         # driver while the configuration said otherwise. Read through the same helper
-        # `/season review` reads, so the two cannot disagree.
+        # `/season placements-review` reads, so the two cannot disagree.
         portrait_fault = await self._portrait_configuration_blocker(cfg.server_id)
         if portrait_fault is not None:
             await interaction.followup.send(
@@ -5863,7 +5863,7 @@ class _ApproveView(discord.ui.View):
     """The standing question at the end of a review, and the button that answers it.
 
     **Who may press.** The member who ran the review, or a server administrator. A league
-    manager holding only the interaction role may run `/season review` — that is what the
+    manager holding only the interaction role may run `/season placements-review` — that is what the
     report is for — but approving somebody else's review is not theirs to do. The message
     is public, so this check is what stops a bystander answering it; the refusal is
     ephemeral, so only the presser reads it.
@@ -5875,7 +5875,7 @@ class _ApproveView(discord.ui.View):
     """
 
     #: The command whose report this button answers, named when the review expires.
-    _review_command = "/season review"
+    _review_command = "/season placements-review"
 
     def __init__(self, cog: SeasonCog, reviewer_id: int) -> None:
         super().__init__(timeout=APPROVAL_WINDOW_SECONDS)
@@ -6047,7 +6047,7 @@ class _ApproveView(discord.ui.View):
                 await interaction.response.send_message(
                     f"⛔ Your season has changed since this review, so the report above "
                     f"no longer describes it:\n{bullets}\n"
-                    f"Run `/season review` again and approve from the fresh report. "
+                    f"Run `/season placements-review` again and approve from the fresh report. "
                     f"**Nothing has been approved.**",
                     ephemeral=True,
                 )

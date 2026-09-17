@@ -197,7 +197,7 @@ def test_the_attendance_reserve_distribution_does_not_refresh_the_lineup():
 
 
 def test_render_for_command_persists_no_message_id_and_deletes_nothing():
-    """FR-028 — `/team lineup` and `/season review` must not touch the record."""
+    """FR-028 — `/team lineup` and `/season placements-review` must not touch the record."""
     source = _function_source(
         SRC / "services" / "image_lineup_post.py", "render_for_command", code_only=True
     )

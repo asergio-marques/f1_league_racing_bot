@@ -1,6 +1,6 @@
-"""Running `/season review` end to end, and what decides whether Approve is offered.
+"""Running `/season placements-review` end to end, and what decides whether Approve is offered.
 
-Issue #208. The helpers `/season review` reads from each have tests of their own, but nothing
+Issue #208. The helpers `/season placements-review` reads from each have tests of their own, but nothing
 drove the command itself — some two hundred statements of report assembly that no test reached.
 This file runs it with the image module off, so the graphics helpers stay out of the way and
 what is under test is the report and the decision at the end of it.

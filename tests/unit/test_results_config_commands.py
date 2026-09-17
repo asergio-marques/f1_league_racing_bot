@@ -12,7 +12,7 @@ manager's, because each of those has another command that reverses it.
 **It asks first where a season in setup is attached to it** (decided 2026-09-15, issue #132).
 The removal takes the attachment with it, so the season quietly stops being the season the
 manager built and is refused at approval. Naming the season and waiting is the difference
-between a deliberate teardown and a surprise found at the next `/season review`. With nothing
+between a deliberate teardown and a surprise found at the next `/season placements-review`. With nothing
 attached there is nothing to lose and the command acts straight away —
 `test_a_configuration_nothing_depends_on_is_removed_without_asking` and its counterpart sit
 either side of that, and collapsing them would either nag on every removal or take a season's
@@ -263,7 +263,7 @@ async def test_a_configuration_a_season_is_built_on_asks_first():
 
 async def test_the_question_names_the_season_at_risk():
     """Naming it is the difference between a deliberate teardown and a surprise found at
-    the next `/season review`."""
+    the next `/season placements-review`."""
     cog = _make_cog()
     interaction = _interaction()
 

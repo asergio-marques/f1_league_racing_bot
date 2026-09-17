@@ -19,7 +19,7 @@ needs to know that is what happened, rather than finding out by looking at the c
 **The season number it draws with is read from an attribute the season does not have.** The
 command passes `getattr(season, "number", None)`; the `Season` model's field is
 `season_number`. So a resynced graphic is drawn with no season number, where the copy shown at
-`/season review` carries it. `test_the_season_number_is_not_passed_today` pins that as it stands
+`/season placements-review` carries it. `test_the_season_number_is_not_passed_today` pins that as it stands
 — the same is true of the calendar approval posts, which pass none at all — and it is
 recorded as issue #213 rather than corrected here, since #208 is a coverage change.
 """

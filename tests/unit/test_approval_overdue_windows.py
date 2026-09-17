@@ -449,7 +449,7 @@ def test_two_rounds_at_one_moment_break_the_tie_on_round_number():
 
 # ── `_calendar_fault_lines` — the verdict as a manager reads it ───────────────
 #
-# The wording a division's calendar carries in `/season review`, and the half of the answer
+# The wording a division's calendar carries in `/season placements-review`, and the half of the answer
 # the approval quotes back when it refuses. Driven directly; that the review posts these
 # beside the calendar whichever form it took is pinned in `test_season_review_images.py`.
 

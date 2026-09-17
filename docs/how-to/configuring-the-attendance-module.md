@@ -116,7 +116,7 @@ They have to stay in that order — the call first, the reminder after it, the d
 >
 > This is checked under test mode too, so a test season needs its rounds set beyond every one of these three timings.
 
-To see what is currently set, run `/attendance config show`, which answers privately with the timings, the penalties and the thresholds in one message. `/season review` shows the same block alongside everything else.
+To see what is currently set, run `/attendance config show`, which answers privately with the timings, the penalties and the thresholds in one message. `/season placements-review` shows the same block alongside everything else.
 
 ---
 
@@ -192,7 +192,7 @@ Follow [Setting up the image module](configuring-the-image-module.md) for the or
 
 > **A picture never delays or changes a sanction.** Auto-reserve and auto-sack are enforced and announced exactly as they would be with the images module switched off, and a sheet that cannot be drawn falls back to the list with the reason in the log channel.
 
-> **The sheet's drawing file has to be big enough for your division.** With `attendance` on, assigning a driver that would push a division past the rows your file declares is **refused** and the driver is not seated. `/season review` also warns where your sheet has fewer round columns than your longest calendar, or your check-in graphic names fewer sessions than a sprint weekend runs — those are warnings and do not block approval.
+> **The sheet's drawing file has to be big enough for your division.** With `attendance` on, assigning a driver that would push a division past the rows your file declares is **refused** and the driver is not seated. `/season placements-review` also warns where your sheet has fewer round columns than your longest calendar, or your check-in graphic names fewer sessions than a sprint weekend runs — those are warnings and do not block approval.
 
 ---
 

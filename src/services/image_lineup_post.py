@@ -369,7 +369,7 @@ async def try_post(
 async def render_for_command(bot, guild, division_id: int) -> LineupPostOutcome:
     """Produce a division's lineup PNG as **command output**, posting it nowhere.
 
-    Used by `/team lineup` and `/season review`. Constitution XIV.7 makes a commanded
+    Used by `/team lineup` and `/season placements-review`. Constitution XIV.7 makes a commanded
     posting reject rather than fall back, so a fault comes back as ``REJECTED`` with the
     message to show the caller.
 

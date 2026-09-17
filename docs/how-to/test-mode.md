@@ -82,7 +82,7 @@ That database detection is load-bearing rather than a fallback: approval skips s
 
 **Database state also covers everything the job store has lost.** Before returning a scheduler job, `advance` checks every chronologically earlier round for work the scheduler cannot see: phases evicted by misfire grace, RSVP jobs never created because their round was already past-dated when they were scheduled, and result submission. Where the job store holds nothing at all, that same check drives the whole queue. This is why `advance` still works on a season most of whose jobs were never created.
 
-> **Approval is no longer a route to such a season** (decided 2026-09-10). A season holding a round already inside one of its enabled modules' configured windows is reported by `/season review`, which withholds its button, and refused by the approval as well, and test mode is not exempt — so a test season has to be built with its rounds beyond the check-in notice and every weather phase deadline. The generator in step 2 of [A workable order](#a-workable-order) does this for you, dating its calendars in the year after the run.
+> **Approval is no longer a route to such a season** (decided 2026-09-10). A season holding a round already inside one of its enabled modules' configured windows is reported by `/season placements-review`, which withholds its button, and refused by the approval as well, and test mode is not exempt — so a test season has to be built with its rounds beyond the check-in notice and every weather phase deadline. The generator in step 2 of [A workable order](#a-workable-order) does this for you, dating its calendars in the year after the run.
 >
 > **Nor with every module switched off** (decided 2026-09-14). The windows above are contributed by the modules that configure them, so a test server running neither weather nor attendance offered none at all and a season built wholly in the past was approved in silence. A round's **own moment** is judged too, whatever the modules, and each division's calendar in the review names the latest round of it that has gone by.
 >
@@ -131,7 +131,7 @@ The response includes a **synthetic mention string** (`<@…>` with the fake pro
 | `/test-mode roster list` | Per division. The cheat sheet — reprints every mention string, with team and nationality. A long roster arrives as several messages, each one a complete table |
 | `/test-mode roster clear` | Empties one division |
 
-Fake drivers show up in `/season review`'s lineup block with their display name beside the mention, which is the quickest way to confirm a division is fully seated — provided the lineup is being shown as text. With the `lineup` image output switched on, the review draws the picture instead, which carries the driver's display name and not the mention; switch that output off, or use `/test-mode roster list`, to read the mentions back.
+Fake drivers show up in `/season placements-review`'s lineup block with their display name beside the mention, which is the quickest way to confirm a division is fully seated — provided the lineup is being shown as text. With the `lineup` image output switched on, the review draws the picture instead, which carries the driver's display name and not the mention; switch that output off, or use `/test-mode roster list`, to read the mentions back.
 
 ### Seating a whole grid at once
 

@@ -93,7 +93,7 @@ Every reply also tells you where the other two stand, which saves setting one an
 
 **Do this before the season is approved.** The bot notes the timings at approval and works to those for the whole season. Afterwards the commands are refused outright, and there is no way to shift a running season's forecasts.
 
-> **They also decide how late you can approve.** A season holding a round whose phase 1, 2 or 3 deadline has already passed is named in `/season review`, which then offers no Approve button, and the approval refuses on the same finding — a first round three days away cannot honour a five-day phase 1. Approve earlier, shorten the deadline, or move the round with `/round amend`. Test mode is not exempt, so a test season needs its rounds set beyond all three.
+> **They also decide how late you can approve.** A season holding a round whose phase 1, 2 or 3 deadline has already passed is named in `/season placements-review`, which then offers no Approve button, and the approval refuses on the same finding — a first round three days away cannot honour a five-day phase 1. Approve earlier, shorten the deadline, or move the round with `/round amend`. Test mode is not exempt, so a test season needs its rounds set beyond all three.
 
 > **The wording of the posts does not follow these settings.** The messages say "5 days out", "2 days out" and "2 hours out" whatever you set. Change phase 1 to seven days and the forecast still arrives seven days ahead — but it will describe itself as five. Worth knowing before your drivers ask.
 
@@ -103,7 +103,7 @@ Every reply also tells you where the other two stand, which saves setting one an
 
 > **A round's circuit is fixed once its first forecast is out.** That forecast was drawn for that circuit and cannot be unsaid, so `/round amend` refuses a bare track change from then on — and refuses a format change once the second forecast is out, that one having been drawn for the round's sessions. Moving the round in the same change puts the forecasts back in question and lets both through, which is the way to correct a circuit late.
 
-To see what is currently set, run `/season review` — the weather block lists all three. There is no separate command for reading them back.
+To see what is currently set, run `/season placements-review` — the weather block lists all three. There is no separate command for reading them back.
 
 ---
 
@@ -209,7 +209,7 @@ Worth running through before the season is approved.
 - [ ] Every division has a forecast channel, including any you created by copying another
 - [ ] Every division has the role you want pinged
 - [ ] The log channel is one you can read, since every calculation goes there
-- [ ] The three timings are what you want, and `/season review` shows them
+- [ ] The three timings are what you want, and `/season placements-review` shows them
 - [ ] The first round is far enough away to honour all three — the review withholds the Approve button if not
 - [ ] Every non-mystery round has a track
 - [ ] Rounds you meant to be mystery rounds are set as mystery, and the rest are not
@@ -223,7 +223,7 @@ Worth running through before the season is approved.
 | What you see | Usually means |
 |---|---|
 | No forecast at all for a division | No forecast channel set for it, or the module is off |
-| No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and nothing anywhere will tell you so: check the round with `/season review` |
+| No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and nothing anywhere will tell you so: check the round with `/season placements-review` |
 | A season that will not approve | A division is missing its forecast channel, or a round is already inside one of the three deadlines. The division's own calendar in the review names the latest such round, and the button is withheld |
 | The post says "5 days out" but arrived earlier or later | Known: the wording is fixed and does not follow your timing settings. The timing itself is correct |
 | `/weather config` refused | Either a season is running, or the value would put the phases out of order. The reply says which |

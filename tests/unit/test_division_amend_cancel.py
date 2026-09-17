@@ -289,7 +289,7 @@ async def test_the_remaining_divisions_are_listed_after_a_delete(tmp_path):
 
 async def test_a_delete_reloads_the_pending_config(tmp_path):
     """The snapshot in memory still holds the division that was just removed; without the
-    reload the next `/season review` would show a division that no longer exists."""
+    reload the next `/season placements-review` would show a division that no longer exists."""
     db_path = await _make_db(tmp_path)
     cfg = PendingConfig(server_id=SERVER_ID, divisions=[PendingDivision(name="Pro")])
     cog = _make_cog(db_path, cfg=cfg)

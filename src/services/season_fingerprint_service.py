@@ -1,4 +1,4 @@
-"""A fingerprint of everything `/season review` reports, taken when it is posted.
+"""A fingerprint of everything `/season placements-review` reports, taken when it is posted.
 
 The review is the evidence a season is approved on, and the Approve button commits on the
 strength of it. A manager who moves a channel, reseats a driver or edits a round between
@@ -127,7 +127,7 @@ def _directory_signature(directory: Path) -> list:
 
 
 async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerprint:
-    """Fingerprint everything `/season review` reports for *season_id*.
+    """Fingerprint everything `/season placements-review` reports for *season_id*.
 
     One connection for the lot. Never raises: a fingerprint that could not be taken is an
     empty one, and an empty fingerprint differs from every other, so a fault here refuses
