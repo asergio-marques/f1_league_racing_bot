@@ -140,8 +140,12 @@ async def build_drawing(bot, guild, division_id: int):
                     "       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
                     "            ELSE sr.nationality END AS nationality "
                     "FROM team_seats ts "
+                    # A placement not yet confirmed mid-season is not drawn (issue #220).
                     "LEFT JOIN driver_season_assignments dsa "
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
+                    "      AND (dsa.committed = 1 OR NOT EXISTS ("
+                    "          SELECT 1 FROM seasons s WHERE s.id = dsa.season_id "
+                    "          AND s.status = 'ACTIVE')) "
                     "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
                     f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
                     "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",

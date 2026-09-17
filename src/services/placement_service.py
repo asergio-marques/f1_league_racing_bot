@@ -1467,7 +1467,10 @@ class PlacementService:
                 JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
                 JOIN team_seats ts ON ts.id = dsa.team_seat_id
                 JOIN team_instances ti ON ti.id = ts.team_instance_id
+                JOIN seasons s ON s.id = dsa.season_id
                 WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
+                  -- A placement not yet confirmed mid-season is not posted (issue #220).
+                  AND (dsa.committed = 1 OR s.status != 'ACTIVE')
                 ORDER BY ti.is_reserve ASC, ti.name ASC
                 """,
                 (division_id,),

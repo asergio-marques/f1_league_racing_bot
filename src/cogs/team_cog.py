@@ -390,7 +390,9 @@ class TeamCog(commands.Cog):
         lines: list[str] = []
         for div in all_divisions:
             lines.append(f"**{div.name}**")
-            teams = await self.bot.team_service.get_division_teams(div.id)  # type: ignore[attr-defined]
+            teams = await self.bot.team_service.get_division_teams(  # type: ignore[attr-defined]
+                div.id, committed_only=True
+            )
             if not teams:
                 lines.append("  *(no teams)*")
             else:

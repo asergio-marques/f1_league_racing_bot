@@ -59,3 +59,29 @@ async def test_the_opening_standings_leave_out_an_uncommitted_driver(db_path):
     snapshots = await standings_service.opening_driver_standings(db_path, DIVISION_ID)
 
     assert sorted(s.driver_user_id for s in snapshots) == [1001, 1003]
+
+
+# ── Lineups ────────────────────────────────────────────────────────────────────────
+
+
+async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
+    from services.image_lineup_post import build_drawing
+    from unittest.mock import patch
+
+    captured = {}
+
+    def _resolve(**kwargs):
+        captured.update(kwargs)
+        return "drawing"
+
+    bot = SimpleNamespace(db_path=db_path)
+    with patch("services.image_lineup_service.resolve_drawing", side_effect=_resolve):
+        await build_drawing(bot, None, DIVISION_ID)
+
+    seated = [
+        seat.discord_user_id
+        for team in captured["teams"]
+        for seat in team.seats
+        if seat.discord_user_id is not None
+    ]
+    assert sorted(seated) == ["1001"]
