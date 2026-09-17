@@ -1,6 +1,6 @@
 # Setting up the bot for your league
 
-Everything the bot does sits on top of one thing: a **season**, divided into **divisions**, each running a list of **rounds**. This guide is the **order to do things in**, from an invited bot to an approved season racing on Sunday.
+Everything the bot does sits on top of one thing: a **season**, divided into **divisions**, each running a list of **rounds**. This guide is the **order to do things in**, from an invited bot to a confirmed season racing on Sunday, and on to its end.
 
 It covers only the parts every league needs, whichever features you use. The five optional modules — signup, results & standings, attendance, weather and images — each have their own settings, and this guide tells you when to turn one on, not how to configure it.
 
@@ -25,7 +25,18 @@ You do not need to read those first. Start here.
 
 **Round** — one race weekend in a division's calendar. You never type a round number; the bot works them out by sorting your rounds by date.
 
-**Setup** and **active** — a season is in *setup* while you are building it, and *active* once you approve it. This matters more than anything else in this guide, because it decides which commands will even run. Rounds and divisions can be freely added and deleted during setup; once a season is active you can only amend and cancel.
+**Stage** — where a season has got to. This matters more than anything else in this guide, because it decides which commands will even run. A season moves through them in one direction:
+
+| Stage | What happens in it | How it ends |
+|---|---|---|
+| **Configuration** | You settle the team list, the modules and their settings, and test mode | `/season config-review`, confirmed |
+| **Waiting** | Nothing yet — the season waits for its signup window. Skipped where the signup module is off or test mode is on | `/signup open` |
+| **Signups** | Drivers sign up | The window closes |
+| **Placements** | You build the divisions and calendar, and place the drivers | `/season placements-review`, confirmed |
+| **Ongoing** | The season races. A new signup window may open mid-season, and its drivers are placed and confirmed the same way | Every division finishes |
+| **Pending completion** | Every division is finished or cancelled | `/season complete` |
+
+A season is **live** from `/season setup` until it is completed, cancelled or aborted, and a server holds one live season at a time. Divisions and rounds are created and deleted only in Placements; once a season is ongoing you can only amend and cancel.
 
 ---
 
@@ -75,8 +86,8 @@ Run it anywhere, and run it as a server administrator: until it has run there is
 | To run | You need |
 |---|---|
 | Most commands in this guide | The **interaction role** |
-| Anything that cannot be undone: `/bot-reset`, `/clean-bot`, `/module enable` and `/module disable`, cancelling or deleting a season, division or round, completing a season, `/team remove`, `/driver sack`, and every `/test-mode` command | The **league admin role** |
-| Approving a season, on the button `/season placements-review` posts | Whoever ran that review, or the league admin role |
+| Anything that cannot be undone: `/bot-reset`, `/clean-bot`, `/module enable` and `/module disable`, cancelling or deleting a season, division or round, aborting or completing a season, `/team remove`, `/driver sack`, and every `/test-mode` command | The **league admin role** |
+| Confirming a season's configuration or its placements, on the button `/season config-review` or `/season placements-review` posts | Whoever ran that review, or the league admin role |
 | `/bot-init` and the four commands that change one setting | The league admin role **or** Discord's **Administrator** permission, from any channel |
 
 The league admin role covers everything the interaction role does, so whoever holds it can
@@ -148,7 +159,7 @@ Five modules, **all off to begin with**. The bot works without any of them, but 
 
 Each module then has its own configuration, which is not covered here. Start from [Slash Commands](../../README.md#slash-commands) in the README and find that module's section.
 
-> **Decide now, not later.** Two of the five cannot be turned *on* once a season is running, turning either off mid-season does real and irreversible damage — `results` deletes the season's championship outright — and a third changes what approval demands of you. This step being early is not an accident.
+> **Decide now, not later.** Signup is fixed the moment a season's configuration is confirmed, and none of the other four can be turned *on* once its placements are. Turning `results` or `attendance` off mid-season does real and irreversible damage — `results` deletes the season's championship outright — and each module you turn on adds to what confirming a season demands of you. This step being early is not an accident.
 
 ---
 
@@ -191,7 +202,7 @@ Worth a look now rather than mid-way through building a calendar, because the na
 
 ---
 
-## Step 5 — Build the season
+## Step 5 — Start the season
 
 ```
 /season setup game_edition:25
@@ -199,7 +210,60 @@ Worth a look now rather than mid-way through building a calendar, because the na
 
 The game edition is the year of the F1 game you are racing on — `25` for F1 25. The bot numbers the season for you.
 
-You are now **in setup**. Nothing you do from here is live until step 8.
+The season is now **in configuration**. Nothing you do from here is live until its placements are confirmed.
+
+**This is the last moment steps 2 and 3 are open.** Configuration is where the season's settings are decided, and confirming it fixes them until the season ends:
+
+- the **team list** — `/team add`, `/team remove` and `/team rename`;
+- the **signup module** — turning it on or off, and every setting in [its guide](configuring-the-signup-module.md);
+- **test mode**, which can be switched on or off only now — see [Testing with test mode](test-mode.md);
+- and the game edition you just gave.
+
+The other modules' settings stay open after confirmation, but none of them can be turned **on** once placements are confirmed. If your league attaches points configurations to its seasons, attach them now — see [Configuring the results module](configuring-the-results-module.md).
+
+---
+
+## Step 6 — Confirm the configuration
+
+```
+/season config-review
+```
+
+The bot posts the configuration to the channel: test mode, which modules are on, the team list with its roles, and — with the image module on — the image outputs. Then it checks everything that can be checked before the season has any divisions:
+
+| The check | Only with |
+|---|---|
+| The signup channel, base role and complete role are set | `signup` |
+| Every team name can be used | — |
+| A points configuration is attached, every attached one exists, and each is in order | `results` |
+| Inkscape is installed, every template a switched-on output draws is valid, every colour slot a drawing uses has a colour, and the driver-photo setting could fetch something | `images` |
+
+Anything wrong is listed with the command that fixes it, and no button is offered. Put it right and review again.
+
+Where nothing is wrong, the review ends by asking whether you confirm the configuration, with a **Confirm** button beneath it. It is governed exactly as the placements button in step 12 is — who may press it, the five minutes, and the refusal if anything changed since the report.
+
+When it goes through, the season moves on:
+
+- **With the signup module on**, to **Waiting** — its signup window is yours to open next, in step 7.
+- **With the signup module off, or test mode on**, straight to **Placements** — skip to step 8.
+
+> **Every one of these checks runs again when you confirm placements.** Only the signup settings and the team list are fixed at this point, so a points configuration or a template can still go wrong in between — and the placements review will say so.
+
+---
+
+## Step 7 — Take signups
+
+```
+/signup open
+```
+
+Skip this step if the signup module is off. Opening the window moves the season to **Signups**; closing it — with `/signup close`, or at the close time you set — moves it to **Placements**. Everything in between is the signup module's job, and [its guide](configuring-the-signup-module.md) covers it.
+
+---
+
+## Step 8 — Build the season
+
+The season is now **in placements**. This is when the calendar is built, because it is only now that you know how many drivers signed up and how many divisions they fill.
 
 ### Add your divisions
 
@@ -208,7 +272,7 @@ You are now **in setup**. Nothing you do from here is live until step 8.
 /division add name:Academy role:@Academy tier:2
 ```
 
-All three are required. Tiers must be unique, and by the time you approve they must run 1, 2, 3… with no gaps — so if you delete your tier 2 division, something has to become tier 2.
+All three are required. Tiers must be unique, and by the time you confirm placements they must run 1, 2, 3… with no gaps — so if you delete your tier 2 division, something has to become tier 2.
 
 If two divisions race the same calendar at different times, build the first one fully and then:
 
@@ -218,13 +282,15 @@ If two divisions race the same calendar at different times, build the first one 
 
 That copies every round across and shifts each by the offset you give. Far quicker than typing a second calendar. There are two offsets — `day_offset` and `hour_offset` — and you can use either or both. Both may be negative; only `hour_offset` accepts a decimal.
 
-Got something wrong? During setup you can fix any of it:
+Got something wrong? Until placements are confirmed you can fix any of it:
 
 | Command | Use it to |
 |---|---|
 | `/division amend` | Change a division's name, tier or role — one, two or all three at once |
 | `/division rename` | Change only the name |
 | `/division delete` | Remove a division and all its rounds |
+
+> **`/division add` is refused outside placements.** A season still in configuration, or waiting on or taking its signups, has no divisions yet — confirm the configuration and close the window first.
 
 ### Add the rounds
 
@@ -239,9 +305,9 @@ Four things to know:
 - **Four formats**: `NORMAL`, `SPRINT`, `MYSTERY` and `ENDURANCE`. You type the format rather than picking it from a list — case does not matter, but a name that is not one of the four is refused. Only `track` offers autocomplete.
 - **A `MYSTERY` round takes no track**, and every other format must have one. That is the whole point of a mystery round: the circuit is kept secret until the weekend.
 
-`/round delete` removes one during setup, and renumbers what remains.
+`/round delete` removes one while the season is in placements, and renumbers what remains.
 
-> **Two rounds in the same division cannot share a date and time.** The command refuses the second one and names the round already sitting there. Approval refuses such a season too, so this only saves you finding out later — duplicating a division with an offset of zero is the usual way it happens.
+> **Two rounds in the same division cannot share a date and time.** The command refuses the second one and names the round already sitting there. Confirming placements refuses such a season too, so this only saves you finding out later — duplicating a division with an offset of zero is the usual way it happens.
 
 ### Or paste the whole calendar at once
 
@@ -282,7 +348,7 @@ Three things to know about both:
 
 ---
 
-## Step 6 — Point each division at its channels
+## Step 9 — Point each division at its channels
 
 The bot posts nothing to a channel you have not named. Two channels are yours to set whatever else you use:
 
@@ -304,9 +370,9 @@ The other six belong to modules. Set the ones whose module you turned on in step
 | `/division rsvp-channel` | `attendance` | Check-in calls |
 | `/division attendance-channel` | `attendance` | The attendance sheet |
 
-**Approval will refuse a season that is missing any of those six for an enabled module**, so it is cheaper to do them all now than to discover it at step 8.
+**Confirming placements will refuse a season that is missing any of these** — the calendar and lineup channels for every division, and the six for every enabled module — so it is cheaper to do them all now than to discover it at step 12.
 
-> **The calendar and lineup channels are not checked.** Unlike the six above, a division missing either is simply skipped at approval — no refusal, no warning. It posts no calendar and no lineup, and the first you know of it is the silence. Set them.
+> **A channel can be repointed at any stage.** If one is deleted mid-season, run the same command with its replacement; nothing about the season has to be undone.
 
 > **A channel does one job.** Every one of these commands refuses a channel that is already set as something else — including your `/bot-init` command and log channels, your signup channel, and the same kind of channel in another division. A two-division league therefore needs its own results channel for each, its own calendar channel for each, and so on.
 >
@@ -316,13 +382,31 @@ The other six belong to modules. Set the ones whose module you turned on in step
 
 ---
 
-## Step 7 — Review what you have built
+## Step 10 — Place your drivers
+
+```
+/driver assign user:@Alice division:1 team:Ferrari
+/driver unassign user:@Alice division:1
+/driver reject user:@Bob
+```
+
+Every driver the signup window let through is **Unassigned**, and each of them has to be **settled** before placements can be confirmed: placed in a team with `/driver assign`, or turned down with `/driver reject`. A signup still awaiting approval, or sent back for a correction, is unsettled too — finish reviewing it. [The signup guide](configuring-the-signup-module.md) covers reading the queue and its seeds.
+
+**A placement is not live until it is confirmed.** Nothing is granted and nothing is posted when you assign: the division and team roles are handed out, and every lineup posted, when you confirm placements in step 12. Until then, `/driver unassign` takes a placement back without trace.
+
+A driver may hold one seat per division. A team runs out of seats; the Reserve team always has room.
+
+With test mode on, fake drivers are placed by `/test-mode roster add` instead, and `/driver assign` is refused for real ones — see [Testing with test mode](test-mode.md).
+
+---
+
+## Step 11 — Review the placements
 
 ```
 /season placements-review
 ```
 
-The bot posts the whole configuration to the channel, **as several messages rather than one**:
+The bot posts the whole season to the channel, **as several messages rather than one**:
 
 1. The season, and which modules are on.
 2. Signup settings.
@@ -337,7 +421,7 @@ With the image module on and the calendar or lineup output switched on, that div
 
 A module you have not switched on has no settings to show, so its message is simply not posted — six is the most you will see, not the number you should expect.
 
-Read it properly. It is the last look you get at the season as a whole before it goes live, and it names anything that will stop approval.
+Read it properly. It is the last look you get at the season as a whole before it goes live, and it names anything that will stop confirmation.
 
 > **A calendar with dates behind you takes the button away.** Two things can be wrong with a season's dates, and each division's calendar in the review carries its own:
 >
@@ -346,18 +430,17 @@ Read it properly. It is the last look you get at the season as a whole before it
 >
 > Only the **latest** round of each kind is named, beside that division's calendar. Every earlier round is implied by it: put that round right and you have put all of them right. Move the round with `/round amend`, or for a window shorten the window instead, then review again. Either way you get no **Approve** button until it is settled.
 >
-> The approval checks it a second time, because the review stands for five minutes and a round can cross a window while it is sitting there. So you can also meet this as a refusal on the button itself, having seen nothing wrong in the report.
+> The confirmation checks it a second time, because the review stands for five minutes and a round can cross a window while it is sitting there. So you can also meet this as a refusal on the button itself, having seen nothing wrong in the report.
 
-Two warnings it raises that are easy to skim past:
+One warning it raises that is easy to skim past: **"Reserve team has no role assigned"** — go back to step 3.
 
-- **"Reserve team has no role assigned"** — go back to step 3.
-- **"*n* driver(s) UNASSIGNED"** — drivers exist who are in no team. Placing drivers belongs to the signup module; see [Driver Commands](../../README.md#driver-commands).
+**And every signup must be settled.** A driver still Unassigned, awaiting approval or correcting their signup takes the button away, and the review names each of them — go back to step 10.
 
 ---
 
-## Step 8 — Approve
+## Step 12 — Confirm the placements
 
-The review ends by asking whether you accept the configuration, with a **✅ Approve** button beneath it. Press it. **There is no `/season approve` command** — approving commits your season, and the review is the evidence it is committed on, so the two are deliberately one action.
+The review ends by asking whether you accept the season, with a **✅ Approve** button beneath it. Press it. **There is no `/season approve` command** — approving commits your season, and the review is the evidence it is committed on, so the two are deliberately one action.
 
 **You can press it if you ran the review, or if you hold the league admin role.** Anybody else who presses is told privately that they cannot, and nothing is approved. Running the review needs only the interaction role, so you may well be able to review a season you cannot approve — that is why the question is posted where everyone can see it rather than to you alone. Show it to a league admin and they can answer it from the same message.
 
@@ -369,7 +452,7 @@ The review ends by asking whether you accept the configuration, with a **✅ App
 
 **The review disappears once you approve it.** The whole report goes, pictures and all — it described a season waiting on your decision, and you have made it. What you are told about the approval itself is private to you and stays, so you still see whether anything needed your attention. A review that expired is cleared the same way.
 
-**Four things will refuse the season whatever modules you use:**
+**These will refuse the season whatever modules you use:**
 
 | The refusal | The fix |
 |---|---|
@@ -377,18 +460,20 @@ The review ends by asking whether you accept the configuration, with a **✅ App
 | A division has no rounds at all | Add one, or delete the division |
 | Two rounds in a division share a date and time | Reschedule one |
 | A team name cannot be used | Rename it — the message names every offender at once |
+| A division has no calendar channel or no lineup channel | Step 9 |
+| A signup is unsettled | Step 10 |
 
-**And more, depending on what you turned on** — a missing channel for any enabled module, a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
+**And more, depending on what you turned on** — a missing channel for any enabled module, and every check from step 6 made again: a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
 
 When it goes through, the bot:
 
 1. **Locks in the calendar** and schedules every job the season needs — forecasts, result collection, check-in calls.
-2. **Grants division and team roles** to every placed driver.
+2. **Confirms every placement** and grants division and team roles to every placed driver.
 3. **Posts the lineup** to each division's lineup channel.
 4. **Posts the calendar** to each division's calendar channel.
 5. **Posts the opening classification** to each division's standings and attendance channels — every driver and team on zero, with the season's rounds drawn empty beside them.
 
-Your season is now **active**.
+Your season is now **ongoing**.
 
 > **The opening classification needs the results and attendance modules, not the images module.**
 > Steps 3 and 4 draw nothing without `/images`; step 5 posts either way — as a drawing where the
@@ -399,7 +484,7 @@ Your season is now **active**.
 
 ---
 
-## Step 9 — Running the season
+## Step 13 — Running the season
 
 ```
 /season status
@@ -407,7 +492,7 @@ Your season is now **active**.
 
 Shows where each division has got to and what its next round is. This one only needs the interaction role, so you can let more people run it.
 
-Things change. During an active season:
+Things change. While the season is ongoing:
 
 | Command | What it does |
 |---|---|
@@ -419,15 +504,31 @@ Things change. During an active season:
 
 > **The posted calendar does not update itself.** It is the calendar the season was approved with, and it stays that way. `/round amend` changes what the bot *does*, but the picture or the message your drivers scroll back to is untouched until you run `/division calendar-sync`. This trips up nearly everyone once.
 
+### Changing the lineup
+
+| Command | What it does |
+|---|---|
+| `/driver move` | Move a driver from their seat to another team, in the same division or another — one change, roles and lineups included |
+| `/driver release` | Take a driver out of one division while they keep their other seats |
+| `/driver sack` | Remove a driver from the season altogether. A league admin's |
+
+Each takes effect at once, roles and lineup posts included, because the placement it changes is already confirmed.
+
+### Signing up drivers mid-season
+
+A signup window can be opened again while the season is ongoing. The same two steps follow it: closing the window moves the season to **Ongoing, placements** where anyone is left to settle — place or reject them as in step 10, then run `/season placements-review`, which in this stage reviews only the lineups and the drivers to confirm. Confirming grants the new drivers their roles, posts each lineup that changed once, and returns the season to ongoing. No division or round can be added mid-season.
+
+Where the window closes with nobody left to settle, the season goes straight back to ongoing.
+
 ---
 
-## Step 10 — Ending a season
+## Step 14 — Ending a season
 
 ```
 /season complete
 ```
 
-**Nothing ends a season by itself.** You run this once every round in every division has been finalised, and the bot refuses — listing the outstanding rounds — until they are. It then ends the season: each division's **final classification** is posted, a history entry is written for every driver whose placement was confirmed, the season's roles are revoked, and every driver returns to **Not Signed Up** — ready to sign up for the next season. Drivers who never raced are deleted at this point, their signups kept with the season; former drivers are kept. An open signup window is closed, test mode is switched off, and the season is archived and announced in the log channel.
+**Nothing ends a season by itself.** Once every division is finished or cancelled, the season moves to **pending completion** on its own, and `/season complete` is what ends it. Before then the bot refuses, listing the outstanding rounds; it refuses too while a mid-season signup window is open or its drivers are being placed. From pending completion no module can be turned off, and the last round's results can still be amended. Completing then ends the season: each division's **final classification** is posted, a history entry is written for every driver whose placement was confirmed, the season's roles are revoked, and every driver returns to **Not Signed Up** — ready to sign up for the next season. Drivers who never raced are deleted at this point, their signups kept with the season; former drivers are kept. An open signup window is closed, test mode is switched off, and the season is archived and announced in the log channel.
 
 > **What "finalised" means here.** A round is finished once its **appeals review is approved** —
 > not when you submit its results, and not when you approve its penalties. Each stage in between
@@ -452,9 +553,9 @@ Things change. During an active season:
 
 An archived season cannot be edited. Start the next one with `/season setup` and a new game edition; your team list, your modules and your `/bot-init` settings all carry over.
 
-**You cannot build next season while this one is still running.** A server holds one live season at a time — one being set up, or one running, never both — so the running season has to be completed (or cancelled) before `/season setup` will start another. Archived seasons are not live and never get in the way: every completed and cancelled season you have ever run stays in the database, with its rounds, results, standings and driver histories intact, and the stats commands keep reading them.
+**You cannot build next season while this one is still live.** A server holds one live season at a time, whatever its stage, so the season has to be completed, cancelled or aborted before `/season setup` will start another. Archived seasons are not live and never get in the way: every completed and cancelled season you have ever run stays in the database, with its rounds, results, standings and driver histories intact, and the stats commands keep reading them.
 
-If you need to abandon a season rather than finish it:
+If you need to stop a season rather than finish it, which command depends on whether its placements were ever confirmed.
 
 ```
 /season cancel confirm:CONFIRM
@@ -467,8 +568,18 @@ If you need to abandon a season rather than finish it:
 > history entry — a cancelled season is league history, marked as cancelled so it can be told apart
 > from one that ran to its end — and then, as on completion, every driver returns to Not Signed Up
 > and those who never raced are deleted. What you lose is the ending: no final classification is
-> posted. It is available only while the season is ongoing; a season whose placements were never
-> confirmed is abandoned with `/season abort` instead.
+> posted. It is available only while the season is ongoing.
+
+A season whose placements were never confirmed — one in configuration, waiting, signups or placements — is abandoned instead:
+
+```
+/season abort confirm:CONFIRM
+```
+
+> ⚠️ **`/season abort` keeps nothing.** The season is deleted with its divisions, rounds and every
+> signup made for it, and it leaves no history — it never raced. Every driver returns to Not Signed
+> Up and those who never raced are deleted; an open signup window is closed and test mode is
+> switched off. It is a league admin's, and it frees the server for a new `/season setup` at once.
 
 ---
 
@@ -482,11 +593,11 @@ Deletes every season, division, round and result, and keeps your `/bot-init` set
 
 ---
 
-## Checklist before you approve
+## Checklist before you confirm placements
 
 - [ ] The bot is running, and its role sits above every role it must grant
 - [ ] `/bot-init` has been run, both roles are set, and the log channel is one your drivers cannot read
-- [ ] Every module you want is on — including the two you cannot change later
+- [ ] Every module you want is on — none can be turned on once placements are confirmed
 - [ ] Every team is on the list, each with a role, and the Reserve team has one too
 - [ ] Division tiers run 1, 2, 3… with no gaps
 - [ ] Every division has at least one round, and no two rounds in it share a time
@@ -494,6 +605,7 @@ Deletes every season, division, round and result, and keeps your `/bot-init` set
 - [ ] Mystery rounds have no track; every other round has one
 - [ ] Every division has a calendar channel and a lineup channel
 - [ ] Every division has the channels each enabled module needs
+- [ ] Every signup is settled — each driver placed or rejected
 - [ ] `/season placements-review` reports nothing blocking
 
 ---
@@ -507,12 +619,14 @@ Deletes every season, division, round and result, and keeps your `/bot-init` set
 | "This command is a league admin's" | It asks for the league admin role, which you do not hold. The table at the top of this guide lists which commands those are; someone holding that role has to run them |
 | "No league admin role is configured" | Your league was set up before the bot had one. A server administrator can put that right from any channel with `/bot-admin-role`, and every league admin command works again |
 | The bot placed a driver but the role did not appear | The bot's own role sits below the role it is trying to grant. Move it up |
-| Approval refuses over tiers | A division was deleted and left a gap. `/division amend` something into it |
+| `/division add` or `/season placements-review` refused, naming placements | The season is not in placements yet. Confirm its configuration with `/season config-review`, and close its signup window if it has one |
+| `/team add` or a signup setting refused, naming the season | The season's configuration is confirmed, which fixes them until it ends |
+| Confirmation refuses over tiers | A division was deleted and left a gap. `/division amend` something into it |
 | "Unknown track" | The circuit name has to match exactly. Use the ID instead, or `/track list` to see the spellings |
 | A round appears at the wrong time to your drivers | You entered local time, not UTC. `/round amend` it |
 | The calendar in the channel is out of date | It only changes when you run `/division calendar-sync` |
-| A division posts nothing where the others post fine | That division is missing the channel for it. Check step 6 |
-| The season will not complete | Some round has not had its appeals review approved. The refusal names them — approve the appeals in each round's submission channel, or cancel a round that will never be raced |
+| A division posts nothing where the others post fine | That division is missing the channel for it. Check step 9 |
+| The season will not complete | Some round has not had its appeals review approved. The refusal names them — approve the appeals in each round's submission channel, or cancel a round that will never be raced. If it names a signup window instead, close it and confirm its placements first |
 | Nothing at all is happening on schedule | The bot is not running. Starting it again picks up missed weather phases, missed check-in deadlines and a signup auto-close timer; anything else that came due while it was down is missed |
 
 Anything the bot works out, fails to find, or falls back on is written to the log channel. When something is behaving oddly and this table has not explained it, read that channel — the answer is nearly always sitting in it.
