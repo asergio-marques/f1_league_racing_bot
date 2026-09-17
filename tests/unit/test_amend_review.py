@@ -539,6 +539,32 @@ async def test_the_panel_says_nothing_would_be_changed():
     assert "nothing would" in _panel(interaction).lower()
 
 
+async def test_the_panel_names_both_faults_when_both_apply():
+    """Two refusals, two repairs — a panel showing one would send the manager back twice.
+
+    The two checks are independent and the panel is where they meet: the ordering is the
+    staged table's own fault and the channels are the server's, and a manager who repaired
+    only the one the panel mentioned would press Approve and be refused again for the
+    other. At the press they cannot both be reported — an exception carries one refusal —
+    so the panel is the only surface that can name both, which is what this pins.
+    """
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _review(
+        cog,
+        interaction,
+        panel_errors=["Config '100%' Feature Race: position 1 (10 pts) < position 2 (25 pts)"],
+        panel_faults=[CHANNEL_FAULT],
+    )
+
+    panel = _panel(interaction)
+    assert "the points would be out of order" in panel
+    assert "position 1 (10 pts) < position 2 (25 pts)" in panel
+    assert "could not" in panel and "published" in panel
+    assert CHANNEL_FAULT in panel
+
+
 async def test_a_sound_season_earns_no_channel_warning():
     """The guard against crying wolf at a correctly configured league."""
     cog = _make_cog()

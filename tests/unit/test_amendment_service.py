@@ -1488,6 +1488,39 @@ async def test_approve_amendment_refuses_a_table_out_of_order(db_path):
 
 
 @pytest.mark.asyncio
+async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_ordering(db_path):
+    """Both checks apply; the ordering one is reached first, and nothing is written (#187).
+
+    They are two independent refusals and an exception carries only one, so which is
+    raised is a real decision rather than an accident of control flow. The ordering goes
+    first because it is the staged table's own fault — the manager can repair it from the
+    panel — where an unreachable channel is the server's and may right itself. Pinned
+    because the outcome is what actually matters and is the same either way: refused
+    entire, nothing changed. The panel is the surface that names **both**, which
+    ``test_the_panel_names_both_faults_when_both_apply`` holds.
+    """
+    from services.amendment_service import NonMonotonicAmendmentError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_two_position_table(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 30)
+
+    before = await _season_state(path, season_id)
+    reposted: list[tuple] = []
+    with pytest.raises(NonMonotonicAmendmentError):
+        await approve_amendment(
+            path, season_id, 99, _bot_recording_reposts(reposted, missing=(501, 502))
+        )
+
+    assert not reposted
+    assert await _season_state(path, season_id) == before, (
+        "a refusal for either reason must leave the season exactly as it stood"
+    )
+
+
+@pytest.mark.asyncio
 async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path):
     """Nothing written: not the points, not the store, not the mode, and nothing reposted.
 
