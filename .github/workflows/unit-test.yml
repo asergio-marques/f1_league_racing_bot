@@ -41,7 +41,7 @@ jobs:
     - name: Github Action for testing the code
       env:
         COVERAGE_CORE: sysmon
-      run: coverage run -m pytest tests/ -q -rs -m "not rasteriser" --junitxml=pytest-results.xml
+      run: coverage run -m pytest tests/ -q -rs -m "not rasteriser" --durations=15 --junitxml=pytest-results.xml
 
     - name: Verify no test failed
       run: |
@@ -124,9 +124,11 @@ jobs:
 
     # Inkscape is absent here as it is on the Linux runner, so the marker is deselected for
     # the same reason. See CLAUDE.md, Testing. `-rs` as on the Linux job: this runner's fonts
-    # differ, so its skips differ too, and the log should say which.
+    # differ, so its skips differ too, and the log should say which. `--durations` on both jobs
+    # names the slowest tests, so one that creeps up is seen before it costs this job its
+    # timeout — which is how issue #252 was found, by a timeout and nothing earlier.
     - name: Github Action for testing the code
-      run: pytest tests/ -q -rs -m "not rasteriser" --junitxml=pytest-results.xml
+      run: pytest tests/ -q -rs -m "not rasteriser" --durations=15 --junitxml=pytest-results.xml
 
     - name: Verify no test failed
       run: |
