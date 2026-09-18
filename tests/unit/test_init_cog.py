@@ -218,6 +218,31 @@ async def test_save_server_config_will_not_overwrite_an_existing_row(tmp_path):
     assert (await _row(db_path))["log_channel_id"] == CONFIGURED_LOG
 
 
+async def test_save_server_config_will_not_claim_a_second_server(tmp_path):
+    """Issue #244: one bot serves one league, and the first server set up is the league's."""
+    from models.server_config import ServerConfig
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    service = ConfigService(db_path)
+
+    created = await service.save_server_config(
+        ServerConfig(
+            server_id=SERVER_ID + 1,
+            interaction_role_id=1,
+            interaction_channel_id=2,
+            log_channel_id=3,
+        )
+    )
+
+    assert created is False
+    assert await service.get_league_server_id() == SERVER_ID
+
+
+async def test_no_server_is_the_league_s_before_bot_init(tmp_path):
+    assert await ConfigService(await _make_db(tmp_path)).get_league_server_id() is None
+
+
 # ── The four settings ─────────────────────────────────────────────────────
 
 #: (command attribute, column, factory, the id it sets)
