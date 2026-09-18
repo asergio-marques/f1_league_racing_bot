@@ -414,3 +414,54 @@ async def test_the_appeals_pass_counts_its_own_staged_corrections(tmp_path):
 
     assert len(state.staged_appeals) == 1
     assert _replied(interaction).startswith("❌")
+
+
+# ---------------------------------------------------------------------------
+# Any account names the driver (issue #243)
+# ---------------------------------------------------------------------------
+
+NEW_ACCOUNT = 4002
+
+
+async def _driver_moved_on(db_path: str) -> None:
+    """The driver raced as DRIVER and has since made NEW_ACCOUNT their current account."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
+            "VALUES (?, ?, 'ASSIGNED')",
+            (SERVER_ID, str(DRIVER)),
+        )
+        await db.execute(
+            "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
+            (str(NEW_ACCOUNT), cursor.lastrowid),
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize("typed", [DRIVER, NEW_ACCOUNT])
+async def test_either_account_finds_a_result_stood_under_the_old_one(tmp_path, typed):
+    """E7: staged under the account the row holds, which is what applies it, and named by the
+    account the driver uses now."""
+    db_path = await _make_db(tmp_path)
+    await _driver_moved_on(db_path)
+    state = _state(db_path)
+
+    interaction = await _submit(state, driver=f"<@{typed}>")
+
+    assert [sp.driver_user_id for sp in state.staged] == [DRIVER]
+    assert f"<@{NEW_ACCOUNT}>" in _replied(interaction)
+    assert f"<@{DRIVER}>" not in _replied(interaction)
+
+
+async def test_the_prompt_names_the_staged_driver_by_the_current_account(tmp_path):
+    from services.penalty_wizard import _render_prompt_content
+
+    db_path = await _make_db(tmp_path)
+    await _driver_moved_on(db_path)
+    state = _state(db_path, staged=[_penalty(5)])
+    state.staged_pardons = []
+
+    content = await _render_prompt_content(state)
+
+    assert f"<@{NEW_ACCOUNT}>" in content
+    assert f"<@{DRIVER}>" not in content

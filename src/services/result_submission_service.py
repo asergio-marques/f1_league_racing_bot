@@ -940,6 +940,11 @@ async def _snapshot_staged_drivers(
             (round_id, *driver_ids, round_id, *driver_ids),
         )
         dsr_rows = await cursor.fetchall()
+        # The standings are keyed by the account a driver uses now; a staged penalty by the
+        # one its result stands under (issue #243).
+        from services.driver_service import current_account_map_for_division
+
+        current_of = await current_account_map_for_division(db, division_id)
 
     # Get total_points from latest standings snapshot
     driver_snaps = await compute_driver_standings(db_path, division_id, round_id)
@@ -952,7 +957,7 @@ async def _snapshot_staged_drivers(
             {
                 "driver_user_id": uid,
                 "finishing_position": r["finishing_position"],
-                "total_points": pts_map.get(uid, 0),
+                "total_points": pts_map.get(current_of.get(uid, uid), 0),
                 "post_race_time_penalties": r["postrace_time_penalties_ms"],
             }
         )

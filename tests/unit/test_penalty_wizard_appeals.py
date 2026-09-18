@@ -75,6 +75,20 @@ def _correction(
     )
 
 
+@pytest.fixture(autouse=True)
+def _no_driver_changed_account(monkeypatch):
+    """No driver here has changed account, so the prompt names each as staged (issue #243).
+
+    The state points at no real database; the account map the prompt reads is the one query
+    it makes, and naming by the current account is pinned in `test_add_penalty_modal.py`.
+    """
+    import services.penalty_wizard as penalty_wizard
+
+    monkeypatch.setattr(
+        penalty_wizard, "current_account_map_for_division", AsyncMock(return_value={})
+    )
+
+
 def _state(*, appeals=(), prompt_id: int | None = PROMPT_ID, channel=...):
     bot = MagicMock()
     resolved = MagicMock() if channel is ... else channel
