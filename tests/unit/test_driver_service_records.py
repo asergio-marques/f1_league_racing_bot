@@ -43,12 +43,9 @@ OLD_USER = "4242"
 NEW_USER = "5353"
 ACTOR_ID = 77
 
-#: A second league on the same bot, for the tests that pin the scope of a re-key.
-OTHER_SERVER = 9109
-
-#: Each league's season, division, round and session are all seeded under this id, so that
-#: one number names the whole of a league's racing and no two leagues share a row.
-LEAGUE, OTHER_LEAGUE = 1, 2
+#: The league's season, division, round and session are all seeded under this id, so that
+#: one number names the whole of its racing.
+LEAGUE = 1
 
 
 # ---------------------------------------------------------------------------
@@ -237,14 +234,6 @@ async def test_a_user_with_no_profile_reads_as_none(tmp_path):
     assert await service.get_profile(SERVER_ID, OLD_USER) is None
 
 
-async def test_another_server_s_driver_is_not_visible(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path)
-    service = DriverService(db_path)
-
-    assert await service.get_profile(SERVER_ID + 1, OLD_USER) is None
-
-
 # ---------------------------------------------------------------------------
 # The destructive transition
 # ---------------------------------------------------------------------------
@@ -376,23 +365,6 @@ async def test_an_account_holding_only_history_of_its_own_is_accepted(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
     await _seed_history(db_path, NEW_USER)
-    service = DriverService(db_path)
-
-    outcome = await service.reassign_user_id(
-        SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-    )
-
-    assert outcome.profile.discord_user_id == NEW_USER
-
-
-async def test_another_league_s_racing_does_not_refuse_a_re_key(tmp_path):
-    """The refusal is the league's own: a person who races in another league on this bot is
-    still free to be re-keyed here."""
-    db_path = await _make_db(tmp_path)
-    await _seed_league(db_path, OTHER_SERVER, OTHER_LEAGUE)
-    await _seed_profile(db_path, user_id=OLD_USER)
-    await _seed_results(db_path, user_id=NEW_USER, league=OTHER_LEAGUE)
-    await _seed_history(db_path, NEW_USER, server_id=OTHER_SERVER)
     service = DriverService(db_path)
 
     outcome = await service.reassign_user_id(

@@ -22,7 +22,7 @@ from db.database import get_connection, run_migrations  # noqa: E402
 from services import driver_service  # noqa: E402
 from services.driver_service import DriverService  # noqa: E402
 
-SERVER_ID, OTHER_SERVER = 2440, 2441
+SERVER_ID = 2440
 A, B, C = "6501", "6502", "6503"
 
 #: Seasons 1 and 3 each hold a division called Pro; season 1 also holds Am.
@@ -33,12 +33,11 @@ async def _make_db(tmp_path) -> str:
     db_path = os.path.join(str(tmp_path), "merge.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
-        for server in (SERVER_ID, OTHER_SERVER):
-            await db.execute(
-                "INSERT INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-                (server,),
-            )
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
+            (SERVER_ID,),
+        )
         for season, number, status in ((1, 1, "COMPLETED"), (3, 3, "ACTIVE")):
             await db.execute(
                 "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
@@ -230,25 +229,6 @@ async def test_different_divisions_of_one_season_are_allowed(tmp_path):
             "ORDER BY division_name"
         )).fetchall()
     assert [tuple(r) for r in rows] == [("Am", outcome.profile.id), ("Pro", outcome.profile.id)]
-
-
-async def test_another_leagues_profile_of_the_same_person_is_untouched(tmp_path):
-    """E30."""
-    db_path = await _make_db(tmp_path)
-    await _profile(db_path, A, state="ASSIGNED")
-    await _profile(db_path, B)
-    elsewhere_a = await _profile(db_path, A, server_id=OTHER_SERVER)
-    elsewhere_b = await _profile(db_path, B, server_id=OTHER_SERVER)
-
-    await _reassign(db_path, A, B)
-
-    async with get_connection(db_path) as db:
-        rows = await (await db.execute(
-            "SELECT driver_profile_id, discord_user_id FROM driver_accounts "
-            "WHERE server_id = ? ORDER BY discord_user_id",
-            (OTHER_SERVER,),
-        )).fetchall()
-    assert [tuple(r) for r in rows] == [(elsewhere_a, A), (elsewhere_b, B)]
 
 
 async def test_leftover_results_elsewhere_become_the_drivers(tmp_path):

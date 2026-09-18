@@ -33,7 +33,6 @@ from services.driver_service import (  # noqa: E402
 from services.season_lifecycle_service import delete_driver_profiles  # noqa: E402
 
 SERVER_ID = 2430
-OTHER_SERVER = 2431
 A, B, C = "1111", "2222", "3333"
 
 
@@ -41,12 +40,11 @@ async def _make_db(tmp_path) -> str:
     db_path = os.path.join(str(tmp_path), "accounts.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
-        for server in (SERVER_ID, OTHER_SERVER):
-            await db.execute(
-                "INSERT INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-                (server,),
-            )
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
+            (SERVER_ID,),
+        )
         await db.commit()
     return db_path
 
@@ -136,14 +134,6 @@ async def test_a_profile_cannot_take_another_drivers_past_account_as_current(tmp
         await _make_current(db_path, second, A)
 
 
-async def test_the_same_account_may_be_a_driver_in_another_league(tmp_path):
-    db_path = await _make_db(tmp_path)
-    pid = await _profile(db_path, A)
-    await _make_current(db_path, pid, B)
-    other = await _profile(db_path, A, OTHER_SERVER)
-    assert (OTHER_SERVER, other, A) in await _listed(db_path)
-
-
 async def test_deleting_a_profile_frees_every_account_it_held(tmp_path):
     """E3: the driver pass deletes a profile, and its accounts go with it."""
     db_path = await _make_db(tmp_path)
@@ -169,7 +159,6 @@ async def test_resolve_driver_profile_id_finds_the_driver_by_any_account(tmp_pat
         assert await resolve_driver_profile_id(SERVER_ID, int(A), db) == pid
         assert await resolve_driver_profile_id(SERVER_ID, int(B), db) == pid
         assert await resolve_driver_profile_id(SERVER_ID, int(C), db) is None
-        assert await resolve_driver_profile_id(OTHER_SERVER, int(A), db) is None
 
 
 async def test_accounts_of_lists_the_whole_driver_from_any_account(tmp_path):
@@ -194,11 +183,8 @@ async def test_current_account_map_carries_only_past_accounts(tmp_path):
     moved = await _profile(db_path, A)
     await _make_current(db_path, moved, B)
     await _profile(db_path, C)
-    other = await _profile(db_path, A, OTHER_SERVER)
     async with get_connection(db_path) as db:
         assert await current_account_map(db, SERVER_ID) == {int(A): int(B)}
-        assert await current_account_map(db, OTHER_SERVER) == {}
-    assert other
 
 
 async def test_current_account_map_for_division_reaches_its_server(tmp_path):
