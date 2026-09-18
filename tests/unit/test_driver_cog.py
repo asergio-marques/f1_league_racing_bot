@@ -102,6 +102,7 @@ def _make_cog(
     bot.placement_service.sack_driver = AsyncMock(return_value=None)
 
     bot.driver_service = MagicMock()
+    bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
     bot.driver_service.get_profile = AsyncMock(return_value=profile)
     bot.driver_service.reassign_user_id = AsyncMock(
         return_value=SimpleNamespace(

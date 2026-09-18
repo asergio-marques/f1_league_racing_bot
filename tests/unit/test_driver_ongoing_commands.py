@@ -44,6 +44,8 @@ def _cog(
     known = {"Pro": PRO, "Academy": ACADEMY} if divisions is None else divisions
     cog = DriverCog.__new__(DriverCog)
     cog.bot = MagicMock()
+    # Any account names the driver (issue #243); these tests name the current one.
+    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
     cog.bot.season_service.get_confirmed_season = AsyncMock(
         return_value=SimpleNamespace(id=SEASON_ID, stage=stage)
     )
@@ -258,6 +260,8 @@ async def test_a_release_is_confirmed_and_logged(stage):
 async def test_a_rejection_stands_when_the_signed_up_role_cannot_be_removed():
     cog = DriverCog.__new__(DriverCog)
     cog.bot = MagicMock()
+    # Any account names the driver (issue #243); these tests name the current one.
+    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
     cog.bot.season_service.get_setup_or_active_season = AsyncMock(
         return_value=SimpleNamespace(id=SEASON_ID, stage=SeasonStage.PLACEMENTS)
     )
@@ -282,3 +286,42 @@ async def test_a_rejection_stands_when_the_signed_up_role_cannot_be_removed():
         SERVER_ID, str(USER_ID), DriverState.NOT_SIGNED_UP
     )
     assert _reply(interaction).startswith("✅ Turned down **Racer**")
+
+
+# ── Any account names the driver (issue #243) ────────────────────────────────────────
+
+CURRENT_ID = 5353
+
+
+def _past_account_cog(current_member: MagicMock | None) -> tuple[DriverCog, MagicMock]:
+    """A cog whose driver has moved from USER_ID to CURRENT_ID, and the guild behind it."""
+    cog = _cog()
+    cog.bot.driver_service.current_account = AsyncMock(return_value=str(CURRENT_ID))
+    interaction = _interaction()
+    interaction.guild.get_member = MagicMock(return_value=current_member)
+    interaction.guild.fetch_member = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404), "gone")
+    )
+    return cog, interaction
+
+
+async def test_a_command_given_a_past_account_acts_on_the_current_one():
+    current = MagicMock(id=CURRENT_ID, display_name="Racer Now")
+    cog, interaction = _past_account_cog(current)
+
+    await _release(cog, interaction)
+
+    interaction.guild.get_member.assert_called_once_with(CURRENT_ID)
+    kwargs = cog.bot.placement_service.release_driver.await_args.kwargs
+    assert kwargs["discord_user_id"] == str(CURRENT_ID)
+    assert "Racer Now" in _reply(interaction)
+
+
+async def test_a_past_account_whose_driver_has_left_the_server_is_refused():
+    cog, interaction = _past_account_cog(None)
+
+    await _move(cog, interaction)
+
+    assert "past account" in _reply(interaction)
+    assert f"<@{CURRENT_ID}>" in _reply(interaction)
+    cog.bot.placement_service.move_driver.assert_not_awaited()

@@ -34,6 +34,39 @@ class DriverCog(commands.Cog):
         default_permissions=None,
     )
 
+    async def _current_member(
+        self, interaction: discord.Interaction, user: discord.Member
+    ) -> discord.Member | None:
+        """The member behind the current account of the driver *user* names (issue #243).
+
+        Any account a driver has held names them, so a manager may give a command one the
+        driver has since left. Everything the command does — the roles, the lineup, the
+        log — belongs to the account the driver uses now, so it is swapped in here, before
+        anything reads it. An account no driver holds is returned as it came.
+
+        Where the current account is no longer in the server there is no member to act on,
+        and the command is refused with the manager told so; returns None, having replied.
+        """
+        current = await self.bot.driver_service.current_account(  # type: ignore[attr-defined]
+            interaction.guild_id, user.id
+        )
+        if current == str(user.id):
+            return user
+        guild = interaction.guild
+        member = guild.get_member(int(current)) if guild is not None else None
+        if member is None and guild is not None:
+            try:
+                member = await guild.fetch_member(int(current))
+            except discord.HTTPException:
+                member = None
+        if member is None:
+            await interaction.followup.send(
+                f"⛔ <@{user.id}> is a past account of a driver whose current account, "
+                f"<@{current}>, is not in the server.",
+                ephemeral=True,
+            )
+        return member
+
     # ------------------------------------------------------------------
     # /driver reassign
     # ------------------------------------------------------------------
@@ -167,6 +200,9 @@ class DriverCog(commands.Cog):
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
@@ -265,6 +301,9 @@ class DriverCog(commands.Cog):
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
@@ -367,6 +406,9 @@ class DriverCog(commands.Cog):
         """
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
 
         season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
         if season is None or season.stage not in ONGOING_STAGES:
@@ -456,6 +498,9 @@ class DriverCog(commands.Cog):
         """Release a committed driver from one division (issue #220), in the ongoing stages."""
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
 
         season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
         if season is None or season.stage not in ONGOING_STAGES:
@@ -528,6 +573,9 @@ class DriverCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
 
         season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
         if season is None or season.stage not in _PLACING_STAGES:
@@ -588,6 +636,9 @@ class DriverCog(commands.Cog):
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
