@@ -544,6 +544,9 @@ Things to know before you run it:
 - **The roles follow the account.** The signed-up, division and team roles move to the new
   account and come off the old one, if it is still in the server. The reply lists anything
   Discord would not let the bot do — usually a role above the bot's own.
+- **So does a signup channel still held open** after its approval or rejection: it moves to the
+  new account and is deleted when it was already due. If the new account has one of its own,
+  that one is kept and the old one is deleted at once.
 - **You can switch back.** Naming one of the driver's past accounts as `new_user` makes it
   current again.
 - **A past account cannot press Sign Up.** It is told to use the current account; switch back

@@ -101,6 +101,7 @@ def _make_cog(
     )
     bot.placement_service.sack_driver = AsyncMock(return_value=None)
     bot.placement_service.move_driver_roles = AsyncMock(return_value=[])
+    bot.wizard_service.move_held_channel = AsyncMock(return_value=[])
 
     bot.driver_service = MagicMock()
     bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
@@ -635,3 +636,16 @@ async def test_roles_discord_would_not_move_are_reported_and_the_reassign_stands
     assert "given a new account" in _replied(interaction)
     assert "Missing Permissions" in _replied(interaction)
     assert "not done: the roles could not be given" in cog.bot.output_router.post_log.await_args.args[1]
+
+
+async def test_reassign_moves_a_held_signup_channel_to_the_new_current_account(tmp_path):
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    cog.bot.wizard_service.move_held_channel.assert_awaited_once_with(
+        SERVER_ID, "1", "2", interaction.guild
+    )

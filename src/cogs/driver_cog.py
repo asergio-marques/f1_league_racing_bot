@@ -134,6 +134,13 @@ class DriverCog(commands.Cog):
             except Exception as exc:  # noqa: BLE001 — the reassign stands whatever Discord says
                 log.exception("reassign: could not move the roles of driver %s", profile.id)
                 problems.append(f"the roles could not be moved: {exc}")
+            try:
+                problems += await self.bot.wizard_service.move_held_channel(  # type: ignore[attr-defined]
+                    server_id, replaced, new_user_id, interaction.guild
+                )
+            except Exception as exc:  # noqa: BLE001 — as the roles
+                log.exception("reassign: could not move the signup channel of %s", replaced)
+                problems.append(f"the signup channel could not be moved: {exc}")
 
         former = "Yes" if profile.former_driver else "No"
         past = [a for a in outcome.accounts if a != new_user_id]

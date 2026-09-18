@@ -621,6 +621,20 @@ class SignupModuleService:
             )
             await db.commit()
 
+    async def rekey_wizard(self, server_id: int, from_account: str, to_account: str) -> None:
+        """Move a wizard record to another account of the same driver (issue #243).
+
+        A wizard record is the transient state of one signup and its channel, not a record of
+        the league's, so it follows the driver to their new current account.
+        """
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE signup_wizard_records SET discord_user_id = ? "
+                "WHERE server_id = ? AND discord_user_id = ?",
+                (to_account, server_id, from_account),
+            )
+            await db.commit()
+
     async def delete_wizard(self, server_id: int, discord_user_id: str) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
