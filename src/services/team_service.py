@@ -79,7 +79,7 @@ class TeamService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    async def _server_keys(db, server_id: int, *, exclude: str | None = None) -> dict[str, str]:
+    async def _server_keys(db, *, exclude: str | None = None) -> dict[str, str]:
         """Normalised key → team name, across the server's team list.
 
         *exclude* drops one name from the comparison, so a rename does not collide with
@@ -87,8 +87,7 @@ class TeamService:
         """
         rows = await (
             await db.execute(
-                "SELECT name FROM default_teams WHERE server_id = ? AND is_reserve = 0",
-                (server_id,),
+                "SELECT name FROM default_teams WHERE is_reserve = 0",
             )
         ).fetchall()
         return {
@@ -117,7 +116,7 @@ class TeamService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    async def _ensure_reserve(db, server_id: int) -> bool:
+    async def _ensure_reserve(db) -> bool:
         """Create the server's Reserve team where none is present. True where it was.
 
         Principle IX requires the Reserve team to exist in the server's team configuration
@@ -128,28 +127,26 @@ class TeamService:
         """
         found = await (
             await db.execute(
-                "SELECT 1 FROM default_teams WHERE server_id = ? AND is_reserve = 1 LIMIT 1",
-                (server_id,),
+                "SELECT 1 FROM default_teams WHERE is_reserve = 1 LIMIT 1",
             )
         ).fetchone()
         if found:
             return False
         await db.execute(
-            "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
-            "VALUES (?, ?, -1, 1)",
-            (server_id, _RESERVE_NAME),
+            "INSERT INTO default_teams (name, max_seats, is_reserve) "
+            "VALUES (?, -1, 1)",
+            (_RESERVE_NAME,),
         )
         return True
 
     async def get_default_teams(self, server_id: int) -> list[DefaultTeam]:
         """Return all default teams for this server, the Reserve team included."""
         async with get_connection(self._db_path) as db:
-            if await self._ensure_reserve(db, server_id):
+            if await self._ensure_reserve(db):
                 await db.commit()
             cursor = await db.execute(
-                "SELECT id, server_id, name, max_seats, is_reserve "
-                "FROM default_teams WHERE server_id = ? ORDER BY is_reserve ASC, name ASC",
-                (server_id,),
+                "SELECT id, name, max_seats, is_reserve "
+                "FROM default_teams ORDER BY is_reserve ASC, name ASC",
             )
             rows = await cursor.fetchall()
         return [_row_to_default_team(r) for r in rows]
@@ -163,10 +160,10 @@ class TeamService:
                 f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
             )
         async with get_connection(self._db_path) as db:
-            await self._ensure_reserve(db, server_id)
+            await self._ensure_reserve(db)
             existing = await db.execute(
-                "SELECT 1 FROM default_teams WHERE server_id = ? AND name = ?",
-                (server_id, name),
+                "SELECT 1 FROM default_teams WHERE name = ?",
+                (name,),
             )
             if await existing.fetchone():
                 raise ValueError(f'A default team named "{name}" already exists.')
@@ -174,19 +171,19 @@ class TeamService:
             # The normalised name must serve as a lineup template's field identifier
             # (Principle IX). Scope: the server's own team list.
             problem = validate_team_name(
-                name, await self._server_keys(db, server_id, exclude=name)
+                name, await self._server_keys(db, exclude=name)
             )
             if problem is not None:
                 raise ValueError(problem)
 
             cursor = await db.execute(
-                "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, ?, 0)",
-                (server_id, name, max_seats),
+                "INSERT INTO default_teams (name, max_seats, is_reserve) "
+                "VALUES (?, ?, 0)",
+                (name, max_seats),
             )
             await db.commit()
             row_id = cursor.lastrowid
-        return DefaultTeam(id=row_id, server_id=server_id, name=name, max_seats=max_seats, is_reserve=False)
+        return DefaultTeam(id=row_id, name=name, max_seats=max_seats, is_reserve=False)
 
     async def rename_default_team(
         self, server_id: int, current_name: str, new_name: str
@@ -200,8 +197,8 @@ class TeamService:
             row = await (
                 await db.execute(
                     "SELECT id, is_reserve FROM default_teams "
-                    "WHERE server_id = ? AND name = ?",
-                    (server_id, current_name),
+                    "WHERE name = ?",
+                    (current_name,),
                 )
             ).fetchone()
             if row is None:
@@ -212,8 +209,8 @@ class TeamService:
                 )
             conflict = await (
                 await db.execute(
-                    "SELECT 1 FROM default_teams WHERE server_id = ? AND name = ?",
-                    (server_id, new_name),
+                    "SELECT 1 FROM default_teams WHERE name = ?",
+                    (new_name,),
                 )
             ).fetchone()
             if conflict:
@@ -223,7 +220,7 @@ class TeamService:
             # already exists, and validating it would leave a team named before this rule
             # impossible to rename or to remove (FR-011).
             problem = validate_team_name(
-                new_name, await self._server_keys(db, server_id, exclude=current_name)
+                new_name, await self._server_keys(db, exclude=current_name)
             )
             if problem is not None:
                 raise ValueError(problem)
@@ -234,7 +231,7 @@ class TeamService:
             )
             await db.commit()
 
-    async def remove_default_team(self, server_id: int, name: str) -> None:
+    async def remove_default_team(self, name: str) -> None:
         """Remove a default team.  Raises ValueError if protected or not found."""
         if name == _RESERVE_NAME:
             raise ValueError(
@@ -244,8 +241,8 @@ class TeamService:
             row = await (
                 await db.execute(
                     "SELECT id, is_reserve FROM default_teams "
-                    "WHERE server_id = ? AND name = ?",
-                    (server_id, name),
+                    "WHERE name = ?",
+                    (name,),
                 )
             ).fetchone()
             if row is None:
@@ -285,21 +282,20 @@ class TeamService:
     # /bot-init seeding (US4)
     # ------------------------------------------------------------------
 
-    async def seed_default_teams_if_empty(self, server_id: int) -> None:
+    async def seed_default_teams_if_empty(self) -> None:
         """Insert the Reserve team if no teams exist yet for this server."""
         async with get_connection(self._db_path) as db:
             existing = await (
                 await db.execute(
-                    "SELECT 1 FROM default_teams WHERE server_id = ? LIMIT 1",
-                    (server_id,),
+                    "SELECT 1 FROM default_teams LIMIT 1",
                 )
             ).fetchone()
             if existing:
                 return
             await db.execute(
-                "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, -1, 1)",
-                (server_id, _RESERVE_NAME),
+                "INSERT INTO default_teams (name, max_seats, is_reserve) "
+                "VALUES (?, -1, 1)",
+                (_RESERVE_NAME,),
             )
             await db.commit()
 
@@ -435,7 +431,7 @@ class TeamService:
     # Read helpers for /team list (016-team-cmd-qol)
     # ------------------------------------------------------------------
 
-    async def get_teams_with_roles(self, server_id: int) -> list[dict]:
+    async def get_teams_with_roles(self) -> list[dict]:
         """Return all server teams joined with their optional role mapping.
 
         Each entry: {name, max_seats, is_reserve, role_id} where role_id is int | None.
@@ -447,12 +443,9 @@ class TeamService:
                 SELECT dt.name, dt.max_seats, dt.is_reserve, trc.role_id
                 FROM default_teams dt
                 LEFT JOIN team_role_configs trc
-                       ON trc.server_id = dt.server_id
-                      AND trc.team_name = dt.name
-                WHERE dt.server_id = ?
+                       ON trc.team_name = dt.name
                 ORDER BY dt.is_reserve ASC, dt.name ASC
                 """,
-                (server_id,),
             )
             rows = await cursor.fetchall()
         return [
@@ -550,7 +543,6 @@ class TeamService:
 def _row_to_default_team(row: object) -> DefaultTeam:
     return DefaultTeam(
         id=row["id"],
-        server_id=row["server_id"],
         name=row["name"],
         max_seats=row["max_seats"],
         is_reserve=bool(row["is_reserve"]),

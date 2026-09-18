@@ -400,7 +400,7 @@ async def compute_team_standings(
             JOIN divisions d ON d.id = ti.division_id
             JOIN seasons s ON s.id = d.season_id
             JOIN team_role_configs trc
-              ON trc.server_id = s.server_id AND trc.team_name = ti.name
+              ON trc.team_name = ti.name
             WHERE ti.division_id = ?
             """,
             (division_id,),
@@ -557,7 +557,7 @@ async def opening_team_standings(
             JOIN divisions d ON d.id = ti.division_id
             JOIN seasons s ON s.id = d.season_id
             JOIN team_role_configs trc
-              ON trc.server_id = s.server_id AND trc.team_name = ti.name
+              ON trc.team_name = ti.name
             WHERE ti.division_id = ?
               AND ti.is_reserve = 0
             """,

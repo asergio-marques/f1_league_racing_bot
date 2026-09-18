@@ -150,7 +150,7 @@ async def test_bot_init_configures_an_unconfigured_server(tmp_path):
     assert row["league_admin_role_id"] == CONFIGURED_ADMIN_ROLE
     assert row["interaction_channel_id"] == CONFIGURED_CHANNEL
     assert row["log_channel_id"] == CONFIGURED_LOG
-    bot.team_service.seed_default_teams_if_empty.assert_awaited_once_with(SERVER_ID)
+    bot.team_service.seed_default_teams_if_empty.assert_awaited_once_with()
 
 
 async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_path):

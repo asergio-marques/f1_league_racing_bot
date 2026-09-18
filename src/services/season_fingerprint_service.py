@@ -284,14 +284,12 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     await _rows(
                         db,
                         "SELECT name, max_seats, is_reserve FROM default_teams "
-                        "WHERE server_id = ? ORDER BY name",
-                        server_id,
+                        " ORDER BY name",
                     ),
                     await _rows(
                         db,
                         "SELECT team_name, role_id FROM team_role_configs "
-                        "WHERE server_id = ? ORDER BY team_name",
-                        server_id,
+                        " ORDER BY team_name",
                     ),
                 ]
             )

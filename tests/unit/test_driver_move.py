@@ -62,8 +62,8 @@ async def db_path(tmp_path):
                     )
         for team, role in ROLES.items():
             await db.execute(
-                "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (?, ?, ?)",
-                (SERVER_ID, team, role),
+                "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+                (team, role),
             )
         await db.execute(
             "INSERT INTO driver_profiles (id, discord_user_id, current_state) "

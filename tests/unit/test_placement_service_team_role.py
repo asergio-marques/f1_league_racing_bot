@@ -37,11 +37,10 @@ async def db_path(tmp_path):
 
             CREATE TABLE team_role_configs (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id  INTEGER NOT NULL REFERENCES server_configs(server_id) ON DELETE CASCADE,
                 team_name  TEXT    NOT NULL,
                 role_id    INTEGER NOT NULL,
                 updated_at TEXT    NOT NULL,
-                UNIQUE(server_id, team_name)
+                UNIQUE(team_name)
             );
 
             CREATE TABLE audit_entries (
@@ -64,8 +63,8 @@ async def _get_role_row(db_path: str, server_id: int, team_name: str):
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT * FROM team_role_configs WHERE server_id = ? AND team_name = ?",
-            (server_id, team_name),
+            "SELECT * FROM team_role_configs WHERE team_name = ?",
+            (team_name,),
         )
         return await cursor.fetchone()
 
@@ -82,9 +81,9 @@ async def _count_audit(db_path: str, change_type: str) -> int:
 async def _seed_role(db_path: str, server_id: int, team_name: str, role_id: int) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id, updated_at) "
-            "VALUES (?, ?, ?, datetime('now'))",
-            (server_id, team_name, role_id),
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) "
+            "VALUES (?, ?, datetime('now'))",
+            (team_name, role_id),
         )
         await db.commit()
 

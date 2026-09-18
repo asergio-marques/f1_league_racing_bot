@@ -947,11 +947,6 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
                   AND dra.division_id = ?
               LEFT JOIN team_role_configs trc
                    ON trc.team_name = ti.name
-                  AND trc.server_id = (
-                      SELECT s.server_id FROM seasons s
-                        JOIN divisions d ON d.season_id = s.id
-                       WHERE d.id = ?
-                  )
               LEFT JOIN team_standings_snapshots tss
                    ON tss.team_role_id = trc.role_id
                   AND tss.round_id = (
@@ -962,7 +957,7 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
                AND ti.is_reserve = 0
              GROUP BY ti.id, ti.name, ti.max_seats
             """,
-            (round_id, division_id, division_id, division_id, round_id, division_id),
+            (round_id, division_id, division_id, round_id, division_id),
         )
         team_rows = await cur.fetchall()
 

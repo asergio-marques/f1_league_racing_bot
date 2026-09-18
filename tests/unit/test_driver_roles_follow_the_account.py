@@ -54,8 +54,8 @@ async def _league(tmp_path, *, state: str = "ASSIGNED", committed: int = 1,
             "VALUES (1, 1, 'Alpha', 2, 0)"
         )
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (?, 'Alpha', ?)",
-            (SERVER_ID, TEAM_ROLE),
+            "INSERT INTO team_role_configs (team_name, role_id) VALUES ('Alpha', ?)",
+            (TEAM_ROLE,),
         )
         cursor = await db.execute(
             "INSERT INTO driver_profiles (discord_user_id, current_state, "

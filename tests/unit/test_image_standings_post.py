@@ -549,8 +549,8 @@ async def _seed_league(tmp_path):
             ("Cobalt", 901, [(13, 1)]),
         ):
             await db.execute(
-                "INSERT INTO team_role_configs (server_id, team_name, role_id) "
-                "VALUES (1, ?, ?)",
+                "INSERT INTO team_role_configs (team_name, role_id) "
+                "VALUES (?, ?)",
                 (team_name, role_id),
             )
             cursor = await db.execute(

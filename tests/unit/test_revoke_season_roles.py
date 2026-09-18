@@ -120,7 +120,7 @@ def _bot(db_path):
 
 
 def _revoked_placement(bot) -> list[int]:
-    return sorted(c.args[1] for c in bot.placement_service.revoke_all_placement_roles.await_args_list)
+    return sorted(c.args[0] for c in bot.placement_service.revoke_all_placement_roles.await_args_list)
 
 
 async def test_every_driver_loses_their_placement_roles(tmp_path):
@@ -131,7 +131,7 @@ async def test_every_driver_loses_their_placement_roles(tmp_path):
     await _revoke_season_roles(SERVER_ID, SEASON_ID, _guild(members), bot)
 
     assert _revoked_placement(bot) == [31, 32]
-    assert all(c.args[2] == SEASON_ID for c in bot.placement_service.revoke_all_placement_roles.await_args_list)
+    assert all(c.args[1] == SEASON_ID for c in bot.placement_service.revoke_all_placement_roles.await_args_list)
 
 
 async def test_the_signed_up_role_is_taken_back_too(tmp_path):

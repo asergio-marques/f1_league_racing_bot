@@ -2076,7 +2076,7 @@ async def _build_division_validation_data(
     """
     # Only drivers whose placements are confirmed may be scored (issue #220).
     div_teams = await bot.team_service.get_division_teams(division_id, committed_only=True)
-    teams_with_roles = await bot.team_service.get_teams_with_roles(server_id)
+    teams_with_roles = await bot.team_service.get_teams_with_roles()
 
     name_to_role: dict[str, int] = {
         t["name"]: t["role_id"]

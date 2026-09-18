@@ -111,8 +111,8 @@ async def _seat(db_path: str, division_id: int, *, profile_id: int = PROFILE_ID)
 async def _map_role(db_path: str, team_name: str, role_id: int = ROLE_ID) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (?, ?, ?)",
-            (SERVER_ID, team_name, role_id),
+            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            (team_name, role_id),
         )
         await db.commit()
 

@@ -89,7 +89,7 @@ async def _make_db(tmp_path, *, season_status: str | None = None, divisions: int
 async def _names(db_path: str) -> list[str]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT name FROM default_teams WHERE server_id = ? ORDER BY name", (SERVER_ID,)
+            "SELECT name FROM default_teams ORDER BY name"
         )
         return [r["name"] for r in await cursor.fetchall()]
 
@@ -137,7 +137,7 @@ async def test_reading_the_team_list_restores_a_lost_reserve(tmp_path):
     await service.add_default_team(SERVER_ID, "Alpha")
     async with get_connection(db_path) as db:
         await db.execute(
-            "DELETE FROM default_teams WHERE server_id = ? AND is_reserve = 1", (SERVER_ID,)
+            "DELETE FROM default_teams WHERE is_reserve = 1"
         )
         await db.commit()
     assert RESERVE not in await _names(db_path)
@@ -164,7 +164,7 @@ async def test_the_reserve_team_sorts_last(tmp_path):
     [
         lambda s: s.add_default_team(SERVER_ID, RESERVE),
         lambda s: s.rename_default_team(SERVER_ID, RESERVE, "Something"),
-        lambda s: s.remove_default_team(SERVER_ID, RESERVE),
+        lambda s: s.remove_default_team(RESERVE),
     ],
     ids=["add", "rename", "remove"],
 )
@@ -182,22 +182,21 @@ async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
     service = TeamService(db_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
-            "VALUES (?, 'Standbys', -1, 1)",
-            (SERVER_ID,),
+            "INSERT INTO default_teams (name, max_seats, is_reserve) "
+            "VALUES ('Standbys', -1, 1)"
         )
         await db.commit()
 
     with pytest.raises(ValueError, match="protected"):
         await service.rename_default_team(SERVER_ID, "Standbys", "Reserves")
     with pytest.raises(ValueError, match="protected"):
-        await service.remove_default_team(SERVER_ID, "Standbys")
+        await service.remove_default_team("Standbys")
 
 
 async def test_seeding_an_empty_server_creates_only_the_reserve(tmp_path):
     db_path = await _make_db(tmp_path)
 
-    await TeamService(db_path).seed_default_teams_if_empty(SERVER_ID)
+    await TeamService(db_path).seed_default_teams_if_empty()
 
     assert await _names(db_path) == [RESERVE]
 
@@ -209,7 +208,7 @@ async def test_seeding_leaves_an_existing_team_list_alone(tmp_path):
     await service.add_default_team(SERVER_ID, "Alpha")
     before = await _names(db_path)
 
-    await service.seed_default_teams_if_empty(SERVER_ID)
+    await service.seed_default_teams_if_empty()
 
     assert await _names(db_path) == before
 
@@ -283,9 +282,8 @@ async def test_a_team_whose_existing_name_breaks_the_rule_can_still_be_renamed(t
     service = TeamService(db_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
-            "VALUES (?, '???', 2, 0)",
-            (SERVER_ID,),
+            "INSERT INTO default_teams (name, max_seats, is_reserve) "
+            "VALUES ('???', 2, 0)"
         )
         await db.commit()
 
@@ -299,7 +297,7 @@ async def test_a_team_is_removed(tmp_path):
     service = TeamService(db_path)
     await service.add_default_team(SERVER_ID, "Alpha")
 
-    await service.remove_default_team(SERVER_ID, "Alpha")
+    await service.remove_default_team("Alpha")
 
     assert "Alpha" not in await _names(db_path)
 
@@ -308,7 +306,7 @@ async def test_removing_a_team_that_does_not_exist_says_so(tmp_path):
     service = TeamService(await _make_db(tmp_path))
 
     with pytest.raises(ValueError, match="No default team"):
-        await service.remove_default_team(SERVER_ID, "Ghost")
+        await service.remove_default_team("Ghost")
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +319,7 @@ async def test_a_team_with_no_role_mapping_reads_as_none(tmp_path):
     service = TeamService(db_path)
     await service.add_default_team(SERVER_ID, "Alpha")
 
-    entries = await service.get_teams_with_roles(SERVER_ID)
+    entries = await service.get_teams_with_roles()
 
     alpha = next(e for e in entries if e["name"] == "Alpha")
     assert alpha["role_id"] is None
@@ -333,12 +331,12 @@ async def test_a_mapped_role_is_carried_through(tmp_path):
     await service.add_default_team(SERVER_ID, "Alpha")
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (?, ?, ?)",
-            (SERVER_ID, "Alpha", 12345),
+            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            ("Alpha", 12345),
         )
         await db.commit()
 
-    entries = await service.get_teams_with_roles(SERVER_ID)
+    entries = await service.get_teams_with_roles()
 
     assert next(e for e in entries if e["name"] == "Alpha")["role_id"] == 12345
 

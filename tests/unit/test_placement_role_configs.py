@@ -222,7 +222,7 @@ async def test_a_driver_with_no_times_is_stored_as_having_none(tmp_path):
 async def test_a_team_with_no_role_reads_as_none(tmp_path):
     service = PlacementService(await _make_db(tmp_path))
 
-    assert await service.get_team_role_config(SERVER_ID, "Alpha") is None
+    assert await service.get_team_role_config("Alpha") is None
 
 
 async def test_a_role_is_mapped_to_a_team(tmp_path):
@@ -231,7 +231,7 @@ async def test_a_role_is_mapped_to_a_team(tmp_path):
 
     await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID, ACTOR_ID, "Manager")
 
-    config = await service.get_team_role_config(SERVER_ID, "Alpha")
+    config = await service.get_team_role_config("Alpha")
     assert config is not None
     assert config.role_id == ROLE_ID
     assert config.team_name == "Alpha"
@@ -247,8 +247,8 @@ async def test_remapping_a_team_replaces_rather_than_duplicates(tmp_path):
         SERVER_ID, "Alpha", OTHER_ROLE_ID, ACTOR_ID, "Manager"
     )
 
-    assert (await service.get_team_role_config(SERVER_ID, "Alpha")).role_id == OTHER_ROLE_ID
-    assert len(await service.get_all_team_role_configs(SERVER_ID)) == 1
+    assert (await service.get_team_role_config("Alpha")).role_id == OTHER_ROLE_ID
+    assert len(await service.get_all_team_role_configs()) == 1
 
 
 async def test_setting_a_role_records_what_it_replaced(tmp_path):
@@ -274,7 +274,7 @@ async def test_every_mapping_is_listed(tmp_path):
     await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID)
     await service.set_team_role_config(SERVER_ID, "Beta", OTHER_ROLE_ID)
 
-    configs = await service.get_all_team_role_configs(SERVER_ID)
+    configs = await service.get_all_team_role_configs()
 
     assert {c.team_name for c in configs} == {"Alpha", "Beta"}
 
@@ -286,7 +286,7 @@ async def test_a_mapping_is_deleted(tmp_path):
 
     await service.delete_team_role_config(SERVER_ID, "Alpha", ACTOR_ID, "Manager")
 
-    assert await service.get_team_role_config(SERVER_ID, "Alpha") is None
+    assert await service.get_team_role_config("Alpha") is None
 
 
 async def test_deleting_records_the_role_that_was_removed(tmp_path):
@@ -321,8 +321,8 @@ async def test_a_mapping_follows_its_team_through_a_rename(tmp_path):
 
     await service.rename_team_role_config(SERVER_ID, "Alpha", "Beta", ACTOR_ID, "Manager")
 
-    assert await service.get_team_role_config(SERVER_ID, "Alpha") is None
-    renamed = await service.get_team_role_config(SERVER_ID, "Beta")
+    assert await service.get_team_role_config("Alpha") is None
+    renamed = await service.get_team_role_config("Beta")
     assert renamed is not None
     assert renamed.role_id == ROLE_ID
 

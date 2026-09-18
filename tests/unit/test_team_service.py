@@ -36,20 +36,18 @@ async def db_path(tmp_path):
 
             CREATE TABLE default_teams (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id  INTEGER NOT NULL,
                 name       TEXT    NOT NULL,
                 max_seats  INTEGER NOT NULL DEFAULT 2,
                 is_reserve INTEGER NOT NULL DEFAULT 0,
-                UNIQUE(server_id, name)
+                UNIQUE(name)
             );
 
             CREATE TABLE team_role_configs (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id  INTEGER NOT NULL,
                 team_name  TEXT    NOT NULL,
                 role_id    INTEGER NOT NULL,
                 updated_at TEXT    NOT NULL,
-                UNIQUE(server_id, team_name)
+                UNIQUE(team_name)
             );
 
             CREATE TABLE seasons (
@@ -80,8 +78,8 @@ async def db_path(tmp_path):
 async def _add_default_team(db_path: str, server_id: int, name: str, is_reserve: int = 0) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) VALUES (?, ?, 2, ?)",
-            (server_id, name, is_reserve),
+            "INSERT INTO default_teams (name, max_seats, is_reserve) VALUES (?, 2, ?)",
+            (name, is_reserve),
         )
         await db.commit()
 
@@ -89,8 +87,8 @@ async def _add_default_team(db_path: str, server_id: int, name: str, is_reserve:
 async def _add_role_config(db_path: str, server_id: int, team_name: str, role_id: int) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id, updated_at) VALUES (?, ?, ?, datetime('now'))",
-            (server_id, team_name, role_id),
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, datetime('now'))",
+            (team_name, role_id),
         )
         await db.commit()
 
@@ -127,7 +125,7 @@ class TestGetTeamsWithRoles:
     async def test_empty_returns_empty_list(self, db_path):
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_teams_with_roles(1)
+        result = await svc.get_teams_with_roles()
         assert result == []
 
     async def test_teams_without_roles_have_none_role_id(self, db_path):
@@ -135,7 +133,7 @@ class TestGetTeamsWithRoles:
         await _add_default_team(db_path, 1, "Ferrari")
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_teams_with_roles(1)
+        result = await svc.get_teams_with_roles()
         names = [r["name"] for r in result]
         assert "Alpine" in names
         assert "Ferrari" in names
@@ -146,7 +144,7 @@ class TestGetTeamsWithRoles:
         await _add_role_config(db_path, 1, "Mercedes", 999)
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_teams_with_roles(1)
+        result = await svc.get_teams_with_roles()
         assert len(result) == 1
         assert result[0]["name"] == "Mercedes"
         assert result[0]["role_id"] == 999
@@ -157,7 +155,7 @@ class TestGetTeamsWithRoles:
         await _add_role_config(db_path, 1, "Ferrari", 777)
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_teams_with_roles(1)
+        result = await svc.get_teams_with_roles()
         by_name = {r["name"]: r for r in result}
         assert by_name["Alpine"]["role_id"] is None
         assert by_name["Ferrari"]["role_id"] == 777
@@ -167,7 +165,7 @@ class TestGetTeamsWithRoles:
         await _add_default_team(db_path, 1, "Reserve", is_reserve=1)
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_teams_with_roles(1)
+        result = await svc.get_teams_with_roles()
         assert result[-1]["name"] == "Reserve"
         assert result[-1]["is_reserve"] is True
 

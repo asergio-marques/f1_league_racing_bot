@@ -616,9 +616,8 @@ class SeasonCog(commands.Cog):
                 scopes: list[tuple[str, str, tuple]] = [
                     (
                         "the server's team list",
-                        "SELECT name FROM default_teams "
-                        "WHERE server_id = ? AND is_reserve = 0 ORDER BY name",
-                        (server_id,),
+                        "SELECT name FROM default_teams WHERE is_reserve = 0 ORDER BY name",
+                        (),
                     )
                 ]
                 if season_id is not None:
@@ -1776,7 +1775,7 @@ class SeasonCog(commands.Cog):
 
             # Pre-fetch role configs so we can warn about teams missing a role
             teams_with_roles = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
-                interaction.guild_id
+                
             )
             roleless = {t["name"] for t in teams_with_roles if not t["role_id"] and not t["is_reserve"]}
             reserve_has_role = any(t["is_reserve"] and t["role_id"] for t in teams_with_roles)
@@ -2315,7 +2314,7 @@ class SeasonCog(commands.Cog):
             return
 
         committed = await self.bot.placement_service.commit_mid_season_placements(  # type: ignore[attr-defined]
-            server_id, season.id, interaction.guild
+            season.id, interaction.guild
         )
         try:
             await self.bot.season_service.set_stage(season.id, SeasonStage.ONGOING)  # type: ignore[attr-defined]
@@ -2569,7 +2568,7 @@ class SeasonCog(commands.Cog):
                 f"  Images: {on if await module.is_images_enabled() else off}",
                 "",
             ]
-            teams = await self.bot.team_service.get_teams_with_roles(server_id)  # type: ignore[attr-defined]
+            teams = await self.bot.team_service.get_teams_with_roles()  # type: ignore[attr-defined]
             lines.append("**Teams**")
             for team in teams:
                 role = f"<@&{team['role_id']}>" if team["role_id"] else "no role"
@@ -6012,7 +6011,7 @@ class SeasonCog(commands.Cog):
                         )
                         _role_ids = [_div.mention_role_id]
                         _team_cfg = await self.bot.placement_service.get_team_role_config(  # type: ignore[attr-defined]
-                            cfg.server_id, _row["team_name"]
+                            _row["team_name"]
                         )
                         if _team_cfg is not None:
                             _role_ids.append(_team_cfg.role_id)

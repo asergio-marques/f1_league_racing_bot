@@ -361,7 +361,7 @@ async def _revoke_season_roles(
                 continue
 
         await placement_svc.revoke_all_placement_roles(
-            server_id, driver_profile_id, season_id, member
+            driver_profile_id, season_id, member
         )
         if signed_up_role_id is not None:
             signed_up_role = guild.get_role(signed_up_role_id)

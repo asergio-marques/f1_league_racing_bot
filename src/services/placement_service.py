@@ -109,20 +109,19 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def get_team_role_config(
-        self, server_id: int, team_name: str
+        self, team_name: str
     ) -> TeamRoleConfig | None:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, team_name, role_id, updated_at "
-                "FROM team_role_configs WHERE server_id = ? AND team_name = ?",
-                (server_id, team_name),
+                "SELECT id, team_name, role_id, updated_at "
+                "FROM team_role_configs WHERE team_name = ?",
+                (team_name,),
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return TeamRoleConfig(
             id=row["id"],
-            server_id=row["server_id"],
             team_name=row["team_name"],
             role_id=row["role_id"],
             updated_at=row["updated_at"],
@@ -136,21 +135,21 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             # Read existing before upsert for audit old_value
             cursor = await db.execute(
-                "SELECT role_id FROM team_role_configs WHERE server_id = ? AND team_name = ?",
-                (server_id, team_name),
+                "SELECT role_id FROM team_role_configs WHERE team_name = ?",
+                (team_name,),
             )
             existing = await cursor.fetchone()
             old_role_id = existing["role_id"] if existing else None
 
             await db.execute(
                 """
-                INSERT INTO team_role_configs (server_id, team_name, role_id, updated_at)
-                VALUES (?, ?, ?, datetime('now'))
-                ON CONFLICT(server_id, team_name) DO UPDATE SET
+                INSERT INTO team_role_configs (team_name, role_id, updated_at)
+                VALUES (?, ?, datetime('now'))
+                ON CONFLICT(team_name) DO UPDATE SET
                     role_id    = excluded.role_id,
                     updated_at = excluded.updated_at
                 """,
-                (server_id, team_name, role_id),
+                (team_name, role_id),
             )
             now = datetime.now(timezone.utc).isoformat()
             await db.execute(
@@ -168,18 +167,16 @@ class PlacementService:
             )
             await db.commit()
 
-    async def get_all_team_role_configs(self, server_id: int) -> list[TeamRoleConfig]:
+    async def get_all_team_role_configs(self) -> list[TeamRoleConfig]:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, team_name, role_id, updated_at "
-                "FROM team_role_configs WHERE server_id = ?",
-                (server_id,),
+                "SELECT id, team_name, role_id, updated_at "
+                "FROM team_role_configs",
             )
             rows = await cursor.fetchall()
         return [
             TeamRoleConfig(
                 id=r["id"],
-                server_id=r["server_id"],
                 team_name=r["team_name"],
                 role_id=r["role_id"],
                 updated_at=r["updated_at"],
@@ -228,9 +225,9 @@ class PlacementService:
             still_mapped = False
             if old_role_id is not None:
                 cursor = await db.execute(
-                    "SELECT 1 FROM team_role_configs WHERE server_id = ? AND role_id = ? "
+                    "SELECT 1 FROM team_role_configs WHERE role_id = ? "
                     "AND team_name != ? LIMIT 1",
-                    (server_id, old_role_id, team_name),
+                    (old_role_id, team_name),
                 )
                 still_mapped = await cursor.fetchone() is not None
 
@@ -257,8 +254,8 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, role_id FROM team_role_configs "
-                "WHERE server_id = ? AND team_name = ?",
-                (server_id, team_name),
+                "WHERE team_name = ?",
+                (team_name,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -289,8 +286,8 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, role_id FROM team_role_configs "
-                "WHERE server_id = ? AND team_name = ?",
-                (server_id, old_name),
+                "WHERE team_name = ?",
+                (old_name,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -368,7 +365,7 @@ class PlacementService:
             return [dict(row) for row in await cursor.fetchall()]
 
     async def commit_mid_season_placements(
-        self, server_id: int, season_id: int, guild: discord.Guild | None
+        self, season_id: int, guild: discord.Guild | None
     ) -> list[dict]:
         """Commit the season's uncommitted placements, granting their roles and posting lineups.
 
@@ -399,7 +396,7 @@ class PlacementService:
                         continue
                 role_ids = [placement["division_role_id"]]
                 if placement["team_name"]:
-                    team_cfg = await self.get_team_role_config(server_id, placement["team_name"])
+                    team_cfg = await self.get_team_role_config(placement["team_name"])
                     if team_cfg is not None:
                         role_ids.append(team_cfg.role_id)
                 await self._grant_roles(member, *role_ids)
@@ -1065,13 +1062,13 @@ class PlacementService:
                     member = None
             if member is not None:
                 old_cfg = (
-                    await self.get_team_role_config(server_id, source["team_name"])
+                    await self.get_team_role_config(source["team_name"])
                     if source["team_name"] else None
                 )
-                new_cfg = await self.get_team_role_config(server_id, team_name)
+                new_cfg = await self.get_team_role_config(team_name)
                 held_role_ids = set()
                 for held in teams_held:
-                    cfg = await self.get_team_role_config(server_id, held)
+                    cfg = await self.get_team_role_config(held)
                     if cfg is not None:
                         held_role_ids.add(cfg.role_id)
                 revoke: list[int] = []
@@ -1260,7 +1257,7 @@ class PlacementService:
         # no lineup. Both follow when placements are confirmed.
         if member is not None and not is_test_driver and is_committed:
             role_ids_to_grant = [div_role_id]
-            team_cfg = await self.get_team_role_config(server_id, team_name)
+            team_cfg = await self.get_team_role_config(team_name)
             if team_cfg is not None:
                 role_ids_to_grant.append(team_cfg.role_id)
             await self._grant_roles(member, *role_ids_to_grant)
@@ -1432,7 +1429,7 @@ class PlacementService:
             # Revoke only if the driver holds no other seat in any team mapped to that role
             team_role_id_to_revoke: int | None = None
             if team_name is not None:
-                team_cfg = await self.get_team_role_config(server_id, team_name)
+                team_cfg = await self.get_team_role_config(team_name)
                 if team_cfg is not None:
                     # Check other assignments that share this role
                     cursor = await db.execute(
@@ -1441,13 +1438,13 @@ class PlacementService:
                         JOIN team_seats ts ON ts.id = dsa.team_seat_id
                         JOIN team_instances ti ON ti.id = ts.team_instance_id
                         JOIN team_role_configs trc
-                            ON trc.server_id = ? AND trc.team_name = ti.name
+                            ON trc.team_name = ti.name
                         WHERE dsa.driver_profile_id = ?
                           AND dsa.season_id = ?
                           AND dsa.division_id != ?
                           AND trc.role_id = ?
                         """,
-                        (server_id, driver_profile_id, season_id, division_id, team_cfg.role_id),
+                        (driver_profile_id, season_id, division_id, team_cfg.role_id),
                     )
                     other_same_role = (await cursor.fetchone())[0]
                     if other_same_role == 0:
@@ -1512,7 +1509,6 @@ class PlacementService:
 
     async def revoke_all_placement_roles(
         self,
-        server_id: int,
         driver_profile_id: int,
         season_id: int | None,
         member: discord.Member,
@@ -1545,10 +1541,10 @@ class PlacementService:
                 JOIN team_seats ts ON ts.id = dsa.team_seat_id
                 JOIN team_instances ti ON ti.id = ts.team_instance_id
                 JOIN team_role_configs trc
-                    ON trc.server_id = ? AND trc.team_name = ti.name
+                    ON trc.team_name = ti.name
                 WHERE dsa.driver_profile_id = ? AND dsa.season_id = ?
                 """,
-                (server_id, driver_profile_id, season_id),
+                (driver_profile_id, season_id),
             )
             team_role_rows = await cursor.fetchall()
 
@@ -1597,7 +1593,7 @@ class PlacementService:
                 LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
                 LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
                 LEFT JOIN team_role_configs trc
-                    ON trc.server_id = s.server_id AND trc.team_name = ti.name
+                    ON trc.team_name = ti.name
                 WHERE dsa.driver_profile_id = ? AND dsa.committed = 1
                   AND s.server_id = ? AND s.status IN ('SETUP', 'ACTIVE')
                 """,
@@ -1732,7 +1728,7 @@ class PlacementService:
                 member = None
 
         if member is not None and not is_test_driver:
-            await self.revoke_all_placement_roles(server_id, driver_profile_id, season_id, member)
+            await self.revoke_all_placement_roles(driver_profile_id, season_id, member)
             # Revoke the signed-up role granted at approval
             async with get_connection(self._db_path) as db:
                 cur = await db.execute(

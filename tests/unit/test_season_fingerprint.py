@@ -233,9 +233,8 @@ async def test_a_team_added_to_the_server_list_is_part_of_the_team_list_area(sea
     before = await _take(season)
     await _assert_only(
         season, before, "team list",
-        "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
-        "VALUES (?, 'Bluestreak', 2, 0)",
-        SERVER_ID,
+        "INSERT INTO default_teams (name, max_seats, is_reserve) "
+        "VALUES ('Bluestreak', 2, 0)",
     )
 
 
@@ -243,9 +242,8 @@ async def test_a_team_role_repointed_is_part_of_the_team_list_area(season):
     before = await _take(season)
     await _assert_only(
         season, before, "team list",
-        "INSERT INTO team_role_configs (server_id, team_name, role_id, updated_at) "
-        "VALUES (?, 'Redline', 4242, '2026-09-17')",
-        SERVER_ID,
+        "INSERT INTO team_role_configs (team_name, role_id, updated_at) "
+        "VALUES ('Redline', 4242, '2026-09-17')",
     )
 
 

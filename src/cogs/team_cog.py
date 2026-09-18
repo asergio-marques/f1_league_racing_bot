@@ -110,7 +110,7 @@ class TeamCog(commands.Cog):
             return
         try:
             await self.bot.team_service.remove_default_team(  # type: ignore[attr-defined]
-                interaction.guild_id, name
+                name
             )
         except ValueError as exc:
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
@@ -200,7 +200,7 @@ class TeamCog(commands.Cog):
         at its replacement. The Reserve team keeps its own command.
         """
         teams = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
-            interaction.guild_id
+            
         )
         match = next(
             (t for t in teams if t["name"].casefold() == name.casefold()), None
@@ -254,7 +254,7 @@ class TeamCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         server_teams = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
-            interaction.guild_id
+            
         )
         non_reserve = [t for t in server_teams if not t["is_reserve"]]
 
@@ -441,7 +441,7 @@ class TeamCog(commands.Cog):
         role: discord.Role | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        teams = await self.bot.team_service.get_teams_with_roles(interaction.guild_id)  # type: ignore[attr-defined]
+        teams = await self.bot.team_service.get_teams_with_roles()  # type: ignore[attr-defined]
         old_role_id = next((t["role_id"] for t in teams if t["is_reserve"]), None)
         if role is not None:
             await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]

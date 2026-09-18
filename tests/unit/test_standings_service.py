@@ -527,10 +527,10 @@ async def test_compute_team_standings_includes_zero_pt_team(db_path):
         await _result(db, sr1, 111, pos=1, pts=25, team=555)
         # Register team_role_config for both teams (server_id=12 from _bootstrap)
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (12, 'TeamA', 555)"
+            "INSERT INTO team_role_configs (team_name, role_id) VALUES ('TeamA', 555)"
         )
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (12, 'TeamB', 666)"
+            "INSERT INTO team_role_configs (team_name, role_id) VALUES ('TeamB', 666)"
         )
         # Create team instances for both in the division
         await db.execute(
@@ -881,8 +881,8 @@ async def _seat(db, div_id: int, server_id: int, team: str, drivers: list[tuple[
     ti_id = cur.lastrowid
     if role_id is not None:
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (?, ?, ?)",
-            (server_id, team, role_id),
+            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            (team, role_id),
         )
     for seat_number, (user_id, _name) in enumerate(drivers, start=1):
         # One driver per account across the league, so a driver seated in a second
@@ -1245,8 +1245,8 @@ async def test_a_tied_role_the_division_holds_no_team_for_ranks_last(db_path):
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id) "
-            "VALUES (93, 'Departed', 751)"
+            "INSERT INTO team_role_configs (team_name, role_id) "
+            "VALUES ('Departed', 751)"
         )
         await _result_dnf(db, sr1, 1, pos=19, team=752)
         await _result_dnf(db, sr1, 3, pos=20, team=751)

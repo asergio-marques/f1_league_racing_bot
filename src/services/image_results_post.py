@@ -247,8 +247,8 @@ async def _team_names(
                 f"FROM team_role_configs trc "
                 f"JOIN team_instances ti "
                 f"  ON ti.name = trc.team_name AND ti.division_id = ? "
-                f"WHERE trc.server_id = ? AND trc.role_id IN ({placeholders})",
-                [division_id, server_id, *role_ids],
+                f"WHERE trc.role_id IN ({placeholders})",
+                [division_id, *role_ids],
             )
         ).fetchall()
     for row in rows:
