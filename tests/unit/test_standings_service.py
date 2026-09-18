@@ -1428,3 +1428,31 @@ async def test_a_recompute_leaves_no_row_under_the_past_account(db_path):
         )
         rows = [tuple(r) for r in await cursor.fetchall()]
     assert rows == [(NOW, 25, 4444, 5555)]
+
+
+@pytest.mark.asyncio
+async def test_a_recompute_leaves_a_row_it_no_longer_names_for_another_reason(db_path):
+    """Only a row superseded by an account change is dropped. A driver the recomputation
+    leaves out for any other reason — here one whose only result was removed — keeps the row
+    they had, exactly as before issue #243."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await _result(db, sr1, 111, pos=1, pts=25)
+        await _result(db, sr1, 222, pos=2, pts=18)
+        await db.commit()
+    await compute_and_persist_round(db_path, r1, div_id)
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM race_session_results WHERE driver_user_id = 222")
+        await db.commit()
+
+    await compute_and_persist_round(db_path, r1, div_id)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id FROM driver_standings_snapshots WHERE round_id = ? "
+            "ORDER BY driver_user_id",
+            (r1,),
+        )
+        assert [r[0] for r in await cursor.fetchall()] == [111, 222]

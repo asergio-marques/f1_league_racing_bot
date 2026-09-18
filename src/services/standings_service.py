@@ -594,13 +594,15 @@ async def opening_team_standings(
 # ---------------------------------------------------------------------------
 
 async def _drop_superseded_driver_rows(db, driver_snaps: list[DriverStandingsSnapshot]) -> None:
-    """Delete a recomputed round's rows for accounts the recomputation no longer names.
+    """Delete a recomputed round's rows standing under an account the driver has since left.
 
     A round's standings are recomputed whenever a penalty, an appeal or an amendment lands in
     it or before it. A driver who changed account since the round was first computed now
     stands under their current account (issue #243), and the upsert below would leave their
-    old row beside the new one: the same driver twice in one round. Only a live season is
-    ever recomputed, so this never touches a completed one.
+    old row beside the new one: the same driver twice in one round. Only such rows go — a
+    past account whose driver's current one the recomputation names. Any other row the
+    recomputation leaves out is left as it was. Only a live season is ever recomputed, so
+    this never touches a completed one.
 
     The message ids of the posted standings live on the round's top row. Where that row is
     one being dropped, they are carried onto the new top row.
@@ -615,7 +617,14 @@ async def _drop_superseded_driver_rows(db, driver_snaps: list[DriverStandingsSna
             (round_id, division_id),
         )
         existing = await cursor.fetchall()
-        dropped = [r for r in existing if int(r["driver_user_id"]) not in kept]
+        from services.driver_service import current_account_map_for_division
+
+        current_of = await current_account_map_for_division(db, division_id)
+        dropped = [
+            r for r in existing
+            if int(r["driver_user_id"]) in current_of
+            and current_of[int(r["driver_user_id"])] in kept
+        ]
         if not dropped:
             continue
         carried = next(
