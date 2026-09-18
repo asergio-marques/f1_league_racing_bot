@@ -34,6 +34,10 @@ _FULL_RESET_TABLES: tuple[str, ...] = (
     "image_aspect_toggles",
     "image_config",
     "image_tier_colour",
+    "points_config_fl",
+    "points_config_entries",
+    "points_config_store",
+    "results_module_config",
 )
 
 

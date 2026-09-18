@@ -204,8 +204,7 @@ def _purge(rounds: int = 0, *, on_call=None):
 async def _flag(db_path: str) -> int | None:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT module_enabled FROM results_module_config",
         )
         row = await cursor.fetchone()
     return row["module_enabled"] if row else None

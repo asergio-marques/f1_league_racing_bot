@@ -147,9 +147,9 @@ async def _seed(
             (server_id,),
         )
         await db.execute(
-            "INSERT OR REPLACE INTO results_module_config (server_id, module_enabled) "
+            "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
             "VALUES (?, 1)",
-            (server_id,),
+            (1,),
         )
         await db.execute(
             "INSERT INTO attendance_config (id, module_enabled) VALUES (?, 0)",
@@ -174,8 +174,8 @@ async def _seed(
         )
         # Configuration that must survive the purge.
         await db.execute(
-            "INSERT INTO points_config_store (server_id, config_name) VALUES (?, '100%')",
-            (server_id,),
+            "INSERT INTO points_config_store (config_name) VALUES ('100%')",
+            (),
         )
         await db.execute(
             "INSERT INTO season_points_entries "

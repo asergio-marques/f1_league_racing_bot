@@ -2543,7 +2543,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # will ever enter a result, so the round has nothing to wait for and ends here — otherwise
     # it would sit outstanding for ever and its season could never be completed, which is issue
     # #154 over again for every league that does not run the results module.
-    results_enabled = await bot.module_service.is_results_enabled(server_id)  # type: ignore[attr-defined]
+    results_enabled = await bot.module_service.is_results_enabled()  # type: ignore[attr-defined]
     arrived_at = (
         RoundStatus.AWAITING_RESULTS.value if results_enabled else RoundStatus.FINAL.value
     )

@@ -465,7 +465,7 @@ class ModuleCog(commands.Cog):
         self, interaction: discord.Interaction, server_id: int
     ) -> None:
         # 1. Guard already-enabled
-        if await self.bot.module_service.is_results_enabled(server_id):
+        if await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "⚠️ Results & Standings module is already enabled.", ephemeral=True
             )
@@ -486,8 +486,7 @@ class ModuleCog(commands.Cog):
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
-                "INSERT OR REPLACE INTO results_module_config (server_id, module_enabled) VALUES (?, 1)",
-                (server_id,),
+                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
             )
             await db.execute(
                 "INSERT INTO audit_entries "
@@ -522,7 +521,7 @@ class ModuleCog(commands.Cog):
         before it happened. So the confirmation is now owed to a running season in its own
         right, whatever attendance is doing.
         """
-        if not await self.bot.module_service.is_results_enabled(server_id):
+        if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "⚠️ Results & Standings module is already disabled.", ephemeral=True
             )
@@ -571,8 +570,7 @@ class ModuleCog(commands.Cog):
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
-                "INSERT OR REPLACE INTO results_module_config (server_id, module_enabled) VALUES (?, 0)",
-                (server_id,),
+                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 0)"
             )
             await db.execute(
                 "INSERT INTO audit_entries "
@@ -662,7 +660,7 @@ class ModuleCog(commands.Cog):
         self, interaction: discord.Interaction, server_id: int
     ) -> None:
         # 1. Guard: R&S must be enabled first
-        if not await self.bot.module_service.is_results_enabled(server_id):
+        if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "❌ The Attendance module requires the Results & Standings module to be enabled first.",
                 ephemeral=True,

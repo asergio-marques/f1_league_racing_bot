@@ -623,7 +623,6 @@ async def _delete_test_drivers_in_division(division_id: int, db_path: str) -> in
 # ─── Test config seeding ─────────────────────────────────────────────────────
 
 async def ensure_test_configs(
-    server_id: int,
     season_id: int,
     db_path: str,
 ) -> list[str]:
@@ -658,7 +657,6 @@ async def ensure_test_configs(
 
     for config_name, session_entries, fl_configs in configs:
         newly_created = await _ensure_single_config(
-            server_id=server_id,
             season_id=season_id,
             config_name=config_name,
             session_entries=session_entries,
@@ -672,7 +670,6 @@ async def ensure_test_configs(
 
 
 async def _ensure_single_config(
-    server_id: int,
     season_id: int,
     config_name: str,
     session_entries: dict[SessionType, dict[int, int]],
@@ -713,12 +710,12 @@ async def _ensure_single_config(
 
         # Create the server-level config and take its id — the entries hang off it.
         await db.execute(
-            "INSERT OR IGNORE INTO points_config_store (server_id, config_name) VALUES (?, ?)",
-            (server_id, config_name),
+            "INSERT OR IGNORE INTO points_config_store (config_name) VALUES (?)",
+            (config_name,),
         )
         cursor = await db.execute(
-            "SELECT id FROM points_config_store WHERE server_id = ? AND config_name = ?",
-            (server_id, config_name),
+            "SELECT id FROM points_config_store WHERE config_name = ?",
+            (config_name,),
         )
         config_id = (await cursor.fetchone())["id"]
 

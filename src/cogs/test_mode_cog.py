@@ -130,7 +130,6 @@ class TestModeCog(commands.Cog):
             config_note = ""
             if season_row is not None:
                 new_configs = await ensure_test_configs(
-                    server_id=interaction.guild_id,
                     season_id=season_row["id"],
                     db_path=self.bot.db_path,  # type: ignore[attr-defined]
                 )

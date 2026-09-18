@@ -52,8 +52,8 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO results_module_config (server_id, module_enabled) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO results_module_config (id, module_enabled) VALUES (?, 1)",
+            (1,),
         )
         await db.execute(
             "INSERT INTO attendance_config (id, module_enabled) VALUES (?, ?)",
@@ -110,7 +110,7 @@ async def _module_flags(db_path: str) -> tuple[int, int, int]:
     """Return ``(results_enabled, attendance_enabled, division_config_rows)``."""
     async with get_connection(db_path) as db:
         cur = await db.execute(
-            "SELECT module_enabled FROM results_module_config WHERE server_id = ?", (SERVER_ID,)
+            "SELECT module_enabled FROM results_module_config"
         )
         results = (await cur.fetchone())[0]
         cur = await db.execute(

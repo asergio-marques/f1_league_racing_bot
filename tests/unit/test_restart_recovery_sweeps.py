@@ -101,6 +101,7 @@ def _stub_bot(db_path: str, *, weather_enabled: bool = True, guild=None, channel
     stub.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
     stub.output_router = MagicMock()
     stub.output_router.post_log = AsyncMock(return_value=None)
+    stub.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     stub.get_guild = MagicMock(return_value=guild)
     stub.get_channel = MagicMock(return_value=channel)
     stub.fetch_channel = AsyncMock(return_value=channel)
@@ -464,10 +465,10 @@ async def _seed_amend(db_path):
             (ROUND_ID, DIVISION_ID),
         )
         await db.execute(
-            "INSERT INTO round_amend_channels (round_id, server_id, channel_id, "
-            "session_type, created_at) VALUES (?, ?, ?, 'FEATURE_RACE', "
+            "INSERT INTO round_amend_channels (round_id, channel_id, "
+            "session_type, created_at) VALUES (?, ?, 'FEATURE_RACE', "
             "'2026-02-01T00:00:00+00:00')",
-            (ROUND_ID, SERVER_ID, CHANNEL_ID),
+            (ROUND_ID, CHANNEL_ID),
         )
         await db.commit()
 

@@ -45,17 +45,16 @@ async def db_path(tmp_path):
 
 @pytest.mark.asyncio
 async def test_create_config_success(db_path):
-    store = await create_config(db_path, server_id=1, config_name="Standard")
+    store = await create_config(db_path, config_name="Standard")
     assert store.config_name == "Standard"
-    assert store.server_id == 1
     assert store.id is not None
 
 
 @pytest.mark.asyncio
 async def test_create_config_duplicate_raises(db_path):
-    await create_config(db_path, server_id=1, config_name="Dup")
+    await create_config(db_path, config_name="Dup")
     with pytest.raises(ConfigAlreadyExistsError):
-        await create_config(db_path, server_id=1, config_name="Dup")
+        await create_config(db_path, config_name="Dup")
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +70,7 @@ async def test_remove_config_not_found_raises(db_path):
 
 @pytest.mark.asyncio
 async def test_remove_config_success(db_path):
-    await create_config(db_path, server_id=1, config_name="Temp")
+    await create_config(db_path, config_name="Temp")
     await remove_config(db_path, server_id=1, config_name="Temp")
     # second removal should raise
     with pytest.raises(ConfigNotFoundError):
@@ -85,20 +84,20 @@ async def test_remove_config_success(db_path):
 
 @pytest.mark.asyncio
 async def test_set_fl_bonus_feature_qualifying_raises(db_path):
-    await create_config(db_path, server_id=1, config_name="CFG")
+    await create_config(db_path, config_name="CFG")
     with pytest.raises(InvalidSessionTypeError):
         await set_fl_bonus(
-            db_path, server_id=1, config_name="CFG",
+            db_path, config_name="CFG",
             session_type=SessionType.FEATURE_QUALIFYING, fl_points=1,
         )
 
 
 @pytest.mark.asyncio
 async def test_set_fl_bonus_sprint_qualifying_raises(db_path):
-    await create_config(db_path, server_id=1, config_name="CFG2")
+    await create_config(db_path, config_name="CFG2")
     with pytest.raises(InvalidSessionTypeError):
         await set_fl_bonus(
-            db_path, server_id=1, config_name="CFG2",
+            db_path, config_name="CFG2",
             session_type=SessionType.SPRINT_QUALIFYING, fl_points=1,
         )
 
@@ -110,20 +109,20 @@ async def test_set_fl_bonus_sprint_qualifying_raises(db_path):
 
 @pytest.mark.asyncio
 async def test_get_config_entries_round_trip(db_path):
-    await create_config(db_path, server_id=1, config_name="R")
+    await create_config(db_path, config_name="R")
     await set_session_points(
-        db_path, server_id=1, config_name="R",
+        db_path, config_name="R",
         session_type=SessionType.FEATURE_RACE, position=1, points=25,
     )
     await set_session_points(
-        db_path, server_id=1, config_name="R",
+        db_path, config_name="R",
         session_type=SessionType.FEATURE_RACE, position=2, points=18,
     )
     await set_fl_bonus(
-        db_path, server_id=1, config_name="R",
+        db_path, config_name="R",
         session_type=SessionType.FEATURE_RACE, fl_points=1,
     )
-    entries, fl_list = await get_config_entries(db_path, server_id=1, config_name="R")
+    entries, fl_list = await get_config_entries(db_path, config_name="R")
     assert len(entries) == 2
     p1 = next(e for e in entries if e.position == 1)
     assert p1.points == 25
@@ -168,7 +167,7 @@ async def _links_of(db_path: str, season_id: int) -> list[str]:
 @pytest.mark.asyncio
 async def test_remove_config_clears_links_from_setup_seasons(db_path):
     """#132's second way in: removing one left the season pointing at nothing at all."""
-    await create_config(db_path, server_id=1, config_name="Standard")
+    await create_config(db_path, config_name="Standard")
     await _make_season(db_path, season_id=1, status="SETUP")
     await _link(db_path, 1, "Standard")
 
@@ -185,7 +184,7 @@ async def test_remove_config_leaves_an_approved_seasons_link_alone(db_path):
     offers that copy as a choice when results are submitted. Clearing it would take a
     running season's points configuration off the submission buttons.
     """
-    await create_config(db_path, server_id=1, config_name="Standard")
+    await create_config(db_path, config_name="Standard")
     await _make_season(db_path, season_id=2, status="ACTIVE", number=2)
     await _link(db_path, 2, "Standard")
 
@@ -202,7 +201,7 @@ async def test_remove_config_clears_the_setup_link_and_keeps_the_finished_one(db
     so the two never coexist live — the pairing that happens is last season, finished and
     keeping its history, beside next season being built.
     """
-    await create_config(db_path, server_id=1, config_name="Standard")
+    await create_config(db_path, config_name="Standard")
     await _make_season(db_path, season_id=1, status="COMPLETED", number=1)
     await _make_season(db_path, season_id=2, status="SETUP", number=2)
     await _link(db_path, 1, "Standard")
@@ -217,8 +216,8 @@ async def test_remove_config_clears_the_setup_link_and_keeps_the_finished_one(db
 @pytest.mark.asyncio
 async def test_remove_config_leaves_other_configs_attached(db_path):
     """Only the name being removed goes; a season keeps the rest of its points."""
-    await create_config(db_path, server_id=1, config_name="Standard")
-    await create_config(db_path, server_id=1, config_name="Half Points")
+    await create_config(db_path, config_name="Standard")
+    await create_config(db_path, config_name="Half Points")
     await _make_season(db_path, season_id=1, status="SETUP")
     await _link(db_path, 1, "Standard")
     await _link(db_path, 1, "Half Points")
@@ -231,7 +230,7 @@ async def test_remove_config_leaves_other_configs_attached(db_path):
 @pytest.mark.asyncio
 async def test_setup_seasons_linking_names_the_season(db_path):
     """What the confirmation prompt reads, so the manager is told what they are losing."""
-    await create_config(db_path, server_id=1, config_name="Standard")
+    await create_config(db_path, config_name="Standard")
     await _make_season(db_path, season_id=1, status="SETUP", number=4)
     await _link(db_path, 1, "Standard")
 
@@ -241,7 +240,7 @@ async def test_setup_seasons_linking_names_the_season(db_path):
 @pytest.mark.asyncio
 async def test_setup_seasons_linking_ignores_an_approved_season(db_path):
     """Nothing is at stake there, so the command must not stop to ask about it."""
-    await create_config(db_path, server_id=1, config_name="Standard")
+    await create_config(db_path, config_name="Standard")
     await _make_season(db_path, season_id=2, status="ACTIVE", number=2)
     await _link(db_path, 2, "Standard")
 
@@ -250,14 +249,14 @@ async def test_setup_seasons_linking_ignores_an_approved_season(db_path):
 
 @pytest.mark.asyncio
 async def test_setup_seasons_linking_is_empty_when_nothing_stands_on_it(db_path):
-    await create_config(db_path, server_id=1, config_name="Standard")
+    await create_config(db_path, config_name="Standard")
 
     assert await setup_seasons_linking(db_path, 1, "Standard") == []
 
 
 @pytest.mark.asyncio
 async def test_config_exists_answers_by_name(db_path):
-    await create_config(db_path, server_id=1, config_name="Standard")
+    await create_config(db_path, config_name="Standard")
 
-    assert await config_exists(db_path, 1, "Standard") is True
-    assert await config_exists(db_path, 1, "Standrad") is False
+    assert await config_exists(db_path, "Standard") is True
+    assert await config_exists(db_path, "Standrad") is False

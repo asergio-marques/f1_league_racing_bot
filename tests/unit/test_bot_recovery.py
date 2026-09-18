@@ -81,12 +81,11 @@ async def _make_db(tmp_path, *, channels: int = 1) -> str:
         for index in range(channels):
             await db.execute(
                 "INSERT INTO round_amend_channels "
-                "(id, round_id, server_id, channel_id, session_type, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(id, round_id, channel_id, session_type, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
                 (
                     index + 1,
                     ROUND_ID,
-                    SERVER_ID,
                     CHANNEL_ID + index,
                     session_types[index],
                     datetime.now(timezone.utc).isoformat(),
@@ -101,6 +100,7 @@ def _make_bot(db_path: str, *, channel=..., guild_found: bool = True):
     bot.db_path = db_path
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
 
     resolved = MagicMock() if channel is ... else channel
     if resolved is not None:

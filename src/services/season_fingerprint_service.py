@@ -257,8 +257,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     await _rows(
                         db,
                         "SELECT module_enabled FROM results_module_config "
-                        "WHERE server_id = ?",
-                        server_id,
+                        "",
                     ),
                     await _rows(
                         db,

@@ -62,12 +62,12 @@ def _cog(db_path):
 
 
 async def _attach_real(db_path, config_name: str) -> None:
-    await points_config_service.create_config(db_path, SERVER_ID, config_name)
+    await points_config_service.create_config(db_path, config_name)
     await points_config_service.set_session_points(
-        db_path, SERVER_ID, config_name, SessionType.FEATURE_RACE, 1, 25
+        db_path, config_name, SessionType.FEATURE_RACE, 1, 25
     )
     await season_points_service.attach_config(
-        db_path, SEASON_ID, config_name, "SETUP", server_id=SERVER_ID
+        db_path, SEASON_ID, config_name, "SETUP"
     )
 
 
@@ -118,8 +118,7 @@ async def test_a_config_removed_from_under_the_season_is_found(db_path):
     await _attach_real(db_path, "Standard")
     async with get_connection(db_path) as db:
         await db.execute(
-            "DELETE FROM points_config_store WHERE server_id = ? AND config_name = 'Standard'",
-            (SERVER_ID,),
+            "DELETE FROM points_config_store WHERE config_name = 'Standard'",
         )
         await db.commit()
 

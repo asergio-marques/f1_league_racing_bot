@@ -449,13 +449,13 @@ async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> N
     from models.points_config import SessionType
     from services import points_config_service, season_points_service
 
-    await points_config_service.create_config(db_path, SERVER_ID, config_name)
+    await points_config_service.create_config(db_path, config_name)
     for position, pts in points:
         await points_config_service.set_session_points(
-            db_path, SERVER_ID, config_name, SessionType.FEATURE_RACE, position, pts
+            db_path, config_name, SessionType.FEATURE_RACE, position, pts
         )
     await season_points_service.attach_config(
-        db_path, SEASON_ID, config_name, "SETUP", server_id=SERVER_ID
+        db_path, SEASON_ID, config_name, "SETUP"
     )
 
 
@@ -541,7 +541,7 @@ async def test_one_broken_position_is_named_once_however_many_checks_saw_it(db_p
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
     from services import season_points_service
 
-    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID, SERVER_ID)
+    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID)
     cog = _cog_with_results(db_path)
     interaction = _interaction()
 

@@ -109,7 +109,7 @@ async def _make_db(tmp_path, *, name: str = "xml_import", with_config: bool = Tr
         )
         await db.commit()
     if with_config:
-        await create_config(db_path, SERVER_ID, CONFIG)
+        await create_config(db_path, CONFIG)
     return db_path
 
 

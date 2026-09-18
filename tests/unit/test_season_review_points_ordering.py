@@ -59,13 +59,13 @@ def _cog(db_path):
 
 
 async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> None:
-    await points_config_service.create_config(db_path, SERVER_ID, config_name)
+    await points_config_service.create_config(db_path, config_name)
     for position, pts in points:
         await points_config_service.set_session_points(
-            db_path, SERVER_ID, config_name, SessionType.FEATURE_RACE, position, pts
+            db_path, config_name, SessionType.FEATURE_RACE, position, pts
         )
     await season_points_service.attach_config(
-        db_path, SEASON_ID, config_name, "SETUP", server_id=SERVER_ID
+        db_path, SEASON_ID, config_name, "SETUP"
     )
 
 
@@ -122,7 +122,7 @@ async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
 @pytest.mark.asyncio
 async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
-    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID, SERVER_ID)
+    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID)
 
     faults = await _cog(db_path)._points_ordering_problems(SERVER_ID, SEASON_ID)
 

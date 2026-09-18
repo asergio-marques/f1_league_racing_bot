@@ -290,8 +290,7 @@ async def get_next_pending_phase(
     # earlier-round priority check and the all-misfired DB fallback.
     async with get_connection(db_path) as db:
         rmc_cursor = await db.execute(
-            "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT module_enabled FROM results_module_config",
         )
         rmc_row = await rmc_cursor.fetchone()
         results_module_enabled = bool(rmc_row[0]) if rmc_row else False
@@ -522,8 +521,7 @@ async def build_review_summary(
 
         # Module-enabled flags
         rmc_cursor = await db.execute(
-            "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT module_enabled FROM results_module_config",
         )
         rmc_row = await rmc_cursor.fetchone()
         results_module_enabled = bool(rmc_row[0]) if rmc_row else False

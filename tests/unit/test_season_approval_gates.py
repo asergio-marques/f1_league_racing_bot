@@ -125,7 +125,7 @@ async def _check_rs_gate(
 ) -> list[str]:
     """Return list of error strings (empty = gate passes)."""
     mod_svc = ModuleService(db_path)
-    if not await mod_svc.is_results_enabled(server_id):
+    if not await mod_svc.is_results_enabled():
         return []
     svc = SeasonService(db_path)
     divs_rs = await svc.get_divisions_with_results_config(season_id)
@@ -222,7 +222,7 @@ class TestResultsStandingsGate:
         await _add_points_link(db_path, season_id)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_results_enabled(1, True)
+        await mod_svc.set_results_enabled(True)
 
         errors = await _check_rs_gate(db_path, 1, season_id)
         assert any("results channel" in e for e in errors)
@@ -236,7 +236,7 @@ class TestResultsStandingsGate:
         await _add_points_link(db_path, season_id)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_results_enabled(1, True)
+        await mod_svc.set_results_enabled(True)
 
         errors = await _check_rs_gate(db_path, 1, season_id)
         assert any("standings channel" in e for e in errors)
@@ -250,7 +250,7 @@ class TestResultsStandingsGate:
         # Deliberately NOT adding a points link
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_results_enabled(1, True)
+        await mod_svc.set_results_enabled(True)
 
         errors = await _check_rs_gate(db_path, 1, season_id)
         assert any("points configuration" in e for e in errors)
@@ -264,7 +264,7 @@ class TestResultsStandingsGate:
         await _add_points_link(db_path, season_id)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_results_enabled(1, True)
+        await mod_svc.set_results_enabled(True)
 
         errors = await _check_rs_gate(db_path, 1, season_id)
         assert errors == []
@@ -277,7 +277,7 @@ class TestResultsStandingsGate:
         # No division_results_config row, no points link
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_results_enabled(1, True)
+        await mod_svc.set_results_enabled(True)
 
         errors = await _check_rs_gate(db_path, 1, season_id)
         assert len(errors) >= 3  # missing results, missing standings, no points config

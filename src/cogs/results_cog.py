@@ -171,7 +171,6 @@ class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
             try:
                 await points_config_service.set_session_points(
                     self._db_path,
-                    self._guild_id,
                     self._config_name,
                     SessionType(self._session.value),
                     position,
@@ -203,7 +202,6 @@ class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
                 self._session.name,
                 await points_config_service.ordering_warnings(
                     self._db_path,
-                    self._guild_id,
                     self._config_name,
                     SessionType(self._session.value),
                 ),
@@ -395,7 +393,7 @@ async def _run_xml_import(
 
     # --- persist ----------------------------------------------------------
     try:
-        await xml_import_config(db_path, guild_id, config_name, payload)
+        await xml_import_config(db_path, config_name, payload)
     except ConfigNotFoundError:
         await interaction.followup.send(
             f"❌ Config **{config_name}** not found.", ephemeral=True
@@ -484,7 +482,7 @@ class ResultsCog(commands.Cog):
     # ------------------------------------------------------------------
 
     async def _module_gate(self, interaction: discord.Interaction) -> bool:
-        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+        if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "\u274c The Results & Standings module is not enabled on this server.",
                 ephemeral=True,
@@ -509,7 +507,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
         try:
-            await points_config_service.create_config(self.bot.db_path, interaction.guild_id, name)
+            await points_config_service.create_config(self.bot.db_path, name)
         except ConfigAlreadyExistsError:
             await interaction.followup.send(
                 f"\u274c A config named **{name}** already exists on this server.", ephemeral=True
@@ -552,7 +550,7 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         if not await points_config_service.config_exists(
-            self.bot.db_path, interaction.guild_id, name
+            self.bot.db_path, name
         ):
             await interaction.followup.send(
                 f"\u274c Config **{name}** not found.", ephemeral=True
@@ -622,7 +620,6 @@ class ResultsCog(commands.Cog):
         try:
             await points_config_service.set_session_points(
                 self.bot.db_path,
-                interaction.guild_id,
                 name,
                 SessionType(session.value),
                 position,
@@ -635,7 +632,7 @@ class ResultsCog(commands.Cog):
             name,
             session.name,
             await points_config_service.ordering_warnings(
-                self.bot.db_path, interaction.guild_id, name, SessionType(session.value)
+                self.bot.db_path, name, SessionType(session.value)
             ),
         )
         await interaction.followup.send(
@@ -670,7 +667,7 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         try:
             await points_config_service.set_fl_bonus(
-                self.bot.db_path, interaction.guild_id, name, SessionType(session.value), points
+                self.bot.db_path, name, SessionType(session.value), points
             )
         except ConfigNotFoundError:
             await interaction.followup.send(f"\u274c Config **{name}** not found.", ephemeral=True)
@@ -711,7 +708,7 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         try:
             await points_config_service.set_fl_position_limit(
-                self.bot.db_path, interaction.guild_id, name, SessionType(session.value), limit
+                self.bot.db_path, name, SessionType(session.value), limit
             )
         except ConfigNotFoundError:
             await interaction.followup.send(f"\u274c Config **{name}** not found.", ephemeral=True)
@@ -746,7 +743,6 @@ class ResultsCog(commands.Cog):
         try:
             await season_points_service.attach_config(
                 self.bot.db_path, season.id, name, season.status,
-                server_id=interaction.guild_id,
             )
         except SeasonNotInSetupError:
             await interaction.followup.send(
@@ -864,7 +860,7 @@ class ResultsCog(commands.Cog):
             # SETUP — read from server-level config store
             try:
                 raw_entries, raw_fl = await points_config_service.get_config_entries(
-                    self.bot.db_path, interaction.guild_id, name
+                    self.bot.db_path, name
                 )
             except ConfigNotFoundError:
                 await interaction.followup.send(

@@ -249,8 +249,7 @@ async def test_results_is_enabled(tmp_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT module_enabled FROM results_module_config",
         )
         assert (await cursor.fetchone())["module_enabled"] == 1
 

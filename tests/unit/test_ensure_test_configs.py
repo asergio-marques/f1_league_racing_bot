@@ -58,7 +58,7 @@ async def season_id(db_path):
 
 
 async def test_both_configs_are_created(db_path, season_id):
-    created = await ensure_test_configs(SERVER_ID, season_id, db_path)
+    created = await ensure_test_configs(season_id, db_path)
 
     assert sorted(created) == ["Half Points", "Standard"]
 
@@ -68,10 +68,10 @@ async def test_a_seeded_config_is_readable_as_a_server_config(
     db_path, season_id, config_name
 ):
     """The bug: this read back empty, so the view reported no entries configured."""
-    await ensure_test_configs(SERVER_ID, season_id, db_path)
+    await ensure_test_configs(season_id, db_path)
 
     entries, fl = await points_config_service.get_config_entries(
-        db_path, SERVER_ID, config_name
+        db_path, config_name
     )
 
     assert entries, f"{config_name} read back with no entries at all"
@@ -79,10 +79,10 @@ async def test_a_seeded_config_is_readable_as_a_server_config(
 
 
 async def test_the_standard_ladder_is_the_one_seeded(db_path, season_id):
-    await ensure_test_configs(SERVER_ID, season_id, db_path)
+    await ensure_test_configs(season_id, db_path)
 
     entries, fl = await points_config_service.get_config_entries(
-        db_path, SERVER_ID, "Standard"
+        db_path, "Standard"
     )
     feature = sorted(
         (e.position, e.points)
@@ -97,10 +97,10 @@ async def test_the_standard_ladder_is_the_one_seeded(db_path, season_id):
 
 
 async def test_every_session_type_of_a_race_weekend_is_covered(db_path, season_id):
-    await ensure_test_configs(SERVER_ID, season_id, db_path)
+    await ensure_test_configs(season_id, db_path)
 
     entries, _ = await points_config_service.get_config_entries(
-        db_path, SERVER_ID, "Standard"
+        db_path, "Standard"
     )
 
     assert {e.session_type for e in entries} == {
@@ -112,7 +112,7 @@ async def test_every_session_type_of_a_race_weekend_is_covered(db_path, season_i
 
 
 async def test_the_configs_are_attached_to_the_season(db_path, season_id):
-    await ensure_test_configs(SERVER_ID, season_id, db_path)
+    await ensure_test_configs(season_id, db_path)
 
     names = await season_points_service.get_attached_config_names(db_path, season_id)
 
@@ -121,14 +121,14 @@ async def test_the_configs_are_attached_to_the_season(db_path, season_id):
 
 async def test_seeding_twice_creates_nothing_and_changes_nothing(db_path, season_id):
     """`/test-mode toggle` can be run again; it must not duplicate or disturb a config."""
-    await ensure_test_configs(SERVER_ID, season_id, db_path)
+    await ensure_test_configs(season_id, db_path)
     before, before_fl = await points_config_service.get_config_entries(
-        db_path, SERVER_ID, "Standard"
+        db_path, "Standard"
     )
 
-    created_again = await ensure_test_configs(SERVER_ID, season_id, db_path)
+    created_again = await ensure_test_configs(season_id, db_path)
     after, after_fl = await points_config_service.get_config_entries(
-        db_path, SERVER_ID, "Standard"
+        db_path, "Standard"
     )
 
     assert created_again == []
@@ -140,10 +140,10 @@ async def test_approve_carries_the_seeded_config_into_the_season_store(
     db_path, season_id
 ):
     """The ordinary snapshot, not a private path — this is what scoring then reads."""
-    await ensure_test_configs(SERVER_ID, season_id, db_path)
+    await ensure_test_configs(season_id, db_path)
 
     await season_points_service.snapshot_configs_to_season(
-        db_path, season_id, SERVER_ID
+        db_path, season_id
     )
 
     async with get_connection(db_path) as db:
@@ -167,9 +167,9 @@ async def test_approve_carries_the_seeded_config_into_the_season_store(
 
 async def test_the_seeded_config_passes_the_approval_gate(db_path, season_id):
     """The confirmation of placements refuses a non-monotonic ladder; a seeded one must not trip it."""
-    await ensure_test_configs(SERVER_ID, season_id, db_path)
+    await ensure_test_configs(season_id, db_path)
     await season_points_service.snapshot_configs_to_season(
-        db_path, season_id, SERVER_ID
+        db_path, season_id
     )
 
     assert await season_points_service.validate_monotonic_ordering(db_path, season_id) == []
@@ -177,13 +177,13 @@ async def test_the_seeded_config_passes_the_approval_gate(db_path, season_id):
 
 async def test_half_points_really_is_the_lesser_ladder(db_path, season_id):
     """The two seeded configs must differ, or there is no point seeding both."""
-    await ensure_test_configs(SERVER_ID, season_id, db_path)
+    await ensure_test_configs(season_id, db_path)
 
     standard, _ = await points_config_service.get_config_entries(
-        db_path, SERVER_ID, "Standard"
+        db_path, "Standard"
     )
     half, _ = await points_config_service.get_config_entries(
-        db_path, SERVER_ID, "Half Points"
+        db_path, "Half Points"
     )
 
     def winner(entries):
@@ -207,13 +207,13 @@ async def test_leaving_test_mode_keeps_the_seeded_configs(db_path, season_id):
     """
     from services.test_roster_service import clear_all_test_drivers
 
-    await ensure_test_configs(SERVER_ID, season_id, db_path)
+    await ensure_test_configs(season_id, db_path)
 
     # The whole of what disabling test mode does to stored data.
     await clear_all_test_drivers(SERVER_ID, db_path)
 
     entries, fl = await points_config_service.get_config_entries(
-        db_path, SERVER_ID, "Standard"
+        db_path, "Standard"
     )
     assert entries, "leaving test mode discarded a points configuration"
     assert fl

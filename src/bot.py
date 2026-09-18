@@ -990,14 +990,16 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
 
     async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
         cursor = await db.execute(
-            "SELECT id, round_id, server_id, channel_id, session_type FROM round_amend_channels"
+            "SELECT id, round_id, channel_id, session_type FROM round_amend_channels"
         )
         orphans = await cursor.fetchall()
+
+    # The league's server is the one configured; the rows no longer say.
+    server_id = await bot.config_service.get_league_server_id()  # type: ignore[attr-defined]
 
     for row in orphans:
         row_id: int = row["id"]
         round_id: int = row["round_id"]
-        server_id: int = row["server_id"]
         channel_id: int = row["channel_id"]
         session_type: str = row["session_type"]
 
@@ -1009,7 +1011,7 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
             await db.commit()
 
         # Delete the Discord channel.
-        guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
+        guild = bot.get_guild(server_id) if server_id is not None else None  # type: ignore[attr-defined]
         if guild is not None:
             channel = guild.get_channel(channel_id)
             if channel is not None:

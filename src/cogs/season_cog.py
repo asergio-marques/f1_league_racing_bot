@@ -561,7 +561,7 @@ class SeasonCog(commands.Cog):
         """
         return list(dict.fromkeys(
             await season_points_service.validate_attached_config_ordering(
-                self.bot.db_path, season_id, server_id
+                self.bot.db_path, season_id
             )
             + await season_points_service.validate_monotonic_ordering(
                 self.bot.db_path, season_id
@@ -586,7 +586,7 @@ class SeasonCog(commands.Cog):
         tree to say so. The season simply stayed in setup and nothing was ever sent.
         """
         return await season_points_service.missing_attached_configs(
-            self.bot.db_path, season_id, server_id  # type: ignore[attr-defined]
+            self.bot.db_path, season_id  # type: ignore[attr-defined]
         )
 
     async def _team_name_problems(self, server_id: int, season_id: int | None) -> list[str]:
@@ -1646,7 +1646,7 @@ class SeasonCog(commands.Cog):
             # ── Modules ───────────────────────────────────────────────
             weather_on = await self.bot.module_service.is_weather_enabled(interaction.guild_id)  # type: ignore[attr-defined]
             signup_on = await self.bot.module_service.is_signup_enabled(interaction.guild_id)  # type: ignore[attr-defined]
-            results_on = await self.bot.module_service.is_results_enabled(interaction.guild_id)  # type: ignore[attr-defined]
+            results_on = await self.bot.module_service.is_results_enabled()  # type: ignore[attr-defined]
             attendance_on = await self.bot.module_service.is_attendance_enabled()  # type: ignore[attr-defined]
             on = "✅ Enabled"
             off = "❌ Disabled"
@@ -2378,7 +2378,7 @@ class SeasonCog(commands.Cog):
         ]
 
         # ── Results: points configurations ────────────────────────────────────
-        if await self.bot.module_service.is_results_enabled(server_id):  # type: ignore[attr-defined]
+        if await self.bot.module_service.is_results_enabled():  # type: ignore[attr-defined]
             async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
                 cursor = await db.execute(
                     "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
@@ -2563,7 +2563,7 @@ class SeasonCog(commands.Cog):
                 "",
                 "**Modules**",
                 f"  Signup: {on if await module.is_signup_enabled(server_id) else off}",
-                f"  Results: {on if await module.is_results_enabled(server_id) else off}",
+                f"  Results: {on if await module.is_results_enabled() else off}",
                 f"  Attendance: {on if await module.is_attendance_enabled() else off}",
                 f"  Weather: {on if await module.is_weather_enabled(server_id) else off}",
                 f"  Images: {on if await module.is_images_enabled() else off}",
@@ -2584,7 +2584,7 @@ class SeasonCog(commands.Cog):
 
             # Every module's configuration, subsection by subsection, in the words and the
             # order of the placements review — save the divisions, which do not exist yet.
-            results_on = await module.is_results_enabled(server_id)
+            results_on = await module.is_results_enabled()
             sections: list[list[str]] = [lines]
             if await module.is_signup_enabled(server_id):
                 sections.append(await self._signup_review_lines(server_id))
@@ -3709,7 +3709,7 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
-        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+        if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "\u274c The Results & Standings module is not enabled.", ephemeral=True
             )
@@ -3728,7 +3728,7 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
-        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+        if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "\u274c The Results & Standings module is not enabled.", ephemeral=True
             )
@@ -3748,7 +3748,7 @@ class SeasonCog(commands.Cog):
         channel: discord.TextChannel,
     ) -> None:
         import json as _json
-        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+        if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "\u274c The Results & Standings module is not enabled.", ephemeral=True
             )
@@ -4929,7 +4929,7 @@ class SeasonCog(commands.Cog):
         Adding, amending and importing rounds stay a league manager's; cancelling and
         deleting one are a league admin's for the same reason this is.
         """
-        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+        if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "\u274c The Results & Standings module is not enabled.", ephemeral=True
             )
@@ -5094,10 +5094,10 @@ class SeasonCog(commands.Cog):
             await _adb.execute(
                 """
                 INSERT OR REPLACE INTO round_amend_channels
-                    (round_id, server_id, channel_id, session_type, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                    (round_id, channel_id, session_type, created_at)
+                VALUES (?, ?, ?, ?)
                 """,
-                (rnd.id, interaction.guild_id, amend_channel.id,
+                (rnd.id, amend_channel.id,
                  chosen_session_type.value, _amend_created_at),
             )
             await _adb.commit()
@@ -5646,7 +5646,7 @@ class SeasonCog(commands.Cog):
                 return
 
         # ── Gate 2: R&S channel and points-config prerequisites (FR-013) ───────
-        if await self.bot.module_service.is_results_enabled(cfg.server_id):
+        if await self.bot.module_service.is_results_enabled():
             # Auto-seed point configs if test mode is active and none are attached yet
             server_config = await self.bot.config_service.get_server_config(cfg.server_id)  # type: ignore[attr-defined]
             if server_config is not None and server_config.test_mode_active:
@@ -5659,7 +5659,6 @@ class SeasonCog(commands.Cog):
                 if (_cnt[0] if _cnt else 0) == 0:
                     from services.test_roster_service import ensure_test_configs
                     await ensure_test_configs(
-                        server_id=cfg.server_id,
                         season_id=cfg.season_id,
                         db_path=self.bot.db_path,  # type: ignore[attr-defined]
                     )
@@ -5939,14 +5938,14 @@ class SeasonCog(commands.Cog):
             return
 
         # Snapshot attached points configs before transitioning (FR-007)
-        if await self.bot.module_service.is_results_enabled(cfg.server_id):
+        if await self.bot.module_service.is_results_enabled():
             await season_points_service.snapshot_configs_to_season(
-                self.bot.db_path, cfg.season_id, cfg.server_id
+                self.bot.db_path, cfg.season_id
             )
 
         # Schedule FIRST — if this fails the season stays SETUP in DB (fix #5)
         weather_enabled = await self.bot.module_service.is_weather_enabled(cfg.server_id)
-        results_enabled = await self.bot.module_service.is_results_enabled(cfg.server_id)
+        results_enabled = await self.bot.module_service.is_results_enabled()
         # Mapping division_id → (season_number, tier) for human-readable job IDs
         _div_meta: dict[int, tuple[int, int]] = {
             div.id: (cfg.season_number, div.tier) for div in divisions

@@ -1280,7 +1280,7 @@ async def test_aspect_enabled_while_source_module_disabled(
     await config_service.set_aspect("standings", True)
 
     # The results module backs the standings aspect and is disabled on this server.
-    assert await module_service.is_results_enabled(SERVER_ID) is False
+    assert await module_service.is_results_enabled() is False
 
     validity = ImageValidityService(config_service, module_service)
     statuses = {s.aspect: s for s in await validity.aspect_statuses(SERVER_ID)}
