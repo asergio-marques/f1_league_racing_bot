@@ -677,16 +677,31 @@ async def finalize_penalty_review(
             except Exception:
                 log.exception("finalize_penalty_review: post_attendance_sheet failed for round %s", round_id)
 
-            # T016: Enforce attendance sanctions (non-blocking).
-            try:
-                if guild:
-                    await enforce_attendance_sanctions(
+            # T016: Enforce attendance sanctions. A sanction that does not apply is never
+            # left in the host's log alone (#239): the run reports its own failures to the
+            # log channel, and the manager who approved is told here, with the command that
+            # finishes the job. A run that cannot start at all is told the same way.
+            _sanction_failures: list[str] = []
+            _run_logged_itself = False
+            if guild is None:
+                _sanction_failures = ["the league's server could not be reached, so no driver was checked"]
+            else:
+                try:
+                    _outcome = await enforce_attendance_sanctions(
                         bot, guild, db_path, round_id, division_id,
                         _att_season_id,
                         head=_verdict_banner,
                     )
-            except Exception:
-                log.exception("finalize_penalty_review: enforce_attendance_sanctions failed for round %s", round_id)
+                    _sanction_failures = _outcome.failure_lines()
+                    _run_logged_itself = True
+                except Exception as exc:
+                    log.exception("finalize_penalty_review: enforce_attendance_sanctions failed for round %s", round_id)
+                    _sanction_failures = [f"the sanctions could not be run: {exc}"]
+            if _sanction_failures:
+                await _report_incomplete_sanctions(
+                    interaction, bot, db_path, division_id, round_id, _sanction_failures,
+                    logged=_run_logged_itself,
+                )
 
         # === END Attendance pipeline ===
 
@@ -697,6 +712,38 @@ async def finalize_penalty_review(
         msg = await sub_channel.send(content, view=appeals_view)
         state.appeals_prompt_message_id = msg.id
         bot.add_view(appeals_view, message_id=msg.id)  # type: ignore[attr-defined]
+
+
+async def _report_incomplete_sanctions(
+    interaction, bot, db_path: str, division_id: int, round_id: int,
+    failures: list[str], *, logged: bool,
+) -> None:
+    """Tell the approving manager which attendance sanctions did not apply (#239).
+
+    *logged* says the run has already posted its own ``ATTENDANCE_SANCTIONS | Incomplete``
+    line; where it never got that far, the log channel is told here instead.
+    """
+    from services.attendance_service import sync_hint
+
+    hint = await sync_hint(db_path, division_id, round_id)
+    body = "\n".join(f"• {line}" for line in failures)
+    if not logged:
+        try:
+            await bot.output_router.post_log(
+                f"ATTENDANCE_SANCTIONS | Incomplete\n"
+                + "\n".join(f"  {line}" for line in failures)
+                + f"\n  {hint}"
+            )
+        except Exception:
+            log.exception("finalize_penalty_review: could not log the incomplete sanctions")
+    try:
+        await interaction.followup.send(
+            f"⚠️ The penalties are approved, but some attendance sanctions did not apply:\n"
+            f"{body}\n{hint}",
+            ephemeral=True,
+        )
+    except Exception:
+        log.exception("finalize_penalty_review: could not tell the manager about the sanctions")
 
 
 async def finalize_appeals_review(
