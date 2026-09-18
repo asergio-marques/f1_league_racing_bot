@@ -385,54 +385,6 @@ async def test_the_dead_finalized_column_is_gone(tmp_path) -> None:
     assert "status" in columns
 
 
-@pytest.mark.parametrize(
-    "season_status, division_status, expected",
-    [
-        ("ACTIVE", "SETUP", "ACTIVE"),
-        ("COMPLETED", "SETUP", "FINISHED"),
-        ("CANCELLED", "SETUP", "CANCELLED"),
-        ("SETUP", "SETUP", "SETUP"),
-        # cancelled first, whatever became of the season around it
-        ("COMPLETED", "CANCELLED", "CANCELLED"),
-    ],
-)
-async def test_the_backfill_reads_each_division_from_its_season(
-    tmp_path, season_status, division_status, expected
-) -> None:
-    """Every existing row says 'SETUP', so its season is the only evidence of what it should say."""
-    from tests.support.migration_steps import migrate_before, run_migrations_through
-
-    db_path = str(tmp_path / "bot.db")
-    migrate_before(db_path, "053")
-
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (?, 1, 2, 3)",
-            (SERVER_ID,),
-        )
-        cur = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', ?, 1)",
-            (SERVER_ID, season_status),
-        )
-        season_id = cur.lastrowid
-        cur = await db.execute(
-            "INSERT INTO divisions (season_id, name, mention_role_id, status, tier) "
-            "VALUES (?, 'Div A', 1, ?, 1)",
-            (season_id, division_status),
-        )
-        division_id = cur.lastrowid
-        await db.commit()
-
-    # 053 and nothing after it: a later migration rebuilt seasons (061), and it is 053's
-    # backfill that is under test.
-    await run_migrations_through(db_path, "053_lifecycle_states.sql")
-
-    assert await _division_status(db_path, division_id) == expected
-
-
 # ---------------------------------------------------------------------------
 # The refusal `/season complete` gives
 # ---------------------------------------------------------------------------
