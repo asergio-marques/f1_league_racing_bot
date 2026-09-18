@@ -138,7 +138,7 @@ These must be enabled in the **Discord Developer Portal → Bot → Privileged G
 One bot serves one league, and a league is one Discord server. Host a bot application for your league alone and add it to that one server.
 
 - **Switch *Public Bot* off** in the **Discord Developer Portal → Bot**. Then only the application's owner can add the bot to a server, and nobody else can invite it into theirs.
-- **The first `/bot-init` claims the server.** From then on the bot answers commands there and nowhere else. On any other server it stays, but refuses every command with *"⛔ This bot serves another server's league and takes no commands here."* and ignores everything that happens there.
+- **The first `/bot-init` claims the server.** From then on the bot answers commands there and nowhere else. On any other server it stays, but refuses every command — and every button or form left over from before a move — with *"⛔ This bot serves another server's league and takes no commands here."*, and ignores everything else that happens there.
 - **The host log warns you.** Whenever the bot sits in more than one server, it logs a warning at startup and each time it joins a server, naming every server it is in. Remove it from the ones that are not the league's.
 - **Moving the league to another server** takes `/bot-reset full:True`, which frees the claim, then `/bot-init` on the new server. Driver profiles and the team list survive a full reset, so the new server inherits them.
 
