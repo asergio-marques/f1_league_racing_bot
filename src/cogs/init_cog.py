@@ -29,6 +29,13 @@ _SETTINGS_COMMANDS = (
     "and `/bot-admin-role`"
 )
 
+#: One bot serves one league (issue #244). The tree refuses a command from another server
+#: before it gets here; this is the clearer message for the one command a second server is
+#: likeliest to try, and the answer to a lost race between two.
+_ANOTHER_SERVER = (
+    "⛔ This bot already serves the league on another server. One bot serves one league."
+)
+
 
 class InitCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
@@ -72,6 +79,11 @@ class InitCog(commands.Cog):
         """
         server_id = interaction.guild_id
 
+        league = await self.bot.config_service.get_league_server_id()
+        if league is not None and league != server_id:
+            await interaction.response.send_message(_ANOTHER_SERVER, ephemeral=True)
+            return
+
         existing = await self.bot.config_service.get_server_config(server_id)
         if existing:
             await interaction.response.send_message(
@@ -91,8 +103,11 @@ class InitCog(commands.Cog):
         )
         created = await self.bot.config_service.save_server_config(cfg)
         if not created:
-            # Lost a race with a concurrent /bot-init. Report the same refusal rather than
-            # claiming a success that wrote nothing.
+            # Lost a race with a concurrent /bot-init. Report the refusal that fits whoever
+            # won rather than claiming a success that wrote nothing.
+            if await self.bot.config_service.get_league_server_id() != server_id:
+                await interaction.response.send_message(_ANOTHER_SERVER, ephemeral=True)
+                return
             await interaction.response.send_message(
                 "⚠️ This server is already configured, and `/bot-init` runs once.\n"
                 f"To change a setting use {_SETTINGS_COMMANDS}.",

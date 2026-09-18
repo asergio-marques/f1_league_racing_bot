@@ -197,6 +197,73 @@ async def test_a_second_bot_init_does_not_switch_test_mode_off(tmp_path):
     assert (await _row(db_path))["test_mode_active"] == 1
 
 
+async def test_bot_init_on_a_second_server_is_refused_and_writes_nothing(tmp_path):
+    """Issue #244: one bot serves one league."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = _bot(db_path)
+    cog = InitCog(bot)
+    interaction = _interaction()
+    interaction.guild_id = SERVER_ID + 1
+
+    await _unwrap(cog.handle_bot_init)(
+        cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
+    )
+
+    reply = interaction.response.send_message.call_args.args[0]
+    assert "another server" in reply
+    async with get_connection(db_path) as db:
+        rows = await (await db.execute("SELECT server_id FROM server_configs")).fetchall()
+    assert [r["server_id"] for r in rows] == [SERVER_ID]
+    bot.team_service.seed_default_teams_if_empty.assert_not_awaited()
+
+
+async def test_a_full_reset_frees_the_server_for_another(tmp_path):
+    """The claim is the configuration row, and `/bot-reset full:True` deletes it."""
+    from services.reset_service import reset_server_data
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    scheduler = MagicMock()
+    scheduler.cancel_all_weather_for_rounds = MagicMock()
+    await reset_server_data(SERVER_ID, db_path, scheduler, full=True)
+    bot = _bot(db_path)
+    cog = InitCog(bot)
+    interaction = _interaction()
+    interaction.guild_id = SERVER_ID + 1
+
+    await _unwrap(cog.handle_bot_init)(
+        cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
+    )
+
+    assert await bot.config_service.get_league_server_id() == SERVER_ID + 1
+
+
+async def test_a_lost_race_to_another_server_names_the_other_server(tmp_path):
+    db_path = await _make_db(tmp_path)
+    bot = _bot(db_path)
+    real = bot.config_service
+
+    async def _lose(cfg):
+        await _seed_config(db_path)  # the other server wins in between
+        return await ConfigService.save_server_config(real, cfg)
+
+    bot.config_service = MagicMock(wraps=real)
+    bot.config_service.get_league_server_id = real.get_league_server_id
+    bot.config_service.get_server_config = real.get_server_config
+    bot.config_service.save_server_config = _lose
+    cog = InitCog(bot)
+    interaction = _interaction()
+    interaction.guild_id = SERVER_ID + 1
+
+    await _unwrap(cog.handle_bot_init)(
+        cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
+    )
+
+    assert "another server" in interaction.response.send_message.call_args.args[0]
+    assert await real.get_league_server_id() == SERVER_ID
+
+
 async def test_save_server_config_will_not_overwrite_an_existing_row(tmp_path):
     """The insert-only contract, at the layer that enforces it."""
     from models.server_config import ServerConfig
