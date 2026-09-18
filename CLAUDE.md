@@ -240,7 +240,11 @@ already holds data, or the set of migration files differs from the one a templat
 from. Do not sidestep it by opening a connection and running the SQL yourself: that
 reintroduces the cost it exists to remove. Applying every migration and committing after each
 runs to some forty flushes per database, which Linux absorbs and Windows does not — it is
-what took the `windows-latest` job from three minutes to over an hour.
+what took the `windows-latest` job from three minutes to over an hour. A test that needs the
+schema as it stood **before** a migration calls `migrate_before` in
+`tests/support/migration_steps.py`, which caches the same way; never loop over the migrations
+directory yourself, which four files did until issue #252 timed the Windows job out, and which
+`tests/unit/test_migration_steps.py` now refuses.
 
 **A test that needs Inkscape carries the `rasteriser` marker and does not run in CI.** Inkscape
 is a separate program, too heavy to install on a hosted runner for what it returns there, so
