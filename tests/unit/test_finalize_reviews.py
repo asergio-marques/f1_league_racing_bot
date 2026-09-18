@@ -19,7 +19,8 @@ cannot drag a FINAL or CANCELLED round back into an awaiting one (#167).
 Attendance is recorded from the results, staged pardons are persisted, points distributed, the
 sheet posted and sanctions enforced — and a failure in one must not stop the rest, because the
 penalty verdicts are already published by the time it runs. Pardons are inserted idempotently,
-so a recovered finalisation cannot grant one twice.
+so a recovered finalisation cannot grant one twice. A sanction that did not apply is told to the
+approving manager and the log channel, with the `/attendance sync` that finishes it (#239).
 
 **Approving appeals is what finishes a round, and so what finishes a division.** The round goes
 to FINAL, the division's status is reconsidered — the last round's appeals are what lets
@@ -40,6 +41,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
+from services.attendance_service import SanctionOutcome  # noqa: E402
 from services.penalty_service import StagedPenalty  # noqa: E402
 from services.penalty_wizard import PenaltyReviewState, StagedPardon  # noqa: E402
 from services.result_submission_service import (  # noqa: E402
@@ -150,6 +152,7 @@ def _interaction(*, guild=True):
     interaction.user.id = STEWARD
     interaction.response = MagicMock()
     interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
     if guild:
         channel = MagicMock()
         message = MagicMock()
@@ -162,7 +165,9 @@ def _interaction(*, guild=True):
     return interaction
 
 
-def _patches(*, apply_result=None, announce_error=None, attendance_errors=None):
+def _patches(
+    *, apply_result=None, announce_error=None, attendance_errors=None, sanction_outcome=None
+):
     attendance_errors = attendance_errors or {}
     return {
         "snapshot": patch(
@@ -207,7 +212,10 @@ def _patches(*, apply_result=None, announce_error=None, attendance_errors=None):
         ),
         "sanctions": patch(
             "services.attendance_service.enforce_attendance_sanctions",
-            new=AsyncMock(side_effect=attendance_errors.get("sanctions")),
+            new=AsyncMock(
+                side_effect=attendance_errors.get("sanctions"),
+                return_value=sanction_outcome or SanctionOutcome(),
+            ),
         ),
         "appeals_view": patch("services.penalty_wizard.AppealsReviewView", new=MagicMock()),
         "appeals_prompt": patch(
@@ -491,17 +499,60 @@ async def test_one_failing_attendance_step_does_not_stop_the_others(tmp_path, fa
 
 
 async def test_without_a_guild_nothing_is_posted_but_points_are_distributed(tmp_path):
+    """The sanctions cannot run without the server — and that is reported, never skipped
+    in silence (#239)."""
     db_path = await _make_db(tmp_path, name="att_noguild")
+    state = _state(db_path, attendance_enabled=True)
+    interaction = _interaction(guild=False)
 
-    stubs = await _run(
-        finalize_penalty_review,
-        _state(db_path, attendance_enabled=True),
-        _interaction(guild=False),
-    )
+    stubs = await _run(finalize_penalty_review, state, interaction)
 
     stubs["distribute"].assert_awaited_once()
     stubs["sheet"].assert_not_awaited()
     stubs["sanctions"].assert_not_awaited()
+    assert "could not be reached" in interaction.followup.send.await_args.args[0]
+    assert "ATTENDANCE_SANCTIONS | Incomplete" in _logged(state)
+
+
+async def test_incomplete_sanctions_are_told_to_the_approving_manager(tmp_path):
+    """#239. The approval used to report nothing of a sanction that did not apply. The run
+    logs its own failures, so the manager is told here and the log is not told twice."""
+    db_path = await _make_db(tmp_path, name="att_incomplete")
+    state = _state(db_path, attendance_enabled=True)
+    interaction = _interaction()
+    outcome = SanctionOutcome(failed=[("<@5> (Five)", "autoreserve", "no Reserve team")])
+
+    await _run(finalize_penalty_review, state, interaction, sanction_outcome=outcome)
+
+    told = interaction.followup.send.await_args
+    assert "<@5> (Five) — autoreserve: no Reserve team" in told.args[0]
+    assert "/attendance sync" in told.args[0]
+    assert told.kwargs["ephemeral"] is True
+    assert "ATTENDANCE_SANCTIONS" not in _logged(state)
+
+
+async def test_a_sanction_run_that_raises_reaches_the_log_channel(tmp_path):
+    """#239. A run that fails outright never logged anything a league could read."""
+    db_path = await _make_db(tmp_path, name="att_raises")
+    state = _state(db_path, attendance_enabled=True)
+    interaction = _interaction()
+
+    await _run(
+        finalize_penalty_review, state, interaction,
+        attendance_errors={"sanctions": RuntimeError("database is locked")},
+    )
+
+    assert "the sanctions could not be run: database is locked" in _logged(state)
+    assert "/attendance sync" in interaction.followup.send.await_args.args[0]
+
+
+async def test_a_clean_sanction_run_tells_the_manager_nothing_more(tmp_path):
+    db_path = await _make_db(tmp_path, name="att_clean")
+    interaction = _interaction()
+
+    await _run(finalize_penalty_review, _state(db_path, attendance_enabled=True), interaction)
+
+    interaction.followup.send.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

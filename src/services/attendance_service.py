@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -1427,6 +1428,32 @@ async def _round_number(db_path: str, round_id: int) -> str:
     return str(row["round_number"]) if row and row["round_number"] else str(round_id)
 
 
+@dataclass
+class SanctionOutcome:
+    """What one run of the attendance sanctions did, driver by driver (#239).
+
+    *applied* holds ``(driver, sanction)`` and *failed* holds ``(driver, sanction, reason)``,
+    the driver as a mention a league can read. A run is never rolled back: every candidate
+    is attempted whatever befell the one before, and what failed is recovered by running the
+    sanctions again, which `/attendance sync` does. That re-run is safe because a driver
+    already sacked is no longer a candidate, and one already in Reserve is passed over.
+    """
+
+    applied: list[tuple[str, str]] = field(default_factory=list)
+    failed: list[tuple[str, str, str]] = field(default_factory=list)
+    #: Postings that failed around sanctions that did apply — the lineup, a sheet.
+    posting_faults: list[str] = field(default_factory=list)
+
+    @property
+    def complete(self) -> bool:
+        return not self.failed and not self.posting_faults
+
+    def failure_lines(self) -> list[str]:
+        return [
+            f"{driver} — {sanction}: {reason}" for driver, sanction, reason in self.failed
+        ] + list(self.posting_faults)
+
+
 async def enforce_attendance_sanctions(
     bot,
     guild: discord.Guild,
@@ -1435,7 +1462,7 @@ async def enforce_attendance_sanctions(
     division_id: int,
     season_id: int,
     head=None,
-) -> None:
+) -> SanctionOutcome:
     """Evaluate every full-time driver against autosack/autoreserve thresholds (FR-022–FR-027).
 
     *head* is the banner poster for the run of verdicts this belongs to, an attendance
@@ -1445,7 +1472,14 @@ async def enforce_attendance_sanctions(
     raising a second. Reached any other way — a recalculation after a pardon or an amendment
     — this builds one of its own, which is the case that would otherwise post sanctions
     with nothing above them.
+
+    **No driver's failure stops the run, and none is swallowed** (decided 2026-09-18, #239).
+    A sanction that raises is recorded in the returned :class:`SanctionOutcome` and the next
+    driver is taken; the caller tells the manager who triggered the run. Nothing already
+    applied is undone — a sack revokes roles through Discord before it writes, so it cannot
+    be reversed reliably — and recovery is a second run by `/attendance sync`.
     """
+    outcome = SanctionOutcome()
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT autoreserve_threshold, autosack_threshold FROM attendance_config"
@@ -1453,18 +1487,18 @@ async def enforce_attendance_sanctions(
         cfg_row = await cursor.fetchone()
 
     if cfg_row is None:
-        return
+        return outcome
     autoreserve_threshold: int | None = cfg_row["autoreserve_threshold"] or None
     autosack_threshold: int | None = cfg_row["autosack_threshold"] or None
 
     if not autoreserve_threshold and not autosack_threshold:
-        return  # both disabled — nothing to do (FR-027)
+        return outcome  # both disabled — nothing to do (FR-027)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
             SELECT dra.driver_profile_id, dra.total_points_after,
-                   dp.discord_user_id, dp.test_display_name
+                   dp.discord_user_id, dp.test_display_name, dp.current_state
             FROM driver_round_attendance dra
             JOIN driver_season_assignments dsa
                 ON dsa.driver_profile_id = dra.driver_profile_id
@@ -1504,8 +1538,17 @@ async def enforce_attendance_sanctions(
         def _driver_ref(uid: int, name: str | None) -> str:
             return f"<@{uid}>" + (f" ({name})" if name else "")
 
+        driver = _driver_ref(discord_user_id_int, test_display_name)
+
         # Autosack supersedes autoreserve (FR-025).
         if autosack_threshold and total >= autosack_threshold:
+            if row["current_state"] == "NOT_SIGNED_UP":
+                # Already signed off — the one refusal that is expected, not a failure (I1).
+                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                    f"ATTENDANCE_AUTOSACK | No-op | driver_profile_id={profile_id} "
+                    f"already NOT_SIGNED_UP (total={total})",
+                )
+                continue
             # Autosack takes every seat in every division (issue #220), so every division
             # the driver sits in has its sheet posted again, not only this one.
             async with get_connection(db_path) as db:
@@ -1526,8 +1569,9 @@ async def enforce_attendance_sanctions(
                     discord_user_id=discord_user_id,
                 )
                 sanctioned_profile_ids.add(profile_id)
+                outcome.applied.append((driver, "autosack"))
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    f"ATTENDANCE_AUTOSACK | {_driver_ref(discord_user_id_int, test_display_name)}"
+                    f"ATTENDANCE_AUTOSACK | {driver}"
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}",
                 )
                 await _vas.post_autosanction_announcement(
@@ -1540,12 +1584,13 @@ async def enforce_attendance_sanctions(
                     threshold=autosack_threshold,
                     head=head,
                 )
-            except ValueError:
-                # Driver already NOT_SIGNED_UP — emit no-op log and continue (I1 edge case).
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    f"ATTENDANCE_AUTOSACK | No-op | driver_profile_id={profile_id} "
-                    f"already NOT_SIGNED_UP (total={total})",
+            except Exception as exc:  # noqa: BLE001 — recorded, reported, and the next driver taken
+                log.exception(
+                    "enforce_attendance_sanctions: autosack failed for profile %s", profile_id
                 )
+                outcome.failed.append((driver, "autosack", _failure_reason(
+                    exc, applied=profile_id in sanctioned_profile_ids
+                )))
             continue  # skip autoreserve for this driver (FR-025)
 
         if autoreserve_threshold and total >= autoreserve_threshold:
@@ -1577,7 +1622,9 @@ async def enforce_attendance_sanctions(
                 reserve_row = await cursor.fetchone()
 
             if reserve_row is None:
-                log.warning("enforce_attendance_sanctions: no Reserve team found for division %s", division_id)
+                outcome.failed.append(
+                    (driver, "autoreserve", "the division has no Reserve team")
+                )
                 continue
 
             reserve_team_name: str = reserve_row["name"]
@@ -1598,8 +1645,9 @@ async def enforce_attendance_sanctions(
                     discord_user_id=discord_user_id,
                 )
                 sanctioned_profile_ids.add(profile_id)
+                outcome.applied.append((driver, "autoreserve"))
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    f"ATTENDANCE_AUTORESERVE | {_driver_ref(discord_user_id_int, test_display_name)}"
+                    f"ATTENDANCE_AUTORESERVE | {driver}"
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autoreserve_threshold}"
                     f" → moved to {reserve_team_name}",
                 )
@@ -1613,19 +1661,29 @@ async def enforce_attendance_sanctions(
                     threshold=autoreserve_threshold,
                     head=head,
                 )
-            except (ValueError, Exception) as exc:
-                log.warning(
-                    "enforce_attendance_sanctions: autoreserve failed for profile %s: %s",
-                    profile_id, exc,
+            except Exception as exc:  # noqa: BLE001 — recorded, reported, and the next driver taken
+                log.exception(
+                    "enforce_attendance_sanctions: autoreserve failed for profile %s", profile_id
                 )
+                outcome.failed.append((driver, "autoreserve", _failure_reason(
+                    exc, applied=profile_id in sanctioned_profile_ids
+                )))
 
     # Refresh lineup and re-post attendance sheet with sanctioned annotations.
     if sanctioned_profile_ids:
-        await placement._refresh_lineup_post(guild, division_id)  # type: ignore[attr-defined]
-        await post_attendance_sheet(
-            bot, guild, db_path, round_id, division_id,
-            sanctioned_profile_ids=sanctioned_profile_ids,
-        )
+        try:
+            await placement._refresh_lineup_post(guild, division_id)  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001 — reported with the outcome
+            log.exception("enforce_attendance_sanctions: lineup refresh failed")
+            outcome.posting_faults.append(f"the lineup could not be posted again: {exc}")
+        try:
+            await post_attendance_sheet(
+                bot, guild, db_path, round_id, division_id,
+                sanctioned_profile_ids=sanctioned_profile_ids,
+            )
+        except Exception as exc:  # noqa: BLE001 — reported with the outcome
+            log.exception("enforce_attendance_sanctions: sheet repost failed")
+            outcome.posting_faults.append(f"the attendance sheet could not be posted again: {exc}")
         for other_division_id, profile_ids in other_divisions.items():
             sacked_here = profile_ids & sanctioned_profile_ids
             if not sacked_here:
@@ -1646,11 +1704,49 @@ async def enforce_attendance_sanctions(
                     bot, guild, db_path, latest["id"], other_division_id,
                     sanctioned_profile_ids=sacked_here,
                 )
-            except Exception:  # noqa: BLE001 — one division's sheet is not worth the others
+            except Exception as exc:  # noqa: BLE001 — one division's sheet is not worth the others
                 log.exception(
                     "enforce_attendance_sanctions: could not repost the sheet of division %s",
                     other_division_id,
                 )
+                outcome.posting_faults.append(
+                    f"the attendance sheet of "
+                    f"{await _division_name(db_path, other_division_id)} "
+                    f"could not be posted again: {exc}"
+                )
+
+    if not outcome.complete:
+        lines = "\n".join(f"  {line}" for line in outcome.failure_lines())
+        try:
+            await bot.output_router.post_log(  # type: ignore[attr-defined]
+                f"ATTENDANCE_SANCTIONS | Incomplete\n{lines}\n"
+                f"  {await sync_hint(db_path, division_id, round_id)}",
+            )
+        except Exception:  # noqa: BLE001 — the caller still reports the outcome it is handed
+            log.exception("enforce_attendance_sanctions: could not log the incomplete run")
+    return outcome
+
+
+async def sync_hint(db_path: str, division_id: int, round_id: int) -> str:
+    """The line telling a manager how to finish a run of sanctions that did not all apply."""
+    return (
+        "Repair the cause, then run `/attendance sync "
+        f"division:{await _division_name(db_path, division_id)} "
+        f"round:{await _round_number(db_path, round_id)}`."
+    )
+
+
+def _failure_reason(exc: Exception, *, applied: bool) -> str:
+    """Why a driver's sanction is in the failures, told apart by whether it took effect.
+
+    A sanction whose placement change succeeded and whose log line or announcement then
+    failed is **applied**: re-running the sanctions will not announce it, because the driver
+    is no longer a candidate, so the manager must be told it happened unannounced.
+    """
+    reason = str(exc) or type(exc).__name__
+    if applied:
+        return f"applied, but not announced ({reason})"
+    return reason
 
 
 async def recalculate_attendance_for_round(
@@ -1660,7 +1756,7 @@ async def recalculate_attendance_for_round(
     round_id: int,
     division_id: int,
     season_id: int,
-) -> None:
+) -> SanctionOutcome:
     """Re-run the full attendance pipeline for an amended round (FR-028–FR-031).
 
     Upgrade-only rule does NOT apply here — this is a deliberate correction and may
@@ -1678,6 +1774,26 @@ async def recalculate_attendance_for_round(
     The **posting** stays outside that transaction deliberately. It is Discord I/O, and
     holding a write transaction open across it would block every other writer for as long
     as Discord took to answer.
+    """
+    await _recalculate_forward(db_path, round_id, division_id, recompute_every_round=False)
+
+    # FR-031: re-post sheet and re-evaluate sanctions.
+    await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
+    return await enforce_attendance_sanctions(
+        bot, guild, db_path, round_id, division_id, season_id
+    )
+
+
+async def _recalculate_forward(
+    db_path: str, round_id: int, division_id: int, *, recompute_every_round: bool
+) -> list[int]:
+    """Recompute *round_id* and carry the running total through every finalised round after
+    it, in **one transaction** (#187). Returns the ids of the rounds it touched, in order.
+
+    The round itself is always fully recomputed (FR-028). With *recompute_every_round* the
+    rounds after it are too, which is what `/attendance sync` asks for: it repairs a round
+    whose recording failed, not only a total carried from an amended one. Without it they are
+    only redistributed (FR-030), as an amendment needs.
     """
     async with get_connection(db_path) as db:
         # FR-028: full recompute without upgrade-only constraint.
@@ -1699,18 +1815,46 @@ async def recalculate_attendance_for_round(
             """,
             (division_id, round_id),
         )
-        subsequent_rounds = await cursor.fetchall()
+        subsequent_rounds = [row["id"] for row in await cursor.fetchall()]
 
-        for sub_row in subsequent_rounds:
-            await distribute_attendance_points(
-                db_path, sub_row["id"], division_id, db=db
-            )
+        for sub_round_id in subsequent_rounds:
+            if recompute_every_round:
+                await record_attendance_from_results_full_recompute(
+                    db_path, sub_round_id, division_id, db=db
+                )
+            await distribute_attendance_points(db_path, sub_round_id, division_id, db=db)
 
         await db.commit()
+    return [round_id, *subsequent_rounds]
 
-    # FR-031: re-post sheet and re-evaluate sanctions.
-    await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
-    await enforce_attendance_sanctions(bot, guild, db_path, round_id, division_id, season_id)
+
+async def sync_attendance(
+    bot,
+    guild: discord.Guild,
+    db_path: str,
+    division_id: int,
+    from_round_id: int,
+    season_id: int,
+) -> SanctionOutcome:
+    """What `/attendance sync` does: recalculate from a round forward, then finish the job.
+
+    Decided 2026-09-18 (#239), as the recovery for sanctions that did not all apply. Every
+    finalised round from *from_round_id* on is recomputed from its results and its points
+    redistributed, in one transaction; the division's sheet is then posted for the latest of
+    them, the channel holding one sheet; and the sanctions are enforced against that latest
+    round, where the running totals now stand.
+
+    **Safe to run again.** A driver already sacked is no longer a candidate and one already
+    in Reserve is passed over, so a second run applies only what the first did not.
+    """
+    touched = await _recalculate_forward(
+        db_path, from_round_id, division_id, recompute_every_round=True
+    )
+    latest = touched[-1]
+    await post_attendance_sheet(bot, guild, db_path, latest, division_id)
+    return await enforce_attendance_sanctions(
+        bot, guild, db_path, latest, division_id, season_id
+    )
 
 
 

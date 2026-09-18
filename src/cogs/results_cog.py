@@ -1301,7 +1301,7 @@ class ResultsCog(commands.Cog):
             # timeout, so a staged table can change between the diff being drawn and the
             # button being pressed — in either direction.
             try:
-                await approve_amendment(
+                sanction_failures = await approve_amendment(
                     self.bot.db_path, season.id, interaction.user.id, interaction.client
                 )
             except NonMonotonicAmendmentError as exc:
@@ -1335,9 +1335,15 @@ class ResultsCog(commands.Cog):
                     f"  {'; '.join(exc.faults)}",
                 )
                 return
-            await interaction.followup.send(
-                "\u2705 Amendment approved. All standings recomputed and reposted.", ephemeral=True
-            )
+            reply = "\u2705 Amendment approved. All standings recomputed and reposted."
+            if sanction_failures:
+                # The approval stands; the sanctions it set off are finished by
+                # `/attendance sync`, which each division's last line names (#239).
+                reply += (
+                    "\n\u26a0\ufe0f But some attendance sanctions did not apply:\n"
+                    + "\n".join(f"\u2022 {line}" for line in sanction_failures)
+                )
+            await interaction.followup.send(reply, ephemeral=True)
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend review | Success\n"
                 f"  standings recomputed and reposted",

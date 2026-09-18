@@ -1296,6 +1296,69 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
     assert "attendance channel" in "; ".join(excinfo.value.faults)
 
 
+async def _approve_with_attendance(db_path, recalc):
+    """Approve a sound amendment with attendance on, the recalculation replaced by *recalc*."""
+    from unittest.mock import AsyncMock, patch
+
+    from services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    division_id, raced, _unraced = await _seed_division_with_rounds(path, season_id)
+    await _staged_amendment(path, season_id)
+    bot = _bot_recording_reposts([])
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    with patch(
+        "services.attendance_service.recalculate_attendance_for_round", new=recalc
+    ):
+        failures = await approve_amendment(path, season_id, 99, bot)
+    return failures, bot
+
+
+@pytest.mark.asyncio
+async def test_approval_reports_sanctions_that_did_not_apply(db_path):
+    """#239. A sanction the recalculation could not apply used to vanish into the host's
+    log; the approval stands, and the failure comes back with the command that finishes it."""
+    from unittest.mock import AsyncMock
+
+    from services.attendance_service import SanctionOutcome
+
+    outcome = SanctionOutcome(failed=[("<@5> (Five)", "autosack", "discord down")])
+    failures, _bot = await _approve_with_attendance(
+        db_path, AsyncMock(return_value=outcome)
+    )
+
+    assert failures[0] == "<@5> (Five) — autosack: discord down"
+    assert failures[1].startswith("Repair the cause, then run `/attendance sync division:")
+    assert failures[1].endswith("round:2`.")
+
+
+@pytest.mark.asyncio
+async def test_a_recalculation_that_raises_is_reported_and_logged(db_path):
+    from unittest.mock import AsyncMock
+
+    failures, bot = await _approve_with_attendance(
+        db_path, AsyncMock(side_effect=RuntimeError("database is locked"))
+    )
+
+    assert failures[0] == "the attendance could not be recalculated: database is locked"
+    logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
+    assert "ATTENDANCE_SANCTIONS | Incomplete" in logged
+
+
+@pytest.mark.asyncio
+async def test_a_clean_recalculation_reports_nothing(db_path):
+    from unittest.mock import AsyncMock
+
+    from services.attendance_service import SanctionOutcome
+
+    failures, _bot = await _approve_with_attendance(
+        db_path, AsyncMock(return_value=SanctionOutcome())
+    )
+
+    assert failures == []
+
+
 @pytest.mark.asyncio
 async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(db_path):
     """A league without the attendance module must not be refused for a channel it has

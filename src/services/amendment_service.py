@@ -820,7 +820,7 @@ async def approve_amendment(
     season_id: int,
     approved_by: int,
     bot,
-) -> None:
+) -> list[str]:
     """Atomically overwrite season points from the modification store, then recompute all standings.
 
     Raises :class:`NonMonotonicAmendmentError` if the staged tables are out of order,
@@ -847,6 +847,12 @@ async def approve_amendment(
     It is the mid-season half of the same rule the confirmation of placements holds at the start of
     one. A rule that bound only the approval would be a rule a league could step around
     by approving a good table and amending it afterwards.
+
+    **The attendance sanctions are the one thing returned rather than refused** (#239). They
+    fall on drivers once the rescored championship is published, and a sanction that does not
+    apply cannot un-publish it. Their failures come back as lines for the manager — each
+    division's ending on the `/attendance sync` that finishes it — and an empty list means
+    every sanction the recalculation reached was applied.
     """
     ordering_errors = await validate_modification_ordering(db_path, season_id)
     if ordering_errors:
@@ -909,6 +915,7 @@ async def approve_amendment(
         div_rows = await cursor.fetchall()
 
     guild = await league_guild(bot)
+    sanction_failures: list[str] = []
 
     for div_row in div_rows:
         division_id = div_row["id"]
@@ -967,17 +974,31 @@ async def approve_amendment(
                 latest_row = await cursor.fetchone()
 
             if latest_row is not None:
+                from services.attendance_service import sync_hint
+
                 try:
-                    await recalculate_attendance_for_round(
+                    outcome = await recalculate_attendance_for_round(
                         bot, guild, db_path,
                         latest_row["id"], division_id,
                         season_id,
                     )
-                except Exception:
+                    lines = outcome.failure_lines()
+                except Exception as exc:
                     log.exception(
                         "approve_amendment: recalculate_attendance_for_round failed for division %s",
                         division_id,
                     )
+                    lines = [f"the attendance could not be recalculated: {exc}"]
+                    # The run never reached its own log line, so the log is told here.
+                    await bot.output_router.post_log(
+                        "ATTENDANCE_SANCTIONS | Incomplete\n"
+                        f"  {lines[0]}\n"
+                        f"  {await sync_hint(db_path, division_id, latest_row['id'])}"
+                    )
+                if lines:
+                    sanction_failures += lines + [
+                        await sync_hint(db_path, division_id, latest_row["id"])
+                    ]
 
     # Logged last, after the cascade it reports (#187). This used to be posted the moment
     # the points were committed and before a single message had been attempted, so the log
@@ -989,3 +1010,4 @@ async def approve_amendment(
             f"<@{approved_by}> | AMENDMENT_APPROVED | Success\n"
             f"  season_id: {season_id}"
         )
+    return sanction_failures

@@ -14,11 +14,16 @@ unpinned — including the two that decide whether a driver keeps their seat.
 - **FR-026.** A driver already in Reserve is not moved to Reserve again.
 
 Three edges matter as much as the thresholds and are pinned beside them. A driver who is
-already `NOT_SIGNED_UP` makes `sack_driver` raise `ValueError`, which is *expected* and must
-leave a no-op log rather than propagate. A division with no Reserve team cannot host an
-autoreserve, and must warn rather than crash. And the attendance sheet is re-posted **only**
-when somebody was actually sanctioned — a re-post on every round would rewrite the sheet
-after each result for no reason.
+already `NOT_SIGNED_UP` is a no-op, logged as one, and never an attempt at a sack. A division
+with no Reserve team cannot host an autoreserve, and that is a reported failure rather than a
+crash. And the attendance sheet is re-posted **only** when somebody was actually sanctioned —
+a re-post on every round would rewrite the sheet after each result for no reason.
+
+**No failure is swallowed, and none stops the run** (decided 2026-09-18, issue #239). Every
+candidate is attempted, and each sanction that did not apply comes back in the returned
+`SanctionOutcome` by name for the caller to report. Before #239 two tests here pinned the
+opposite — a failed autoreserve and a missing Reserve team each left a warning in the host's
+log file and nowhere a league could read — which is how the suite passed over it.
 
 **The banner is deliberately pinned** (decided 2026-09-09, per the function's own docstring).
 An attendance sanction is a verdict and is headed like one. A caller that has already posted
@@ -202,13 +207,13 @@ def _make_bot(db_path: str) -> MagicMock:
     return bot
 
 
-async def _run(bot, db_path: str, *, head=None) -> None:
+async def _run(bot, db_path: str, *, head=None):
     """Call the function under test with the sheet re-post and announcer stubbed out.
 
     Both are covered by their own files; what is under test here is *whether* and *with what*
     they are called.
     """
-    await enforce_attendance_sanctions(
+    return await enforce_attendance_sanctions(
         bot=bot,
         guild=MagicMock(),
         db_path=db_path,
@@ -414,20 +419,178 @@ async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
 async def test_a_driver_already_signed_off_logs_a_no_op_rather_than_raising(
     tmp_path, announcer, sheet
 ):
-    """I1. `sack_driver` raises `ValueError` for a driver already `NOT_SIGNED_UP`, which is
-    an expected outcome of a recalculation — not a failure. It must be swallowed, logged as
-    a no-op, and must not announce a sanction that did not happen."""
+    """I1. A driver already `NOT_SIGNED_UP` is an expected outcome of a recalculation — not
+    a failure. It is logged as a no-op, not attempted, and no sanction is announced."""
+    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET current_state = 'NOT_SIGNED_UP' WHERE id = ?",
+            (FULL_TIME_PROFILE,),
+        )
+        await db.commit()
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
+    bot = _make_bot(db_path)
+    announce, _ = announcer
+
+    outcome = await _run(bot, db_path)
+
+    assert "No-op" in _logged(bot)
+    bot.placement_service.sack_driver.assert_not_awaited()
+    announce.assert_not_awaited()
+    sheet.assert_not_awaited()
+    assert outcome.complete
+
+
+async def test_an_autosack_refused_for_another_reason_is_a_failure_not_a_no_op(
+    tmp_path, announcer, sheet
+):
+    """#239. Every `ValueError` from `sack_driver` used to be logged as "already
+    NOT_SIGNED_UP", the refusal of an unconfirmed placement included. It is a failure, and
+    comes back with its reason."""
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
-    bot.placement_service.sack_driver = AsyncMock(side_effect=ValueError("not signed up"))
-    announce, _ = announcer
+    bot.placement_service.sack_driver = AsyncMock(
+        side_effect=ValueError("Only a driver whose placement is confirmed can be sacked.")
+    )
+
+    outcome = await _run(bot, db_path)
+
+    assert "No-op" not in _logged(bot)
+    assert outcome.failed == [(
+        f"<@{FULL_TIME_PROFILE}> (Full Timer)", "autosack",
+        "Only a driver whose placement is confirmed can be sacked.",
+    )]
+
+
+async def _add_second_full_timer(db_path: str, profile_id: int = 103) -> int:
+    """A second full-time driver in the Alpha seat beside the first."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles "
+            "(id, discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES (?, ?, 'ASSIGNED', 1, 'Second')",
+            (profile_id, str(profile_id)),
+        )
+        await db.execute(
+            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (22, 10, 2, ?)",
+            (profile_id,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id) VALUES (?, ?, ?, 22)",
+            (profile_id, SEASON_ID, DIVISION_ID),
+        )
+        await db.commit()
+    return profile_id
+
+
+async def test_an_autosack_that_raises_does_not_stop_the_next_driver(
+    tmp_path, announcer, sheet
+):
+    """#239. Only `ValueError` was caught, so anything else from `sack_driver` ended the
+    loop: the drivers after it went unsanctioned and the sheet was never posted again.
+    Whichever driver is read first fails here, so the other must still be sacked."""
+    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
+    second = await _add_second_full_timer(db_path)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25, second: 25})
+    bot = _make_bot(db_path)
+    calls: list[int] = []
+
+    async def _sack(**kwargs):
+        calls.append(kwargs["driver_profile_id"])
+        if len(calls) == 1:
+            raise RuntimeError("discord down")
+
+    bot.placement_service.sack_driver = AsyncMock(side_effect=_sack)
+
+    outcome = await _run(bot, db_path)
+
+    assert sorted(calls) == sorted([FULL_TIME_PROFILE, second])
+    assert len(outcome.applied) == 1
+    assert len(outcome.failed) == 1
+    assert outcome.failed[0][1:] == ("autosack", "discord down")
+    sheet.assert_awaited_once()
+
+
+async def test_the_outcome_names_every_applied_and_failed_sanction(
+    tmp_path, announcer, sheet
+):
+    """What the caller reports is read off this, so it must hold every driver by name."""
+    db_path = await _make_db(tmp_path, autoreserve=10, autosack=20)
+    second = await _add_second_full_timer(db_path)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25, second: 12})
+    bot = _make_bot(db_path)
+    bot.placement_service.move_driver = AsyncMock(side_effect=RuntimeError("no roles"))
+
+    outcome = await _run(bot, db_path)
+
+    assert outcome.applied == [(f"<@{FULL_TIME_PROFILE}> (Full Timer)", "autosack")]
+    assert outcome.failed == [(f"<@{second}> (Second)", "autoreserve", "no roles")]
+    assert not outcome.complete
+    assert outcome.failure_lines() == [f"<@{second}> (Second) — autoreserve: no roles"]
+
+
+async def test_an_incomplete_run_is_posted_to_the_log_channel_with_the_sync_line(
+    tmp_path, announcer, sheet
+):
+    """#239. The failures reach the log channel, where a league can read them, each driver by
+    name and ending on the command that finishes the job."""
+    db_path = await _make_db(tmp_path, autoreserve=10, autosack=None, with_reserve_team=False)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 12})
+    bot = _make_bot(db_path)
 
     await _run(bot, db_path)
 
-    assert "No-op" in _logged(bot)
-    announce.assert_not_awaited()
-    sheet.assert_not_awaited()
+    logged = _logged(bot)
+    assert "ATTENDANCE_SANCTIONS | Incomplete" in logged
+    assert (
+        f"<@{FULL_TIME_PROFILE}> (Full Timer) — autoreserve: the division has no Reserve team"
+        in logged
+    )
+    assert "`/attendance sync division:Division 1 round:1`" in logged
+
+
+async def test_a_clean_run_posts_no_incomplete_line(tmp_path, announcer, sheet):
+    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
+    bot = _make_bot(db_path)
+
+    outcome = await _run(bot, db_path)
+
+    assert outcome.complete
+    assert "Incomplete" not in _logged(bot)
+
+
+async def test_a_sanction_applied_but_not_announced_is_reported_as_such(
+    tmp_path, announcer, sheet
+):
+    """A re-run will not announce it — the driver is no longer a candidate — so the manager
+    must be told it took effect unannounced rather than that it failed."""
+    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
+    bot = _make_bot(db_path)
+    announce, _ = announcer
+    announce.side_effect = RuntimeError("verdicts channel gone")
+
+    outcome = await _run(bot, db_path)
+
+    assert outcome.failed[0][2] == "applied, but not announced (verdicts channel gone)"
+    sheet.assert_awaited_once()
+
+
+async def test_a_sheet_that_cannot_be_posted_again_is_reported(tmp_path, announcer, sheet):
+    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
+    bot = _make_bot(db_path)
+    sheet.side_effect = RuntimeError("no channel")
+
+    outcome = await _run(bot, db_path)
+
+    assert outcome.applied
+    assert outcome.posting_faults == ["the attendance sheet could not be posted again: no channel"]
+    assert not outcome.complete
 
 
 # ---------------------------------------------------------------------------
@@ -478,35 +641,40 @@ async def test_a_driver_already_in_reserve_is_not_a_candidate(tmp_path, announce
     bot.placement_service.assign_driver.assert_not_awaited()
 
 
-async def test_a_division_with_no_reserve_team_warns_instead_of_crashing(
-    tmp_path, announcer, sheet, caplog
+async def test_a_division_with_no_reserve_team_reports_each_candidate_as_failed(
+    tmp_path, announcer, sheet
 ):
     """A league may simply not run a Reserve team. That is a misconfiguration for
-    autoreserve, not an error a round's finalisation should die on."""
+    autoreserve, not an error a round's finalisation should die on — but nor is it silent:
+    before #239 it reached only the host's log file."""
     db_path = await _make_db(tmp_path, autoreserve=10, autosack=None, with_reserve_team=False)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 12})
     bot = _make_bot(db_path)
 
-    with caplog.at_level("WARNING"):
-        await _run(bot, db_path)
+    outcome = await _run(bot, db_path)
 
-    bot.placement_service.assign_driver.assert_not_awaited()
-    assert "no Reserve team found" in caplog.text
+    bot.placement_service.move_driver.assert_not_awaited()
+    assert outcome.failed == [(
+        f"<@{FULL_TIME_PROFILE}> (Full Timer)", "autoreserve",
+        "the division has no Reserve team",
+    )]
 
 
-async def test_a_failed_autoreserve_is_warned_and_does_not_stop_the_run(
-    tmp_path, announcer, sheet, caplog
+async def test_a_failed_autoreserve_is_reported_and_does_not_stop_the_run(
+    tmp_path, announcer, sheet
 ):
-    """One driver's move failing must not abandon the drivers after them in the list."""
+    """One driver's move failing must not abandon the drivers after them in the list, and
+    must come back to the caller rather than stop at the host's log file (#239)."""
     db_path = await _make_db(tmp_path, autoreserve=10, autosack=None)
-    await _seed_totals(db_path, {FULL_TIME_PROFILE: 12})
+    second = await _add_second_full_timer(db_path)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 12, second: 12})
     bot = _make_bot(db_path)
     bot.placement_service.move_driver = AsyncMock(side_effect=RuntimeError("discord down"))
 
-    with caplog.at_level("WARNING"):
-        await _run(bot, db_path)
+    outcome = await _run(bot, db_path)
 
-    assert "autoreserve failed" in caplog.text
+    assert bot.placement_service.move_driver.await_count == 2
+    assert [f[2] for f in outcome.failed] == ["discord down", "discord down"]
     sheet.assert_not_awaited()
 
 

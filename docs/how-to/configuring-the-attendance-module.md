@@ -38,6 +38,7 @@ This guide covers the attendance module only. Setting the bot up, creating a sea
 |---|---|
 | `/module enable results` and `/module enable attendance` | The **league admin role** |
 | `/attendance config` — all of them | The **interaction role** |
+| `/attendance sync` | The **interaction role** |
 | `/division rsvp-channel` and `/division attendance-channel` | The **interaction role** |
 | The check-in buttons | No role. A confirmed placement in that division, full-time or reserve — anybody else is told they are not a member of it |
 | The pardon button on a penalty review | Whoever runs your penalty reviews |
@@ -168,7 +169,7 @@ Set either to `0` to switch it off.
 
 Either action is announced in the division's verdicts channel, the same place your penalty decisions go, so your league sees why a driver moved. The lineup post is redrawn to match, and the sheet for that same round is reposted straight away with the driver still listed and marked as having reached the limit — a sheet lists everyone who held a seat in the division this season, not only those who still do. An auto-sack also reposts the latest sheet of every **other** division the driver sat in, since they lose those seats too. Where the image module's `Verdict banner` switch is on, these are headed like any other verdict. If the sanction came out of approving a penalty review, it falls under that approval's banner alongside the penalties; if it fired on its own — a clean round, or a pardon that made the bot re-check attendance — it gets a banner of its own.
 
-**Auto-reserve needs somewhere to put them.** If a division has no Reserve team, the sanction is skipped **silently** — nothing is posted to the verdicts channel, nothing to the log channel, nothing anywhere you can see; it reaches only the bot's own log file on the host. A driver already in the Reserve team is left alone, equally silently.
+**Auto-reserve needs somewhere to put them.** If a division has no Reserve team, the sanction cannot be applied, and you are told so — see [When a sanction does not apply](#when-a-sanction-does-not-apply). A driver already in the Reserve team is left alone.
 
 > **This is the one part of the module that changes your grid without being asked.** Try it in test mode before a real season depends on it, and pick numbers you would be comfortable defending — the bot does not ask twice and there is no undo. An auto-reserved driver can be moved back with `/driver move`; an auto-sacked one is back at Not Signed Up, and has to sign up again in a later window and be placed from it.
 
@@ -274,6 +275,18 @@ Pardons are staged with the round's penalties and listed alongside them for revi
 
 ---
 
+## When a sanction does not apply
+
+The bot tries every driver over the threshold, and one driver's sanction failing never stops the next. Nothing that did apply is undone. What did not apply is never kept quiet:
+
+1. **Read what you are told.** The reply to your penalty-review or amendment approval lists each driver whose sanction did not apply and why, and the log channel carries the same list as an `ATTENDANCE_SANCTIONS | Incomplete` entry. Both end with the exact `/attendance sync` command to run.
+2. **Put the cause right.** Usually it is a division with no Reserve team, or the bot lacking the permission to change a driver's roles. A line saying *applied, but not announced* means the sanction did take effect and only its announcement failed — there is nothing left to apply for that driver.
+3. **Run `/attendance sync`** with the division and round it names. It recalculates that round and every later one whose penalties are approved, reposts the latest sheet, and applies whatever is still owed, with its announcement in the verdicts channel as usual. The reply tells you what it applied and anything still outstanding.
+
+Running it twice does no harm: a driver already sacked or already in the Reserve team is not sanctioned again. It is available only while the season is ongoing, and is refused, with nothing changed, if a channel it would post to cannot be reached. You can also use it to put a division's attendance right after anything else went wrong in a round's scoring.
+
+---
+
 ## What you cannot change
 
 Worth knowing so you do not go looking for the setting.
@@ -324,7 +337,7 @@ Worth running through before the season is approved.
 | Check-in stopped mid-season and will not come back | Attendance was switched off, directly or by turning results & standings off. It stays off until the season ends |
 | `/attendance config` on a timing refused | Either the season's placements are confirmed, or the value would put the three out of order. The reply says which |
 | Auto-reserve or auto-sack refused | The other one is set. Set it to `0` first |
-| A driver over the threshold who was not sanctioned | Auto-reserve with no Reserve team in that division, or the driver is in it already. Nothing is posted either way — check the division's Reserve team yourself |
+| A driver over the threshold who was not sanctioned | Either they are in the Reserve team already, which is intended, or the sanction failed — the log channel says which driver and why. Put it right and run `/attendance sync` |
 | Points charged later than you expected | They are charged when post-race penalties are approved, never at provisional results |
 | A driver charged for a round they raced | They are in no session's results. Correct the classification with `/round results amend` and the round is recalculated |
 | Reserves not distributed | Nobody in the Reserve team accepted, or there was no vacancy — an accepted seat is never a vacancy, however slow the driver was to answer |
