@@ -928,6 +928,8 @@ Name the driver by any of their accounts: `old_user` where it is still in the se
 
 > **Switching back is allowed.** Naming one of the driver's own past accounts as `new_user` makes it current again.
 
+> **The roles move with it.** The signed-up, division and team roles the driver holds are given to the new current account and taken from the one it replaces, where that one is still in the server. Anything Discord refuses is listed in the reply; the account change stands regardless.
+
 > **Refused, changing nothing, when:** `new_user` is already the driver's current account; it is a past account of another driver — an account belongs to one driver; it already holds a driver profile, or results, standings or history of its own; either side is a test-mode driver; or either side has a signup in progress (collecting, in review, or in correction) — finish it, approve or reject it, or have it withdrawn first.
 
 > **A past account cannot sign up.** The Sign Up button refuses it and names the driver's current account. Run this command first if the driver wants to use it again.

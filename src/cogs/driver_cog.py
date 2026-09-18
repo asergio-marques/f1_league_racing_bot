@@ -110,27 +110,44 @@ class DriverCog(commands.Cog):
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
+        # Deferred: moving roles and a signup channel talks to Discord several times over.
+        await interaction.response.defer(ephemeral=True)
         try:
             outcome = await self.bot.driver_service.reassign_user_id(  # type: ignore[attr-defined]
                 server_id, resolved_old_id, new_user_id, actor_id, actor_name
             )
         except ValueError as exc:
-            await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
+            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
             return
 
         profile = outcome.profile
         replaced = outcome.replaced_account
+
+        # The account change is committed. What follows is Discord's side of it, and a failure
+        # there is reported rather than undoing it.
+        problems: list[str] = []
+        if interaction.guild is not None:
+            try:
+                problems += await self.bot.placement_service.move_driver_roles(  # type: ignore[attr-defined]
+                    interaction.guild, server_id, profile.id, replaced, new_user_id
+                )
+            except Exception as exc:  # noqa: BLE001 — the reassign stands whatever Discord says
+                log.exception("reassign: could not move the roles of driver %s", profile.id)
+                problems.append(f"the roles could not be moved: {exc}")
+
         former = "Yes" if profile.former_driver else "No"
         past = [a for a in outcome.accounts if a != new_user_id]
         how = "switched back to a past account" if outcome.switched_back else "given a new account"
-        await interaction.response.send_message(
+        reply = (
             f"✅ Driver {how}.\n"
             f"   Current account : <@{new_user_id}>\n"
             f"   Past accounts   : {', '.join(f'<@{a}>' for a in past) or '—'}\n"
             f"   State           : {profile.current_state.value}\n"
-            f"   Former driver   : {former}",
-            ephemeral=True,
+            f"   Former driver   : {former}"
         )
+        if problems:
+            reply += "\n⚠️ Done, but on Discord:\n" + "\n".join(f"• {p}" for p in problems)
+        await interaction.followup.send(reply, ephemeral=True)
         # After the reply, so that reading the image configuration and touching the league's
         # directory can never eat into Discord's three seconds.
         await self._remove_old_portrait(server_id, replaced)
@@ -139,7 +156,8 @@ class DriverCog(commands.Cog):
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reassign | Success\n"
             f"  replaced: <@{replaced}>\n"
             f"  current: {new_user.display_name} (<@{new_user_id}>)\n"
-            f"  accounts: {', '.join(outcome.accounts)}",
+            f"  accounts: {', '.join(outcome.accounts)}"
+            + "".join(f"\n  not done: {p}" for p in problems),
         )
         log.info(
             "Driver account changed on server %s: %s → %s by %s",

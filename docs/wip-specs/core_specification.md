@@ -462,6 +462,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Any account of the driver's shall name them wherever a driver is named: a result submitted or resubmitted, a penalty, a pardon, an appeal, an amendment, a command, a check-in. It is read at the moment of use, so a submission or a review already open when the account changes accepts both.
 - The driver may be named to the command by any of their accounts, and one of their own past accounts may be made current again.
 - Only a member of the server may be made current.
+- The driver's roles shall belong to their current account. Making an account current shall give it the signed-up, division and team roles the driver holds, and take them from the account it replaces where that account is still in the server. A role Discord will not move shall be reported to the league manager; the change of account stands.
 - An account shall belong to one driver in a league. An account that is a past account of another driver shall be refused.
 - The change shall be refused while either the driver or the new account has a signup in progress — collecting, in review, or in correction — and the league manager told to finish or withdraw it first.
 - A test-mode driver shall not be given a real account, nor a real driver a test-mode one.

@@ -541,6 +541,9 @@ Things to know before you run it:
 - **The new account must be in the server,** and it cannot be another driver's past account, a
   driver of its own, or an account holding results, standings or history of its own here.
   Nothing is changed by a refusal.
+- **The roles follow the account.** The signed-up, division and team roles move to the new
+  account and come off the old one, if it is still in the server. The reply lists anything
+  Discord would not let the bot do — usually a role above the bot's own.
 - **You can switch back.** Naming one of the driver's past accounts as `new_user` makes it
   current again.
 - **A past account cannot press Sign Up.** It is told to use the current account; switch back

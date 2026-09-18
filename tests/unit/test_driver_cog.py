@@ -100,6 +100,7 @@ def _make_cog(
         return_value={"team_name": "Alpha", "division_name": "Division 1"}
     )
     bot.placement_service.sack_driver = AsyncMock(return_value=None)
+    bot.placement_service.move_driver_roles = AsyncMock(return_value=[])
 
     bot.driver_service = MagicMock()
     bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
@@ -108,7 +109,9 @@ def _make_cog(
     bot.driver_service.reassign_user_id = AsyncMock(
         side_effect=lambda _server, old, new, *_a: SimpleNamespace(
             profile=SimpleNamespace(
-                current_state=SimpleNamespace(value="ACTIVE"), former_driver=False
+                id=PROFILE_ID,
+                current_state=SimpleNamespace(value="ACTIVE"),
+                former_driver=False,
             ),
             replaced_account=old,
             accounts=sorted([old, new]),
@@ -602,3 +605,33 @@ async def test_a_switch_back_is_reported_as_one(tmp_path):
     )
 
     assert "switched back to a past account" in _replied(interaction)
+
+
+async def test_reassign_moves_the_roles_to_the_new_current_account(tmp_path):
+    """Issue #243: from the account replaced to the one made current."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    args = cog.bot.placement_service.move_driver_roles.await_args.args
+    assert args == (interaction.guild, SERVER_ID, PROFILE_ID, "1", "2")
+
+
+async def test_roles_discord_would_not_move_are_reported_and_the_reassign_stands(tmp_path):
+    """E44."""
+    cog = _make_cog()
+    cog.bot.placement_service.move_driver_roles = AsyncMock(
+        return_value=["the roles could not be given to <@2>: Missing Permissions"]
+    )
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    assert "given a new account" in _replied(interaction)
+    assert "Missing Permissions" in _replied(interaction)
+    assert "not done: the roles could not be given" in cog.bot.output_router.post_log.await_args.args[1]
