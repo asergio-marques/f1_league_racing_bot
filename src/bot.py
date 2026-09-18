@@ -8,6 +8,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from utils.league_server import LeagueCommandTree
 from utils.log_filters import install_late_autocomplete_filter
 
 load_dotenv()
@@ -34,7 +35,10 @@ def create_bot() -> commands.Bot:
     intents.members = True
     intents.message_content = True  # required for signup wizard on_message dispatch
 
-    bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
+    # The tree refuses every command from a server that is not the league's (issue #244).
+    bot = commands.Bot(
+        command_prefix="!", intents=intents, help_command=None, tree_cls=LeagueCommandTree
+    )
     bot.db_path = DB_PATH  # type: ignore[attr-defined]
 
     return bot
