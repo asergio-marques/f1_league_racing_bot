@@ -289,8 +289,7 @@ async def test_the_weather_area(season):
     before = await _take(season)
     await _assert_only(
         season, before, "weather",
-        "INSERT INTO weather_pipeline_config (server_id, phase_1_days) VALUES (?, 7)",
-        SERVER_ID,
+        "INSERT INTO weather_pipeline_config (id, phase_1_days) VALUES (1, 7)",
     )
 
 

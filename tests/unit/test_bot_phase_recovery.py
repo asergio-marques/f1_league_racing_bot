@@ -42,7 +42,6 @@ from bot import _recover_missed_phases  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 12008
-OTHER_SERVER_ID = 12009
 SEASON_ID = 1
 DIVISION_ID = 11
 
@@ -130,9 +129,9 @@ async def _recover(bot, *, config=None, reads: list | None = None):
 
         return _run
 
-    async def _get_config(db_path, server_id):
+    async def _get_config(db_path):
         if reads is not None:
-            reads.append(server_id)
+            reads.append(db_path)
         return config or _config()
 
     with patch("services.phase1_service.run_phase1", new=await _phase(1)), patch(
@@ -227,10 +226,10 @@ async def test_a_shorter_horizon_holds_a_phase_back(tmp_path):
     assert fired == []
 
 
-async def test_the_configuration_is_read_once_per_server(tmp_path):
-    """A season's rounds all share one, and a league with seventy-two rounds would
-    otherwise read it seventy-two times on every start. Held against the obvious
-    "simplification" of moving the read inside the loop."""
+async def test_the_configuration_is_read_once(tmp_path):
+    """The league has one, and a league with seventy-two rounds would otherwise read it
+    seventy-two times on every start. Held against the obvious "simplification" of moving
+    the read inside the loop."""
     db_path = await _make_db(
         tmp_path,
         rounds=(
@@ -239,11 +238,11 @@ async def test_the_configuration_is_read_once_per_server(tmp_path):
             (3, -1, False, True, True, "NORMAL"),
         ),
     )
-    reads: list[int] = []
+    reads: list[str] = []
 
     await _recover(_bot(db_path), reads=reads)
 
-    assert reads == [SERVER_ID]
+    assert reads == [db_path]
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +260,7 @@ async def test_a_server_with_weather_off_is_never_asked_for_its_configuration(tm
     """The module gate runs first, so a server that does not use the config is not queried
     for it — the module-output rule applied to reads."""
     db_path = await _make_db(tmp_path, rounds=((1, -1, False, False, False, "NORMAL"),))
-    reads: list[int] = []
+    reads: list[str] = []
 
     await _recover(_bot(db_path, weather_enabled=False), reads=reads)
 

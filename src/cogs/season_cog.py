@@ -1512,7 +1512,7 @@ class SeasonCog(commands.Cog):
         if await self.bot.module_service.is_weather_enabled(server_id):  # type: ignore[attr-defined]
             from services.weather_config_service import get_weather_pipeline_config
 
-            _wx = await get_weather_pipeline_config(self.bot.db_path, server_id)
+            _wx = await get_weather_pipeline_config(self.bot.db_path)
             weather = WeatherWindows(
                 phase_1_days=_wx.phase_1_days,
                 phase_2_days=_wx.phase_2_days,
@@ -2410,7 +2410,7 @@ class SeasonCog(commands.Cog):
         """The weather deadlines, as both reviews report them."""
         from services.weather_config_service import get_weather_pipeline_config as _gwpc
 
-        _wcfg = await _gwpc(self.bot.db_path, server_id)  # type: ignore[attr-defined]
+        _wcfg = await _gwpc(self.bot.db_path)  # type: ignore[attr-defined]
         return [
             "**Weather Config**",
             f"  • Phase 1 deadline: {_wcfg.phase_1_days} day(s) before race",
@@ -5954,7 +5954,7 @@ class SeasonCog(commands.Cog):
         if weather_enabled:
             # schedule_round creates weather phase jobs AND the results job together
             from services.weather_config_service import get_weather_pipeline_config
-            _wcfg = await get_weather_pipeline_config(self.bot.db_path, cfg.server_id)
+            _wcfg = await get_weather_pipeline_config(self.bot.db_path)
             self.bot.scheduler_service.schedule_all_rounds(
                 all_rounds,
                 division_meta=_div_meta,
@@ -6558,7 +6558,7 @@ async def _judge_round_amendment(
     # The forecast horizons are read whatever the module's state: a forecast posted while
     # weather was on is still posted, and whether it survives the amendment is what the track
     # and format rules turn on.
-    _wcfg = await get_weather_pipeline_config(bot.db_path, server_id)
+    _wcfg = await get_weather_pipeline_config(bot.db_path)
     weather = WeatherWindows(
         phase_1_days=_wcfg.phase_1_days,
         phase_2_days=_wcfg.phase_2_days,

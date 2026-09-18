@@ -21,6 +21,17 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+#: The module configuration a full reset deletes by name.
+#:
+#: These tables once hung off `server_configs` by a cascading foreign key, and a full reset
+#: reached them by deleting that one row. One bot serves one league (issue #244), so the
+#: rebuilds that took `server_id` out of them took the foreign key too, and each table joins
+#: this list as its rebuild lands. What a full reset deletes is pinned table by table in
+#: `tests/unit/test_full_reset_scope.py`.
+_FULL_RESET_TABLES: tuple[str, ...] = (
+    "weather_pipeline_config",
+)
+
 
 async def reset_server_data(
     server_id: int,
@@ -172,6 +183,8 @@ async def reset_server_data(
         )
 
         if full:
+            for table in _FULL_RESET_TABLES:
+                await db.execute(f"DELETE FROM {table}")
             await db.execute(
                 "DELETE FROM server_configs WHERE server_id = ?",
                 (server_id,),

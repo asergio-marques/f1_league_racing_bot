@@ -506,7 +506,7 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
         )
         # Anything but the packaged 5 / 2 / 2, so a fallback cannot pass by coincidence.
         await db.execute(
-            "INSERT INTO weather_pipeline_config (server_id, phase_1_days, phase_2_days, phase_3_hours) "
+            "INSERT INTO weather_pipeline_config (id, phase_1_days, phase_2_days, phase_3_hours) "
             "VALUES (1, 7, 3, 4)"
         )
         await db.commit()

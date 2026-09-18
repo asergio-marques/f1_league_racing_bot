@@ -243,9 +243,9 @@ async def test_a_server_with_weather_off_is_never_asked_for_its_horizons(tmp_pat
     get_config.assert_not_awaited()
 
 
-async def test_the_horizons_are_read_once_per_server(tmp_path):
-    """A season's rounds all share one configuration, and a query per round would be a
-    database read for every round of every division on every start-up."""
+async def test_the_horizons_are_read_once(tmp_path):
+    """The league has one configuration, and a query per round would be a database read for
+    every round of every division on every start-up."""
     db_path = await _base_db(tmp_path, "phases_onceper")
     for round_id in (21, 22, 23):
         await _seed_round(db_path, days_away=0.1, round_id=round_id)

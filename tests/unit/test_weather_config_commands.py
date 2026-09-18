@@ -65,7 +65,7 @@ ALL_SETTERS = [entry[1] for entry in COMMANDS]
 
 def _config(**overrides) -> WeatherPipelineConfig:
     """A configuration carrying the packaged 5 / 2 / 2 horizons."""
-    values = dict(server_id=SERVER_ID, phase_1_days=5, phase_2_days=2, phase_3_hours=2)
+    values = dict(phase_1_days=5, phase_2_days=2, phase_3_hours=2)
     values.update(overrides)
     return WeatherPipelineConfig(**values)
 
@@ -241,7 +241,7 @@ async def test_one_is_accepted(command, setter, value, _log):
         await _invoke(command, cog, interaction, 1)
 
         mocks[setter].assert_awaited_once()
-        assert mocks[setter].await_args.args == (DB_PATH, SERVER_ID, 1)
+        assert mocks[setter].await_args.args == (DB_PATH, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +283,7 @@ async def test_success_reaches_the_service_with_the_value(command, setter, value
         await _invoke(command, cog, interaction, value)
 
         mocks[setter].assert_awaited_once()
-        assert mocks[setter].await_args.args == (DB_PATH, SERVER_ID, value)
+        assert mocks[setter].await_args.args == (DB_PATH, value)
         # Only the command's own setter runs.
         for name in ALL_SETTERS:
             if name != setter:

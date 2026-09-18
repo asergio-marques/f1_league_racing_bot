@@ -410,9 +410,8 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
     timings on an enable and another on a restart: a longer phase 1 was never published at all,
     a shorter one was published days early.
 
-    The config is resolved once per server rather than once per round, since a season's rounds
-    all share one, and only after the module gate, so a server with weather switched off is
-    never queried for it.
+    The config is resolved once rather than once per round, since the league has one, and only
+    after the module gate, so a league with weather switched off is never queried for it.
     """
     from db.database import get_connection
     from services.phase1_service import run_phase1
@@ -423,7 +422,7 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
     from datetime import datetime, timedelta, timezone
 
     now = datetime.now(timezone.utc)
-    configs: dict[int, WeatherPipelineConfig] = {}
+    cfg: WeatherPipelineConfig | None = None
 
     async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
         cursor = await db.execute(
@@ -450,9 +449,8 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
         if not await bot.module_service.is_weather_enabled(server_id):  # type: ignore[attr-defined]
             continue
 
-        if server_id not in configs:
-            configs[server_id] = await get_weather_pipeline_config(bot.db_path, server_id)  # type: ignore[attr-defined]
-        cfg = configs[server_id]
+        if cfg is None:
+            cfg = await get_weather_pipeline_config(bot.db_path)  # type: ignore[attr-defined]
 
         phase1_horizon = scheduled_at - timedelta(days=cfg.phase_1_days)
         phase2_horizon = scheduled_at - timedelta(days=cfg.phase_2_days)

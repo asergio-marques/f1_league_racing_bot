@@ -169,7 +169,7 @@ class AmendmentService:
             else None
         )
 
-        _wcfg = await get_weather_pipeline_config(self._db_path, server_id)
+        _wcfg = await get_weather_pipeline_config(self._db_path)
         _verdict = judge_amendment(
             _Round(
                 id=round_id,

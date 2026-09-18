@@ -80,7 +80,7 @@ class WeatherCog(commands.Cog):
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         from services.weather_config_service import set_phase_1_days
-        result = await set_phase_1_days(self.bot.db_path, server_id, days)  # type: ignore[attr-defined]
+        result = await set_phase_1_days(self.bot.db_path, days)  # type: ignore[attr-defined]
 
         if isinstance(result, str):
             await interaction.followup.send(f"❌ {result}", ephemeral=True)
@@ -122,7 +122,7 @@ class WeatherCog(commands.Cog):
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         from services.weather_config_service import set_phase_2_days
-        result = await set_phase_2_days(self.bot.db_path, server_id, days)  # type: ignore[attr-defined]
+        result = await set_phase_2_days(self.bot.db_path, days)  # type: ignore[attr-defined]
 
         if isinstance(result, str):
             await interaction.followup.send(f"❌ {result}", ephemeral=True)
@@ -164,7 +164,7 @@ class WeatherCog(commands.Cog):
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         from services.weather_config_service import set_phase_3_hours
-        result = await set_phase_3_hours(self.bot.db_path, server_id, hours)  # type: ignore[attr-defined]
+        result = await set_phase_3_hours(self.bot.db_path, hours)  # type: ignore[attr-defined]
 
         if isinstance(result, str):
             await interaction.followup.send(f"❌ {result}", ephemeral=True)

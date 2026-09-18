@@ -21,7 +21,7 @@ these two tests would object.
 The setters are exercised against a real migrated database rather than a double, because
 what they are chiefly at risk of getting wrong is the `ON CONFLICT` upsert — that it updates
 the one column named and leaves the other two as they were, and that a second call does not
-insert a second row for the server.
+insert a second row.
 """
 from __future__ import annotations
 
@@ -41,8 +41,6 @@ from services.weather_config_service import (  # noqa: E402
     validate_ordering,
 )
 
-SERVER_ID = 6161
-
 #: The horizons the bot ships with, per the specification's "By default" clauses.
 PACKAGED_DEFAULTS = (5, 2, 2)
 
@@ -52,34 +50,19 @@ PACKAGED_DEFAULTS = (5, 2, 2)
 # ---------------------------------------------------------------------------
 
 
-async def _make_db(tmp_path, *, servers: tuple[int, ...] = (SERVER_ID,)) -> str:
-    """A migrated database holding a `server_configs` row for each of *servers*.
-
-    `weather_pipeline_config.server_id` carries a foreign key onto `server_configs`, and
-    `get_connection` enables foreign-key enforcement, so the parent row has to exist before
-    any setter can write.
-    """
+async def _make_db(tmp_path) -> str:
+    """A migrated database. The league's one config row hangs off nothing, so nothing else
+    need exist before a setter writes it."""
     db_path = os.path.join(str(tmp_path), "weather_config.db")
     await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        for server_id in servers:
-            await db.execute(
-                "INSERT INTO server_configs "
-                "(server_id, interaction_role_id, interaction_channel_id, log_channel_id, "
-                " weather_module_enabled) VALUES (?, 100, 200, 300, 1)",
-                (server_id,),
-            )
-        await db.commit()
     return db_path
 
 
-async def _stored(db_path: str, server_id: int = SERVER_ID) -> tuple[int, int, int] | None:
+async def _stored(db_path: str) -> tuple[int, int, int] | None:
     """Return the raw stored row as ``(p1_days, p2_days, p3_hours)``, or None if absent."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT phase_1_days, phase_2_days, phase_3_hours "
-            "FROM weather_pipeline_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT phase_1_days, phase_2_days, phase_3_hours FROM weather_pipeline_config"
         )
         row = await cursor.fetchone()
     if row is None:
@@ -87,13 +70,10 @@ async def _stored(db_path: str, server_id: int = SERVER_ID) -> tuple[int, int, i
     return row["phase_1_days"], row["phase_2_days"], row["phase_3_hours"]
 
 
-async def _row_count(db_path: str, server_id: int = SERVER_ID) -> int:
-    """How many config rows the server holds. The upsert must never make this exceed 1."""
+async def _row_count(db_path: str) -> int:
+    """How many config rows the league holds. The upsert must never make this exceed 1."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) AS n FROM weather_pipeline_config WHERE server_id = ?",
-            (server_id,),
-        )
+        cursor = await db.execute("SELECT COUNT(*) AS n FROM weather_pipeline_config")
         row = await cursor.fetchone()
     return row["n"]
 
@@ -111,10 +91,9 @@ async def test_absent_row_reads_as_the_packaged_defaults(tmp_path):
     """A league that has configured nothing gets 5 days / 2 days / 2 hours."""
     db_path = await _make_db(tmp_path)
 
-    config = await get_weather_pipeline_config(db_path, SERVER_ID)
+    config = await get_weather_pipeline_config(db_path)
 
     assert _triple(config) == PACKAGED_DEFAULTS
-    assert config.server_id == SERVER_ID
     # Reading must not create the row — only a setter writes.
     assert await _stored(db_path) is None
 
@@ -122,9 +101,9 @@ async def test_absent_row_reads_as_the_packaged_defaults(tmp_path):
 async def test_stored_row_is_read_back(tmp_path):
     """A configured league gets its own horizons, not the packaged ones."""
     db_path = await _make_db(tmp_path)
-    await set_phase_1_days(db_path, SERVER_ID, 10)
+    await set_phase_1_days(db_path, 10)
 
-    config = await get_weather_pipeline_config(db_path, SERVER_ID)
+    config = await get_weather_pipeline_config(db_path)
 
     assert _triple(config) == (10, 2, 2)
 
@@ -133,13 +112,13 @@ async def test_defaults_are_not_shared_between_calls(tmp_path):
     """The module-level `_DEFAULTS` instance must not leak into a returned config.
 
     `weather_config_service` holds a single `WeatherPipelineConfig` at import time. Were a
-    caller ever handed that object rather than a fresh one, mutating one server's config
-    would silently change what every other server reads.
+    caller ever handed that object rather than a fresh one, mutating one read's config would
+    silently change what every later read returns.
     """
     db_path = await _make_db(tmp_path)
 
-    first = await get_weather_pipeline_config(db_path, SERVER_ID)
-    second = await get_weather_pipeline_config(db_path, SERVER_ID)
+    first = await get_weather_pipeline_config(db_path)
+    second = await get_weather_pipeline_config(db_path)
 
     assert first is not second
 
@@ -223,7 +202,7 @@ async def test_setter_persists_and_leaves_the_other_two_alone(
     """The `ON CONFLICT` upsert writes the one column named and no other."""
     db_path = await _make_db(tmp_path)
 
-    result = await setter(db_path, SERVER_ID, value)
+    result = await setter(db_path, value)
 
     assert not isinstance(result, str), result
     assert _triple(result) == expected
@@ -238,8 +217,8 @@ async def test_second_call_updates_rather_than_inserting_a_second_row(
 ):
     db_path = await _make_db(tmp_path)
 
-    await setter(db_path, SERVER_ID, value)
-    await setter(db_path, SERVER_ID, value)
+    await setter(db_path, value)
+    await setter(db_path, value)
 
     assert await _row_count(db_path) == 1
     assert await _stored(db_path) == expected
@@ -249,9 +228,9 @@ async def test_setters_compose(tmp_path):
     """Setting all three in turn leaves every one of them stored."""
     db_path = await _make_db(tmp_path)
 
-    await set_phase_1_days(db_path, SERVER_ID, 14)
-    await set_phase_2_days(db_path, SERVER_ID, 7)
-    await set_phase_3_hours(db_path, SERVER_ID, 12)
+    await set_phase_1_days(db_path, 14)
+    await set_phase_2_days(db_path, 7)
+    await set_phase_3_hours(db_path, 12)
 
     assert await _stored(db_path) == (14, 7, 12)
     assert await _row_count(db_path) == 1
@@ -273,10 +252,10 @@ async def test_violating_value_is_refused_and_writes_nothing(setter, value, tmp_
     anyway would corrupt the very state the next validation reads.
     """
     db_path = await _make_db(tmp_path)
-    await set_phase_1_days(db_path, SERVER_ID, 5)  # a real row to be left untouched
+    await set_phase_1_days(db_path, 5)  # a real row to be left untouched
     before = await _stored(db_path)
 
-    result = await setter(db_path, SERVER_ID, value)
+    result = await setter(db_path, value)
 
     assert isinstance(result, str)
     assert await _stored(db_path) == before
@@ -292,10 +271,24 @@ async def test_a_violation_is_judged_against_the_stored_values_not_the_defaults(
     could not reach 10 days while Phase 1 still stood at the packaged 5.
     """
     db_path = await _make_db(tmp_path)
-    assert not isinstance(await set_phase_1_days(db_path, SERVER_ID, 20), str)
-    assert not isinstance(await set_phase_2_days(db_path, SERVER_ID, 10), str)
+    assert not isinstance(await set_phase_1_days(db_path, 20), str)
+    assert not isinstance(await set_phase_2_days(db_path, 10), str)
 
-    result = await set_phase_1_days(db_path, SERVER_ID, 5)
+    result = await set_phase_1_days(db_path, 5)
 
     assert isinstance(result, str)
     assert await _stored(db_path) == (20, 10, 2)
+
+
+async def test_the_league_holds_one_row_at_most(tmp_path):
+    """Keyed by nothing but a constant, so a second row cannot be written even by hand."""
+    import sqlite3
+
+    db_path = await _make_db(tmp_path)
+    await set_phase_1_days(db_path, 10)
+
+    async with get_connection(db_path) as db:
+        with pytest.raises(sqlite3.IntegrityError):
+            await db.execute(
+                "INSERT INTO weather_pipeline_config (id, phase_1_days) VALUES (2, 9)"
+            )

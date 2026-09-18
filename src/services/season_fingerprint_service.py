@@ -365,8 +365,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                 await _rows(
                     db,
                     "SELECT phase_1_days, phase_2_days, phase_3_hours "
-                    "FROM weather_pipeline_config WHERE server_id = ?",
-                    server_id,
+                    "FROM weather_pipeline_config",
                 )
             )
 
