@@ -454,9 +454,11 @@ it only to place it; the rules governing it belong to its own specification.
 - A placement or a move shall be refused where it would carry a division beyond what its lineup, its attendance sheet or its standings graphic can draw, and nothing shall be changed by the refusal.
 - Every successful move, release and sacking shall cause the lineup of each division it touches to be deleted and posted again in its lineup channel, once.
 
-### Changing the account behind a profile
-- A league manager shall be able to re-key a driver profile onto another Discord account, so that a person changing account keeps their history.
-- Everything the league holds of that driver shall be carried to the new account with the profile: every signup they made, their results in every session they raced, their standings in every division, the fastest lap of a session where theirs was named, and their history of every season that has ended. Their standings, their results and their history shall read after the change exactly as they read before it, and shall name the new account.
+### A driver's accounts
+- A driver shall own every Discord account they have raced under. One of them is their **current** account; the others are their past accounts. Any of them identifies the driver.
+- A league manager shall be able to make another account a driver's current one, so that a person changing account keeps their history. The account it replaces joins the driver's past accounts.
+- Nothing the league holds of the driver shall be rewritten when their account changes. A signup, a result, a standing, a fastest lap and a history entry each keep the account they were written under, and a completed season stays exactly as it was.
+- A driver's results, standings, points, positions and history shall count them once, whichever of their accounts each result stands under. Everything drawn or posted from then on shall name them by their current account — a completed season's results or standings drawn again included. A message already posted is not rewritten.
 - A re-key shall touch nothing of any other league upon the bot. A person who holds a profile in two leagues shall carry only the one whose manager commanded it.
 - A driver's portrait shall not be carried, a portrait being the picture of the account itself. The one obtained for the account left behind shall be discarded, and the new account's own shall be obtained as any driver's is.
 - The new account shall be accepted whether or not it is still a member of the server.

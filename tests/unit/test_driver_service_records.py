@@ -11,21 +11,19 @@ driver is kept outright, their signups kept whole as the season's history. The t
 are pinned separately because they share a call site and a reader could easily make one do
 the other's work.
 
-**Re-keying is how a driver who lost their Discord account keeps their history**, so every
-record naming that driver by their account is carried with the profile: their signups, their
-session results, their standings, a session's fastest-lap override and their history entries
-(issue #222). Each is pinned on its own, and `_DRIVER_COLUMNS` at the foot of this file
-guards the set against a table added later. Three things refuse it — no profile at the old
-account, a profile already at the new one, or racing records of its own at the new one — and
-each refusal leaves everything as it was.
+**Re-keying is how a driver who lost their Discord account keeps their history.** Since
+issue #243 it rewrites nothing: the profile's current account changes, the old one stays in
+the driver's list of accounts, and every record keeps the account it was written under.
+`test_a_re_key_rewrites_no_record_of_the_driver` compares the whole database to hold that.
+Three things refuse it — no profile at the old account, a profile already at the new one, or
+racing records of its own at the new one — and each refusal leaves everything as it was.
 
 **Both write audit entries carrying the old and the new value.** They are the league's only
 record of a manager re-keying or re-flagging a driver, which are the two commands that can
 quietly rewrite who somebody is.
 
-Everything runs against a real migrated database: the re-key crosses seven tables and reaches
-the results through their division, and the audit inserts are raw SQL — none of which a
-double would check.
+Everything runs against a real migrated database: the refusals reach the results through their
+division, and the audit inserts are raw SQL — none of which a double would check.
 """
 from __future__ import annotations
 
@@ -331,163 +329,6 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
     assert await service.get_profile(SERVER_ID, OLD_USER) is None
 
 
-async def test_re_keying_carries_every_signup_to_the_new_account(tmp_path):
-    """Issue #220: signups are kept under the account, so they must move with the profile."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path)
-    await _seed_signup_record(db_path)
-    await _seed_signup_record(db_path)
-    service = DriverService(db_path)
-
-    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT discord_user_id, COUNT(*) AS n FROM signup_records GROUP BY discord_user_id"
-        )
-        rows = {row["discord_user_id"]: row["n"] for row in await cursor.fetchall()}
-    assert rows == {NEW_USER: 2}
-
-
-async def test_re_keying_carries_the_driver_s_standings_to_the_new_account(tmp_path):
-    """Issue #222. Keyed by the abandoned account, a driver's points join to no profile: the
-    standings draw them as a raw snowflake and the season's end reads their final standing
-    as nothing at all."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path)
-    await _seed_snapshot(db_path)
-    service = DriverService(db_path)
-
-    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
-
-    assert await _standings_users(db_path) == [(LEAGUE, int(NEW_USER))]
-
-
-async def test_re_keying_carries_both_session_result_tables_to_the_new_account(tmp_path):
-    """A driver's results are the source of the standings and of every statistic, so both
-    tables move or the standings are rebuilt under the old account at the next round."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path)
-    await _seed_results(db_path)
-    service = DriverService(db_path)
-
-    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
-
-    assert await _result_users(db_path, "race_session_results") == [(LEAGUE, int(NEW_USER))]
-    assert await _result_users(db_path, "qualifying_session_results") == [
-        (LEAGUE, int(NEW_USER))
-    ]
-
-
-async def test_re_keying_carries_every_history_entry_to_the_new_account(tmp_path):
-    """A history entry names its driver by identifier so that it outlives the profile, which
-    is exactly why a re-key has to move it — and only in the league that ordered it."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path)
-    await _seed_history(db_path, season=1)
-    await _seed_history(db_path, season=2)
-    await _seed_history(db_path, server_id=OTHER_SERVER)
-    service = DriverService(db_path)
-
-    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT server_id, discord_user_id, season_number FROM driver_history_entries "
-            "ORDER BY server_id, season_number"
-        )
-        rows = [tuple(r) for r in await cursor.fetchall()]
-    assert rows == [
-        (SERVER_ID, NEW_USER, 1),
-        (SERVER_ID, NEW_USER, 2),
-        (OTHER_SERVER, OLD_USER, 1),
-    ]
-
-
-async def test_re_keying_carries_a_part_finished_signup_to_the_new_account(tmp_path):
-    """The driver's answers so far are held against the account, and the review panel reads
-    the driver from the wizard record, so the record moves with the profile."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path)
-    await _seed_wizard(db_path, OLD_USER)
-    service = DriverService(db_path)
-
-    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT discord_user_id, draft_answers_json FROM signup_wizard_records"
-        )
-        rows = [tuple(r) for r in await cursor.fetchall()]
-    assert rows == [(NEW_USER, '{"platform": "Steam"}')]
-
-
-async def test_an_abandoned_wizard_on_the_new_account_is_replaced(tmp_path):
-    """The new account holds no profile, so a record standing on it is an abandoned draft and
-    the live one being carried wins. Left in place it would collide, the account and the
-    server being unique together."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path)
-    await _seed_wizard(db_path, OLD_USER)
-    await _seed_wizard(db_path, NEW_USER, state="UNENGAGED")
-    service = DriverService(db_path)
-
-    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT discord_user_id, wizard_state FROM signup_wizard_records"
-        )
-        rows = [tuple(r) for r in await cursor.fetchall()]
-    assert rows == [(NEW_USER, "COLLECTING")]
-
-
-async def test_re_keying_carries_the_fastest_lap_override_to_the_new_account(tmp_path):
-    """The bonus is recomputed from the override whenever a penalty, an appeal verdict or an
-    amendment lands, so an override left on the old account awards it to nobody."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE session_results SET fl_driver_override = ? WHERE id = ?",
-            (OLD_USER, LEAGUE),
-        )
-        await db.commit()
-    service = DriverService(db_path)
-
-    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT fl_driver_override FROM session_results WHERE id = ?", (LEAGUE,)
-        )
-        assert (await cursor.fetchone())["fl_driver_override"] == int(NEW_USER)
-
-
-async def test_re_keying_leaves_another_league_s_racing_alone(tmp_path):
-    """Neither table holds a server of its own, so an unscoped re-key would move the same
-    person's results in every other league this bot serves."""
-    db_path = await _make_db(tmp_path)
-    await _seed_league(db_path, OTHER_SERVER, OTHER_LEAGUE)
-    await _seed_profile(db_path)
-    await _seed_profile(db_path, server_id=OTHER_SERVER)
-    for league in (LEAGUE, OTHER_LEAGUE):
-        await _seed_snapshot(db_path, league=league)
-        await _seed_results(db_path, league=league)
-    service = DriverService(db_path)
-
-    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
-
-    assert await _standings_users(db_path) == [
-        (LEAGUE, int(NEW_USER)),
-        (OTHER_LEAGUE, int(OLD_USER)),
-    ]
-    assert await _result_users(db_path, "race_session_results") == [
-        (LEAGUE, int(NEW_USER)),
-        (OTHER_LEAGUE, int(OLD_USER)),
-    ]
-
-
 async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
     service = DriverService(db_path)
@@ -681,105 +522,77 @@ async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_pat
 
 
 # ---------------------------------------------------------------------------
-# Every column that names a driver by their Discord account
+# A re-key rewrites nothing (issue #243)
 # ---------------------------------------------------------------------------
 #
-# Issue #222 was a hand-written list of tables going stale: the re-key moved two of them and
-# nobody noticed the other six. The guard below reads the schema instead of trusting a list,
-# so a table added later cannot quietly reintroduce the same defect — it fails here until
-# somebody decides, in writing, whether a re-key carries it.
+# Issue #222 carried every record naming a driver onto their new account, and kept a
+# hand-written list of those columns so a table added later could not be missed. Issue #243
+# withdrew the carrying: a record keeps the account it was written under, and the bot maps a
+# past account to the current one wherever it reads. The guard is now the opposite one, and
+# needs no list — it compares the whole database, so a table added later is covered already.
+
+#: The only tables a re-key writes: the profile's current account, the list of its accounts,
+#: and the audit entry recording that it happened.
+_WRITTEN_BY_A_RE_KEY = {"driver_profiles", "driver_accounts", "audit_entries"}
 
 
-def _names_a_driver(column: str) -> bool:
-    """Whether *column* could name a driver: by account, by profile, or by override.
+async def _every_other_row(db_path: str) -> dict[str, list[tuple]]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+        tables = [r["name"] for r in await cursor.fetchall()]
+        rows: dict[str, list[tuple]] = {}
+        for table in tables:
+            if table in _WRITTEN_BY_A_RE_KEY:
+                continue
+            cursor = await db.execute(f"SELECT * FROM '{table}'")
+            rows[table] = sorted(
+                (tuple(r) for r in await cursor.fetchall()), key=repr
+            )
+    return rows
 
-    Deliberately wider than the columns a re-key moves. The point is to catch the next one
-    somebody adds, so a match here is a question to answer rather than a fault.
-    """
-    return "user_id" in column or (
-        "driver" in column and (column.endswith("_id") or column.endswith("_override"))
+
+async def test_a_re_key_rewrites_no_record_of_the_driver(tmp_path):
+    """Results, standings, signups, history, a part-finished signup and the fastest-lap
+    override all stand under the old account, and every one of them is left exactly so."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path)
+    await _seed_signup_record(db_path)
+    await _seed_snapshot(db_path)
+    await _seed_results(db_path)
+    await _seed_history(db_path)
+    await _seed_wizard(db_path, OLD_USER)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE session_results SET fl_driver_override = ? WHERE id = ?",
+            (OLD_USER, LEAGUE),
+        )
+        await db.commit()
+    before = await _every_other_row(db_path)
+
+    await DriverService(db_path).reassign_user_id(
+        SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
     )
 
-
-#: Every column the schema has that could name a driver, and what a re-key does with it.
-#:
-#: `CARRIED` means the re-key moves it, and each one has a test of its own above. Any other
-#: value is the reason it is left alone, and reads as a decision rather than an oversight.
-CARRIED = "carried by a re-key"
-
-_DRIVER_COLUMNS: dict[tuple[str, str], str] = {
-    ("driver_profiles", "discord_user_id"): CARRIED,
-    ("signup_records", "discord_user_id"): CARRIED,
-    ("driver_history_entries", "discord_user_id"): CARRIED,
-    ("signup_wizard_records", "discord_user_id"): CARRIED,
-    ("driver_standings_snapshots", "driver_user_id"): CARRIED,
-    ("race_session_results", "driver_user_id"): CARRIED,
-    ("qualifying_session_results", "driver_user_id"): CARRIED,
-    ("session_results", "fl_driver_override"): CARRIED,
-    ("driver_portraits", "discord_user_id"): (
-        "a cache of that account's own profile picture, so the row and its file are removed "
-        "rather than carried: the new account has a picture of its own"
-    ),
-    ("lap_records", "driver_id"): (
-        "migration 029 raised the table as a structural prerequisite and nothing writes it, "
-        "so it holds no rows to carry. Whoever populates it answers this question then"
-    ),
-    ("track_records", "driver_id"): (
-        "as lap_records — created by migration 029 and written by nothing"
-    ),
-    ("driver_history_entries", "driver_profile_id"): (
-        "keyed by the profile, which a re-key does not replace"
-    ),
-    ("driver_standings_snapshots", "driver_profile_id"): "keyed by the profile",
-    ("race_session_results", "driver_profile_id"): "keyed by the profile",
-    ("qualifying_session_results", "driver_profile_id"): "keyed by the profile",
-    ("driver_division_memberships", "driver_profile_id"): "keyed by the profile",
-    ("driver_round_attendance", "driver_profile_id"): "keyed by the profile",
-    ("driver_season_assignments", "driver_profile_id"): "keyed by the profile",
-    ("team_seats", "driver_profile_id"): "keyed by the profile",
-    ("driver_accounts", "discord_user_id"): (
-        "the list of the driver's accounts itself (issue #243): the migration 059 triggers "
-        "add the new account to it, and the old one stays listed"
-    ),
-    ("driver_accounts", "driver_profile_id"): "keyed by the profile",
-}
+    assert await _every_other_row(db_path) == before
 
 
-async def test_every_column_naming_a_driver_is_accounted_for_by_the_re_key(tmp_path):
-    """A table added later that names a driver fails here until somebody decides about it.
-
-    Read the failure as a question: does a re-key have to carry this column? Add it to
-    `_DRIVER_COLUMNS` as `CARRIED`, with a test beside the others above, or with the reason
-    it is left alone. Do not simply add the name to silence the test.
-    """
+async def test_a_re_key_keeps_the_old_account_listed(tmp_path):
     db_path = await _make_db(tmp_path)
+    profile_id = await _seed_profile(db_path)
+
+    await DriverService(db_path).reassign_user_id(
+        SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+    )
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+            "SELECT driver_profile_id, discord_user_id FROM driver_accounts "
+            "ORDER BY discord_user_id"
         )
-        tables = [row["name"] for row in await cursor.fetchall()]
-        found: set[tuple[str, str]] = set()
-        for table in tables:
-            cursor = await db.execute(f"PRAGMA table_info('{table}')")
-            for row in await cursor.fetchall():
-                if _names_a_driver(row["name"]):
-                    found.add((table, row["name"]))
-
-    assert sorted(found) == sorted(_DRIVER_COLUMNS)
-
-
-async def test_the_columns_a_re_key_carries_are_named_as_such(tmp_path):
-    """The eight of them, so that dropping one from the service is dropping it from here."""
-    carried = sorted(key for key, why in _DRIVER_COLUMNS.items() if why == CARRIED)
-
-    assert carried == [
-        ("driver_history_entries", "discord_user_id"),
-        ("driver_profiles", "discord_user_id"),
-        ("driver_standings_snapshots", "driver_user_id"),
-        ("qualifying_session_results", "driver_user_id"),
-        ("race_session_results", "driver_user_id"),
-        ("session_results", "fl_driver_override"),
-        ("signup_records", "discord_user_id"),
-        ("signup_wizard_records", "discord_user_id"),
-    ]
+        assert [tuple(r) for r in await cursor.fetchall()] == [
+            (profile_id, OLD_USER),
+            (profile_id, NEW_USER),
+        ]
