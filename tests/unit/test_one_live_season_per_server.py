@@ -47,7 +47,7 @@ async def _seed_server(db_path, *server_ids):
         await db.commit()
 
 
-async def _add_season(db_path, status, number, *, server_id=SERVER_ID):
+async def _add_season(db_path, status, number):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO seasons (start_date, status, season_number) "

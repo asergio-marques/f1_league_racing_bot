@@ -140,7 +140,6 @@ async def sheet_db(tmp_path):
             """
             CREATE TABLE attendance_division_config (
                 division_id           INTEGER PRIMARY KEY,
-                server_id             INTEGER,
                 rsvp_channel_id       TEXT,
                 attendance_channel_id TEXT,
                 attendance_message_id TEXT
@@ -176,7 +175,7 @@ async def sheet_db(tmp_path):
                 test_display_name TEXT
             );
             CREATE TABLE attendance_config (
-                server_id             INTEGER PRIMARY KEY,
+                id                    INTEGER PRIMARY KEY CHECK (id = 1),
                 autoreserve_threshold INTEGER,
                 autosack_threshold    INTEGER
             );
@@ -213,7 +212,7 @@ async def _config(db_path, *, prior: str | None):
     async with aiosqlite.connect(db_path) as db:
         await db.execute("DELETE FROM attendance_division_config")
         await db.execute(
-            "INSERT INTO attendance_division_config VALUES (7, 1, NULL, '900', ?)",
+            "INSERT INTO attendance_division_config VALUES (7, NULL, '900', ?)",
             (prior,),
         )
         await db.commit()
@@ -449,7 +448,7 @@ async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db)
     async with aiosqlite.connect(sheet_db) as db:
         await db.execute("DELETE FROM attendance_division_config")
         await db.execute(
-            "INSERT INTO attendance_division_config VALUES (7, 1, NULL, NULL, '4242')"
+            "INSERT INTO attendance_division_config VALUES (7, NULL, NULL, '4242')"
         )
         await db.commit()
 

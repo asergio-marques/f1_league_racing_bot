@@ -34,13 +34,12 @@ async def db_path(tmp_path):
         await db.execute(
             """
             CREATE TABLE divisions (
-                id        INTEGER PRIMARY KEY,
-                server_id INTEGER NOT NULL
+                id        INTEGER PRIMARY KEY
             )
             """
         )
-        await db.execute("INSERT INTO divisions (id, server_id) VALUES (10, 1)")
-        await db.execute("INSERT INTO divisions (id, server_id) VALUES (11, 1)")
+        await db.execute("INSERT INTO divisions (id) VALUES (10)")
+        await db.execute("INSERT INTO divisions (id) VALUES (11)")
         await db.execute(
             """
             CREATE TABLE attendance_config (

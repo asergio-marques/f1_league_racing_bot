@@ -172,7 +172,7 @@ from cogs.season_cog import SeasonCog  # noqa: E402
 async def _seed(path, server_teams, division_teams):
     async with aiosqlite.connect(path) as db:
         await db.execute(
-            "CREATE TABLE default_teams (server_id INTEGER, name TEXT, is_reserve INTEGER)"
+            "CREATE TABLE default_teams (name TEXT, is_reserve INTEGER)"
         )
         await db.execute("CREATE TABLE divisions (id INTEGER, season_id INTEGER, name TEXT, tier INTEGER)")
         await db.execute(
@@ -180,7 +180,7 @@ async def _seed(path, server_teams, division_teams):
         )
         for name in server_teams:
             await db.execute(
-                "INSERT INTO default_teams VALUES (?, ?, 0)", (1, name)
+                "INSERT INTO default_teams VALUES (?, 0)", (name,)
             )
         await db.execute("INSERT INTO divisions VALUES (10, 1, 'Elite', 1)")
         for name in division_teams:

@@ -44,7 +44,7 @@ def service(db_path):
     return SeasonService(db_path)
 
 
-async def _seed(db_path, status: str, number: int, *, server_id: int = SERVER_ID) -> int:
+async def _seed(db_path, status: str, number: int) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO seasons (start_date, status, season_number) "

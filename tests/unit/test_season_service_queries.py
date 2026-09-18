@@ -72,7 +72,6 @@ async def _seed_season(
     status: str,
     *,
     number: int = 1,
-    server_id: int = SERVER_ID,
 ) -> None:
     async with get_connection(db_path) as db:
         await db.execute(

@@ -58,7 +58,7 @@ async def db_path(tmp_path):
     return path
 
 
-async def _get_role_row(db_path: str, server_id: int, team_name: str):
+async def _get_role_row(db_path: str, team_name: str):
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -77,7 +77,7 @@ async def _count_audit(db_path: str, change_type: str) -> int:
         return row[0]
 
 
-async def _seed_role(db_path: str, server_id: int, team_name: str, role_id: int) -> None:
+async def _seed_role(db_path: str, team_name: str, role_id: int) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
             "INSERT INTO team_role_configs (team_name, role_id, updated_at) "
@@ -93,15 +93,15 @@ async def _seed_role(db_path: str, server_id: int, team_name: str, role_id: int)
 
 class TestDeleteTeamRoleConfig:
     async def test_existing_row_is_deleted(self, db_path):
-        await _seed_role(db_path, 1, "Ferrari", 111)
+        await _seed_role(db_path, "Ferrari", 111)
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
         await svc.delete_team_role_config("Ferrari", actor_id=9, actor_name="admin")
-        row = await _get_role_row(db_path, 1, "Ferrari")
+        row = await _get_role_row(db_path, "Ferrari")
         assert row is None
 
     async def test_existing_row_writes_audit(self, db_path):
-        await _seed_role(db_path, 1, "Ferrari", 111)
+        await _seed_role(db_path, "Ferrari", 111)
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
         await svc.delete_team_role_config("Ferrari", actor_id=9, actor_name="admin")
@@ -128,18 +128,18 @@ class TestDeleteTeamRoleConfig:
 
 class TestRenameTeamRoleConfig:
     async def test_existing_row_is_renamed(self, db_path):
-        await _seed_role(db_path, 1, "Red Bull", 222)
+        await _seed_role(db_path, "Red Bull", 222)
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
         await svc.rename_team_role_config("Red Bull", "Oracle Red Bull", actor_id=9, actor_name="admin")
-        old = await _get_role_row(db_path, 1, "Red Bull")
-        new = await _get_role_row(db_path, 1, "Oracle Red Bull")
+        old = await _get_role_row(db_path, "Red Bull")
+        new = await _get_role_row(db_path, "Oracle Red Bull")
         assert old is None
         assert new is not None
         assert new["role_id"] == 222
 
     async def test_existing_row_writes_audit(self, db_path):
-        await _seed_role(db_path, 1, "Red Bull", 222)
+        await _seed_role(db_path, "Red Bull", 222)
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
         await svc.rename_team_role_config("Red Bull", "Oracle Red Bull", actor_id=9, actor_name="admin")

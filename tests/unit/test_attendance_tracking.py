@@ -82,7 +82,6 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
         """
         CREATE TABLE driver_profiles (
             id INTEGER PRIMARY KEY,
-            server_id INTEGER NOT NULL,
             discord_user_id TEXT NOT NULL
         )
         """

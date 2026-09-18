@@ -869,7 +869,7 @@ async def test_no_reference_round_returns_none_not_an_empty_mapping(db_path):
 # nothing and an explicit rule is owed: team name, then driver, both case-insensitively.
 
 
-async def _seat(db, div_id: int, server_id: int, team: str, drivers: list[tuple[int, str]],
+async def _seat(db, div_id: int, team: str, drivers: list[tuple[int, str]],
                 *, is_reserve: int = 0, role_id: int | None = None) -> int:
     """Create a team instance holding *drivers* as (discord_user_id, display name)."""
     cur = await db.execute(
@@ -911,8 +911,8 @@ async def test_the_opening_grid_is_ordered_by_team_then_driver(db_path):
     """
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=70)
-        await _seat(db, div_id, 70, "zebra", [(1, "bravo"), (2, "Alpha")])
-        await _seat(db, div_id, 70, "Aardvark", [(3, "delta"), (4, "Charlie")])
+        await _seat(db, div_id, "zebra", [(1, "bravo"), (2, "Alpha")])
+        await _seat(db, div_id, "Aardvark", [(3, "delta"), (4, "Charlie")])
         await db.commit()
 
     names = {1: "bravo", 2: "Alpha", 3: "delta", 4: "Charlie"}
@@ -926,7 +926,7 @@ async def test_the_opening_grid_is_ordered_by_team_then_driver(db_path):
 async def test_the_opening_grid_puts_everybody_on_zero(db_path):
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=71)
-        await _seat(db, div_id, 71, "Alpha", [(1, "One"), (2, "Two")])
+        await _seat(db, div_id, "Alpha", [(1, "One"), (2, "Two")])
         await db.commit()
 
     snaps = await opening_driver_standings(db_path, div_id, {1: "One", 2: "Two"})
@@ -941,8 +941,8 @@ async def test_the_opening_grid_excludes_reserves(db_path):
     """The same drivers `compute_driver_standings` selects, and no others."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=72)
-        await _seat(db, div_id, 72, "Alpha", [(1, "One")])
-        await _seat(db, div_id, 72, "Reserve", [(9, "Nine")], is_reserve=1)
+        await _seat(db, div_id, "Alpha", [(1, "One")])
+        await _seat(db, div_id, "Reserve", [(9, "Nine")], is_reserve=1)
         await db.commit()
 
     snaps = await opening_driver_standings(db_path, div_id, {1: "One", 9: "Nine"})
@@ -955,7 +955,7 @@ async def test_an_unresolved_driver_orders_by_their_id(db_path):
     """A name the caller could not resolve falls back to the id, as everywhere else."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=73)
-        await _seat(db, div_id, 73, "Alpha", [(500, "zulu"), (400, None)])
+        await _seat(db, div_id, "Alpha", [(500, "zulu"), (400, None)])
         await db.commit()
 
     snaps = await opening_driver_standings(db_path, div_id, {500: "zulu"})
@@ -968,8 +968,8 @@ async def test_an_unresolved_driver_orders_by_their_id(db_path):
 async def test_the_opening_constructors_are_ordered_by_name(db_path):
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=74)
-        await _seat(db, div_id, 74, "zebra", [(1, "One")], role_id=901)
-        await _seat(db, div_id, 74, "Aardvark", [(2, "Two")], role_id=902)
+        await _seat(db, div_id, "zebra", [(1, "One")], role_id=901)
+        await _seat(db, div_id, "Aardvark", [(2, "Two")], role_id=902)
         await db.commit()
 
     snaps = await opening_team_standings(db_path, div_id)
@@ -984,9 +984,9 @@ async def test_the_opening_constructors_exclude_reserves_and_unmapped_teams(db_p
     """Keyed by role, as a constructors classification always is."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=75)
-        await _seat(db, div_id, 75, "Alpha", [(1, "One")], role_id=901)
-        await _seat(db, div_id, 75, "Reserve", [(9, "Nine")], is_reserve=1, role_id=903)
-        await _seat(db, div_id, 75, "Unmapped", [(2, "Two")])
+        await _seat(db, div_id, "Alpha", [(1, "One")], role_id=901)
+        await _seat(db, div_id, "Reserve", [(9, "Nine")], is_reserve=1, role_id=903)
+        await _seat(db, div_id, "Unmapped", [(2, "Two")])
         await db.commit()
 
     snaps = await opening_team_standings(db_path, div_id)
@@ -999,7 +999,7 @@ async def test_neither_opening_function_persists_anything(db_path):
     """There is no round for a snapshot row to key to (see the module comment)."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=76)
-        await _seat(db, div_id, 76, "Alpha", [(1, "One")], role_id=901)
+        await _seat(db, div_id, "Alpha", [(1, "One")], role_id=901)
         await db.commit()
 
     await opening_driver_standings(db_path, div_id, {1: "One"})
@@ -1029,8 +1029,8 @@ async def test_tied_drivers_are_ordered_by_team_then_name(db_path):
     """Nobody has scored: alphabetically by team, then by driver within the team."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=80)
-        await _seat(db, div_id, 80, "zebra", [(1, "bravo"), (2, "Alpha")])
-        await _seat(db, div_id, 80, "Aardvark", [(3, "delta"), (4, "Charlie")])
+        await _seat(db, div_id, "zebra", [(1, "bravo"), (2, "Alpha")])
+        await _seat(db, div_id, "Aardvark", [(3, "delta"), (4, "Charlie")])
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
@@ -1058,7 +1058,7 @@ async def test_an_unrelated_driver_does_not_reorder_two_tied_drivers(db_path):
 
     async with get_connection(db_path) as db:
         small_id, season_id = await _bootstrap(db, server_id=81)
-        await _seat(db, small_id, 81, "Alpha", pair)
+        await _seat(db, small_id, "Alpha", pair)
         small_round = await _round(db, small_id, 1)
         await db.commit()
 
@@ -1070,7 +1070,7 @@ async def test_an_unrelated_driver_does_not_reorder_two_tied_drivers(db_path):
             (season_id,),
         )
         big_id = cur.lastrowid
-        await _seat(db, big_id, 81, "Alpha", pair + others)
+        await _seat(db, big_id, "Alpha", pair + others)
         big_round = await _round(db, big_id, 1)
         await db.commit()
 
@@ -1095,8 +1095,8 @@ async def test_tied_drivers_on_the_reserve_team_come_after_the_named_teams(db_pa
     """A reserve is last whatever their team's name, so 'Aardvark' does not beat 'zebra'."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=83)
-        await _seat(db, div_id, 83, "zebra", [(2, "alpha")])
-        await _seat(db, div_id, 83, "Aardvark reserves", [(1, "alpha")], is_reserve=1)
+        await _seat(db, div_id, "zebra", [(2, "alpha")])
+        await _seat(db, div_id, "Aardvark reserves", [(1, "alpha")], is_reserve=1)
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
         # Both retired: nought points, no classified finish, both participants.
@@ -1114,8 +1114,8 @@ async def test_a_tied_driver_with_no_seat_comes_after_the_reserves(db_path):
     """Their points stand, but a driver who left a division is of no team at all."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=84)
-        await _seat(db, div_id, 84, "zebra", [(3, "alpha")])
-        await _seat(db, div_id, 84, "Reserves", [(2, "alpha")], is_reserve=1)
+        await _seat(db, div_id, "zebra", [(3, "alpha")])
+        await _seat(db, div_id, "Reserves", [(2, "alpha")], is_reserve=1)
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
         await _result_dnf(db, sr1, 3, pos=18)
@@ -1135,7 +1135,7 @@ async def test_tied_drivers_sharing_a_display_name_order_by_ascending_id(db_path
     """Display names are not unique on Discord, so the id is what makes the order total."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=85)
-        await _seat(db, div_id, 85, "Alpha", [(900, "Mika"), (800, "Mika")])
+        await _seat(db, div_id, "Alpha", [(900, "Mika"), (800, "Mika")])
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
@@ -1149,7 +1149,7 @@ async def test_an_unresolved_tied_driver_orders_by_their_id(db_path):
     """No name resolved is the same fallback the opening grid takes."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=86)
-        await _seat(db, div_id, 86, "Alpha", [(2, "two"), (1, "one")])
+        await _seat(db, div_id, "Alpha", [(2, "two"), (1, "one")])
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
@@ -1163,7 +1163,7 @@ async def test_the_driver_order_reads_the_resolved_name_not_the_id(db_path):
     """The name decides, so the order inverts when the names do — the id cannot be what won."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=87)
-        await _seat(db, div_id, 87, "Alpha", [(1, "zulu"), (2, "alpha")])
+        await _seat(db, div_id, "Alpha", [(1, "zulu"), (2, "alpha")])
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
@@ -1179,8 +1179,8 @@ async def test_the_final_tiebreak_never_outranks_the_countback(db_path):
     """It is the *final* tiebreak: a driver ahead on points stays ahead of an earlier name."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=88)
-        await _seat(db, div_id, 88, "zebra", [(1, "zulu")])
-        await _seat(db, div_id, 88, "Aardvark", [(2, "alpha")])
+        await _seat(db, div_id, "zebra", [(1, "zulu")])
+        await _seat(db, div_id, "Aardvark", [(2, "alpha")])
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
         await _result(db, sr1, 1, pos=1, pts=25)
@@ -1197,8 +1197,8 @@ async def test_tied_teams_are_ordered_by_name(db_path):
     """No round has been run, so the constructors are separated by name alone."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=89)
-        await _seat(db, div_id, 89, "zebra", [(1, "one")], role_id=501)
-        await _seat(db, div_id, 89, "Aardvark", [(2, "two")], role_id=502)
+        await _seat(db, div_id, "zebra", [(1, "one")], role_id=501)
+        await _seat(db, div_id, "Aardvark", [(2, "two")], role_id=502)
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
@@ -1212,8 +1212,8 @@ async def test_a_tied_reserve_team_comes_after_the_named_teams(db_path):
     """Last whatever it is called, and whatever its role id."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=90)
-        await _seat(db, div_id, 90, "zebra", [(1, "one")], role_id=602)
-        await _seat(db, div_id, 90, "Aardvark reserves", [(2, "two")],
+        await _seat(db, div_id, "zebra", [(1, "one")], role_id=602)
+        await _seat(db, div_id, "Aardvark reserves", [(2, "two")],
                     is_reserve=1, role_id=601)
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
@@ -1231,8 +1231,8 @@ async def test_tied_teams_sharing_a_name_order_by_ascending_role_id(db_path):
     """The name is compared case-insensitively, so it can tie; the role id makes it total."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=91)
-        await _seat(db, div_id, 91, "Alpha", [(1, "one")], role_id=702)
-        await _seat(db, div_id, 91, "alpha", [(2, "two")], role_id=701)
+        await _seat(db, div_id, "Alpha", [(1, "one")], role_id=702)
+        await _seat(db, div_id, "alpha", [(2, "two")], role_id=701)
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
@@ -1246,7 +1246,7 @@ async def test_a_tied_role_the_division_holds_no_team_for_ranks_last(db_path):
     """A role that reached the standings through a result alone has no name to order on."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=93)
-        await _seat(db, div_id, 93, "zebra", [(1, "one")], role_id=752)
+        await _seat(db, div_id, "zebra", [(1, "one")], role_id=752)
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
         await db.execute(
@@ -1267,8 +1267,8 @@ async def test_the_team_final_tiebreak_never_outranks_the_countback(db_path):
     """A team ahead on points stays ahead of one with an earlier name."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=92)
-        await _seat(db, div_id, 92, "zebra", [(1, "one")], role_id=801)
-        await _seat(db, div_id, 92, "Aardvark", [(2, "two")], role_id=802)
+        await _seat(db, div_id, "zebra", [(1, "one")], role_id=801)
+        await _seat(db, div_id, "Aardvark", [(2, "two")], role_id=802)
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
         await _result(db, sr1, 1, pos=1, pts=25, team=801)
@@ -1305,7 +1305,7 @@ async def test_the_persisted_snapshot_is_ordered_on_the_names_given(db_path):
 
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=94)
-        await _seat(db, div_id, 94, "Alpha", [(1, "zulu"), (2, "alpha")])
+        await _seat(db, div_id, "Alpha", [(1, "zulu"), (2, "alpha")])
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
@@ -1321,7 +1321,7 @@ async def test_the_persisted_snapshot_falls_back_to_the_id_with_no_names(db_path
 
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=95)
-        await _seat(db, div_id, 95, "Alpha", [(1, "zulu"), (2, "alpha")])
+        await _seat(db, div_id, "Alpha", [(1, "zulu"), (2, "alpha")])
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
@@ -1337,7 +1337,7 @@ async def test_a_cascade_orders_every_round_it_rewrites_on_the_same_names(db_pat
 
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=96)
-        await _seat(db, div_id, 96, "Alpha", [(1, "zulu"), (2, "alpha")])
+        await _seat(db, div_id, "Alpha", [(1, "zulu"), (2, "alpha")])
         r1 = await _round(db, div_id, 1)
         r2 = await _round(db, div_id, 2)
         await db.commit()
@@ -1355,7 +1355,7 @@ from services.standings_service import compute_and_persist_round  # noqa: E402
 PAST, NOW = 5101, 5102
 
 
-async def _driver_moved(db, server_id: int = 1) -> None:
+async def _driver_moved(db) -> None:
     """A driver on PAST who has since made NOW their current account."""
     cursor = await db.execute(
         "INSERT INTO driver_profiles (discord_user_id, current_state) "

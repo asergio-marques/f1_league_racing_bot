@@ -372,7 +372,7 @@ class TestWindowState:
 # ---------------------------------------------------------------------------
 
 
-def _make_record(server_id: int = 1, user_id: str = "u1") -> "SignupRecord":
+def _make_record(user_id: str = "u1") -> "SignupRecord":
     from models.signup_module import SignupRecord
     return SignupRecord(
         id=0,
@@ -450,7 +450,7 @@ class TestSignupRecordCRUD:
 # ---------------------------------------------------------------------------
 
 
-def _make_wizard(server_id: int = 1, user_id: str = "w1") -> "SignupWizardRecord":
+def _make_wizard(user_id: str = "w1") -> "SignupWizardRecord":
     from models.signup_module import SignupWizardRecord, WizardState
     return SignupWizardRecord(
         id=0,

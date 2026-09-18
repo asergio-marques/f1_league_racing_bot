@@ -281,7 +281,7 @@ async def _count(db_path: str, table: str) -> int:
         return (await cur.fetchone())[0]
 
 
-async def _disable(cog: ModuleCog, server_id: int = SERVER_ID) -> MagicMock:
+async def _disable(cog: ModuleCog) -> MagicMock:
     """Run the disable through the confirmation, as a league manager would."""
     interaction = _make_interaction()
     await cog._apply_results_disable(interaction, cascade_attendance=False)

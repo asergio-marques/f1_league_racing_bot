@@ -65,7 +65,7 @@ async def _make_db(tmp_path) -> str:
 
 
 async def _profile(db_path: str, account: str, *, state: str = "NOT_SIGNED_UP",
-                   former: bool = False, server_id: int = SERVER_ID) -> int:
+                   former: bool = False) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO driver_profiles (discord_user_id, current_state, "

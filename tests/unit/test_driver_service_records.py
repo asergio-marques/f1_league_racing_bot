@@ -132,7 +132,7 @@ async def _seed_results(db_path: str, user_id: str = OLD_USER, league: int = LEA
 
 
 async def _seed_history(
-    db_path: str, user_id: str = OLD_USER, *, server_id: int = SERVER_ID, season: int = 1
+    db_path: str, user_id: str = OLD_USER, *, season: int = 1
 ) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
@@ -180,7 +180,6 @@ async def _seed_profile(
     user_id: str = OLD_USER,
     state: str = "UNASSIGNED",
     former: bool = False,
-    server_id: int = SERVER_ID,
 ) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(

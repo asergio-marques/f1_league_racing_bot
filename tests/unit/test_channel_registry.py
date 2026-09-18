@@ -50,7 +50,7 @@ async def db_path(tmp_path):
     return path
 
 
-async def _season(db_path, server_id=SERVER_ID, status="SETUP"):
+async def _season(db_path, status="SETUP"):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO seasons (start_date, status, season_number) "

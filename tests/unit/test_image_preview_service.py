@@ -155,7 +155,7 @@ async def _seat_driver(
             (user_id,),
         )
         profile_id = cursor.lastrowid
-        # signup_records is keyed by (server_id, discord_user_id) — it holds no profile id.
+        # signup_records is keyed by discord_user_id — it holds no profile id.
         await db.execute(
             "INSERT INTO signup_records (discord_user_id, server_display_name, "
             "discord_username, nationality) VALUES (?, ?, ?, ?)",
