@@ -140,7 +140,6 @@ async def sheet_db(tmp_path):
             """
             CREATE TABLE attendance_division_config (
                 division_id           INTEGER PRIMARY KEY,
-                server_id             INTEGER,
                 rsvp_channel_id       TEXT,
                 attendance_channel_id TEXT,
                 attendance_message_id TEXT
@@ -176,11 +175,11 @@ async def sheet_db(tmp_path):
                 test_display_name TEXT
             );
             CREATE TABLE attendance_config (
-                server_id             INTEGER PRIMARY KEY,
+                id                    INTEGER PRIMARY KEY CHECK (id = 1),
                 autoreserve_threshold INTEGER,
                 autosack_threshold    INTEGER
             );
-            CREATE TABLE seasons  (id INTEGER PRIMARY KEY, server_id INTEGER, status TEXT);
+            CREATE TABLE seasons  (id INTEGER PRIMARY KEY, status TEXT);
             CREATE TABLE divisions(id INTEGER PRIMARY KEY, season_id INTEGER, name TEXT);
             CREATE TABLE rounds (
                 id           INTEGER PRIMARY KEY,
@@ -191,7 +190,7 @@ async def sheet_db(tmp_path):
                 status       TEXT DEFAULT 'ACTIVE'
             );
 
-            INSERT INTO seasons  VALUES (1, 1, 'ACTIVE');
+            INSERT INTO seasons  VALUES (1, 'ACTIVE');
             INSERT INTO divisions VALUES (7, 1, 'Division 1');
             INSERT INTO rounds VALUES (3, 7, 3, 'NORMAL', 'Silverstone Circuit', 'NOT_RUN');
             INSERT INTO rounds VALUES (9, 7, 9, 'NORMAL', 'Circuit Zandvoort', 'CANCELLED');
@@ -213,7 +212,7 @@ async def _config(db_path, *, prior: str | None):
     async with aiosqlite.connect(db_path) as db:
         await db.execute("DELETE FROM attendance_division_config")
         await db.execute(
-            "INSERT INTO attendance_division_config VALUES (7, 1, NULL, '900', ?)",
+            "INSERT INTO attendance_division_config VALUES (7, NULL, '900', ?)",
             (prior,),
         )
         await db.commit()
@@ -384,7 +383,7 @@ async def test_a_failed_post_enqueues_the_textual_sheet_for_retry(sheet_db, monk
 
     enqueued: list[dict] = []
 
-    async def _fake_enqueue(db_path, server_id, channel_id, content, failure_reason):
+    async def _fake_enqueue(db_path, channel_id, content, failure_reason):
         enqueued.append(
             {"channel_id": channel_id, "content": content, "reason": failure_reason}
         )
@@ -449,7 +448,7 @@ async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db)
     async with aiosqlite.connect(sheet_db) as db:
         await db.execute("DELETE FROM attendance_division_config")
         await db.execute(
-            "INSERT INTO attendance_division_config VALUES (7, 1, NULL, NULL, '4242')"
+            "INSERT INTO attendance_division_config VALUES (7, NULL, NULL, '4242')"
         )
         await db.commit()
 

@@ -109,7 +109,7 @@ async def test_the_results_render_body_runs_and_labels_itself_with_its_template(
     )
 
     decision = await image_results_post.render_png(
-        bot, 1, drawing, PostingOrigin.SCHEDULED
+        bot, drawing, PostingOrigin.SCHEDULED
     )
 
     assert decision.posts_image
@@ -118,7 +118,7 @@ async def test_the_results_render_body_runs_and_labels_itself_with_its_template(
     assert seen["classes"] == ["team", "flag", "tyre"]
     bot.image_render_service.render_for_posting.assert_awaited_once()
     assert (
-        bot.image_render_service.render_for_posting.await_args.args[1]
+        bot.image_render_service.render_for_posting.await_args.args[0]
         == "results_race_template"
     )
     # The **session's** name, not the template's: one template draws four sessions.
@@ -146,7 +146,7 @@ async def test_the_results_render_body_labels_qualifying_as_qualifying(
         round_number="4",
     )
 
-    await image_results_post.render_png(bot, 1, drawing, PostingOrigin.SCHEDULED)
+    await image_results_post.render_png(bot, drawing, PostingOrigin.SCHEDULED)
 
     assert seen["image_type"] == "results_qualifying_template"
     assert (
@@ -177,7 +177,7 @@ async def test_the_lineup_render_body_runs_and_labels_itself_with_its_template(
     )
 
     decision = await image_lineup_post.render_png(
-        bot, 1, MagicMock(), 7, PostingOrigin.SCHEDULED
+        bot, MagicMock(), 7, PostingOrigin.SCHEDULED
     )
 
     assert decision.posts_image
@@ -185,7 +185,7 @@ async def test_the_lineup_render_body_runs_and_labels_itself_with_its_template(
     assert seen["image_type"] == "lineup_template"
     assert seen["classes"] == ["team", "flag", "driver"]
     assert (
-        bot.image_render_service.render_for_posting.await_args.args[1]
+        bot.image_render_service.render_for_posting.await_args.args[0]
         == "lineup_template"
     )
 
@@ -200,7 +200,7 @@ async def test_the_attendance_render_body_runs_and_labels_itself(tmp_path, monke
     seen = _capture_image_type(monkeypatch)
 
     render = await image_attendance_post.render_sheet(
-        bot, 1, SimpleNamespace(division_name="Division 1")
+        bot, SimpleNamespace(division_name="Division 1")
     )
 
     assert render.draws, render.problem
@@ -215,7 +215,7 @@ async def test_the_verdict_render_body_runs_and_labels_itself(tmp_path, monkeypa
     seen = _capture_image_type(monkeypatch)
 
     render = await image_verdict_post.render_verdict(
-        bot, 1, SimpleNamespace(division_name="Division 1")
+        bot, SimpleNamespace(division_name="Division 1")
     )
 
     assert render.draws, render.problem
@@ -236,7 +236,7 @@ async def test_the_weather_render_body_runs_and_labels_itself(tmp_path, monkeypa
         round_number="7",
     )
 
-    render = await image_weather_post.render_forecast(bot, 1, drawing)
+    render = await image_weather_post.render_forecast(bot, drawing)
 
     assert render.draws, render.problem
     assert render.png == png
@@ -261,7 +261,6 @@ async def test_the_rsvp_render_body_runs_and_labels_itself(tmp_path, monkeypatch
 
     attachment = await image_rsvp_post.try_attach(
         bot,
-        1,
         division_name="Main",
         round_number=4,
         round_format="STANDARD",

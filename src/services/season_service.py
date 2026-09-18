@@ -52,11 +52,11 @@ class SeasonService:
     # Season
     # ------------------------------------------------------------------
 
-    async def create_season(self, server_id: int, start_date: date | None = None) -> Season:
+    async def create_season(self, start_date: date | None = None) -> Season:
         """Insert a new SETUP season and return it.
 
-        Raises ``sqlite3.IntegrityError`` where the server already holds a live season:
-        migration 049 permits one SETUP-or-ACTIVE row per server, and this method applies
+        Raises ``sqlite3.IntegrityError`` where the league already holds a live season:
+        the schema permits one SETUP-or-ACTIVE row, and this method applies
         none of the checks `/season setup` makes before its own writes. Nothing in
         ``src/`` calls it — season setup writes its season through
         :meth:`save_pending_snapshot` — so any new caller wants those checks first.
@@ -65,21 +65,20 @@ class SeasonService:
             start_date = date.today()
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "INSERT INTO seasons (server_id, start_date, status) VALUES (?, ?, ?)",
-                (server_id, start_date.isoformat(), SeasonStatus.SETUP.value),
+                "INSERT INTO seasons (start_date, status) VALUES (?, ?)",
+                (start_date.isoformat(), SeasonStatus.SETUP.value),
             )
             await db.commit()
             season_id = cursor.lastrowid
 
         return Season(
             id=season_id,
-            server_id=server_id,
             start_date=start_date,
             status=SeasonStatus.SETUP,
         )
 
-    async def get_confirmed_season(self, server_id: int) -> Season | None:
-        """Return the ACTIVE season for *server_id*, or None.
+    async def get_confirmed_season(self) -> Season | None:
+        """Return the ACTIVE season, or None.
 
         ACTIVE is every stage from the first confirmation of placements to the season's
         completion or cancellation: the three ongoing stages and Pending completion. This was
@@ -89,9 +88,9 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
-                "WHERE server_id = ? AND status = ?",
-                (server_id, SeasonStatus.ACTIVE.value),
+                "SELECT id, start_date, status, season_number, stage FROM seasons "
+                "WHERE status = ?",
+                (SeasonStatus.ACTIVE.value,),
             )
             row = await cursor.fetchone()
 
@@ -99,25 +98,24 @@ class SeasonService:
             return None
         return _row_to_season(row)
 
-    async def get_season_for_server(self, server_id: int) -> Season | None:
-        """Return the most recent season for *server_id* regardless of status.
+    async def get_season_for_server(self) -> Season | None:
+        """Return the most recent season regardless of status.
 
         Used by channel assignment commands that should work in any season state.
         Returns the season with the highest id for the server.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
-                "WHERE server_id = ? ORDER BY id DESC LIMIT 1",
-                (server_id,),
+                "SELECT id, start_date, status, season_number, stage FROM seasons "
+                " ORDER BY id DESC LIMIT 1",
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return _row_to_season(row)
 
-    async def get_setup_or_active_season(self, server_id: int) -> Season | None:
-        """Return the live (SETUP or ACTIVE) season for *server_id*, or None.
+    async def get_setup_or_active_season(self) -> Season | None:
+        """Return the live (SETUP or ACTIVE) season, or None.
 
         A server holds at most one, enforced by the partial unique index migration 049
         builds, so the two states cannot both be present and there is nothing to choose
@@ -128,17 +126,16 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
-                "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
+                "SELECT id, start_date, status, season_number, stage FROM seasons "
+                "WHERE status IN ('SETUP', 'ACTIVE') "
                 "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-                (server_id,),
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return _row_to_season(row)
 
-    async def get_previewable_season(self, server_id: int) -> Season | None:
+    async def get_previewable_season(self) -> Season | None:
         """Return the season an `/images test` preview draws, or None.
 
         The server's one live season — SETUP or ACTIVE. A COMPLETED or CANCELLED season is
@@ -152,100 +149,92 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
-                "WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+                "SELECT id, start_date, status, season_number, stage FROM seasons "
+                "WHERE status IN ('ACTIVE', 'SETUP') "
                 "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-                (server_id,),
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return _row_to_season(row)
 
-    async def get_previous_season_number(self, server_id: int) -> int:
-        """The highest season number *server_id* has already committed, or 0.
+    async def get_previous_season_number(self) -> int:
+        """The highest season number the league has already committed, or 0.
 
         "Committed" means the number has been issued and cannot be re-used — every status
         but SETUP. A season still in setup holds a provisional number and is excluded, so
         that a league drafting its next season does not push the count forward twice.
 
         Not `server_configs.previous_season_number`, which is written by nothing and reads
-        0 on every server whatever its history.
+        0 whatever the league's history.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT MAX(season_number) AS highest FROM seasons "
-                "WHERE server_id = ? AND status != 'SETUP'",
-                (server_id,),
+                "WHERE status != 'SETUP'",
             )
             row = await cursor.fetchone()
         if row is None or row["highest"] is None:
             return 0
         return int(row["highest"])
 
-    async def get_setup_season(self, server_id: int) -> Season | None:
-        """Return the SETUP season for *server_id*, or None."""
+    async def get_setup_season(self) -> Season | None:
+        """Return the SETUP season, or None."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
-                "WHERE server_id = ? AND status = 'SETUP' LIMIT 1",
-                (server_id,),
+                "SELECT id, start_date, status, season_number, stage FROM seasons "
+                "WHERE status = 'SETUP' LIMIT 1",
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return _row_to_season(row)
 
-    async def has_existing_season(self, server_id: int) -> bool:
-        """Return True if any season row exists for *server_id* (any status)."""
+    async def has_existing_season(self) -> bool:
+        """Return True if any season row exists (any status)."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT 1 FROM seasons WHERE server_id = ? LIMIT 1",
-                (server_id,),
+                "SELECT 1 FROM seasons LIMIT 1",
             )
             row = await cursor.fetchone()
         return row is not None
 
-    async def has_active_or_completed_season(self, server_id: int) -> bool:
-        """Return True if an ACTIVE or COMPLETED season exists for *server_id*."""
+    async def has_active_or_completed_season(self) -> bool:
+        """Return True if an ACTIVE or COMPLETED season exists."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT 1 FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'COMPLETED') LIMIT 1",
-                (server_id,),
+                "SELECT 1 FROM seasons WHERE status IN ('ACTIVE', 'COMPLETED') LIMIT 1",
             )
             row = await cursor.fetchone()
         return row is not None
 
-    async def has_active_or_setup_season(self, server_id: int) -> bool:
-        """Return True if an ACTIVE or SETUP season exists for *server_id*."""
+    async def has_active_or_setup_season(self) -> bool:
+        """Return True if an ACTIVE or SETUP season exists."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT 1 FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') LIMIT 1",
-                (server_id,),
+                "SELECT 1 FROM seasons WHERE status IN ('ACTIVE', 'SETUP') LIMIT 1",
             )
             row = await cursor.fetchone()
         return row is not None
 
-    async def count_completed_seasons(self, server_id: int) -> int:
-        """Return the count of COMPLETED seasons for *server_id*."""
+    async def count_completed_seasons(self) -> int:
+        """Return the count of COMPLETED seasons."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT COUNT(id) FROM seasons WHERE server_id = ? AND status = 'COMPLETED'",
-                (server_id,),
+                "SELECT COUNT(id) FROM seasons WHERE status = 'COMPLETED'",
             )
             row = await cursor.fetchone()
         return row[0] if row else 0
 
-    async def count_persisted_seasons(self, server_id: int) -> int:
-        """Return the count of all persisted (non-SETUP) seasons for *server_id*.
+    async def count_persisted_seasons(self) -> int:
+        """Return the count of all persisted (non-SETUP) seasons.
 
         Includes ACTIVE, COMPLETED, and CANCELLED seasons — every season whose
         number has already been committed.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT COUNT(id) FROM seasons WHERE server_id = ? AND status != 'SETUP'",
-                (server_id,),
+                "SELECT COUNT(id) FROM seasons WHERE status != 'SETUP'",
             )
             row = await cursor.fetchone()
         return row[0] if row else 0
@@ -315,14 +304,13 @@ class SeasonService:
 
     async def save_pending_snapshot(
         self,
-        server_id: int,
         start_date: date,
         existing_season_id: int,
         divisions: list[dict],
         game_edition: int = 0,
         initial_stage: SeasonStage | None = None,
     ) -> tuple[int, int]:
-        """Atomically replace the SETUP season snapshot for *server_id* in the DB.
+        """Atomically replace the SETUP season snapshot in the DB.
 
         Rebuilds everything beneath the season row (if *existing_season_id* is non-zero)
         and re-inserts the full pending config. *initial_stage* is the stage a season
@@ -371,7 +359,7 @@ class SeasonService:
                 # First snapshot: season_number = count of all persisted seasons + 1.
                 # Persisted seasons (ACTIVE, COMPLETED, CANCELLED) have already used their
                 # number, so the next season is simply one higher than that tally.
-                season_number = await self.count_persisted_seasons(server_id) + 1
+                season_number = await self.count_persisted_seasons() + 1
 
             if existing_season_id != 0:
                 # Save division_results_config keyed by division name so we can
@@ -543,10 +531,9 @@ class SeasonService:
             else:
                 cursor = await db.execute(
                     "INSERT INTO seasons "
-                    "(server_id, start_date, status, season_number, game_edition, stage) "
-                    "VALUES (?, ?, 'SETUP', ?, ?, ?)",
+                    "(start_date, status, season_number, game_edition, stage) "
+                    "VALUES (?, 'SETUP', ?, ?, ?)",
                     (
-                        server_id,
                         start_date.isoformat(),
                         season_number,
                         game_edition,
@@ -613,11 +600,10 @@ class SeasonService:
                     if saved.get("rsvp_channel_id") or saved.get("attendance_channel_id"):
                         await db.execute(
                             "INSERT INTO attendance_division_config "
-                            "(division_id, server_id, rsvp_channel_id, attendance_channel_id) "
-                            "VALUES (?, ?, ?, ?)",
+                            "(division_id, rsvp_channel_id, attendance_channel_id) "
+                            "VALUES (?, ?, ?)",
                             (
                                 div_db_id,
-                                server_id,
                                 saved.get("rsvp_channel_id"),
                                 saved.get("attendance_channel_id"),
                             ),
@@ -731,7 +717,8 @@ class SeasonService:
         """Return raw data for every SETUP-status season to rebuild PendingConfig on startup."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, season_number, game_edition FROM seasons WHERE status = 'SETUP'"
+                "SELECT id, start_date, season_number, game_edition "
+                "FROM seasons WHERE status = 'SETUP'"
             )
             season_rows = await cursor.fetchall()
 
@@ -773,7 +760,6 @@ class SeasonService:
 
                 result.append({
                     "season_id": season_id,
-                    "server_id": s_row["server_id"],
                     "start_date": date.fromisoformat(s_row["start_date"]),
                     "season_number": s_row["season_number"] if "season_number" in s_row.keys() else 0,
                     "game_edition": s_row["game_edition"] if "game_edition" in s_row.keys() else 0,
@@ -782,14 +768,13 @@ class SeasonService:
 
         return result
 
-    async def increment_previous_season_number(self, server_id: int) -> None:
+    async def increment_previous_season_number(self) -> None:
         """Increment server_configs.previous_season_number by 1."""
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE server_configs "
                 "SET previous_season_number = previous_season_number + 1 "
-                "WHERE server_id = ?",
-                (server_id,),
+                "",
             )
             await db.commit()
 
@@ -814,7 +799,7 @@ class SeasonService:
                 f"Missing tier(s): {missing}."
             )
 
-    async def get_last_scheduled_at(self, server_id: int) -> datetime | None:
+    async def get_last_scheduled_at(self) -> datetime | None:
         """Return the latest scheduled_at across all ACTIVE rounds for the active season."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -823,18 +808,17 @@ class SeasonService:
                 FROM rounds r
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons   s ON s.id = d.season_id
-                WHERE s.server_id = ? AND s.status = 'ACTIVE'
+                WHERE s.status = 'ACTIVE'
                   AND r.status   != 'CANCELLED'
                   AND d.status   != 'CANCELLED'
                 """,
-                (server_id,),
             )
             row = await cursor.fetchone()
         if row is None or row[0] is None:
             return None
         return datetime.fromisoformat(row[0])
 
-    async def all_phases_complete(self, server_id: int) -> bool:
+    async def all_phases_complete(self) -> bool:
         """True if every non-MYSTERY, non-CANCELLED round in the active season has all 3 phases done."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -842,14 +826,12 @@ class SeasonService:
                 SELECT COUNT(*) FROM rounds r
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons   s ON s.id = d.season_id
-                WHERE s.server_id = ?
-                  AND s.status    = 'ACTIVE'
+                WHERE s.status    = 'ACTIVE'
                   AND r.format   != 'MYSTERY'
                   AND r.status   != 'CANCELLED'
                   AND d.status   != 'CANCELLED'
                   AND (r.phase1_done = 0 OR r.phase2_done = 0 OR r.phase3_done = 0)
                 """,
-                (server_id,),
             )
             row = await cursor.fetchone()
         return row is not None and row[0] == 0
@@ -860,7 +842,7 @@ class SeasonService:
 
         return await advance_to_pending_completion(self._db_path, season_id)
 
-    async def wind_down_ongoing(self, bot, server_id: int) -> bool:
+    async def wind_down_ongoing(self, bot) -> bool:
         """Take a season whose every division is done out of the ongoing stages (issue #220).
 
         Its signup window closed, its pending placements turned down, and on to Pending
@@ -869,7 +851,7 @@ class SeasonService:
         """
         from services.season_lifecycle_service import wind_down_ongoing
 
-        return await wind_down_ongoing(bot, server_id)
+        return await wind_down_ongoing(bot)
 
     async def refresh_division_status(self, division_id: int) -> bool:
         """Move a division ACTIVE -> FINISHED once none of its rounds is outstanding.
@@ -924,7 +906,6 @@ class SeasonService:
 
     async def end_rounds_awaiting_results(
         self,
-        server_id: int,
         actor_id: int,
         actor_name: str,
     ) -> list[dict]:
@@ -959,13 +940,11 @@ class SeasonService:
                 FROM rounds r
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons   s ON s.id = d.season_id
-                WHERE s.server_id = ?
-                  AND s.status    = 'ACTIVE'
+                WHERE s.status    = 'ACTIVE'
                   AND d.status   != 'CANCELLED'
                   AND r.status IN ({_AWAITING_RESULTS_MODULE_SQL})
                 ORDER BY d.name, r.round_number
                 """,
-                (server_id,),
             )
             rows = [dict(r) for r in await cursor.fetchall()]
 
@@ -977,12 +956,11 @@ class SeasonService:
                 await db.execute(
                     """
                     INSERT INTO audit_entries
-                        (server_id, actor_id, actor_name, division_id, change_type,
+                        (actor_id, actor_name, division_id, change_type,
                          old_value, new_value, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        server_id,
                         actor_id,
                         actor_name,
                         row["division_id"],
@@ -1009,7 +987,7 @@ class SeasonService:
             for row in rows
         ]
 
-    async def all_divisions_finished(self, server_id: int) -> bool:
+    async def all_divisions_finished(self) -> bool:
         """True if every division of the active season is FINISHED or CANCELLED.
 
         This is the gate on completing a season. It asks about divisions, not rounds: a division
@@ -1021,16 +999,14 @@ class SeasonService:
                 """
                 SELECT COUNT(*) FROM divisions d
                 JOIN seasons s ON s.id = d.season_id
-                WHERE s.server_id = ?
-                  AND s.status    = 'ACTIVE'
+                WHERE s.status    = 'ACTIVE'
                   AND d.status NOT IN ('FINISHED', 'CANCELLED')
                 """,
-                (server_id,),
             )
             row = await cursor.fetchone()
         return row is not None and row[0] == 0
 
-    async def get_outstanding_rounds(self, server_id: int) -> list[dict]:
+    async def get_outstanding_rounds(self) -> list[dict]:
         """Return division, round_number and track_name for every round still to be finalised.
 
         Cancelled rounds and cancelled divisions are excluded — neither is waiting on anybody.
@@ -1042,25 +1018,14 @@ class SeasonService:
                 FROM rounds r
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons   s ON s.id = d.season_id
-                WHERE s.server_id = ?
-                  AND s.status    = 'ACTIVE'
+                WHERE s.status    = 'ACTIVE'
                   AND r.status NOT IN ({_TERMINAL_SQL})
                   AND d.status   != 'CANCELLED'
                 ORDER BY d.name, r.round_number
                 """,
-                (server_id,),
             )
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
-
-    async def get_all_server_ids_with_active_season(self) -> list[int]:
-        """Return all server_ids that currently have an ACTIVE season row."""
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT DISTINCT server_id FROM seasons WHERE status = 'ACTIVE'"
-            )
-            rows = await cursor.fetchall()
-        return [row[0] for row in rows]
 
     async def discard_uncommitted_placements(self, season_id: int) -> int:
         """Delete every placement of *season_id* not yet committed, freeing its seat.
@@ -1259,7 +1224,7 @@ class SeasonService:
         )
 
     async def get_previewable_divisions(
-        self, server_id: int, *, timeout: float | None = None
+        self, *, timeout: float | None = None
     ) -> list[Division]:
         """The divisions of the season an `/images test` preview draws, in one connection.
 
@@ -1282,9 +1247,8 @@ class SeasonService:
         async with get_connection(self._db_path, timeout=timeout) as db:
             cursor = await db.execute(
                 "SELECT id FROM seasons "
-                "WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+                "WHERE status IN ('ACTIVE', 'SETUP') "
                 "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-                (server_id,),
             )
             season_row = await cursor.fetchone()
             if season_row is None:
@@ -1465,7 +1429,6 @@ class SeasonService:
         self,
         db,
         division_id: int,
-        server_id: int,
         actor_id: int,
         actor_name: str,
         now: datetime,
@@ -1503,12 +1466,12 @@ class SeasonService:
             await db.execute(
                 """
                 INSERT INTO audit_entries
-                    (server_id, actor_id, actor_name, division_id, change_type,
+                    (actor_id, actor_name, division_id, change_type,
                      old_value, new_value, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    server_id, actor_id, actor_name, division_id,
+                    actor_id, actor_name, division_id,
                     "round.status", "ACTIVE", "CANCELLED", now.isoformat(),
                 ),
             )
@@ -1520,12 +1483,11 @@ class SeasonService:
         await db.execute(
             """
             INSERT INTO audit_entries
-                (server_id, actor_id, actor_name, division_id, change_type,
+                (actor_id, actor_name, division_id, change_type,
                  old_value, new_value, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                server_id,
                 actor_id,
                 actor_name,
                 division_id,
@@ -1539,7 +1501,6 @@ class SeasonService:
     async def cancel_division(
         self,
         division_id: int,
-        server_id: int,
         actor_id: int,
         actor_name: str,
     ) -> None:
@@ -1553,7 +1514,7 @@ class SeasonService:
         now = datetime.now(timezone.utc)
         async with get_connection(self._db_path) as db:
             await self._cancel_division_on(
-                db, division_id, server_id, actor_id, actor_name, now
+                db, division_id, actor_id, actor_name, now
             )
             await db.commit()
             cursor = await db.execute(
@@ -1570,7 +1531,6 @@ class SeasonService:
     async def cancel_season_cascade(
         self,
         season_id: int,
-        server_id: int,
         actor_id: int,
         actor_name: str,
     ) -> None:
@@ -1593,7 +1553,7 @@ class SeasonService:
 
             for division_id in division_ids:
                 await self._cancel_division_on(
-                    db, division_id, server_id, actor_id, actor_name, now
+                    db, division_id, actor_id, actor_name, now
                 )
 
             await db.execute(
@@ -1772,7 +1732,6 @@ class SeasonService:
     async def cancel_round(
         self,
         round_id: int,
-        server_id: int,
         actor_id: int,
         actor_name: str,
     ) -> None:
@@ -1805,12 +1764,11 @@ class SeasonService:
             await db.execute(
                 """
                 INSERT INTO audit_entries
-                    (server_id, actor_id, actor_name, division_id, change_type,
+                    (actor_id, actor_name, division_id, change_type,
                      old_value, new_value, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    server_id,
                     actor_id,
                     actor_name,
                     division_id,
@@ -1906,7 +1864,6 @@ class SeasonService:
 def _row_to_season(row: object) -> Season:
     return Season(
         id=row["id"],
-        server_id=row["server_id"],
         start_date=date.fromisoformat(row["start_date"]),
         status=SeasonStatus(row["status"]),
         season_number=row["season_number"] if "season_number" in row.keys() else 0,

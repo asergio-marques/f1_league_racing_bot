@@ -53,7 +53,6 @@ def _wizard(state, *, tracks=(), nationality_required=False, lap_index=0, **draf
 
     return SignupWizardRecord(
         id=1,
-        server_id=SERVER_ID,
         discord_user_id=DRIVER_ID,
         wizard_state=state,
         signup_channel_id=99,
@@ -91,6 +90,7 @@ def advancer():
     signup_svc.save_wizard = AsyncMock(return_value=None)
     bot = MagicMock()
     bot.signup_module_service = signup_svc
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
 
     channel = MagicMock(spec=discord.TextChannel)
@@ -303,7 +303,7 @@ async def test_the_last_step_commits_the_signup(advancer):
 
     await _advance(advancer, wizard)
 
-    advancer.svc.commit_wizard.assert_awaited_once_with(SERVER_ID, DRIVER_ID, advancer.guild)
+    advancer.svc.commit_wizard.assert_awaited_once_with(DRIVER_ID, advancer.guild)
 
 
 async def test_the_final_answers_are_saved_before_the_commit_reads_them(advancer):

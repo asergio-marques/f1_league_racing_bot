@@ -81,9 +81,9 @@ async def _base_db(tmp_path, name: str, *, season_status: str = "ACTIVE") -> str
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', ?)",
-            (SEASON_ID, SERVER_ID, season_status),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', ?)",
+            (SEASON_ID, season_status),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -96,11 +96,13 @@ async def _base_db(tmp_path, name: str, *, season_status: str = "ACTIVE") -> str
 
 def _stub_bot(db_path: str, *, weather_enabled: bool = True, guild=None, channel=None):
     stub = MagicMock()
+    stub.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     stub.db_path = db_path
     stub.module_service = MagicMock()
     stub.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
     stub.output_router = MagicMock()
     stub.output_router.post_log = AsyncMock(return_value=None)
+    stub.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     stub.get_guild = MagicMock(return_value=guild)
     stub.get_channel = MagicMock(return_value=channel)
     stub.fetch_channel = AsyncMock(return_value=channel)
@@ -243,9 +245,9 @@ async def test_a_server_with_weather_off_is_never_asked_for_its_horizons(tmp_pat
     get_config.assert_not_awaited()
 
 
-async def test_the_horizons_are_read_once_per_server(tmp_path):
-    """A season's rounds all share one configuration, and a query per round would be a
-    database read for every round of every division on every start-up."""
+async def test_the_horizons_are_read_once(tmp_path):
+    """The league has one configuration, and a query per round would be a database read for
+    every round of every division on every start-up."""
     db_path = await _base_db(tmp_path, "phases_onceper")
     for round_id in (21, 22, 23):
         await _seed_round(db_path, days_away=0.1, round_id=round_id)
@@ -303,10 +305,10 @@ async def test_a_naive_scheduled_time_is_read_as_utc(tmp_path):
 async def _seed_prompt(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO season_review_prompts (server_id, season_id, channel_id, "
+            "INSERT INTO season_review_prompts (id, season_id, channel_id, "
             "message_id, reviewer_id, posted_at) "
             "VALUES (?, ?, ?, ?, ?, '2026-02-01T00:00:00+00:00')",
-            (SERVER_ID, SEASON_ID, CHANNEL_ID, MESSAGE_ID, REVIEWER_ID),
+            (1, SEASON_ID, CHANNEL_ID, MESSAGE_ID, REVIEWER_ID),
         )
         await db.commit()
 
@@ -464,10 +466,10 @@ async def _seed_amend(db_path):
             (ROUND_ID, DIVISION_ID),
         )
         await db.execute(
-            "INSERT INTO round_amend_channels (round_id, server_id, channel_id, "
-            "session_type, created_at) VALUES (?, ?, ?, 'FEATURE_RACE', "
+            "INSERT INTO round_amend_channels (round_id, channel_id, "
+            "session_type, created_at) VALUES (?, ?, 'FEATURE_RACE', "
             "'2026-02-01T00:00:00+00:00')",
-            (ROUND_ID, SERVER_ID, CHANNEL_ID),
+            (ROUND_ID, CHANNEL_ID),
         )
         await db.commit()
 
@@ -529,7 +531,7 @@ async def test_the_league_manager_is_told_to_re_run_the_command(tmp_path):
 
     await bot_module._recover_orphaned_amend_channels(stub)
 
-    logged = str(stub.output_router.post_log.await_args.args[1])
+    logged = str(stub.output_router.post_log.await_args.args[0])
     assert "restarted mid-amendment" in logged
     assert "/round results amend" in logged
 
@@ -542,7 +544,7 @@ async def test_the_notice_names_the_round_and_the_session(tmp_path):
 
     await bot_module._recover_orphaned_amend_channels(stub)
 
-    logged = str(stub.output_router.post_log.await_args.args[1])
+    logged = str(stub.output_router.post_log.await_args.args[0])
     assert "R3" in logged
     assert "Feature Race" in logged
 

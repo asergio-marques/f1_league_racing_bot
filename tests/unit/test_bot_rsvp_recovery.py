@@ -79,13 +79,13 @@ async def _make_db(
         )
         await db.execute(
             "INSERT INTO attendance_config "
-            "(server_id, module_enabled, rsvp_deadline_hours) VALUES (?, ?, ?)",
-            (SERVER_ID, int(attendance_enabled), deadline_hours),
+            "(id, module_enabled, rsvp_deadline_hours) VALUES (?, ?, ?)",
+            (1, int(attendance_enabled), deadline_hours),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', ?)",
-            (SEASON_ID, SERVER_ID, season_status),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', ?)",
+            (SEASON_ID, season_status),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -113,9 +113,8 @@ async def _make_db(
         if distributed:
             await db.execute(
                 "INSERT INTO driver_profiles "
-                "(id, server_id, discord_user_id, current_state) "
-                "VALUES (1, ?, '4242', 'ACTIVE')",
-                (SERVER_ID,),
+                "(id, discord_user_id, current_state) "
+                "VALUES (1, '4242', 'ACTIVE')"
             )
             await db.execute(
                 "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "

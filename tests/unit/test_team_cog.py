@@ -88,7 +88,7 @@ class TestTeamAdd:
 
         await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=role)
 
-        bot.team_service.add_default_team.assert_awaited_once_with(1, "Alpine")
+        bot.team_service.add_default_team.assert_awaited_once_with("Alpine")
         bot.placement_service.set_team_role_config.assert_awaited_once()
         bot.team_service.season_team_add.assert_not_awaited()
         args, kwargs = interaction.response.send_message.call_args
@@ -110,7 +110,7 @@ class TestTeamAdd:
 
         await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=role)
 
-        bot.team_service.add_default_team.assert_awaited_once_with(1, "Alpine")
+        bot.team_service.add_default_team.assert_awaited_once_with("Alpine")
         bot.team_service.season_team_add.assert_not_awaited()
         args, kwargs = interaction.response.send_message.call_args
         content = args[0] if args else kwargs["content"]
@@ -211,7 +211,7 @@ class TestTeamRename:
 
         await _unwrap(cog.team_rename)(cog, interaction, current_name="Alpine", new_name="BWT Alpine")
 
-        bot.team_service.rename_default_team.assert_awaited_once_with(1, "Alpine", "BWT Alpine")
+        bot.team_service.rename_default_team.assert_awaited_once_with("Alpine", "BWT Alpine")
         bot.placement_service.rename_team_role_config.assert_awaited_once()
         bot.team_service.season_team_rename.assert_not_awaited()
         args, kwargs = interaction.response.send_message.call_args
@@ -371,7 +371,7 @@ class TestTeamRole:
 
         bot.placement_service.set_team_role_config.assert_awaited_once()
         call_args = bot.placement_service.set_team_role_config.call_args
-        assert call_args.args[1:3] == ("Ferrari", 222)
+        assert call_args.args[0:2] == ("Ferrari", 222)
         args, kwargs = interaction.followup.send.call_args
         content = args[0] if args else kwargs["content"]
         assert "✅" in content
@@ -391,10 +391,10 @@ class TestTeamRole:
         await _unwrap(cog.team_role)(cog, interaction, name="Ferrari", role=role)
 
         bot.placement_service.swap_team_role.assert_awaited_once_with(
-            1, "Ferrari", 111, 222, interaction.guild
+            "Ferrari", 111, 222, interaction.guild
         )
         assert "3 seated driver(s) moved to the new role" in interaction.followup.send.call_args.args[0]
-        assert "seated drivers moved: 3" in bot.output_router.post_log.call_args.args[1]
+        assert "seated drivers moved: 3" in bot.output_router.post_log.call_args.args[0]
 
     async def test_refuses_a_team_not_in_the_list(self):
         from cogs.team_cog import TeamCog
@@ -439,8 +439,8 @@ class TestTeamReserveRole:
 
         bot.placement_service.set_team_role_config.assert_awaited_once()
         call_args = bot.placement_service.set_team_role_config.call_args
-        assert call_args.args[1] == "Reserve"
-        assert call_args.args[2] == 999
+        assert call_args.args[0] == "Reserve"
+        assert call_args.args[1] == 999
         args, kwargs = interaction.followup.send.call_args
         content = args[0] if args else kwargs["content"]
         assert "✅" in content
@@ -456,7 +456,7 @@ class TestTeamReserveRole:
 
         bot.placement_service.delete_team_role_config.assert_awaited_once()
         call_args = bot.placement_service.delete_team_role_config.call_args
-        assert call_args.args[1] == "Reserve"
+        assert call_args.args[0] == "Reserve"
         bot.placement_service.set_team_role_config.assert_not_awaited()
         args, kwargs = interaction.followup.send.call_args
         content = args[0] if args else kwargs["content"]
@@ -476,7 +476,7 @@ class TestTeamReserveRole:
         await _unwrap(cog.team_reserve_role)(cog, interaction, role=role)
 
         bot.placement_service.swap_team_role.assert_awaited_once_with(
-            1, "Reserve", 555, 999, interaction.guild
+            "Reserve", 555, 999, interaction.guild
         )
 
 

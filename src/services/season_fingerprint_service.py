@@ -129,7 +129,7 @@ def _directory_signature(directory: Path) -> list:
     return [_path_signature(p) for p in entries]
 
 
-async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerprint:
+async def take_fingerprint(bot, season_id: int) -> SeasonFingerprint:
     """Fingerprint everything `/season placements-review` reports for *season_id*.
 
     One connection for the lot. Never raises: a fingerprint that could not be taken is an
@@ -205,9 +205,8 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                 await _rows(
                     db,
                     "SELECT id, discord_user_id, current_state FROM driver_profiles "
-                    f"WHERE server_id = ? AND current_state IN ({','.join('?' for _ in UNSETTLED_STATES)}) "
+                    f"WHERE current_state IN ({','.join('?' for _ in UNSETTLED_STATES)}) "
                     "ORDER BY id",
-                    server_id,
                     *UNSETTLED_STATES,
                 )
             )
@@ -251,24 +250,20 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     await _rows(
                         db,
                         "SELECT weather_module_enabled, signup_module_enabled "
-                        "FROM server_configs WHERE server_id = ?",
-                        server_id,
+                        "FROM server_configs",
                     ),
                     await _rows(
                         db,
                         "SELECT module_enabled FROM results_module_config "
-                        "WHERE server_id = ?",
-                        server_id,
+                        "",
                     ),
                     await _rows(
                         db,
-                        "SELECT module_enabled FROM attendance_config WHERE server_id = ?",
-                        server_id,
+                        "SELECT module_enabled FROM attendance_config",
                     ),
                     await _rows(
                         db,
-                        "SELECT module_enabled FROM image_config WHERE server_id = ?",
-                        server_id,
+                        "SELECT module_enabled FROM image_config",
                     ),
                 ]
             )
@@ -279,8 +274,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
             areas["test mode"] = _digest(
                 await _rows(
                     db,
-                    "SELECT test_mode_active FROM server_configs WHERE server_id = ?",
-                    server_id,
+                    "SELECT test_mode_active FROM server_configs",
                 )
             )
             areas["team list"] = _digest(
@@ -288,14 +282,12 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     await _rows(
                         db,
                         "SELECT name, max_seats, is_reserve FROM default_teams "
-                        "WHERE server_id = ? ORDER BY name",
-                        server_id,
+                        " ORDER BY name",
                     ),
                     await _rows(
                         db,
                         "SELECT team_name, role_id FROM team_role_configs "
-                        "WHERE server_id = ? ORDER BY team_name",
-                        server_id,
+                        " ORDER BY team_name",
                     ),
                 ]
             )
@@ -331,21 +323,18 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                         db,
                         "SELECT signup_channel_id, base_role_id, signed_up_role_id, "
                         "       signups_open, selected_tracks_json, close_at "
-                        "FROM signup_module_config WHERE server_id = ?",
-                        server_id,
+                        "FROM signup_module_config",
                     ),
                     await _rows(
                         db,
                         "SELECT nationality_required, time_type, time_image_required "
-                        "FROM signup_module_settings WHERE server_id = ?",
-                        server_id,
+                        "FROM signup_module_settings",
                     ),
                     await _rows(
                         db,
                         "SELECT id, day_of_week, time_hhmm "
                         "FROM signup_availability_slots "
-                        "WHERE server_id = ? ORDER BY id",
-                        server_id,
+                        " ORDER BY id",
                     ),
                 ]
             )
@@ -356,8 +345,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     "SELECT module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
                     "       rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, "
                     "       no_show_penalty, autoreserve_threshold, autosack_threshold "
-                    "FROM attendance_config WHERE server_id = ?",
-                    server_id,
+                    "FROM attendance_config",
                 )
             )
 
@@ -365,13 +353,12 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                 await _rows(
                     db,
                     "SELECT phase_1_days, phase_2_days, phase_3_hours "
-                    "FROM weather_pipeline_config WHERE server_id = ?",
-                    server_id,
+                    "FROM weather_pipeline_config",
                 )
             )
 
             image_config = await _rows(
-                db, "SELECT * FROM image_config WHERE server_id = ?", server_id
+                db, "SELECT * FROM image_config"
             )
             areas["images"] = _digest(
                 [
@@ -379,13 +366,12 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     await _rows(
                         db,
                         "SELECT aspect, enabled FROM image_aspect_toggles "
-                        "WHERE server_id = ? ORDER BY aspect",
-                        server_id,
+                        " ORDER BY aspect",
                     ),
                 ]
             )
 
-        areas["artwork"] = _digest(await _artwork_signature(bot, server_id))
+        areas["artwork"] = _digest(await _artwork_signature(bot))
     except Exception as exc:  # noqa: BLE001 — an unreadable season is a changed one
         log.error("season fingerprint: could not be taken: %s", exc)
         return SeasonFingerprint({})
@@ -401,7 +387,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
     return SeasonFingerprint(areas)
 
 
-async def _artwork_signature(bot, server_id: int) -> list:
+async def _artwork_signature(bot) -> list:
     """The template files and asset folders, by size and modification time.
 
     The one thing a database read cannot see. A template edited or deleted between the
@@ -411,7 +397,7 @@ async def _artwork_signature(bot, server_id: int) -> list:
     from models.image_constants import ASSET_DIRECTORIES, TEMPLATE_COLUMNS
     from utils.paths import resolve_within_project_root
 
-    config = await bot.image_config_service.get_config(server_id)
+    config = await bot.image_config_service.get_config()
     if config is None:
         return []
 

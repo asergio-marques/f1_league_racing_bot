@@ -28,9 +28,9 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
+from tests.support.migration_steps import run_migrations_through  # noqa: E402
 
 SERVER_ID = 4242
-OTHER_SERVER = 4343
 MIGRATIONS = os.path.join(
     os.path.dirname(__file__), "..", "..", "src", "db", "migrations"
 )
@@ -47,12 +47,12 @@ async def _seed_server(db_path, *server_ids):
         await db.commit()
 
 
-async def _add_season(db_path, status, number, *, server_id=SERVER_ID):
+async def _add_season(db_path, status, number):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-03-01', ?, ?)",
-            (server_id, status, number),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-03-01', ?, ?)",
+            (status, number),
         )
         await db.commit()
         return cursor.lastrowid
@@ -62,7 +62,7 @@ async def _add_season(db_path, status, number, *, server_id=SERVER_ID):
 async def db_path(tmp_path):
     path = str(tmp_path / "live.db")
     await run_migrations(path)
-    await _seed_server(path, SERVER_ID, OTHER_SERVER)
+    await _seed_server(path, SERVER_ID)
     return path
 
 
@@ -103,16 +103,9 @@ async def test_a_league_keeps_every_season_of_its_history(db_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT COUNT(*) FROM seasons WHERE server_id = ?", (SERVER_ID,)
+            "SELECT COUNT(*) FROM seasons"
         )
         assert (await cursor.fetchone())[0] == 5
-
-
-async def test_each_server_has_its_own_live_season(db_path):
-    """The constraint is per server, not global — the bot serves many leagues."""
-    await _add_season(db_path, "ACTIVE", 1)
-
-    assert await _add_season(db_path, "SETUP", 1, server_id=OTHER_SERVER)
 
 
 # ── Repairing a database that already breaks the rule ──────────────────────
@@ -120,10 +113,12 @@ async def test_each_server_has_its_own_live_season(db_path):
 
 def _schema_before_049(path):
     """Build the schema as it stood before migration 049, and dirty it."""
+    # Every migration before 049, and none after it: a later one may have rebuilt the very
+    # table 049 indexes (068 took its server_id away), so it is not the schema 049 met.
     files = sorted(
         f
         for f in os.listdir(MIGRATIONS)
-        if f.endswith(".sql") and not f.startswith(("__", "049"))
+        if f.endswith(".sql") and not f.startswith("__") and f < "049"
     )
     con = sqlite3.connect(path)
     con.execute(
@@ -170,7 +165,7 @@ async def test_the_migration_repairs_a_database_that_already_holds_two(
     con.commit()
     con.close()
 
-    await run_migrations(path)
+    await run_migrations_through(path, "049_one_live_season_per_server.sql")
 
     async with get_connection(path) as db:
         cursor = await db.execute(
@@ -203,7 +198,7 @@ async def test_the_repair_leaves_the_archive_alone(tmp_path):
     con.commit()
     con.close()
 
-    await run_migrations(path)
+    await run_migrations_through(path, "049_one_live_season_per_server.sql")
 
     async with get_connection(path) as db:
         cursor = await db.execute("SELECT id, status FROM seasons ORDER BY id")
@@ -226,7 +221,7 @@ async def test_the_migration_is_idempotent(tmp_path):
 
     async with get_connection(path) as db:
         cursor = await db.execute(
-            "SELECT status FROM seasons WHERE server_id = ?", (SERVER_ID,)
+            "SELECT status FROM seasons"
         )
         assert [r[0] for r in await cursor.fetchall()] == ["ACTIVE"]
 
@@ -247,10 +242,10 @@ async def test_every_reader_of_the_season_resolves_the_same_row(db_path):
 
     season_id = await _add_season(db_path, "SETUP", 1)
 
-    roster_view = await _get_active_season_id(SERVER_ID, db_path)
+    roster_view = await _get_active_season_id(db_path)
     service = SeasonService(db_path)
-    season_view = await service.get_setup_or_active_season(SERVER_ID)
-    preview_view = await service.get_previewable_season(SERVER_ID)
+    season_view = await service.get_setup_or_active_season()
+    preview_view = await service.get_previewable_season()
 
     assert roster_view == season_id
     assert season_view.id == season_id

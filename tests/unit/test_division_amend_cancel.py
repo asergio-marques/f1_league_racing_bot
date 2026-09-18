@@ -74,9 +74,9 @@ async def _make_db(tmp_path, *, status: str = "SETUP", name: str = "division_ame
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', ?)",
-            (SEASON_ID, SERVER_ID, status),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', ?)",
+            (SEASON_ID, status),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -138,7 +138,7 @@ def _make_cog(
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
     cog._pending = {ACTOR_ID: cfg} if cfg is not None else {}
-    cog._get_pending_for_server = MagicMock(return_value=cfg)
+    cog._get_pending = MagicMock(return_value=cfg)
     cog._reload_pending_from_db = AsyncMock(return_value=None)
     return cog
 
@@ -207,8 +207,7 @@ async def _division_row(db_path: str) -> dict:
 async def _audit_rows(db_path: str) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type, old_value, new_value FROM audit_entries WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT change_type, old_value, new_value FROM audit_entries",
         )
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -293,7 +292,7 @@ async def test_a_delete_reloads_the_pending_config(tmp_path):
     """The snapshot in memory still holds the division that was just removed; without the
     reload the next `/season placements-review` would show a division that no longer exists."""
     db_path = await _make_db(tmp_path)
-    cfg = PendingConfig(server_id=SERVER_ID, divisions=[PendingDivision(name="Pro")])
+    cfg = PendingConfig(divisions=[PendingDivision(name="Pro")])
     cog = _make_cog(db_path, cfg=cfg)
 
     await _delete(cog, _interaction())
@@ -318,7 +317,7 @@ async def test_the_delete_is_logged(tmp_path):
 
     await _delete(cog, _interaction())
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "/division delete" in logged
     assert "Pro" in logged
 
@@ -368,7 +367,6 @@ async def test_the_rename_reaches_the_pending_config(tmp_path):
     manager may have typed and not yet committed."""
     db_path = await _make_db(tmp_path)
     cfg = PendingConfig(
-        server_id=SERVER_ID,
         divisions=[PendingDivision(name="Pro", tier=1), PendingDivision(name="Am", tier=2)],
     )
     cog = _make_cog(db_path, cfg=cfg)
@@ -381,7 +379,6 @@ async def test_the_rename_reaches_the_pending_config(tmp_path):
 async def test_only_the_renamed_division_changes_in_the_pending_config(tmp_path):
     db_path = await _make_db(tmp_path)
     cfg = PendingConfig(
-        server_id=SERVER_ID,
         divisions=[PendingDivision(name="Pro"), PendingDivision(name="Pro Am")],
     )
     cog = _make_cog(db_path, cfg=cfg)
@@ -398,7 +395,7 @@ async def test_the_rename_is_logged_with_both_names(tmp_path):
 
     await _rename(cog, _interaction())
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "Pro" in logged and "Elite" in logged
 
 
@@ -534,7 +531,7 @@ async def test_the_audit_carries_the_unchanged_fields_too(tmp_path):
 
 async def test_an_amendment_reloads_the_pending_config(tmp_path):
     db_path = await _make_db(tmp_path)
-    cfg = PendingConfig(server_id=SERVER_ID, divisions=[PendingDivision(name="Pro")])
+    cfg = PendingConfig(divisions=[PendingDivision(name="Pro")])
     cog = _make_cog(db_path, cfg=cfg)
 
     await _amend(cog, _interaction(), tier=3)
@@ -556,7 +553,7 @@ async def test_the_log_names_only_what_was_amended(tmp_path, kwargs, fragment):
 
     await _amend(cog, _interaction(), **kwargs)
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert fragment in logged
     assert logged.count("\n") == 2  # the header, the division, and the one field
 
@@ -568,7 +565,7 @@ async def test_an_amended_role_is_logged_by_name(tmp_path):
 
     await _amend(cog, _interaction(), role=_role(888, "Elite drivers"))
 
-    assert "Elite drivers" in str(cog.bot.output_router.post_log.await_args.args[1])
+    assert "Elite drivers" in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
 # ---------------------------------------------------------------------------
@@ -613,7 +610,7 @@ async def test_cancelling_a_division_winds_a_finished_season_down(tmp_path):
     await _cancel(cog, interaction)
 
     cog.bot.season_service.wind_down_ongoing.assert_awaited_once_with(
-        cog.bot, interaction.guild_id
+        cog.bot
     )
 
 
@@ -743,7 +740,7 @@ async def test_the_cancellation_is_logged(tmp_path):
 
     await _cancel(cog, _interaction())
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "/division cancel" in logged
     assert "Pro" in logged
 

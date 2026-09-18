@@ -113,7 +113,7 @@ def _button(view, label: str):
 async def test_a_button_is_offered_for_every_question_the_wizard_asks():
     """A question with no button could never be corrected, and the manager would have to
     reject the whole signup to get it changed."""
-    view = CorrectionParameterView(SERVER_ID, DRIVER_ID, _bot())
+    view = CorrectionParameterView(DRIVER_ID, _bot())
 
     labels = [c.label for c in view.children if getattr(c, "label", None)]
     for label, _ in PARAMETERS:
@@ -123,7 +123,7 @@ async def test_a_button_is_offered_for_every_question_the_wizard_asks():
 async def test_each_button_carries_its_own_custom_id():
     """Persistent views are matched by custom id, so two buttons sharing one would make
     which parameter a press means depend on the order Discord matched them."""
-    view = CorrectionParameterView(SERVER_ID, DRIVER_ID, _bot())
+    view = CorrectionParameterView(DRIVER_ID, _bot())
 
     ids = [c.custom_id for c in view.children if getattr(c, "custom_id", None)]
     assert len(ids) == len(set(ids))
@@ -142,13 +142,13 @@ async def test_each_button_sends_back_its_own_parameter(monkeypatch, label, key)
     to re-enter their notes — and nothing else in the suite would notice."""
     _permitted(monkeypatch, True)
     bot = _bot()
-    view = CorrectionParameterView(SERVER_ID, DRIVER_ID, bot)
+    view = CorrectionParameterView(DRIVER_ID, bot)
     interaction = _interaction(bot)
 
     await _button(view, label).callback(interaction)
 
     bot.wizard_service.select_correction_parameter.assert_awaited_once()
-    assert bot.wizard_service.select_correction_parameter.await_args.args[2] == key
+    assert bot.wizard_service.select_correction_parameter.await_args.args[1] == key
 
 
 @pytest.mark.parametrize("label,key", PARAMETERS, ids=[k for _, k in PARAMETERS])
@@ -157,7 +157,7 @@ async def test_the_driver_is_told_which_answer_to_give_again(monkeypatch, label,
     `platform_id`."""
     _permitted(monkeypatch, True)
     bot = _bot()
-    view = CorrectionParameterView(SERVER_ID, DRIVER_ID, bot)
+    view = CorrectionParameterView(DRIVER_ID, bot)
     interaction = _interaction(bot)
 
     await _button(view, label).callback(interaction)
@@ -176,7 +176,7 @@ async def test_a_driver_cannot_choose_which_of_their_own_answers_to_re_open(monk
     button to get here — but a different person can press this one."""
     _permitted(monkeypatch, False)
     bot = _bot()
-    view = CorrectionParameterView(SERVER_ID, DRIVER_ID, bot)
+    view = CorrectionParameterView(DRIVER_ID, bot)
     interaction = _interaction(bot)
 
     await _button(view, "Nationality").callback(interaction)
@@ -201,7 +201,7 @@ async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(monkeypatch):
     await _button(view, "Platform").callback(interaction)
 
     bot.wizard_service.get_wizard_by_channel.assert_awaited_once()
-    assert bot.wizard_service.select_correction_parameter.await_args.args[1] == DRIVER_ID
+    assert bot.wizard_service.select_correction_parameter.await_args.args[0] == DRIVER_ID
 
 
 async def test_a_panel_whose_channel_has_no_wizard_refuses(monkeypatch):
@@ -224,7 +224,7 @@ async def test_a_stored_driver_is_preferred_over_the_lookup(monkeypatch):
     already have removed."""
     _permitted(monkeypatch, True)
     bot = _bot()
-    view = CorrectionParameterView(SERVER_ID, DRIVER_ID, bot)
+    view = CorrectionParameterView(DRIVER_ID, bot)
     interaction = _interaction(bot)
 
     await _button(view, "Notes").callback(interaction)

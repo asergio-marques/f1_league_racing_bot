@@ -25,7 +25,6 @@ from pathlib import Path
 
 @dataclass
 class ImageConfig:
-    server_id: int
     module_enabled: bool
 
     # Template location
@@ -81,7 +80,6 @@ class ImageConfig:
 
 @dataclass
 class ImageAspectToggle:
-    server_id: int
     aspect: str
     enabled: bool
 

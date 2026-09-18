@@ -56,7 +56,6 @@ def _wizard(**draft):
 
     return SignupWizardRecord(
         id=1,
-        server_id=SERVER_ID,
         discord_user_id=DRIVER_ID,
         # The wizard has no review state of its own — `WizardState` stops at the last
         # question. Awaiting review is carried on the *driver profile*, so a completed
@@ -92,10 +91,10 @@ def review():
     svc._cancel_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
     svc._trigger_channel_hold = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
-    async def _transition(server_id, user_id, state):
+    async def _transition(user_id, state):
         order.append(f"transition:{state.value if hasattr(state, 'value') else state}")
 
-    async def _store_total(server_id, user_id, lap_times):
+    async def _store_total(user_id, lap_times):
         order.append("store_total_lap_ms")
 
     driver_service = MagicMock()
@@ -114,6 +113,7 @@ def review():
     bot.driver_service = driver_service
     bot.signup_module_service = signup_svc
     bot.placement_service.store_total_lap_ms = AsyncMock(side_effect=_store_total)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
 
     svc._output_router = MagicMock()
@@ -152,7 +152,7 @@ def review():
 
 def _logged(ctx) -> str:
     return "\n".join(
-        str(call.args[1]) for call in ctx.svc._output_router.post_log.await_args_list
+        str(call.args[0]) for call in ctx.svc._output_router.post_log.await_args_list
     )
 
 
@@ -162,7 +162,7 @@ def _logged(ctx) -> str:
 
 
 async def test_an_approved_driver_is_granted_the_signed_up_role(review):
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     review.member.add_roles.assert_awaited_once()
     assert review.member.add_roles.await_args.args[0] is review.role
@@ -171,7 +171,7 @@ async def test_an_approved_driver_is_granted_the_signed_up_role(review):
 async def test_an_approved_driver_becomes_unassigned(review):
     """Unassigned, not placed. Approval says they may race; the placement commands decide
     where."""
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     assert "transition:UNASSIGNED" in review.order
 
@@ -182,7 +182,7 @@ async def test_the_seeding_lap_time_is_stored_before_the_driver_becomes_unassign
     a league would seed its divisions from a value that was not there yet."""
     review.signup_svc.get_record = AsyncMock(return_value=_record({"1": "1:23.456"}))
 
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     assert review.order.index("store_total_lap_ms") < review.order.index(
         "transition:UNASSIGNED"
@@ -194,7 +194,7 @@ async def test_a_driver_with_no_lap_times_stores_no_seeding_value(review):
     seed every driver identically."""
     review.signup_svc.get_record = AsyncMock(return_value=_record({}))
 
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     assert "store_total_lap_ms" not in review.order
 
@@ -202,7 +202,7 @@ async def test_a_driver_with_no_lap_times_stores_no_seeding_value(review):
 async def test_approval_without_a_signup_configuration_does_nothing(review):
     review.signup_svc.get_config = AsyncMock(return_value=None)
 
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     assert review.order == []
     review.member.add_roles.assert_not_awaited()
@@ -215,7 +215,7 @@ async def test_a_role_the_bot_cannot_grant_does_not_stop_the_approval(review):
         side_effect=discord.HTTPException(MagicMock(), "forbidden")
     )
 
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     assert "transition:UNASSIGNED" in review.order
 
@@ -225,7 +225,7 @@ async def test_a_league_with_no_signed_up_role_configured_still_approves(review)
         return_value=SimpleNamespace(signed_up_role_id=None)
     )
 
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     review.member.add_roles.assert_not_awaited()
     assert "transition:UNASSIGNED" in review.order
@@ -235,7 +235,7 @@ async def test_a_driver_who_has_left_the_server_is_still_approved(review):
     """They may come back, and the record is the league's either way."""
     review.guild.get_member = MagicMock(return_value=None)
 
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     assert "transition:UNASSIGNED" in review.order
 
@@ -243,10 +243,10 @@ async def test_a_driver_who_has_left_the_server_is_still_approved(review):
 async def test_approval_holds_the_channel_rather_than_deleting_it(review):
     """The driver is told the outcome in the channel; deleting it at once would take the
     message with it."""
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     review.svc._trigger_channel_hold.assert_awaited_once()
-    notice = review.svc._trigger_channel_hold.await_args.args[3]
+    notice = review.svc._trigger_channel_hold.await_args.args[2]
     assert "approved" in notice
     assert "Manager" in notice
 
@@ -254,13 +254,13 @@ async def test_approval_holds_the_channel_rather_than_deleting_it(review):
 async def test_approval_cancels_the_inactivity_timeout(review):
     """The wizard is finished. Left armed, the timeout would later close a signup that had
     already been approved."""
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     review.svc._cancel_inactivity_job.assert_awaited_once()
 
 
 async def test_approval_is_logged_naming_the_manager_and_the_driver(review):
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     logged = _logged(review)
     assert "Approved" in logged
@@ -273,13 +273,13 @@ async def test_approval_is_logged_naming_the_manager_and_the_driver(review):
 
 
 async def test_a_rejected_driver_returns_to_not_signed_up(review):
-    await review.svc.reject_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
 
     assert "transition:NOT_SIGNED_UP" in review.order
 
 
 async def test_rejection_grants_no_role(review):
-    await review.svc.reject_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
 
     review.member.add_roles.assert_not_awaited()
 
@@ -287,18 +287,18 @@ async def test_rejection_grants_no_role(review):
 async def test_a_rejection_reason_reaches_the_driver(review):
     """The driver has to know what to fix before signing up again."""
     await review.svc.reject_signup(
-        SERVER_ID, DRIVER_ID, review.guild, review.actor, reason="Lap time unverified"
+        DRIVER_ID, review.guild, review.actor, reason="Lap time unverified"
     )
 
-    notice = review.svc._trigger_channel_hold.await_args.args[3]
+    notice = review.svc._trigger_channel_hold.await_args.args[2]
     assert "Lap time unverified" in notice
 
 
 async def test_a_rejection_without_a_reason_omits_the_reason_line(review):
     """An empty **Reason:** would read as a reason nobody gave."""
-    await review.svc.reject_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
 
-    assert "Reason:" not in review.svc._trigger_channel_hold.await_args.args[3]
+    assert "Reason:" not in review.svc._trigger_channel_hold.await_args.args[2]
 
 
 async def test_a_failed_transition_does_not_stop_the_rejection(review):
@@ -306,7 +306,7 @@ async def test_a_failed_transition_does_not_stop_the_rejection(review):
     happen, or the driver is never told."""
     review.driver_service.transition = AsyncMock(side_effect=ValueError("already there"))
 
-    await review.svc.reject_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
 
     review.svc._trigger_channel_hold.assert_awaited_once()
 
@@ -315,17 +315,17 @@ async def test_rejection_cancels_a_pending_correction_window(review):
     """A driver sent back and then rejected must not still have a correction window open,
     which would let them re-submit into a signup that no longer exists."""
     task = MagicMock()
-    review.svc._correction_tasks[(SERVER_ID, DRIVER_ID)] = task
+    review.svc._correction_tasks[DRIVER_ID] = task
 
-    await review.svc.reject_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
 
     task.cancel.assert_called_once()
-    assert (SERVER_ID, DRIVER_ID) not in review.svc._correction_tasks
+    assert DRIVER_ID not in review.svc._correction_tasks
 
 
 async def test_a_rejection_reason_is_logged(review):
     await review.svc.reject_signup(
-        SERVER_ID, DRIVER_ID, review.guild, review.actor, reason="Duplicate entry"
+        DRIVER_ID, review.guild, review.actor, reason="Duplicate entry"
     )
 
     logged = _logged(review)
@@ -342,7 +342,7 @@ async def test_requesting_changes_awaits_a_correction_parameter(review):
     wizard = _wizard()
     review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
 
-    await review.svc.request_changes(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
 
     assert "transition:AWAITING_CORRECTION_PARAMETER" in review.order
     for task in review.svc._correction_tasks.values():
@@ -355,7 +355,7 @@ async def test_the_manager_who_asked_is_written_down(review):
     wizard = _wizard()
     review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
 
-    await review.svc.request_changes(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
 
     assert wizard.draft_answers["_correction_requested_by"] == str(ACTOR_ID)
     review.signup_svc.save_wizard.assert_awaited_once()
@@ -368,7 +368,7 @@ async def test_the_reason_is_saved_alongside_it(review):
     review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
 
     await review.svc.request_changes(
-        SERVER_ID, DRIVER_ID, review.guild, review.actor, reason="Wrong platform"
+        DRIVER_ID, review.guild, review.actor, reason="Wrong platform"
     )
 
     assert wizard.draft_answers["_correction_reason"] == "Wrong platform"
@@ -382,7 +382,7 @@ async def test_no_reason_writes_no_reason(review):
     wizard = _wizard()
     review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
 
-    await review.svc.request_changes(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
 
     assert "_correction_reason" not in wizard.draft_answers
     for task in review.svc._correction_tasks.values():
@@ -393,7 +393,7 @@ async def test_the_driver_is_prompted_in_their_own_channel(review):
     wizard = _wizard()
     review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
 
-    await review.svc.request_changes(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
 
     review.channel.send.assert_awaited_once()
     assert "requested a correction" in review.channel.send.await_args.args[0]
@@ -405,9 +405,9 @@ async def test_a_five_minute_window_is_armed(review):
     wizard = _wizard()
     review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
 
-    await review.svc.request_changes(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
 
-    assert (SERVER_ID, DRIVER_ID) in review.svc._correction_tasks
+    assert DRIVER_ID in review.svc._correction_tasks
     for task in review.svc._correction_tasks.values():
         task.cancel()
 
@@ -418,12 +418,12 @@ async def test_asking_twice_replaces_the_window_rather_than_stacking_them(review
     wizard = _wizard()
     review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
     existing = MagicMock()
-    review.svc._correction_tasks[(SERVER_ID, DRIVER_ID)] = existing
+    review.svc._correction_tasks[DRIVER_ID] = existing
 
-    await review.svc.request_changes(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
 
     existing.cancel.assert_called_once()
-    assert review.svc._correction_tasks[(SERVER_ID, DRIVER_ID)] is not existing
+    assert review.svc._correction_tasks[DRIVER_ID] is not existing
     for task in review.svc._correction_tasks.values():
         if isinstance(task, asyncio.Task):
             task.cancel()
@@ -432,7 +432,7 @@ async def test_asking_twice_replaces_the_window_rather_than_stacking_them(review
 async def test_a_driver_with_no_wizard_is_left_alone(review):
     review.signup_svc.get_wizard = AsyncMock(return_value=None)
 
-    await review.svc.request_changes(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
 
     assert review.order == []
     review.channel.send.assert_not_awaited()
@@ -445,16 +445,16 @@ async def test_a_missing_channel_still_transitions_and_arms_the_window(review):
     review.signup_svc.get_wizard = AsyncMock(return_value=wizard)
     review.guild.get_channel = MagicMock(return_value=None)
 
-    await review.svc.request_changes(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.request_changes(DRIVER_ID, review.guild, review.actor)
 
     assert "transition:AWAITING_CORRECTION_PARAMETER" in review.order
-    assert (SERVER_ID, DRIVER_ID) in review.svc._correction_tasks
+    assert DRIVER_ID in review.svc._correction_tasks
     for task in review.svc._correction_tasks.values():
         task.cancel()
 
 
 async def test_an_approved_signup_is_marked_as_such(review):
     """Issue #243: an approved signup outranks a later one of the driver's that was not."""
-    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+    await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
-    review.signup_svc.mark_approved.assert_awaited_once_with(SERVER_ID, DRIVER_ID)
+    review.signup_svc.mark_approved.assert_awaited_once_with(DRIVER_ID)

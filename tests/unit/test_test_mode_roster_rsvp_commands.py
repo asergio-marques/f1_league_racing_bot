@@ -66,9 +66,9 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', ?)",
-            (SEASON_ID, SERVER_ID, season_status),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', ?)",
+            (SEASON_ID, season_status),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -99,6 +99,7 @@ def _make_cog(
     bot = MagicMock()
     bot.db_path = db_path
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(
         return_value=None
         if config_missing
@@ -201,7 +202,7 @@ async def test_a_clear_is_logged_with_what_it_removed(tmp_path):
 
     await _clear(cog, _interaction(), result=5)
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "/test-mode roster clear" in logged
     assert "Pro" in logged
     assert "5" in logged

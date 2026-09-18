@@ -95,8 +95,7 @@ class CleanCog(commands.Cog):
         await interaction.followup.send(" ".join(parts), ephemeral=True)
 
         log.info(
-            "clean-bot: server=%s channel=%s asked=%d deleted=%d errors=%d by %s",
-            interaction.guild_id,
+            "clean-bot: channel=%s asked=%d deleted=%d errors=%d by %s",
             channel.id,
             count,
             deleted,

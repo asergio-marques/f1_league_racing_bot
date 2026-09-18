@@ -73,9 +73,9 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -88,11 +88,10 @@ async def _make_db(
             (ROUND_ID, DIVISION_ID),
         )
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state, "
-            "former_driver, is_test_driver) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+            "former_driver, is_test_driver) VALUES (?, ?, ?, ?, ?)",
             (
                 PROFILE_ID,
-                SERVER_ID,
                 DISCORD_USER_ID,
                 state.value,
                 int(former_driver),
@@ -115,9 +114,9 @@ async def _make_db(
             (cursor.lastrowid, PROFILE_ID),
         )
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, "
-            "discord_username, nationality) VALUES (?, ?, 'racer', 'GB')",
-            (SERVER_ID, DISCORD_USER_ID),
+            "INSERT INTO signup_records (discord_user_id, "
+            "discord_username, nationality) VALUES (?, 'racer', 'GB')",
+            (DISCORD_USER_ID,),
         )
         await db.execute(
             "INSERT INTO driver_round_attendance (driver_profile_id, round_id, "
@@ -150,9 +149,9 @@ async def _make_db(
         )
         if signed_up_role is not None:
             await db.execute(
-                "INSERT INTO signup_module_config (server_id, signed_up_role_id) "
+                "INSERT INTO signup_module_config (id, signed_up_role_id) "
                 "VALUES (?, ?)",
-                (SERVER_ID, signed_up_role),
+                (1, signed_up_role),
             )
         await db.commit()
     return db_path
@@ -190,7 +189,6 @@ def _service(db_path: str) -> PlacementService:
 
 async def _sack(service, guild, *, season_id: int | None = SEASON_ID):
     await service.sack_driver(
-        SERVER_ID,
         PROFILE_ID,
         season_id,
         ACTOR_ID,
@@ -272,18 +270,6 @@ async def test_the_refusal_names_the_state_it_found(tmp_path):
         await _sack(_service(db_path), _guild())
 
 
-async def test_a_profile_from_another_server_is_not_found(tmp_path):
-    """Profiles are per server, and sacking across one would let a manager reach into
-    another league's roster."""
-    db_path = await _make_db(tmp_path, name="refuse_server")
-    service = _service(db_path)
-
-    with pytest.raises(ValueError, match="not found"):
-        await service.sack_driver(
-            99999, PROFILE_ID, SEASON_ID, ACTOR_ID, "Manager", _guild(), DISCORD_USER_ID
-        )
-
-
 # ---------------------------------------------------------------------------
 # Nobody is deleted: a driver who never raced is pending deletion
 # ---------------------------------------------------------------------------
@@ -344,8 +330,8 @@ async def test_a_former_drivers_signup_details_are_kept(tmp_path):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT discord_username, nationality FROM signup_records "
-            "WHERE server_id = ? AND discord_user_id = ?",
-            (SERVER_ID, DISCORD_USER_ID),
+            "WHERE discord_user_id = ?",
+            (DISCORD_USER_ID,),
         )
         row = await cursor.fetchone()
     assert row["discord_username"] is not None
@@ -387,9 +373,9 @@ async def test_a_seat_in_a_completed_season_is_left_as_the_archive_holds_it(tmp_
     db_path = await _make_db(tmp_path, name="sack_archive_seat")
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 0, '2025-01-01', 'COMPLETED')",
-            (PRIOR_SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 0, '2025-01-01', 'COMPLETED')",
+            (PRIOR_SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -561,8 +547,7 @@ async def test_the_sack_is_audited(tmp_path):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, actor_id, old_value, new_value FROM audit_entries "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+            "",
         )
         rows = [dict(r) for r in await cursor.fetchall()]
     assert [r["change_type"] for r in rows] == ["DRIVER_SACK"]
@@ -578,8 +563,7 @@ async def test_the_audit_records_the_state_and_divisions_as_they_were(tmp_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT old_value, new_value FROM audit_entries WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT old_value, new_value FROM audit_entries",
         )
         row = await cursor.fetchone()
     old = json.loads(row["old_value"])
@@ -595,7 +579,7 @@ async def test_the_audit_records_whether_the_profile_was_kept(tmp_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT new_value FROM audit_entries WHERE server_id = ?", (SERVER_ID,)
+            "SELECT new_value FROM audit_entries"
         )
         row = await cursor.fetchone()
     assert json.loads(row["new_value"])["former_driver"] is True

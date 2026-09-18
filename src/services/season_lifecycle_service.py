@@ -16,6 +16,7 @@ import logging
 
 from db.database import get_connection
 from models.season import ONGOING_STAGES, InvalidStageTransition, SeasonStage, status_of_stage
+from utils.league_server import league_guild
 
 log = logging.getLogger(__name__)
 
@@ -57,14 +58,13 @@ def uncommitted_seat_excluded(seat_alias: str = "ts") -> str:
     )
 
 
-async def live_season_stage(db_path: str, server_id: int) -> tuple[int, SeasonStage] | None:
+async def live_season_stage(db_path: str) -> tuple[int, SeasonStage] | None:
     """The server's active season and its stage, or None where it holds none."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT id, stage FROM seasons "
-            "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
+            "WHERE status IN ('SETUP', 'ACTIVE') "
             "ORDER BY id DESC LIMIT 1",
-            (server_id,),
         )
         row = await cursor.fetchone()
     if row is None or row["stage"] is None:
@@ -72,14 +72,14 @@ async def live_season_stage(db_path: str, server_id: int) -> tuple[int, SeasonSt
     return int(row["id"]), SeasonStage(row["stage"])
 
 
-async def count_unsettled_signups(db_path: str, server_id: int) -> int:
-    """How many drivers of *server_id* hold a signup not yet placed or turned down."""
+async def count_unsettled_signups(db_path: str) -> int:
+    """How many drivers hold a signup not yet placed or turned down."""
     placeholders = ",".join("?" for _ in UNSETTLED_STATES)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"SELECT COUNT(*) AS n FROM driver_profiles "
-            f"WHERE server_id = ? AND current_state IN ({placeholders})",
-            (server_id, *UNSETTLED_STATES),
+            f"WHERE current_state IN ({placeholders})",
+            (*UNSETTLED_STATES,),
         )
         row = await cursor.fetchone()
     return int(row["n"]) if row is not None else 0
@@ -99,13 +99,13 @@ async def _move(db_path: str, season_id: int, current: SeasonStage, target: Seas
         )
 
 
-async def advance_on_window_open(db_path: str, server_id: int) -> SeasonStage | None:
+async def advance_on_window_open(db_path: str) -> SeasonStage | None:
     """Move the active season on for a signup window just opened.
 
     Waiting becomes Signups; Ongoing becomes Ongoing, signups open. Returns the new stage,
     or None where the season stood in neither and nothing was moved.
     """
-    found = await live_season_stage(db_path, server_id)
+    found = await live_season_stage(db_path)
     if found is None:
         return None
     season_id, stage = found
@@ -116,7 +116,7 @@ async def advance_on_window_open(db_path: str, server_id: int) -> SeasonStage | 
     return target
 
 
-async def advance_on_window_close(db_path: str, server_id: int) -> SeasonStage | None:
+async def advance_on_window_close(db_path: str) -> SeasonStage | None:
     """Move the active season on for a signup window just closed.
 
     Signups becomes Placements. Ongoing, signups open becomes Ongoing, placements where any
@@ -124,14 +124,14 @@ async def advance_on_window_close(db_path: str, server_id: int) -> SeasonStage |
     where the season stood in neither and nothing was moved — a window force-closed by
     disabling the module, for one, belongs to no stage.
     """
-    found = await live_season_stage(db_path, server_id)
+    found = await live_season_stage(db_path)
     if found is None:
         return None
     season_id, stage = found
     if stage is SeasonStage.SIGNUPS:
         target = SeasonStage.PLACEMENTS
     elif stage is SeasonStage.ONGOING_SIGNUPS:
-        unsettled = await count_unsettled_signups(db_path, server_id)
+        unsettled = await count_unsettled_signups(db_path)
         target = SeasonStage.ONGOING_PLACEMENTS if unsettled else SeasonStage.ONGOING
     else:
         return None
@@ -141,7 +141,7 @@ async def advance_on_window_close(db_path: str, server_id: int) -> SeasonStage |
     return target
 
 
-async def turn_down_pending_placements(bot, server_id: int, season_id: int, guild) -> list[int]:
+async def turn_down_pending_placements(bot, season_id: int, guild) -> list[int]:
     """Turn down every placement of *season_id* still pending, as the reject command would.
 
     Pending are the unsettled signups — Unassigned, awaiting approval or mid-correction — and
@@ -158,7 +158,7 @@ async def turn_down_pending_placements(bot, server_id: int, season_id: int, guil
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
-            f"WHERE server_id = ? AND ("
+            f"WHERE ("
             f"  current_state IN ({placeholders}) "
             f"  OR (current_state = 'ASSIGNED' AND id IN ("
             f"      SELECT driver_profile_id FROM driver_season_assignments "
@@ -167,17 +167,16 @@ async def turn_down_pending_placements(bot, server_id: int, season_id: int, guil
             f"      SELECT driver_profile_id FROM driver_season_assignments "
             f"      WHERE season_id = ? AND committed = 1))"
             f") ORDER BY id",
-            (server_id, *UNSETTLED_STATES, season_id, season_id),
+            (*UNSETTLED_STATES, season_id, season_id),
         )
         drivers = [dict(r) for r in await cursor.fetchall()]
         cursor = await db.execute(
-            "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT signed_up_role_id FROM signup_module_config",
         )
         cfg_row = await cursor.fetchone()
 
     await _close_driver_signups(
-        server_id, drivers, cfg_row["signed_up_role_id"] if cfg_row else None,
+        drivers, cfg_row["signed_up_role_id"] if cfg_row else None,
         bot=bot, guild=guild,
         notice="🔒 Every division of this season is done, so its signups are closed. "
         "This channel will be automatically deleted in 24 hours.",
@@ -202,10 +201,9 @@ async def turn_down_pending_placements(bot, server_id: int, season_id: int, guil
         if drivers:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, 0, 'system', NULL, 'PENDING_PLACEMENTS_TURNED_DOWN', ?, ?, datetime('now'))",
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (0, 'system', NULL, 'PENDING_PLACEMENTS_TURNED_DOWN', ?, ?, datetime('now'))",
                 (
-                    server_id,
                     json.dumps({d["id"]: d["current_state"] for d in drivers}, sort_keys=True),
                     json.dumps({"state": "NOT_SIGNED_UP"}),
                 ),
@@ -214,7 +212,7 @@ async def turn_down_pending_placements(bot, server_id: int, season_id: int, guil
     return [d["id"] for d in drivers]
 
 
-async def wind_down_ongoing(bot, server_id: int) -> bool:
+async def wind_down_ongoing(bot) -> bool:
     """Take a season whose every division is done out of the ongoing stages (issue #220).
 
     A season in Ongoing, signups open or Ongoing, placements has no round left to place a
@@ -224,7 +222,7 @@ async def wind_down_ongoing(bot, server_id: int) -> bool:
     for any other season. Returns True where the season was moved.
     """
     db_path = bot.db_path
-    found = await live_season_stage(db_path, server_id)
+    found = await live_season_stage(db_path)
     if found is None:
         return False
     season_id, stage = found
@@ -234,30 +232,29 @@ async def wind_down_ongoing(bot, server_id: int) -> bool:
     if not done:
         return False
 
-    guild = bot.get_guild(server_id)
+    guild = await league_guild(bot)
     if stage is not SeasonStage.ONGOING:
         try:
-            signup_cfg = await bot.signup_module_service.get_config(server_id)
+            signup_cfg = await bot.signup_module_service.get_config()
             if signup_cfg is not None and signup_cfg.signups_open:
                 from cogs.module_cog import execute_forced_close
 
                 try:
-                    bot.scheduler_service.cancel_signup_close_timer(server_id)
+                    bot.scheduler_service.cancel_signup_close_timer()
                 except Exception:  # noqa: BLE001 — a timer already gone is the aim
                     pass
                 await execute_forced_close(
-                    server_id, bot, audit_action="SIGNUP_DIVISIONS_DONE_CLOSE"
+                    bot, audit_action="SIGNUP_DIVISIONS_DONE_CLOSE"
                 )
         except Exception:  # noqa: BLE001 — the window's close must not hold the season
-            log.exception("wind_down_ongoing: could not close the signup window of %s", server_id)
-        turned_down = await turn_down_pending_placements(bot, server_id, season_id, guild)
+            log.exception("wind_down_ongoing: could not close the signup window")
+        turned_down = await turn_down_pending_placements(bot, season_id, guild)
         current_stage, _ = await _stage_and_whether_done(db_path, season_id)
         if current_stage in (SeasonStage.ONGOING_SIGNUPS.value, SeasonStage.ONGOING_PLACEMENTS.value):
             await _move(db_path, season_id, SeasonStage(current_stage), SeasonStage.ONGOING)
         if turned_down:
             try:
                 await bot.output_router.post_log(
-                    server_id,
                     "System | Every division is done | Signups closed\n"
                     f"  pending placements turned down: {len(turned_down)}",
                 )
@@ -268,7 +265,7 @@ async def wind_down_ongoing(bot, server_id: int) -> bool:
     return final_stage == SeasonStage.PENDING_COMPLETION.value
 
 
-async def signup_configuration_fixed(db_path: str, server_id: int) -> int | None:
+async def signup_configuration_fixed(db_path: str) -> int | None:
     """The number of the season holding the signup module fixed, or None where it is free.
 
     The signup module is enabled, disabled and configured only while the server holds no
@@ -279,9 +276,8 @@ async def signup_configuration_fixed(db_path: str, server_id: int) -> int | None
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT season_number, stage FROM seasons "
-            "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
+            "WHERE status IN ('SETUP', 'ACTIVE') "
             "ORDER BY id DESC LIMIT 1",
-            (server_id,),
         )
         row = await cursor.fetchone()
     if row is None or row["stage"] == SeasonStage.CONFIGURATION.value:
@@ -289,13 +285,13 @@ async def signup_configuration_fixed(db_path: str, server_id: int) -> int | None
     return int(row["season_number"])
 
 
-async def modules_frozen_for_completion(db_path: str, server_id: int) -> bool:
+async def modules_frozen_for_completion(db_path: str) -> bool:
     """True while the server's season stands in Pending completion.
 
     Nothing but amending a final round's results, approving an amendment of the season's
     points and completing the season may be done then, so no module may be disabled.
     """
-    found = await live_season_stage(db_path, server_id)
+    found = await live_season_stage(db_path)
     return found is not None and found[1] is SeasonStage.PENDING_COMPLETION
 
 
@@ -360,7 +356,6 @@ _SIGNUP_IN_PROGRESS: frozenset[str] = frozenset({
 
 
 async def _close_driver_signups(
-    server_id: int,
     drivers: list[dict],
     signed_up_role_id: int | None,
     *,
@@ -381,13 +376,13 @@ async def _close_driver_signups(
         if driver["current_state"] in _SIGNUP_IN_PROGRESS and bot is not None:
             try:
                 if guild is not None:
-                    await bot.wizard_service._trigger_channel_hold(server_id, uid, guild, notice)
+                    await bot.wizard_service._trigger_channel_hold(uid, guild, notice)
                 # The channel's own deletion job stays armed, and reads the wizard record
                 # when it fires; only the inactivity timeout is cancelled.
                 try:
-                    bot.scheduler_service._scheduler.remove_job(
-                        f"wizard_inactivity_{server_id}_{uid}"
-                    )
+                    from services.wizard_service import inactivity_job_id
+
+                    bot.scheduler_service._scheduler.remove_job(inactivity_job_id(uid))
                 except Exception:  # noqa: BLE001 — a job already gone is the aim
                     pass
             except Exception:  # noqa: BLE001 — a signup channel is never worth the pass
@@ -446,7 +441,7 @@ async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bo
     await db.execute(f"DELETE FROM driver_profiles WHERE id IN ({placeholders})", ids)
 
 
-async def run_driver_pass(db_path: str, server_id: int, *, bot=None, guild=None) -> dict:
+async def run_driver_pass(db_path: str, *, bot=None, guild=None) -> dict:
     """The driver pass that ends a season: completion, cancellation and abort alike (#220).
 
     1. Every driver Unassigned, Assigned, mid-signup or in review returns to Not Signed Up. A
@@ -463,19 +458,18 @@ async def run_driver_pass(db_path: str, server_id: int, *, bot=None, guild=None)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
-            f"WHERE server_id = ? AND current_state IN ({placeholders})",
-            (server_id, *DRIVER_PASS_STATES),
+            f"WHERE current_state IN ({placeholders})",
+            (*DRIVER_PASS_STATES,),
         )
         to_reset = [dict(r) for r in await cursor.fetchall()]
         cursor = await db.execute(
-            "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT signed_up_role_id FROM signup_module_config",
         )
         cfg_row = await cursor.fetchone()
     signed_up_role_id = cfg_row["signed_up_role_id"] if cfg_row else None
 
     await _close_driver_signups(
-        server_id, to_reset, signed_up_role_id, bot=bot, guild=guild,
+        to_reset, signed_up_role_id, bot=bot, guild=guild,
         notice="🔒 This season has ended. This channel will be automatically deleted in 24 hours.",
         reason="Season ended",
     )
@@ -491,18 +485,16 @@ async def run_driver_pass(db_path: str, server_id: int, *, bot=None, guild=None)
                 DriverState.NOT_SIGNED_UP,
             )
         cursor = await db.execute(
-            "SELECT id FROM driver_profiles WHERE server_id = ? AND is_test_driver = 0 "
+            "SELECT id FROM driver_profiles WHERE is_test_driver = 0 "
             "AND former_driver = 0 AND current_state = 'NOT_SIGNED_UP'",
-            (server_id,),
         )
         pending_deletion = [r["id"] for r in await cursor.fetchall()]
         await delete_driver_profiles(db, pending_deletion, keep_history=False)
         await db.execute(
             "INSERT INTO audit_entries "
-            "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-            "VALUES (?, 0, 'system', NULL, 'DRIVER_PASS', ?, ?, datetime('now'))",
+            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+            "VALUES (0, 'system', NULL, 'DRIVER_PASS', ?, ?, datetime('now'))",
             (
-                server_id,
                 json.dumps({d["id"]: d["current_state"] for d in to_reset}, sort_keys=True),
                 json.dumps({"state": "NOT_SIGNED_UP", "deleted": sorted(pending_deletion)}),
             ),

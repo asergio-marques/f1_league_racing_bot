@@ -54,13 +54,13 @@ class TestIsWeatherEnabled:
     async def test_returns_false_by_default(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        result = await svc.is_weather_enabled(1)
+        result = await svc.is_weather_enabled()
         assert result is False
 
     async def test_returns_false_for_unknown_server(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        result = await svc.is_weather_enabled(999)
+        result = await svc.is_weather_enabled()
         assert result is False
 
 
@@ -68,13 +68,13 @@ class TestIsSignupEnabled:
     async def test_returns_false_by_default(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        result = await svc.is_signup_enabled(1)
+        result = await svc.is_signup_enabled()
         assert result is False
 
     async def test_returns_false_for_unknown_server(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        result = await svc.is_signup_enabled(999)
+        result = await svc.is_signup_enabled()
         assert result is False
 
 
@@ -82,67 +82,67 @@ class TestSetWeatherEnabled:
     async def test_enable(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_weather_enabled(1, True)
-        assert await svc.is_weather_enabled(1) is True
+        await svc.set_weather_enabled(True)
+        assert await svc.is_weather_enabled() is True
 
     async def test_disable(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_weather_enabled(1, True)
-        await svc.set_weather_enabled(1, False)
-        assert await svc.is_weather_enabled(1) is False
+        await svc.set_weather_enabled(True)
+        await svc.set_weather_enabled(False)
+        assert await svc.is_weather_enabled() is False
 
     async def test_idempotent_enable(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_weather_enabled(1, True)
-        await svc.set_weather_enabled(1, True)  # second enable is a no-op
-        assert await svc.is_weather_enabled(1) is True
+        await svc.set_weather_enabled(True)
+        await svc.set_weather_enabled(True)  # second enable is a no-op
+        assert await svc.is_weather_enabled() is True
 
     async def test_idempotent_disable(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_weather_enabled(1, False)
-        await svc.set_weather_enabled(1, False)  # second disable is safe
-        assert await svc.is_weather_enabled(1) is False
+        await svc.set_weather_enabled(False)
+        await svc.set_weather_enabled(False)  # second disable is safe
+        assert await svc.is_weather_enabled() is False
 
 
 class TestSetSignupEnabled:
     async def test_enable(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_signup_enabled(1, True)
-        assert await svc.is_signup_enabled(1) is True
+        await svc.set_signup_enabled(True)
+        assert await svc.is_signup_enabled() is True
 
     async def test_disable(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_signup_enabled(1, True)
-        await svc.set_signup_enabled(1, False)
-        assert await svc.is_signup_enabled(1) is False
+        await svc.set_signup_enabled(True)
+        await svc.set_signup_enabled(False)
+        assert await svc.is_signup_enabled() is False
 
     async def test_idempotent_enable(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_signup_enabled(1, True)
-        await svc.set_signup_enabled(1, True)
-        assert await svc.is_signup_enabled(1) is True
+        await svc.set_signup_enabled(True)
+        await svc.set_signup_enabled(True)
+        assert await svc.is_signup_enabled() is True
 
     async def test_idempotent_disable(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_signup_enabled(1, False)
-        await svc.set_signup_enabled(1, False)
-        assert await svc.is_signup_enabled(1) is False
+        await svc.set_signup_enabled(False)
+        await svc.set_signup_enabled(False)
+        assert await svc.is_signup_enabled() is False
 
     async def test_weather_and_signup_are_independent(self, db_path):
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_weather_enabled(1, True)
-        assert await svc.is_signup_enabled(1) is False
-        await svc.set_signup_enabled(1, True)
-        assert await svc.is_weather_enabled(1) is True
-        assert await svc.is_signup_enabled(1) is True
+        await svc.set_weather_enabled(True)
+        assert await svc.is_signup_enabled() is False
+        await svc.set_signup_enabled(True)
+        assert await svc.is_weather_enabled() is True
+        assert await svc.is_signup_enabled() is True
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ class TestWeatherGateFR010:
     async def _set_flag(self, db_path: str, value: bool) -> None:
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_weather_enabled(1, value)
+        await svc.set_weather_enabled(value)
 
     def _make_interaction(self, server_id: int = 1):
         from unittest.mock import MagicMock
@@ -197,7 +197,7 @@ class TestWeatherGateFR010:
         rounds = [round_obj, round_obj]
 
         # Call the gate directly
-        if await bot.module_service.is_weather_enabled(1):
+        if await bot.module_service.is_weather_enabled():
             bot.scheduler_service.schedule_all_rounds(rounds)
 
         bot.scheduler_service.schedule_all_rounds.assert_called_once_with(rounds)
@@ -214,7 +214,7 @@ class TestWeatherGateFR010:
         rounds = [round_obj]
 
         # Replicate the gate from season_cog._do_approve
-        if await bot.module_service.is_weather_enabled(1):
+        if await bot.module_service.is_weather_enabled():
             bot.scheduler_service.schedule_all_rounds(rounds)
 
         bot.scheduler_service.schedule_all_rounds.assert_not_called()
@@ -230,13 +230,13 @@ class TestWeatherGateFR010:
         rounds = [round_obj]
 
         # Disabled → no scheduling
-        await svc.set_weather_enabled(1, False)
-        if await bot.module_service.is_weather_enabled(1):
+        await svc.set_weather_enabled(False)
+        if await bot.module_service.is_weather_enabled():
             bot.scheduler_service.schedule_all_rounds(rounds)
         bot.scheduler_service.schedule_all_rounds.assert_not_called()
 
         # Enabled → scheduling happens
-        await svc.set_weather_enabled(1, True)
-        if await bot.module_service.is_weather_enabled(1):
+        await svc.set_weather_enabled(True)
+        if await bot.module_service.is_weather_enabled():
             bot.scheduler_service.schedule_all_rounds(rounds)
         bot.scheduler_service.schedule_all_rounds.assert_called_once_with(rounds)

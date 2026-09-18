@@ -92,13 +92,13 @@ async def _make_db(
         if with_config:
             await db.execute(
                 "INSERT INTO attendance_config "
-                "(server_id, autoreserve_threshold, autosack_threshold) VALUES (?, ?, ?)",
-                (SERVER_ID, autoreserve, autosack),
+                "(id, autoreserve_threshold, autosack_threshold) VALUES (?, ?, ?)",
+                (1, autoreserve, autosack),
             )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -136,9 +136,9 @@ async def _make_db(
         ):
             await db.execute(
                 "INSERT INTO driver_profiles "
-                "(id, server_id, discord_user_id, current_state, is_test_driver, "
-                "test_display_name) VALUES (?, ?, ?, 'ACTIVE', 1, ?)",
-                (profile_id, SERVER_ID, str(profile_id), name),
+                "(id, discord_user_id, current_state, is_test_driver, "
+                "test_display_name) VALUES (?, ?, 'ACTIVE', 1, ?)",
+                (profile_id, str(profile_id), name),
             )
 
         await db.execute(
@@ -214,7 +214,6 @@ async def _run(bot, db_path: str, *, head=None) -> None:
         db_path=db_path,
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
-        server_id=SERVER_ID,
         season_id=SEASON_ID,
         head=head,
     )
@@ -222,7 +221,7 @@ async def _run(bot, db_path: str, *, head=None) -> None:
 
 def _logged(bot) -> str:
     """Every log line the run posted, joined — enough to assert a marker appears."""
-    return "\n".join(str(call.args[1]) for call in bot.output_router.post_log.await_args_list)
+    return "\n".join(str(call.args[0]) for call in bot.output_router.post_log.await_args_list)
 
 
 @pytest.fixture
@@ -373,9 +372,9 @@ async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(id, server_id, discord_user_id, current_state, is_test_driver, "
-            "test_display_name) VALUES (?, ?, ?, 'ASSIGNED', 1, 'No Show')",
-            (second_profile, SERVER_ID, str(second_profile)),
+            "(id, discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES (?, ?, 'ASSIGNED', 1, 'No Show')",
+            (second_profile, str(second_profile)),
         )
         await db.execute(
             "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "

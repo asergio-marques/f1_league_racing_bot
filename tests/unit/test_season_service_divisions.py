@@ -53,9 +53,9 @@ async def _make_db(tmp_path, *, name="season_divisions", status="SETUP") -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, game_edition, start_date, "
-            "status) VALUES (?, ?, 5, 25, '2026-01-01', ?)",
-            (SEASON_ID, SERVER_ID, status),
+            "INSERT INTO seasons (id, season_number, game_edition, start_date, "
+            "status) VALUES (?, 5, 25, '2026-01-01', ?)",
+            (SEASON_ID, status),
         )
         await db.commit()
     return db_path
@@ -234,7 +234,6 @@ async def test_a_setup_season_is_rebuilt_with_its_divisions_and_rounds(tmp_path)
     [season] = await service.load_all_setup_seasons()
 
     assert season["season_id"] == SEASON_ID
-    assert season["server_id"] == SERVER_ID
     assert season["season_number"] == 5
     assert season["game_edition"] == 25
     assert season["start_date"] == date(2026, 1, 1)
@@ -270,8 +269,8 @@ async def test_the_previous_season_number_is_incremented(tmp_path):
     db_path = await _make_db(tmp_path, name="increment")
     service = SeasonService(db_path)
 
-    await service.increment_previous_season_number(SERVER_ID)
-    await service.increment_previous_season_number(SERVER_ID)
+    await service.increment_previous_season_number()
+    await service.increment_previous_season_number()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -279,16 +278,3 @@ async def test_the_previous_season_number_is_incremented(tmp_path):
             (SERVER_ID,),
         )
         assert (await cursor.fetchone())[0] == 2
-
-
-async def test_incrementing_another_server_leaves_this_one_alone(tmp_path):
-    db_path = await _make_db(tmp_path, name="increment_other")
-
-    await SeasonService(db_path).increment_previous_season_number(99999)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT previous_season_number FROM server_configs WHERE server_id = ?",
-            (SERVER_ID,),
-        )
-        assert (await cursor.fetchone())[0] == 0

@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 
 #: Columns a slash command may write. Anything outside this set is rejected, so a caller
-#: cannot reach `module_enabled` or `server_id` through the generic setter.
+#: cannot reach `module_enabled` or `id` through the generic setter.
 SETTABLE_COLUMNS: frozenset[str] = frozenset(
     {"template_directory"}
     | set(TEMPLATE_COLUMNS)
@@ -38,7 +38,7 @@ FLAG_COLUMNS: frozenset[str] = PFP_FLAG_COLUMNS | {"per_tier_colour_enabled"}
 
 #: Ordered column list used to build an ImageConfig from a row.
 _CONFIG_COLUMNS: tuple[str, ...] = (
-    ("server_id", "module_enabled", "template_directory")
+    ("module_enabled", "template_directory")
     + tuple(TEMPLATE_COLUMNS)
     + tuple(ASSET_DIRECTORIES)
     + ("use_pfp", "pfp_prerender", "pfp_daily", "pfp_daily_time")
@@ -57,59 +57,52 @@ class ImageConfigService:
 
     # ── Reads ─────────────────────────────────────────────────────────────
 
-    async def get_config(self, server_id: int) -> ImageConfig | None:
+    async def get_config(self) -> ImageConfig | None:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT * FROM image_config WHERE server_id = ?", (server_id,)
+                "SELECT * FROM image_config"
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return _row_to_config(row)
 
-    async def get_toggles(self, server_id: int) -> dict[str, bool]:
+    async def get_toggles(self) -> dict[str, bool]:
         """Return every aspect's state. Aspects with no row read as disabled."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT aspect, enabled FROM image_aspect_toggles WHERE server_id = ?",
-                (server_id,),
+                "SELECT aspect, enabled FROM image_aspect_toggles"
             )
             rows = await cursor.fetchall()
         stored = {row["aspect"]: bool(row["enabled"]) for row in rows}
         return {aspect: stored.get(aspect, False) for aspect in ASPECTS}
 
-    async def is_aspect_enabled(self, server_id: int, aspect: str) -> bool:
-        return (await self.get_toggles(server_id)).get(aspect, False)
+    async def is_aspect_enabled(self, aspect: str) -> bool:
+        return (await self.get_toggles()).get(aspect, False)
 
     # ── Writes ────────────────────────────────────────────────────────────
 
-    async def create_with_defaults(self, server_id: int) -> ImageConfig:
+    async def create_with_defaults(self) -> ImageConfig:
         """Create the config row and all eight toggle rows in one transaction.
 
         Idempotent: an existing configuration is left exactly as it is, which is what
         makes re-enabling after a disable lossless (FR-004a).
         """
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "INSERT OR IGNORE INTO image_config (server_id) VALUES (?)",
-                (server_id,),
-            )
+            await db.execute("INSERT OR IGNORE INTO image_config (id) VALUES (1)")
             await db.executemany(
-                "INSERT OR IGNORE INTO image_aspect_toggles (server_id, aspect, enabled) "
-                "VALUES (?, ?, 0)",
-                [(server_id, aspect) for aspect in ASPECTS],
+                "INSERT OR IGNORE INTO image_aspect_toggles (aspect, enabled) VALUES (?, 0)",
+                [(aspect,) for aspect in ASPECTS],
             )
             await db.commit()
 
-            cursor = await db.execute(
-                "SELECT * FROM image_config WHERE server_id = ?", (server_id,)
-            )
+            cursor = await db.execute("SELECT * FROM image_config")
             row = await cursor.fetchone()
 
         return _row_to_config(row)
 
     async def candidate_config(
-        self, server_id: int, column: str, value: str
+        self, column: str, value: str
     ) -> ImageConfig | None:
         """The stored configuration with *column* overridden — **not** persisted.
 
@@ -124,12 +117,12 @@ class ImageConfigService:
         if column not in SETTABLE_COLUMNS:
             raise UnknownConfigField(f"`{column}` is not a settable image config field.")
 
-        current = await self.get_config(server_id)
+        current = await self.get_config()
         if current is None:
             return None
         return dataclasses.replace(current, **{column: value})
 
-    async def set_field(self, server_id: int, column: str, value: str) -> None:
+    async def set_field(self, column: str, value: str) -> None:
         """Write a single configuration column, guarded by the allow-list."""
         if column not in SETTABLE_COLUMNS:
             raise UnknownConfigField(f"`{column}` is not a settable image config field.")
@@ -138,12 +131,11 @@ class ImageConfigService:
         # it is safe only because it was checked against the allow-list above.
         async with get_connection(self._db_path) as db:
             await db.execute(
-                f"UPDATE image_config SET {column} = ? WHERE server_id = ?",
-                (value, server_id),
+                f"UPDATE image_config SET {column} = ?", (value,)
             )
             await db.commit()
 
-    async def set_pfp_flag(self, server_id: int, column: str, enabled: bool) -> None:
+    async def set_pfp_flag(self, column: str, enabled: bool) -> None:
         """Write one of the three portrait toggles.
 
         Separate from `set_field` because these are booleans and that setter is string-valued.
@@ -153,9 +145,9 @@ class ImageConfigService:
         """
         if column not in PFP_FLAG_COLUMNS:
             raise UnknownConfigField(column)
-        await self.set_flag(server_id, column, enabled)
+        await self.set_flag(column, enabled)
 
-    async def set_flag(self, server_id: int, column: str, enabled: bool) -> None:
+    async def set_flag(self, column: str, enabled: bool) -> None:
         """Write any boolean configuration column, guarded by its own allow-list.
 
         The generalisation of `set_pfp_flag`, which now delegates here: a second boolean
@@ -169,27 +161,25 @@ class ImageConfigService:
         # it is safe only because it was checked against the allow-list above.
         async with get_connection(self._db_path) as db:
             await db.execute(
-                f"UPDATE image_config SET {column} = ? WHERE server_id = ?",
-                (1 if enabled else 0, server_id),
+                f"UPDATE image_config SET {column} = ?", (1 if enabled else 0,)
             )
             await db.commit()
 
-    async def set_aspect(self, server_id: int, aspect: str, enabled: bool) -> None:
+    async def set_aspect(self, aspect: str, enabled: bool) -> None:
         if aspect not in ASPECTS:
             raise UnknownConfigField(f"`{aspect}` is not a known image aspect.")
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "INSERT INTO image_aspect_toggles (server_id, aspect, enabled) "
-                "VALUES (?, ?, ?) "
-                "ON CONFLICT(server_id, aspect) DO UPDATE SET enabled = excluded.enabled",
-                (server_id, aspect, int(enabled)),
+                "INSERT INTO image_aspect_toggles (aspect, enabled) VALUES (?, ?) "
+                "ON CONFLICT(aspect) DO UPDATE SET enabled = excluded.enabled",
+                (aspect, int(enabled)),
             )
             await db.commit()
 
-    async def toggle_aspect(self, server_id: int, aspect: str) -> bool:
+    async def toggle_aspect(self, aspect: str) -> bool:
         """Flip an aspect and return its new state."""
-        current = await self.is_aspect_enabled(server_id, aspect)
-        await self.set_aspect(server_id, aspect, not current)
+        current = await self.is_aspect_enabled(aspect)
+        await self.set_aspect(aspect, not current)
         return not current
 
     # ── Per-tier colours (051) ────────────────────────────────────────────
@@ -201,7 +191,7 @@ class ImageConfigService:
     # makes a tier's logo `division_1.svg`.
 
     async def set_tier_colour(
-        self, server_id: int, division_name: str, slot: str, colour: str
+        self, division_name: str, slot: str, colour: str
     ) -> None:
         """Set one slot's colour for one tier, replacing whatever stood there.
 
@@ -219,16 +209,16 @@ class ImageConfigService:
         canonical = normalise_slot(slot)
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "INSERT INTO image_tier_colour (server_id, division_slug, slot, colour) "
-                "VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(server_id, division_slug, slot) "
+                "INSERT INTO image_tier_colour (division_slug, slot, colour) "
+                "VALUES (?, ?, ?) "
+                "ON CONFLICT(division_slug, slot) "
                 "DO UPDATE SET colour = excluded.colour",
-                (server_id, key, canonical, colour),
+                (key, canonical, colour),
             )
             await db.commit()
 
     async def set_tier_colours(
-        self, server_id: int, division_name: str, colours: dict[str, str]
+        self, division_name: str, colours: dict[str, str]
     ) -> int:
         """Set several slots for one tier at once, returning how many were written.
 
@@ -250,21 +240,21 @@ class ImageConfigService:
             return 0
 
         rows = [
-            (server_id, key, normalise_slot(slot), colour)
+            (key, normalise_slot(slot), colour)
             for slot, colour in sorted(colours.items())
         ]
         async with get_connection(self._db_path) as db:
             await db.executemany(
-                "INSERT INTO image_tier_colour (server_id, division_slug, slot, colour) "
-                "VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(server_id, division_slug, slot) "
+                "INSERT INTO image_tier_colour (division_slug, slot, colour) "
+                "VALUES (?, ?, ?) "
+                "ON CONFLICT(division_slug, slot) "
                 "DO UPDATE SET colour = excluded.colour",
                 rows,
             )
             await db.commit()
         return len(rows)
 
-    async def get_tier_palette(self, server_id: int, division_name: str) -> dict[str, str]:
+    async def get_tier_palette(self, division_name: str) -> dict[str, str]:
         """Every slot this tier has a colour for. The render path's only reader."""
         from utils.asset_resolver import normalise
 
@@ -274,14 +264,13 @@ class ImageConfigService:
         async with get_connection(self._db_path) as db:
             rows = await (
                 await db.execute(
-                    "SELECT slot, colour FROM image_tier_colour "
-                    "WHERE server_id = ? AND division_slug = ?",
-                    (server_id, key),
+                    "SELECT slot, colour FROM image_tier_colour WHERE division_slug = ?",
+                    (key,),
                 )
             ).fetchall()
         return {row["slot"]: row["colour"] for row in rows}
 
-    async def season_division_names(self, server_id: int) -> list[str]:
+    async def season_division_names(self) -> list[str]:
         """The divisions the per-tier colour check measures against, by tier.
 
         The season a league is working on: ACTIVE if there is one, else SETUP — the same
@@ -301,9 +290,8 @@ class ImageConfigService:
             season = await (
                 await db.execute(
                     "SELECT id FROM seasons "
-                    "WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+                    "WHERE status IN ('ACTIVE', 'SETUP') "
                     "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-                    (server_id,),
                 )
             ).fetchone()
             if season is None:
@@ -316,7 +304,7 @@ class ImageConfigService:
             ).fetchall()
         return [row["name"] for row in rows]
 
-    async def get_all_tier_colours(self, server_id: int) -> dict[str, dict[str, str]]:
+    async def get_all_tier_colours(self) -> dict[str, dict[str, str]]:
         """Every tier's palette, keyed by division slug — for validation and the view.
 
         Ordered, so the configuration view and the season review list tiers and slots the
@@ -327,8 +315,7 @@ class ImageConfigService:
             rows = await (
                 await db.execute(
                     "SELECT division_slug, slot, colour FROM image_tier_colour "
-                    "WHERE server_id = ? ORDER BY division_slug, slot",
-                    (server_id,),
+                    "ORDER BY division_slug, slot"
                 )
             ).fetchall()
         palettes: dict[str, dict[str, str]] = {}

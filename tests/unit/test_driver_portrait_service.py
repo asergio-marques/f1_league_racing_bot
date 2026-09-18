@@ -46,9 +46,8 @@ async def db_path(tmp_path):
         # which this service never reads.
         await db.execute(
             "CREATE TABLE driver_portraits ("
-            " server_id INTEGER NOT NULL, discord_user_id TEXT NOT NULL,"
-            " avatar_key TEXT NOT NULL, fetched_at TEXT NOT NULL,"
-            " PRIMARY KEY (server_id, discord_user_id))"
+            " discord_user_id TEXT PRIMARY KEY,"
+            " avatar_key TEXT NOT NULL, fetched_at TEXT NOT NULL)"
         )
         await db.commit()
     return path
@@ -193,7 +192,7 @@ def test_a_server_avatar_counts_even_where_the_account_has_none():
 async def test_a_first_fetch_writes_the_file_and_the_row(db_path, directory):
     member = _member(7, "abc")
 
-    written = await refresh_portraits(db_path, SERVER_ID, [member], directory, now=NOW)
+    written = await refresh_portraits(db_path, [member], directory, now=NOW)
 
     assert written == 1
     assert (directory / "7.svg").is_file()
@@ -205,20 +204,20 @@ async def test_a_first_fetch_writes_the_file_and_the_row(db_path, directory):
 
 async def test_an_unchanged_hash_downloads_nothing(db_path, directory):
     member = _member(7, "abc")
-    await refresh_portraits(db_path, SERVER_ID, [member], directory, now=NOW)
+    await refresh_portraits(db_path, [member], directory, now=NOW)
     member.display_avatar.read.reset_mock()
 
-    written = await refresh_portraits(db_path, SERVER_ID, [member], directory, now=NOW)
+    written = await refresh_portraits(db_path, [member], directory, now=NOW)
 
     assert written == 0
     member.display_avatar.read.assert_not_awaited()
 
 
 async def test_a_changed_hash_refetches(db_path, directory):
-    await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
 
     later = _member(7, "def", data=b"NEWBYTES")
-    written = await refresh_portraits(db_path, SERVER_ID, [later], directory, now=NOW)
+    written = await refresh_portraits(db_path, [later], directory, now=NOW)
 
     assert written == 1
     assert base64.b64encode(b"NEWBYTES").decode() in (directory / "7.svg").read_text()
@@ -230,7 +229,7 @@ async def test_a_file_the_league_supplied_is_never_touched(db_path, directory):
     (directory / "7.svg").write_text("<svg>the league's own</svg>")
     member = _member(7, "abc")
 
-    written = await refresh_portraits(db_path, SERVER_ID, [member], directory, now=NOW)
+    written = await refresh_portraits(db_path, [member], directory, now=NOW)
 
     assert written == 0
     member.display_avatar.read.assert_not_awaited()
@@ -239,12 +238,12 @@ async def test_a_file_the_league_supplied_is_never_touched(db_path, directory):
 
 
 async def test_a_generated_avatar_is_skipped_and_an_owned_file_removed(db_path, directory):
-    await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
     assert (directory / "7.svg").is_file()
 
     # The driver removes their avatar: the seat must revert to the class fallback.
     written = await refresh_portraits(
-        db_path, SERVER_ID, [_member(7, generated=True)], directory, now=NOW
+        db_path, [_member(7, generated=True)], directory, now=NOW
     )
 
     assert written == 0
@@ -256,7 +255,7 @@ async def test_a_generated_avatar_does_not_remove_a_file_the_league_supplied(db_
     (directory / "7.svg").write_text("<svg>the league's own</svg>")
 
     await refresh_portraits(
-        db_path, SERVER_ID, [_member(7, generated=True)], directory, now=NOW
+        db_path, [_member(7, generated=True)], directory, now=NOW
     )
 
     assert (directory / "7.svg").read_text() == "<svg>the league's own</svg>"
@@ -266,9 +265,9 @@ async def test_removing_a_portrait_takes_the_file_and_the_row(db_path, directory
     """What `/driver reassign` does with the account a driver has left (issue #222)."""
     from services.driver_portrait_service import remove_portrait
 
-    await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
 
-    assert await remove_portrait(db_path, SERVER_ID, "7", directory) is True
+    assert await remove_portrait(db_path, "7", directory) is True
     assert not (directory / "7.svg").exists()
     assert await _rows(db_path) == {}
 
@@ -280,7 +279,7 @@ async def test_removing_a_portrait_leaves_the_league_s_own_artwork_alone(db_path
 
     (directory / "7.svg").write_text("<svg>the league's own</svg>")
 
-    assert await remove_portrait(db_path, SERVER_ID, "7", directory) is False
+    assert await remove_portrait(db_path, "7", directory) is False
     assert (directory / "7.svg").read_text() == "<svg>the league's own</svg>"
 
 
@@ -288,10 +287,10 @@ async def test_removing_a_portrait_whose_file_has_gone_still_takes_the_row(db_pa
     """The row is the ownership register; left behind it would claim a file that is not there."""
     from services.driver_portrait_service import remove_portrait
 
-    await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
     (directory / "7.svg").unlink()
 
-    assert await remove_portrait(db_path, SERVER_ID, "7", directory) is True
+    assert await remove_portrait(db_path, "7", directory) is True
     assert await _rows(db_path) == {}
 
 
@@ -299,10 +298,10 @@ async def test_removing_one_driver_s_portrait_leaves_the_rest(db_path, directory
     from services.driver_portrait_service import remove_portrait
 
     await refresh_portraits(
-        db_path, SERVER_ID, [_member(7, "abc"), _member(8, "def")], directory, now=NOW
+        db_path, [_member(7, "abc"), _member(8, "def")], directory, now=NOW
     )
 
-    await remove_portrait(db_path, SERVER_ID, "7", directory)
+    await remove_portrait(db_path, "7", directory)
 
     assert sorted(await _rows(db_path)) == ["8"]
     assert (directory / "8.svg").is_file()
@@ -315,11 +314,11 @@ async def test_the_new_account_is_fetched_fresh_once_the_old_portrait_has_gone(
     own, and the next refresh obtains it."""
     from services.driver_portrait_service import remove_portrait
 
-    await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
-    await remove_portrait(db_path, SERVER_ID, "7", directory)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    await remove_portrait(db_path, "7", directory)
 
     written = await refresh_portraits(
-        db_path, SERVER_ID, [_member(9, "xyz")], directory, now=NOW
+        db_path, [_member(9, "xyz")], directory, now=NOW
     )
 
     assert written == 1
@@ -328,11 +327,11 @@ async def test_the_new_account_is_fetched_fresh_once_the_old_portrait_has_gone(
 
 
 async def test_a_missing_file_is_refetched_even_where_the_hash_matches(db_path, directory):
-    await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
     (directory / "7.svg").unlink()
 
     written = await refresh_portraits(
-        db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW
+        db_path, [_member(7, "abc")], directory, now=NOW
     )
 
     assert written == 1
@@ -357,7 +356,7 @@ async def test_an_http_error_abandons_the_rest_of_the_batch(db_path, directory):
     others = [_member(n, "b") for n in (2, 3, 4)]
 
     written = await refresh_portraits(
-        db_path, SERVER_ID, [failing] + others, directory,
+        db_path, [failing] + others, directory,
         concurrency=1, budget_seconds=None, now=NOW,
     )
 
@@ -374,7 +373,7 @@ async def test_one_unreadable_avatar_does_not_stop_the_others(db_path, directory
     ok = _member(2, "b")
 
     written = await refresh_portraits(
-        db_path, SERVER_ID, [failing, ok], directory, budget_seconds=None, now=NOW
+        db_path, [failing, ok], directory, budget_seconds=None, now=NOW
     )
 
     assert written == 1
@@ -391,7 +390,7 @@ async def test_the_budget_returns_without_raising_and_writes_no_row(db_path, dir
     slow.display_avatar.read = AsyncMock(side_effect=never)
 
     written = await refresh_portraits(
-        db_path, SERVER_ID, [slow], directory, budget_seconds=0.05, now=NOW
+        db_path, [slow], directory, budget_seconds=0.05, now=NOW
     )
 
     assert written == 0
@@ -400,7 +399,7 @@ async def test_the_budget_returns_without_raising_and_writes_no_row(db_path, dir
 
 
 async def test_no_partial_file_is_left_behind(db_path, directory):
-    await refresh_portraits(db_path, SERVER_ID, [_member(7, "abc")], directory, now=NOW)
+    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
 
     assert sorted(p.name for p in directory.iterdir()) == ["7.svg"]
 
@@ -424,15 +423,15 @@ async def _gate(monkeypatch, config, directory, members=None, *, ignore_trigger=
 
     calls = []
 
-    async def _fake(db_path, server_id, members, directory, **kwargs):
-        calls.append((server_id, list(members), directory))
+    async def _fake(db_path, members, directory, **kwargs):
+        calls.append((list(members), directory))
         return len(list(members))
 
     monkeypatch.setattr(m, "refresh_portraits", _fake)
     bot = MagicMock()
     bot.db_path = ":memory:"
     written = await m.refresh_before_render(
-        bot, SERVER_ID, members if members is not None else [_member(1)],
+        bot, members if members is not None else [_member(1)],
         config=config, directory=directory, ignore_trigger=ignore_trigger,
     )
     return written, calls
@@ -442,7 +441,7 @@ async def test_the_gate_refreshes_when_the_league_asked_for_it(monkeypatch, dire
     written, calls = await _gate(monkeypatch, _config(), directory)
 
     assert written == 1
-    assert calls and calls[0][0] == SERVER_ID and calls[0][2] == directory
+    assert calls and calls[0][1] == directory
 
 
 async def test_the_gate_is_shut_while_portraits_are_disabled(monkeypatch, directory):
@@ -482,7 +481,7 @@ async def _season_db(tmp_path, *, uids=("11", "22"), test_uid="99", status="ACTI
     """A database carrying just the four tables `assigned_driver_ids` joins."""
     path = str(tmp_path / "season.db")
     async with aiosqlite.connect(path) as db:
-        await db.execute("CREATE TABLE seasons (id INTEGER PRIMARY KEY, server_id INTEGER, status TEXT)")
+        await db.execute("CREATE TABLE seasons (id INTEGER PRIMARY KEY, status TEXT)")
         await db.execute(
             "CREATE TABLE driver_profiles (id INTEGER PRIMARY KEY, discord_user_id TEXT,"
             " is_test_driver INTEGER DEFAULT 0)"
@@ -491,11 +490,10 @@ async def _season_db(tmp_path, *, uids=("11", "22"), test_uid="99", status="ACTI
             "CREATE TABLE driver_season_assignments (driver_profile_id INTEGER, season_id INTEGER)"
         )
         await db.execute(
-            "CREATE TABLE driver_portraits (server_id INTEGER NOT NULL,"
-            " discord_user_id TEXT NOT NULL, avatar_key TEXT NOT NULL,"
-            " fetched_at TEXT NOT NULL, PRIMARY KEY (server_id, discord_user_id))"
+            "CREATE TABLE driver_portraits (discord_user_id TEXT PRIMARY KEY,"
+            " avatar_key TEXT NOT NULL, fetched_at TEXT NOT NULL)"
         )
-        await db.execute("INSERT INTO seasons VALUES (1, ?, ?)", (SERVER_ID, status))
+        await db.execute("INSERT INTO seasons VALUES (1, ?)", (status,))
         pid = 0
         for uid in uids:
             pid += 1
@@ -515,7 +513,7 @@ async def test_assigned_driver_ids_skips_test_drivers_and_sorts(tmp_path):
     path = await _season_db(tmp_path, uids=("22", "11"))
 
     # Sorted rather than in insertion order: a run cut short must resume predictably.
-    assert await assigned_driver_ids(path, SERVER_ID) == ["11", "22"]
+    assert await assigned_driver_ids(path) == ["11", "22"]
 
 
 async def test_assigned_driver_ids_ignores_a_season_that_is_not_active(tmp_path):
@@ -523,7 +521,7 @@ async def test_assigned_driver_ids_ignores_a_season_that_is_not_active(tmp_path)
 
     path = await _season_db(tmp_path, status="COMPLETED")
 
-    assert await assigned_driver_ids(path, SERVER_ID) == []
+    assert await assigned_driver_ids(path) == []
 
 
 def _daily_bot(db_path, directory, **config_overrides):
@@ -536,6 +534,8 @@ def _daily_bot(db_path, directory, **config_overrides):
     guild = MagicMock()
     members = {11: _member(11, "k11"), 22: _member(22, "k22")}
     guild.get_member.side_effect = members.get
+    guild.id = SERVER_ID
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.get_guild.return_value = guild
     return bot
 
@@ -548,7 +548,7 @@ async def test_the_daily_refresh_writes_every_seated_driver(tmp_path, monkeypatc
     path = await _season_db(tmp_path)
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", tmp_path)
 
-    written = await m.run_daily_refresh(_daily_bot(path, directory), SERVER_ID, now=NOW)
+    written = await m.run_daily_refresh(_daily_bot(path, directory), now=NOW)
 
     assert written == 2
     assert sorted(p.name for p in directory.iterdir()) == ["11.svg", "22.svg"]
@@ -563,10 +563,10 @@ async def test_the_daily_refresh_stands_aside_when_not_asked_for(tmp_path, monke
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", tmp_path)
 
     assert await m.run_daily_refresh(
-        _daily_bot(path, directory, pfp_daily=False), SERVER_ID, now=NOW
+        _daily_bot(path, directory, pfp_daily=False), now=NOW
     ) == 0
     assert await m.run_daily_refresh(
-        _daily_bot(path, directory, use_pfp=False), SERVER_ID, now=NOW
+        _daily_bot(path, directory, use_pfp=False), now=NOW
     ) == 0
     assert list(directory.iterdir()) == []
 
@@ -579,7 +579,7 @@ async def test_the_daily_refresh_swallows_a_failure_rather_than_stopping_the_job
     bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("boom"))
 
     # An APScheduler job that raises is logged into a void the league never reads.
-    assert await m.run_daily_refresh(bot, SERVER_ID, now=NOW) == 0
+    assert await m.run_daily_refresh(bot, now=NOW) == 0
 
 
 async def test_the_daily_refresh_stands_aside_where_the_guild_is_unreachable(tmp_path, monkeypatch):
@@ -592,7 +592,7 @@ async def test_the_daily_refresh_stands_aside_where_the_guild_is_unreachable(tmp
     bot = _daily_bot(path, directory)
     bot.get_guild.return_value = None
 
-    assert await m.run_daily_refresh(bot, SERVER_ID, now=NOW) == 0
+    assert await m.run_daily_refresh(bot, now=NOW) == 0
 
 
 # ── Reading the shape off the league's own lineup template ───────────────
@@ -933,7 +933,7 @@ async def test_approval_pulls_even_where_only_daily_updates_are_asked_for(
     )
 
     assert written == 1
-    assert calls and calls[0][0] == SERVER_ID
+    assert calls
 
 
 async def test_the_same_configuration_pulls_nothing_on_an_ordinary_posting(

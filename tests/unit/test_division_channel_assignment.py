@@ -65,9 +65,9 @@ async def _make_db(tmp_path) -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'SETUP')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'SETUP')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -142,8 +142,7 @@ async def _audit(db_path: str) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, old_value, new_value, division_id FROM audit_entries "
-            "WHERE server_id = ? ORDER BY id",
-            (SERVER_ID,),
+            " ORDER BY id",
         )
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -413,6 +412,6 @@ async def test_a_successful_assignment_is_logged(tmp_path, monkeypatch):
 
     await cog._set_division_channel(_interaction(), "Division 1", _channel(), "weather")
 
-    logged = cog.bot.output_router.post_log.await_args.args[1]
+    logged = cog.bot.output_router.post_log.await_args.args[0]
     assert "weather-channel" in logged
     assert "Division 1" in logged

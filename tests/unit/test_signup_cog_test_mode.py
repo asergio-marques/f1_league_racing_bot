@@ -70,7 +70,7 @@ def _bot(*, test_mode: bool):
         ),
         driver_service=SimpleNamespace(
             get_profile=AsyncMock(return_value=None),
-            current_account=AsyncMock(side_effect=lambda _s, a: str(a)),
+            current_account=AsyncMock(side_effect=lambda a: str(a)),
         ),
         wizard_service=SimpleNamespace(start_wizard=AsyncMock(return_value=None)),
         signup_module_service=SimpleNamespace(get_config=AsyncMock(return_value=None)),

@@ -62,9 +62,9 @@ async def _make_db(tmp_path, *, state: str = "ASSIGNED") -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         for div_id, name in ((DIVISION_A, "Division 1"), (DIVISION_B, "Division 2")):
             await db.execute(
@@ -85,9 +85,9 @@ async def _make_db(tmp_path, *, state: str = "ASSIGNED") -> str:
             )
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(id, server_id, discord_user_id, current_state, is_test_driver) "
-            "VALUES (?, ?, '4242', ?, 0)",
-            (PROFILE_ID, SERVER_ID, state),
+            "(id, discord_user_id, current_state, is_test_driver) "
+            "VALUES (?, '4242', ?, 0)",
+            (PROFILE_ID, state),
         )
         await db.commit()
     return db_path
@@ -111,8 +111,8 @@ async def _seat(db_path: str, division_id: int, *, profile_id: int = PROFILE_ID)
 async def _map_role(db_path: str, team_name: str, role_id: int = ROLE_ID) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (?, ?, ?)",
-            (SERVER_ID, team_name, role_id),
+            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            (team_name, role_id),
         )
         await db.commit()
 
@@ -131,7 +131,6 @@ async def _unassign(service, division_id: int = DIVISION_A, *, member=None) -> d
     guild.get_member = MagicMock(return_value=member)
     guild.fetch_member = AsyncMock(return_value=member)
     return await service.unassign_driver(
-        server_id=SERVER_ID,
         driver_profile_id=PROFILE_ID,
         division_id=division_id,
         season_id=SEASON_ID,
@@ -374,8 +373,7 @@ async def test_the_unassignment_is_audited_against_its_division(tmp_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type, division_id FROM audit_entries WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT change_type, division_id FROM audit_entries",
         )
         row = await cursor.fetchone()
     assert row["change_type"] == "DRIVER_UNASSIGN"

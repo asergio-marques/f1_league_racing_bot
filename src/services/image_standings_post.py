@@ -141,7 +141,7 @@ class StandingsPostOutcome:
 # ── Enablement ────────────────────────────────────────────────────────────
 
 
-async def standings_enabled(bot, server_id: int, template_key: str) -> bool:
+async def standings_enabled(bot, template_key: str) -> bool:
     """True where the module is on, the `standings` aspect is on, and *template_key* is valid.
 
     Read per template rather than per aspect, so a sound drivers template still draws while a
@@ -149,16 +149,16 @@ async def standings_enabled(bot, server_id: int, template_key: str) -> bool:
     graphic, and the two championships are two graphics).
     """
     try:
-        if not await bot.module_service.is_images_enabled(server_id):
+        if not await bot.module_service.is_images_enabled():
             return False
-        toggles = await bot.image_config_service.get_toggles(server_id)
+        toggles = await bot.image_config_service.get_toggles()
         if not toggles.get("standings"):
             return False
-        reports = await bot.image_validity_service.template_reports(server_id)
+        reports = await bot.image_validity_service.template_reports()
         report = reports.get(template_key)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("standings: enablement check failed for server %s: %s", server_id, exc)
+        log.error("standings: enablement check failed: %s", exc)
         return False
 
 
@@ -319,7 +319,6 @@ async def build_drawings(
     guild,
     *,
     db_path: str,
-    server_id: int,
     division_id: int,
     round_id: int,
     round_number,
@@ -354,11 +353,11 @@ async def build_drawings(
 
     names = await _driver_names(bot, guild, driver_keys, division_id=division_id)
     nationalities = await _nationalities(bot, driver_keys, division_id=division_id)
-    collected = await _nationality_collected(db_path, server_id)
+    collected = await _nationality_collected(db_path)
 
     # A constructors row *is* a team, so that graphic's names are keyed by role. A drivers
     # row names the team its own driver sits in, so that graphic's are keyed by driver.
-    team_names_by_role = await _team_names(bot, guild, server_id, division_id, team_keys)
+    team_names_by_role = await _team_names(bot, guild, division_id, team_keys)
 
     headings, ordinal_of_round = await _calendar(bot, division_id)
     session_results = await _round_session_results(bot, ordinal_of_round)
@@ -432,7 +431,7 @@ async def build_drawings(
 # ── Render ────────────────────────────────────────────────────────────────
 
 
-async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
+async def render_png(bot, drawing, origin: PostingOrigin):
     """Render one championship. Returns the render service's PostingDecision."""
     from services.image_render_service import (
         resolve_configured_directories,
@@ -440,7 +439,7 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
     )
     from services.image_standings_service import build_fill_spec
 
-    config = await bot.image_config_service.get_config(server_id)
+    config = await bot.image_config_service.get_config()
     directories, directory_faults = resolve_configured_directories(
         config,
         (
@@ -457,7 +456,6 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
     from utils.image_naming import stem_for_drawing
 
     return await bot.image_render_service.render_for_posting(
-        server_id,
         drawing.template_key,
         spec_builder_with_faults(
             build_fill_spec, drawing, directories, directory_faults
@@ -476,7 +474,6 @@ async def _post_one(
     bot,
     channel,
     *,
-    server_id: int,
     db_path: str,
     division_id: int,
     round_id: int,
@@ -502,10 +499,10 @@ async def _post_one(
     what = f"{subject} — {championship} standings"
 
     try:
-        decision = await render_png(bot, server_id, drawing, origin)
+        decision = await render_png(bot, drawing, origin)
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
         log.error("standings: %s render failed: %s", championship, exc)
-        await report(bot, server_id, what, str(exc))
+        await report(bot, what, str(exc))
         if origin is PostingOrigin.COMMANDED:
             return ChampionshipOutcome(action=REJECTED, message=f"❌ {exc}")
         return ChampionshipOutcome(action=FELL_BACK)
@@ -521,7 +518,7 @@ async def _post_one(
         # Uncommanded, and it would not draw: this championship's section is posted as
         # text by the caller, and the other championship is untouched by it.
         if decision.problem is not None:
-            await report(bot, server_id, what, decision.problem.detail)
+            await report(bot, what, decision.problem.detail)
         return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices)
 
     from services.image_render_service import discard_attachment
@@ -564,7 +561,7 @@ async def _post_one(
         )
 
     if decision.notices:
-        await report_notices(bot, server_id, what, decision.notices)
+        await report_notices(bot, what, decision.notices)
 
     # No ``png_path``: the file was discarded the moment the send returned, and handing
     # back a path to something deleted is worse than handing back nothing.
@@ -607,9 +604,8 @@ async def try_post(
     if bot is None or guild is None or channel is None:
         return StandingsPostOutcome()
 
-    server_id = guild.id
     wanted = {
-        name: await standings_enabled(bot, server_id, key)
+        name: await standings_enabled(bot, key)
         for name, key in TEMPLATE_KEYS.items()
     }
     if not any(wanted.values()):
@@ -626,7 +622,6 @@ async def try_post(
             bot,
             guild,
             db_path=db_path,
-            server_id=server_id,
             division_id=division_id,
             round_id=round_id,
             round_number=round_number,
@@ -643,7 +638,7 @@ async def try_post(
         )
     except Exception as exc:  # noqa: BLE001 — the data behind both, so both answer for it
         log.error("standings: the drawings could not be resolved: %s", exc)
-        await report(bot, server_id, subject, str(exc))
+        await report(bot, subject, str(exc))
         if origin is PostingOrigin.COMMANDED:
             return StandingsPostOutcome(
                 drivers=ChampionshipOutcome(action=REJECTED, message=f"❌ {exc}"),
@@ -667,7 +662,6 @@ async def try_post(
             result = await _post_one(
                 bot,
                 channel,
-                server_id=server_id,
                 db_path=db_path,
                 division_id=division_id,
                 round_id=round_id,
@@ -701,7 +695,7 @@ async def try_post(
 # ── Reporting ─────────────────────────────────────────────────────────────
 
 
-async def report(bot, server_id: int, what: str, detail: str) -> None:
+async def report(bot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to the standings channel.
 
     Drivers read the standings channel (FR-053); a template fault is the league manager's
@@ -709,13 +703,13 @@ async def report(bot, server_id: int, what: str, detail: str) -> None:
     """
     try:
         await bot.output_router.post_log(
-            server_id, f"⚠️ Standings image — {what}: {detail}"
+            f"⚠️ Standings image — {what}: {detail}"
         )
     except Exception as exc:  # noqa: BLE001
         log.error("standings: could not report to the log channel: %s", exc)
 
 
-async def report_notices(bot, server_id: int, what: str, notices) -> None:
+async def report_notices(bot, what: str, notices) -> None:
     """Report every non-fatal degradation, in one grouped block like every other path.
 
     This used to post one Discord message per notice, which a twenty-driver championship
@@ -728,6 +722,6 @@ async def report_notices(bot, server_id: int, what: str, notices) -> None:
     try:
         from services.image_render_service import ImageRenderService
 
-        await ImageRenderService.report_notices(bot, server_id, notices, subject=what)
+        await ImageRenderService.report_notices(bot, notices, subject=what)
     except Exception as exc:  # noqa: BLE001
         log.error("standings: could not report notices: %s", exc)

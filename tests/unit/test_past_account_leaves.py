@@ -24,9 +24,9 @@ async def _cog(tmp_path) -> SignupCog:
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'ASSIGNED')",
-            (SERVER_ID, PAST),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'ASSIGNED')",
+            (PAST,),
         )
         await db.execute(
             "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
@@ -38,6 +38,7 @@ async def _cog(tmp_path) -> SignupCog:
     cog.bot.db_path = db_path
     cog.bot.wizard_service.handle_member_remove = AsyncMock()
     cog.bot.output_router.post_log = AsyncMock()
+    cog.bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     return cog
 
 
@@ -59,4 +60,4 @@ async def test_the_current_account_leaving_is_reported(tmp_path):
     cog = await _cog(tmp_path)
     await SignupCog.on_member_remove(cog, _member(CURRENT))
     cog.bot.output_router.post_log.assert_awaited_once()
-    assert "Driver left server" in cog.bot.output_router.post_log.await_args.args[1]
+    assert "Driver left server" in cog.bot.output_router.post_log.await_args.args[0]

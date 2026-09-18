@@ -109,7 +109,7 @@ async def _make_db(tmp_path, *, name: str = "xml_import", with_config: bool = Tr
         )
         await db.commit()
     if with_config:
-        await create_config(db_path, SERVER_ID, CONFIG)
+        await create_config(db_path, CONFIG)
     return db_path
 
 
@@ -141,13 +141,13 @@ def _replied(interaction) -> str:
 
 def _audited(interaction) -> str:
     return "\n".join(
-        str(call.args[1])
+        str(call.args[0])
         for call in interaction.client.output_router.post_log.await_args_list
     )
 
 
 async def _import(db_path, interaction, xml=VALID_XML, *, config=CONFIG):
-    await _run_xml_import(interaction, xml, config, db_path, SERVER_ID)
+    await _run_xml_import(interaction, xml, config, db_path)
 
 
 async def _rows(db_path: str) -> list[tuple[str, int, int]]:
@@ -500,7 +500,7 @@ async def test_the_modal_defers_before_importing(tmp_path):
     """The modal path cannot defer in the command — `send_modal` has to be the first
     response — so the deferral moves into `on_submit`, where the work is."""
     db_path = await _make_db(tmp_path, name="xml_modal_submit")
-    modal = XmlImportModal(CONFIG, db_path, SERVER_ID)
+    modal = XmlImportModal(CONFIG, db_path)
     modal.xml_payload._value = VALID_XML  # type: ignore[attr-defined]
     interaction = _interaction()
 

@@ -90,9 +90,8 @@ async def _seed(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (1, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
         )
         await db.execute(
             "INSERT INTO divisions "
@@ -299,8 +298,7 @@ async def test_unresolvable_circuit_blocks_the_phase(tmp_path):
     posted.assert_not_awaited()
     # The reason reaches the league's log channel rather than only the bot's own log.
     bot.output_router.post_log.assert_awaited_once()
-    server_id, text = bot.output_router.post_log.await_args.args
-    assert server_id == SERVER_ID
+    (text,) = bot.output_router.post_log.await_args.args
     assert "BLOCKED" in text
 
 
@@ -324,7 +322,7 @@ async def test_infeasible_sigma_blocks_the_phase(tmp_path):
     assert await _phase1_state(db_path) == (0, 0)
     posted.assert_not_awaited()
     bot.output_router.post_log.assert_awaited_once()
-    _, text = bot.output_router.post_log.await_args.args
+    (text,) = bot.output_router.post_log.await_args.args
     assert "BLOCKED" in text
     # σ = 0.9 against a limit of √(0.5 × 0.5) = 0.5.
     assert 0.9 >= math.sqrt(0.5 * 0.5)

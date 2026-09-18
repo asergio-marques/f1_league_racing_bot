@@ -1,7 +1,7 @@
 """WeatherCog — /weather command group.
 
 Provides /weather config phase-1-deadline, phase-2-deadline, phase-3-deadline
-for configuring per-server weather pipeline horizons.
+for configuring the league's weather pipeline horizons.
 """
 from __future__ import annotations
 
@@ -35,8 +35,7 @@ class WeatherCog(commands.Cog):
 
     async def _weather_gate(self, interaction: discord.Interaction) -> bool:
         """Return True (and respond ephemerally) if weather module is not enabled."""
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        if not await self.bot.module_service.is_weather_enabled(server_id):  # type: ignore[attr-defined]
+        if not await self.bot.module_service.is_weather_enabled():  # type: ignore[attr-defined]
             await interaction.response.send_message(
                 "❌ The weather module is not enabled.", ephemeral=True
             )
@@ -45,8 +44,7 @@ class WeatherCog(commands.Cog):
 
     async def _active_season_gate(self, interaction: discord.Interaction) -> bool:
         """Return True (and respond ephemerally) if a season is currently ACTIVE."""
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if season is not None:
             await interaction.response.send_message(
                 "❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.",
@@ -77,17 +75,15 @@ class WeatherCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         from services.weather_config_service import set_phase_1_days
-        result = await set_phase_1_days(self.bot.db_path, server_id, days)  # type: ignore[attr-defined]
+        result = await set_phase_1_days(self.bot.db_path, days)  # type: ignore[attr-defined]
 
         if isinstance(result, str):
             await interaction.followup.send(f"❌ {result}", ephemeral=True)
             return
 
         await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE1_DEADLINE | Success\n"
             f"  new_value: {days}d  (Phase 2: {result.phase_2_days}d, Phase 3: {result.phase_3_hours}h)",
         )
@@ -119,17 +115,15 @@ class WeatherCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         from services.weather_config_service import set_phase_2_days
-        result = await set_phase_2_days(self.bot.db_path, server_id, days)  # type: ignore[attr-defined]
+        result = await set_phase_2_days(self.bot.db_path, days)  # type: ignore[attr-defined]
 
         if isinstance(result, str):
             await interaction.followup.send(f"❌ {result}", ephemeral=True)
             return
 
         await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE2_DEADLINE | Success\n"
             f"  new_value: {days}d  (Phase 1: {result.phase_1_days}d, Phase 3: {result.phase_3_hours}h)",
         )
@@ -161,17 +155,15 @@ class WeatherCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         from services.weather_config_service import set_phase_3_hours
-        result = await set_phase_3_hours(self.bot.db_path, server_id, hours)  # type: ignore[attr-defined]
+        result = await set_phase_3_hours(self.bot.db_path, hours)  # type: ignore[attr-defined]
 
         if isinstance(result, str):
             await interaction.followup.send(f"❌ {result}", ephemeral=True)
             return
 
         await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE3_DEADLINE | Success\n"
             f"  new_value: {hours}h  (Phase 1: {result.phase_1_days}d, Phase 2: {result.phase_2_days}d)",
         )

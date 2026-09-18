@@ -7,7 +7,6 @@ from dataclasses import dataclass
 @dataclass
 class DefaultTeam:
     id: int
-    server_id: int
     name: str
     max_seats: int  # -1 = unlimited
     is_reserve: bool
@@ -34,7 +33,6 @@ class TeamSeat:
 class TeamRoleConfig:
     """Server-scoped mapping of team name → Discord role ID."""
     id: int
-    server_id: int
     team_name: str
     role_id: int
     updated_at: str

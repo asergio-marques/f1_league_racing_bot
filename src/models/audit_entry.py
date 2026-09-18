@@ -6,7 +6,6 @@ from datetime import datetime
 @dataclass
 class AuditEntry:
     id: int
-    server_id: int
     actor_id: int
     actor_name: str
     division_id: int | None

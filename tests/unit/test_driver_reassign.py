@@ -52,9 +52,9 @@ async def _profile(db_path: str, account: str, *, state: str = "UNASSIGNED",
                    test: bool = False) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "is_test_driver) VALUES (?, ?, ?, ?)",
-            (SERVER_ID, account, state, int(test)),
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "is_test_driver) VALUES (?, ?, ?)",
+            (account, state, int(test)),
         )
         await db.commit()
         return cursor.lastrowid
@@ -74,7 +74,7 @@ async def _state_of_the_league(db_path: str) -> tuple:
 
 
 async def _reassign(db_path: str, old: str, new: str):
-    return await DriverService(db_path).reassign_user_id(SERVER_ID, old, new, ACTOR, "Manager")
+    return await DriverService(db_path).reassign_user_id(old, new, ACTOR, "Manager")
 
 
 async def _refused(db_path: str, old: str, new: str, match: str) -> None:
@@ -123,7 +123,7 @@ async def test_a_past_account_may_be_made_current_again(tmp_path):
     assert outcome.switched_back is True
     assert outcome.replaced_account == B
     assert outcome.accounts == [A, B]
-    assert (await DriverService(db_path).get_profile(SERVER_ID, A)).id == outcome.profile.id
+    assert (await DriverService(db_path).get_profile(A)).id == outcome.profile.id
 
 
 async def test_a_reassign_is_audited_with_the_account_replaced(tmp_path):
@@ -213,9 +213,8 @@ async def test_a_reassign_expires_an_open_placements_review(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, ?, '2026-09-17', 'SETUP', 1)",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-09-17', 'SETUP', 1)"
         )
         await db.commit()
     await _profile(db_path, A)
@@ -223,10 +222,10 @@ async def test_a_reassign_expires_an_open_placements_review(tmp_path):
         db_path=db_path,
         image_config_service=SimpleNamespace(get_config=AsyncMock(return_value=None)),
     )
-    before = await take_fingerprint(bot, SERVER_ID, 1)
+    before = await take_fingerprint(bot, 1)
 
     await _reassign(db_path, A, B)
 
-    assert "the unsettled signups" in (await take_fingerprint(bot, SERVER_ID, 1)).differs_from(
+    assert "the unsettled signups" in (await take_fingerprint(bot, 1)).differs_from(
         before
     )

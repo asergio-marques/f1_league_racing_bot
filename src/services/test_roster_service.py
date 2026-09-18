@@ -81,7 +81,7 @@ async def _next_synthetic_id(db_path: str) -> int:
     return _SYNTHETIC_ID_BASE + 1 if current_max is None else current_max + 1
 
 
-async def _reattach_history(db, server_id: int, discord_user_id: str, profile_id: int) -> None:
+async def _reattach_history(db, discord_user_id: str, profile_id: int) -> None:
     """Give a driver created by test mode the history an earlier one of the same identifier left.
 
     Test mode deletes its drivers when it is switched off, and keeps their history entries
@@ -90,12 +90,12 @@ async def _reattach_history(db, server_id: int, discord_user_id: str, profile_id
     """
     await db.execute(
         "UPDATE driver_history_entries SET driver_profile_id = ? "
-        "WHERE server_id = ? AND discord_user_id = ? AND driver_profile_id IS NULL",
-        (profile_id, server_id, discord_user_id),
+        "WHERE discord_user_id = ? AND driver_profile_id IS NULL",
+        (profile_id, discord_user_id),
     )
 
 
-async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
+async def _get_active_season_id(db_path: str) -> int | None:
     """Return the live season ID for a server, or None if it has none.
 
     A server holds at most one live (SETUP or ACTIVE) season — migration 049 enforces it
@@ -110,16 +110,15 @@ async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+            "SELECT id FROM seasons WHERE status IN ('ACTIVE', 'SETUP') "
             "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-            (server_id,),
         )
         row = await cursor.fetchone()
     return row["id"] if row else None
 
 
 async def _get_division_id(
-    server_id: int, season_id: int, division_name: str, db_path: str
+    season_id: int, division_name: str, db_path: str
 ) -> int | None:
     """Return the division ID for a named division in the active season, or None."""
     async with get_connection(db_path) as db:
@@ -128,12 +127,11 @@ async def _get_division_id(
             SELECT d.id
             FROM divisions d
             JOIN seasons s ON s.id = d.season_id
-            WHERE s.server_id = ?
-              AND s.id = ?
+            WHERE s.id = ?
               AND LOWER(d.name) = LOWER(?)
               AND d.status != 'CANCELLED'
             """,
-            (server_id, season_id, division_name),
+            (season_id, division_name),
         )
         row = await cursor.fetchone()
     return row["id"] if row else None
@@ -142,7 +140,6 @@ async def _get_division_id(
 # ─── Public API ──────────────────────────────────────────────────────────────
 
 async def add_test_driver(
-    server_id: int,
     driver_name: str,
     team_name: str,
     division_name: str,
@@ -166,11 +163,11 @@ async def add_test_driver(
                 "(e.g. 'British') or country name (e.g. 'United Kingdom'), or 'other'."
             )
 
-    season_id = await _get_active_season_id(server_id, db_path)
+    season_id = await _get_active_season_id(db_path)
     if season_id is None:
         return "No active or setup season found."
 
-    division_id = await _get_division_id(server_id, season_id, division_name, db_path)
+    division_id = await _get_division_id(season_id, division_name, db_path)
     if division_id is None:
         return f"Division '{division_name}' not found in the active season."
 
@@ -224,15 +221,15 @@ async def add_test_driver(
         try:
             profile_cursor = await db.execute(
                 "INSERT INTO driver_profiles "
-                "(server_id, discord_user_id, current_state, former_driver, is_test_driver, "
+                "(discord_user_id, current_state, former_driver, is_test_driver, "
                 " test_display_name, test_nationality) "
-                "VALUES (?, ?, 'ASSIGNED', 0, 1, ?, ?)",
-                (server_id, uid_str, driver_name, canonical_nationality),
+                "VALUES (?, 'ASSIGNED', 0, 1, ?, ?)",
+                (uid_str, driver_name, canonical_nationality),
             )
             profile_id: int = profile_cursor.lastrowid  # type: ignore[assignment]
         except Exception as exc:
             return f"Failed to create driver profile: {exc}"
-        await _reattach_history(db, server_id, uid_str, profile_id)
+        await _reattach_history(db, uid_str, profile_id)
 
         # Occupy the seat
         await db.execute(
@@ -261,7 +258,6 @@ async def add_test_driver(
 
 
 async def add_test_drivers_in_bulk(
-    server_id: int,
     drivers: list,
     db_path: str,
 ) -> tuple[int, list[str]]:
@@ -293,7 +289,7 @@ async def add_test_drivers_in_bulk(
     if not drivers:
         return 0, ["There were no drivers to add."]
 
-    season_id = await _get_active_season_id(server_id, db_path)
+    season_id = await _get_active_season_id(db_path)
     if season_id is None:
         return 0, ["No active or setup season found."]
 
@@ -319,7 +315,7 @@ async def add_test_drivers_in_bulk(
         # Every division named must exist, and must be empty.
         division_ids: dict[str, int] = {}
         for name in divisions_named(drivers):
-            division_id = await _get_division_id(server_id, season_id, name, db_path)
+            division_id = await _get_division_id(season_id, name, db_path)
             if division_id is None:
                 errors.append(f"Division '{name}' is not in the current season.")
                 continue
@@ -341,8 +337,8 @@ async def add_test_drivers_in_bulk(
         # one thing worth naming precisely: it means the file has already been imported.
         for driver in drivers:
             cursor = await db.execute(
-                "SELECT 1 FROM driver_profiles WHERE server_id = ? AND discord_user_id = ?",
-                (server_id, str(driver.discord_user_id)),
+                "SELECT 1 FROM driver_profiles WHERE discord_user_id = ?",
+                (str(driver.discord_user_id),),
             )
             if await cursor.fetchone():
                 errors.append(
@@ -420,18 +416,17 @@ async def add_test_drivers_in_bulk(
 
             profile_cursor = await db.execute(
                 "INSERT INTO driver_profiles "
-                "(server_id, discord_user_id, current_state, former_driver, is_test_driver, "
+                "(discord_user_id, current_state, former_driver, is_test_driver, "
                 " test_display_name, test_nationality) "
-                "VALUES (?, ?, 'ASSIGNED', 0, 1, ?, ?)",
+                "VALUES (?, 'ASSIGNED', 0, 1, ?, ?)",
                 (
-                    server_id,
                     str(driver.discord_user_id),
                     driver.driver_name,
                     canonical[driver.line],
                 ),
             )
             profile_id = profile_cursor.lastrowid
-            await _reattach_history(db, server_id, str(driver.discord_user_id), profile_id)
+            await _reattach_history(db, str(driver.discord_user_id), profile_id)
 
             await db.execute(
                 "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
@@ -449,13 +444,12 @@ async def add_test_drivers_in_bulk(
         await db.commit()
 
     log.info(
-        "roster import: seated %d test drivers on server %s", seated, server_id
+        "roster import: seated %d test drivers", seated
     )
     return seated, []
 
 
 async def list_test_drivers(
-    server_id: int,
     division_name: str,
     db_path: str,
 ) -> list[TestDriverInfo] | str:
@@ -463,11 +457,11 @@ async def list_test_drivers(
 
     Returns an error string if the division does not exist.
     """
-    season_id = await _get_active_season_id(server_id, db_path)
+    season_id = await _get_active_season_id(db_path)
     if season_id is None:
         return "No active or setup season found."
 
-    division_id = await _get_division_id(server_id, season_id, division_name, db_path)
+    division_id = await _get_division_id(season_id, division_name, db_path)
     if division_id is None:
         return f"Division '{division_name}' not found in the active season."
 
@@ -503,7 +497,6 @@ async def list_test_drivers(
 
 
 async def clear_test_drivers(
-    server_id: int,
     division_name: str,
     db_path: str,
 ) -> int | str:
@@ -511,11 +504,11 @@ async def clear_test_drivers(
 
     Returns an error string if the division does not exist.
     """
-    season_id = await _get_active_season_id(server_id, db_path)
+    season_id = await _get_active_season_id(db_path)
     if season_id is None:
         return "No active or setup season found."
 
-    division_id = await _get_division_id(server_id, season_id, division_name, db_path)
+    division_id = await _get_division_id(season_id, division_name, db_path)
     if division_id is None:
         return f"Division '{division_name}' not found in the active season."
 
@@ -523,7 +516,6 @@ async def clear_test_drivers(
 
 
 async def remove_test_driver(
-    server_id: int,
     discord_user_id: int,
     db_path: str,
 ) -> str | dict:
@@ -541,11 +533,10 @@ async def remove_test_driver(
             FROM driver_profiles dp
             LEFT JOIN team_seats ts ON ts.driver_profile_id = dp.id
             LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
-            WHERE dp.server_id = ?
-              AND CAST(dp.discord_user_id AS INTEGER) = ?
+            WHERE CAST(dp.discord_user_id AS INTEGER) = ?
               AND dp.is_test_driver = 1
             """,
-            (server_id, discord_user_id),
+            (discord_user_id,),
         )
         row = await cursor.fetchone()
 
@@ -576,7 +567,7 @@ async def remove_test_driver(
     return {"display_name": display_name, "team_name": team_name}
 
 
-async def clear_all_test_drivers(server_id: int, db_path: str) -> int:
+async def clear_all_test_drivers(db_path: str) -> int:
     """Remove every driver created by test mode on the server, keeping their history.
 
     Every one of them, seated or not and in whatever season — switching test mode off deletes
@@ -589,8 +580,7 @@ async def clear_all_test_drivers(server_id: int, db_path: str) -> int:
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM driver_profiles WHERE server_id = ? AND is_test_driver = 1",
-            (server_id,),
+            "SELECT id FROM driver_profiles WHERE is_test_driver = 1",
         )
         profile_ids = [r["id"] for r in await cursor.fetchall()]
         await delete_driver_profiles(db, profile_ids, keep_history=True)
@@ -623,7 +613,6 @@ async def _delete_test_drivers_in_division(division_id: int, db_path: str) -> in
 # ─── Test config seeding ─────────────────────────────────────────────────────
 
 async def ensure_test_configs(
-    server_id: int,
     season_id: int,
     db_path: str,
 ) -> list[str]:
@@ -658,7 +647,6 @@ async def ensure_test_configs(
 
     for config_name, session_entries, fl_configs in configs:
         newly_created = await _ensure_single_config(
-            server_id=server_id,
             season_id=season_id,
             config_name=config_name,
             session_entries=session_entries,
@@ -672,7 +660,6 @@ async def ensure_test_configs(
 
 
 async def _ensure_single_config(
-    server_id: int,
     season_id: int,
     config_name: str,
     session_entries: dict[SessionType, dict[int, int]],
@@ -713,12 +700,12 @@ async def _ensure_single_config(
 
         # Create the server-level config and take its id — the entries hang off it.
         await db.execute(
-            "INSERT OR IGNORE INTO points_config_store (server_id, config_name) VALUES (?, ?)",
-            (server_id, config_name),
+            "INSERT OR IGNORE INTO points_config_store (config_name) VALUES (?)",
+            (config_name,),
         )
         cursor = await db.execute(
-            "SELECT id FROM points_config_store WHERE server_id = ? AND config_name = ?",
-            (server_id, config_name),
+            "SELECT id FROM points_config_store WHERE config_name = ?",
+            (config_name,),
         )
         config_id = (await cursor.fetchone())["id"]
 

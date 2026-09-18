@@ -32,7 +32,7 @@ def _cog(stage: SeasonStage | None) -> SeasonCog:
     )
     cog.bot.season_service.delete_season = AsyncMock()
     cog.bot.output_router.post_log = AsyncMock()
-    cog._pending = {42: PendingConfig(server_id=SERVER_ID, season_id=7)}
+    cog._pending = {42: PendingConfig(season_id=7)}
     return cog
 
 
@@ -95,20 +95,17 @@ async def test_deleting_the_season_takes_its_signups_windows_and_configuration(t
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (7, ?, '2026-09-17', 'SETUP', 1, 'PLACEMENTS')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (7, '2026-09-17', 'SETUP', 1, 'PLACEMENTS')"
         )
         await db.execute(
-            "INSERT INTO signup_windows (server_id, season_id) VALUES (?, 7)", (SERVER_ID,)
-        )
+            "INSERT INTO signup_windows (season_id) VALUES (7)")
         await db.execute(
             "INSERT INTO season_signup_config (season_id, nationality_required, time_type, "
             "time_image_required) VALUES (7, 1, 'TIME_TRIAL', 1)"
         )
         await db.execute(
-            "INSERT INTO signup_records (server_id, season_id, discord_user_id) VALUES (?, 7, '1')",
-            (SERVER_ID,),
+            "INSERT INTO signup_records (season_id, discord_user_id) VALUES (7, '1')"
         )
         await db.commit()
 
@@ -162,6 +159,6 @@ async def test_aborting_keeps_the_saved_test_mode_backup(tmp_path):
     bot.scheduler_service._jobstore_path = str(jobstore)
 
     with patch("services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()):
-        await end_of_season_pass(SERVER_ID, bot, None)
+        await end_of_season_pass(bot, None)
 
     assert backup_service.backup_path(db_path).read_bytes() == b"saved"

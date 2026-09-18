@@ -66,20 +66,18 @@ class ResetCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         # ── defer so we can safely await the service ──────────────────────────
         await interaction.response.defer(ephemeral=True)
 
         try:
             result = await reset_service.reset_server_data(
-                server_id=server_id,
                 db_path=self.bot.db_path,  # type: ignore[attr-defined]
                 scheduler_service=self.bot.scheduler_service,  # type: ignore[attr-defined]
                 full=full,
             )
         except Exception as exc:  # noqa: BLE001
-            log.exception("Reset failed for server %s", server_id)
+            log.exception("Reset failed")
             await interaction.followup.send(
                 f"❌ Reset failed unexpectedly: {exc}",
                 ephemeral=True,
@@ -87,12 +85,12 @@ class ResetCog(commands.Cog):
             return
 
         # Cancel any pending season-end scheduled job
-        self.bot.scheduler_service.cancel_season_end(server_id)  # type: ignore[attr-defined]
+        self.bot.scheduler_service.cancel_season_end()  # type: ignore[attr-defined]
 
         # Clear any in-memory pending season setups for this server
         season_cog = self.bot.get_cog("SeasonCog")
         if season_cog is not None:
-            season_cog.clear_pending_for_server(server_id)
+            season_cog.clear_pending()
 
         seasons = result["seasons_deleted"]
         divisions = result["divisions_deleted"]
@@ -106,7 +104,6 @@ class ResetCog(commands.Cog):
         mode_label = "fully reset" if full else "reset"
         log_mode = "Full reset (config deleted)" if full else "Partial reset (config preserved)"
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot-reset | Success\n"
             f"  mode: {log_mode}\n"
             f"  deleted: {seasons} season(s), {divisions} division(s), {rounds} round(s)",
@@ -119,10 +116,9 @@ class ResetCog(commands.Cog):
             ephemeral=True,
         )
         log.info(
-            "/bot-reset by %s on server %s: %d season(s), %d division(s), "
+            "/bot-reset by %s: %d season(s), %d division(s), "
             "%d round(s) deleted (full=%s)",
             interaction.user,
-            server_id,
             seasons,
             divisions,
             rounds,

@@ -42,9 +42,8 @@ async def season(tmp_path):
             (SERVER_ID,),
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-03-01', 'SETUP', 1)",
-            (SERVER_ID,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-03-01', 'SETUP', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -65,9 +64,8 @@ async def season(tmp_path):
         )
         seat_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "former_driver, is_test_driver) VALUES (?, '123', 'ASSIGNED', 0, 0)",
-            (SERVER_ID,),
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "former_driver, is_test_driver) VALUES ('123', 'ASSIGNED', 0, 0)"
         )
         profile_id = cursor.lastrowid
         await db.execute(
@@ -80,7 +78,7 @@ async def season(tmp_path):
             "scheduled_at) VALUES (?, 1, 'NORMAL', 'Hungaroring', '2026-06-14T18:00:00')",
             (division_id,),
         )
-        await db.execute("INSERT INTO image_config (server_id) VALUES (?)", (SERVER_ID,))
+        await db.execute("INSERT INTO image_config (id) VALUES (?)", (1,))
         await db.commit()
 
     bot = SimpleNamespace(db_path=path, image_config_service=ImageConfigService(path))
@@ -90,7 +88,7 @@ async def season(tmp_path):
 
 
 async def _take(season) -> SeasonFingerprint:
-    return await take_fingerprint(season.bot, SERVER_ID, season.season_id)
+    return await take_fingerprint(season.bot, season.season_id)
 
 
 async def _change(season, sql: str, *params) -> None:
@@ -128,7 +126,7 @@ async def test_an_unreadable_season_yields_an_empty_fingerprint():
     """Same reasoning, reached through the real failure path."""
     bot = SimpleNamespace(db_path="/nonexistent/nowhere.db", image_config_service=None)
 
-    assert (await take_fingerprint(bot, SERVER_ID, 1)).areas == {}
+    assert (await take_fingerprint(bot, 1)).areas == {}
 
 
 # ── One case per area ─────────────────────────────────────────────────────
@@ -210,9 +208,8 @@ async def test_a_signup_settled_after_the_report_is_part_of_the_unsettled_signup
     change to what would be confirmed."""
     await _change(
         season,
-        "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-        "VALUES (900, ?, '900', 'PENDING_ADMIN_APPROVAL')",
-        SERVER_ID,
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+        "VALUES (900, '900', 'PENDING_ADMIN_APPROVAL')",
     )
     before = await _take(season)
     await _assert_only(
@@ -235,9 +232,8 @@ async def test_a_team_added_to_the_server_list_is_part_of_the_team_list_area(sea
     before = await _take(season)
     await _assert_only(
         season, before, "team list",
-        "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) "
-        "VALUES (?, 'Bluestreak', 2, 0)",
-        SERVER_ID,
+        "INSERT INTO default_teams (name, max_seats, is_reserve) "
+        "VALUES ('Bluestreak', 2, 0)",
     )
 
 
@@ -245,9 +241,8 @@ async def test_a_team_role_repointed_is_part_of_the_team_list_area(season):
     before = await _take(season)
     await _assert_only(
         season, before, "team list",
-        "INSERT INTO team_role_configs (server_id, team_name, role_id, updated_at) "
-        "VALUES (?, 'Redline', 4242, '2026-09-17')",
-        SERVER_ID,
+        "INSERT INTO team_role_configs (team_name, role_id, updated_at) "
+        "VALUES ('Redline', 4242, '2026-09-17')",
     )
 
 
@@ -264,8 +259,7 @@ async def test_the_signup_area(season):
     before = await _take(season)
     await _assert_only(
         season, before, "signup",
-        "INSERT INTO signup_module_config (server_id, signup_channel_id) VALUES (?, 77)",
-        SERVER_ID,
+        "INSERT INTO signup_module_config (id, signup_channel_id) VALUES (1, 77)",
     )
 
 
@@ -274,14 +268,12 @@ async def test_the_attendance_area(season):
     also disturbed — inserting the row would move both, correctly but less precisely."""
     await _change(
         season,
-        "INSERT INTO attendance_config (server_id, rsvp_notice_days) VALUES (?, 5)",
-        SERVER_ID,
+        "INSERT INTO attendance_config (id, rsvp_notice_days) VALUES (1, 5)",
     )
     before = await _take(season)
     await _assert_only(
         season, before, "attendance",
-        "UPDATE attendance_config SET rsvp_notice_days = 9 WHERE server_id = ?",
-        SERVER_ID,
+        "UPDATE attendance_config SET rsvp_notice_days = 9",
     )
 
 
@@ -289,8 +281,7 @@ async def test_the_weather_area(season):
     before = await _take(season)
     await _assert_only(
         season, before, "weather",
-        "INSERT INTO weather_pipeline_config (server_id, phase_1_days) VALUES (?, 7)",
-        SERVER_ID,
+        "INSERT INTO weather_pipeline_config (id, phase_1_days) VALUES (1, 7)",
     )
 
 
@@ -298,8 +289,7 @@ async def test_the_images_area(season):
     before = await _take(season)
     await _assert_only(
         season, before, "images",
-        "UPDATE image_config SET date_format = 'YYYY_MM_DD' WHERE server_id = ?",
-        SERVER_ID,
+        "UPDATE image_config SET date_format = 'YYYY_MM_DD'",
     )
 
 
@@ -307,9 +297,7 @@ async def test_an_aspect_toggle_is_part_of_the_images_area(season):
     before = await _take(season)
     await _assert_only(
         season, before, "images",
-        "INSERT INTO image_aspect_toggles (server_id, aspect, enabled) "
-        "VALUES (?, 'calendar', 1)",
-        SERVER_ID,
+        "INSERT INTO image_aspect_toggles (aspect, enabled) VALUES ('calendar', 1)",
     )
 
 
@@ -334,9 +322,8 @@ async def with_templates(season, tmp_path):
 
     await _change(
         season,
-        "UPDATE image_config SET template_directory = ? WHERE server_id = ?",
+        "UPDATE image_config SET template_directory = ?",
         "resources/_test_fingerprint_templates",
-        SERVER_ID,
     )
     yield season, folder
     shutil.rmtree(folder, ignore_errors=True)
@@ -374,9 +361,8 @@ async def test_artwork_added_to_an_asset_folder_is_noticed(season, tmp_path):
     try:
         await _change(
             season,
-            "UPDATE image_config SET flag_directory = ? WHERE server_id = ?",
+            "UPDATE image_config SET flag_directory = ?",
             "resources/_test_fingerprint_flags",
-            SERVER_ID,
         )
         before = await _take(season)
 

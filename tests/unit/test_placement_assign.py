@@ -67,9 +67,9 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -100,9 +100,9 @@ async def _make_db(
             )
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(id, server_id, discord_user_id, current_state, is_test_driver) "
-            "VALUES (?, ?, '4242', ?, ?)",
-            (PROFILE_ID, SERVER_ID, state, int(is_test_driver)),
+            "(id, discord_user_id, current_state, is_test_driver) "
+            "VALUES (?, '4242', ?, ?)",
+            (PROFILE_ID, state, int(is_test_driver)),
         )
         await db.commit()
     return db_path
@@ -130,7 +130,6 @@ async def _assign(service, *, team: str = "Alpha", profile_id: int = PROFILE_ID)
         PlacementService, "_guard_test_mode", new=AsyncMock(return_value=None)
     ):
         return await service.assign_driver(
-            server_id=SERVER_ID,
             driver_profile_id=profile_id,
             division_id=DIVISION_ID,
             team_name=team,
@@ -158,9 +157,9 @@ async def _add_driver(db_path: str, profile_id: int, state: str = "UNASSIGNED") 
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(id, server_id, discord_user_id, current_state, is_test_driver) "
-            "VALUES (?, ?, ?, ?, 0)",
-            (profile_id, SERVER_ID, str(4000 + profile_id), state),
+            "(id, discord_user_id, current_state, is_test_driver) "
+            "VALUES (?, ?, ?, 0)",
+            (profile_id, str(4000 + profile_id), state),
         )
         await db.commit()
 

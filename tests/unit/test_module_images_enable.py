@@ -109,7 +109,7 @@ def _replied(interaction) -> str:
 async def _audit_types(db_path: str) -> list[str]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type FROM audit_entries WHERE server_id = ?", (SERVER_ID,)
+            "SELECT change_type FROM audit_entries"
         )
         return [r["change_type"] for r in await cursor.fetchall()]
 
@@ -129,7 +129,7 @@ def _rasteriser(present: bool):
 
 async def _enable(cog, interaction, *, rasteriser: bool = True):
     with _rasteriser(rasteriser):
-        await cog._enable_images(interaction, SERVER_ID)
+        await cog._enable_images(interaction)
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +144,7 @@ async def test_the_module_is_enabled(tmp_path):
 
     await _enable(cog, interaction)
 
-    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(SERVER_ID, True)
+    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(True)
     assert "enabled" in _replied(interaction)
 
 
@@ -154,7 +154,7 @@ async def test_the_configuration_is_created_with_defaults(tmp_path):
 
     await _enable(cog, _interaction())
 
-    cog.bot.image_config_service.create_with_defaults.assert_awaited_once_with(SERVER_ID)
+    cog.bot.image_config_service.create_with_defaults.assert_awaited_once_with()
 
 
 async def test_every_output_aspect_starts_disabled(tmp_path):
@@ -207,7 +207,7 @@ async def test_the_module_enables_without_a_rasteriser(tmp_path):
 
     await _enable(cog, interaction, rasteriser=False)
 
-    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(SERVER_ID, True)
+    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(True)
     assert "enabled" in _replied(interaction)
 
 
@@ -246,7 +246,7 @@ async def test_the_rasteriser_check_is_not_cached(tmp_path):
         "services.image_render_service.converter_available",
         new=MagicMock(return_value=True),
     ) as available:
-        await cog._enable_images(_interaction(), SERVER_ID)
+        await cog._enable_images(_interaction())
 
     assert available.call_args.kwargs.get("use_cache") is False
 
@@ -265,7 +265,7 @@ async def test_a_failed_enable_leaves_the_module_off(tmp_path):
 
     await _enable(cog, interaction)
 
-    cog.bot.module_service.set_images_enabled.assert_awaited_with(SERVER_ID, False)
+    cog.bot.module_service.set_images_enabled.assert_awaited_with(False)
     assert "remains disabled" in _replied(interaction)
 
 

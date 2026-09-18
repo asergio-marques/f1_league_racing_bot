@@ -53,9 +53,9 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (?, ?, '2026-03-01', 'SETUP', 1)",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (?, '2026-03-01', 'SETUP', 1)",
+            (SEASON_ID,),
         )
         await db.commit()
     return path
@@ -105,7 +105,7 @@ def _cog(db_path, **overrides):
     # anywhere along it fail this test rather than hide behind an early return.
     cog._team_name_problems = AsyncMock(return_value=[])
     cog._lineup_problems = AsyncMock(return_value=[])
-    cog._get_pending_for_server = MagicMock(return_value=_pending())
+    cog._get_pending = MagicMock(return_value=_pending())
     # The season is in Placements with every signup settled and every channel set; the
     # gates of issue #220 have tests of their own in test_placements_confirmation.py.
     from models.season import SeasonStage
@@ -160,7 +160,7 @@ async def test_a_season_is_actually_approved(db_path):
 async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
     cog = _cog(db_path)
     cog._pending = {}
-    cog._get_pending_for_server = MagicMock(return_value=None)
+    cog._get_pending = MagicMock(return_value=None)
     interaction = _interaction()
 
     await _run(cog, interaction)
@@ -245,7 +245,6 @@ def _attendance_config():
     from models.attendance import AttendanceConfig
 
     return AttendanceConfig(
-        server_id=SERVER_ID,
         module_enabled=True,
         rsvp_notice_days=5,
         rsvp_last_notice_hours=24,
@@ -450,13 +449,13 @@ async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> N
     from models.points_config import SessionType
     from services import points_config_service, season_points_service
 
-    await points_config_service.create_config(db_path, SERVER_ID, config_name)
+    await points_config_service.create_config(db_path, config_name)
     for position, pts in points:
         await points_config_service.set_session_points(
-            db_path, SERVER_ID, config_name, SessionType.FEATURE_RACE, position, pts
+            db_path, config_name, SessionType.FEATURE_RACE, position, pts
         )
     await season_points_service.attach_config(
-        db_path, SEASON_ID, config_name, "SETUP", server_id=SERVER_ID
+        db_path, SEASON_ID, config_name, "SETUP"
     )
 
 
@@ -542,7 +541,7 @@ async def test_one_broken_position_is_named_once_however_many_checks_saw_it(db_p
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
     from services import season_points_service
 
-    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID, SERVER_ID)
+    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID)
     cog = _cog_with_results(db_path)
     interaction = _interaction()
 

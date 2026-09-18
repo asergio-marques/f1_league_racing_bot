@@ -48,7 +48,7 @@ class DriverCog(commands.Cog):
         and the command is refused with the manager told so; returns None, having replied.
         """
         current = await self.bot.driver_service.current_account(  # type: ignore[attr-defined]
-            interaction.guild_id, user.id
+            user.id
         )
         if current == str(user.id):
             return user
@@ -105,7 +105,6 @@ class DriverCog(commands.Cog):
             )
             return
 
-        server_id = interaction.guild_id
         new_user_id = str(new_user.id)
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
@@ -114,7 +113,7 @@ class DriverCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         try:
             outcome = await self.bot.driver_service.reassign_user_id(  # type: ignore[attr-defined]
-                server_id, resolved_old_id, new_user_id, actor_id, actor_name
+                resolved_old_id, new_user_id, actor_id, actor_name
             )
         except ValueError as exc:
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
@@ -129,14 +128,14 @@ class DriverCog(commands.Cog):
         if interaction.guild is not None:
             try:
                 problems += await self.bot.placement_service.move_driver_roles(  # type: ignore[attr-defined]
-                    interaction.guild, server_id, profile.id, replaced, new_user_id
+                    interaction.guild, profile.id, replaced, new_user_id
                 )
             except Exception as exc:  # noqa: BLE001 — the reassign stands whatever Discord says
                 log.exception("reassign: could not move the roles of driver %s", profile.id)
                 problems.append(f"the roles could not be moved: {exc}")
             try:
                 problems += await self.bot.wizard_service.move_held_channel(  # type: ignore[attr-defined]
-                    server_id, replaced, new_user_id, interaction.guild
+                    replaced, new_user_id, interaction.guild
                 )
             except Exception as exc:  # noqa: BLE001 — as the roles
                 log.exception("reassign: could not move the signup channel of %s", replaced)
@@ -163,9 +162,8 @@ class DriverCog(commands.Cog):
         await interaction.followup.send(reply, ephemeral=True)
         # After the reply, so that reading the image configuration and touching the league's
         # directory can never eat into Discord's three seconds.
-        await self._remove_old_portrait(server_id, replaced)
+        await self._remove_old_portrait(replaced)
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reassign | Success\n"
             f"  replaced: <@{replaced}>\n"
             f"  current: {new_user.display_name} (<@{new_user_id}>)\n"
@@ -173,11 +171,11 @@ class DriverCog(commands.Cog):
             + "".join(f"\n  not done: {p}" for p in problems),
         )
         log.info(
-            "Driver account changed on server %s: %s → %s by %s",
-            server_id, replaced, new_user_id, actor_name,
+            "Driver account changed: %s → %s by %s",
+            replaced, new_user_id, actor_name,
         )
 
-    async def _remove_old_portrait(self, server_id: int, discord_user_id: str) -> None:
+    async def _remove_old_portrait(self, discord_user_id: str) -> None:
         """Delete the portrait the bot obtained for the account a driver has just replaced.
 
         A portrait is a cache of one Discord account's own profile picture. Everything is
@@ -196,7 +194,7 @@ class DriverCog(commands.Cog):
             from services.driver_portrait_service import remove_portrait
             from services.image_render_service import resolve_configured_directories
 
-            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
+            config = await self.bot.image_config_service.get_config()  # type: ignore[attr-defined]
             if config is None:
                 return
             directories, _faults = resolve_configured_directories(
@@ -208,12 +206,12 @@ class DriverCog(commands.Cog):
             if directory is None:
                 return
             await remove_portrait(
-                self.bot.db_path, server_id, discord_user_id, directory  # type: ignore[attr-defined]
+                self.bot.db_path, discord_user_id, directory  # type: ignore[attr-defined]
             )
         except Exception:  # noqa: BLE001 — a portrait never fails a command
             log.warning(
-                "/driver reassign: could not remove the portrait of %s on server %s",
-                discord_user_id, server_id, exc_info=True,
+                "/driver reassign: could not remove the portrait of %s",
+                discord_user_id, exc_info=True,
             )
 
     # ------------------------------------------------------------------
@@ -238,7 +236,6 @@ class DriverCog(commands.Cog):
         team: str,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
@@ -246,7 +243,7 @@ class DriverCog(commands.Cog):
         actor_name = str(interaction.user)
 
         # Resolve season, and the stage placements may be made in (issue #220)
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in _PLACING_STAGES:
             await interaction.followup.send(
                 _NOT_PLACING_REFUSAL.format(command="/driver assign"), ephemeral=True
@@ -275,7 +272,7 @@ class DriverCog(commands.Cog):
 
         # Fetch the driver profile
         profile = await self.bot.driver_service.get_profile(  # type: ignore[attr-defined]
-            server_id, str(user.id)
+            str(user.id)
         )
         if profile is None:
             await interaction.followup.send(
@@ -285,7 +282,6 @@ class DriverCog(commands.Cog):
 
         try:
             result = await self.bot.placement_service.assign_driver(  # type: ignore[attr-defined]
-                server_id=server_id,
                 driver_profile_id=profile.id,
                 division_id=division_id,
                 team_name=team,
@@ -308,15 +304,14 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver assign | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)\n"
             f"  team: {result['team_name']}\n"
             f"  division: {result['division_name']}",
         )
         log.info(
-            "assign: server=%s user=%s → team=%s division=%s by %s",
-            server_id, user.id, team, division_name, actor_name,
+            "assign: user=%s → team=%s division=%s by %s",
+            user.id, team, division_name, actor_name,
         )
 
     # ------------------------------------------------------------------
@@ -339,14 +334,13 @@ class DriverCog(commands.Cog):
         division: str,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in _PLACING_STAGES:
             await interaction.followup.send(
                 _NOT_PLACING_REFUSAL.format(command="/driver unassign"), ephemeral=True
@@ -373,7 +367,7 @@ class DriverCog(commands.Cog):
         division_id, _division_name = resolved
 
         profile = await self.bot.driver_service.get_profile(  # type: ignore[attr-defined]
-            server_id, str(user.id)
+            str(user.id)
         )
         if profile is None:
             await interaction.followup.send(
@@ -383,7 +377,6 @@ class DriverCog(commands.Cog):
 
         try:
             result = await self.bot.placement_service.unassign_driver(  # type: ignore[attr-defined]
-                server_id=server_id,
                 driver_profile_id=profile.id,
                 division_id=division_id,
                 season_id=season.id,
@@ -403,14 +396,13 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver unassign | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)\n"
             f"  division: {result['division_name']}",
         )
         log.info(
-            "unassign: server=%s user=%s from division=%s by %s",
-            server_id, user.id, division, actor_name,
+            "unassign: user=%s from division=%s by %s",
+            user.id, division, actor_name,
         )
 
     # ------------------------------------------------------------------
@@ -444,12 +436,11 @@ class DriverCog(commands.Cog):
         assigning again.
         """
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
 
-        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in ONGOING_STAGES:
             await interaction.followup.send(
                 "⛔ `/driver move` is available only while the season is ongoing.",
@@ -477,7 +468,7 @@ class DriverCog(commands.Cog):
                 )
                 return
 
-        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        profile = await self.bot.driver_service.get_profile(str(user.id))  # type: ignore[attr-defined]
         if profile is None:
             await interaction.followup.send(
                 f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
@@ -486,7 +477,6 @@ class DriverCog(commands.Cog):
 
         try:
             result = await self.bot.placement_service.move_driver(  # type: ignore[attr-defined]
-                server_id=server_id,
                 driver_profile_id=profile.id,
                 season_id=season.id,
                 from_division_id=resolved_from[0],
@@ -508,7 +498,6 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver move | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)\n"
             f"  from: {result['from_team']}, {result['from_division']}\n"
@@ -536,12 +525,11 @@ class DriverCog(commands.Cog):
     ) -> None:
         """Release a committed driver from one division (issue #220), in the ongoing stages."""
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
 
-        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in ONGOING_STAGES:
             await interaction.followup.send(
                 "⛔ `/driver release` is available only while the season is ongoing.",
@@ -558,7 +546,7 @@ class DriverCog(commands.Cog):
             )
             return
 
-        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        profile = await self.bot.driver_service.get_profile(str(user.id))  # type: ignore[attr-defined]
         if profile is None:
             await interaction.followup.send(
                 f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
@@ -567,7 +555,6 @@ class DriverCog(commands.Cog):
 
         try:
             result = await self.bot.placement_service.release_driver(  # type: ignore[attr-defined]
-                server_id=server_id,
                 driver_profile_id=profile.id,
                 division_id=resolved[0],
                 season_id=season.id,
@@ -585,7 +572,6 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver release | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)\n"
             f"  division: {result['division_name']}",
@@ -611,19 +597,18 @@ class DriverCog(commands.Cog):
         from models.driver_profile import DriverState
 
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
 
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in _PLACING_STAGES:
             await interaction.followup.send(
                 _NOT_PLACING_REFUSAL.format(command="/driver reject"), ephemeral=True
             )
             return
 
-        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        profile = await self.bot.driver_service.get_profile(str(user.id))  # type: ignore[attr-defined]
         if profile is None or profile.current_state is not DriverState.UNASSIGNED:
             await interaction.followup.send(
                 f"⛔ **{user.display_name}** is not an Unassigned driver. A placed driver is "
@@ -633,13 +618,13 @@ class DriverCog(commands.Cog):
             return
 
         await self.bot.driver_service.transition(  # type: ignore[attr-defined]
-            server_id, str(user.id), DriverState.NOT_SIGNED_UP
+            str(user.id), DriverState.NOT_SIGNED_UP
         )
         await self.bot.signup_module_service.withdraw_approval(  # type: ignore[attr-defined]
-            server_id, profile.id
+            profile.id
         )
 
-        signup_cfg = await self.bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
+        signup_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
         role_id = getattr(signup_cfg, "signed_up_role_id", None)
         if role_id and interaction.guild is not None:
             role = interaction.guild.get_role(role_id)
@@ -654,7 +639,6 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reject | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)",
         )
@@ -677,7 +661,6 @@ class DriverCog(commands.Cog):
         user: discord.Member,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
@@ -687,7 +670,7 @@ class DriverCog(commands.Cog):
         # Sacking is available only while the season is ongoing (issue #220). Between seasons
         # every driver has already been returned to Not Signed Up by the season's end, and a
         # season still being built has no confirmed placement to sack anyone from.
-        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in ONGOING_STAGES:
             await interaction.followup.send(
                 "⛔ `/driver sack` is available only while the season is ongoing.",
@@ -696,7 +679,7 @@ class DriverCog(commands.Cog):
             return
 
         profile = await self.bot.driver_service.get_profile(  # type: ignore[attr-defined]
-            server_id, str(user.id)
+            str(user.id)
         )
         if profile is None:
             await interaction.followup.send(
@@ -706,7 +689,6 @@ class DriverCog(commands.Cog):
 
         try:
             await self.bot.placement_service.sack_driver(  # type: ignore[attr-defined]
-                server_id=server_id,
                 driver_profile_id=profile.id,
                 season_id=season.id,
                 acting_user_id=actor_id,
@@ -723,11 +705,10 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver sack | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)",
         )
         log.info(
-            "sack: server=%s user=%s by %s",
-            server_id, user.id, actor_name,
+            "sack: user=%s by %s",
+            user.id, actor_name,
         )

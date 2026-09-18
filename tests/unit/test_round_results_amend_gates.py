@@ -71,9 +71,9 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 7, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 7, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -124,6 +124,7 @@ def _make_cog(
         return_value=rounds if rounds is not None else [_round()]
     )
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=None)
 
     cog = SeasonCog.__new__(SeasonCog)

@@ -59,7 +59,6 @@ def _wizard(state=None, *, channel_id: int | None = CHANNEL_ID, last_activity: s
 
     return SignupWizardRecord(
         id=1,
-        server_id=SERVER_ID,
         discord_user_id=DRIVER_ID,
         wizard_state=state or WizardState.COLLECTING_PLATFORM,
         signup_channel_id=channel_id,
@@ -112,6 +111,7 @@ def lifecycle():
     bot.signup_module_service = signup_svc
     bot.driver_service = driver_service
     bot.get_guild = MagicMock(return_value=guild)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
 
     svc._output_router = MagicMock()
@@ -128,7 +128,7 @@ def lifecycle():
 
 def _transitioned_to(ctx) -> list[str]:
     return [
-        call.args[2].value if hasattr(call.args[2], "value") else str(call.args[2])
+        call.args[1].value if hasattr(call.args[1], "value") else str(call.args[1])
         for call in ctx.driver_service.transition.await_args_list
     ]
 
@@ -139,42 +139,42 @@ def _transitioned_to(ctx) -> list[str]:
 
 
 async def test_withdrawing_returns_the_driver_to_not_signed_up(lifecycle):
-    await lifecycle.svc.withdraw(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
 
     assert "NOT_SIGNED_UP" in _transitioned_to(lifecycle)
 
 
 async def test_withdrawing_holds_the_channel_rather_than_deleting_it(lifecycle):
     """The driver is still here and is being told their signup has ended."""
-    await lifecycle.svc.withdraw(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
 
     lifecycle.svc._trigger_channel_hold.assert_awaited_once()
-    assert "cancelled" in lifecycle.svc._trigger_channel_hold.await_args.args[3]
+    assert "cancelled" in lifecycle.svc._trigger_channel_hold.await_args.args[2]
     lifecycle.channel.delete.assert_not_awaited()
 
 
 async def test_withdrawing_cancels_the_inactivity_job(lifecycle):
     """Left armed it would fire against a driver who has already withdrawn."""
-    await lifecycle.svc.withdraw(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
 
     lifecycle.svc._cancel_inactivity_job.assert_awaited_once()
 
 
 async def test_withdrawing_cancels_a_pending_correction_window(lifecycle):
     task = MagicMock()
-    lifecycle.svc._correction_tasks[(SERVER_ID, DRIVER_ID)] = task
+    lifecycle.svc._correction_tasks[DRIVER_ID] = task
 
-    await lifecycle.svc.withdraw(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
 
     task.cancel.assert_called_once()
-    assert (SERVER_ID, DRIVER_ID) not in lifecycle.svc._correction_tasks
+    assert DRIVER_ID not in lifecycle.svc._correction_tasks
 
 
 async def test_a_failed_transition_does_not_stop_the_withdrawal(lifecycle):
     """The driver may already be NOT_SIGNED_UP. They must still be told."""
     lifecycle.driver_service.transition = AsyncMock(side_effect=ValueError("already"))
 
-    await lifecycle.svc.withdraw(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
 
     lifecycle.svc._trigger_channel_hold.assert_awaited_once()
 
@@ -185,15 +185,15 @@ async def test_a_failed_transition_does_not_stop_the_withdrawal(lifecycle):
 
 
 async def test_a_timed_out_driver_returns_to_not_signed_up(lifecycle):
-    await lifecycle.svc.handle_inactivity_timeout(SERVER_ID, DRIVER_ID)
+    await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
 
     assert "NOT_SIGNED_UP" in _transitioned_to(lifecycle)
 
 
 async def test_a_timed_out_driver_is_told_why_in_their_channel(lifecycle):
-    await lifecycle.svc.handle_inactivity_timeout(SERVER_ID, DRIVER_ID)
+    await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
 
-    assert "expired" in lifecycle.svc._trigger_channel_hold.await_args.args[3]
+    assert "expired" in lifecycle.svc._trigger_channel_hold.await_args.args[2]
 
 
 async def test_a_timeout_for_a_guild_the_bot_has_left_still_ends_the_signup(lifecycle):
@@ -201,7 +201,7 @@ async def test_a_timeout_for_a_guild_the_bot_has_left_still_ends_the_signup(life
     league's record and must be put right even where no channel can be held."""
     lifecycle.svc._bot.get_guild = MagicMock(return_value=None)
 
-    await lifecycle.svc.handle_inactivity_timeout(SERVER_ID, DRIVER_ID)
+    await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
 
     assert "NOT_SIGNED_UP" in _transitioned_to(lifecycle)
     lifecycle.svc._trigger_channel_hold.assert_not_awaited()
@@ -209,9 +209,9 @@ async def test_a_timeout_for_a_guild_the_bot_has_left_still_ends_the_signup(life
 
 async def test_a_timeout_cancels_a_pending_correction_window(lifecycle):
     task = MagicMock()
-    lifecycle.svc._correction_tasks[(SERVER_ID, DRIVER_ID)] = task
+    lifecycle.svc._correction_tasks[DRIVER_ID] = task
 
-    await lifecycle.svc.handle_inactivity_timeout(SERVER_ID, DRIVER_ID)
+    await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
 
     task.cancel.assert_called_once()
 
@@ -222,7 +222,7 @@ async def test_a_timeout_cancels_a_pending_correction_window(lifecycle):
 
 
 async def test_a_driver_part_way_through_the_questions_is_cleaned_up(lifecycle):
-    await lifecycle.svc.handle_member_remove(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
     assert "NOT_SIGNED_UP" in _transitioned_to(lifecycle)
     lifecycle.signup_svc.delete_wizard.assert_awaited_once()
@@ -241,7 +241,7 @@ async def test_a_driver_waiting_on_a_manager_is_cleaned_up_too(lifecycle):
         return_value=SimpleNamespace(current_state=DriverState.PENDING_ADMIN_APPROVAL)
     )
 
-    await lifecycle.svc.handle_member_remove(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
     assert "NOT_SIGNED_UP" in _transitioned_to(lifecycle)
 
@@ -259,7 +259,7 @@ async def test_a_driver_awaiting_a_correction_parameter_is_cleaned_up(lifecycle)
         )
     )
 
-    await lifecycle.svc.handle_member_remove(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
     assert "NOT_SIGNED_UP" in _transitioned_to(lifecycle)
 
@@ -274,7 +274,7 @@ async def test_a_member_who_was_never_signing_up_is_left_alone(lifecycle):
     )
     lifecycle.driver_service.get_profile = AsyncMock(return_value=None)
 
-    await lifecycle.svc.handle_member_remove(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
     lifecycle.driver_service.transition.assert_not_awaited()
     lifecycle.signup_svc.delete_wizard.assert_not_awaited()
@@ -293,7 +293,7 @@ async def test_an_approved_driver_leaving_is_left_alone(lifecycle):
         return_value=SimpleNamespace(current_state=DriverState.UNASSIGNED)
     )
 
-    await lifecycle.svc.handle_member_remove(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
     lifecycle.driver_service.transition.assert_not_awaited()
 
@@ -301,7 +301,7 @@ async def test_an_approved_driver_leaving_is_left_alone(lifecycle):
 async def test_a_departing_driver_s_channel_is_deleted_rather_than_held(lifecycle):
     """The distinction from every other ending. Nobody will read it, and a private channel
     for a departed member is clutter the league clears by hand."""
-    await lifecycle.svc.handle_member_remove(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
     lifecycle.channel.delete.assert_awaited_once()
     lifecycle.svc._trigger_channel_hold.assert_not_awaited()
@@ -312,14 +312,14 @@ async def test_a_channel_that_cannot_be_deleted_does_not_stop_the_cleanup(lifecy
         side_effect=discord.HTTPException(MagicMock(), "forbidden")
     )
 
-    await lifecycle.svc.handle_member_remove(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
     lifecycle.signup_svc.delete_wizard.assert_awaited_once()
 
 
 async def test_a_departure_cancels_both_scheduled_jobs(lifecycle):
     """A wizard may have left an inactivity job *and* a channel-delete job."""
-    await lifecycle.svc.handle_member_remove(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
     lifecycle.svc._cancel_inactivity_job.assert_awaited_once()
     lifecycle.svc._cancel_channel_delete_job.assert_awaited_once()
@@ -328,9 +328,9 @@ async def test_a_departure_cancels_both_scheduled_jobs(lifecycle):
 async def test_the_departure_log_names_the_driver_and_the_state_they_were_in(lifecycle):
     """The state is captured before the cleanup, so the log says what the driver was doing
     rather than the NOT_SIGNED_UP they were left in."""
-    await lifecycle.svc.handle_member_remove(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
-    logged = lifecycle.svc._output_router.post_log.await_args.args[1]
+    logged = lifecycle.svc._output_router.post_log.await_args.args[0]
     assert "Lewis Hamilton" in logged
     assert "COLLECTING_PLATFORM" in logged
 
@@ -338,9 +338,9 @@ async def test_the_departure_log_names_the_driver_and_the_state_they_were_in(lif
 async def test_a_driver_with_no_record_is_logged_by_id(lifecycle):
     lifecycle.signup_svc.get_record = AsyncMock(return_value=None)
 
-    await lifecycle.svc.handle_member_remove(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
-    assert DRIVER_ID in lifecycle.svc._output_router.post_log.await_args.args[1]
+    assert DRIVER_ID in lifecycle.svc._output_router.post_log.await_args.args[0]
 
 
 async def test_a_failing_record_lookup_does_not_stop_the_log(lifecycle):
@@ -348,7 +348,7 @@ async def test_a_failing_record_lookup_does_not_stop_the_log(lifecycle):
     leave the league with no record of why a driver vanished."""
     lifecycle.signup_svc.get_record = AsyncMock(side_effect=RuntimeError("db gone"))
 
-    await lifecycle.svc.handle_member_remove(SERVER_ID, DRIVER_ID, lifecycle.guild)
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
     lifecycle.svc._output_router.post_log.assert_awaited_once()
 
@@ -369,7 +369,7 @@ async def test_an_open_wizard_is_re_armed_from_its_own_last_activity(lifecycle):
     await lifecycle.svc.recover_wizards()
 
     lifecycle.svc._arm_inactivity_job.assert_awaited_once()
-    fire_at = lifecycle.svc._arm_inactivity_job.await_args.args[2]
+    fire_at = lifecycle.svc._arm_inactivity_job.await_args.args[1]
     assert fire_at == last + timedelta(hours=24)
 
 
@@ -382,14 +382,14 @@ async def test_a_deadline_already_passed_expires_at_once(lifecycle):
     )
     expired: list = []
     lifecycle.svc.handle_inactivity_timeout = AsyncMock(  # type: ignore[method-assign]
-        side_effect=lambda s, u: expired.append((s, u))
+        side_effect=lambda u: expired.append(u)
     )
 
     await lifecycle.svc.recover_wizards()
     await asyncio.sleep(0)  # let the background task run
 
     lifecycle.svc._arm_inactivity_job.assert_not_awaited()
-    assert expired == [(SERVER_ID, DRIVER_ID)]
+    assert expired == [DRIVER_ID]
 
 
 async def test_a_wizard_with_no_recorded_activity_expires_at_once(lifecycle):
@@ -399,13 +399,13 @@ async def test_a_wizard_with_no_recorded_activity_expires_at_once(lifecycle):
     )
     expired: list = []
     lifecycle.svc.handle_inactivity_timeout = AsyncMock(  # type: ignore[method-assign]
-        side_effect=lambda s, u: expired.append((s, u))
+        side_effect=lambda u: expired.append(u)
     )
 
     await lifecycle.svc.recover_wizards()
     await asyncio.sleep(0)
 
-    assert expired == [(SERVER_ID, DRIVER_ID)]
+    assert expired == [DRIVER_ID]
 
 
 async def test_a_parked_wizard_is_not_re_armed(lifecycle):
@@ -434,7 +434,7 @@ async def test_a_naive_timestamp_is_read_as_utc(lifecycle):
 
     await lifecycle.svc.recover_wizards()
 
-    fire_at = lifecycle.svc._arm_inactivity_job.await_args.args[2]
+    fire_at = lifecycle.svc._arm_inactivity_job.await_args.args[1]
     assert fire_at.tzinfo is not None
     assert fire_at == last.replace(tzinfo=timezone.utc) + timedelta(hours=24)
 

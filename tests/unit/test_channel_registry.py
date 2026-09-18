@@ -31,7 +31,6 @@ from services.channel_registry_service import (  # noqa: E402
 )
 
 SERVER_ID = 4242
-OTHER_SERVER = 4343
 
 
 @pytest.fixture
@@ -42,22 +41,21 @@ async def db_path(tmp_path):
         # Both channel columns are NOT NULL, so a configured server always holds some
         # value. These two are far from every id the tests use, so they cannot be
         # mistaken for a channel under test.
-        for server in (SERVER_ID, OTHER_SERVER):
-            await db.execute(
-                "INSERT INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (?, 1, ?, ?)",
-                (server, 900_000 + server, 910_000 + server),
-            )
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 1, ?, ?)",
+            (SERVER_ID, 900_000 + SERVER_ID, 910_000 + SERVER_ID),
+        )
         await db.commit()
     return path
 
 
-async def _season(db_path, server_id=SERVER_ID, status="SETUP"):
+async def _season(db_path, status="SETUP"):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-03-01', ?, 1)",
-            (server_id, status),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-03-01', ?, 1)",
+            (status,),
         )
         await db.commit()
         return cursor.lastrowid
@@ -101,15 +99,15 @@ async def _set(db_path, setting, channel_id, *, division_id=None, server_id=SERV
         elif setting in ("rsvp", "attendance"):
             column = f"{setting}_channel_id"
             await db.execute(
-                f"INSERT INTO attendance_division_config (division_id, server_id, {column}) "
-                f"VALUES (?, ?, ?) ON CONFLICT(division_id) DO UPDATE SET {column} = ?",
-                (division_id, server_id, channel_id, channel_id),
+                f"INSERT INTO attendance_division_config (division_id, {column}) "
+                f"VALUES (?, ?) ON CONFLICT(division_id) DO UPDATE SET {column} = ?",
+                (division_id, channel_id, channel_id),
             )
         elif setting == "signup":
             await db.execute(
-                "INSERT INTO signup_module_config (server_id, signup_channel_id) "
-                "VALUES (?, ?) ON CONFLICT(server_id) DO UPDATE SET signup_channel_id = ?",
-                (server_id, channel_id, channel_id),
+                "INSERT INTO signup_module_config (id, signup_channel_id) "
+                "VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET signup_channel_id = ?",
+                (1, channel_id, channel_id),
             )
         else:
             column = {"interaction": "interaction_channel_id", "log": "log_channel_id"}[
@@ -133,13 +131,13 @@ async def test_a_channel_in_use_is_found_whatever_uses_it(db_path, setting):
 
     await _set(db_path, setting, 500, division_id=division_id)
 
-    use = await find_channel_use(db_path, SERVER_ID, 500)
+    use = await find_channel_use(db_path, 500)
     assert use is not None, f"{setting} was not detected"
     assert use.setting == setting
 
 
 async def test_a_free_channel_is_free(db_path):
-    assert await find_channel_use(db_path, SERVER_ID, 999) is None
+    assert await find_channel_use(db_path, 999) is None
 
 
 async def test_the_label_names_the_division_for_a_per_division_setting(db_path):
@@ -147,7 +145,7 @@ async def test_the_label_names_the_division_for_a_per_division_setting(db_path):
     division_id = await _division(db_path, season_id, "Pro")
     await _set(db_path, "results", 500, division_id=division_id)
 
-    use = await find_channel_use(db_path, SERVER_ID, 500)
+    use = await find_channel_use(db_path, 500)
 
     assert use.division_name == "Pro"
     assert "**Pro**" in use.describe()
@@ -157,7 +155,7 @@ async def test_the_label_names_the_division_for_a_per_division_setting(db_path):
 async def test_a_server_setting_names_no_division(db_path, setting):
     await _set(db_path, setting, 500)
 
-    use = await find_channel_use(db_path, SERVER_ID, 500)
+    use = await find_channel_use(db_path, 500)
 
     assert use.division_name is None
     assert "**" not in use.describe()
@@ -173,7 +171,7 @@ async def test_two_divisions_may_not_share_a_channel(db_path):
     await _division(db_path, season_id, "Academy")
     await _set(db_path, "results", 500, division_id=pro)
 
-    use = await find_channel_use(db_path, SERVER_ID, 500)
+    use = await find_channel_use(db_path, 500)
 
     assert use == ChannelUse("results", "Pro")
 
@@ -183,21 +181,9 @@ async def test_one_division_may_not_use_a_channel_for_two_things(db_path):
     pro = await _division(db_path, season_id, "Pro")
     await _set(db_path, "calendar", 500, division_id=pro)
 
-    use = await find_channel_use(db_path, SERVER_ID, 500)
+    use = await find_channel_use(db_path, 500)
 
     assert use.setting == "calendar"
-
-
-async def test_another_servers_channel_is_not_this_servers_business(db_path):
-    """The bot serves many leagues, and a channel id is unique across Discord anyway —
-    but the query must still be scoped, or one league could block another."""
-    other_season = await _season(db_path, server_id=OTHER_SERVER)
-    other_division = await _division(db_path, other_season, "Theirs")
-    await _set(
-        db_path, "results", 500, division_id=other_division, server_id=OTHER_SERVER
-    )
-
-    assert await find_channel_use(db_path, SERVER_ID, 500) is None
 
 
 # ── An archived season does not hold a channel hostage ────────────────────
@@ -210,7 +196,7 @@ async def test_a_finished_seasons_channel_is_free_again(db_path, status):
     division_id = await _division(db_path, season_id, "Pro")
     await _set(db_path, "results", 500, division_id=division_id)
 
-    assert await find_channel_use(db_path, SERVER_ID, 500) is None
+    assert await find_channel_use(db_path, 500) is None
 
 
 # ── Ignoring the setting being written ────────────────────────────────────
@@ -224,7 +210,7 @@ async def test_a_setting_does_not_block_itself(db_path):
     await _set(db_path, "results", 500, division_id=division_id)
 
     ignored = await find_channel_use(
-        db_path, SERVER_ID, 500, ignore=ChannelUse("results", "Pro")
+        db_path, 500, ignore=ChannelUse("results", "Pro")
     )
 
     assert ignored is None
@@ -236,7 +222,7 @@ async def test_ignoring_one_setting_does_not_hide_another(db_path):
     await _set(db_path, "calendar", 500, division_id=pro)
 
     use = await find_channel_use(
-        db_path, SERVER_ID, 500, ignore=ChannelUse("results", "Pro")
+        db_path, 500, ignore=ChannelUse("results", "Pro")
     )
 
     assert use == ChannelUse("calendar", "Pro")

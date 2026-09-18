@@ -52,7 +52,7 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(SERVER_ID)
+    await config_service.create_with_defaults()
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),
@@ -64,9 +64,9 @@ async def _seed(db_path, rounds):
     """A season, a division, its rounds, and the tracks they name."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, ?, 'ACTIVE', 4)",
-            (SERVER_ID, NOW.date().isoformat()),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES (?, 'ACTIVE', 4)",
+            (NOW.date().isoformat(),),
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -105,7 +105,7 @@ class TestCalendarPreview:
                 (3, "NORMAL", TRACK_C),
             ],
         )
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
 
         requests = await build_calendar_preview(bot, context)
 
@@ -116,7 +116,7 @@ class TestCalendarPreview:
 
     async def test_the_drawing_carries_the_divisions_identity(self, bot, db_path):
         await _seed(db_path, [(1, "NORMAL", TRACK_A)])
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
 
         assert context.division_name == "Premier"
         assert context.division_tier == 1
@@ -134,7 +134,7 @@ class TestCalendarPreview:
                 (2, "SPRINT", TRACK_B),
             ],
         )
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
 
         from services.calendar_post_service import tracks_by_name
 
@@ -156,7 +156,7 @@ class TestCalendarPreview:
         from services.image_calendar_service import resolve_drawing
 
         await _seed(db_path, [(1, "NORMAL", TRACK_A)])
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
 
         drawing = resolve_drawing(
             division_name=context.division_name,
@@ -179,10 +179,10 @@ class TestItUsesTheLeaguesOwnDirectories:
         """FR-035 — never the packaged directories the withdrawn command hardcoded."""
         await _seed(db_path, [(1, "NORMAL", TRACK_A)])
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "resources/defaults/teams"
+            "flag_directory", "resources/defaults/teams"
         )
 
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
 
         assert context.asset_directories["flag"].name == "teams"
         assert context.asset_directories["track"].name == "tracks"
@@ -193,9 +193,9 @@ class TestItUsesTheLeaguesOwnDirectories:
 
         await _seed(db_path, [(1, "NORMAL", TRACK_A)])
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "resources/defaults/teams"
+            "flag_directory", "resources/defaults/teams"
         )
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
         requests = await build_calendar_preview(bot, context)
 
         seen = {}

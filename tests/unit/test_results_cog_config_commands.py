@@ -45,9 +45,9 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (?, ?, '2026-03-01', 'SETUP', 4)",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (?, '2026-03-01', 'SETUP', 4)",
+            (SEASON_ID,),
         )
         await db.commit()
     return path
@@ -112,9 +112,9 @@ def _views(interaction) -> list:
 
 
 async def _make_config(db_path, name: str) -> None:
-    await points_config_service.create_config(db_path, SERVER_ID, name)
+    await points_config_service.create_config(db_path, name)
     await points_config_service.set_session_points(
-        db_path, SERVER_ID, name, SessionType.FEATURE_RACE, 1, 25
+        db_path, name, SessionType.FEATURE_RACE, 1, 25
     )
 
 
@@ -172,7 +172,7 @@ async def test_config_remove_goes_straight_through_with_no_links(db_path):
 
     assert "removed" in _replies(interaction)
     assert _views(interaction) == []
-    assert await points_config_service.config_exists(db_path, SERVER_ID, "Spare") is False
+    assert await points_config_service.config_exists(db_path, "Spare") is False
 
 
 async def test_config_remove_asks_before_clearing_a_setup_link(db_path):
@@ -181,7 +181,7 @@ async def test_config_remove_asks_before_clearing_a_setup_link(db_path):
     interaction = _interaction()
     await _make_config(db_path, "Standard")
     await season_points_service.attach_config(
-        db_path, SEASON_ID, "Standard", "SETUP", server_id=SERVER_ID
+        db_path, SEASON_ID, "Standard", "SETUP"
     )
 
     await ResultsCog.config_remove.callback(cog, interaction, "Standard")
@@ -189,7 +189,7 @@ async def test_config_remove_asks_before_clearing_a_setup_link(db_path):
     replies = _replies(interaction)
     assert "Season #4" in replies, "the prompt must name the season that is affected"
     assert len(_views(interaction)) == 1
-    assert await points_config_service.config_exists(db_path, SERVER_ID, "Standard") is True, (
+    assert await points_config_service.config_exists(db_path, "Standard") is True, (
         "nothing may be deleted before the manager answers"
     )
 
@@ -210,14 +210,14 @@ async def test_confirming_the_removal_deletes_it_and_clears_the_link(db_path):
     cog = _cog(db_path)
     await _make_config(db_path, "Standard")
     await season_points_service.attach_config(
-        db_path, SEASON_ID, "Standard", "SETUP", server_id=SERVER_ID
+        db_path, SEASON_ID, "Standard", "SETUP"
     )
     view = _ConfirmRemoveConfigView(cog, USER_ID, "Standard")
     interaction = _interaction()
 
     await view.confirm.callback(interaction)
 
-    assert await points_config_service.config_exists(db_path, SERVER_ID, "Standard") is False
+    assert await points_config_service.config_exists(db_path, "Standard") is False
     assert await season_points_service.get_attached_config_names(db_path, SEASON_ID) == []
 
 
@@ -225,14 +225,14 @@ async def test_cancelling_the_removal_leaves_everything_alone(db_path):
     cog = _cog(db_path)
     await _make_config(db_path, "Standard")
     await season_points_service.attach_config(
-        db_path, SEASON_ID, "Standard", "SETUP", server_id=SERVER_ID
+        db_path, SEASON_ID, "Standard", "SETUP"
     )
     view = _ConfirmRemoveConfigView(cog, USER_ID, "Standard")
     interaction = _interaction()
 
     await view.cancel.callback(interaction)
 
-    assert await points_config_service.config_exists(db_path, SERVER_ID, "Standard") is True
+    assert await points_config_service.config_exists(db_path, "Standard") is True
     assert await season_points_service.get_attached_config_names(db_path, SEASON_ID) == [
         "Standard"
     ]
@@ -248,4 +248,4 @@ async def test_only_the_manager_who_asked_may_answer(db_path):
 
     await view.confirm.callback(interaction)
 
-    assert await points_config_service.config_exists(db_path, SERVER_ID, "Standard") is True
+    assert await points_config_service.config_exists(db_path, "Standard") is True

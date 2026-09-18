@@ -36,8 +36,8 @@ async def db_path(tmp_path):
             "VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         await db.commit()
@@ -226,8 +226,8 @@ async def test_amend_round_changes_the_field(tmp_path):
             "VALUES (1, 10, 20, 30)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
@@ -245,6 +245,7 @@ async def test_amend_round_changes_the_field(tmp_path):
     actor.display_name = "Race Control"
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
@@ -261,7 +262,7 @@ async def test_amend_round_changes_the_field(tmp_path):
         cursor = await db.execute("SELECT track_name FROM rounds WHERE id = 1")
         row = await cursor.fetchone()
         audit = await db.execute(
-            "SELECT change_type, old_value, new_value FROM audit_entries WHERE server_id = 1"
+            "SELECT change_type, old_value, new_value FROM audit_entries"
         )
         entry = await audit.fetchone()
 
@@ -301,8 +302,8 @@ async def test_amending_two_fields_amends_once(tmp_path):
             "VALUES (1, 10, 20, 30)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
@@ -322,6 +323,7 @@ async def test_amending_two_fields_amends_once(tmp_path):
     actor.display_name = "Race Control"
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
@@ -344,7 +346,7 @@ async def test_amending_two_fields_amends_once(tmp_path):
         cursor = await db.execute("SELECT track_name, scheduled_at FROM rounds WHERE id = 1")
         rnd = await cursor.fetchone()
         cursor = await db.execute(
-            "SELECT change_type FROM audit_entries WHERE server_id = 1 ORDER BY change_type"
+            "SELECT change_type FROM audit_entries ORDER BY change_type"
         )
         audit = [r["change_type"] for r in await cursor.fetchall()]
 
@@ -397,8 +399,8 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
             "VALUES (1, 10, 20, 30)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
@@ -425,6 +427,7 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
     actor.display_name = "Race Control"
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
@@ -491,8 +494,8 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
             "VALUES (1, 10, 20, 30)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
@@ -506,7 +509,7 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
         )
         # Anything but the packaged 5 / 2 / 2, so a fallback cannot pass by coincidence.
         await db.execute(
-            "INSERT INTO weather_pipeline_config (server_id, phase_1_days, phase_2_days, phase_3_hours) "
+            "INSERT INTO weather_pipeline_config (id, phase_1_days, phase_2_days, phase_3_hours) "
             "VALUES (1, 7, 3, 4)"
         )
         await db.commit()
@@ -516,6 +519,7 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     actor.display_name = "Race Control"
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
@@ -545,6 +549,7 @@ def _amend_bot_with_attendance(path, *, attendance: bool, weather: bool = False)
     from unittest.mock import AsyncMock, MagicMock, patch
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
@@ -571,8 +576,8 @@ async def _seed_one_round(path, scheduled_at):
             "VALUES (1, 10, 20, 30)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 3)"
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 3)"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
@@ -934,6 +939,7 @@ def _bot_recording_reposts(reposted: list[tuple], *, missing: tuple[int, ...] = 
     guild.get_channel = get_channel
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.user.id = _BOT_USER_ID
     bot.get_guild.return_value = guild
     bot.output_router.post_log = AsyncMock()
@@ -1164,7 +1170,7 @@ async def test_a_refused_amendment_is_not_logged_as_a_success(db_path):
         await approve_amendment(path, season_id, 99, bot)
 
     logged = "\n".join(
-        str(call.args[1]) for call in bot.output_router.post_log.await_args_list
+        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
     )
     assert "AMENDMENT_APPROVED" not in logged, logged
 
@@ -1271,11 +1277,11 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
     division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
     async with get_connection(path) as db:
         await db.execute(
-            "INSERT INTO attendance_config (server_id, autosack_threshold) VALUES (1, 3)"
+            "INSERT INTO attendance_config (id, autosack_threshold) VALUES (1, 3)"
         )
         await db.execute(
-            "INSERT INTO attendance_division_config (division_id, server_id, "
-            "attendance_channel_id) VALUES (?, 1, 601)",
+            "INSERT INTO attendance_division_config (division_id, "
+            "attendance_channel_id) VALUES (?, 601)",
             (division_id,),
         )
         await db.commit()
@@ -1301,11 +1307,11 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
     division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
     async with get_connection(path) as db:
         await db.execute(
-            "INSERT INTO attendance_config (server_id, autosack_threshold) VALUES (1, 3)"
+            "INSERT INTO attendance_config (id, autosack_threshold) VALUES (1, 3)"
         )
         await db.execute(
-            "INSERT INTO attendance_division_config (division_id, server_id, "
-            "attendance_channel_id) VALUES (?, 1, 601)",
+            "INSERT INTO attendance_division_config (division_id, "
+            "attendance_channel_id) VALUES (?, 601)",
             (division_id,),
         )
         await db.commit()
@@ -1360,7 +1366,7 @@ async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
 
     guild.get_channel = get_channel
 
-    async def recording_log(_server_id, content):
+    async def recording_log(content):
         order.append("log" if "AMENDMENT_APPROVED" in str(content) else "other-log")
 
     bot.output_router.post_log = AsyncMock(side_effect=recording_log)

@@ -26,7 +26,6 @@ from services.rsvp_service import _report_call_failure  # noqa: E402
 def _bot():
     bot = MagicMock()
     bot.output_router.post_log = AsyncMock()
-    bot.server_id_for_division = MagicMock(return_value=99)
     return bot
 
 
@@ -43,8 +42,7 @@ async def test_the_report_names_the_season_the_division_and_the_round():
     )
 
     bot.output_router.post_log.assert_awaited_once()
-    server_id, content = bot.output_router.post_log.await_args.args
-    assert server_id == 99
+    (content,) = bot.output_router.post_log.await_args.args
     assert "season: 4" in content
     assert "Division 1" in content
     assert "id=7" in content
@@ -65,7 +63,7 @@ async def test_the_report_says_the_round_opened_no_attendance_rows():
         reason="whatever",
     )
 
-    _, content = bot.output_router.post_log.await_args.args
+    (content,) = bot.output_router.post_log.await_args.args
     assert "no attendance rows were opened" in content
 
 
@@ -83,25 +81,6 @@ async def test_a_failure_to_report_never_masks_the_original_failure():
         round_number=11,
         reason="whatever",
     )
-
-
-@pytest.mark.asyncio
-async def test_the_report_survives_a_bot_without_the_division_lookup():
-    bot = MagicMock()
-    bot.output_router.post_log = AsyncMock()
-    del bot.server_id_for_division
-
-    await _report_call_failure(
-        bot,
-        division_id=7,
-        division_name="Division 1",
-        season_number=4,
-        round_number=11,
-        reason="whatever",
-    )
-
-    server_id, _ = bot.output_router.post_log.await_args.args
-    assert server_id == 0
 
 
 # ── Wiring, and its independence from the images module ───────────────────

@@ -38,7 +38,7 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
             "SELECT r.id, r.track_name, r.phase2_done, r.phase3_done, r.division_id, "
-            "       d.forecast_channel_id, d.mention_role_id, s.server_id "
+            "       d.forecast_channel_id, d.mention_role_id "
             "FROM rounds r "
             "JOIN divisions d ON d.id = r.division_id "
             "JOIN seasons s ON s.id = d.season_id "
@@ -52,10 +52,10 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
         return
 
     # The module gate — see the docstring for why it sits here.
-    if not await bot.module_service.is_weather_enabled(row["server_id"]):  # type: ignore[attr-defined]
+    if not await bot.module_service.is_weather_enabled():  # type: ignore[attr-defined]
         log.info(
-            "Phase 3: weather module disabled for server %s — round %s left untouched.",
-            row["server_id"], round_id,
+            "Phase 3: weather module disabled — round %s left untouched.",
+            round_id,
         )
         return
 
@@ -157,7 +157,7 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
     from services.forecast_cleanup_service import post_phase_message
     from services.image_weather_post import attach_forecast
 
-    attachment = await attach_forecast(bot, round_id, 3, row["server_id"])
+    attachment = await attach_forecast(bot, round_id, 3)
 
     # Produce before destroy (Constitution XIV.8) — see phase2_service for the reasoning.
     # This is the phase where it matters most: the phase 3 render is the one that falls back
@@ -167,7 +167,6 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
         bot,
         round_id=round_id,
         division_id=row["division_id"],
-        server_id=row["server_id"],
         channel_id=row["forecast_channel_id"],
         phase_number=3,
         text=phase3_message(row["mention_role_id"], track_name, session_weather),
@@ -177,7 +176,6 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
     )
 
     await bot.output_router.post_log(
-        row["server_id"],
         phase_log_message(3, round_id, track_name, payload),
     )
     log.info("Phase 3 complete for round %s", round_id)

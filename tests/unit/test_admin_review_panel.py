@@ -78,6 +78,7 @@ def _bot(*, state=DriverState.PENDING_ADMIN_APPROVAL, wizard_user: str | None = 
     bot.wizard_service.get_wizard_by_channel = AsyncMock(
         return_value=SimpleNamespace(discord_user_id=wizard_user) if wizard_user else None
     )
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     return bot
 
 
@@ -126,7 +127,7 @@ async def test_a_driver_cannot_action_their_own_signup(monkeypatch, button):
     only thing between them and approving themselves."""
     _permitted(monkeypatch, False)
     bot = _bot()
-    view = AdminReviewView(SERVER_ID, DRIVER_ID, bot)
+    view = AdminReviewView(DRIVER_ID, bot)
     interaction = _interaction(bot)
 
     await getattr(type(view), button)(view, interaction, MagicMock())
@@ -144,7 +145,7 @@ async def test_a_signup_already_actioned_is_refused(monkeypatch, button):
     on which callback finished first."""
     _permitted(monkeypatch, True)
     bot = _bot(state=DriverState.UNASSIGNED)
-    view = AdminReviewView(SERVER_ID, DRIVER_ID, bot)
+    view = AdminReviewView(DRIVER_ID, bot)
     interaction = _interaction(bot)
 
     await getattr(type(view), button)(view, interaction, MagicMock())
@@ -158,7 +159,7 @@ async def test_a_driver_whose_profile_has_gone_is_refused(monkeypatch, button):
     """They withdrew, or left the server, between the panel being posted and pressed."""
     _permitted(monkeypatch, True)
     bot = _bot(state=None)
-    view = AdminReviewView(SERVER_ID, DRIVER_ID, bot)
+    view = AdminReviewView(DRIVER_ID, bot)
     interaction = _interaction(bot)
 
     await getattr(type(view), button)(view, interaction, MagicMock())
@@ -199,15 +200,14 @@ async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(monkeypatch):
 async def test_approving_approves_the_signup(monkeypatch):
     _permitted(monkeypatch, True)
     bot = _bot()
-    view = AdminReviewView(SERVER_ID, DRIVER_ID, bot)
+    view = AdminReviewView(DRIVER_ID, bot)
     interaction = _interaction(bot)
 
     await type(view).approve_button(view, interaction, MagicMock())
 
     bot.wizard_service.approve_signup.assert_awaited_once()
     args = bot.wizard_service.approve_signup.await_args.args
-    assert args[0] == SERVER_ID
-    assert args[1] == DRIVER_ID
+    assert args[0] == DRIVER_ID
     assert "approved" in _replied(interaction)
 
 
@@ -216,7 +216,7 @@ async def test_approving_needs_no_reason(monkeypatch):
     would be an odd thing to read."""
     _permitted(monkeypatch, True)
     bot = _bot()
-    view = AdminReviewView(SERVER_ID, DRIVER_ID, bot)
+    view = AdminReviewView(DRIVER_ID, bot)
 
     await type(view).approve_button(view, _interaction(bot), MagicMock())
 
@@ -238,7 +238,7 @@ async def test_the_negative_buttons_ask_for_a_reason_first(monkeypatch, button, 
     parks an entry and the listener picks up the manager's next message."""
     _permitted(monkeypatch, True)
     bot = _bot()
-    view = AdminReviewView(SERVER_ID, DRIVER_ID, bot)
+    view = AdminReviewView(DRIVER_ID, bot)
     interaction = _interaction(bot)
 
     await getattr(type(view), button)(view, interaction, MagicMock())
@@ -253,7 +253,7 @@ async def test_the_parked_entry_is_keyed_to_the_manager_who_pressed(monkeypatch)
     """Two managers in one channel must not answer each other's prompt."""
     _permitted(monkeypatch, True)
     bot = _bot()
-    view = AdminReviewView(SERVER_ID, DRIVER_ID, bot)
+    view = AdminReviewView(DRIVER_ID, bot)
 
     await type(view).reject_button(view, _interaction(bot, user_id=MANAGER_ID), MagicMock())
     await type(view).reject_button(view, _interaction(bot, user_id=MANAGER_ID + 1), MagicMock())
@@ -274,6 +274,7 @@ def _message(content: str, *, author_id: int = MANAGER_ID, is_bot: bool = False)
     message.author.id = author_id
     message.author.bot = is_bot
     message.guild = MagicMock()
+    message.guild.id = SERVER_ID
     message.channel = MagicMock()
     message.channel.id = CHANNEL_ID
     message.delete = AsyncMock(return_value=None)
@@ -286,7 +287,6 @@ def _cog_with_pending(action: str):
     followup.send = AsyncMock(return_value=None)
     _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)] = {
         "action": action,
-        "server_id": SERVER_ID,
         "discord_user_id": DRIVER_ID,
         "actor": MagicMock(),
         "guild": MagicMock(),

@@ -62,9 +62,9 @@ async def _make_db(tmp_path, *, name="att_capacity", divisions=None) -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'SETUP')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'SETUP')",
+            (SEASON_ID,),
         )
         round_id = 100
         for tier, (division, formats) in enumerate(divisions.items(), start=1):
@@ -93,7 +93,7 @@ def _make_cog(db_path, *, aspects=("attendance", "rsvp"), reports=None):
     bot.db_path = db_path
     bot.image_config_service = MagicMock()
     bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda _server, aspect: aspect in aspects
+        side_effect=lambda aspect: aspect in aspects
     )
     bot.image_validity_service = MagicMock()
     bot.image_validity_service.template_reports = AsyncMock(
@@ -114,7 +114,7 @@ async def _warn(cog, *, columns=24, sessions=4, error=None):
     with patch("utils.svg_document.load_svg", new=MagicMock()), patch(
         "models.image_catalogues.catalogue_for", new=MagicMock(return_value=catalogue)
     ):
-        return await cog._attendance_capacity_warning(SERVER_ID, SEASON_ID)
+        return await cog._attendance_capacity_warning(SEASON_ID)
 
 
 # ---------------------------------------------------------------------------

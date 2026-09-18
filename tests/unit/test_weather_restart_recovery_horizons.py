@@ -79,13 +79,13 @@ async def _seed_server(
         if horizons is not None:
             await db.execute(
                 "INSERT INTO weather_pipeline_config "
-                "(server_id, phase_1_days, phase_2_days, phase_3_hours) VALUES (?, ?, ?, ?)",
-                (server_id, *horizons),
+                "(id, phase_1_days, phase_2_days, phase_3_hours) VALUES (1, ?, ?, ?)",
+                horizons,
             )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', ?)",
-            (season_id, server_id, season_status),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', ?)",
+            (season_id, season_status),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -192,29 +192,6 @@ async def test_a_restart_still_uses_the_packaged_horizons_where_the_league_set_n
     assert phases.rounds(phases.one) == [ROUND_ID], "the packaged five-day phase 1 was not recovered"
     phases.two.assert_not_awaited()
     phases.three.assert_not_awaited()
-
-
-async def test_a_restart_uses_each_servers_own_horizons(tmp_path):
-    """Two leagues recovered in one restart are each judged by their own settings."""
-    db_path = await _make_db(tmp_path)
-    # Six days out: overdue under the first league's seven-day phase 1, not under the second's five.
-    await _seed_server(db_path, days_until_round=6, horizons=(7, 2, 2))
-    await _seed_server(
-        db_path,
-        server_id=SERVER_ID + 1,
-        season_id=SEASON_ID + 1,
-        division_id=DIVISION_ID + 1,
-        round_id=ROUND_ID + 1,
-        days_until_round=6,
-        horizons=(5, 2, 2),
-    )
-    bot = _make_bot(db_path)
-
-    phases = await _recover(bot)
-
-    assert phases.rounds(phases.one) == [ROUND_ID], (
-        "one config was read for every server, so the two leagues were judged alike"
-    )
 
 
 # ---------------------------------------------------------------------------

@@ -89,7 +89,7 @@ async def delete_forecast_message(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT fm.message_id, d.forecast_channel_id, s.server_id
+            SELECT fm.message_id, d.forecast_channel_id
             FROM forecast_messages fm
             JOIN divisions d ON d.id = fm.division_id
             JOIN seasons s ON s.id = d.season_id
@@ -106,7 +106,6 @@ async def delete_forecast_message(
         )
         return
 
-    server_id: int = row["server_id"]
     message_id: int = row["message_id"]
     channel_id: int = row["forecast_channel_id"]
 
@@ -165,8 +164,8 @@ async def run_post_race_cleanup(round_id: int, bot: "Bot") -> None:
 # T013 — flush_pending_deletions (test-mode disable hook)
 # ---------------------------------------------------------------------------
 
-async def flush_pending_deletions(server_id: int, bot: "Bot") -> None:
-    """Delete all pending forecast messages for *server_id*.
+async def flush_pending_deletions(bot: "Bot") -> None:
+    """Delete all pending forecast messages.
 
     Called when test mode is disabled (FR-015).  By the time this function
     runs, test mode has already been persisted as ``False`` in the DB, so the
@@ -184,20 +183,18 @@ async def flush_pending_deletions(server_id: int, bot: "Bot") -> None:
             FROM forecast_messages fm
             JOIN divisions d ON d.id = fm.division_id
             JOIN seasons s ON s.id = d.season_id
-            WHERE s.server_id = ?
             ORDER BY fm.round_id, fm.division_id, fm.phase_number
             """,
-            (server_id,),
         )
         rows = await cursor.fetchall()
 
     if not rows:
-        log.debug("flush_pending_deletions: no pending messages for server=%s", server_id)
+        log.debug("flush_pending_deletions: no pending messages")
         return
 
     log.info(
-        "flush_pending_deletions: flushing %d message(s) for server=%s",
-        len(rows), server_id,
+        "flush_pending_deletions: flushing %d message(s)",
+        len(rows),
     )
     for row in rows:
         await delete_forecast_message(
@@ -254,7 +251,6 @@ async def post_phase_message(
     *,
     round_id: int,
     division_id: int,
-    server_id: int,
     channel_id: int,
     phase_number: int,
     text: str,
@@ -295,7 +291,7 @@ async def post_phase_message(
             forecast_channel_id = channel_id
 
         msg = await bot.output_router.post_forecast(  # type: ignore[attr-defined]
-            _Div(), text, server_id=server_id
+            _Div(), text, enqueue_on_failure=True
         )
     else:
         # One `finally` around the whole graphic branch. Two of its three exits abandon the
@@ -334,7 +330,6 @@ async def post_phase_message(
 
                     await retry_service.enqueue(
                         db_path,
-                        server_id=server_id,
                         channel_id=channel_id,
                         content=text,
                         failure_reason=(

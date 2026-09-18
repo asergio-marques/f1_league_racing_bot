@@ -52,20 +52,20 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO results_module_config (server_id, module_enabled) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO results_module_config (id, module_enabled) VALUES (?, 1)",
+            (1,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, module_enabled) VALUES (?, ?)",
-            (SERVER_ID, int(attendance_enabled)),
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (?, ?)",
+            (1, int(attendance_enabled)),
         )
         # SETUP by default, so the cascade is the only thing at stake here. A running season
         # puts its own — far larger — warning in front of the disable, and that is tested in
         # `test_results_disable_purges_the_season.py`.
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (1, ?, 1, '2026-01-01', ?)",
-            (SERVER_ID, season_status),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 1, '2026-01-01', ?)",
+            (season_status,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -73,8 +73,7 @@ async def _make_db(
         )
         await db.execute(
             "INSERT INTO attendance_division_config "
-            "(division_id, server_id, rsvp_channel_id) VALUES (1, ?, '880011')",
-            (SERVER_ID,),
+            "(division_id, rsvp_channel_id) VALUES (1, '880011')"
         )
         await db.commit()
     return db_path
@@ -83,6 +82,7 @@ async def _make_db(
 def _make_cog(db_path: str, *, attendance_enabled: bool) -> ModuleCog:
     cog = ModuleCog.__new__(ModuleCog)
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
@@ -111,15 +111,15 @@ async def _module_flags(db_path: str) -> tuple[int, int, int]:
     """Return ``(results_enabled, attendance_enabled, division_config_rows)``."""
     async with get_connection(db_path) as db:
         cur = await db.execute(
-            "SELECT module_enabled FROM results_module_config WHERE server_id = ?", (SERVER_ID,)
+            "SELECT module_enabled FROM results_module_config"
         )
         results = (await cur.fetchone())[0]
         cur = await db.execute(
-            "SELECT module_enabled FROM attendance_config WHERE server_id = ?", (SERVER_ID,)
+            "SELECT module_enabled FROM attendance_config"
         )
         attendance = (await cur.fetchone())[0]
         cur = await db.execute(
-            "SELECT COUNT(*) FROM attendance_division_config WHERE server_id = ?", (SERVER_ID,)
+            "SELECT COUNT(*) FROM attendance_division_config"
         )
         div_rows = (await cur.fetchone())[0]
     return results, attendance, div_rows
@@ -135,7 +135,7 @@ async def test_the_cascade_is_named_before_anything_is_written(tmp_path):
     cog = _make_cog(db_path, attendance_enabled=True)
     interaction = _make_interaction()
 
-    await cog._disable_results(interaction, SERVER_ID)
+    await cog._disable_results(interaction)
 
     interaction.response.send_message.assert_awaited()
     warning = interaction.response.send_message.await_args.args[0]
@@ -150,7 +150,7 @@ async def test_the_warning_carries_a_confirmation(tmp_path):
     cog = _make_cog(db_path, attendance_enabled=True)
     interaction = _make_interaction()
 
-    await cog._disable_results(interaction, SERVER_ID)
+    await cog._disable_results(interaction)
 
     view = interaction.response.send_message.await_args.kwargs["view"]
     assert isinstance(view, _ConfirmDisableResultsView)
@@ -164,7 +164,7 @@ async def test_the_warning_carries_a_confirmation(tmp_path):
 async def test_cancelling_leaves_both_modules_enabled(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
     cog = _make_cog(db_path, attendance_enabled=True)
-    view = _ConfirmDisableResultsView(cog, ACTOR_ID, SERVER_ID)
+    view = _ConfirmDisableResultsView(cog, ACTOR_ID)
     interaction = _make_interaction()
 
     await view.cancel.callback(interaction)
@@ -177,7 +177,7 @@ async def test_cancelling_leaves_both_modules_enabled(tmp_path):
 async def test_confirming_disables_both_and_names_both(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
     cog = _make_cog(db_path, attendance_enabled=True)
-    view = _ConfirmDisableResultsView(cog, ACTOR_ID, SERVER_ID)
+    view = _ConfirmDisableResultsView(cog, ACTOR_ID)
     interaction = _make_interaction()
 
     await view.confirm.callback(interaction)
@@ -195,7 +195,7 @@ async def test_confirming_disables_both_and_names_both(tmp_path):
 async def test_only_the_actor_may_confirm(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
     cog = _make_cog(db_path, attendance_enabled=True)
-    view = _ConfirmDisableResultsView(cog, ACTOR_ID, SERVER_ID)
+    view = _ConfirmDisableResultsView(cog, ACTOR_ID)
     interaction = _make_interaction()
     interaction.user.id = ACTOR_ID + 1
 
@@ -219,7 +219,7 @@ async def test_no_warning_where_neither_attendance_nor_a_season_is_at_stake(tmp_
     cog = _make_cog(db_path, attendance_enabled=False)
     interaction = _make_interaction()
 
-    await cog._disable_results(interaction, SERVER_ID)
+    await cog._disable_results(interaction)
 
     interaction.response.send_message.assert_not_awaited()
     interaction.response.defer.assert_awaited()

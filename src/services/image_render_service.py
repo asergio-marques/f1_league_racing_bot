@@ -613,7 +613,7 @@ class ImageRenderService:
         self._config_service = config_service
         self._validity_service = validity_service
 
-    async def _apply_tier_palette(self, server_id: int, root, division_name: str) -> None:
+    async def _apply_tier_palette(self, root, division_name: str) -> None:
         """Paint this tier's configured colours into the parsed template (051).
 
         Reads nothing while the feature is off, which is what keeps it inert: a league that
@@ -621,16 +621,15 @@ class ImageRenderService:
         """
         from utils.svg_palette import apply_palette
 
-        config = await self._config_service.get_config(server_id)
+        config = await self._config_service.get_config()
         if config is None or not getattr(config, "per_tier_colour_enabled", False):
             return
-        palette = await self._config_service.get_tier_palette(server_id, division_name)
+        palette = await self._config_service.get_tier_palette(division_name)
         if palette:
             apply_palette(root, palette)
 
     async def render(
         self,
-        server_id: int,
         image_type: str,
         spec_builder,
         *,
@@ -669,7 +668,7 @@ class ImageRenderService:
                 )
             )
 
-        reports = await self._validity_service.template_reports(server_id)
+        reports = await self._validity_service.template_reports()
         report = reports.get(image_type)
         if report is None:
             # No league can cause this: a caller asked for a type the module has no
@@ -714,7 +713,7 @@ class ImageRenderService:
         # to post over it would be a worse answer than posting the wrong shade of blue.
         if division_name:
             try:
-                await self._apply_tier_palette(server_id, root, division_name)
+                await self._apply_tier_palette(root, division_name)
             except Exception:  # noqa: BLE001
                 log.exception(
                     "render: per-tier palette failed for %s / %s", image_type, division_name
@@ -804,7 +803,7 @@ class ImageRenderService:
 
     @staticmethod
     async def report_notices(
-        bot, server_id: int, notices: list[RenderNotice], *, subject: str | None = None
+        bot, notices: list[RenderNotice], *, subject: str | None = None
     ):
         """Surface notices to the calculation log channel (Principle V, FR-031).
 
@@ -820,7 +819,7 @@ class ImageRenderService:
             return None
         try:
             return await bot.output_router.post_log(
-                server_id, ImageRenderService.format_notices(notices, subject=subject)
+                ImageRenderService.format_notices(notices, subject=subject)
             )
         except Exception as exc:  # noqa: BLE001
             log.error("report_notices: log write failed: %s", exc)
@@ -830,7 +829,6 @@ class ImageRenderService:
 
     async def render_for_posting(
         self,
-        server_id: int,
         image_type: str,
         spec_builder,
         *,
@@ -864,7 +862,6 @@ class ImageRenderService:
             )
 
         outcome = await self.render(
-            server_id,
             image_type,
             spec_builder,
             output_dir=output_dir,
@@ -873,7 +870,7 @@ class ImageRenderService:
         )
 
         if bot is not None and outcome.notices:
-            await self.report_notices(bot, server_id, outcome.notices)
+            await self.report_notices(bot, outcome.notices)
 
         if outcome.ok:
             return PostingDecision(
@@ -885,9 +882,8 @@ class ImageRenderService:
         problem = outcome.problem
         if problem is not None and problem.is_internal:
             log.error(
-                "render_for_posting: internal problem for %s on server %s — %s",
+                "render_for_posting: internal problem for %s — %s",
                 image_type,
-                server_id,
                 problem.detail,
             )
 

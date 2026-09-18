@@ -156,8 +156,7 @@ async def _complete_role(cog, interaction, *, role=None):
 async def _audit_rows(db_path) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type, old_value, new_value FROM audit_entries WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT change_type, old_value, new_value FROM audit_entries",
         )
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -178,7 +177,7 @@ def _permission_calls(interaction) -> list:
 async def test_the_role_is_stored(tmp_path, run, change_type):
     db_path = await _make_db(tmp_path, name=f"store_{change_type}")
     cog = _make_cog(db_path)
-    config = await cog.bot.signup_module_service.get_config(SERVER_ID)
+    config = await cog.bot.signup_module_service.get_config()
 
     await run(cog, _interaction())
 
@@ -227,7 +226,7 @@ async def test_the_change_is_logged_with_the_roles_name(tmp_path, run):
 
     await run(cog, _interaction(), role=_role(NEW_ROLE, "Verified drivers"))
 
-    assert "Verified drivers" in str(cog.bot.output_router.post_log.await_args.args[1])
+    assert "Verified drivers" in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
 @pytest.mark.parametrize("run", [_base_role, _complete_role])

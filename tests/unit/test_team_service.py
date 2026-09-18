@@ -36,25 +36,22 @@ async def db_path(tmp_path):
 
             CREATE TABLE default_teams (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id  INTEGER NOT NULL,
                 name       TEXT    NOT NULL,
                 max_seats  INTEGER NOT NULL DEFAULT 2,
                 is_reserve INTEGER NOT NULL DEFAULT 0,
-                UNIQUE(server_id, name)
+                UNIQUE(name)
             );
 
             CREATE TABLE team_role_configs (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id  INTEGER NOT NULL,
                 team_name  TEXT    NOT NULL,
                 role_id    INTEGER NOT NULL,
                 updated_at TEXT    NOT NULL,
-                UNIQUE(server_id, team_name)
+                UNIQUE(team_name)
             );
 
             CREATE TABLE seasons (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id     INTEGER NOT NULL,
                 season_number INTEGER NOT NULL DEFAULT 1,
                 status        TEXT    NOT NULL DEFAULT 'SETUP'
             );
@@ -77,29 +74,28 @@ async def db_path(tmp_path):
     return path
 
 
-async def _add_default_team(db_path: str, server_id: int, name: str, is_reserve: int = 0) -> None:
+async def _add_default_team(db_path: str, name: str, is_reserve: int = 0) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT INTO default_teams (server_id, name, max_seats, is_reserve) VALUES (?, ?, 2, ?)",
-            (server_id, name, is_reserve),
+            "INSERT INTO default_teams (name, max_seats, is_reserve) VALUES (?, 2, ?)",
+            (name, is_reserve),
         )
         await db.commit()
 
 
-async def _add_role_config(db_path: str, server_id: int, team_name: str, role_id: int) -> None:
+async def _add_role_config(db_path: str, team_name: str, role_id: int) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id, updated_at) VALUES (?, ?, ?, datetime('now'))",
-            (server_id, team_name, role_id),
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, datetime('now'))",
+            (team_name, role_id),
         )
         await db.commit()
 
 
-async def _add_season_with_divisions(db_path: str, server_id: int, div_count: int = 1) -> int:
+async def _add_season_with_divisions(db_path: str, div_count: int = 1) -> int:
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, season_number, status) VALUES (?, 1, 'SETUP')",
-            (server_id,),
+            "INSERT INTO seasons (season_number, status) VALUES (1, 'SETUP')"
         )
         season_id = cursor.lastrowid
         for _ in range(div_count):
@@ -127,47 +123,47 @@ class TestGetTeamsWithRoles:
     async def test_empty_returns_empty_list(self, db_path):
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_teams_with_roles(1)
+        result = await svc.get_teams_with_roles()
         assert result == []
 
     async def test_teams_without_roles_have_none_role_id(self, db_path):
-        await _add_default_team(db_path, 1, "Alpine")
-        await _add_default_team(db_path, 1, "Ferrari")
+        await _add_default_team(db_path, "Alpine")
+        await _add_default_team(db_path, "Ferrari")
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_teams_with_roles(1)
+        result = await svc.get_teams_with_roles()
         names = [r["name"] for r in result]
         assert "Alpine" in names
         assert "Ferrari" in names
         assert all(r["role_id"] is None for r in result)
 
     async def test_teams_with_roles_have_correct_role_id(self, db_path):
-        await _add_default_team(db_path, 1, "Mercedes")
-        await _add_role_config(db_path, 1, "Mercedes", 999)
+        await _add_default_team(db_path, "Mercedes")
+        await _add_role_config(db_path, "Mercedes", 999)
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_teams_with_roles(1)
+        result = await svc.get_teams_with_roles()
         assert len(result) == 1
         assert result[0]["name"] == "Mercedes"
         assert result[0]["role_id"] == 999
 
     async def test_mixed_teams_some_with_roles(self, db_path):
-        await _add_default_team(db_path, 1, "Alpine")
-        await _add_default_team(db_path, 1, "Ferrari")
-        await _add_role_config(db_path, 1, "Ferrari", 777)
+        await _add_default_team(db_path, "Alpine")
+        await _add_default_team(db_path, "Ferrari")
+        await _add_role_config(db_path, "Ferrari", 777)
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_teams_with_roles(1)
+        result = await svc.get_teams_with_roles()
         by_name = {r["name"]: r for r in result}
         assert by_name["Alpine"]["role_id"] is None
         assert by_name["Ferrari"]["role_id"] == 777
 
     async def test_reserve_team_included_last(self, db_path):
-        await _add_default_team(db_path, 1, "Alpine")
-        await _add_default_team(db_path, 1, "Reserve", is_reserve=1)
+        await _add_default_team(db_path, "Alpine")
+        await _add_default_team(db_path, "Reserve", is_reserve=1)
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_teams_with_roles(1)
+        result = await svc.get_teams_with_roles()
         assert result[-1]["name"] == "Reserve"
         assert result[-1]["is_reserve"] is True
 
@@ -178,36 +174,36 @@ class TestGetTeamsWithRoles:
 
 class TestGetSetupSeasonTeamNames:
     async def test_empty_season_returns_empty_set(self, db_path):
-        season_id = await _add_season_with_divisions(db_path, 1)
+        season_id = await _add_season_with_divisions(db_path)
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_setup_season_team_names(1, season_id)
+        result = await svc.get_setup_season_team_names(season_id)
         assert result == set()
 
     async def test_returns_team_names_present_in_divisions(self, db_path):
-        season_id = await _add_season_with_divisions(db_path, 1)
+        season_id = await _add_season_with_divisions(db_path)
         await _add_team_instance(db_path, season_id, "Ferrari")
         await _add_team_instance(db_path, season_id, "Alpine")
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_setup_season_team_names(1, season_id)
+        result = await svc.get_setup_season_team_names(season_id)
         assert result == {"Ferrari", "Alpine"}
 
     async def test_excludes_reserve_teams(self, db_path):
-        season_id = await _add_season_with_divisions(db_path, 1)
+        season_id = await _add_season_with_divisions(db_path)
         await _add_team_instance(db_path, season_id, "Ferrari")
         await _add_team_instance(db_path, season_id, "Reserve", is_reserve=1)
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_setup_season_team_names(1, season_id)
+        result = await svc.get_setup_season_team_names(season_id)
         assert "Reserve" not in result
         assert "Ferrari" in result
 
     async def test_deduplicates_across_multiple_divisions(self, db_path):
-        season_id = await _add_season_with_divisions(db_path, 1, div_count=2)
+        season_id = await _add_season_with_divisions(db_path, div_count=2)
         await _add_team_instance(db_path, season_id, "Ferrari")
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_setup_season_team_names(1, season_id)
+        result = await svc.get_setup_season_team_names(season_id)
         # Ferrari appears in both divisions but should only appear once in set
         assert result == {"Ferrari"}

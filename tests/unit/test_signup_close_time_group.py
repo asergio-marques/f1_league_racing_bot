@@ -60,15 +60,15 @@ async def _seed(tmp_path, *, signups_open: bool = True, close_at: str | None = N
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open, close_at) "
+            "INSERT INTO signup_module_config (id, signups_open, close_at) "
             "VALUES (?, ?, ?)",
-            (SERVER_ID, 1 if signups_open else 0, close_at),
+            (1, 1 if signups_open else 0, close_at),
         )
         # A season awaiting its window, so `/signup open` reaches the checks under test.
         await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
-            "VALUES (?, '2026-09-17', 'SETUP', 1, ?)",
-            (SERVER_ID, "SIGNUPS" if signups_open else "WAITING"),
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-09-17', 'SETUP', 1, ?)",
+            ("SIGNUPS" if signups_open else "WAITING",),
         )
         await db.commit()
     return path
@@ -120,16 +120,15 @@ async def _close(cog, interaction):
 async def _close_at(db_path) -> str | None:
     from services.signup_module_service import SignupModuleService
 
-    cfg = await SignupModuleService(db_path).get_config(SERVER_ID)
+    cfg = await SignupModuleService(db_path).get_config()
     return cfg.close_at
 
 
 async def _audit_types(db_path) -> list[str]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type FROM audit_entries WHERE server_id = ? "
+            "SELECT change_type FROM audit_entries "
             "ORDER BY change_type",
-            (SERVER_ID,),
         )
         return [row["change_type"] for row in await cursor.fetchall()]
 
@@ -208,9 +207,7 @@ class TestCancel:
         await _cancel(cog, _interaction())
 
         assert await _close_at(db_path) is None
-        cog.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with(
-            SERVER_ID
-        )
+        cog.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
 
     async def test_it_leaves_signups_open(self, tmp_path):
         """The window survives the cancel — only the timer goes."""
@@ -220,7 +217,7 @@ class TestCancel:
 
         await _cancel(_cog(db_path), _interaction())
 
-        cfg = await SignupModuleService(db_path).get_config(SERVER_ID)
+        cfg = await SignupModuleService(db_path).get_config()
         assert cfg.signups_open is True
 
     async def test_it_is_refused_when_nothing_is_armed(self, tmp_path):
@@ -253,7 +250,7 @@ class TestAdd:
 
         assert await _close_at(db_path) == LATER
         cog.bot.scheduler_service.schedule_signup_close_timer.assert_called_once_with(
-            SERVER_ID, LATER
+            LATER
         )
 
     async def test_it_is_refused_when_one_is_already_armed(self, tmp_path):
@@ -307,11 +304,9 @@ class TestModify:
         await _modify(cog, _interaction(), LATER)
 
         assert await _close_at(db_path) == LATER
-        cog.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with(
-            SERVER_ID
-        )
+        cog.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
         cog.bot.scheduler_service.schedule_signup_close_timer.assert_called_once_with(
-            SERVER_ID, LATER
+            LATER
         )
 
     async def test_it_is_refused_when_nothing_is_armed(self, tmp_path):
@@ -342,8 +337,7 @@ class TestModify:
 
         async with get_connection(db_path) as db:
             cursor = await db.execute(
-                "SELECT old_value, new_value FROM audit_entries WHERE server_id = ?",
-                (SERVER_ID,),
+                "SELECT old_value, new_value FROM audit_entries",
             )
             row = await cursor.fetchone()
         assert (row["old_value"], row["new_value"]) == (ARMED, LATER)
@@ -419,7 +413,7 @@ class TestOneRuleForTheCloseTime:
         cog.bot.signup_module_service.get_slots = AsyncMock(
             return_value=[MagicMock(display_label="Friday 20:00")]
         )
-        cfg = await cog.bot.signup_module_service.get_config(SERVER_ID)
+        cfg = await cog.bot.signup_module_service.get_config()
         cfg.signup_channel_id, cfg.base_role_id, cfg.signed_up_role_id = 1, 2, 3
         cog.bot.signup_module_service.get_config = AsyncMock(return_value=cfg)
 

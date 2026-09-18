@@ -54,9 +54,9 @@ async def _make_db(tmp_path, *, name="revoke_roles", signed_up_role=SIGNED_UP_RO
         )
         for season_id, status in ((SEASON_ID, "ACTIVE"), (OTHER_SEASON_ID, "COMPLETED")):
             await db.execute(
-                "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-                "VALUES (?, ?, ?, '2026-01-01', ?)",
-                (season_id, SERVER_ID, season_id, status),
+                "INSERT INTO seasons (id, season_number, start_date, status) "
+                "VALUES (?, ?, '2026-01-01', ?)",
+                (season_id, season_id, status),
             )
             await db.execute(
                 "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -65,9 +65,9 @@ async def _make_db(tmp_path, *, name="revoke_roles", signed_up_role=SIGNED_UP_RO
             )
         for profile_id, uid, is_test, season_id in drivers:
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state, "
-                "is_test_driver) VALUES (?, ?, ?, 'ASSIGNED', ?)",
-                (profile_id, SERVER_ID, str(uid), is_test),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+                "is_test_driver) VALUES (?, ?, 'ASSIGNED', ?)",
+                (profile_id, str(uid), is_test),
             )
             await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
@@ -76,8 +76,8 @@ async def _make_db(tmp_path, *, name="revoke_roles", signed_up_role=SIGNED_UP_RO
             )
         if signed_up_role is not None:
             await db.execute(
-                "INSERT INTO signup_module_config (server_id, signed_up_role_id) VALUES (?, ?)",
-                (SERVER_ID, signed_up_role),
+                "INSERT INTO signup_module_config (id, signed_up_role_id) VALUES (?, ?)",
+                (1, signed_up_role),
             )
         await db.commit()
     return db_path
@@ -120,7 +120,7 @@ def _bot(db_path):
 
 
 def _revoked_placement(bot) -> list[int]:
-    return sorted(c.args[1] for c in bot.placement_service.revoke_all_placement_roles.await_args_list)
+    return sorted(c.args[0] for c in bot.placement_service.revoke_all_placement_roles.await_args_list)
 
 
 async def test_every_driver_loses_their_placement_roles(tmp_path):
@@ -128,10 +128,10 @@ async def test_every_driver_loses_their_placement_roles(tmp_path):
     bot = _bot(db_path)
     members = {101: _member(101), 102: _member(102)}
 
-    await _revoke_season_roles(SERVER_ID, SEASON_ID, _guild(members), bot)
+    await _revoke_season_roles(SEASON_ID, _guild(members), bot)
 
     assert _revoked_placement(bot) == [31, 32]
-    assert all(c.args[2] == SEASON_ID for c in bot.placement_service.revoke_all_placement_roles.await_args_list)
+    assert all(c.args[1] == SEASON_ID for c in bot.placement_service.revoke_all_placement_roles.await_args_list)
 
 
 async def test_the_signed_up_role_is_taken_back_too(tmp_path):
@@ -141,7 +141,7 @@ async def test_the_signed_up_role_is_taken_back_too(tmp_path):
     bot = _bot(db_path)
     members = {101: _member(101), 102: _member(102)}
 
-    await _revoke_season_roles(SERVER_ID, SEASON_ID, _guild(members), bot)
+    await _revoke_season_roles(SEASON_ID, _guild(members), bot)
 
     assert bot.placement_service._revoke_roles.await_count == 2
     assert all(c.args[1] == SIGNED_UP_ROLE for c in bot.placement_service._revoke_roles.await_args_list)
@@ -152,7 +152,7 @@ async def test_a_driver_without_the_signed_up_role_is_not_asked_to_lose_it(tmp_p
     bot = _bot(db_path)
     members = {101: _member(101), 102: _member(102, has_signed_up=False)}
 
-    await _revoke_season_roles(SERVER_ID, SEASON_ID, _guild(members), bot)
+    await _revoke_season_roles(SEASON_ID, _guild(members), bot)
 
     assert bot.placement_service._revoke_roles.await_count == 1
 
@@ -162,7 +162,7 @@ async def test_a_league_with_no_signed_up_role_revokes_placement_only(tmp_path):
     bot = _bot(db_path)
     members = {101: _member(101), 102: _member(102)}
 
-    await _revoke_season_roles(SERVER_ID, SEASON_ID, _guild(members), bot)
+    await _revoke_season_roles(SEASON_ID, _guild(members), bot)
 
     assert _revoked_placement(bot) == [31, 32]
     bot.placement_service._revoke_roles.assert_not_awaited()
@@ -175,7 +175,7 @@ async def test_a_test_driver_is_skipped(tmp_path):
     )
     bot = _bot(db_path)
 
-    await _revoke_season_roles(SERVER_ID, SEASON_ID, _guild({101: _member(101)}), bot)
+    await _revoke_season_roles(SEASON_ID, _guild({101: _member(101)}), bot)
 
     assert _revoked_placement(bot) == [31]
 
@@ -186,7 +186,7 @@ async def test_a_member_missing_from_the_cache_is_fetched(tmp_path):
     members = {101: _member(101), 102: _member(102)}
     guild = _guild(members, missing={102})
 
-    await _revoke_season_roles(SERVER_ID, SEASON_ID, guild, bot)
+    await _revoke_season_roles(SEASON_ID, guild, bot)
 
     guild.fetch_member.assert_awaited_once_with(102)
     assert _revoked_placement(bot) == [31, 32]
@@ -199,7 +199,7 @@ async def test_a_driver_who_has_left_the_server_is_stepped_over(tmp_path):
     members = {101: _member(101), 102: _member(102)}
     guild = _guild(members, missing={101}, fetch_fails={101})
 
-    await _revoke_season_roles(SERVER_ID, SEASON_ID, guild, bot)
+    await _revoke_season_roles(SEASON_ID, guild, bot)
 
     assert _revoked_placement(bot) == [32]
 
@@ -212,7 +212,7 @@ async def test_another_seasons_drivers_are_left_alone(tmp_path):
     bot = _bot(db_path)
     members = {101: _member(101), 102: _member(102)}
 
-    await _revoke_season_roles(SERVER_ID, SEASON_ID, _guild(members), bot)
+    await _revoke_season_roles(SEASON_ID, _guild(members), bot)
 
     assert _revoked_placement(bot) == [31]
 
@@ -221,6 +221,6 @@ async def test_a_season_with_no_drivers_revokes_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="revoke_empty", drivers=[])
     bot = _bot(db_path)
 
-    await _revoke_season_roles(SERVER_ID, SEASON_ID, _guild({}), bot)
+    await _revoke_season_roles(SEASON_ID, _guild({}), bot)
 
     bot.placement_service.revoke_all_placement_roles.assert_not_awaited()

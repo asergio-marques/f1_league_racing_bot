@@ -70,9 +70,9 @@ async def _make_db(tmp_path, *, name: str = "calendar") -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id, "
@@ -177,7 +177,6 @@ async def _post(
         result = await post_division_calendar(
             _bot(db_path),
             guild,
-            SERVER_ID,
             division or _division(),
             rounds if rounds is not None else [_round()],
             {},
@@ -379,7 +378,7 @@ async def test_a_posting_failure_enqueues_the_textual_calendar(tmp_path):
     result, _, _, enqueue = await _post(db_path, channel=_channel(send_fails=True))
 
     enqueue.assert_awaited_once()
-    assert "Pro" in str(enqueue.await_args.args[3])
+    assert "Pro" in str(enqueue.await_args.args[2])
     assert result.message_id is None
 
 
@@ -397,7 +396,7 @@ async def test_a_failed_graphic_post_enqueues_text_rather_than_a_picture(tmp_pat
         channel=_channel(send_fails=True),
     )
 
-    assert "Silverstone" in str(enqueue.await_args.args[3])
+    assert "Silverstone" in str(enqueue.await_args.args[2])
 
 
 async def test_a_failing_retry_queue_does_not_raise(tmp_path):
@@ -413,7 +412,7 @@ async def test_a_failing_retry_queue_does_not_raise(tmp_path):
         "services.retry_service.enqueue", new=AsyncMock(side_effect=RuntimeError("no db"))
     ):
         result = await post_division_calendar(
-            _bot(db_path), _guild(channel), SERVER_ID, _division(), [_round()], {}
+            _bot(db_path), _guild(channel), _division(), [_round()], {}
         )
 
     assert result.problem is not None

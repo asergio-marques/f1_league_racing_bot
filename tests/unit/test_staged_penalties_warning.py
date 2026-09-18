@@ -17,9 +17,8 @@ async def test_a_penalty_applied_under_a_past_account_names_the_current_one(tmp_
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, '8101', 'ASSIGNED')",
-            (SERVER_ID,),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES ('8101', 'ASSIGNED')"
         )
         await db.execute(
             "UPDATE driver_profiles SET discord_user_id = '8102' WHERE id = ?",
@@ -27,7 +26,7 @@ async def test_a_penalty_applied_under_a_past_account_names_the_current_one(tmp_
         )
         await db.commit()
 
-    text = await staged_penalties_warning(db_path, SERVER_ID, [
+    text = await staged_penalties_warning(db_path, [
         {"session_type": "FEATURE_RACE", "penalty_type": "TIME", "penalty_seconds": 5,
          "driver_user_id": 8101},
         {"session_type": "FEATURE_RACE", "penalty_type": "DSQ", "driver_user_id": 9999},

@@ -57,7 +57,7 @@ def _reset_cog(*, season_cog=..., result=None):
     bot.output_router.post_log = AsyncMock(return_value=None)
     resolved = MagicMock() if season_cog is ... else season_cog
     if resolved is not None:
-        resolved.clear_pending_for_server = MagicMock()
+        resolved.clear_pending = MagicMock()
     bot.get_cog = MagicMock(return_value=resolved)
 
     cog = ResetCog.__new__(ResetCog)
@@ -189,7 +189,7 @@ async def test_the_mode_is_recorded_in_the_log(full):
     with _reset_service():
         await _reset(cog, _interaction(), full=full)
 
-    logged = cog.bot.output_router.post_log.await_args.args[1]
+    logged = cog.bot.output_router.post_log.await_args.args[0]
     assert ("config deleted" if full else "config preserved") in logged
 
 
@@ -201,7 +201,7 @@ async def test_the_season_end_job_is_cancelled():
     with _reset_service():
         await _reset(cog, _interaction())
 
-    cog.bot.scheduler_service.cancel_season_end.assert_called_once_with(SERVER_ID)
+    cog.bot.scheduler_service.cancel_season_end.assert_called_once_with()
 
 
 async def test_the_in_memory_pending_setup_is_cleared():
@@ -212,7 +212,7 @@ async def test_the_in_memory_pending_setup_is_cleared():
     with _reset_service():
         await _reset(cog, _interaction())
 
-    cog._season_cog.clear_pending_for_server.assert_called_once_with(SERVER_ID)
+    cog._season_cog.clear_pending.assert_called_once_with()
 
 
 async def test_a_bot_without_the_season_cog_loaded_still_resets():

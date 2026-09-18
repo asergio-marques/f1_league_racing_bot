@@ -49,15 +49,15 @@ async def _make_db(tmp_path, *, name="member_remove", state=None, record=True):
         )
         if state is not None:
             await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?)",
-                (SERVER_ID, str(DRIVER), state),
+                "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                "VALUES (?, ?)",
+                (str(DRIVER), state),
             )
         if record:
             await db.execute(
-                "INSERT INTO signup_records (server_id, discord_user_id, discord_username, "
-                "server_display_name) VALUES (?, ?, 'racer', 'Racer One')",
-                (SERVER_ID, str(DRIVER)),
+                "INSERT INTO signup_records (discord_user_id, discord_username, "
+                "server_display_name) VALUES (?, 'racer', 'Racer One')",
+                (str(DRIVER),),
             )
         await db.commit()
     return db_path
@@ -70,6 +70,7 @@ def _cog(db_path):
     bot.wizard_service.handle_member_remove = AsyncMock()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     cog = SignupCog.__new__(SignupCog)
     cog.bot = bot
     return cog
@@ -89,7 +90,7 @@ async def _leave(cog):
 
 
 def _logged(cog) -> str:
-    return "\n".join(str(c.args[1]) for c in cog.bot.output_router.post_log.await_args_list)
+    return "\n".join(str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list)
 
 
 @pytest.mark.parametrize("state", [None, "NOT_SIGNED_UP", "PENDING_ADMIN_APPROVAL", "ASSIGNED"])
@@ -100,7 +101,7 @@ async def test_every_departure_goes_through_the_wizard_clean_up(tmp_path, state)
 
     cog.bot.wizard_service.handle_member_remove.assert_awaited_once()
     args = cog.bot.wizard_service.handle_member_remove.await_args.args
-    assert args[:2] == (SERVER_ID, str(DRIVER))
+    assert args[0] == str(DRIVER)
 
 
 @pytest.mark.parametrize("state", ["UNASSIGNED", "ASSIGNED"])

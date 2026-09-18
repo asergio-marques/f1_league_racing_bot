@@ -89,9 +89,9 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -104,9 +104,9 @@ async def _make_db(
             (ROUND_ID, DIVISION_ID, round_status),
         )
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, ?, 'ASSIGNED')",
-            (PROFILE_ID, SERVER_ID, str(DRIVER_USER_ID)),
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (?, ?, 'ASSIGNED')",
+            (PROFILE_ID, str(DRIVER_USER_ID)),
         )
         if attendance_row:
             await db.execute(
@@ -294,7 +294,7 @@ async def test_the_justification_is_logged(tmp_path):
 
     await _submit(state, justification="Power cut on the night")
 
-    logged = str(state.bot.output_router.post_log.await_args.args[1])
+    logged = str(state.bot.output_router.post_log.await_args.args[0])
     assert "ATTENDANCE_PARDON_STAGED" in logged
     assert "Power cut on the night" in logged
     assert "Pro" in logged

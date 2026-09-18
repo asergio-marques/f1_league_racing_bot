@@ -71,9 +71,9 @@ async def _seed(tmp_path, *, state: str = "AWAITING_CORRECTION_PARAMETER") -> st
             (SERVER_ID, 111, 222, 333),
         )
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, ?)",
-            (SERVER_ID, DRIVER_ID, state),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, ?)",
+            (DRIVER_ID, state),
         )
         await db.commit()
     return db_path
@@ -86,7 +86,6 @@ async def _save_wizard(db_path: str, draft: dict) -> None:
     await svc.save_wizard(
         SignupWizardRecord(
             id=-1,
-            server_id=SERVER_ID,
             discord_user_id=DRIVER_ID,
             wizard_state=WizardState.UNENGAGED,
             signup_channel_id=CHANNEL_ID,
@@ -99,7 +98,6 @@ async def _save_wizard(db_path: str, draft: dict) -> None:
     await svc.save_record(
         SignupRecord(
             id=-1,
-            server_id=SERVER_ID,
             discord_user_id=DRIVER_ID,
             discord_username="driver",
             server_display_name="Lewis Hamilton",
@@ -138,10 +136,12 @@ def _build_service(db_path: str, channel, *, signup_enabled: bool = True):
     )
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.driver_service = DriverService(db_path)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.module_service.is_signup_enabled = AsyncMock(return_value=signup_enabled)
     bot.get_guild = MagicMock(return_value=guild)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
     return svc, guild
 
@@ -149,8 +149,8 @@ def _build_service(db_path: str, channel, *, signup_enabled: bool = True):
 async def _state(db_path: str) -> str:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT current_state FROM driver_profiles WHERE server_id = ? AND discord_user_id = ?",
-            (SERVER_ID, DRIVER_ID),
+            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?",
+            (DRIVER_ID,),
         )
         row = await cursor.fetchone()
     return row["current_state"]
@@ -160,8 +160,8 @@ async def _draft(db_path: str) -> dict:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT draft_answers_json FROM signup_wizard_records "
-            "WHERE server_id = ? AND discord_user_id = ?",
-            (SERVER_ID, DRIVER_ID),
+            "WHERE discord_user_id = ?",
+            (DRIVER_ID,),
         )
         row = await cursor.fetchone()
     return json.loads(row["draft_answers_json"] or "{}")
@@ -185,7 +185,7 @@ async def test_request_changes_records_the_requesting_admin(tmp_path):
     svc, guild = _build_service(db_path, channel)
 
     await svc.request_changes(
-        SERVER_ID, DRIVER_ID, guild, _member(ADMIN_ID, "Toto"), reason="Lap time looks wrong"
+        DRIVER_ID, guild, _member(ADMIN_ID, "Toto"), reason="Lap time looks wrong"
     )
 
     assert (await _draft(db_path))["_correction_requested_by"] == str(ADMIN_ID)
@@ -294,7 +294,7 @@ async def test_the_five_minute_timeout_mentions_the_admin(tmp_path):
     channel = _channel()
     svc, _ = _build_service(db_path, channel)
 
-    await svc._correction_timeout_callback(SERVER_ID, DRIVER_ID)
+    await svc._correction_timeout_callback(DRIVER_ID)
 
     assert f"<@{ADMIN_ID}>" in _posted(channel)
     assert await _state(db_path) == "PENDING_ADMIN_APPROVAL"
@@ -314,7 +314,7 @@ async def test_a_lapsed_window_clears_the_correction_state(tmp_path):
     channel = _channel()
     svc, _ = _build_service(db_path, channel)
 
-    await svc._correction_timeout_callback(SERVER_ID, DRIVER_ID)
+    await svc._correction_timeout_callback(DRIVER_ID)
 
     draft = await _draft(db_path)
     assert "_correction_reason" not in draft
@@ -332,7 +332,7 @@ async def test_the_timeout_does_nothing_while_the_signup_module_is_disabled(tmp_
     channel = _channel()
     svc, _ = _build_service(db_path, channel, signup_enabled=False)
 
-    await svc._correction_timeout_callback(SERVER_ID, DRIVER_ID)
+    await svc._correction_timeout_callback(DRIVER_ID)
 
     assert await _state(db_path) == "AWAITING_CORRECTION_PARAMETER"
     assert channel.send.await_count == 0
@@ -344,9 +344,9 @@ async def test_the_timeout_does_nothing_while_the_signup_module_is_disabled(tmp_
 async def _open_the_window(db_path: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open, close_at) "
+            "INSERT INTO signup_module_config (id, signups_open, close_at) "
             "VALUES (?, 1, NULL)",
-            (SERVER_ID,),
+            (1,),
         )
         await db.commit()
 
@@ -357,6 +357,7 @@ def _close_cog(db_path: str):
     from services.signup_module_service import SignupModuleService
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.driver_service = DriverService(db_path)
     bot.signup_module_service = SignupModuleService(db_path)
@@ -405,6 +406,6 @@ async def test_a_close_leaves_a_driver_awaiting_a_correction_parameter_alone(tmp
     await _open_the_window(db_path)
     cog = _close_cog(db_path)
 
-    await execute_forced_close(SERVER_ID, cog.bot, audit_action="SIGNUP_CLOSE")
+    await execute_forced_close(cog.bot, audit_action="SIGNUP_CLOSE")
 
     assert await _state(db_path) == "AWAITING_CORRECTION_PARAMETER"

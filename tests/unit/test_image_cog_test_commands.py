@@ -66,7 +66,6 @@ def _context(**overrides):
     from services.image_preview_service import PreviewContext
 
     values = dict(
-        server_id=99,
         season_number=1,
         division_id=1,
         division_name="Division 1",
@@ -197,8 +196,7 @@ class TestDivisionAutocomplete:
         """
         seen = {}
 
-        async def _capture(server_id, *, timeout=None):
-            seen["server_id"] = server_id
+        async def _capture(*, timeout=None):
             seen["timeout"] = timeout
             return []
 
@@ -208,7 +206,6 @@ class TestDivisionAutocomplete:
 
         await cog._division_autocomplete(_Interaction(guild_id=99), "")
 
-        assert seen["server_id"] == 99
         assert seen["timeout"] == AUTOCOMPLETE_TIMEOUT_SECONDS
 
     async def test_an_autocomplete_that_hangs_offers_nothing(self, cog):
@@ -661,7 +658,7 @@ class TestTheNoticeBlock:
     def _bot(*, jump_url="http://discord/x/1", fail=False):
         posted = []
 
-        async def _post_log(server_id, content):
+        async def _post_log(content):
             if fail:
                 raise RuntimeError("no permission to write to the log channel")
             posted.append(content)

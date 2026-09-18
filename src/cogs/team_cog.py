@@ -29,7 +29,7 @@ class TeamCog(commands.Cog):
         refused, having answered the interaction.
         """
         season = await self.bot.season_service.get_setup_or_active_season(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if season is None or season.stage is SeasonStage.CONFIGURATION:
             return False
@@ -71,14 +71,14 @@ class TeamCog(commands.Cog):
             return
         try:
             await self.bot.team_service.add_default_team(  # type: ignore[attr-defined]
-                interaction.guild_id, name
+                name
             )
         except ValueError as exc:
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
             return
 
         await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-            interaction.guild_id, name, role.id,
+            name, role.id,
             actor_id=interaction.user.id, actor_name=str(interaction.user),
         )
 
@@ -86,7 +86,6 @@ class TeamCog(commands.Cog):
             f'✅ Team "{name}" added with role {role.mention}.', ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team add | Success\n"
             f"  team: {name}",
         )
@@ -110,14 +109,14 @@ class TeamCog(commands.Cog):
             return
         try:
             await self.bot.team_service.remove_default_team(  # type: ignore[attr-defined]
-                interaction.guild_id, name
+                name
             )
         except ValueError as exc:
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
             return
 
         await self.bot.placement_service.delete_team_role_config(  # type: ignore[attr-defined]
-            interaction.guild_id, name,
+            name,
             actor_id=interaction.user.id, actor_name=str(interaction.user),
         )
 
@@ -125,7 +124,6 @@ class TeamCog(commands.Cog):
             f'✅ Team "{name}" removed from the server list.', ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team remove | Success\n"
             f"  team: {name}",
         )
@@ -153,14 +151,14 @@ class TeamCog(commands.Cog):
             return
         try:
             await self.bot.team_service.rename_default_team(  # type: ignore[attr-defined]
-                interaction.guild_id, current_name, new_name
+                current_name, new_name
             )
         except ValueError as exc:
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
             return
 
         await self.bot.placement_service.rename_team_role_config(  # type: ignore[attr-defined]
-            interaction.guild_id, current_name, new_name,
+            current_name, new_name,
             actor_id=interaction.user.id, actor_name=str(interaction.user),
         )
 
@@ -168,7 +166,6 @@ class TeamCog(commands.Cog):
             f'✅ Team "{current_name}" renamed to "{new_name}".', ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team rename | Success\n"
             f"  old_name: {current_name}\n"
             f"  new_name: {new_name}",
@@ -200,7 +197,7 @@ class TeamCog(commands.Cog):
         at its replacement. The Reserve team keeps its own command.
         """
         teams = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         match = next(
             (t for t in teams if t["name"].casefold() == name.casefold()), None
@@ -218,12 +215,12 @@ class TeamCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-            interaction.guild_id, match["name"], role.id,
+            match["name"], role.id,
             actor_id=interaction.user.id, actor_name=str(interaction.user),
         )
         # The drivers already seated in the team follow its role (issue #220).
         moved = await self.bot.placement_service.swap_team_role(  # type: ignore[attr-defined]
-            interaction.guild_id, match["name"], match["role_id"], role.id, interaction.guild
+            match["name"], match["role_id"], role.id, interaction.guild
         )
         await interaction.followup.send(
             f'✅ Team "{match["name"]}" now maps to {role.mention}.'
@@ -231,7 +228,6 @@ class TeamCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team role | Success\n"
             f"  team: {match['name']}\n"
             f"  role: {role.name} (<@&{role.id}>)\n"
@@ -254,7 +250,7 @@ class TeamCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         server_teams = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         non_reserve = [t for t in server_teams if not t["is_reserve"]]
 
@@ -274,7 +270,7 @@ class TeamCog(commands.Cog):
             server_lines.append(_fmt_team(reserve))
 
         setup_season = await self.bot.season_service.get_setup_season(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
 
         if setup_season is None:
@@ -284,7 +280,7 @@ class TeamCog(commands.Cog):
             return
 
         season_names = await self.bot.team_service.get_setup_season_team_names(  # type: ignore[attr-defined]
-            interaction.guild_id, setup_season.id
+            setup_season.id
         )
         server_names = {t["name"] for t in non_reserve}
 
@@ -323,7 +319,7 @@ class TeamCog(commands.Cog):
         await interaction.response.defer(ephemeral=not public)
 
         season = await self.bot.season_service.get_confirmed_season(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if season is None:
             await interaction.followup.send("⛔ No season is being raced, so no lineup is confirmed.", ephemeral=True)
@@ -354,7 +350,7 @@ class TeamCog(commands.Cog):
         # the caller is the one person able to fix the template (Constitution XIV.7).
         from services.image_lineup_post import lineup_enabled, render_for_command
 
-        if await lineup_enabled(self.bot, interaction.guild_id):
+        if await lineup_enabled(self.bot):
             from services.image_render_service import discard_attachment
 
             files: list[discord.File] = []
@@ -386,7 +382,7 @@ class TeamCog(commands.Cog):
                         from services.image_render_service import ImageRenderService
 
                         await ImageRenderService.report_notices(
-                            self.bot, interaction.guild_id, notices
+                            self.bot, notices
                         )
                     await interaction.followup.send(
                         text, files=files, ephemeral=not public
@@ -441,31 +437,30 @@ class TeamCog(commands.Cog):
         role: discord.Role | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        teams = await self.bot.team_service.get_teams_with_roles(interaction.guild_id)  # type: ignore[attr-defined]
+        teams = await self.bot.team_service.get_teams_with_roles()  # type: ignore[attr-defined]
         old_role_id = next((t["role_id"] for t in teams if t["is_reserve"]), None)
         if role is not None:
             await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-                interaction.guild_id, "Reserve", role.id,
+                "Reserve", role.id,
                 actor_id=interaction.user.id, actor_name=str(interaction.user),
             )
             msg = f"✅ Reserve team role set to {role.mention}."
         else:
             await self.bot.placement_service.delete_team_role_config(  # type: ignore[attr-defined]
-                interaction.guild_id, "Reserve",
+                "Reserve",
                 actor_id=interaction.user.id, actor_name=str(interaction.user),
             )
             msg = "✅ Reserve team role cleared."
 
         # The drivers already seated in Reserve follow its role (issue #220).
         moved = await self.bot.placement_service.swap_team_role(  # type: ignore[attr-defined]
-            interaction.guild_id, "Reserve", old_role_id, role.id if role else None,
+            "Reserve", old_role_id, role.id if role else None,
             interaction.guild,
         )
         if moved:
             msg += f" {moved} seated driver(s) moved to the new role."
         await interaction.followup.send(msg, ephemeral=True)
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team reserve-role | Success\n"
             + (f"  role: {role.name} (<@&{role.id}>)" if role else "  role: cleared"),
         )

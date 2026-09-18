@@ -46,7 +46,6 @@ from models.season import SeasonStatus  # noqa: E402
 from services.season_service import SeasonImmutableError, SeasonService  # noqa: E402
 
 SERVER_ID = 9808
-OTHER_SERVER_ID = 9809
 
 
 # ---------------------------------------------------------------------------
@@ -58,12 +57,11 @@ async def _make_db(tmp_path) -> str:
     db_path = os.path.join(str(tmp_path), "seasons.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
-        for server_id in (SERVER_ID, OTHER_SERVER_ID):
-            await db.execute(
-                "INSERT INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-                (server_id,),
-            )
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
+            (SERVER_ID,),
+        )
         await db.commit()
     return db_path
 
@@ -74,13 +72,12 @@ async def _seed_season(
     status: str,
     *,
     number: int = 1,
-    server_id: int = SERVER_ID,
 ) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, ?, '2026-01-01', ?)",
-            (season_id, server_id, number, status),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, ?, '2026-01-01', ?)",
+            (season_id, number, status),
         )
         await db.commit()
 
@@ -118,9 +115,9 @@ async def _seed_full_division(
             (division_id * 10, division_id),
         )
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, ?, 'ACTIVE')",
-            (division_id, SERVER_ID, str(4000 + division_id)),
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (?, ?, 'ACTIVE')",
+            (division_id, str(4000 + division_id)),
         )
         await db.execute(
             "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
@@ -171,7 +168,7 @@ async def test_the_active_season_is_found_past_a_league_s_history(tmp_path):
     back last year's championship."""
     db_path = await _history_plus_live(tmp_path, "ACTIVE")
 
-    season = await SeasonService(db_path).get_confirmed_season(SERVER_ID)
+    season = await SeasonService(db_path).get_confirmed_season()
 
     assert season is not None
     assert season.id == 3
@@ -183,13 +180,13 @@ async def test_a_league_between_seasons_has_no_active_season(tmp_path):
     guarded on an active season are exactly the ones that must not run during setup."""
     db_path = await _history_plus_live(tmp_path, "SETUP")
 
-    assert await SeasonService(db_path).get_confirmed_season(SERVER_ID) is None
+    assert await SeasonService(db_path).get_confirmed_season() is None
 
 
 async def test_the_setup_season_is_the_one_being_built(tmp_path):
     db_path = await _history_plus_live(tmp_path, "SETUP")
 
-    season = await SeasonService(db_path).get_setup_season(SERVER_ID)
+    season = await SeasonService(db_path).get_setup_season()
 
     assert season is not None
     assert season.id == 3
@@ -198,7 +195,7 @@ async def test_the_setup_season_is_the_one_being_built(tmp_path):
 async def test_a_league_mid_season_has_no_setup_season(tmp_path):
     db_path = await _history_plus_live(tmp_path, "ACTIVE")
 
-    assert await SeasonService(db_path).get_setup_season(SERVER_ID) is None
+    assert await SeasonService(db_path).get_setup_season() is None
 
 
 @pytest.mark.parametrize("live_status", ["SETUP", "ACTIVE"])
@@ -207,7 +204,7 @@ async def test_setup_or_active_finds_the_live_season_either_way(tmp_path, live_s
     archived seasons to whichever one is live."""
     db_path = await _history_plus_live(tmp_path, live_status)
 
-    season = await SeasonService(db_path).get_setup_or_active_season(SERVER_ID)
+    season = await SeasonService(db_path).get_setup_or_active_season()
 
     assert season is not None
     assert season.id == 3
@@ -218,25 +215,16 @@ async def test_a_league_with_only_archived_seasons_has_no_live_one(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "COMPLETED", number=1)
 
-    assert await SeasonService(db_path).get_setup_or_active_season(SERVER_ID) is None
+    assert await SeasonService(db_path).get_setup_or_active_season() is None
 
 
 async def test_a_server_with_no_season_reads_as_none(tmp_path):
     db_path = await _make_db(tmp_path)
     service = SeasonService(db_path)
 
-    assert await service.get_confirmed_season(SERVER_ID) is None
-    assert await service.get_setup_season(SERVER_ID) is None
-    assert await service.get_season_for_server(SERVER_ID) is None
-
-
-async def test_another_server_s_seasons_are_never_returned(tmp_path):
-    """Every lookup is server-scoped; one league driving another's season is the fault
-    these `WHERE server_id` clauses exist to prevent."""
-    service = SeasonService(await _history_plus_live(tmp_path, "ACTIVE"))
-
-    assert await service.get_confirmed_season(OTHER_SERVER_ID) is None
-    assert await service.get_setup_season(OTHER_SERVER_ID) is None
+    assert await service.get_confirmed_season() is None
+    assert await service.get_setup_season() is None
+    assert await service.get_season_for_server() is None
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +234,7 @@ async def test_another_server_s_seasons_are_never_returned(tmp_path):
 
 async def test_a_setup_season_counts_as_existing(tmp_path):
     db_path = await _history_plus_live(tmp_path, "SETUP")
-    assert await SeasonService(db_path).has_existing_season(SERVER_ID) is True
+    assert await SeasonService(db_path).has_existing_season() is True
 
 
 async def test_a_setup_season_alone_is_not_active_or_completed(tmp_path):
@@ -256,8 +244,8 @@ async def test_a_setup_season_alone_is_not_active_or_completed(tmp_path):
     await _seed_season(db_path, 1, "SETUP")
     service = SeasonService(db_path)
 
-    assert await service.has_active_or_completed_season(SERVER_ID) is False
-    assert await service.has_active_or_setup_season(SERVER_ID) is True
+    assert await service.has_active_or_completed_season() is False
+    assert await service.has_active_or_setup_season() is True
 
 
 async def test_a_completed_season_is_not_setup_or_active(tmp_path):
@@ -265,8 +253,8 @@ async def test_a_completed_season_is_not_setup_or_active(tmp_path):
     await _seed_season(db_path, 1, "COMPLETED")
     service = SeasonService(db_path)
 
-    assert await service.has_active_or_completed_season(SERVER_ID) is True
-    assert await service.has_active_or_setup_season(SERVER_ID) is False
+    assert await service.has_active_or_completed_season() is True
+    assert await service.has_active_or_setup_season() is False
 
 
 async def test_completed_seasons_are_counted(tmp_path):
@@ -275,7 +263,7 @@ async def test_completed_seasons_are_counted(tmp_path):
     await _seed_season(db_path, 2, "COMPLETED", number=2)
     await _seed_season(db_path, 3, "ACTIVE", number=3)
 
-    assert await SeasonService(db_path).count_completed_seasons(SERVER_ID) == 2
+    assert await SeasonService(db_path).count_completed_seasons() == 2
 
 
 async def test_a_setup_season_has_not_committed_its_number(tmp_path):
@@ -286,7 +274,7 @@ async def test_a_setup_season_has_not_committed_its_number(tmp_path):
     await _seed_season(db_path, 2, "CANCELLED", number=2)
     await _seed_season(db_path, 3, "SETUP", number=3)
 
-    assert await SeasonService(db_path).count_persisted_seasons(SERVER_ID) == 2
+    assert await SeasonService(db_path).count_persisted_seasons() == 2
 
 
 async def test_a_cancelled_season_still_counts_as_persisted(tmp_path):
@@ -295,7 +283,7 @@ async def test_a_cancelled_season_still_counts_as_persisted(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "CANCELLED", number=1)
 
-    assert await SeasonService(db_path).count_persisted_seasons(SERVER_ID) == 1
+    assert await SeasonService(db_path).count_persisted_seasons() == 1
 
 
 # ---------------------------------------------------------------------------
@@ -311,8 +299,8 @@ async def test_a_season_is_completed_in_place(tmp_path):
 
     await service.complete_season(1)
 
-    assert await service.get_confirmed_season(SERVER_ID) is None
-    assert await service.has_active_or_completed_season(SERVER_ID) is True
+    assert await service.get_confirmed_season() is None
+    assert await service.has_active_or_completed_season() is True
 
 
 async def test_a_cancelled_season_keeps_its_data(tmp_path):
@@ -333,7 +321,7 @@ async def test_an_archived_season_refuses_modification(tmp_path, status):
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, status)
     service = SeasonService(db_path)
-    season = await service.get_season_for_server(SERVER_ID)
+    season = await service.get_season_for_server()
 
     with pytest.raises(SeasonImmutableError, match="archived"):
         await service.assert_season_mutable(season)
@@ -344,7 +332,7 @@ async def test_a_live_season_may_be_modified(tmp_path, status):
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, status)
     service = SeasonService(db_path)
-    season = await service.get_season_for_server(SERVER_ID)
+    season = await service.get_season_for_server()
 
     await service.assert_season_mutable(season)  # must not raise
 

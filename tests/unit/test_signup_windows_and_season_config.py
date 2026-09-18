@@ -30,13 +30,12 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open) VALUES (?, 0)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signups_open) VALUES (?, 0)",
+            (1,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (5, ?, '2026-09-17', 'SETUP', 1, 'WAITING')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (5, '2026-09-17', 'SETUP', 1, 'WAITING')"
         )
         await db.commit()
     return path
@@ -45,7 +44,7 @@ async def db_path(tmp_path):
 async def test_opening_records_a_window_of_the_season(db_path):
     svc = SignupModuleService(db_path)
 
-    await svc.set_window_open(SERVER_ID, 111, ["3", "12"])
+    await svc.set_window_open(111, ["3", "12"])
 
     windows = await svc.get_windows(5)
     assert len(windows) == 1
@@ -55,10 +54,10 @@ async def test_opening_records_a_window_of_the_season(db_path):
 
 async def test_the_close_time_is_kept_with_the_window(db_path):
     svc = SignupModuleService(db_path)
-    await svc.set_window_open(SERVER_ID, 111, [])
+    await svc.set_window_open(111, [])
 
-    await svc.set_close_at(SERVER_ID, "2026-10-01T20:00:00+00:00")
-    await svc.set_window_closed(SERVER_ID)
+    await svc.set_close_at("2026-10-01T20:00:00+00:00")
+    await svc.set_window_closed()
 
     window = (await svc.get_windows(5))[0]
     assert window["close_at"] == "2026-10-01T20:00:00+00:00"
@@ -67,10 +66,10 @@ async def test_the_close_time_is_kept_with_the_window(db_path):
 
 async def test_a_second_window_is_a_second_record(db_path):
     svc = SignupModuleService(db_path)
-    await svc.set_window_open(SERVER_ID, 111, ["1"])
-    await svc.set_window_closed(SERVER_ID)
+    await svc.set_window_open(111, ["1"])
+    await svc.set_window_closed()
 
-    await svc.set_window_open(SERVER_ID, 222, ["2"])
+    await svc.set_window_open(222, ["2"])
 
     windows = await svc.get_windows(5)
     assert [w["selected_tracks"] for w in windows] == [["1"], ["2"]]
@@ -80,13 +79,13 @@ async def test_a_second_window_is_a_second_record(db_path):
 
 async def test_the_season_config_snapshot_holds_settings_and_slots(db_path):
     svc = SignupModuleService(db_path)
-    await svc.add_slot(SERVER_ID, 1, "19:00")
-    settings = await svc.get_settings(SERVER_ID)
+    await svc.add_slot(1, "19:00")
+    settings = await svc.get_settings()
     settings.time_type = "SHORT_QUALIFICATION"
     settings.nationality_required = False
     await svc.save_settings(settings)
 
-    await svc.snapshot_season_config(SERVER_ID, 5)
+    await svc.snapshot_season_config(5)
 
     config = await svc.get_season_config(5)
     assert config["time_type"] == "SHORT_QUALIFICATION"
@@ -96,18 +95,18 @@ async def test_the_season_config_snapshot_holds_settings_and_slots(db_path):
 
 async def test_the_snapshot_is_replaced_not_duplicated(db_path):
     svc = SignupModuleService(db_path)
-    await svc.snapshot_season_config(SERVER_ID, 5)
-    await svc.add_slot(SERVER_ID, 3, "20:00")
+    await svc.snapshot_season_config(5)
+    await svc.add_slot(3, "20:00")
 
-    await svc.snapshot_season_config(SERVER_ID, 5)
+    await svc.snapshot_season_config(5)
 
     assert len((await svc.get_season_config(5))["slots"]) == 1
 
 
 async def test_windows_and_config_go_with_their_season(db_path):
     svc = SignupModuleService(db_path)
-    await svc.set_window_open(SERVER_ID, 111, [])
-    await svc.snapshot_season_config(SERVER_ID, 5)
+    await svc.set_window_open(111, [])
+    await svc.snapshot_season_config(5)
 
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM seasons WHERE id = 5")

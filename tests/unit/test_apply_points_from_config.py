@@ -72,9 +72,9 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -346,9 +346,8 @@ async def test_another_season_s_table_is_not_used(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (2, ?, 2, '2027-01-01', 'COMPLETED')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (2, 2, '2027-01-01', 'COMPLETED')"
         )
         await db.execute(
             "INSERT INTO season_points_entries "

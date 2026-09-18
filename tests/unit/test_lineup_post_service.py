@@ -75,28 +75,28 @@ class _Bot:
         self.image_config_service = self
         self.image_validity_service = self
 
-    async def is_images_enabled(self, server_id):
+    async def is_images_enabled(self):
         return self._module
 
-    async def get_toggles(self, server_id):
+    async def get_toggles(self):
         return {"lineup": self._toggle}
 
-    async def template_reports(self, server_id):
+    async def template_reports(self):
         return {"lineup_template": type("R", (), {"valid": self._valid})()}
 
 
 async def test_the_gate_needs_module_toggle_and_a_valid_template():
-    assert await lineup_enabled(_Bot(), 1) is True
-    assert await lineup_enabled(_Bot(module=False), 1) is False
-    assert await lineup_enabled(_Bot(toggle=False), 1) is False
-    assert await lineup_enabled(_Bot(valid=False), 1) is False
+    assert await lineup_enabled(_Bot()) is True
+    assert await lineup_enabled(_Bot(module=False)) is False
+    assert await lineup_enabled(_Bot(toggle=False)) is False
+    assert await lineup_enabled(_Bot(valid=False)) is False
 
 
 async def test_the_gate_never_raises_on_a_broken_reader():
     class _Broken:
         module_service = property(lambda self: (_ for _ in ()).throw(RuntimeError()))
 
-    assert await lineup_enabled(_Broken(), 1) is False
+    assert await lineup_enabled(_Broken()) is False
 
 
 # ── FR-025: the image path builds before it deletes ───────────────────────

@@ -83,7 +83,7 @@ _DIVISION_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("attendance", "attendance_division_config", "attendance_channel_id"),
 )
 
-#: The server-wide settings, as (setting key, table, column, server key column).
+#: The league-wide settings, as (setting key, table, column). Each table holds one row.
 _SERVER_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("interaction", "server_configs", "interaction_channel_id"),
     ("log", "server_configs", "log_channel_id"),
@@ -93,12 +93,11 @@ _SERVER_SOURCES: tuple[tuple[str, str, str], ...] = (
 
 async def find_channel_use(
     db_path: str,
-    server_id: int,
     channel_id: int,
     *,
     ignore: ChannelUse | None = None,
 ) -> ChannelUse | None:
-    """What *channel_id* is already used for on *server_id*, or None where it is free.
+    """What *channel_id* is already used for, or None where it is free.
 
     *ignore* names a use to disregard — the setting being written. Without it, changing a
     division's results channel to a different channel would be refused by its own current
@@ -113,8 +112,7 @@ async def find_channel_use(
             if ignore is not None and ignore.setting == setting:
                 continue
             cursor = await db.execute(
-                f"SELECT 1 FROM {table} WHERE server_id = ? AND {column} = ? LIMIT 1",
-                (server_id, channel_id),
+                f"SELECT 1 FROM {table} WHERE {column} = ? LIMIT 1", (channel_id,)
             )
             if await cursor.fetchone() is not None:
                 return ChannelUse(setting)
@@ -124,7 +122,7 @@ async def find_channel_use(
                 sql = (
                     f"SELECT d.name FROM divisions d "
                     f"JOIN seasons s ON s.id = d.season_id "
-                    f"WHERE s.server_id = ? AND s.status IN ('SETUP', 'ACTIVE') "
+                    f"WHERE s.status IN ('SETUP', 'ACTIVE') "
                     f"  AND d.{column} = ? LIMIT 1"
                 )
             else:
@@ -132,10 +130,10 @@ async def find_channel_use(
                     f"SELECT d.name FROM {table} c "
                     f"JOIN divisions d ON d.id = c.division_id "
                     f"JOIN seasons s ON s.id = d.season_id "
-                    f"WHERE s.server_id = ? AND s.status IN ('SETUP', 'ACTIVE') "
+                    f"WHERE s.status IN ('SETUP', 'ACTIVE') "
                     f"  AND c.{column} = ? LIMIT 1"
                 )
-            cursor = await db.execute(sql, (server_id, channel_id))
+            cursor = await db.execute(sql, (channel_id,))
             row = await cursor.fetchone()
             if row is None:
                 continue

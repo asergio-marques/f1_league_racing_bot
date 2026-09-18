@@ -80,9 +80,9 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id, "
@@ -101,10 +101,10 @@ async def _make_db(
                 teams[team] = cursor.lastrowid
             profile_id += 1
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, "
+                "INSERT INTO driver_profiles (id, discord_user_id, "
                 "current_state, is_test_driver, test_display_name) "
-                "VALUES (?, ?, ?, 'ASSIGNED', ?, ?)",
-                (profile_id, SERVER_ID, str(user_id), int(is_test), display),
+                "VALUES (?, ?, 'ASSIGNED', ?, ?)",
+                (profile_id, str(user_id), int(is_test), display),
             )
             cursor = await db.execute(
                 "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
@@ -182,8 +182,7 @@ async def _audit(db_path) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, new_value, actor_name FROM audit_entries "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+            "",
         )
         return [dict(r) for r in await cursor.fetchall()]
 

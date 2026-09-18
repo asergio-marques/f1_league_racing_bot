@@ -64,9 +64,9 @@ async def _make_db(tmp_path) -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -97,6 +97,7 @@ def _make_cog(db_path: str, *, test_mode: bool = True) -> _Cog:
     bot = MagicMock()
     bot.db_path = db_path
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(test_mode_active=test_mode)
     )
@@ -527,7 +528,7 @@ async def test_a_fired_check_in_phase_is_logged_by_name(tmp_path, phase, name):
 
     await _advance(cog, _interaction(), _entry(phase))
 
-    assert f"phase: {name}" in str(cog.bot.output_router.post_log.await_args.args[1])
+    assert f"phase: {name}" in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
 async def test_the_deadline_reply_says_reserves_were_distributed(tmp_path):
@@ -598,6 +599,6 @@ async def test_a_fired_weather_phase_is_logged_with_its_track(tmp_path):
 
     await _advance(cog, _interaction(), _entry(3))
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "phase: 3" in logged
     assert "track: Silverstone Circuit" in logged

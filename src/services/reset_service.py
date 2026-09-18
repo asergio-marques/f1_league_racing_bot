@@ -21,20 +21,43 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+#: The module configuration a full reset deletes by name.
+#:
+#: These tables once hung off `server_configs` by a cascading foreign key, and a full reset
+#: reached them by deleting that one row. One bot serves one league (issue #244), so the
+#: rebuilds that took `server_id` out of them took the foreign key too, and each table joins
+#: this list as its rebuild lands. What a full reset deletes is pinned table by table in
+#: `tests/unit/test_full_reset_scope.py`.
+_FULL_RESET_TABLES: tuple[str, ...] = (
+    "weather_pipeline_config",
+    "attendance_config",
+    "image_aspect_toggles",
+    "image_config",
+    "image_tier_colour",
+    "points_config_fl",
+    "points_config_entries",
+    "points_config_store",
+    "results_module_config",
+    "signup_availability_slots",
+    "signup_division_config",
+    "signup_module_config",
+    "signup_module_settings",
+    "signup_records",
+    "signup_windows",
+    "signup_wizard_records",
+)
+
 
 async def reset_server_data(
-    server_id: int,
     db_path: str,
     scheduler_service: "SchedulerService",
     *,
     full: bool = False,
 ) -> dict[str, int]:
-    """Delete season data (and optionally server config) for *server_id*.
+    """Delete the league's season data, and optionally its configuration.
 
     Parameters
     ----------
-    server_id:
-        Discord guild ID whose data is to be deleted.
     db_path:
         Path to the SQLite database file.
     scheduler_service:
@@ -42,7 +65,7 @@ async def reset_server_data(
         *before* rows are deleted.
     full:
         When ``True``, also deletes the ``server_configs`` row, effectively
-        factory-resetting the bot for this server.
+        factory-resetting the bot and freeing its claim on the server.
 
     Returns
     -------
@@ -53,8 +76,7 @@ async def reset_server_data(
         # ── 1.  Collect IDs up-front (read-only; outside the write transaction) ──
 
         cursor = await db.execute(
-            "SELECT id FROM seasons WHERE server_id = ?",
-            (server_id,),
+            "SELECT id FROM seasons",
         )
         season_ids: list[int] = [row[0] for row in await cursor.fetchall()]
 
@@ -161,28 +183,26 @@ async def reset_server_data(
             )
 
         seasons_cur = await db.execute(
-            "DELETE FROM seasons WHERE server_id = ?",
-            (server_id,),
+            "DELETE FROM seasons",
         )
         seasons_deleted: int = seasons_cur.rowcount  # type: ignore[assignment]
 
         await db.execute(
-            "DELETE FROM audit_entries WHERE server_id = ?",
-            (server_id,),
+            "DELETE FROM audit_entries",
         )
 
         if full:
+            for table in _FULL_RESET_TABLES:
+                await db.execute(f"DELETE FROM {table}")
             await db.execute(
-                "DELETE FROM server_configs WHERE server_id = ?",
-                (server_id,),
+                "DELETE FROM server_configs",
             )
 
         await db.commit()
 
     log.info(
-        "Reset server %s: %d season(s), %d division(s), %d round(s) deleted "
+        "Reset: %d season(s), %d division(s), %d round(s) deleted "
         "(full=%s)",
-        server_id,
         seasons_deleted,
         len(division_ids),
         len(round_ids),

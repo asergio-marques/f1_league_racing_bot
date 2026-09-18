@@ -41,9 +41,9 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (?, ?, '2026-03-01', 'SETUP', 1)",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (?, '2026-03-01', 'SETUP', 1)",
+            (SEASON_ID,),
         )
         await db.commit()
     return path
@@ -59,13 +59,13 @@ def _cog(db_path):
 
 
 async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> None:
-    await points_config_service.create_config(db_path, SERVER_ID, config_name)
+    await points_config_service.create_config(db_path, config_name)
     for position, pts in points:
         await points_config_service.set_session_points(
-            db_path, SERVER_ID, config_name, SessionType.FEATURE_RACE, position, pts
+            db_path, config_name, SessionType.FEATURE_RACE, position, pts
         )
     await season_points_service.attach_config(
-        db_path, SEASON_ID, config_name, "SETUP", server_id=SERVER_ID
+        db_path, SEASON_ID, config_name, "SETUP"
     )
 
 
@@ -86,7 +86,7 @@ def _function_source(name: str) -> str:
 async def test_a_well_built_table_raises_nothing(db_path):
     await _attach(db_path, "GOOD", [(1, 25), (2, 18), (3, 15)])
 
-    assert await _cog(db_path)._points_ordering_problems(SERVER_ID, SEASON_ID) == []
+    assert await _cog(db_path)._points_ordering_problems(SEASON_ID) == []
 
 
 @pytest.mark.asyncio
@@ -94,7 +94,7 @@ async def test_a_table_the_season_has_not_copied_yet_is_still_found(db_path):
     """The whole of #131: the season's own table is empty until approval copies into it."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
 
-    faults = await _cog(db_path)._points_ordering_problems(SERVER_ID, SEASON_ID)
+    faults = await _cog(db_path)._points_ordering_problems(SEASON_ID)
 
     assert len(faults) == 1
     assert "BROKEN" in faults[0]
@@ -114,7 +114,7 @@ async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
             )
         await db.commit()
 
-    faults = await _cog(db_path)._points_ordering_problems(SERVER_ID, SEASON_ID)
+    faults = await _cog(db_path)._points_ordering_problems(SEASON_ID)
 
     assert any("GONE" in fault for fault in faults)
 
@@ -122,9 +122,9 @@ async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
 @pytest.mark.asyncio
 async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
-    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID, SERVER_ID)
+    await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID)
 
-    faults = await _cog(db_path)._points_ordering_problems(SERVER_ID, SEASON_ID)
+    faults = await _cog(db_path)._points_ordering_problems(SEASON_ID)
 
     assert len(faults) == 1
 

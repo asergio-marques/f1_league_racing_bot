@@ -130,8 +130,8 @@ async def _make_db(tmp_path) -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, module_enabled) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (?, 1)",
+            (1,),
         )
         await db.commit()
     return db_path
@@ -192,7 +192,7 @@ def _view_of(interaction):
 
 
 def _purge(rounds: int = 0, *, on_call=None):
-    async def _run(db_path, server_id, bot):
+    async def _run(db_path, bot):
         if on_call is not None:
             await on_call()
         return {"rounds": rounds, "sessions": rounds * 2, "standings": rounds * 20,
@@ -204,8 +204,7 @@ def _purge(rounds: int = 0, *, on_call=None):
 async def _flag(db_path: str) -> int | None:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT module_enabled FROM results_module_config",
         )
         row = await cursor.fetchone()
     return row["module_enabled"] if row else None
@@ -214,8 +213,7 @@ async def _flag(db_path: str) -> int | None:
 async def _audit_types(db_path: str) -> list[str]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type FROM audit_entries WHERE server_id = ? ORDER BY id",
-            (SERVER_ID,),
+            "SELECT change_type FROM audit_entries ORDER BY id",
         )
         return [r["change_type"] for r in await cursor.fetchall()]
 
@@ -231,7 +229,7 @@ async def test_disabling_twice_does_no_work(tmp_path):
     interaction = _interaction()
 
     with _purge():
-        await cog._disable_results(interaction, SERVER_ID)
+        await cog._disable_results(interaction)
 
     assert "already disabled" in _replied(interaction)
     assert await _audit_types(db_path) == []
@@ -245,7 +243,7 @@ async def test_a_league_with_nothing_at_stake_is_not_asked(tmp_path):
     interaction = _interaction()
 
     with _purge():
-        await cog._disable_results(interaction, SERVER_ID)
+        await cog._disable_results(interaction)
 
     assert _view_of(interaction) is None
     assert await _flag(db_path) == 0
@@ -262,7 +260,7 @@ async def test_a_running_season_is_warned_even_with_attendance_already_off(tmp_p
     interaction = _interaction()
 
     with _purge():
-        await cog._disable_results(interaction, SERVER_ID)
+        await cog._disable_results(interaction)
 
     assert _view_of(interaction) is not None
     assert await _flag(db_path) is None  # nothing written yet
@@ -275,7 +273,7 @@ async def test_a_cascade_is_warned_about_between_seasons(tmp_path):
     interaction = _interaction()
 
     with _purge():
-        await cog._disable_results(interaction, SERVER_ID)
+        await cog._disable_results(interaction)
 
     assert _view_of(interaction) is not None
 
@@ -287,7 +285,7 @@ async def test_nothing_is_written_until_the_league_confirms(tmp_path):
     cog = _make_cog(db_path, season=SimpleNamespace(id=3), attendance_enabled=True)
 
     with _purge(rounds=4) as purge:
-        await cog._disable_results(_interaction(), SERVER_ID)
+        await cog._disable_results(_interaction())
 
     purge.assert_not_awaited()
     assert await _audit_types(db_path) == []
@@ -310,7 +308,7 @@ async def test_the_flag_goes_down_before_the_results_are_purged(tmp_path):
 
     with _purge(rounds=1, on_call=_observe):
         await cog._apply_results_disable(
-            _interaction(), SERVER_ID, cascade_attendance=False
+            _interaction(), cascade_attendance=False
         )
 
     assert seen == [0]
@@ -332,7 +330,7 @@ async def test_the_rounds_are_closed_after_the_purge(tmp_path):
 
     with _purge(rounds=1, on_call=_observe):
         await cog._apply_results_disable(
-            _interaction(), SERVER_ID, cascade_attendance=False
+            _interaction(), cascade_attendance=False
         )
 
     assert order == ["purge", "close"]
@@ -345,7 +343,7 @@ async def test_a_disable_between_seasons_still_takes_all_three_steps(tmp_path):
 
     with _purge(rounds=0) as purge:
         await cog._apply_results_disable(
-            _interaction(), SERVER_ID, cascade_attendance=False
+            _interaction(), cascade_attendance=False
         )
 
     purge.assert_awaited_once()
@@ -361,7 +359,7 @@ async def test_a_purged_season_is_audited_separately(tmp_path):
 
     with _purge(rounds=4):
         await cog._apply_results_disable(
-            _interaction(), SERVER_ID, cascade_attendance=False
+            _interaction(), cascade_attendance=False
         )
 
     types = await _audit_types(db_path)
@@ -377,7 +375,7 @@ async def test_a_disable_that_destroyed_nothing_writes_no_purge_entry(tmp_path):
 
     with _purge(rounds=0):
         await cog._apply_results_disable(
-            _interaction(), SERVER_ID, cascade_attendance=False
+            _interaction(), cascade_attendance=False
         )
 
     assert "RESULTS_SEASON_PURGED" not in await _audit_types(db_path)
@@ -391,7 +389,7 @@ async def test_the_reply_counts_what_was_destroyed(tmp_path):
 
     with _purge(rounds=4):
         await cog._apply_results_disable(
-            interaction, SERVER_ID, cascade_attendance=False
+            interaction, cascade_attendance=False
         )
 
     replied = _replied(interaction)
@@ -408,7 +406,7 @@ async def test_the_reply_says_what_survived_the_purge(tmp_path):
 
     with _purge(rounds=4):
         await cog._apply_results_disable(
-            interaction, SERVER_ID, cascade_attendance=False
+            interaction, cascade_attendance=False
         )
 
     replied = _replied(interaction)
@@ -424,7 +422,7 @@ async def test_a_disable_between_seasons_reports_no_destruction(tmp_path):
 
     with _purge(rounds=0):
         await cog._apply_results_disable(
-            interaction, SERVER_ID, cascade_attendance=False
+            interaction, cascade_attendance=False
         )
 
     assert "results are gone" not in _replied(interaction)
@@ -442,7 +440,7 @@ async def test_the_cascade_disables_attendance_and_says_so(tmp_path):
 
     with _purge():
         await cog._apply_results_disable(
-            interaction, SERVER_ID, cascade_attendance=True
+            interaction, cascade_attendance=True
         )
 
     replied = _replied(interaction)
@@ -459,7 +457,7 @@ async def test_the_cascade_says_what_attendance_keeps(tmp_path):
 
     with _purge():
         await cog._apply_results_disable(
-            interaction, SERVER_ID, cascade_attendance=True
+            interaction, cascade_attendance=True
         )
 
     assert "timings, penalties and thresholds are kept" in _replied(interaction)
@@ -474,7 +472,7 @@ async def test_no_cascade_where_attendance_is_already_off(tmp_path):
 
     with _purge():
         await cog._apply_results_disable(
-            interaction, SERVER_ID, cascade_attendance=True
+            interaction, cascade_attendance=True
         )
 
     assert "Attendance module disabled with it" not in _replied(interaction)
@@ -490,7 +488,7 @@ async def test_only_the_admin_who_asked_may_confirm(tmp_path):
     they had not been asked about."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
-    view = _ConfirmDisableResultsView(cog, ACTOR_ID, SERVER_ID, cascade_attendance=False)
+    view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=False)
     interaction = _interaction(user_id=OTHER_ADMIN)
 
     with _purge():

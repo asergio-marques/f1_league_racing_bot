@@ -82,7 +82,6 @@ def _division(name: str = "Division 1", *, rounds: int = 1, tier: int = 1) -> di
 
 async def _snapshot(service, *, existing: int = 0, divisions=None) -> tuple[int, int]:
     return await service.save_pending_snapshot(
-        SERVER_ID,
         START,
         existing,
         divisions if divisions is not None else [_division()],
@@ -140,7 +139,7 @@ async def test_a_rebuild_keeps_the_season_row(tmp_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT COUNT(*) AS n FROM seasons WHERE server_id = ?", (SERVER_ID,)
+            "SELECT COUNT(*) AS n FROM seasons"
         )
         assert (await cursor.fetchone())["n"] == 1
     assert second == first
@@ -153,9 +152,8 @@ async def test_the_season_number_survives_a_rebuild(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (90, ?, 1, '2025-01-01', 'COMPLETED')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (90, 1, '2025-01-01', 'COMPLETED')"
         )
         await db.commit()
     service = SeasonService(db_path)
@@ -174,9 +172,9 @@ async def test_a_first_snapshot_numbers_past_the_archived_seasons(tmp_path):
     async with get_connection(db_path) as db:
         for season_id, status in ((90, "COMPLETED"), (91, "CANCELLED")):
             await db.execute(
-                "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-                "VALUES (?, ?, ?, '2025-01-01', ?)",
-                (season_id, SERVER_ID, season_id - 89, status),
+                "INSERT INTO seasons (id, season_number, start_date, status) "
+                "VALUES (?, ?, '2025-01-01', ?)",
+                (season_id, season_id - 89, status),
             )
         await db.commit()
 
@@ -299,9 +297,9 @@ async def test_the_attendance_channels_survive(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO attendance_division_config "
-            "(division_id, server_id, rsvp_channel_id, attendance_channel_id) "
-            "VALUES (?, ?, '7201', '7202')",
-            (await _division_id(db_path, first), SERVER_ID),
+            "(division_id, rsvp_channel_id, attendance_channel_id) "
+            "VALUES (?, '7201', '7202')",
+            (await _division_id(db_path, first),),
         )
         await db.commit()
 
@@ -406,9 +404,8 @@ async def test_seated_drivers_are_held_for_restoration(tmp_path):
     div_id = await _division_id(db_path, first)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-            "VALUES (1, ?, '4242', 'ASSIGNED')",
-            (SERVER_ID,),
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (1, '4242', 'ASSIGNED')"
         )
         await db.execute(
             "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
@@ -447,7 +444,7 @@ async def test_a_first_snapshot_begins_in_the_stage_it_is_given(tmp_path):
     service = SeasonService(db_path)
 
     season_id, _ = await service.save_pending_snapshot(
-        SERVER_ID, START, 0, [], initial_stage=SeasonStage.CONFIGURATION
+        START, 0, [], initial_stage=SeasonStage.CONFIGURATION
     )
 
     assert await service.get_stage(season_id) is SeasonStage.CONFIGURATION
@@ -459,11 +456,11 @@ async def test_a_rebuild_ignores_the_initial_stage(tmp_path):
     db_path = await _make_db(tmp_path)
     service = SeasonService(db_path)
     first, _ = await service.save_pending_snapshot(
-        SERVER_ID, START, 0, [], initial_stage=SeasonStage.CONFIGURATION
+        START, 0, [], initial_stage=SeasonStage.CONFIGURATION
     )
 
     await service.save_pending_snapshot(
-        SERVER_ID, START, first, [_division()], initial_stage=SeasonStage.PLACEMENTS
+        START, first, [_division()], initial_stage=SeasonStage.PLACEMENTS
     )
 
     assert await service.get_stage(first) is SeasonStage.CONFIGURATION

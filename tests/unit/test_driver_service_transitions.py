@@ -38,16 +38,13 @@ async def db_path(tmp_path):
 
             CREATE TABLE driver_profiles (
                 id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id        INTEGER NOT NULL,
-                discord_user_id  TEXT NOT NULL,
+                discord_user_id  TEXT NOT NULL UNIQUE,
                 current_state    TEXT NOT NULL DEFAULT 'NOT_SIGNED_UP',
-                former_driver    INTEGER NOT NULL DEFAULT 0,
-                UNIQUE(server_id, discord_user_id)
+                former_driver    INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE audit_entries (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id   INTEGER NOT NULL,
                 actor_id    INTEGER NOT NULL,
                 actor_name  TEXT    NOT NULL,
                 division_id INTEGER,
@@ -59,7 +56,6 @@ async def db_path(tmp_path):
 
             CREATE TABLE seasons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id INTEGER NOT NULL,
                 status TEXT NOT NULL DEFAULT 'SETUP'
             );
             CREATE TABLE driver_season_assignments (
@@ -80,7 +76,6 @@ async def db_path(tmp_path):
 
             CREATE TABLE signup_records (
                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id            INTEGER NOT NULL,
                 discord_user_id      TEXT NOT NULL,
                 discord_username     TEXT,
                 server_display_name  TEXT,
@@ -96,8 +91,7 @@ async def db_path(tmp_path):
                 signup_channel_id    INTEGER,
                 total_lap_ms         INTEGER,
                 created_at           TEXT,
-                updated_at           TEXT,
-                UNIQUE(server_id, discord_user_id)
+                updated_at           TEXT
             );
             """
         )
@@ -114,7 +108,7 @@ async def _seed_driver(db_path, user_id: str, state: str) -> None:
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) VALUES (1, ?, ?)",
+            "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES (?, ?)",
             (user_id, state),
         )
         await db.commit()
@@ -130,7 +124,7 @@ class TestPendingSignupCompletionToNotSignedUp:
         from models.driver_profile import DriverState
         await _seed_driver(db_path, "u1", "PENDING_SIGNUP_COMPLETION")
         svc = _make_svc(db_path)
-        result = await svc.transition(1, "u1", DriverState.NOT_SIGNED_UP)
+        result = await svc.transition("u1", DriverState.NOT_SIGNED_UP)
         # Nothing is deleted: the driver is pending deletion (issue #220)
         assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP
 
@@ -144,7 +138,7 @@ class TestPendingSignupCompletionToNotSignedUp:
             )
             await db.commit()
         svc = _make_svc(db_path)
-        result = await svc.transition(1, "u2", DriverState.NOT_SIGNED_UP)
+        result = await svc.transition("u2", DriverState.NOT_SIGNED_UP)
         assert result is not None
         assert result.current_state == DriverState.NOT_SIGNED_UP
 
@@ -152,7 +146,7 @@ class TestPendingSignupCompletionToNotSignedUp:
         from models.driver_profile import DriverState
         await _seed_driver(db_path, "u3", "PENDING_SIGNUP_COMPLETION")
         svc = _make_svc(db_path)
-        result = await svc.transition(1, "u3", DriverState.PENDING_ADMIN_APPROVAL)
+        result = await svc.transition("u3", DriverState.PENDING_ADMIN_APPROVAL)
         assert result is not None
         assert result.current_state == DriverState.PENDING_ADMIN_APPROVAL
 
@@ -167,14 +161,14 @@ class TestPendingDriverCorrectionToNotSignedUp:
         from models.driver_profile import DriverState
         await _seed_driver(db_path, "u4", "PENDING_DRIVER_CORRECTION")
         svc = _make_svc(db_path)
-        result = await svc.transition(1, "u4", DriverState.NOT_SIGNED_UP)
+        result = await svc.transition("u4", DriverState.NOT_SIGNED_UP)
         assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP  # pending deletion (#220)
 
     async def test_existing_transitions_still_work(self, db_path):
         from models.driver_profile import DriverState
         await _seed_driver(db_path, "u5", "PENDING_DRIVER_CORRECTION")
         svc = _make_svc(db_path)
-        result = await svc.transition(1, "u5", DriverState.PENDING_ADMIN_APPROVAL)
+        result = await svc.transition("u5", DriverState.PENDING_ADMIN_APPROVAL)
         assert result is not None
         assert result.current_state == DriverState.PENDING_ADMIN_APPROVAL
 
@@ -184,7 +178,7 @@ class TestPendingDriverCorrectionToNotSignedUp:
         svc = _make_svc(db_path)
         with pytest.raises(ValueError):
             # Cannot go directly to ASSIGNED from PENDING_DRIVER_CORRECTION
-            await svc.transition(1, "u6", DriverState.ASSIGNED)
+            await svc.transition("u6", DriverState.ASSIGNED)
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +191,7 @@ class TestPendingAdminApprovalToNotSignedUp:
         from models.driver_profile import DriverState
         await _seed_driver(db_path, "u7", "PENDING_ADMIN_APPROVAL")
         svc = _make_svc(db_path)
-        result = await svc.transition(1, "u7", DriverState.NOT_SIGNED_UP)
+        result = await svc.transition("u7", DriverState.NOT_SIGNED_UP)
         assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP  # pending deletion (#220)
 
 
@@ -213,7 +207,7 @@ class TestAwaitingCorrectionParameterTransitions:
         from models.driver_profile import DriverState
         await _seed_driver(db_path, "acp1", "PENDING_ADMIN_APPROVAL")
         svc = _make_svc(db_path)
-        result = await svc.transition(1, "acp1", DriverState.AWAITING_CORRECTION_PARAMETER)
+        result = await svc.transition("acp1", DriverState.AWAITING_CORRECTION_PARAMETER)
         assert result is not None
         assert result.current_state == DriverState.AWAITING_CORRECTION_PARAMETER
 
@@ -221,7 +215,7 @@ class TestAwaitingCorrectionParameterTransitions:
         from models.driver_profile import DriverState
         await _seed_driver(db_path, "acp2", "AWAITING_CORRECTION_PARAMETER")
         svc = _make_svc(db_path)
-        result = await svc.transition(1, "acp2", DriverState.PENDING_DRIVER_CORRECTION)
+        result = await svc.transition("acp2", DriverState.PENDING_DRIVER_CORRECTION)
         assert result is not None
         assert result.current_state == DriverState.PENDING_DRIVER_CORRECTION
 
@@ -229,7 +223,7 @@ class TestAwaitingCorrectionParameterTransitions:
         from models.driver_profile import DriverState
         await _seed_driver(db_path, "acp3", "AWAITING_CORRECTION_PARAMETER")
         svc = _make_svc(db_path)
-        result = await svc.transition(1, "acp3", DriverState.PENDING_ADMIN_APPROVAL)
+        result = await svc.transition("acp3", DriverState.PENDING_ADMIN_APPROVAL)
         assert result is not None
         assert result.current_state == DriverState.PENDING_ADMIN_APPROVAL
 
@@ -237,7 +231,7 @@ class TestAwaitingCorrectionParameterTransitions:
         from models.driver_profile import DriverState
         await _seed_driver(db_path, "acp4", "PENDING_DRIVER_CORRECTION")
         svc = _make_svc(db_path)
-        result = await svc.transition(1, "acp4", DriverState.PENDING_ADMIN_APPROVAL)
+        result = await svc.transition("acp4", DriverState.PENDING_ADMIN_APPROVAL)
         assert result is not None
         assert result.current_state == DriverState.PENDING_ADMIN_APPROVAL
 
@@ -247,14 +241,14 @@ class TestAwaitingCorrectionParameterTransitions:
         await _seed_driver(db_path, "acp5", "PENDING_SIGNUP_COMPLETION")
         svc = _make_svc(db_path)
         with pytest.raises(ValueError):
-            await svc.transition(1, "acp5", DriverState.AWAITING_CORRECTION_PARAMETER)
+            await svc.transition("acp5", DriverState.AWAITING_CORRECTION_PARAMETER)
 
     async def test_acp_to_not_signed_up(self, db_path):
         """ACP can transition to NOT_SIGNED_UP (withdrawal/forced-close)."""
         from models.driver_profile import DriverState
         await _seed_driver(db_path, "acp6", "AWAITING_CORRECTION_PARAMETER")
         svc = _make_svc(db_path)
-        result = await svc.transition(1, "acp6", DriverState.NOT_SIGNED_UP)
+        result = await svc.transition("acp6", DriverState.NOT_SIGNED_UP)
         assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP  # pending deletion (#220)
 
 
@@ -286,16 +280,13 @@ async def db_with_signup(tmp_path):
 
             CREATE TABLE driver_profiles (
                 id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id          INTEGER NOT NULL,
-                discord_user_id    TEXT NOT NULL,
+                discord_user_id    TEXT NOT NULL UNIQUE,
                 current_state      TEXT NOT NULL DEFAULT 'NOT_SIGNED_UP',
-                former_driver      INTEGER NOT NULL DEFAULT 0,
-                UNIQUE(server_id, discord_user_id)
+                former_driver      INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE audit_entries (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id   INTEGER NOT NULL,
                 actor_id    INTEGER NOT NULL,
                 actor_name  TEXT    NOT NULL,
                 division_id INTEGER,
@@ -307,7 +298,6 @@ async def db_with_signup(tmp_path):
 
             CREATE TABLE seasons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id INTEGER NOT NULL,
                 status TEXT NOT NULL DEFAULT 'SETUP'
             );
             CREATE TABLE driver_season_assignments (
@@ -328,7 +318,6 @@ async def db_with_signup(tmp_path):
 
             CREATE TABLE signup_records (
                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id            INTEGER NOT NULL,
                 discord_user_id      TEXT NOT NULL,
                 discord_username     TEXT,
                 server_display_name  TEXT,
@@ -344,8 +333,7 @@ async def db_with_signup(tmp_path):
                 signup_channel_id    INTEGER,
                 total_lap_ms         INTEGER,
                 created_at           TEXT,
-                updated_at           TEXT,
-                UNIQUE(server_id, discord_user_id)
+                updated_at           TEXT
             );
             """
         )
@@ -362,14 +350,14 @@ class TestSignupDataClearing:
             db.row_factory = aiosqlite.Row
             await db.execute(
                 "INSERT INTO driver_profiles "
-                "(server_id, discord_user_id, current_state, former_driver) "
-                "VALUES (1, ?, 'PENDING_ADMIN_APPROVAL', 1)",
+                "(discord_user_id, current_state, former_driver) "
+                "VALUES (?, 'PENDING_ADMIN_APPROVAL', 1)",
                 (user_id,),
             )
             await db.execute(
                 "INSERT INTO signup_records "
-                "(server_id, discord_user_id, discord_username, platform, platform_id) "
-                "VALUES (1, ?, 'TestUser', 'Steam', 'SteamUser123')",
+                "(discord_user_id, discord_username, platform, platform_id) "
+                "VALUES (?, 'TestUser', 'Steam', 'SteamUser123')",
                 (user_id,),
             )
             await db.commit()
@@ -380,7 +368,7 @@ class TestSignupDataClearing:
         from models.driver_profile import DriverState
         await self._seed_former_driver_with_record(db_with_signup, "fd1")
         svc = _make_svc(db_with_signup)
-        result = await svc.transition(1, "fd1", DriverState.NOT_SIGNED_UP)
+        result = await svc.transition("fd1", DriverState.NOT_SIGNED_UP)
         assert result is not None  # former driver profile retained
         assert result.current_state == DriverState.NOT_SIGNED_UP
         # The signup is kept whole
@@ -388,7 +376,7 @@ class TestSignupDataClearing:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
                 "SELECT discord_username, platform, platform_id FROM signup_records "
-                "WHERE server_id = 1 AND discord_user_id = 'fd1'"
+                "WHERE discord_user_id = 'fd1'"
             )
             row = await cur.fetchone()
         assert row is not None
@@ -404,12 +392,12 @@ class TestSignupDataClearing:
             db.row_factory = aiosqlite.Row
             await db.execute(
                 "INSERT INTO driver_profiles "
-                "(server_id, discord_user_id, current_state, former_driver) "
-                "VALUES (1, 'nfd1', 'PENDING_ADMIN_APPROVAL', 0)"
+                "(discord_user_id, current_state, former_driver) "
+                "VALUES ('nfd1', 'PENDING_ADMIN_APPROVAL', 0)"
             )
             await db.commit()
         svc = _make_svc(db_with_signup)
-        result = await svc.transition(1, "nfd1", DriverState.NOT_SIGNED_UP)
+        result = await svc.transition("nfd1", DriverState.NOT_SIGNED_UP)
         assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP
 
 
@@ -429,8 +417,8 @@ async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):
             "interaction_channel_id, log_channel_id) VALUES (1, 1, 2, 3)"
         )
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-            "VALUES (9, 1, '99', 'PENDING_SIGNUP_COMPLETION')"
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (9, '99', 'PENDING_SIGNUP_COMPLETION')"
         )
         await db.commit()
 

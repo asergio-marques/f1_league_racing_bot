@@ -63,9 +63,9 @@ async def _make_db(tmp_path, *, season_status: str = "ACTIVE", rounds=()) -> str
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', ?)",
-            (SEASON_ID, SERVER_ID, season_status),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', ?)",
+            (SEASON_ID, season_status),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id, status) "
@@ -202,7 +202,7 @@ async def test_a_round_is_marked_cancelled(tmp_path):
         tmp_path, rounds=((1, 1, 7, NOT_RUN), (2, 2, 14, NOT_RUN))
     )
 
-    await SeasonService(db_path).cancel_round(1, SERVER_ID, ACTOR_ID, "Manager")
+    await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
 
     assert await _status(db_path, 1) == RoundStatus.CANCELLED.value
 
@@ -214,7 +214,7 @@ async def test_a_cancelled_round_keeps_its_number(tmp_path):
         tmp_path, rounds=((1, 1, 7, NOT_RUN), (2, 2, 14, NOT_RUN))
     )
 
-    await SeasonService(db_path).cancel_round(1, SERVER_ID, ACTOR_ID, "Manager")
+    await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
 
     assert await _numbers(db_path) == [(1, 1), (2, 2)]
 
@@ -222,13 +222,12 @@ async def test_a_cancelled_round_keeps_its_number(tmp_path):
 async def test_cancelling_is_audited_against_its_division(tmp_path):
     db_path = await _make_db(tmp_path, rounds=((1, 1, 7, NOT_RUN),))
 
-    await SeasonService(db_path).cancel_round(1, SERVER_ID, ACTOR_ID, "Manager")
+    await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, old_value, new_value, division_id FROM audit_entries "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+            "",
         )
         row = await cursor.fetchone()
     assert row["change_type"] == "round.status"
@@ -245,7 +244,7 @@ async def test_a_round_in_an_archived_season_cannot_be_cancelled(tmp_path, statu
     )
 
     with pytest.raises(SeasonImmutableError, match="archived season"):
-        await SeasonService(db_path).cancel_round(1, SERVER_ID, ACTOR_ID, "Manager")
+        await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
 
 
 async def test_a_refused_cancellation_changes_nothing(tmp_path):
@@ -254,7 +253,7 @@ async def test_a_refused_cancellation_changes_nothing(tmp_path):
     )
 
     with pytest.raises(SeasonImmutableError):
-        await SeasonService(db_path).cancel_round(1, SERVER_ID, ACTOR_ID, "Manager")
+        await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
 
     assert await _status(db_path, 1) == NOT_RUN
     async with get_connection(db_path) as db:
@@ -270,7 +269,7 @@ async def test_cancelling_the_last_round_finishes_the_division(tmp_path):
         tmp_path, rounds=((1, 1, 7, FINAL), (2, 2, 14, NOT_RUN))
     )
 
-    await SeasonService(db_path).cancel_round(2, SERVER_ID, ACTOR_ID, "Manager")
+    await SeasonService(db_path).cancel_round(2, ACTOR_ID, "Manager")
 
     assert await _division_status(db_path) == "FINISHED"
 
@@ -280,7 +279,7 @@ async def test_cancelling_one_of_several_rounds_leaves_the_division_running(tmp_
         tmp_path, rounds=((1, 1, 7, NOT_RUN), (2, 2, 14, NOT_RUN))
     )
 
-    await SeasonService(db_path).cancel_round(1, SERVER_ID, ACTOR_ID, "Manager")
+    await SeasonService(db_path).cancel_round(1, ACTOR_ID, "Manager")
 
     assert await _division_status(db_path) == "ACTIVE"
 

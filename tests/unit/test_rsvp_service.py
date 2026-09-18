@@ -43,7 +43,6 @@ async def _make_db(tmp_path) -> str:
             """
             CREATE TABLE seasons (
                 id            INTEGER PRIMARY KEY,
-                server_id     INTEGER NOT NULL DEFAULT 1,
                 season_number INTEGER NOT NULL DEFAULT 1,
                 status        TEXT    NOT NULL DEFAULT 'ACTIVE'
             );
@@ -65,7 +64,6 @@ async def _make_db(tmp_path) -> str:
 
             CREATE TABLE driver_profiles (
                 id                INTEGER PRIMARY KEY,
-                server_id         INTEGER NOT NULL DEFAULT 1,
                 discord_user_id   TEXT    NOT NULL DEFAULT '0',
                 test_display_name TEXT,
                 is_test_driver    INTEGER NOT NULL DEFAULT 0
@@ -110,10 +108,9 @@ async def _make_db(tmp_path) -> str:
 
             CREATE TABLE team_role_configs (
                 id          INTEGER PRIMARY KEY,
-                server_id   INTEGER NOT NULL,
                 team_name   TEXT    NOT NULL,
                 role_id     INTEGER NOT NULL,
-                UNIQUE(server_id, team_name)
+                UNIQUE(team_name)
             );
             """
         )
@@ -405,10 +402,10 @@ class TestTiebreakerStandings:
 
             # Standings: TeamAlpha=pos1, TeamBeta=pos2 (snapshot anchored at round 41)
             await db.execute(
-                "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (1, 'TeamAlpha', 1002)"
+                "INSERT INTO team_role_configs (team_name, role_id) VALUES ('TeamAlpha', 1002)"
             )
             await db.execute(
-                "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (1, 'TeamBeta', 1001)"
+                "INSERT INTO team_role_configs (team_name, role_id) VALUES ('TeamBeta', 1001)"
             )
             await db.execute(
                 "INSERT INTO team_standings_snapshots (team_role_id, round_id, standing_position) VALUES (1002, 41, 1)"
@@ -460,7 +457,7 @@ class TestTiebreakerStandings:
 
             # Only TeamRanked carries a snapshot; TeamUnranked has none
             await db.execute(
-                "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (1, 'TeamRanked', 1001)"
+                "INSERT INTO team_role_configs (team_name, role_id) VALUES ('TeamRanked', 1001)"
             )
             await db.execute(
                 "INSERT INTO team_standings_snapshots (team_role_id, round_id, standing_position) VALUES (1001, 41, 1)"
@@ -559,10 +556,10 @@ class TestAcceptedAtOrdering:
             late_dra  = await _insert_dra(db, 42, 10, 4, "ACCEPTED", "2025-06-01T11:00:00+00:00")
 
             await db.execute(
-                "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (1, 'TeamTop', 1001)"
+                "INSERT INTO team_role_configs (team_name, role_id) VALUES ('TeamTop', 1001)"
             )
             await db.execute(
-                "INSERT INTO team_role_configs (server_id, team_name, role_id) VALUES (1, 'TeamBottom', 1002)"
+                "INSERT INTO team_role_configs (team_name, role_id) VALUES ('TeamBottom', 1002)"
             )
             await db.execute(
                 "INSERT INTO team_standings_snapshots (team_role_id, round_id, standing_position) VALUES (1001, 41, 1)"

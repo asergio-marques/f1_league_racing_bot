@@ -31,7 +31,7 @@ from tests.unit.test_driver_move import (  # noqa: E402
 
 async def _release(service, division_id):
     return await service.release_driver(
-        server_id=SERVER_ID, driver_profile_id=PROFILE_ID, division_id=division_id,
+        driver_profile_id=PROFILE_ID, division_id=division_id,
         season_id=SEASON_ID, acting_user_id=1, acting_user_name="Manager", guild=_guild(),
         discord_user_id="4242",
     )
@@ -94,7 +94,7 @@ async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
 
     cog = DriverCog.__new__(DriverCog)
     cog.bot = MagicMock()
-    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
+    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
     cog.bot.season_service.get_confirmed_season = AsyncMock(
         return_value=SimpleNamespace(id=1, stage=SeasonStage(stage_name))
     )

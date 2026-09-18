@@ -8,7 +8,6 @@ from datetime import datetime
 @dataclass
 class PendingMessage:
     id: int
-    server_id: int
     channel_id: int
     content: str
     failure_reason: str

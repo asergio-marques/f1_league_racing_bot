@@ -29,22 +29,22 @@ class InvalidSessionTypeError(Exception):
     pass
 
 
-async def create_config(db_path: str, server_id: int, config_name: str) -> PointsConfigStore:
+async def create_config(db_path: str, config_name: str) -> PointsConfigStore:
     async with get_connection(db_path) as db:
         try:
             cursor = await db.execute(
-                "INSERT INTO points_config_store (server_id, config_name) VALUES (?, ?)",
-                (server_id, config_name),
+                "INSERT INTO points_config_store (config_name) VALUES (?)",
+                (config_name,),
             )
             await db.commit()
             row_id = cursor.lastrowid
         except aiosqlite.IntegrityError:
             raise ConfigAlreadyExistsError(config_name)
-    return PointsConfigStore(id=row_id, server_id=server_id, config_name=config_name)
+    return PointsConfigStore(id=row_id, config_name=config_name)
 
 
-async def config_exists(db_path: str, server_id: int, config_name: str) -> bool:
-    """Whether the server's points store holds a configuration under this name.
+async def config_exists(db_path: str, config_name: str) -> bool:
+    """Whether the league's points store holds a configuration under this name.
 
     Asked by :func:`season_points_service.attach_config`, which records a season's link to a
     configuration by name into a column carrying no foreign key. Nothing beneath it objects
@@ -52,14 +52,14 @@ async def config_exists(db_path: str, server_id: int, config_name: str) -> bool:
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT 1 FROM points_config_store WHERE server_id = ? AND config_name = ?",
-            (server_id, config_name),
+            "SELECT 1 FROM points_config_store WHERE config_name = ?",
+            (config_name,),
         )
         return await cursor.fetchone() is not None
 
 
 async def setup_seasons_linking(
-    db_path: str, server_id: int, config_name: str
+    db_path: str, config_name: str
 ) -> list[tuple[int, int]]:
     """The ``(season_id, season_number)`` of every season in setup attached to this name.
 
@@ -72,15 +72,15 @@ async def setup_seasons_linking(
             SELECT s.id AS id, s.season_number AS season_number
             FROM season_points_links AS l
             JOIN seasons AS s ON s.id = l.season_id
-            WHERE l.config_name = ? AND s.server_id = ? AND s.status = 'SETUP'
+            WHERE l.config_name = ? AND s.status = 'SETUP'
             ORDER BY s.season_number, s.id
             """,
-            (config_name, server_id),
+            (config_name,),
         )
         return [(r["id"], r["season_number"]) for r in await cursor.fetchall()]
 
 
-async def remove_config(db_path: str, server_id: int, config_name: str) -> None:
+async def remove_config(db_path: str, config_name: str) -> None:
     """Delete a named points configuration, and the setup-season links that named it.
 
     **Why the links go with it, and why only those of a season in setup** (decided
@@ -108,8 +108,8 @@ async def remove_config(db_path: str, server_id: int, config_name: str) -> None:
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM points_config_store WHERE server_id = ? AND config_name = ?",
-            (server_id, config_name),
+            "SELECT id FROM points_config_store WHERE config_name = ?",
+            (config_name,),
         )
         row = await cursor.fetchone()
         if row is None:
@@ -123,18 +123,18 @@ async def remove_config(db_path: str, server_id: int, config_name: str) -> None:
             DELETE FROM season_points_links
             WHERE config_name = ?
               AND season_id IN (
-                  SELECT id FROM seasons WHERE server_id = ? AND status = 'SETUP'
+                  SELECT id FROM seasons WHERE status = 'SETUP'
               )
             """,
-            (config_name, server_id),
+            (config_name,),
         )
         await db.commit()
 
 
-async def _get_config_id(db: aiosqlite.Connection, server_id: int, config_name: str) -> int:
+async def _get_config_id(db: aiosqlite.Connection, config_name: str) -> int:
     cursor = await db.execute(
-        "SELECT id FROM points_config_store WHERE server_id = ? AND config_name = ?",
-        (server_id, config_name),
+        "SELECT id FROM points_config_store WHERE config_name = ?",
+        (config_name,),
     )
     row = await cursor.fetchone()
     if row is None:
@@ -144,14 +144,13 @@ async def _get_config_id(db: aiosqlite.Connection, server_id: int, config_name: 
 
 async def set_session_points(
     db_path: str,
-    server_id: int,
     config_name: str,
     session_type: SessionType,
     position: int,
     points: int,
 ) -> None:
     async with get_connection(db_path) as db:
-        config_id = await _get_config_id(db, server_id, config_name)
+        config_id = await _get_config_id(db, config_name)
         await db.execute(
             """
             INSERT INTO points_config_entries (config_id, session_type, position, points)
@@ -166,7 +165,6 @@ async def set_session_points(
 
 async def ordering_warnings(
     db_path: str,
-    server_id: int,
     config_name: str,
     session_type: SessionType,
 ) -> list[str]:
@@ -186,7 +184,7 @@ async def ordering_warnings(
     """
     async with get_connection(db_path) as db:
         try:
-            config_id = await _get_config_id(db, server_id, config_name)
+            config_id = await _get_config_id(db, config_name)
         except ConfigNotFoundError:
             return []
         cursor = await db.execute(
@@ -206,7 +204,6 @@ async def ordering_warnings(
 
 async def set_fl_bonus(
     db_path: str,
-    server_id: int,
     config_name: str,
     session_type: SessionType,
     fl_points: int,
@@ -216,7 +213,7 @@ async def set_fl_bonus(
             f"Fastest-lap bonus cannot be set for qualifying session type: {session_type.value}"
         )
     async with get_connection(db_path) as db:
-        config_id = await _get_config_id(db, server_id, config_name)
+        config_id = await _get_config_id(db, config_name)
         # Preserve existing fl_position_limit if row already exists
         cursor = await db.execute(
             "SELECT fl_position_limit FROM points_config_fl WHERE config_id = ? AND session_type = ?",
@@ -238,7 +235,6 @@ async def set_fl_bonus(
 
 async def set_fl_position_limit(
     db_path: str,
-    server_id: int,
     config_name: str,
     session_type: SessionType,
     limit: int,
@@ -248,7 +244,7 @@ async def set_fl_position_limit(
             f"Fastest-lap position limit cannot be set for qualifying session type: {session_type.value}"
         )
     async with get_connection(db_path) as db:
-        config_id = await _get_config_id(db, server_id, config_name)
+        config_id = await _get_config_id(db, config_name)
         cursor = await db.execute(
             "SELECT fl_points FROM points_config_fl WHERE config_id = ? AND session_type = ?",
             (config_id, session_type.value),
@@ -269,11 +265,10 @@ async def set_fl_position_limit(
 
 async def get_config_entries(
     db_path: str,
-    server_id: int,
     config_name: str,
 ) -> tuple[list[PointsConfigEntry], list[PointsConfigFastestLap]]:
     async with get_connection(db_path) as db:
-        config_id = await _get_config_id(db, server_id, config_name)
+        config_id = await _get_config_id(db, config_name)
         cursor = await db.execute(
             "SELECT id, config_id, session_type, position, points "
             "FROM points_config_entries WHERE config_id = ? ORDER BY session_type, position",
@@ -310,36 +305,34 @@ async def get_config_entries(
     return entries, fl_entries
 
 
-async def list_configs(db_path: str, server_id: int) -> list[PointsConfigStore]:
+async def list_configs(db_path: str) -> list[PointsConfigStore]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id, server_id, config_name FROM points_config_store WHERE server_id = ? ORDER BY config_name",
-            (server_id,),
+            "SELECT id, config_name FROM points_config_store ORDER BY config_name"
         )
         rows = await cursor.fetchall()
     return [
-        PointsConfigStore(id=r["id"], server_id=r["server_id"], config_name=r["config_name"])
+        PointsConfigStore(id=r["id"], config_name=r["config_name"])
         for r in rows
     ]
 
 
 async def xml_import_config(
     db_path: str,
-    server_id: int,
     config_name: str,
     payload: "XmlImportPayload",
 ) -> None:
     """Atomically upsert all position and fastest-lap rows from *payload*.
 
-    Raises :class:`ConfigNotFoundError` if *config_name* does not exist for
-    *server_id*.  All writes happen inside a single DB connection; the
+    Raises :class:`ConfigNotFoundError` if *config_name* does not exist.
+    All writes happen inside a single DB connection; the
     aiosqlite context manager rolls back automatically on any exception before
     ``db.commit()``.
     """
     from utils.xml_import import XmlImportPayload  # local import — avoids circular at module level  # noqa: F401
 
     async with get_connection(db_path) as db:
-        config_id = await _get_config_id(db, server_id, config_name)
+        config_id = await _get_config_id(db, config_name)
 
         # --- position rows ------------------------------------------------
         for session_type, pos_dict in payload.positions.items():

@@ -60,7 +60,7 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(SERVER_ID)
+    await config_service.create_with_defaults()
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),
@@ -78,9 +78,9 @@ async def _seed_test_season(
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, ?, ?, 1)",
-            (SERVER_ID, NOW.date().isoformat(), status),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES (?, ?, 1)",
+            (NOW.date().isoformat(), status),
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -122,7 +122,6 @@ async def _seed_test_season(
     for index, name in enumerate(MOCK_NAMES):
         team = "Redline" if index < 2 else "Bluewave"
         result = await test_roster_service.add_test_driver(
-            SERVER_ID,
             name,
             team,
             "Division 1",
@@ -143,7 +142,7 @@ class TestMockDriversAreDrawnByTheirMockName:
     async def test_every_mock_name_is_drawn(self, bot, db_path, status):
         await _seed_test_season(db_path, status=status)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert sorted(d.display_name for d in context.drivers) == sorted(MOCK_NAMES)
 
@@ -151,7 +150,7 @@ class TestMockDriversAreDrawnByTheirMockName:
         """The lineup draws the seats, not the flat list, so both must be right."""
         await _seed_test_season(db_path)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         seated = [
             seat.server_display_name or seat.test_display_name
@@ -167,7 +166,7 @@ class TestMockDriversAreDrawnByTheirMockName:
         await _seed_test_season(db_path)
 
         context = await resolve_context(
-            bot, SERVER_ID, "Division 1", round_number=1, kind=kind
+            bot, "Division 1", round_number=1, kind=kind
         )
 
         assert sorted(d.display_name for d in context.drivers) == sorted(MOCK_NAMES)
@@ -176,7 +175,7 @@ class TestMockDriversAreDrawnByTheirMockName:
         """FR-027 — a mock driver is a seated driver, not an empty seat."""
         await _seed_test_season(db_path)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.fabricated_drivers is False
         assert all(not d.fabricated for d in context.drivers)
@@ -191,7 +190,7 @@ class TestTheNationalityTally:
     async def test_mock_drivers_are_counted(self, bot, db_path):
         await _seed_test_season(db_path)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.nationality_collected is True
         assert context.drivers_without_nationality == len(MOCK_NAMES)
@@ -201,7 +200,7 @@ class TestTheNationalityTally:
     ):
         await _seed_test_season(db_path)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert all(d.nationality in (None, "") for d in context.drivers)
 
@@ -211,13 +210,13 @@ class TestTheNationalityTally:
         await _seed_test_season(db_path)
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO signup_module_settings (server_id, nationality_required) "
+                "INSERT INTO signup_module_settings (id, nationality_required) "
                 "VALUES (?, 0)",
-                (SERVER_ID,),
+                (1,),
             )
             await db.commit()
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.nationality_collected is False
         assert context.drivers_without_nationality == 0
@@ -229,8 +228,7 @@ class TestTheNationalityTally:
             profile = await (
                 await db.execute(
                     "SELECT id FROM driver_profiles "
-                    "WHERE server_id = ? AND is_test_driver = 1 LIMIT 1",
-                    (SERVER_ID,),
+                    "WHERE is_test_driver = 1 LIMIT 1",
                 )
             ).fetchone()
             await db.execute(
@@ -239,7 +237,7 @@ class TestTheNationalityTally:
             )
             await db.commit()
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.drivers_without_nationality == len(MOCK_NAMES) - 1
 
@@ -249,7 +247,7 @@ class TestTheNationalityTally:
         """The whole point of the column: a mock driver has a flag of its own."""
         await _seed_test_season(db_path, nationalities=("british", "Dutch", "brazil"))
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.drivers_without_nationality == 0
         # Stored canonically, whatever form the roster command was given.
@@ -273,7 +271,7 @@ class TestTheNationalityTally:
             )
             await db.commit()
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.nationality_collected is False
         assert context.drivers_without_nationality == 0

@@ -33,9 +33,9 @@ async def _seed(tmp_path, *, test_mode: bool, drivers: dict[int, bool] | None = 
         )
         for profile_id, is_test in sorted((drivers or {}).items()):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, "
-                "current_state, is_test_driver) VALUES (?, ?, ?, 'UNASSIGNED', ?)",
-                (profile_id, SERVER_ID, str(9000 + profile_id), 1 if is_test else 0),
+                "INSERT INTO driver_profiles (id, discord_user_id, "
+                "current_state, is_test_driver) VALUES (?, ?, 'UNASSIGNED', ?)",
+                (profile_id, str(9000 + profile_id), 1 if is_test else 0),
             )
         await db.commit()
     return db_path
@@ -51,7 +51,7 @@ async def test_a_real_driver_is_refused_under_test_mode(tmp_path):
     db_path = await _seed(tmp_path, test_mode=True, drivers={1: False})
 
     with pytest.raises(ValueError) as excinfo:
-        await _service(db_path)._guard_test_mode(SERVER_ID, 1)
+        await _service(db_path)._guard_test_mode(1)
 
     assert "Test mode is active" in str(excinfo.value)
 
@@ -60,26 +60,20 @@ async def test_a_fake_driver_is_seated_under_test_mode(tmp_path):
     """Attendance autoreserve moves the test roster through assign_driver."""
     db_path = await _seed(tmp_path, test_mode=True, drivers={1: True})
 
-    await _service(db_path)._guard_test_mode(SERVER_ID, 1)
+    await _service(db_path)._guard_test_mode(1)
 
 
 async def test_a_real_driver_is_seated_when_test_mode_is_off(tmp_path):
     db_path = await _seed(tmp_path, test_mode=False, drivers={1: False})
 
-    await _service(db_path)._guard_test_mode(SERVER_ID, 1)
+    await _service(db_path)._guard_test_mode(1)
 
 
 async def test_an_unknown_profile_is_left_to_the_check_that_reports_it(tmp_path):
     """assign_driver names a missing profile in its own words; the guard stays quiet."""
     db_path = await _seed(tmp_path, test_mode=True)
 
-    await _service(db_path)._guard_test_mode(SERVER_ID, 404)
-
-
-async def test_a_server_with_no_config_row_is_not_in_test_mode(tmp_path):
-    db_path = await _seed(tmp_path, test_mode=True, drivers={1: False})
-
-    await _service(db_path)._guard_test_mode(SERVER_ID + 1, 1)
+    await _service(db_path)._guard_test_mode(404)
 
 
 async def test_the_guard_runs_before_a_placement(tmp_path):
@@ -90,7 +84,6 @@ async def test_the_guard_runs_before_a_placement(tmp_path):
 
     with pytest.raises(ValueError) as excinfo:
         await service.assign_driver(
-            server_id=SERVER_ID,
             driver_profile_id=1,
             division_id=1,
             team_name="Redline",

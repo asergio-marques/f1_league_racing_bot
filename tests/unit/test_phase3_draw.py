@@ -88,9 +88,8 @@ async def _seed(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (1, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
         )
         await db.execute(
             "INSERT INTO divisions "

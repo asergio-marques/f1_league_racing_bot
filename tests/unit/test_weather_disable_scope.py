@@ -3,7 +3,7 @@ issue #117.
 
 Every round carries eight scheduled jobs and all eight are keyed by the same ``round_id``
 kwarg: three forecast phases and a post-race cleanup (weather), a result submission
-(results), and three RSVP jobs (attendance). ``cancel_all_weather_for_server`` swept every
+(results), and three RSVP jobs (attendance). ``cancel_all_weather`` swept every
 round of the server's ACTIVE and SETUP seasons through a whole-round cancel, so switching
 weather off took the other four down with them, for every round still to come — while the
 league was told that only weather jobs had been cancelled.
@@ -92,9 +92,9 @@ async def _seed(db_path: str, *, live_status: str = "ACTIVE") -> dict[str, int]:
             (3, 3, "COMPLETED"),
         ):
             await db.execute(
-                "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-                "VALUES (?, ?, ?, '2026-01-01', ?)",
-                (season_id, SERVER_ID, season_number, status),
+                "INSERT INTO seasons (id, season_number, start_date, status) "
+                "VALUES (?, ?, '2026-01-01', ?)",
+                (season_id, season_number, status),
             )
             await db.execute(
                 "INSERT INTO divisions "
@@ -122,7 +122,7 @@ async def _disable_weather(tmp_path, jobs_for, *, live_status: str = "ACTIVE") -
     ids = await _seed(db_path, live_status=live_status)
     svc = _make_scheduler(db_path)
     svc._scheduler.get_jobs.return_value = jobs_for(ids)
-    await svc.cancel_all_weather_for_server(SERVER_ID)
+    await svc.cancel_all_weather()
     return [c.args[0] for c in svc._scheduler.remove_job.call_args_list]
 
 

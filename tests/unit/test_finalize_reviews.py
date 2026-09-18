@@ -76,9 +76,9 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -97,9 +97,8 @@ async def _make_db(
         )
         if attendance_row:
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (31, ?, '101', 'ASSIGNED')",
-                (SERVER_ID,),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+                "VALUES (31, '101', 'ASSIGNED')"
             )
             await db.execute(
                 "INSERT INTO driver_round_attendance (id, round_id, division_id, "
@@ -123,6 +122,7 @@ def _penalty(driver: int = 101) -> StagedPenalty:
 
 def _state(db_path, *, staged=(), appeals=(), pardons=(), attendance_enabled=False):
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.add_view = MagicMock()
     bot.output_router = MagicMock()
@@ -251,7 +251,7 @@ async def _staged_column(db_path):
 
 
 def _logged(state) -> str:
-    return "\n".join(str(c.args[1]) for c in state.bot.output_router.post_log.await_args_list)
+    return "\n".join(str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list)
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ import discord
 
 from db.database import get_connection
 from models.round import RoundFormat
+from utils.league_server import LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ def build_rsvp_embed(
     return embed
 
 
-class RsvpView(discord.ui.View):
+class RsvpView(LeagueView):
     """Persistent RSVP view — three action buttons (Accept / Tentative / Decline).
 
     custom_id values embed the round_id so handlers can identify the target round
@@ -176,11 +177,11 @@ class _RsvpButton(discord.ui.Button):
 
 
 async def _attendance_enabled_for_round(round_id: int, bot) -> bool:  # type: ignore[type-arg]
-    """Return True when *round_id*'s server has the attendance module enabled."""
+    """Return True when *round_id* exists and the league has the attendance module enabled."""
     async with get_connection(bot.db_path) as db:
         cur = await db.execute(
             """
-            SELECT s.server_id
+            SELECT 1
               FROM rounds r
               JOIN divisions d ON d.id = r.division_id
               JOIN seasons s ON s.id = d.season_id
@@ -191,15 +192,15 @@ async def _attendance_enabled_for_round(round_id: int, bot) -> bool:  # type: ig
         row = await cur.fetchone()
     if row is None:
         return False
-    return await bot.module_service.is_attendance_enabled(int(row["server_id"]))
+    return await bot.module_service.is_attendance_enabled()
 
 
 async def _attendance_enabled_for_division(division_id: int, bot) -> bool:  # type: ignore[type-arg]
-    """Return True when *division_id*'s server has the attendance module enabled."""
+    """Return True when *division_id* exists and the league has the attendance module enabled."""
     async with get_connection(bot.db_path) as db:
         cur = await db.execute(
             """
-            SELECT s.server_id
+            SELECT 1
               FROM divisions d
               JOIN seasons s ON s.id = d.season_id
              WHERE d.id = ?
@@ -209,7 +210,7 @@ async def _attendance_enabled_for_division(division_id: int, bot) -> bool:  # ty
         row = await cur.fetchone()
     if row is None:
         return False
-    return await bot.module_service.is_attendance_enabled(int(row["server_id"]))
+    return await bot.module_service.is_attendance_enabled()
 
 
 # ── Roster query helper ───────────────────────────────────────────────────────
@@ -308,13 +309,7 @@ async def _report_call_failure(
     division cannot answer. Staff re-post it instead.
     """
     try:
-        server_id = (
-            bot.server_id_for_division(division_id)
-            if hasattr(bot, "server_id_for_division")
-            else 0
-        )
         await bot.output_router.post_log(
-            server_id,
             f"ATTENDANCE | check-in call | NOT POSTED\n"
             f"  season: {season_number}\n"
             f"  division: {division_name} (id={division_id})\n"
@@ -349,22 +344,15 @@ async def _checkin_attachment(
     """
     try:
         from services.image_rsvp_post import try_attach
-
-        server_id = (
-            bot.server_id_for_division(division_id)
-            if hasattr(bot, "server_id_for_division")
-            else 0
-        )
         deadline_hours = None
         try:
-            config = await bot.attendance_service.get_config(server_id)
+            config = await bot.attendance_service.get_config()
             deadline_hours = getattr(config, "rsvp_deadline_hours", None)
         except Exception:  # noqa: BLE001 — the deadline is optional on the graphic
             pass
 
         return await try_attach(
             bot,
-            server_id,
             division_name=division_name,
             round_number=round_number,
             round_format=round_format,
@@ -460,7 +448,6 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
             division_id, division_name,
         )
         await bot.output_router.post_log(
-            bot.server_id_for_division(division_id) if hasattr(bot, "server_id_for_division") else 0,
             f"SYSTEM | run_rsvp_notice | SKIP\n"
             f"  reason: no rsvp_channel configured\n"
             f"  division: {division_name} (id={division_id})\n"
@@ -947,11 +934,6 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
                   AND dra.division_id = ?
               LEFT JOIN team_role_configs trc
                    ON trc.team_name = ti.name
-                  AND trc.server_id = (
-                      SELECT s.server_id FROM seasons s
-                        JOIN divisions d ON d.season_id = s.id
-                       WHERE d.id = ?
-                  )
               LEFT JOIN team_standings_snapshots tss
                    ON tss.team_role_id = trc.role_id
                   AND tss.round_id = (
@@ -962,7 +944,7 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
                AND ti.is_reserve = 0
              GROUP BY ti.id, ti.name, ti.max_seats
             """,
-            (round_id, division_id, division_id, division_id, round_id, division_id),
+            (round_id, division_id, division_id, round_id, division_id),
         )
         team_rows = await cur.fetchall()
 

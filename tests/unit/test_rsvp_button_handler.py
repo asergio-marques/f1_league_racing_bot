@@ -104,13 +104,13 @@ async def _make_db(
         )
         await db.execute(
             "INSERT INTO attendance_config "
-            "(server_id, module_enabled, rsvp_deadline_hours) VALUES (?, 1, ?)",
-            (SERVER_ID, deadline_hours),
+            "(id, module_enabled, rsvp_deadline_hours) VALUES (?, 1, ?)",
+            (1, deadline_hours),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -119,8 +119,8 @@ async def _make_db(
         )
         await db.execute(
             "INSERT INTO attendance_division_config "
-            "(division_id, server_id, rsvp_channel_id) VALUES (?, ?, ?)",
-            (DIVISION_ID, SERVER_ID, str(RSVP_CHANNEL_ID)),
+            "(division_id, rsvp_channel_id) VALUES (?, ?)",
+            (DIVISION_ID, str(RSVP_CHANNEL_ID)),
         )
         await db.execute(
             "INSERT INTO rounds "
@@ -146,9 +146,9 @@ async def _make_db(
         ):
             await db.execute(
                 "INSERT INTO driver_profiles "
-                "(id, server_id, discord_user_id, current_state, is_test_driver, "
-                "test_display_name) VALUES (?, ?, ?, 'ACTIVE', 1, ?)",
-                (profile_id, SERVER_ID, str(profile_id), name),
+                "(id, discord_user_id, current_state, is_test_driver, "
+                "test_display_name) VALUES (?, ?, 'ACTIVE', 1, ?)",
+                (profile_id, str(profile_id), name),
             )
         await db.execute(
             "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "

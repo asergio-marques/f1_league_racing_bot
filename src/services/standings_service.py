@@ -400,7 +400,7 @@ async def compute_team_standings(
             JOIN divisions d ON d.id = ti.division_id
             JOIN seasons s ON s.id = d.season_id
             JOIN team_role_configs trc
-              ON trc.server_id = s.server_id AND trc.team_name = ti.name
+              ON trc.team_name = ti.name
             WHERE ti.division_id = ?
             """,
             (division_id,),
@@ -557,7 +557,7 @@ async def opening_team_standings(
             JOIN divisions d ON d.id = ti.division_id
             JOIN seasons s ON s.id = d.season_id
             JOIN team_role_configs trc
-              ON trc.server_id = s.server_id AND trc.team_name = ti.name
+              ON trc.team_name = ti.name
             WHERE ti.division_id = ?
               AND ti.is_reserve = 0
             """,
@@ -674,23 +674,19 @@ async def persist_snapshots(
     async with get_connection(db_path) as db:
         await _drop_superseded_driver_rows(db, driver_snaps)
 
-        # Cache server_id per division_id (all snaps in a batch are typically one division)
-        _server_id_cache: dict[int, int | None] = {}
+        # Whether each division exists, cached (all snaps in a batch are typically one division)
+        _division_known: dict[int, bool] = {}
 
         for snap in driver_snaps:
-            if snap.division_id not in _server_id_cache:
+            if snap.division_id not in _division_known:
                 cursor = await db.execute(
-                    "SELECT s.server_id FROM divisions d "
-                    "JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
-                    (snap.division_id,),
+                    "SELECT 1 FROM divisions WHERE id = ?", (snap.division_id,)
                 )
-                div_row = await cursor.fetchone()
-                _server_id_cache[snap.division_id] = div_row["server_id"] if div_row else None
-            server_id = _server_id_cache.get(snap.division_id)
+                _division_known[snap.division_id] = await cursor.fetchone() is not None
             snap_profile_id: int | None = None
-            if server_id is not None:
+            if _division_known[snap.division_id]:
                 snap_profile_id = await resolve_driver_profile_id(
-                    server_id, snap.driver_user_id, db
+                    snap.driver_user_id, db
                 )
             await db.execute(
                 """

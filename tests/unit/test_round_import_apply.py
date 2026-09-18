@@ -56,7 +56,6 @@ async def _no_overflow(_division_name: str, _would_hold: int) -> str | None:
 
 def _cfg(*rounds: dict, name: str = "Pro") -> PendingConfig:
     return PendingConfig(
-        server_id=1,
         divisions=[PendingDivision(name=name, role_id=1, rounds=list(rounds))],
     )
 
@@ -226,7 +225,6 @@ async def test_a_rejected_import_leaves_existing_rounds_untouched(db_path):
 async def test_a_division_that_fails_rejects_the_others_too(db_path):
     """A season calendar is one artefact; a manager wanting them separate runs it twice."""
     cfg = PendingConfig(
-        server_id=1,
         divisions=[
             PendingDivision(name="Pro", role_id=1),
             PendingDivision(name="Am", role_id=2),

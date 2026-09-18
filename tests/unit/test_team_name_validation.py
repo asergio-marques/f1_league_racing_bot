@@ -172,7 +172,7 @@ from cogs.season_cog import SeasonCog  # noqa: E402
 async def _seed(path, server_teams, division_teams):
     async with aiosqlite.connect(path) as db:
         await db.execute(
-            "CREATE TABLE default_teams (server_id INTEGER, name TEXT, is_reserve INTEGER)"
+            "CREATE TABLE default_teams (name TEXT, is_reserve INTEGER)"
         )
         await db.execute("CREATE TABLE divisions (id INTEGER, season_id INTEGER, name TEXT, tier INTEGER)")
         await db.execute(
@@ -180,7 +180,7 @@ async def _seed(path, server_teams, division_teams):
         )
         for name in server_teams:
             await db.execute(
-                "INSERT INTO default_teams VALUES (?, ?, 0)", (1, name)
+                "INSERT INTO default_teams VALUES (?, 0)", (name,)
             )
         await db.execute("INSERT INTO divisions VALUES (10, 1, 'Elite', 1)")
         for name in division_teams:
@@ -192,7 +192,7 @@ async def _review_problems(tmp_path, server_teams, division_teams):
     path = tmp_path / "review.db"
     await _seed(path, server_teams, division_teams)
     cog = _MagicMock(bot=_MagicMock(db_path=str(path)))
-    return await SeasonCog._team_name_problems(cog, server_id=1, season_id=1)
+    return await SeasonCog._team_name_problems(cog, season_id=1)
 
 
 @pytest.mark.asyncio

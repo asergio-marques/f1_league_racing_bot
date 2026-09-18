@@ -70,7 +70,7 @@ async def test_enable_reaches_the_modules_own_handler(module):
 
     await undecorate(ModuleCog.enable)(cog, interaction, _choice(module))
 
-    getattr(cog, f"_enable_{module}").assert_awaited_once_with(interaction, SERVER_ID)
+    getattr(cog, f"_enable_{module}").assert_awaited_once_with(interaction)
     for other in HANDLED - {module}:
         getattr(cog, f"_enable_{other}").assert_not_awaited()
 

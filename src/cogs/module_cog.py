@@ -1,6 +1,6 @@
 """ModuleCog — /module enable and /module disable commands.
 
-Manages the weather and signup modules for each server.
+Manages the league's modules.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from discord.ext import commands
 from db.database import get_connection
 from models.driver_profile import DriverState
 from utils.channel_guard import league_admin_only
+from utils.league_server import LeagueView, league_guild
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ _MODULE_CHOICES = [
 # ---------------------------------------------------------------------------
 
 
-async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_action: str) -> None:
+async def execute_forced_close(bot: commands.Bot, *, audit_action: str) -> None:
     """Force-close the signup window.
 
     1. Transition in-progress drivers to NOT_SIGNED_UP.
@@ -40,7 +41,7 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
     4. Set window closed.
     5. Emit audit entry.
     """
-    cfg = await bot.signup_module_service.get_config(server_id)
+    cfg = await bot.signup_module_service.get_config()
     if cfg is None:
         return
 
@@ -53,15 +54,15 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
         placeholders = ",".join("?" for _ in in_progress_states)
         cursor = await db.execute(
             f"SELECT discord_user_id FROM driver_profiles "
-            f"WHERE server_id = ? AND current_state IN ({placeholders})",
-            (server_id, *[s.value for s in in_progress_states]),
+            f"WHERE current_state IN ({placeholders})",
+            (*[s.value for s in in_progress_states],),
         )
         rows = await cursor.fetchall()
 
     for row in rows:
         try:
             await bot.driver_service.transition(
-                server_id, row["discord_user_id"], DriverState.NOT_SIGNED_UP
+                row["discord_user_id"], DriverState.NOT_SIGNED_UP
             )
         except Exception:
             log.exception("forced_close: failed to transition driver %s", row["discord_user_id"])
@@ -70,22 +71,24 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
     svc = bot.scheduler_service  # type: ignore[attr-defined]
     for row in rows:
         uid = row["discord_user_id"]
-        for prefix in ("wizard_inactivity", "wizard_channel_delete"):
+        from services.wizard_service import channel_delete_job_id, inactivity_job_id
+
+        for job_id in (inactivity_job_id(uid), channel_delete_job_id(uid)):
             try:
-                svc._scheduler.remove_job(f"{prefix}_{server_id}_{uid}")
+                svc._scheduler.remove_job(job_id)
             except Exception:
                 pass  # Job already fired or never existed
 
     # Post cancellation notice in each wizard channel and schedule deletion.
     # This mirrors the withdraw() path so drivers see a message and the channel
     # is cleaned up after a 24-hour hold.
-    _guild = bot.get_guild(server_id)
+    _guild = await league_guild(bot)
     if _guild is not None:
         _wizard_svc = bot.wizard_service  # type: ignore[attr-defined]
         for row in rows:
             try:
                 await _wizard_svc._trigger_channel_hold(
-                    server_id, row["discord_user_id"], _guild,
+                    row["discord_user_id"], _guild,
                     "🔒 Signups have closed. This channel will be automatically deleted in 24 hours.",
                 )
             except Exception:
@@ -93,7 +96,7 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
 
     # 2. Delete button message
     if cfg.signup_button_message_id:
-        guild = bot.get_guild(server_id)
+        guild = await league_guild(bot)
         if guild:
             channel = guild.get_channel(cfg.signup_channel_id)
             if channel:
@@ -107,7 +110,7 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
 
     # 3. Post closed message; capture ID so it can be deleted when re-opening
     closed_msg_id: int | None = None
-    guild = bot.get_guild(server_id)
+    guild = await league_guild(bot)
     if guild:
         channel = guild.get_channel(cfg.signup_channel_id)
         if channel:
@@ -118,7 +121,7 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
                 log.exception("forced_close: could not post closed message")
 
     # 4. Set window closed (persists closed_msg_id)
-    await bot.signup_module_service.set_window_closed(server_id, closed_msg_id=closed_msg_id)
+    await bot.signup_module_service.set_window_closed(closed_msg_id=closed_msg_id)
 
     # 4b. Move the season on (issue #220). Every close reaches here — the command, the
     #     close timer and the restart sweep — so every close moves the season alike. A
@@ -126,18 +129,18 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
     from services.season_lifecycle_service import advance_on_window_close
 
     try:
-        await advance_on_window_close(bot.db_path, server_id)
+        await advance_on_window_close(bot.db_path)
     except Exception:  # noqa: BLE001
-        log.exception("forced_close: could not move the season on for server %s", server_id)
+        log.exception("forced_close: could not move the season on")
 
     # 5. Audit entry
     now = datetime.now(timezone.utc).isoformat()
     async with get_connection(bot.db_path) as db:
         await db.execute(
             "INSERT INTO audit_entries "
-            "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-            "VALUES (?, ?, ?, NULL, ?, ?, ?, ?)",
-            (server_id, 0, "system", audit_action, "open", "closed", now),
+            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+            "VALUES (?, ?, NULL, ?, ?, ?, ?)",
+            (0, "system", audit_action, "open", "closed", now),
         )
         await db.commit()
 
@@ -189,7 +192,7 @@ def _results_disable_warning(*, season_active: bool, attendance: bool) -> str:
     return "\n\n".join(lines)
 
 
-class _ConfirmDisableResultsView(discord.ui.View):
+class _ConfirmDisableResultsView(LeagueView):
     """Confirm disabling results & standings before anything is written.
 
     Shown wherever the command costs the league something it cannot get back: a running
@@ -202,14 +205,12 @@ class _ConfirmDisableResultsView(discord.ui.View):
         self,
         cog: "ModuleCog",
         actor_id: int,
-        server_id: int,
         *,
         cascade_attendance: bool = True,
     ) -> None:
         super().__init__(timeout=120)
         self._cog = cog
         self._actor_id = actor_id
-        self._server_id = server_id
         self._cascade_attendance = cascade_attendance
         self.confirm.label = (
             "✅ Disable both" if cascade_attendance else "✅ Disable and delete the results"
@@ -225,7 +226,7 @@ class _ConfirmDisableResultsView(discord.ui.View):
         self.stop()
         await interaction.response.defer(ephemeral=True)
         await self._cog._apply_results_disable(
-            interaction, self._server_id, cascade_attendance=self._cascade_attendance
+            interaction, cascade_attendance=self._cascade_attendance
         )
 
     @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
@@ -275,21 +276,20 @@ class ModuleCog(commands.Cog):
         interaction: discord.Interaction,
         module_name: app_commands.Choice[str],
     ) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
-        if await self._refuse_module_change(interaction, server_id, module_name.value, "enable"):
+        if await self._refuse_module_change(interaction, module_name.value, "enable"):
             return
 
         if module_name.value == "weather":
-            await self._enable_weather(interaction, server_id)
+            await self._enable_weather(interaction)
         elif module_name.value == "results":
-            await self._enable_results(interaction, server_id)
+            await self._enable_results(interaction)
         elif module_name.value == "attendance":
-            await self._enable_attendance(interaction, server_id)
+            await self._enable_attendance(interaction)
         elif module_name.value == "images":
-            await self._enable_images(interaction, server_id)
+            await self._enable_images(interaction)
         else:
-            await self._enable_signup(interaction, server_id)
+            await self._enable_signup(interaction)
 
     # ── /module disable ────────────────────────────────────────────────
 
@@ -305,26 +305,23 @@ class ModuleCog(commands.Cog):
         interaction: discord.Interaction,
         module_name: app_commands.Choice[str],
     ) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-
-        if await self._refuse_module_change(interaction, server_id, module_name.value, "disable"):
+        if await self._refuse_module_change(interaction, module_name.value, "disable"):
             return
 
         if module_name.value == "weather":
-            await self._disable_weather(interaction, server_id)
+            await self._disable_weather(interaction)
         elif module_name.value == "results":
-            await self._disable_results(interaction, server_id)
+            await self._disable_results(interaction)
         elif module_name.value == "attendance":
             await self._disable_attendance(interaction)
         elif module_name.value == "images":
-            await self._disable_images(interaction, server_id)
+            await self._disable_images(interaction)
         else:
-            await self._disable_signup(interaction, server_id)
+            await self._disable_signup(interaction)
 
     async def _refuse_module_change(
         self,
         interaction: discord.Interaction,
-        server_id: int,
         module: str,
         action: str,
     ) -> bool:
@@ -346,7 +343,7 @@ class ModuleCog(commands.Cog):
         )
 
         if module == "signup":
-            season_number = await signup_configuration_fixed(self.bot.db_path, server_id)
+            season_number = await signup_configuration_fixed(self.bot.db_path)
             if season_number is not None:
                 await interaction.response.send_message(
                     f"❌ The signup module is fixed for Season {season_number} now that its "
@@ -356,7 +353,7 @@ class ModuleCog(commands.Cog):
                 )
                 return True
         elif action == "enable":
-            if await self.bot.season_service.get_confirmed_season(server_id) is not None:
+            if await self.bot.season_service.get_confirmed_season() is not None:
                 await interaction.response.send_message(
                     "❌ A module cannot be enabled once the season's placements have been "
                     "confirmed. Enable it before then, or once the season has ended.",
@@ -365,7 +362,7 @@ class ModuleCog(commands.Cog):
                 return True
 
         if action == "disable" and await modules_frozen_for_completion(
-            self.bot.db_path, server_id
+            self.bot.db_path
         ):
             await interaction.response.send_message(
                 "❌ No module can be disabled while the season is pending completion. "
@@ -378,10 +375,10 @@ class ModuleCog(commands.Cog):
     # ── Weather enable (T011) ──────────────────────────────────────────
 
     async def _enable_weather(
-        self, interaction: discord.Interaction, server_id: int
+        self, interaction: discord.Interaction
     ) -> None:
         # 1. Guard already-enabled
-        if await self.bot.module_service.is_weather_enabled(server_id):
+        if await self.bot.module_service.is_weather_enabled():
             await interaction.response.send_message(
                 "⚠️ Weather module is already enabled.", ephemeral=True
             )
@@ -398,14 +395,13 @@ class ModuleCog(commands.Cog):
         try:
             async with get_connection(self.bot.db_path) as db:
                 await db.execute(
-                    "UPDATE server_configs SET weather_module_enabled = 1 WHERE server_id = ?",
-                    (server_id,),
+                    "UPDATE server_configs SET weather_module_enabled = 1",
                 )
                 await db.execute(
                     "INSERT INTO audit_entries "
-                    "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                    "VALUES (?, ?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
-                    (server_id, interaction.user.id, str(interaction.user),
+                    "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                    "VALUES (?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
+                    (interaction.user.id, str(interaction.user),
                      json.dumps({"module": "weather"}), now),
                 )
                 await db.commit()
@@ -418,7 +414,6 @@ class ModuleCog(commands.Cog):
 
         # 5. Post log channel confirmation
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable weather | Success",
         )
         await interaction.followup.send("✅ Weather module enabled.", ephemeral=True)
@@ -426,9 +421,9 @@ class ModuleCog(commands.Cog):
     # ── Weather disable (T012) ─────────────────────────────────────────
 
     async def _disable_weather(
-        self, interaction: discord.Interaction, server_id: int
+        self, interaction: discord.Interaction
     ) -> None:
-        if not await self.bot.module_service.is_weather_enabled(server_id):
+        if not await self.bot.module_service.is_weather_enabled():
             await interaction.response.send_message(
                 "⚠️ Weather module is already disabled.", ephemeral=True
             )
@@ -436,22 +431,21 @@ class ModuleCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        await self.bot.scheduler_service.cancel_all_weather_for_server(server_id)
-        await self.bot.module_service.set_weather_enabled(server_id, False)
+        await self.bot.scheduler_service.cancel_all_weather()
+        await self.bot.module_service.set_weather_enabled(False)
 
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'MODULE_DISABLE', ?, '', ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'MODULE_DISABLE', ?, '', ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"module": "weather"}), now),
             )
             await db.commit()
 
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable weather | Success",
         )
         await interaction.followup.send(
@@ -462,17 +456,17 @@ class ModuleCog(commands.Cog):
     # ── Results & Standings enable ─────────────────────────────────────
 
     async def _enable_results(
-        self, interaction: discord.Interaction, server_id: int
+        self, interaction: discord.Interaction
     ) -> None:
         # 1. Guard already-enabled
-        if await self.bot.module_service.is_results_enabled(server_id):
+        if await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "⚠️ Results & Standings module is already enabled.", ephemeral=True
             )
             return
 
         # 2. Block if ACTIVE season exists (FR-003)
-        active_season = await self.bot.season_service.get_confirmed_season(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season()
         if active_season is not None:
             await interaction.response.send_message(
                 "❌ Results & Standings module cannot be enabled once a season's placements are confirmed.",
@@ -486,29 +480,25 @@ class ModuleCog(commands.Cog):
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
-                "INSERT OR REPLACE INTO results_module_config (server_id, module_enabled) VALUES (?, 1)",
-                (server_id,),
+                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
             )
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"module": "results"}), now),
             )
             await db.commit()
 
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable results | Success",
         )
         await interaction.followup.send("✅ Results & Standings module enabled.", ephemeral=True)
 
     # ── Results & Standings disable ────────────────────────────────────
 
-    async def _disable_results(
-        self, interaction: discord.Interaction, server_id: int
-    ) -> None:
+    async def _disable_results(self, interaction: discord.Interaction) -> None:
         """Disable results & standings, warning first wherever it costs the league something.
 
         The cascade used to happen unannounced: the reply named results alone and the league
@@ -522,15 +512,15 @@ class ModuleCog(commands.Cog):
         before it happened. So the confirmation is now owed to a running season in its own
         right, whatever attendance is doing.
         """
-        if not await self.bot.module_service.is_results_enabled(server_id):
+        if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "⚠️ Results & Standings module is already disabled.", ephemeral=True
             )
             return
 
         # Warn before anything irreversible, and write nothing until the league confirms it.
-        active_season = await self.bot.season_service.get_confirmed_season(server_id)
-        attendance_on = await self.bot.module_service.is_attendance_enabled(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season()
+        attendance_on = await self.bot.module_service.is_attendance_enabled()
 
         if active_season is not None or attendance_on:
             await interaction.response.send_message(
@@ -540,7 +530,6 @@ class ModuleCog(commands.Cog):
                 view=_ConfirmDisableResultsView(
                     self,
                     interaction.user.id,
-                    server_id,
                     cascade_attendance=attendance_on,
                 ),
                 ephemeral=True,
@@ -548,12 +537,11 @@ class ModuleCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self._apply_results_disable(interaction, server_id, cascade_attendance=False)
+        await self._apply_results_disable(interaction, cascade_attendance=False)
 
     async def _apply_results_disable(
         self,
         interaction: discord.Interaction,
-        server_id: int,
         *,
         cascade_attendance: bool,
     ) -> None:
@@ -571,41 +559,39 @@ class ModuleCog(commands.Cog):
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
-                "INSERT OR REPLACE INTO results_module_config (server_id, module_enabled) VALUES (?, 0)",
-                (server_id,),
+                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 0)"
             )
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'MODULE_DISABLE', ?, '', ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'MODULE_DISABLE', ?, '', ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"module": "results"}), now),
             )
             await db.commit()
 
         from services.results_purge_service import purge_season_results
 
-        purged = await purge_season_results(self.bot.db_path, server_id, self.bot)
+        purged = await purge_season_results(self.bot.db_path, self.bot)
         closed = await self.bot.season_service.end_rounds_awaiting_results(
-            server_id, interaction.user.id, str(interaction.user)
+            interaction.user.id, str(interaction.user)
         )
 
         # The division finishing may have been the season's last: a season with a window open or
         # placements to confirm is wound down and moves to Pending completion at once (#220).
         try:
-            await self.bot.season_service.wind_down_ongoing(self.bot, server_id)
+            await self.bot.season_service.wind_down_ongoing(self.bot)
         except Exception:  # noqa: BLE001 — never fail the disabling on the season's next stage
-            log.exception("could not wind the season of server %s down", server_id)
+            log.exception("could not wind the season down")
 
         if purged["rounds"]:
             async with get_connection(self.bot.db_path) as db:
                 await db.execute(
                     "INSERT INTO audit_entries "
-                    "(server_id, actor_id, actor_name, division_id, change_type, old_value, "
+                    "(actor_id, actor_name, division_id, change_type, old_value, "
                     "new_value, timestamp) "
-                    "VALUES (?, ?, ?, NULL, 'RESULTS_SEASON_PURGED', '', ?, ?)",
+                    "VALUES (?, ?, NULL, 'RESULTS_SEASON_PURGED', '', ?, ?)",
                     (
-                        server_id,
                         interaction.user.id,
                         str(interaction.user),
                         json.dumps({**purged, "rounds_closed": len(closed)}),
@@ -615,7 +601,6 @@ class ModuleCog(commands.Cog):
                 await db.commit()
 
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results | Success"
             + (
                 f"\n  season results deleted: {purged['sessions']} session results, "
@@ -640,7 +625,7 @@ class ModuleCog(commands.Cog):
         # Cascade: disable attendance if it is currently enabled
         cascaded = (
             cascade_attendance
-            and await self.bot.module_service.is_attendance_enabled(server_id)
+            and await self.bot.module_service.is_attendance_enabled()
         )
         if cascaded:
             await self._disable_attendance(interaction, cascade=True)
@@ -659,10 +644,10 @@ class ModuleCog(commands.Cog):
     # ── Attendance enable ──────────────────────────────────────────────
 
     async def _enable_attendance(
-        self, interaction: discord.Interaction, server_id: int
+        self, interaction: discord.Interaction
     ) -> None:
         # 1. Guard: R&S must be enabled first
-        if not await self.bot.module_service.is_results_enabled(server_id):
+        if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "❌ The Attendance module requires the Results & Standings module to be enabled first.",
                 ephemeral=True,
@@ -670,7 +655,7 @@ class ModuleCog(commands.Cog):
             return
 
         # 2. Guard: no ACTIVE season
-        active_season = await self.bot.season_service.get_confirmed_season(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season()
         if active_season is not None:
             await interaction.response.send_message(
                 "❌ Attendance module cannot be enabled once a season's placements are confirmed.",
@@ -679,7 +664,7 @@ class ModuleCog(commands.Cog):
             return
 
         # 3. Guard: already enabled
-        if await self.bot.module_service.is_attendance_enabled(server_id):
+        if await self.bot.module_service.is_attendance_enabled():
             await interaction.response.send_message(
                 "⚠️ Attendance module is already enabled.", ephemeral=True
             )
@@ -693,17 +678,16 @@ class ModuleCog(commands.Cog):
             async with get_connection(self.bot.db_path) as db:
                 await db.execute(
                     "INSERT OR REPLACE INTO attendance_config "
-                    "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
+                    "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
                     "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
                     "autoreserve_threshold, autosack_threshold) "
-                    "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
-                    (server_id,),
+                    "VALUES (1, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)"
                 )
                 await db.execute(
                     "INSERT INTO audit_entries "
-                    "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                    "VALUES (?, ?, ?, NULL, 'ATTENDANCE_MODULE_ENABLED', '', '', ?)",
-                    (server_id, interaction.user.id, str(interaction.user), now),
+                    "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                    "VALUES (?, ?, NULL, 'ATTENDANCE_MODULE_ENABLED', '', '', ?)",
+                    (interaction.user.id, str(interaction.user), now),
                 )
                 await db.commit()
         except Exception as exc:
@@ -714,7 +698,6 @@ class ModuleCog(commands.Cog):
             return
 
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable attendance | Success",
         )
         await interaction.followup.send("✅ Attendance module enabled.", ephemeral=True)
@@ -722,14 +705,14 @@ class ModuleCog(commands.Cog):
     # ── Images enable (T015) ───────────────────────────────────────────
 
     async def _enable_images(
-        self, interaction: discord.Interaction, server_id: int
+        self, interaction: discord.Interaction
     ) -> None:
         from services.image_render_service import (
             converter_absent_message,
             converter_available,
         )
 
-        if await self.bot.module_service.is_images_enabled(server_id):
+        if await self.bot.module_service.is_images_enabled():
             await interaction.response.send_message(
                 "⚠️ Image module is already enabled.", ephemeral=True
             )
@@ -741,18 +724,18 @@ class ModuleCog(commands.Cog):
         try:
             # create_with_defaults is idempotent: an existing configuration is left
             # exactly as it was, which is what makes re-enabling lossless (FR-004a).
-            await self.bot.image_config_service.create_with_defaults(server_id)
-            await self.bot.module_service.set_images_enabled(server_id, True)
+            await self.bot.image_config_service.create_with_defaults()
+            await self.bot.module_service.set_images_enabled(True)
             async with get_connection(self.bot.db_path) as db:
                 await db.execute(
                     "INSERT INTO audit_entries "
-                    "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                    "VALUES (?, ?, ?, NULL, 'IMAGE_MODULE_ENABLED', '', '', ?)",
-                    (server_id, interaction.user.id, str(interaction.user), now),
+                    "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                    "VALUES (?, ?, NULL, 'IMAGE_MODULE_ENABLED', '', '', ?)",
+                    (interaction.user.id, str(interaction.user), now),
                 )
                 await db.commit()
         except Exception as exc:
-            await self.bot.module_service.set_images_enabled(server_id, False)
+            await self.bot.module_service.set_images_enabled(False)
             await interaction.followup.send(
                 f"❌ Image module enable failed: {exc}. Module remains disabled.",
                 ephemeral=True,
@@ -760,7 +743,6 @@ class ModuleCog(commands.Cog):
             return
 
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable images | Success",
         )
 
@@ -775,7 +757,7 @@ class ModuleCog(commands.Cog):
     # ── Images disable (T016) ──────────────────────────────────────────
 
     async def _disable_images(
-        self, interaction: discord.Interaction, server_id: int
+        self, interaction: discord.Interaction
     ) -> None:
         """Clear the enabled flag and nothing else.
 
@@ -785,7 +767,7 @@ class ModuleCog(commands.Cog):
         none can become a stale binding while the module is off (FR-004a). No
         ``--preserve-config`` flag is offered because nothing is cleared (FR-004b).
         """
-        if not await self.bot.module_service.is_images_enabled(server_id):
+        if not await self.bot.module_service.is_images_enabled():
             await interaction.response.send_message(
                 "⚠️ Image module is already disabled.", ephemeral=True
             )
@@ -794,18 +776,17 @@ class ModuleCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         now = datetime.now(timezone.utc).isoformat()
-        await self.bot.module_service.set_images_enabled(server_id, False)
+        await self.bot.module_service.set_images_enabled(False)
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'IMAGE_MODULE_DISABLED', '', '', ?)",
-                (server_id, interaction.user.id, str(interaction.user), now),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'IMAGE_MODULE_DISABLED', '', '', ?)",
+                (interaction.user.id, str(interaction.user), now),
             )
             await db.commit()
 
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable images | Success",
         )
         await interaction.followup.send(
@@ -819,10 +800,9 @@ class ModuleCog(commands.Cog):
     async def _disable_attendance(
         self, interaction: discord.Interaction, *, cascade: bool = False
     ) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         if not cascade:
-            if not await self.bot.module_service.is_attendance_enabled(server_id):
+            if not await self.bot.module_service.is_attendance_enabled():
                 await interaction.response.send_message(
                     "⚠️ Attendance module is already disabled.", ephemeral=True
                 )
@@ -834,24 +814,17 @@ class ModuleCog(commands.Cog):
         )
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET module_enabled = 0 WHERE server_id = ?",
-                (server_id,),
-            )
-            await db.execute(
-                "DELETE FROM attendance_division_config WHERE server_id = ?",
-                (server_id,),
-            )
+            await db.execute("UPDATE attendance_config SET module_enabled = 0")
+            await db.execute("DELETE FROM attendance_division_config")
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, ?, '', '', ?)",
-                (server_id, interaction.user.id, str(interaction.user), change_type, now),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, ?, '', '', ?)",
+                (interaction.user.id, str(interaction.user), change_type, now),
             )
             await db.commit()
 
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable attendance | Success",
         )
         if not cascade:
@@ -864,10 +837,9 @@ class ModuleCog(commands.Cog):
     async def _enable_signup(
         self,
         interaction: discord.Interaction,
-        server_id: int,
     ) -> None:
         # Guard already-enabled
-        if await self.bot.module_service.is_signup_enabled(server_id):
+        if await self.bot.module_service.is_signup_enabled():
             await interaction.response.send_message(
                 "⚠️ Signup module is already enabled.", ephemeral=True
             )
@@ -878,7 +850,6 @@ class ModuleCog(commands.Cog):
         # Upsert a bare config row — channel/role fields all NULL
         from models.signup_module import SignupModuleConfig
         new_cfg = SignupModuleConfig(
-            server_id=server_id,
             signup_channel_id=None,
             base_role_id=None,
             signed_up_role_id=None,
@@ -889,20 +860,19 @@ class ModuleCog(commands.Cog):
         await self.bot.signup_module_service.save_config(new_cfg)
 
         # Set enabled + audit
-        await self.bot.module_service.set_signup_enabled(server_id, True)
+        await self.bot.module_service.set_signup_enabled(True)
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"module": "signup"}), now),
             )
             await db.commit()
 
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable signup | Success",
         )
         await interaction.followup.send(
@@ -917,9 +887,9 @@ class ModuleCog(commands.Cog):
     # ── Signup disable (T018) ──────────────────────────────────────────
 
     async def _disable_signup(
-        self, interaction: discord.Interaction, server_id: int
+        self, interaction: discord.Interaction
     ) -> None:
-        if not await self.bot.module_service.is_signup_enabled(server_id):
+        if not await self.bot.module_service.is_signup_enabled():
             await interaction.response.send_message(
                 "⚠️ Signup module is already disabled.", ephemeral=True
             )
@@ -927,18 +897,18 @@ class ModuleCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        signup_cfg = await self.bot.signup_module_service.get_config(server_id)
+        signup_cfg = await self.bot.signup_module_service.get_config()
 
         # Force-close if signups are open
         if signup_cfg and signup_cfg.signups_open:
-            await execute_forced_close(server_id, self.bot, audit_action="SIGNUP_FORCE_CLOSE")
+            await execute_forced_close(self.bot, audit_action="SIGNUP_FORCE_CLOSE")
 
         # Cancel any active signup close timer
-        self.bot.scheduler_service.cancel_signup_close_timer(server_id)
+        self.bot.scheduler_service.cancel_signup_close_timer()
 
         # Remove bot-applied permission overwrites (only those set by /signup channel)
         if signup_cfg and signup_cfg.signup_channel_id is not None:
-            guild = self.bot.get_guild(server_id)
+            guild = await league_guild(self.bot)
             if guild:
                 channel = guild.get_channel(signup_cfg.signup_channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
@@ -947,7 +917,7 @@ class ModuleCog(commands.Cog):
                         base_role = guild.get_role(signup_cfg.base_role_id)
                         if base_role:
                             targets_to_revert.append(base_role)
-                    server_cfg = await self.bot.config_service.get_server_config(server_id)
+                    server_cfg = await self.bot.config_service.get_server_config()
                     if server_cfg:
                         interaction_role = guild.get_role(server_cfg.interaction_role_id)
                         if interaction_role:
@@ -962,36 +932,37 @@ class ModuleCog(commands.Cog):
 
         # Cancel all wizard inactivity and channel-delete APScheduler jobs for this server
         if signup_cfg:
-            active_wizards = await self.bot.signup_module_service.get_all_active_wizards(
-                server_id
-            )
+            active_wizards = await self.bot.signup_module_service.get_all_active_wizards()
             scheduler = self.bot.scheduler_service._scheduler
             for wiz in active_wizards:
-                for prefix in ("wizard_inactivity", "wizard_channel_delete"):
-                    job_id = f"{prefix}_{server_id}_{wiz.discord_user_id}"
+                from services.wizard_service import channel_delete_job_id, inactivity_job_id
+
+                for job_id in (
+                    inactivity_job_id(wiz.discord_user_id),
+                    channel_delete_job_id(wiz.discord_user_id),
+                ):
                     try:
                         scheduler.remove_job(job_id)
                     except Exception:
                         pass
 
         # Delete config (cascades to settings + slots)
-        await self.bot.signup_module_service.delete_config(server_id)
+        await self.bot.signup_module_service.delete_config()
 
         # Set disabled + audit
-        await self.bot.module_service.set_signup_enabled(server_id, False)
+        await self.bot.module_service.set_signup_enabled(False)
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'MODULE_DISABLE', ?, '', ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'MODULE_DISABLE', ?, '', ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"module": "signup"}), now),
             )
             await db.commit()
 
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable signup | Success",
         )
         await interaction.followup.send(

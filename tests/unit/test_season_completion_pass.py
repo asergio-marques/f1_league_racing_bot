@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.season_end_service import execute_season_end  # noqa: E402
+from services.config_service import ConfigService  # noqa: E402
 from services.season_service import SeasonService  # noqa: E402
 from services.signup_module_service import SignupModuleService  # noqa: E402
 from services.test_mode_service import count_live_real_drivers  # noqa: E402
@@ -26,7 +27,7 @@ SERVER_ID = 22150
 
 
 class _Scheduler:
-    def cancel_season_end(self, server_id):
+    def cancel_season_end(self):
         pass
 
 
@@ -34,7 +35,7 @@ class _Router:
     def __init__(self):
         self.logged: list[str] = []
 
-    async def post_log(self, server_id, content):
+    async def post_log(self, content):
         self.logged.append(content)
 
 
@@ -42,6 +43,7 @@ def _bot(db_path):
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),
+        config_service=ConfigService(db_path),
         signup_module_service=SignupModuleService(db_path),
         scheduler_service=_Scheduler(),
         output_router=_Router(),
@@ -60,9 +62,8 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (1, ?, '2026-01-01', 'ACTIVE', 4, 'PENDING_COMPLETION')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 4, 'PENDING_COMPLETION')"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, mention_role_id, tier, status) "
@@ -75,9 +76,9 @@ async def db_path(tmp_path):
         for pid, uid, former, test in ((1, "1001", 1, 0), (2, "1002", 0, 0),
                                         (3, "9000000000000000003", 0, 1)):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state, "
-                "former_driver, is_test_driver) VALUES (?, ?, ?, 'ASSIGNED', ?, ?)",
-                (pid, SERVER_ID, uid, former, test),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+                "former_driver, is_test_driver) VALUES (?, ?, 'ASSIGNED', ?, ?)",
+                (pid, uid, former, test),
             )
             cursor = await db.execute(
                 "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
@@ -97,7 +98,7 @@ async def db_path(tmp_path):
 async def _complete(db_path):
     bot = _bot(db_path)
     with patch("services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()):
-        await execute_season_end(SERVER_ID, 1, bot)
+        await execute_season_end(1, bot)
     return bot
 
 
@@ -116,7 +117,7 @@ async def test_completion_leaves_no_live_driver_to_hold_test_mode_shut(db_path):
     """The defect behind `/test-mode toggle` refusing between seasons."""
     await _complete(db_path)
 
-    assert await count_live_real_drivers(SERVER_ID, db_path) == 0
+    assert await count_live_real_drivers(db_path) == 0
 
 
 async def test_completion_switches_test_mode_off(db_path):
@@ -146,8 +147,8 @@ async def test_the_season_is_archived_with_history_for_its_former_driver(db_path
 async def test_an_open_signup_window_is_closed(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signups_open) VALUES (?, 1)",
+            (1,),
         )
         await db.commit()
 
@@ -173,8 +174,8 @@ async def test_test_mode_that_cannot_be_switched_off_does_not_stop_completion(db
 async def test_a_window_that_cannot_be_closed_does_not_keep_test_mode_on(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signups_open) VALUES (?, 1)",
+            (1,),
         )
         await db.commit()
 
@@ -194,8 +195,8 @@ async def test_the_window_is_closed_before_the_driver_pass(db_path):
     """Closed first, so that nobody begins a signup the driver pass has already gone by."""
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signups_open) VALUES (?, 1)",
+            (1,),
         )
         await db.commit()
     order: list[str] = []

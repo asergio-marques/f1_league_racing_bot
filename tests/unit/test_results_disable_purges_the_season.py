@@ -35,7 +35,6 @@ from services.season_service import SeasonService  # noqa: E402
 from services.results_purge_service import purge_season_results  # noqa: E402
 
 SERVER_ID = 5150
-OTHER_SERVER_ID = 5151
 ACTOR_ID = 4242
 ACTOR_NAME = "Admin"
 BOT_USER_ID = 77
@@ -85,6 +84,7 @@ class _FakeChannel:
 
 def _make_bot(db_path: str, *, guild: bool = True) -> MagicMock:
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
@@ -148,18 +148,18 @@ async def _seed(
             (server_id,),
         )
         await db.execute(
-            "INSERT OR REPLACE INTO results_module_config (server_id, module_enabled) "
+            "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
             "VALUES (?, 1)",
-            (server_id,),
+            (1,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, module_enabled) VALUES (?, 0)",
-            (server_id,),
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (?, 0)",
+            (1,),
         )
         cur = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', ?, 1)",
-            (server_id, season_status),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', ?, 1)",
+            (season_status,),
         )
         season_id = cur.lastrowid
         cur = await db.execute(
@@ -175,8 +175,7 @@ async def _seed(
         )
         # Configuration that must survive the purge.
         await db.execute(
-            "INSERT INTO points_config_store (server_id, config_name) VALUES (?, '100%')",
-            (server_id,),
+            "INSERT INTO points_config_store (config_name) VALUES ('100%')"
         )
         await db.execute(
             "INSERT INTO season_points_entries "
@@ -282,10 +281,10 @@ async def _count(db_path: str, table: str) -> int:
         return (await cur.fetchone())[0]
 
 
-async def _disable(cog: ModuleCog, server_id: int = SERVER_ID) -> MagicMock:
+async def _disable(cog: ModuleCog) -> MagicMock:
     """Run the disable through the confirmation, as a league manager would."""
     interaction = _make_interaction()
-    await cog._apply_results_disable(interaction, server_id, cascade_attendance=False)
+    await cog._apply_results_disable(interaction, cascade_attendance=False)
     return interaction
 
 
@@ -310,7 +309,7 @@ async def test_each_state_only_results_could_move_is_closed(tmp_path) -> None:
 
         assert await _round_status(db_path, round_id) == "FINAL", status
         assert await _division_status(db_path, division_id) == "FINISHED", status
-        assert await SeasonService(db_path).all_divisions_finished(SERVER_ID) is True, status
+        assert await SeasonService(db_path).all_divisions_finished() is True, status
 
 
 async def test_a_round_still_waiting_on_the_clock_is_left_alone(tmp_path) -> None:
@@ -346,40 +345,6 @@ async def test_a_cancelled_division_s_rounds_are_left_alone(tmp_path) -> None:
     await _disable(_make_cog(db_path))
 
     assert await _round_status(db_path, round_id) == "AWAITING_RESULTS"
-
-
-async def test_another_server_s_season_is_untouched(tmp_path) -> None:
-    db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (?, 100, 200, 300)",
-            (OTHER_SERVER_ID,),
-        )
-        cur = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
-            (OTHER_SERVER_ID,),
-        )
-        cur = await db.execute(
-            "INSERT INTO divisions (season_id, name, mention_role_id, tier, status) "
-            "VALUES (?, 'Theirs', 556, 1, 'ACTIVE')",
-            (cur.lastrowid,),
-        )
-        cur = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, "
-            "format, status) VALUES (?, 1, 'Monza', '2026-02-01T12:00:00', 'NORMAL', "
-            "'AWAITING_RESULTS')",
-            (cur.lastrowid,),
-        )
-        their_round = cur.lastrowid
-        await db.commit()
-
-    await _disable(_make_cog(db_path))
-
-    assert await _round_status(db_path, round_id) == "FINAL"
-    assert await _round_status(db_path, their_round) == "AWAITING_RESULTS"
 
 
 async def test_a_season_not_yet_running_has_nothing_closed_or_deleted(tmp_path) -> None:
@@ -462,7 +427,7 @@ async def test_a_verdict_does_not_block_the_delete(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_APPEAL_VERDICTS",))
     assert await _count(db_path, "penalty_records") == 1
 
-    report = await purge_season_results(db_path, SERVER_ID, _make_bot(db_path))
+    report = await purge_season_results(db_path, _make_bot(db_path))
 
     assert report["sessions"] == 1
     assert await _count(db_path, "penalty_records") == 0
@@ -487,7 +452,7 @@ async def test_an_open_submission_channel_is_closed(tmp_path) -> None:
     submission_channel = _FakeChannel(8000)
     cog.bot.channels[8000] = submission_channel
 
-    report = await purge_season_results(db_path, SERVER_ID, cog.bot)
+    report = await purge_season_results(db_path, cog.bot)
 
     assert report["submission_channels"] == 1
     assert submission_channel.deleted is True
@@ -545,7 +510,7 @@ async def test_a_running_season_is_confirmed_even_with_attendance_off(tmp_path) 
     cog = _make_cog(db_path)
     interaction = _make_interaction()
 
-    await cog._disable_results(interaction, SERVER_ID)
+    await cog._disable_results(interaction)
 
     warning = interaction.response.send_message.await_args.args[0]
     assert "destroys this season's results" in warning
@@ -562,7 +527,7 @@ async def test_the_warning_says_verdicts_cannot_be_taken_back(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     interaction = _make_interaction()
 
-    await _make_cog(db_path)._disable_results(interaction, SERVER_ID)
+    await _make_cog(db_path)._disable_results(interaction)
 
     assert "verdicts channel" in interaction.response.send_message.await_args.args[0]
 
@@ -571,7 +536,7 @@ async def test_confirming_erases_the_season(tmp_path) -> None:
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     cog = _make_cog(db_path)
     view = _ConfirmDisableResultsView(
-        cog, ACTOR_ID, SERVER_ID, cascade_attendance=False
+        cog, ACTOR_ID, cascade_attendance=False
     )
 
     await view.confirm.callback(_make_interaction())
@@ -584,7 +549,7 @@ async def test_cancelling_erases_nothing(tmp_path) -> None:
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     cog = _make_cog(db_path)
     view = _ConfirmDisableResultsView(
-        cog, ACTOR_ID, SERVER_ID, cascade_attendance=False
+        cog, ACTOR_ID, cascade_attendance=False
     )
     interaction = _make_interaction()
 

@@ -114,7 +114,6 @@ class PreviewContext:
     all — flow through all twelve builders unchanged (046).
     """
 
-    server_id: int
     season_number: int
     division_id: int
     division_name: str
@@ -198,7 +197,6 @@ def _fabricated_driver(index: int, team_name: str, seat_number: int, *, collecte
 
 async def resolve_context(
     bot,
-    server_id: int,
     division_name: str | None = None,
     *,
     guild=None,
@@ -237,7 +235,7 @@ async def resolve_context(
     # (FR-001). A season pending approval holds its divisions, rounds, teams, seats and
     # driver assignments in the same tables and the same shape as an approved one, so
     # widening the lookup is the whole of what drawing it takes.
-    season = await bot.season_service.get_previewable_season(server_id)
+    season = await bot.season_service.get_previewable_season()
 
     if season is None:
         # Refused rather than invented (decided 2026-09-06). A preview used to fabricate a
@@ -284,7 +282,6 @@ async def resolve_context(
         )
 
     context = PreviewContext(
-        server_id=server_id,
         season_number=season.season_number,
         division_id=division.id,
         division_name=division.name,
@@ -344,7 +341,7 @@ async def resolve_context(
             )
 
     context.asset_directories, context.directory_faults = await resolve_asset_directories(
-        bot, server_id
+        bot
     )
     return context
 
@@ -378,7 +375,7 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
         for instance in instances:
             seats = await (
                 await db.execute(
-                    # `signup_records` is keyed by (server_id, discord_user_id) and
+                    # `signup_records` is keyed by the Discord account and
                     # carries no driver_profile_id, so this is the join the table admits.
                     # The posting paths joined a phantom column until 2026-08-18 and could
                     # not render at all; they now join as this does.
@@ -424,7 +421,7 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
             )
 
     context.teams = teams
-    context.nationality_collected = await _nationality_collected(bot, context.server_id)
+    context.nationality_collected = await _nationality_collected(bot)
 
     # The first link of the name chain is the account's display name on the server at the
     # moment of generation, which only the guild can answer. Read through the same helper the
@@ -441,7 +438,6 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
 
     await refresh_before_render(
         bot,
-        context.server_id,
         list(members.values()),
         directory=context.asset_directories.get("driver"),
     )
@@ -522,7 +518,7 @@ def _drivers_from_teams(
     return fabricated, bool(fabricated)
 
 
-async def _nationality_collected(bot, server_id: int) -> bool:
+async def _nationality_collected(bot) -> bool:
     """True where the league collects a driver's nationality at all.
 
     A preview reads the switch the posting paths read, and now through the very function
@@ -533,7 +529,7 @@ async def _nationality_collected(bot, server_id: int) -> bool:
     """
     from services.image_results_post import _nationality_collected as read_switch
 
-    return await read_switch(bot.db_path, server_id)
+    return await read_switch(bot.db_path)
 
 
 # ── Asset directories ─────────────────────────────────────────────────────
@@ -552,7 +548,7 @@ ASSET_CLASS_COLUMNS: tuple[tuple[str, str], ...] = tuple(
 
 
 async def resolve_asset_directories(
-    bot, server_id: int
+    bot
 ) -> tuple[dict[str, Path], list[DirectoryFault]]:
     """The league's own asset directories, and the ones that would not resolve.
 
@@ -565,7 +561,7 @@ async def resolve_asset_directories(
 
     faults: list[DirectoryFault] = []
 
-    config = await bot.image_config_service.get_config(server_id)
+    config = await bot.image_config_service.get_config()
     if config is None:
         return {}, faults
 
@@ -626,7 +622,7 @@ async def build_calendar_preview(bot, context: PreviewContext):
     from services.calendar_post_service import tracks_by_name
     from services.image_calendar_service import build_fill_spec, resolve_drawing
 
-    config = await bot.image_config_service.get_config(context.server_id)
+    config = await bot.image_config_service.get_config()
     rounds = context.rounds
     tracks = await tracks_by_name(bot.db_path)
 
@@ -781,7 +777,7 @@ async def build_rsvp_preview(bot, context: PreviewContext):
     from services.attendance_service import derive_checkin_deadline
     from services.image_rsvp_service import build_fill_spec, resolve_drawing
 
-    config = await bot.image_config_service.get_config(context.server_id)
+    config = await bot.image_config_service.get_config()
     round_obj = context.round
     is_mystery = _format_of(round_obj) == "MYSTERY"
 
@@ -846,7 +842,7 @@ async def build_results_preview(bot, context: PreviewContext):
     from services.image_results_service import build_fill_spec, resolve_drawing
     from services.result_submission_service import get_sessions_for_format
 
-    config = await bot.image_config_service.get_config(context.server_id)
+    config = await bot.image_config_service.get_config()
     drivers = _racing_drivers(context)
     names, teams, flags, role_of = _driver_maps(context, drivers)
     round_obj = context.round

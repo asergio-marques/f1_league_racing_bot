@@ -27,11 +27,11 @@ from services.season_end_service import execute_season_end
 
 class _FakeScheduler:
     def __init__(self) -> None:
-        self.season_end_cancelled: list[int] = []
+        self.season_end_cancelled: int = 0
         self.cancelled_rounds: list[int] = []
 
-    def cancel_season_end(self, server_id: int) -> None:
-        self.season_end_cancelled.append(server_id)
+    def cancel_season_end(self) -> None:
+        self.season_end_cancelled += 1
 
     def cancel_round(self, round_id: int) -> None:
         self.cancelled_rounds.append(round_id)
@@ -39,16 +39,19 @@ class _FakeScheduler:
 
 class _FakeRouter:
     def __init__(self) -> None:
-        self.log_messages: list[tuple[int, str]] = []
+        self.log_messages: list[str] = []
 
-    async def post_log(self, server_id: int, content: str) -> None:
-        self.log_messages.append((server_id, content))
+    async def post_log(self, content: str) -> None:
+        self.log_messages.append(content)
 
 
 class _FakeBot:
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
         self.season_service = SeasonService(db_path)
+        from services.config_service import ConfigService
+
+        self.config_service = ConfigService(db_path)
         self.scheduler_service = _FakeScheduler()
         self.output_router = _FakeRouter()
 
@@ -66,9 +69,8 @@ async def _seed_server(db_path: str, server_id: int = 1) -> tuple[int, list[int]
             (server_id,),
         )
         await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status) "
-            "VALUES (?, '2026-01-01', 'ACTIVE')",
-            (server_id,),
+            "INSERT INTO seasons (start_date, status) "
+            "VALUES ('2026-01-01', 'ACTIVE')"
         )
         cur = await db.execute("SELECT last_insert_rowid()")
         (season_id,) = await cur.fetchone()
@@ -122,7 +124,7 @@ async def test_has_existing_season_true() -> None:
         await run_migrations(db_path)
         await _seed_server(db_path, server_id=1)
         svc = SeasonService(db_path)
-        assert await svc.has_existing_season(1) is True
+        assert await svc.has_existing_season() is True
     finally:
         os.unlink(db_path)
 
@@ -133,7 +135,7 @@ async def test_has_existing_season_false() -> None:
     try:
         await run_migrations(db_path)
         svc = SeasonService(db_path)
-        assert await svc.has_existing_season(999) is False
+        assert await svc.has_existing_season() is False
     finally:
         os.unlink(db_path)
 
@@ -145,7 +147,7 @@ async def test_all_phases_complete_false_when_pending() -> None:
         await run_migrations(db_path)
         await _seed_server(db_path, server_id=1)
         svc = SeasonService(db_path)
-        assert await svc.all_phases_complete(1) is False
+        assert await svc.all_phases_complete() is False
     finally:
         os.unlink(db_path)
 
@@ -158,7 +160,7 @@ async def test_all_phases_complete_true_when_done() -> None:
         _, round_ids = await _seed_server(db_path, server_id=1)
         await _mark_all_phases_done(db_path, round_ids)
         svc = SeasonService(db_path)
-        assert await svc.all_phases_complete(1) is True
+        assert await svc.all_phases_complete() is True
     finally:
         os.unlink(db_path)
 
@@ -170,7 +172,7 @@ async def test_get_last_scheduled_at_returns_latest() -> None:
         await run_migrations(db_path)
         await _seed_server(db_path, server_id=1)
         svc = SeasonService(db_path)
-        last_at = await svc.get_last_scheduled_at(1)
+        last_at = await svc.get_last_scheduled_at()
         assert last_at is not None
         # The seeded rounds have scheduled_at '2026-04-01' and '2026-05-01'
         assert last_at.year == 2026
@@ -185,7 +187,7 @@ async def test_get_last_scheduled_at_returns_none_for_unknown_server() -> None:
     try:
         await run_migrations(db_path)
         svc = SeasonService(db_path)
-        assert await svc.get_last_scheduled_at(999) is None
+        assert await svc.get_last_scheduled_at() is None
     finally:
         os.unlink(db_path)
 
@@ -202,11 +204,11 @@ async def test_execute_season_end_archives_season() -> None:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(1, season_id, bot)
+        await execute_season_end(season_id, bot)
         # Season row must still exist with status COMPLETED
         async with get_connection(db_path) as db:
             cur = await db.execute(
-                "SELECT status FROM seasons WHERE server_id = 1"
+                "SELECT status FROM seasons"
             )
             row = await cur.fetchone()
         assert row is not None, "Season row must be retained after completion"
@@ -223,17 +225,17 @@ async def test_execute_season_end_retains_divisions_and_rounds() -> None:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(1, season_id, bot)
+        await execute_season_end(season_id, bot)
         async with get_connection(db_path) as db:
             cur = await db.execute(
                 "SELECT COUNT(*) FROM divisions d "
-                "JOIN seasons s ON s.id = d.season_id WHERE s.server_id = 1"
+                "JOIN seasons s ON s.id = d.season_id"
             )
             (div_count,) = await cur.fetchone()
             cur = await db.execute(
                 "SELECT COUNT(*) FROM rounds r "
                 "JOIN divisions d ON d.id = r.division_id "
-                "JOIN seasons s ON s.id = d.season_id WHERE s.server_id = 1"
+                "JOIN seasons s ON s.id = d.season_id"
             )
             (round_count,) = await cur.fetchone()
         assert div_count == 1
@@ -249,10 +251,9 @@ async def test_execute_season_end_posts_log_message() -> None:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(1, season_id, bot)
+        await execute_season_end(season_id, bot)
         assert len(bot.output_router.log_messages) == 1
-        server_id, msg = bot.output_router.log_messages[0]
-        assert server_id == 1
+        msg = bot.output_router.log_messages[0]
         assert "Season Complete" in msg or "season" in msg.lower()
     finally:
         os.unlink(db_path)
@@ -266,8 +267,8 @@ async def test_execute_season_end_is_idempotent() -> None:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(1, season_id, bot)
-        await execute_season_end(1, season_id, bot)  # second call: no-op (no active season)
+        await execute_season_end(season_id, bot)
+        await execute_season_end(season_id, bot)  # second call: no-op (no active season)
         assert len(bot.output_router.log_messages) == 1  # only posted once
     finally:
         os.unlink(db_path)
@@ -280,7 +281,7 @@ async def test_execute_season_end_preserves_server_config() -> None:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(1, season_id, bot)
+        await execute_season_end(season_id, bot)
         async with get_connection(db_path) as db:
             cur = await db.execute(
                 "SELECT COUNT(*) FROM server_configs WHERE server_id = 1"
@@ -298,27 +299,8 @@ async def test_execute_season_end_cancels_season_end_job() -> None:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(1, season_id, bot)
-        assert 1 in bot.scheduler_service.season_end_cancelled
-    finally:
-        os.unlink(db_path)
-
-
-async def test_get_all_server_ids_with_active_season() -> None:
-    """Returns only server_ids with ACTIVE seasons; excludes servers with none."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        # Seed two servers
-        await _seed_server(db_path, server_id=1)
-        await _seed_server(db_path, server_id=2)
-        svc = SeasonService(db_path)
-        ids = await svc.get_all_server_ids_with_active_season()
-        assert set(ids) == {1, 2}
-        # A server with no season row is not included
-        ids_no_99 = [i for i in ids if i != 99]
-        assert 99 not in ids_no_99
+        await execute_season_end(season_id, bot)
+        assert bot.scheduler_service.season_end_cancelled == 1
     finally:
         os.unlink(db_path)
 
@@ -353,7 +335,7 @@ class _FakeGuildBot(_FakeBot):
 
 async def _status(db_path: str) -> str:
     async with get_connection(db_path) as db:
-        cur = await db.execute("SELECT status FROM seasons WHERE server_id = 1")
+        cur = await db.execute("SELECT status FROM seasons")
         row = await cur.fetchone()
     return row[0]
 
@@ -378,7 +360,7 @@ async def test_the_final_classification_is_posted_while_the_season_is_still_acti
             "services.season_classification_service.post_final_classifications",
             AsyncMock(side_effect=_post),
         ) as spy:
-            await execute_season_end(1, season_id, bot)
+            await execute_season_end(season_id, bot)
 
         assert spy.await_count == 1
         assert spy.await_args.args[3] == season_id
@@ -403,7 +385,7 @@ async def test_the_season_still_completes_when_the_classification_fails() -> Non
             "services.season_classification_service.post_final_classifications",
             AsyncMock(side_effect=RuntimeError("the renderer fell over")),
         ):
-            await execute_season_end(1, season_id, bot)
+            await execute_season_end(season_id, bot)
 
         assert await _status(db_path) == "COMPLETED"
     finally:
@@ -425,9 +407,9 @@ async def test_a_classification_problem_reaches_the_logging_channel() -> None:
             "services.season_classification_service.post_final_classifications",
             AsyncMock(return_value=["Div A standings: the template is at fault"]),
         ):
-            await execute_season_end(1, season_id, bot)
+            await execute_season_end(season_id, bot)
 
-        posted = "\n".join(text for _sid, text in bot.output_router.log_messages)
+        posted = "\n".join(bot.output_router.log_messages)
         assert "the template is at fault" in posted
         assert await _status(db_path) == "COMPLETED"
     finally:

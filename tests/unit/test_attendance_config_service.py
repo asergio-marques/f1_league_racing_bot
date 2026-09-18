@@ -71,9 +71,9 @@ async def _make_db(tmp_path) -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -87,7 +87,7 @@ async def _make_db(tmp_path) -> str:
 async def _row(db_path: str) -> dict:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT * FROM attendance_config WHERE server_id = ?", (SERVER_ID,)
+            "SELECT * FROM attendance_config"
         )
         row = await cursor.fetchone()
     return dict(row) if row else {}
@@ -100,7 +100,7 @@ async def _row(db_path: str) -> dict:
 
 async def test_a_server_that_never_configured_attendance_has_no_config(tmp_path):
     service = AttendanceService(await _make_db(tmp_path))
-    assert await service.get_config(SERVER_ID) is None
+    assert await service.get_config() is None
 
 
 async def test_get_or_create_writes_the_packaged_defaults(tmp_path):
@@ -109,10 +109,10 @@ async def test_get_or_create_writes_the_packaged_defaults(tmp_path):
     into nothing."""
     service = AttendanceService(await _make_db(tmp_path))
 
-    config = await service.get_or_create_config(SERVER_ID)
+    config = await service.get_or_create_config()
 
     assert config is not None
-    assert await service.get_config(SERVER_ID) is not None
+    assert await service.get_config() is not None
 
 
 async def test_get_or_create_is_idempotent(tmp_path):
@@ -121,13 +121,13 @@ async def test_get_or_create_is_idempotent(tmp_path):
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
 
-    await service.get_or_create_config(SERVER_ID)
-    await service.update_no_rsvp_penalty(SERVER_ID, 42)
-    await service.get_or_create_config(SERVER_ID)
+    await service.get_or_create_config()
+    await service.update_no_rsvp_penalty(42)
+    await service.get_or_create_config()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT COUNT(*) AS n FROM attendance_config WHERE server_id = ?", (SERVER_ID,)
+            "SELECT COUNT(*) AS n FROM attendance_config"
         )
         assert (await cursor.fetchone())["n"] == 1
     # The second call returned the existing row rather than resetting it.
@@ -143,9 +143,9 @@ async def test_get_or_create_is_idempotent(tmp_path):
 async def test_each_setter_persists_its_value(tmp_path, method, column, value):
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
-    await service.get_or_create_config(SERVER_ID)
+    await service.get_or_create_config()
 
-    await getattr(service, method)(SERVER_ID, value)
+    await getattr(service, method)(value)
 
     assert (await _row(db_path))[column] == value
 
@@ -156,10 +156,10 @@ async def test_each_setter_touches_only_its_own_column(tmp_path, method, column,
     test that reads back only what it wrote."""
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
-    await service.get_or_create_config(SERVER_ID)
+    await service.get_or_create_config()
     before = await _row(db_path)
 
-    await getattr(service, method)(SERVER_ID, value)
+    await getattr(service, method)(value)
     after = await _row(db_path)
 
     changed = {k for k in after if before.get(k) != after.get(k)}
@@ -172,10 +172,10 @@ async def test_a_threshold_can_be_cleared_back_to_null(tmp_path, method):
     setters are the only ones typed to accept `None`."""
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
-    await service.get_or_create_config(SERVER_ID)
-    await getattr(service, method)(SERVER_ID, 25)
+    await service.get_or_create_config()
+    await getattr(service, method)(25)
 
-    await getattr(service, method)(SERVER_ID, None)
+    await getattr(service, method)(None)
 
     column = method.replace("update_", "")
     assert (await _row(db_path))[column] is None
@@ -187,9 +187,9 @@ async def test_a_setter_for_an_unconfigured_server_writes_nothing(tmp_path):
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
 
-    await service.update_no_rsvp_penalty(SERVER_ID, 5)
+    await service.update_no_rsvp_penalty(5)
 
-    assert await service.get_config(SERVER_ID) is None
+    assert await service.get_config() is None
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +201,7 @@ async def test_the_rsvp_channel_can_be_set_and_read_back(tmp_path):
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
 
-    await service.set_rsvp_channel(DIVISION_ID, SERVER_ID, 777001)
+    await service.set_rsvp_channel(DIVISION_ID, 777001)
 
     config = await service.get_division_config(DIVISION_ID)
     assert config is not None
@@ -212,8 +212,8 @@ async def test_repointing_the_rsvp_channel_updates_rather_than_duplicates(tmp_pa
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
 
-    await service.set_rsvp_channel(DIVISION_ID, SERVER_ID, 777001)
-    await service.set_rsvp_channel(DIVISION_ID, SERVER_ID, 777002)
+    await service.set_rsvp_channel(DIVISION_ID, 777001)
+    await service.set_rsvp_channel(DIVISION_ID, 777002)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -231,8 +231,8 @@ async def test_setting_one_division_channel_leaves_the_other_alone(tmp_path):
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
 
-    await service.set_rsvp_channel(DIVISION_ID, SERVER_ID, 777001)
-    await service.set_attendance_channel(DIVISION_ID, SERVER_ID, 888001)
+    await service.set_rsvp_channel(DIVISION_ID, 777001)
+    await service.set_attendance_channel(DIVISION_ID, 888001)
 
     config = await service.get_division_config(DIVISION_ID)
     assert str(config.rsvp_channel_id) == "777001"
@@ -249,9 +249,9 @@ async def test_deleting_a_server_s_division_configs_clears_them(tmp_path):
     previous one's channel."""
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
-    await service.set_rsvp_channel(DIVISION_ID, SERVER_ID, 777001)
+    await service.set_rsvp_channel(DIVISION_ID, 777001)
 
-    await service.delete_division_configs(SERVER_ID)
+    await service.delete_division_configs()
 
     assert await service.get_division_config(DIVISION_ID) is None
 
@@ -307,7 +307,6 @@ async def _recalculate(db_path: str, round_id: int = 1) -> None:
         db_path=db_path,
         round_id=round_id,
         division_id=DIVISION_ID,
-        server_id=SERVER_ID,
         season_id=SEASON_ID,
     )
 

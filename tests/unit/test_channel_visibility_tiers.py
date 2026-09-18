@@ -65,8 +65,8 @@ async def _seed(tmp_path, *, admin_role_id: int | None = ADMIN_ROLE) -> str:
             (SERVER_ID, MANAGER_ROLE, 111, 333, admin_role_id),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status) VALUES (1, ?, ?, 'ACTIVE')",
-            (SERVER_ID, "2026-01-01"),
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, ?, 'ACTIVE')",
+            ("2026-01-01",),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, mention_role_id) "

@@ -90,9 +90,9 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -158,6 +158,7 @@ def _channel(*, fetch_fails: bool = False, delete_fails: bool = False):
 
 def _bot(db_path: str, *, guild_missing: bool = False, channel=None):
     stub = MagicMock()
+    stub.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     stub.db_path = db_path
     stub.add_view = MagicMock()
     stub.output_router = MagicMock()
@@ -205,7 +206,7 @@ async def _rows(db_path, table) -> int:
 
 def _logged(stub) -> str:
     return "\n".join(
-        str(call.args[1]) for call in stub.output_router.post_log.await_args_list
+        str(call.args[0]) for call in stub.output_router.post_log.await_args_list
     )
 
 

@@ -36,7 +36,7 @@ class AttendanceCog(commands.Cog):
 
     async def _guard_module_enabled(self, interaction: discord.Interaction) -> bool:
         """Return True (and send error) if module is NOT enabled."""
-        if not await self.bot.module_service.is_attendance_enabled(interaction.guild_id):  # type: ignore[attr-defined]
+        if not await self.bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
             await interaction.response.send_message(
                 "\u274c The Attendance module is not enabled. "
                 "Use `/module enable attendance` first.",
@@ -47,7 +47,7 @@ class AttendanceCog(commands.Cog):
 
     async def _guard_no_active_season(self, interaction: discord.Interaction) -> bool:
         """Return True (and send error) if there IS an active season."""
-        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if season is not None:
             await interaction.response.send_message(
                 "\u274c Attendance configuration cannot be changed once a season's placements are confirmed.",
@@ -77,8 +77,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+        cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
         if cfg is None:
             await interaction.response.send_message(
                 "\u274c No attendance configuration found. Enable the module first.",
@@ -92,7 +91,7 @@ class AttendanceCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_rsvp_notice_days(server_id, days)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_rsvp_notice_days(days)  # type: ignore[attr-defined]
         await interaction.followup.send(
             f"\u2705 RSVP notice set to **{days}** day(s) before the race.", ephemeral=True
         )
@@ -118,8 +117,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+        cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
         if cfg is None:
             await interaction.response.send_message(
                 "\u274c No attendance configuration found. Enable the module first.",
@@ -133,7 +131,7 @@ class AttendanceCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_rsvp_last_notice_hours(server_id, hours)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_rsvp_last_notice_hours(hours)  # type: ignore[attr-defined]
         if hours == 0:
             msg = "\u2705 Last RSVP reminder **disabled** (set to 0)."
         else:
@@ -161,8 +159,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+        cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
         if cfg is None:
             await interaction.response.send_message(
                 "\u274c No attendance configuration found. Enable the module first.",
@@ -176,7 +173,7 @@ class AttendanceCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_rsvp_deadline_hours(server_id, hours)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_rsvp_deadline_hours(hours)  # type: ignore[attr-defined]
         await interaction.followup.send(
             f"\u2705 RSVP deadline set to **{hours}** hour(s) before the race.", ephemeral=True
         )
@@ -200,9 +197,8 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_no_rsvp_penalty(server_id, points)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_no_rsvp_penalty(points)  # type: ignore[attr-defined]
         await interaction.followup.send(
             f"\u2705 No-RSVP penalty set to **{points}** point(s).", ephemeral=True
         )
@@ -226,9 +222,8 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_absent_penalty(server_id, points)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_absent_penalty(points)  # type: ignore[attr-defined]
         await interaction.followup.send(
             f"\u2705 Absent penalty set to **{points}** point(s).", ephemeral=True
         )
@@ -252,9 +247,8 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_no_show_penalty(server_id, points)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_no_show_penalty(points)  # type: ignore[attr-defined]
         await interaction.followup.send(
             f"\u2705 No-show penalty set to **{points}** point(s).", ephemeral=True
         )
@@ -278,10 +272,9 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         value = None if points == 0 else points
         if value is not None:
-            cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+            cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
             if cfg and cfg.autoreserve_threshold:
                 await interaction.response.send_message(
                     "\u274c Cannot set auto-sack while auto-reserve is active. "
@@ -290,7 +283,7 @@ class AttendanceCog(commands.Cog):
                 )
                 return
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_autosack_threshold(server_id, value)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_autosack_threshold(value)  # type: ignore[attr-defined]
         if value is None:
             msg = "\u2705 Auto-sack **disabled**."
         else:
@@ -324,10 +317,9 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         value = None if points == 0 else points
         if value is not None:
-            cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+            cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
             if cfg and cfg.autosack_threshold:
                 await interaction.response.send_message(
                     "\u274c Cannot set auto-reserve while auto-sack is active. "
@@ -336,7 +328,7 @@ class AttendanceCog(commands.Cog):
                 )
                 return
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_autoreserve_threshold(server_id, value)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_autoreserve_threshold(value)  # type: ignore[attr-defined]
         if value is None:
             msg = "\u2705 Auto-reserve **disabled**."
         else:
@@ -354,8 +346,7 @@ class AttendanceCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+        cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
         if cfg is None:
             await interaction.response.send_message(
                 "\u274c No attendance configuration found. Enable the module first.",
@@ -438,10 +429,9 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
 
     bot = interaction.client
     discord_user_id = interaction.user.id
-    guild_id: int = interaction.guild_id  # type: ignore[assignment]
 
     # The module gate — see the docstring for why it sits here and not on the cog.
-    if not await bot.module_service.is_attendance_enabled(guild_id):  # type: ignore[attr-defined]
+    if not await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
         await interaction.response.send_message(
             "❌ The Attendance module is switched off for this server, so check-in is "
             "no longer running. Your answer has not been recorded.",
@@ -454,7 +444,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     from services.driver_service import resolve_driver_profile_id
 
     async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
-        resolved_profile_id = await resolve_driver_profile_id(guild_id, discord_user_id, db)
+        resolved_profile_id = await resolve_driver_profile_id(discord_user_id, db)
 
         if resolved_profile_id is None:
             await interaction.response.send_message(
@@ -471,7 +461,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
               FROM rounds r
               JOIN divisions d ON d.id = r.division_id
               JOIN seasons s ON s.id = d.season_id
-              JOIN attendance_config ac ON ac.server_id = s.server_id
+              CROSS JOIN attendance_config ac
              WHERE r.id = ?
             """,
             (round_id,),

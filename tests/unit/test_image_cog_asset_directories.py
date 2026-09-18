@@ -123,7 +123,7 @@ async def test_a_folder_that_does_not_exist_yet_is_stored_with_a_warning(
     await _run(cog)
 
     cog._config_service.set_field.assert_awaited_once_with(
-        1, "division_logo_directory", "resources/league/mine"
+        "division_logo_directory", "resources/league/mine"
     )
     assert "Nothing is there yet" in _said(cog)
     assert "✅ **Division logos** set to" in _said(cog)

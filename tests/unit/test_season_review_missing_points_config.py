@@ -44,9 +44,9 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (?, ?, '2026-03-01', 'SETUP', 1)",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (?, '2026-03-01', 'SETUP', 1)",
+            (SEASON_ID,),
         )
         await db.commit()
     return path
@@ -62,12 +62,12 @@ def _cog(db_path):
 
 
 async def _attach_real(db_path, config_name: str) -> None:
-    await points_config_service.create_config(db_path, SERVER_ID, config_name)
+    await points_config_service.create_config(db_path, config_name)
     await points_config_service.set_session_points(
-        db_path, SERVER_ID, config_name, SessionType.FEATURE_RACE, 1, 25
+        db_path, config_name, SessionType.FEATURE_RACE, 1, 25
     )
     await season_points_service.attach_config(
-        db_path, SEASON_ID, config_name, "SETUP", server_id=SERVER_ID
+        db_path, SEASON_ID, config_name, "SETUP"
     )
 
 
@@ -98,7 +98,7 @@ def _function_source(name: str) -> str:
 async def test_a_season_whose_configs_all_exist_raises_nothing(db_path):
     await _attach_real(db_path, "Standard")
 
-    assert await _cog(db_path)._missing_points_config_problems(SERVER_ID, SEASON_ID) == []
+    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == []
 
 
 @pytest.mark.asyncio
@@ -107,7 +107,7 @@ async def test_a_mistyped_name_is_found(db_path):
     await _attach_real(db_path, "Standard")
     await _attach_phantom(db_path, "Standrad")
 
-    assert await _cog(db_path)._missing_points_config_problems(SERVER_ID, SEASON_ID) == [
+    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == [
         "Standrad"
     ]
 
@@ -118,12 +118,11 @@ async def test_a_config_removed_from_under_the_season_is_found(db_path):
     await _attach_real(db_path, "Standard")
     async with get_connection(db_path) as db:
         await db.execute(
-            "DELETE FROM points_config_store WHERE server_id = ? AND config_name = 'Standard'",
-            (SERVER_ID,),
+            "DELETE FROM points_config_store WHERE config_name = 'Standard'",
         )
         await db.commit()
 
-    assert await _cog(db_path)._missing_points_config_problems(SERVER_ID, SEASON_ID) == [
+    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == [
         "Standard"
     ]
 
@@ -131,7 +130,7 @@ async def test_a_config_removed_from_under_the_season_is_found(db_path):
 @pytest.mark.asyncio
 async def test_a_season_with_nothing_attached_raises_nothing_here(db_path):
     """"Nothing attached" is the prerequisite gate's complaint, not this one's."""
-    assert await _cog(db_path)._missing_points_config_problems(SERVER_ID, SEASON_ID) == []
+    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == []
 
 
 # ── The two surfaces read the same helper ─────────────────────────────────

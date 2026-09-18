@@ -105,19 +105,15 @@ class AttendanceService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
 
-    # ── Server-level config ────────────────────────────────────────────────
+    # ── League-level config ────────────────────────────────────────────────
 
-    async def get_config(self, server_id: int) -> AttendanceConfig | None:
+    async def get_config(self) -> AttendanceConfig | None:
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT * FROM attendance_config WHERE server_id = ?",
-                (server_id,),
-            )
+            cursor = await db.execute("SELECT * FROM attendance_config")
             row = await cursor.fetchone()
         if row is None:
             return None
         return AttendanceConfig(
-            server_id=row["server_id"],
             module_enabled=bool(row["module_enabled"]),
             rsvp_notice_days=row["rsvp_notice_days"],
             rsvp_last_notice_hours=row["rsvp_last_notice_hours"],
@@ -129,26 +125,20 @@ class AttendanceService:
             autosack_threshold=row["autosack_threshold"],
         )
 
-    async def get_or_create_config(self, server_id: int) -> AttendanceConfig:
-        existing = await self.get_config(server_id)
+    async def get_or_create_config(self) -> AttendanceConfig:
+        existing = await self.get_config()
         if existing is not None:
             return existing
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "INSERT OR IGNORE INTO attendance_config (server_id) VALUES (?)",
-                (server_id,),
-            )
+            await db.execute("INSERT OR IGNORE INTO attendance_config (id) VALUES (1)")
             await db.commit()
-        result = await self.get_config(server_id)
+        result = await self.get_config()
         assert result is not None
         return result
 
-    async def delete_division_configs(self, server_id: int) -> None:
+    async def delete_division_configs(self) -> None:
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "DELETE FROM attendance_division_config WHERE server_id = ?",
-                (server_id,),
-            )
+            await db.execute("DELETE FROM attendance_division_config")
             await db.commit()
 
     # ── Division-level config ──────────────────────────────────────────────
@@ -164,105 +154,92 @@ class AttendanceService:
             return None
         return AttendanceDivisionConfig(
             division_id=row["division_id"],
-            server_id=row["server_id"],
             rsvp_channel_id=row["rsvp_channel_id"],
             attendance_channel_id=row["attendance_channel_id"],
             attendance_message_id=row["attendance_message_id"],
         )
 
-    async def set_rsvp_channel(
-        self, division_id: int, server_id: int, channel_id: int
-    ) -> None:
+    async def set_rsvp_channel(self, division_id: int, channel_id: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
                 """
-                INSERT INTO attendance_division_config (division_id, server_id, rsvp_channel_id)
-                VALUES (?, ?, ?)
+                INSERT INTO attendance_division_config (division_id, rsvp_channel_id)
+                VALUES (?, ?)
                 ON CONFLICT(division_id)
                 DO UPDATE SET rsvp_channel_id = excluded.rsvp_channel_id
                 """,
-                (division_id, server_id, str(channel_id)),
+                (division_id, str(channel_id)),
             )
             await db.commit()
 
-    async def set_attendance_channel(
-        self, division_id: int, server_id: int, channel_id: int
-    ) -> None:
+    async def set_attendance_channel(self, division_id: int, channel_id: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
                 """
-                INSERT INTO attendance_division_config (division_id, server_id, attendance_channel_id)
-                VALUES (?, ?, ?)
+                INSERT INTO attendance_division_config (division_id, attendance_channel_id)
+                VALUES (?, ?)
                 ON CONFLICT(division_id)
                 DO UPDATE SET attendance_channel_id = excluded.attendance_channel_id
                 """,
-                (division_id, server_id, str(channel_id)),
+                (division_id, str(channel_id)),
             )
             await db.commit()
 
     # ── Field updates ──────────────────────────────────────────────────────
 
-    async def update_rsvp_notice_days(self, server_id: int, value: int) -> None:
+    async def update_rsvp_notice_days(self, value: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET rsvp_notice_days = ? WHERE server_id = ?",
-                (value, server_id),
+                "UPDATE attendance_config SET rsvp_notice_days = ?", (value,)
             )
             await db.commit()
 
-    async def update_rsvp_last_notice_hours(self, server_id: int, value: int) -> None:
+    async def update_rsvp_last_notice_hours(self, value: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET rsvp_last_notice_hours = ? WHERE server_id = ?",
-                (value, server_id),
+                "UPDATE attendance_config SET rsvp_last_notice_hours = ?", (value,)
             )
             await db.commit()
 
-    async def update_rsvp_deadline_hours(self, server_id: int, value: int) -> None:
+    async def update_rsvp_deadline_hours(self, value: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET rsvp_deadline_hours = ? WHERE server_id = ?",
-                (value, server_id),
+                "UPDATE attendance_config SET rsvp_deadline_hours = ?", (value,)
             )
             await db.commit()
 
-    async def update_no_rsvp_penalty(self, server_id: int, value: int) -> None:
+    async def update_no_rsvp_penalty(self, value: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET no_rsvp_penalty = ? WHERE server_id = ?",
-                (value, server_id),
+                "UPDATE attendance_config SET no_rsvp_penalty = ?", (value,)
             )
             await db.commit()
 
-    async def update_absent_penalty(self, server_id: int, value: int) -> None:
+    async def update_absent_penalty(self, value: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET absent_penalty = ? WHERE server_id = ?",
-                (value, server_id),
+                "UPDATE attendance_config SET absent_penalty = ?", (value,)
             )
             await db.commit()
 
-    async def update_no_show_penalty(self, server_id: int, value: int) -> None:
+    async def update_no_show_penalty(self, value: int) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET no_show_penalty = ? WHERE server_id = ?",
-                (value, server_id),
+                "UPDATE attendance_config SET no_show_penalty = ?", (value,)
             )
             await db.commit()
 
-    async def update_autosack_threshold(self, server_id: int, value: int | None) -> None:
+    async def update_autosack_threshold(self, value: int | None) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET autosack_threshold = ? WHERE server_id = ?",
-                (value, server_id),
+                "UPDATE attendance_config SET autosack_threshold = ?", (value,)
             )
             await db.commit()
 
-    async def update_autoreserve_threshold(self, server_id: int, value: int | None) -> None:
+    async def update_autoreserve_threshold(self, value: int | None) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET autoreserve_threshold = ? WHERE server_id = ?",
-                (value, server_id),
+                "UPDATE attendance_config SET autoreserve_threshold = ?", (value,)
             )
             await db.commit()
 
@@ -700,13 +677,9 @@ async def distribute_attendance_points(
         # Load penalty config for this division's server.
         cursor = await db.execute(
             """
-            SELECT ac.no_rsvp_penalty, ac.absent_penalty, ac.no_show_penalty
-            FROM attendance_config ac
-            JOIN seasons s ON s.server_id = ac.server_id
-            JOIN divisions d ON d.season_id = s.id
-            WHERE d.id = ?
+            SELECT no_rsvp_penalty, absent_penalty, no_show_penalty
+            FROM attendance_config
             """,
-            (division_id,),
         )
         cfg_row = await cursor.fetchone()
         if cfg_row is None:
@@ -941,13 +914,9 @@ async def post_attendance_sheet(
 
         cursor2 = await db.execute(
             """
-            SELECT ac.autoreserve_threshold, ac.autosack_threshold
-            FROM attendance_config ac
-            JOIN seasons s ON s.server_id = ac.server_id
-            JOIN divisions d ON d.season_id = s.id
-            WHERE d.id = ?
+            SELECT autoreserve_threshold, autosack_threshold
+            FROM attendance_config
             """,
-            (division_id,),
         )
         cfg_row = await cursor2.fetchone()
 
@@ -1053,7 +1022,6 @@ async def post_attendance_sheet(
 
             await retry_service.enqueue(
                 db_path,
-                server_id=guild.id,
                 channel_id=channel_id,
                 content=content,
                 failure_reason=f"attendance sheet for division {division_id}: {exc}",
@@ -1221,8 +1189,7 @@ async def _sheet_attachment(
         )
         from services.image_attendance_service import DriverRecord, resolve_drawing
 
-        server_id = guild.id
-        if not await attendance_enabled(bot, server_id):
+        if not await attendance_enabled(bot):
             return None
 
         from services.image_results_post import (
@@ -1248,7 +1215,7 @@ async def _sheet_attachment(
         # every graphic shares, called rather than restated (wip-spec § "The name of a person").
         display_names = await _driver_names(bot, guild, user_ids, division_id=division_id)
         nationalities = await _nationalities(bot, user_ids, division_id=division_id)
-        collected = await _nationality_collected(db_path, server_id)
+        collected = await _nationality_collected(db_path)
 
         # The team of a row is the team of the division seating the driver **at the moment of
         # generation** — the reserve team for a reserve — and never the team whose car they
@@ -1291,16 +1258,16 @@ async def _sheet_attachment(
             nationality_collected=collected,
         )
 
-        render = await render_sheet(bot, server_id, drawing)
+        render = await render_sheet(bot, drawing)
         label = (
             f"{division_name} — attendance after round {round_number}"
             if occasion.names_a_round
             else f"{division_name} — attendance, {occasion.label()}"
         )
         if render.notices:
-            await report_notices(bot, server_id, label, render.notices)
+            await report_notices(bot, label, render.notices)
         if render.problem:
-            await report(bot, server_id, label, render.problem)
+            await report(bot, label, render.problem)
         if not render.draws:
             return None
 
@@ -1466,7 +1433,6 @@ async def enforce_attendance_sanctions(
     db_path: str,
     round_id: int,
     division_id: int,
-    server_id: int,
     season_id: int,
     head=None,
 ) -> None:
@@ -1482,8 +1448,7 @@ async def enforce_attendance_sanctions(
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT autoreserve_threshold, autosack_threshold FROM attendance_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT autoreserve_threshold, autosack_threshold FROM attendance_config"
         )
         cfg_row = await cursor.fetchone()
 
@@ -1553,7 +1518,6 @@ async def enforce_attendance_sanctions(
                     other_divisions.setdefault(other["division_id"], set()).add(profile_id)
             try:
                 await placement.sack_driver(
-                    server_id=server_id,
                     driver_profile_id=profile_id,
                     season_id=season_id,
                     acting_user_id=acting_id,
@@ -1563,7 +1527,6 @@ async def enforce_attendance_sanctions(
                 )
                 sanctioned_profile_ids.add(profile_id)
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    server_id,
                     f"ATTENDANCE_AUTOSACK | {_driver_ref(discord_user_id_int, test_display_name)}"
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}",
                 )
@@ -1580,7 +1543,6 @@ async def enforce_attendance_sanctions(
             except ValueError:
                 # Driver already NOT_SIGNED_UP — emit no-op log and continue (I1 edge case).
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    server_id,
                     f"ATTENDANCE_AUTOSACK | No-op | driver_profile_id={profile_id} "
                     f"already NOT_SIGNED_UP (total={total})",
                 )
@@ -1625,7 +1587,6 @@ async def enforce_attendance_sanctions(
                 # keeps a seat throughout, their roles are swapped once, and the lineup is
                 # posted once rather than twice.
                 await placement.move_driver(
-                    server_id=server_id,
                     driver_profile_id=profile_id,
                     season_id=season_id,
                     from_division_id=division_id,
@@ -1638,7 +1599,6 @@ async def enforce_attendance_sanctions(
                 )
                 sanctioned_profile_ids.add(profile_id)
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    server_id,
                     f"ATTENDANCE_AUTORESERVE | {_driver_ref(discord_user_id_int, test_display_name)}"
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autoreserve_threshold}"
                     f" → moved to {reserve_team_name}",
@@ -1699,7 +1659,6 @@ async def recalculate_attendance_for_round(
     db_path: str,
     round_id: int,
     division_id: int,
-    server_id: int,
     season_id: int,
 ) -> None:
     """Re-run the full attendance pipeline for an amended round (FR-028–FR-031).
@@ -1751,7 +1710,7 @@ async def recalculate_attendance_for_round(
 
     # FR-031: re-post sheet and re-evaluate sanctions.
     await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
-    await enforce_attendance_sanctions(bot, guild, db_path, round_id, division_id, server_id, season_id)
+    await enforce_attendance_sanctions(bot, guild, db_path, round_id, division_id, season_id)
 
 
 
@@ -1805,12 +1764,9 @@ async def recalculation_faults(
 
         cursor = await db.execute(
             """
-            SELECT ac.autoreserve_threshold, ac.autosack_threshold
-            FROM attendance_config ac
-            JOIN seasons s ON s.server_id = ac.server_id
-            WHERE s.id = ?
+            SELECT autoreserve_threshold, autosack_threshold
+            FROM attendance_config
             """,
-            (season_id,),
         )
         thresholds = await cursor.fetchone()
 
@@ -1818,7 +1774,7 @@ async def recalculation_faults(
         thresholds
         and (thresholds["autoreserve_threshold"] or thresholds["autosack_threshold"])
     )
-    attendance_graphics = await aspect_attaches_files(bot, guild.id, "attendance")
+    attendance_graphics = await aspect_attaches_files(bot, "attendance")
 
     faults: list[str] = []
     for row in division_rows:

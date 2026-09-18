@@ -31,10 +31,8 @@ async def attach_config(
     season_id: int,
     config_name: str,
     season_status: str,
-    *,
-    server_id: int,
 ) -> None:
-    """Attach a server-level points configuration to a season in setup.
+    """Attach one of the league's points configurations to a season in setup.
 
     Raises :class:`points_config_service.ConfigNotFoundError` for a name the server's store
     does not hold. **The check is here because nothing below it can make one** (#132):
@@ -44,15 +42,12 @@ async def attach_config(
     middle of a deferred command — and with no error handler on the tree, said nothing at
     all. Refusing at the moment the name is typed is the only place the manager still knows
     what they meant.
-
-    ``server_id`` is keyword-only and required, so that a caller written against the older
-    signature fails loudly rather than silently checking nothing.
     """
     if season_status != "SETUP":
         raise SeasonNotInSetupError(
             f"Config attachment is only allowed for seasons in SETUP (status: {season_status})"
         )
-    if not await points_config_service.config_exists(db_path, server_id, config_name):
+    if not await points_config_service.config_exists(db_path, config_name):
         raise points_config_service.ConfigNotFoundError(config_name)
     async with get_connection(db_path) as db:
         await db.execute(
@@ -95,7 +90,6 @@ async def get_attached_config_names(db_path: str, season_id: int) -> list[str]:
 async def missing_attached_configs(
     db_path: str,
     season_id: int,
-    server_id: int,
 ) -> list[str]:
     """Every name this season is linked to that the server's points store does not hold.
 
@@ -108,7 +102,7 @@ async def missing_attached_configs(
     """
     missing: list[str] = []
     for name in await get_attached_config_names(db_path, season_id):
-        if not await points_config_service.config_exists(db_path, server_id, name):
+        if not await points_config_service.config_exists(db_path, name):
             missing.append(name)
     return sorted(missing)
 
@@ -116,14 +110,13 @@ async def missing_attached_configs(
 async def snapshot_configs_to_season(
     db_path: str,
     season_id: int,
-    server_id: int,
 ) -> None:
     """Copy all attached server-level configs into the season's own points store."""
     config_names = await get_attached_config_names(db_path, season_id)
     async with get_connection(db_path) as db:
         for config_name in config_names:
             entries, fl_entries = await points_config_service.get_config_entries(
-                db_path, server_id, config_name
+                db_path, config_name
             )
             for entry in entries:
                 await db.execute(
@@ -175,7 +168,6 @@ async def validate_monotonic_ordering(db_path: str, season_id: int) -> list[str]
 async def validate_attached_config_ordering(
     db_path: str,
     season_id: int,
-    server_id: int,
 ) -> list[str]:
     """Return ordering errors in the server-level configs this season will snapshot.
 
@@ -200,7 +192,7 @@ async def validate_attached_config_ordering(
     for config_name in await get_attached_config_names(db_path, season_id):
         try:
             entries, _ = await points_config_service.get_config_entries(
-                db_path, server_id, config_name
+                db_path, config_name
             )
         except points_config_service.ConfigNotFoundError:
             continue

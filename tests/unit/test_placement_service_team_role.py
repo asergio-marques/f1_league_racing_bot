@@ -37,16 +37,14 @@ async def db_path(tmp_path):
 
             CREATE TABLE team_role_configs (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id  INTEGER NOT NULL REFERENCES server_configs(server_id) ON DELETE CASCADE,
                 team_name  TEXT    NOT NULL,
                 role_id    INTEGER NOT NULL,
                 updated_at TEXT    NOT NULL,
-                UNIQUE(server_id, team_name)
+                UNIQUE(team_name)
             );
 
             CREATE TABLE audit_entries (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id   INTEGER NOT NULL,
                 actor_id    INTEGER NOT NULL,
                 actor_name  TEXT    NOT NULL,
                 division_id INTEGER,
@@ -60,12 +58,12 @@ async def db_path(tmp_path):
     return path
 
 
-async def _get_role_row(db_path: str, server_id: int, team_name: str):
+async def _get_role_row(db_path: str, team_name: str):
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT * FROM team_role_configs WHERE server_id = ? AND team_name = ?",
-            (server_id, team_name),
+            "SELECT * FROM team_role_configs WHERE team_name = ?",
+            (team_name,),
         )
         return await cursor.fetchone()
 
@@ -79,12 +77,12 @@ async def _count_audit(db_path: str, change_type: str) -> int:
         return row[0]
 
 
-async def _seed_role(db_path: str, server_id: int, team_name: str, role_id: int) -> None:
+async def _seed_role(db_path: str, team_name: str, role_id: int) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (server_id, team_name, role_id, updated_at) "
-            "VALUES (?, ?, ?, datetime('now'))",
-            (server_id, team_name, role_id),
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) "
+            "VALUES (?, ?, datetime('now'))",
+            (team_name, role_id),
         )
         await db.commit()
 
@@ -95,18 +93,18 @@ async def _seed_role(db_path: str, server_id: int, team_name: str, role_id: int)
 
 class TestDeleteTeamRoleConfig:
     async def test_existing_row_is_deleted(self, db_path):
-        await _seed_role(db_path, 1, "Ferrari", 111)
+        await _seed_role(db_path, "Ferrari", 111)
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
-        await svc.delete_team_role_config(1, "Ferrari", actor_id=9, actor_name="admin")
-        row = await _get_role_row(db_path, 1, "Ferrari")
+        await svc.delete_team_role_config("Ferrari", actor_id=9, actor_name="admin")
+        row = await _get_role_row(db_path, "Ferrari")
         assert row is None
 
     async def test_existing_row_writes_audit(self, db_path):
-        await _seed_role(db_path, 1, "Ferrari", 111)
+        await _seed_role(db_path, "Ferrari", 111)
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
-        await svc.delete_team_role_config(1, "Ferrari", actor_id=9, actor_name="admin")
+        await svc.delete_team_role_config("Ferrari", actor_id=9, actor_name="admin")
         count = await _count_audit(db_path, "TEAM_ROLE_CONFIG")
         assert count == 1
 
@@ -114,12 +112,12 @@ class TestDeleteTeamRoleConfig:
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
         # Should not raise
-        await svc.delete_team_role_config(1, "NonExistent", actor_id=9, actor_name="admin")
+        await svc.delete_team_role_config("NonExistent", actor_id=9, actor_name="admin")
 
     async def test_not_found_writes_no_audit(self, db_path):
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
-        await svc.delete_team_role_config(1, "NonExistent", actor_id=9, actor_name="admin")
+        await svc.delete_team_role_config("NonExistent", actor_id=9, actor_name="admin")
         count = await _count_audit(db_path, "TEAM_ROLE_CONFIG")
         assert count == 0
 
@@ -130,32 +128,32 @@ class TestDeleteTeamRoleConfig:
 
 class TestRenameTeamRoleConfig:
     async def test_existing_row_is_renamed(self, db_path):
-        await _seed_role(db_path, 1, "Red Bull", 222)
+        await _seed_role(db_path, "Red Bull", 222)
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
-        await svc.rename_team_role_config(1, "Red Bull", "Oracle Red Bull", actor_id=9, actor_name="admin")
-        old = await _get_role_row(db_path, 1, "Red Bull")
-        new = await _get_role_row(db_path, 1, "Oracle Red Bull")
+        await svc.rename_team_role_config("Red Bull", "Oracle Red Bull", actor_id=9, actor_name="admin")
+        old = await _get_role_row(db_path, "Red Bull")
+        new = await _get_role_row(db_path, "Oracle Red Bull")
         assert old is None
         assert new is not None
         assert new["role_id"] == 222
 
     async def test_existing_row_writes_audit(self, db_path):
-        await _seed_role(db_path, 1, "Red Bull", 222)
+        await _seed_role(db_path, "Red Bull", 222)
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
-        await svc.rename_team_role_config(1, "Red Bull", "Oracle Red Bull", actor_id=9, actor_name="admin")
+        await svc.rename_team_role_config("Red Bull", "Oracle Red Bull", actor_id=9, actor_name="admin")
         count = await _count_audit(db_path, "TEAM_ROLE_CONFIG")
         assert count == 1
 
     async def test_not_found_is_silent_no_op(self, db_path):
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
-        await svc.rename_team_role_config(1, "Ghost", "Ghost2", actor_id=9, actor_name="admin")
+        await svc.rename_team_role_config("Ghost", "Ghost2", actor_id=9, actor_name="admin")
 
     async def test_not_found_writes_no_audit(self, db_path):
         from services.placement_service import PlacementService
         svc = PlacementService(db_path)
-        await svc.rename_team_role_config(1, "Ghost", "Ghost2", actor_id=9, actor_name="admin")
+        await svc.rename_team_role_config("Ghost", "Ghost2", actor_id=9, actor_name="admin")
         count = await _count_audit(db_path, "TEAM_ROLE_CONFIG")
         assert count == 0

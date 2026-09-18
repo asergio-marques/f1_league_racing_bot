@@ -694,7 +694,7 @@ async def test_penalty_state_entered_after_final_session(tmp_path):
             "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) VALUES (1,'2026-01-01','ACTIVE',1)"
+            "INSERT INTO seasons (start_date, status, season_number) VALUES ('2026-01-01','ACTIVE',1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -730,7 +730,7 @@ async def test_channel_not_in_penalty_review_when_flag_zero(tmp_path):
             "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) VALUES (1,'2026-01-01','ACTIVE',1)"
+            "INSERT INTO seasons (start_date, status, season_number) VALUES ('2026-01-01','ACTIVE',1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -1057,7 +1057,7 @@ async def _seed_round(db) -> int:
         "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
     )
     cursor = await db.execute(
-        "INSERT INTO seasons (server_id, start_date, status, season_number) VALUES (1,'2026-01-01','ACTIVE',1)"
+        "INSERT INTO seasons (start_date, status, season_number) VALUES ('2026-01-01','ACTIVE',1)"
     )
     season_id = cursor.lastrowid
     cursor = await db.execute(

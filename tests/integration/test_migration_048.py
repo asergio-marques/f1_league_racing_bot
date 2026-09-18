@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 import db.database as database  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
+from tests.support.migration_steps import run_migrations_through  # noqa: E402
 
 MIGRATION = "048_division_logo_directory.sql"
 COLUMN = "division_logo_directory"
@@ -63,7 +64,7 @@ async def pre_migration_db(tmp_path):
 
 
 async def test_a_new_server_gets_the_league_folder(pre_migration_db):
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         await db.execute(_SEED_SERVER, (1,))
@@ -94,7 +95,7 @@ async def test_a_league_already_configured_keeps_what_it_configured(pre_migratio
         )
         await db.commit()
 
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         cursor = await db.execute(
@@ -112,7 +113,7 @@ async def test_the_schema_default_matches_the_constant(pre_migration_db):
     """Written twice — once in SQL, once in `ASSET_DIRECTORIES` — and must not drift."""
     from models.image_constants import ASSET_DIRECTORIES
 
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         await db.execute(_SEED_SERVER, (1,))

@@ -73,8 +73,7 @@ async def _audit(db_path: str) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, old_value, new_value, actor_name FROM audit_entries "
-            "WHERE server_id = ? ORDER BY id",
-            (SERVER_ID,),
+            " ORDER BY id",
         )
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -178,14 +177,13 @@ async def test_the_total_is_persisted_against_the_signup(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, discord_username) "
-            "VALUES (?, '4242', 'lewis')",
-            (SERVER_ID,),
+            "INSERT INTO signup_records (discord_user_id, discord_username) "
+            "VALUES ('4242', 'lewis')"
         )
         await db.commit()
 
     total = await PlacementService(db_path).store_total_lap_ms(
-        SERVER_ID, "4242", {"1": "1:00.000", "2": "0:30.500"}
+        "4242", {"1": "1:00.000", "2": "0:30.500"}
     )
 
     assert total == 90_500
@@ -201,13 +199,12 @@ async def test_a_driver_with_no_times_is_stored_as_having_none(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, discord_username) "
-            "VALUES (?, '4242', 'lewis')",
-            (SERVER_ID,),
+            "INSERT INTO signup_records (discord_user_id, discord_username) "
+            "VALUES ('4242', 'lewis')"
         )
         await db.commit()
 
-    assert await PlacementService(db_path).store_total_lap_ms(SERVER_ID, "4242", {}) is None
+    assert await PlacementService(db_path).store_total_lap_ms("4242", {}) is None
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -224,16 +221,16 @@ async def test_a_driver_with_no_times_is_stored_as_having_none(tmp_path):
 async def test_a_team_with_no_role_reads_as_none(tmp_path):
     service = PlacementService(await _make_db(tmp_path))
 
-    assert await service.get_team_role_config(SERVER_ID, "Alpha") is None
+    assert await service.get_team_role_config("Alpha") is None
 
 
 async def test_a_role_is_mapped_to_a_team(tmp_path):
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)
 
-    await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID, ACTOR_ID, "Manager")
+    await service.set_team_role_config("Alpha", ROLE_ID, ACTOR_ID, "Manager")
 
-    config = await service.get_team_role_config(SERVER_ID, "Alpha")
+    config = await service.get_team_role_config("Alpha")
     assert config is not None
     assert config.role_id == ROLE_ID
     assert config.team_name == "Alpha"
@@ -244,13 +241,13 @@ async def test_remapping_a_team_replaces_rather_than_duplicates(tmp_path):
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)
 
-    await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID, ACTOR_ID, "Manager")
+    await service.set_team_role_config("Alpha", ROLE_ID, ACTOR_ID, "Manager")
     await service.set_team_role_config(
-        SERVER_ID, "Alpha", OTHER_ROLE_ID, ACTOR_ID, "Manager"
+        "Alpha", OTHER_ROLE_ID, ACTOR_ID, "Manager"
     )
 
-    assert (await service.get_team_role_config(SERVER_ID, "Alpha")).role_id == OTHER_ROLE_ID
-    assert len(await service.get_all_team_role_configs(SERVER_ID)) == 1
+    assert (await service.get_team_role_config("Alpha")).role_id == OTHER_ROLE_ID
+    assert len(await service.get_all_team_role_configs()) == 1
 
 
 async def test_setting_a_role_records_what_it_replaced(tmp_path):
@@ -259,9 +256,9 @@ async def test_setting_a_role_records_what_it_replaced(tmp_path):
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)
 
-    await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID, ACTOR_ID, "Manager")
+    await service.set_team_role_config("Alpha", ROLE_ID, ACTOR_ID, "Manager")
     await service.set_team_role_config(
-        SERVER_ID, "Alpha", OTHER_ROLE_ID, ACTOR_ID, "Manager"
+        "Alpha", OTHER_ROLE_ID, ACTOR_ID, "Manager"
     )
 
     entries = await _audit(db_path)
@@ -273,30 +270,22 @@ async def test_setting_a_role_records_what_it_replaced(tmp_path):
 async def test_every_mapping_is_listed(tmp_path):
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)
-    await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID)
-    await service.set_team_role_config(SERVER_ID, "Beta", OTHER_ROLE_ID)
+    await service.set_team_role_config("Alpha", ROLE_ID)
+    await service.set_team_role_config("Beta", OTHER_ROLE_ID)
 
-    configs = await service.get_all_team_role_configs(SERVER_ID)
+    configs = await service.get_all_team_role_configs()
 
     assert {c.team_name for c in configs} == {"Alpha", "Beta"}
-
-
-async def test_another_server_s_mappings_are_not_listed(tmp_path):
-    db_path = await _make_db(tmp_path)
-    service = PlacementService(db_path)
-    await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID)
-
-    assert await service.get_all_team_role_configs(SERVER_ID + 1) == []
 
 
 async def test_a_mapping_is_deleted(tmp_path):
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)
-    await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID)
+    await service.set_team_role_config("Alpha", ROLE_ID)
 
-    await service.delete_team_role_config(SERVER_ID, "Alpha", ACTOR_ID, "Manager")
+    await service.delete_team_role_config("Alpha", ACTOR_ID, "Manager")
 
-    assert await service.get_team_role_config(SERVER_ID, "Alpha") is None
+    assert await service.get_team_role_config("Alpha") is None
 
 
 async def test_deleting_records_the_role_that_was_removed(tmp_path):
@@ -304,9 +293,9 @@ async def test_deleting_records_the_role_that_was_removed(tmp_path):
     than merely that something happened."""
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)
-    await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID)
+    await service.set_team_role_config("Alpha", ROLE_ID)
 
-    await service.delete_team_role_config(SERVER_ID, "Alpha", ACTOR_ID, "Manager")
+    await service.delete_team_role_config("Alpha", ACTOR_ID, "Manager")
 
     entry = (await _audit(db_path))[-1]
     assert json.loads(entry["old_value"])["role_id"] == ROLE_ID
@@ -318,7 +307,7 @@ async def test_deleting_a_mapping_that_does_not_exist_is_a_no_op(tmp_path):
     would make the common case an error."""
     db_path = await _make_db(tmp_path)
 
-    await PlacementService(db_path).delete_team_role_config(SERVER_ID, "Ghost")
+    await PlacementService(db_path).delete_team_role_config("Ghost")
 
     assert await _audit(db_path) == []
 
@@ -327,12 +316,12 @@ async def test_a_mapping_follows_its_team_through_a_rename(tmp_path):
     """Otherwise renaming a team would silently strip its drivers' role."""
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)
-    await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID)
+    await service.set_team_role_config("Alpha", ROLE_ID)
 
-    await service.rename_team_role_config(SERVER_ID, "Alpha", "Beta", ACTOR_ID, "Manager")
+    await service.rename_team_role_config("Alpha", "Beta", ACTOR_ID, "Manager")
 
-    assert await service.get_team_role_config(SERVER_ID, "Alpha") is None
-    renamed = await service.get_team_role_config(SERVER_ID, "Beta")
+    assert await service.get_team_role_config("Alpha") is None
+    renamed = await service.get_team_role_config("Beta")
     assert renamed is not None
     assert renamed.role_id == ROLE_ID
 
@@ -340,9 +329,9 @@ async def test_a_mapping_follows_its_team_through_a_rename(tmp_path):
 async def test_a_rename_records_the_same_role_under_both_names(tmp_path):
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)
-    await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID)
+    await service.set_team_role_config("Alpha", ROLE_ID)
 
-    await service.rename_team_role_config(SERVER_ID, "Alpha", "Beta", ACTOR_ID, "Manager")
+    await service.rename_team_role_config("Alpha", "Beta", ACTOR_ID, "Manager")
 
     entry = (await _audit(db_path))[-1]
     old, new = json.loads(entry["old_value"]), json.loads(entry["new_value"])
@@ -353,7 +342,7 @@ async def test_a_rename_records_the_same_role_under_both_names(tmp_path):
 async def test_renaming_a_team_with_no_mapping_is_a_no_op(tmp_path):
     db_path = await _make_db(tmp_path)
 
-    await PlacementService(db_path).rename_team_role_config(SERVER_ID, "Ghost", "Beta")
+    await PlacementService(db_path).rename_team_role_config("Ghost", "Beta")
 
     assert await _audit(db_path) == []
 
@@ -363,6 +352,6 @@ async def test_a_change_made_by_the_bot_itself_is_attributed_to_it(tmp_path):
     actor. "system" in the audit is better than a blank or a zero."""
     db_path = await _make_db(tmp_path)
 
-    await PlacementService(db_path).set_team_role_config(SERVER_ID, "Alpha", ROLE_ID)
+    await PlacementService(db_path).set_team_role_config("Alpha", ROLE_ID)
 
     assert (await _audit(db_path))[0]["actor_name"] == "system"

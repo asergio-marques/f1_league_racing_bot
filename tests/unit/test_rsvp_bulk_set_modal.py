@@ -73,9 +73,9 @@ async def _make_db(tmp_path, *, name: str = "rsvp_bulk") -> str:
         )
         for discord_uid, profile_id in DRIVERS.items():
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, "
-                "current_state, is_test_driver) VALUES (?, ?, ?, 'ASSIGNED', 1)",
-                (profile_id, SERVER_ID, str(discord_uid)),
+                "INSERT INTO driver_profiles (id, discord_user_id, "
+                "current_state, is_test_driver) VALUES (?, ?, 'ASSIGNED', 1)",
+                (profile_id, str(discord_uid)),
             )
         await db.commit()
     return db_path
@@ -309,27 +309,6 @@ async def test_a_driver_with_no_attendance_row_is_refused(tmp_path):
     assert _applied(bot) == []
 
 
-async def test_a_profile_from_another_server_is_not_found(tmp_path):
-    """Profiles are per server, and a maintainer pasting ids from another league's
-    rehearsal must not reach into this one."""
-    db_path = await _make_db(tmp_path, name="bulk_otherserver")
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (99999, 900, 100, 101)"
-        )
-        await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, "
-            "current_state, is_test_driver) VALUES (99, 99999, '900000003', 'ASSIGNED', 1)"
-        )
-        await db.commit()
-    bot = _bot(db_path)
-
-    interaction, _ = await _submit(bot, "900000003, accept")
-
-    assert "no driver profile" in _replied(interaction)
-
-
 # ---------------------------------------------------------------------------
 # Partial success
 # ---------------------------------------------------------------------------
@@ -448,7 +427,7 @@ async def test_the_changes_are_logged(tmp_path):
 
     await _submit(bot, "900000001, accept")
 
-    logged = str(bot.output_router.post_log.await_args.args[1])
+    logged = str(bot.output_router.post_log.await_args.args[0])
     assert "/test-mode rsvp set-status" in logged
     assert "Pro" in logged
     assert str(ROUND_ID) in logged

@@ -111,13 +111,13 @@ def _pending(server_id: int = 1) -> PendingConfig:
             }
         ],
     )
-    return PendingConfig(server_id=server_id, divisions=[div], season_id=7)
+    return PendingConfig(divisions=[div], season_id=7)
 
 
 def _cog(pending: PendingConfig | None) -> SeasonCog:
     cog = SeasonCog(_bot())
     if pending is not None:
-        cog._pending[pending.server_id] = pending
+        cog._pending[0] = pending
     return cog
 
 
@@ -137,7 +137,7 @@ async def test_round_add_defers_before_touching_the_database(monkeypatch):
     async def _snapshot(cfg):
         order.append("snapshot")
 
-    async def _overflow(server_id, would_hold):
+    async def _overflow(would_hold):
         order.append("overflow")
         return None
 

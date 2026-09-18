@@ -22,7 +22,7 @@ from db.database import get_connection, run_migrations  # noqa: E402
 from services import driver_service  # noqa: E402
 from services.driver_service import DriverService  # noqa: E402
 
-SERVER_ID, OTHER_SERVER = 2440, 2441
+SERVER_ID = 2440
 A, B, C = "6501", "6502", "6503"
 
 #: Seasons 1 and 3 each hold a division called Pro; season 1 also holds Am.
@@ -33,17 +33,16 @@ async def _make_db(tmp_path) -> str:
     db_path = os.path.join(str(tmp_path), "merge.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
-        for server in (SERVER_ID, OTHER_SERVER):
-            await db.execute(
-                "INSERT INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-                (server,),
-            )
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
+            (SERVER_ID,),
+        )
         for season, number, status in ((1, 1, "COMPLETED"), (3, 3, "ACTIVE")):
             await db.execute(
-                "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-                "VALUES (?, ?, '2026-01-01', ?, ?)",
-                (season, SERVER_ID, status, number),
+                "INSERT INTO seasons (id, start_date, status, season_number) "
+                "VALUES (?, '2026-01-01', ?, ?)",
+                (season, status, number),
             )
         for division, season, name in ((S1_PRO, 1, "Pro"), (S1_AM, 1, "Am"), (S3_PRO, 3, "Pro")):
             await db.execute(
@@ -66,12 +65,12 @@ async def _make_db(tmp_path) -> str:
 
 
 async def _profile(db_path: str, account: str, *, state: str = "NOT_SIGNED_UP",
-                   former: bool = False, server_id: int = SERVER_ID) -> int:
+                   former: bool = False) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "former_driver) VALUES (?, ?, ?, ?)",
-            (server_id, account, state, int(former)),
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "former_driver) VALUES (?, ?, ?)",
+            (account, state, int(former)),
         )
         await db.commit()
         return cursor.lastrowid
@@ -102,9 +101,9 @@ async def _raced(db_path: str, account: str, division: int, profile_id: int | No
 async def _history(db_path: str, profile_id: int, account: str, division_name: str = "Pro") -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_history_entries (server_id, discord_user_id, driver_profile_id, "
-            "season_number, division_name) VALUES (?, ?, ?, 1, ?)",
-            (SERVER_ID, account, profile_id, division_name),
+            "INSERT INTO driver_history_entries (discord_user_id, driver_profile_id, "
+            "season_number, division_name) VALUES (?, ?, 1, ?)",
+            (account, profile_id, division_name),
         )
         await db.commit()
 
@@ -123,15 +122,14 @@ async def _snapshot(db_path: str) -> dict[str, list[tuple]]:
 
 
 async def _reassign(db_path: str, old: str, new: str):
-    return await DriverService(db_path).reassign_user_id(SERVER_ID, old, new, 77, "Manager")
+    return await DriverService(db_path).reassign_user_id(old, new, 77, "Manager")
 
 
 async def _profiles(db_path: str) -> list[tuple]:
     async with get_connection(db_path) as db:
         rows = await (await db.execute(
             "SELECT id, discord_user_id, current_state, former_driver FROM driver_profiles "
-            "WHERE server_id = ? ORDER BY id",
-            (SERVER_ID,),
+            " ORDER BY id",
         )).fetchall()
     return [tuple(r) for r in rows]
 
@@ -232,25 +230,6 @@ async def test_different_divisions_of_one_season_are_allowed(tmp_path):
     assert [tuple(r) for r in rows] == [("Am", outcome.profile.id), ("Pro", outcome.profile.id)]
 
 
-async def test_another_leagues_profile_of_the_same_person_is_untouched(tmp_path):
-    """E30."""
-    db_path = await _make_db(tmp_path)
-    await _profile(db_path, A, state="ASSIGNED")
-    await _profile(db_path, B)
-    elsewhere_a = await _profile(db_path, A, server_id=OTHER_SERVER)
-    elsewhere_b = await _profile(db_path, B, server_id=OTHER_SERVER)
-
-    await _reassign(db_path, A, B)
-
-    async with get_connection(db_path) as db:
-        rows = await (await db.execute(
-            "SELECT driver_profile_id, discord_user_id FROM driver_accounts "
-            "WHERE server_id = ? ORDER BY discord_user_id",
-            (OTHER_SERVER,),
-        )).fetchall()
-    assert [tuple(r) for r in rows] == [(elsewhere_a, A), (elsewhere_b, B)]
-
-
 async def test_leftover_results_elsewhere_become_the_drivers(tmp_path):
     """E32: B holds no profile, only results in season 1 Am; the driver raced season 1 Pro."""
     db_path = await _make_db(tmp_path)
@@ -262,7 +241,7 @@ async def test_leftover_results_elsewhere_become_the_drivers(tmp_path):
 
     assert outcome.accounts == [A, B]
     async with get_connection(db_path) as db:
-        assert await driver_service.resolve_driver_profile_id(SERVER_ID, int(B), db) == a
+        assert await driver_service.resolve_driver_profile_id(int(B), db) == a
 
 
 # ── Merges refused ─────────────────────────────────────────────────────────

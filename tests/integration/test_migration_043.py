@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 import db.database as database  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
+from tests.support.migration_steps import run_migrations_through  # noqa: E402
 
 MIGRATION = "043_league_asset_directories.sql"
 
@@ -86,7 +87,7 @@ async def pre_migration_db(tmp_path):
 
 
 async def test_a_new_server_gets_the_league_folders(pre_migration_db):
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         await db.execute(_SEED_SERVER, (1,))
@@ -105,7 +106,7 @@ async def test_a_new_server_gets_the_league_folders(pre_migration_db):
 async def test_the_template_directory_does_not_move(pre_migration_db):
     """It has no packaged second tier: pointing it at an empty folder would leave a fresh
     install unable to render anything at all."""
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         await db.execute(_SEED_SERVER, (1,))
@@ -130,7 +131,7 @@ async def test_an_existing_row_is_carried_over_verbatim(pre_migration_db):
         )
         await db.commit()
 
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         cursor = await db.execute(
@@ -156,7 +157,7 @@ async def test_the_aspect_toggles_survive_the_rebuild(pre_migration_db):
         )
         await db.commit()
 
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         cursor = await db.execute(
@@ -170,7 +171,7 @@ async def test_the_aspect_toggles_survive_the_rebuild(pre_migration_db):
 
 async def test_the_rebuilt_table_keeps_its_own_foreign_key(pre_migration_db):
     """The rebuild must not quietly drop the cascade from `server_configs`."""
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         await db.execute(_SEED_SERVER, (7,))
@@ -195,14 +196,15 @@ async def test_the_defaults_in_the_schema_match_the_constants(pre_migration_db):
     everything else in the module reads the constants."""
     from models.image_constants import ASSET_DIRECTORIES
 
+    # The schema as it stands at the head, not as 043 left it: the constants describe today's
+    # module, and a directory added since (048) has a default of its own to agree with.
     await run_migrations(pre_migration_db)
 
     async with get_connection(pre_migration_db) as db:
-        await db.execute(_SEED_SERVER, (1,))
-        await db.execute("INSERT INTO image_config (server_id) VALUES (1)")
+        await db.execute("INSERT INTO image_config (id) VALUES (1)")
         await db.commit()
 
-        cursor = await db.execute("SELECT * FROM image_config WHERE server_id = 1")
+        cursor = await db.execute("SELECT * FROM image_config")
         row = await cursor.fetchone()
 
     for column, (_command, default, _packaged) in ASSET_DIRECTORIES.items():

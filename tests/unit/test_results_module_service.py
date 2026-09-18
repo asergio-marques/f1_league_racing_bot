@@ -36,9 +36,7 @@ async def db_path(tmp_path):
             );
 
             CREATE TABLE results_module_config (
-                server_id      INTEGER PRIMARY KEY
-                                   REFERENCES server_configs(server_id)
-                                   ON DELETE CASCADE,
+                id             INTEGER PRIMARY KEY CHECK (id = 1),
                 module_enabled INTEGER NOT NULL DEFAULT 0
             );
 
@@ -58,28 +56,28 @@ class TestIsResultsEnabled:
         """No row in results_module_config → False."""
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        assert await svc.is_results_enabled(1) is False
+        assert await svc.is_results_enabled() is False
 
     async def test_default_false_unknown_server(self, db_path):
         """Server with no config row at all → False."""
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        assert await svc.is_results_enabled(999) is False
+        assert await svc.is_results_enabled() is False
 
     async def test_returns_true_after_enable(self, db_path):
         """After set_results_enabled(True), is_results_enabled returns True."""
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_results_enabled(1, True)
-        assert await svc.is_results_enabled(1) is True
+        await svc.set_results_enabled(True)
+        assert await svc.is_results_enabled() is True
 
     async def test_returns_false_after_disable(self, db_path):
         """After enable then disable, returns False."""
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_results_enabled(1, True)
-        await svc.set_results_enabled(1, False)
-        assert await svc.is_results_enabled(1) is False
+        await svc.set_results_enabled(True)
+        await svc.set_results_enabled(False)
+        assert await svc.is_results_enabled() is False
 
 
 # ---------------------------------------------------------------------------
@@ -92,30 +90,30 @@ class TestSetResultsEnabled:
         """set_results_enabled creates the row when it does not exist."""
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_results_enabled(1, True)
-        assert await svc.is_results_enabled(1) is True
+        await svc.set_results_enabled(True)
+        assert await svc.is_results_enabled() is True
 
     async def test_idempotent_double_enable(self, db_path):
         """Calling set_results_enabled(True) twice does not error."""
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_results_enabled(1, True)
-        await svc.set_results_enabled(1, True)
-        assert await svc.is_results_enabled(1) is True
+        await svc.set_results_enabled(True)
+        await svc.set_results_enabled(True)
+        assert await svc.is_results_enabled() is True
 
     async def test_idempotent_double_disable(self, db_path):
         """Calling set_results_enabled(False) twice does not error."""
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_results_enabled(1, False)
-        await svc.set_results_enabled(1, False)
-        assert await svc.is_results_enabled(1) is False
+        await svc.set_results_enabled(False)
+        await svc.set_results_enabled(False)
+        assert await svc.is_results_enabled() is False
 
     async def test_toggle_true_then_false(self, db_path):
         """Enable then disable cycles correctly."""
         from services.module_service import ModuleService
         svc = ModuleService(db_path)
-        await svc.set_results_enabled(1, True)
-        assert await svc.is_results_enabled(1) is True
-        await svc.set_results_enabled(1, False)
-        assert await svc.is_results_enabled(1) is False
+        await svc.set_results_enabled(True)
+        assert await svc.is_results_enabled() is True
+        await svc.set_results_enabled(False)
+        assert await svc.is_results_enabled() is False

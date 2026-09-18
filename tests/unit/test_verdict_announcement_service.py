@@ -88,8 +88,8 @@ async def test_post_penalty_announcements_skips_when_no_channel_configured(tmp_p
             "interaction_channel_id, log_channel_id) VALUES (1001, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1001, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -134,8 +134,8 @@ async def test_post_penalty_announcements_skips_when_channel_inaccessible(tmp_pa
             "interaction_channel_id, log_channel_id) VALUES (1001, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1001, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -252,7 +252,7 @@ def capture_drawings(monkeypatch, tmp_path):
 
     state = {"enabled": True, "built": []}
 
-    async def _enabled(_bot, _server_id):
+    async def _enabled(_bot):
         return state["enabled"]
 
     async def _build(_bot, **kwargs):
@@ -283,7 +283,7 @@ def capture_drawings(monkeypatch, tmp_path):
             ),
         )
 
-    async def _render(_bot, _server_id, drawing, **_kwargs):
+    async def _render(_bot, drawing, **_kwargs):
         from services.image_verdict_post import VerdictRender
 
         return VerdictRender(png=png, notices=[], problem=None)
@@ -318,9 +318,8 @@ async def _seed_round(db_path: str) -> dict:
             (SERVER_ID,),
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
-            (SERVER_ID,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -369,10 +368,9 @@ async def _seed_driver(
 
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "is_test_driver, test_display_name) VALUES (?, ?, 'FULL_TIME', ?, ?)",
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "is_test_driver, test_display_name) VALUES (?, 'FULL_TIME', ?, ?)",
             (
-                SERVER_ID,
                 str(DRIVER_ID),
                 1 if test_display_name else 0,
                 test_display_name,
@@ -380,9 +378,9 @@ async def _seed_driver(
         )
         if signup_display_name is not None or signup_username is not None:
             await db.execute(
-                "INSERT INTO signup_records (server_id, discord_user_id, "
-                "discord_username, server_display_name) VALUES (?, ?, ?, ?)",
-                (SERVER_ID, str(DRIVER_ID), signup_username, signup_display_name),
+                "INSERT INTO signup_records (discord_user_id, "
+                "discord_username, server_display_name) VALUES (?, ?, ?)",
+                (str(DRIVER_ID), signup_username, signup_display_name),
             )
         await db.commit()
 
@@ -606,8 +604,7 @@ async def test_a_verdict_on_a_result_under_a_past_account_names_the_current_one(
     await _seed_driver(db_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE driver_profiles SET discord_user_id = '31337' WHERE server_id = ?",
-            (SERVER_ID,),
+            "UPDATE driver_profiles SET discord_user_id = '31337'",
         )
         await db.commit()
 

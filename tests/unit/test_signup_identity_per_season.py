@@ -33,9 +33,8 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, ?, '2025-01-01', 'COMPLETED', 1), (2, ?, '2026-01-01', 'ACTIVE', 2)",
-            (SERVER_ID, SERVER_ID),
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2025-01-01', 'COMPLETED', 1), (2, '2026-01-01', 'ACTIVE', 2)",
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
@@ -47,15 +46,15 @@ async def db_path(tmp_path):
             "'2025-06-01T14:00:00')"
         )
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'ASSIGNED')",
-            (SERVER_ID, str(USER)),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'ASSIGNED')",
+            (str(USER),),
         )
         for season_id, name, nationality in ((1, "Old Name", "French"), (2, "New Name", "British")):
             await db.execute(
-                "INSERT INTO signup_records (server_id, season_id, discord_user_id, "
-                "server_display_name, nationality) VALUES (?, ?, ?, ?, ?)",
-                (SERVER_ID, season_id, str(USER), name, nationality),
+                "INSERT INTO signup_records (season_id, discord_user_id, "
+                "server_display_name, nationality) VALUES (?, ?, ?, ?)",
+                (season_id, str(USER), name, nationality),
             )
         await db.commit()
     return path
@@ -94,5 +93,5 @@ async def test_a_season_holding_no_signup_falls_back_to_the_latest(db_path):
 
 
 async def test_a_verdict_reads_the_nationality_of_its_rounds_season(db_path):
-    assert await _driver_nationality(db_path, SERVER_ID, USER, 111) == "French"
-    assert await _driver_nationality(db_path, SERVER_ID, USER) == "British"
+    assert await _driver_nationality(db_path, USER, 111) == "French"
+    assert await _driver_nationality(db_path, USER) == "British"

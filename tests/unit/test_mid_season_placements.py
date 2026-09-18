@@ -56,7 +56,7 @@ async def test_the_uncommitted_placements_are_listed(db_path):
 async def test_confirming_commits_grants_roles_and_posts_each_lineup_once(db_path):
     service = _service(db_path)
 
-    committed = await service.commit_mid_season_placements(SERVER_ID, 1, _guild())
+    committed = await service.commit_mid_season_placements(1, _guild())
 
     assert [p["discord_user_id"] for p in committed] == ["1002"]
     assert await service.uncommitted_placements(1) == []
@@ -68,10 +68,10 @@ async def test_confirming_commits_grants_roles_and_posts_each_lineup_once(db_pat
 
 async def test_confirming_with_nothing_uncommitted_does_nothing(db_path):
     service = _service(db_path)
-    await service.commit_mid_season_placements(SERVER_ID, 1, _guild())
+    await service.commit_mid_season_placements(1, _guild())
     service._refresh_lineup_post.reset_mock()
 
-    assert await service.commit_mid_season_placements(SERVER_ID, 1, _guild()) == []
+    assert await service.commit_mid_season_placements(1, _guild()) == []
     service._refresh_lineup_post.assert_not_awaited()
 
 
@@ -227,7 +227,7 @@ async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the
     assert "Old" not in text, "a cancelled division has no lineup to confirm"
     assert "Do you confirm these placements?" in messages[-1][0]
     (view,) = _RecordedView.made
-    view.record_fingerprint.assert_awaited_once_with(SERVER_ID, 1)
+    view.record_fingerprint.assert_awaited_once_with(1)
     view.bind.assert_awaited_once()
 
 
@@ -267,7 +267,7 @@ async def test_confirming_after_the_season_moved_on_still_reports_the_placements
 
     cog.bot.placement_service.commit_mid_season_placements.assert_awaited_once()
     assert "1 placement(s) confirmed" in interaction.followup.send.await_args.args[0]
-    assert "placements: 1" in cog.bot.output_router.post_log.await_args.args[1]
+    assert "placements: 1" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 # ── The mid-season button ──────────────────────────────────────────────────────────
@@ -360,7 +360,7 @@ async def test_a_test_driver_is_committed_without_roles(db_path):
         await db.commit()
     service = _service(db_path)
 
-    committed = await service.commit_mid_season_placements(SERVER_ID, 1, _guild())
+    committed = await service.commit_mid_season_placements(1, _guild())
 
     assert len(committed) == 1
     service._grant_roles.assert_not_awaited()
@@ -374,7 +374,7 @@ async def test_a_member_not_cached_is_fetched_for_their_roles(db_path):
     guild.get_member = MagicMock(return_value=None)
     guild.fetch_member = AsyncMock(return_value=member)
 
-    await service.commit_mid_season_placements(SERVER_ID, 1, guild)
+    await service.commit_mid_season_placements(1, guild)
 
     assert service._grant_roles.await_args.args[0] is member
 
@@ -389,7 +389,7 @@ async def test_a_member_who_left_is_committed_and_the_lineup_still_posted(db_pat
         side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Member")
     )
 
-    committed = await service.commit_mid_season_placements(SERVER_ID, 1, guild)
+    committed = await service.commit_mid_season_placements(1, guild)
 
     assert len(committed) == 1
     assert await service.uncommitted_placements(1) == []

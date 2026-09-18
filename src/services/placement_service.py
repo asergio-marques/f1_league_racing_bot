@@ -109,56 +109,54 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def get_team_role_config(
-        self, server_id: int, team_name: str
+        self, team_name: str
     ) -> TeamRoleConfig | None:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, team_name, role_id, updated_at "
-                "FROM team_role_configs WHERE server_id = ? AND team_name = ?",
-                (server_id, team_name),
+                "SELECT id, team_name, role_id, updated_at "
+                "FROM team_role_configs WHERE team_name = ?",
+                (team_name,),
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return TeamRoleConfig(
             id=row["id"],
-            server_id=row["server_id"],
             team_name=row["team_name"],
             role_id=row["role_id"],
             updated_at=row["updated_at"],
         )
 
     async def set_team_role_config(
-        self, server_id: int, team_name: str, role_id: int,
+        self, team_name: str, role_id: int,
         actor_id: int = 0, actor_name: str = "system",
     ) -> None:
         """Upsert a team → role mapping and write an audit entry."""
         async with get_connection(self._db_path) as db:
             # Read existing before upsert for audit old_value
             cursor = await db.execute(
-                "SELECT role_id FROM team_role_configs WHERE server_id = ? AND team_name = ?",
-                (server_id, team_name),
+                "SELECT role_id FROM team_role_configs WHERE team_name = ?",
+                (team_name,),
             )
             existing = await cursor.fetchone()
             old_role_id = existing["role_id"] if existing else None
 
             await db.execute(
                 """
-                INSERT INTO team_role_configs (server_id, team_name, role_id, updated_at)
-                VALUES (?, ?, ?, datetime('now'))
-                ON CONFLICT(server_id, team_name) DO UPDATE SET
+                INSERT INTO team_role_configs (team_name, role_id, updated_at)
+                VALUES (?, ?, datetime('now'))
+                ON CONFLICT(team_name) DO UPDATE SET
                     role_id    = excluded.role_id,
                     updated_at = excluded.updated_at
                 """,
-                (server_id, team_name, role_id),
+                (team_name, role_id),
             )
             now = datetime.now(timezone.utc).isoformat()
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'TEAM_ROLE_CONFIG', ?, ?, ?)",
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'TEAM_ROLE_CONFIG', ?, ?, ?)",
                 (
-                    server_id,
                     actor_id,
                     actor_name,
                     json.dumps({"team": team_name, "role_id": old_role_id}),
@@ -168,18 +166,16 @@ class PlacementService:
             )
             await db.commit()
 
-    async def get_all_team_role_configs(self, server_id: int) -> list[TeamRoleConfig]:
+    async def get_all_team_role_configs(self) -> list[TeamRoleConfig]:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, team_name, role_id, updated_at "
-                "FROM team_role_configs WHERE server_id = ?",
-                (server_id,),
+                "SELECT id, team_name, role_id, updated_at "
+                "FROM team_role_configs",
             )
             rows = await cursor.fetchall()
         return [
             TeamRoleConfig(
                 id=r["id"],
-                server_id=r["server_id"],
                 team_name=r["team_name"],
                 role_id=r["role_id"],
                 updated_at=r["updated_at"],
@@ -189,7 +185,6 @@ class PlacementService:
 
     async def swap_team_role(
         self,
-        server_id: int,
         team_name: str,
         old_role_id: int | None,
         new_role_id: int | None,
@@ -217,20 +212,20 @@ class PlacementService:
                 JOIN divisions d ON d.id = ti.division_id
                 JOIN seasons s ON s.id = d.season_id
                 JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
-                WHERE s.server_id = ? AND s.status = 'ACTIVE' AND ti.name = ?
+                WHERE s.status = 'ACTIVE' AND ti.name = ?
                   AND dp.is_test_driver = 0
                   AND {uncommitted_seat_excluded("ts")}
                 ORDER BY dp.discord_user_id
                 """,
-                (server_id, team_name),
+                (team_name,),
             )
             user_ids = [row["discord_user_id"] for row in await cursor.fetchall()]
             still_mapped = False
             if old_role_id is not None:
                 cursor = await db.execute(
-                    "SELECT 1 FROM team_role_configs WHERE server_id = ? AND role_id = ? "
+                    "SELECT 1 FROM team_role_configs WHERE role_id = ? "
                     "AND team_name != ? LIMIT 1",
-                    (server_id, old_role_id, team_name),
+                    (old_role_id, team_name),
                 )
                 still_mapped = await cursor.fetchone() is not None
 
@@ -250,15 +245,15 @@ class PlacementService:
         return reached
 
     async def delete_team_role_config(
-        self, server_id: int, team_name: str,
+        self, team_name: str,
         actor_id: int = 0, actor_name: str = "system",
     ) -> None:
         """Delete the team -> role mapping if present; silent no-op if absent."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, role_id FROM team_role_configs "
-                "WHERE server_id = ? AND team_name = ?",
-                (server_id, team_name),
+                "WHERE team_name = ?",
+                (team_name,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -269,11 +264,11 @@ class PlacementService:
             now = datetime.now(timezone.utc).isoformat()
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, "
+                "(actor_id, actor_name, division_id, change_type, "
                 "old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'TEAM_ROLE_CONFIG', ?, ?, ?)",
+                "VALUES (?, ?, NULL, 'TEAM_ROLE_CONFIG', ?, ?, ?)",
                 (
-                    server_id, actor_id, actor_name,
+                    actor_id, actor_name,
                     json.dumps({"team": team_name, "role_id": row["role_id"]}),
                     json.dumps({"team": team_name, "role_id": None}),
                     now,
@@ -282,15 +277,15 @@ class PlacementService:
             await db.commit()
 
     async def rename_team_role_config(
-        self, server_id: int, old_name: str, new_name: str,
+        self, old_name: str, new_name: str,
         actor_id: int = 0, actor_name: str = "system",
     ) -> None:
         """Rename the team_name key in the role mapping; silent no-op if absent."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, role_id FROM team_role_configs "
-                "WHERE server_id = ? AND team_name = ?",
-                (server_id, old_name),
+                "WHERE team_name = ?",
+                (old_name,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -303,11 +298,11 @@ class PlacementService:
             now = datetime.now(timezone.utc).isoformat()
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, "
+                "(actor_id, actor_name, division_id, change_type, "
                 "old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'TEAM_ROLE_CONFIG', ?, ?, ?)",
+                "VALUES (?, ?, NULL, 'TEAM_ROLE_CONFIG', ?, ?, ?)",
                 (
-                    server_id, actor_id, actor_name,
+                    actor_id, actor_name,
                     json.dumps({"team": old_name, "role_id": row["role_id"]}),
                     json.dumps({"team": new_name, "role_id": row["role_id"]}),
                     now,
@@ -320,7 +315,7 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def store_total_lap_ms(
-        self, server_id: int, discord_user_id: str, lap_times: dict[str, str]
+        self, discord_user_id: str, lap_times: dict[str, str]
     ) -> int | None:
         """Compute and persist total_lap_ms on the driver's SignupRecord.
 
@@ -333,8 +328,8 @@ class PlacementService:
             await db.execute(
                 "UPDATE signup_records SET total_lap_ms = ? "
                 "WHERE id = (SELECT MAX(id) FROM signup_records "
-                "            WHERE server_id = ? AND discord_user_id = ?)",
-                (total_ms, server_id, discord_user_id),
+                "            WHERE discord_user_id = ?)",
+                (total_ms, discord_user_id),
             )
             await db.commit()
         return total_ms
@@ -368,7 +363,7 @@ class PlacementService:
             return [dict(row) for row in await cursor.fetchall()]
 
     async def commit_mid_season_placements(
-        self, server_id: int, season_id: int, guild: discord.Guild | None
+        self, season_id: int, guild: discord.Guild | None
     ) -> list[dict]:
         """Commit the season's uncommitted placements, granting their roles and posting lineups.
 
@@ -399,7 +394,7 @@ class PlacementService:
                         continue
                 role_ids = [placement["division_role_id"]]
                 if placement["team_name"]:
-                    team_cfg = await self.get_team_role_config(server_id, placement["team_name"])
+                    team_cfg = await self.get_team_role_config(placement["team_name"])
                     if team_cfg is not None:
                         role_ids.append(team_cfg.role_id)
                 await self._grant_roles(member, *role_ids)
@@ -411,7 +406,7 @@ class PlacementService:
     # Seeded unassigned listing (T008)
     # ------------------------------------------------------------------
 
-    async def get_unassigned_drivers_seeded(self, server_id: int) -> list[dict]:
+    async def get_unassigned_drivers_seeded(self) -> list[dict]:
         """Return every unsettled signup: Unassigned drivers in seed order, then the rest.
 
         Unassigned drivers are seeded by total_lap_ms ASC NULLS LAST, then by the moment their
@@ -439,8 +434,7 @@ class PlacementService:
                 -- The driver's signup: records are kept, never overwritten (#220), and an
                 -- approved one outranks a later one that was not (#243).
                 LEFT JOIN signup_records sr ON sr.id = {drivers_signup}
-                WHERE dp.server_id = ?
-                  AND dp.current_state IN ({unsettled})
+                WHERE dp.current_state IN ({unsettled})
                 ORDER BY
                     dp.current_state = 'UNASSIGNED' DESC,
                     sr.total_lap_ms ASC NULLS LAST,
@@ -448,8 +442,7 @@ class PlacementService:
                     -- was made, which a correction never moves.
                     sr.created_at ASC,
                     sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL),
-                (server_id,),
+                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL)
             )
             rows = await cursor.fetchall()
 
@@ -477,7 +470,7 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def get_unassigned_drivers_for_export(
-        self, server_id: int, slots: list[AvailabilitySlot]
+        self, slots: list[AvailabilitySlot]
     ) -> list[dict]:
         """Return every unsettled signup, as the seeded listing orders it, enriched for CSV.
 
@@ -512,8 +505,7 @@ class PlacementService:
                 -- The driver's signup: records are kept, never overwritten (#220), and an
                 -- approved one outranks a later one that was not (#243).
                 LEFT JOIN signup_records sr ON sr.id = {drivers_signup}
-                WHERE dp.server_id = ?
-                  AND dp.current_state IN ({unsettled})
+                WHERE dp.current_state IN ({unsettled})
                 ORDER BY
                     dp.current_state = 'UNASSIGNED' DESC,
                     sr.total_lap_ms ASC NULLS LAST,
@@ -521,8 +513,7 @@ class PlacementService:
                     -- was made, which a correction never moves.
                     sr.created_at ASC,
                     sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL),
-                (server_id,),
+                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL)
             )
             rows = await cursor.fetchall()
 
@@ -578,7 +569,7 @@ class PlacementService:
         return None if row is None else bool(row["is_reserve"])
 
     async def _guard_reserve_capacity(
-        self, server_id: int, division_id: int, team_name: str
+        self, division_id: int, team_name: str
     ) -> None:
         """Refuse a reserve placement that would outgrow the lineup template (FR/R8).
 
@@ -610,10 +601,10 @@ class PlacementService:
             if not await self._is_reserve_team(division_id, team_name):
                 return
 
-            if not await lineup_enabled(bot, server_id):
+            if not await lineup_enabled(bot):
                 return
 
-            reports = await bot.image_validity_service.template_reports(server_id)
+            reports = await bot.image_validity_service.template_reports()
             report = reports.get("lineup_template")
             if report is None or not report.valid:
                 return
@@ -640,7 +631,7 @@ class PlacementService:
                 f"turn the `lineup` image aspect off with `/images config toggle`."
             )
 
-    async def _guard_sheet_capacity(self, server_id: int, division_id: int) -> None:
+    async def _guard_sheet_capacity(self, division_id: int) -> None:
         """Refuse a placement that would outgrow the attendance sheet template (FR-042).
 
         The sheet draws every driver of the division, and its rows are counted from the file
@@ -671,10 +662,10 @@ class PlacementService:
             from services.image_attendance_post import attendance_enabled
             from utils.svg_document import load_svg
 
-            if not await attendance_enabled(bot, server_id):
+            if not await attendance_enabled(bot):
                 return
 
-            reports = await bot.image_validity_service.template_reports(server_id)
+            reports = await bot.image_validity_service.template_reports()
             report = reports.get("attendance_template")
             if report is None or not report.valid or report.resolved_path is None:
                 return
@@ -702,7 +693,7 @@ class PlacementService:
             )
 
     async def _guard_standings_capacity(
-        self, server_id: int, division_id: int, team_name: str
+        self, division_id: int, team_name: str
     ) -> None:
         """Refuse a placement that would outgrow the driver standings template (FR-044).
 
@@ -740,10 +731,10 @@ class PlacementService:
             if await self._is_reserve_team(division_id, team_name) is not False:
                 return
 
-            if not await standings_enabled(bot, server_id, DRIVERS_TEMPLATE_KEY):
+            if not await standings_enabled(bot, DRIVERS_TEMPLATE_KEY):
                 return
 
-            reports = await bot.image_validity_service.template_reports(server_id)
+            reports = await bot.image_validity_service.template_reports()
             report = reports.get(DRIVERS_TEMPLATE_KEY)
             if report is None or not report.valid or report.resolved_path is None:
                 return
@@ -772,7 +763,7 @@ class PlacementService:
                 f"the standings would silently drop a driver."
             )
 
-    async def _guard_test_mode(self, server_id: int, driver_profile_id: int) -> None:
+    async def _guard_test_mode(self, driver_profile_id: int) -> None:
         """Refuse to seat a *real* driver while the server is in test mode.
 
         Test mode and a real league may not share a server, so a real driver never enters
@@ -786,11 +777,11 @@ class PlacementService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT (SELECT test_mode_active FROM server_configs WHERE server_id = ?) "
+                "SELECT (SELECT test_mode_active FROM server_configs) "
                 "           AS test_mode_active, "
                 "       dp.is_test_driver "
-                "FROM driver_profiles dp WHERE dp.id = ? AND dp.server_id = ?",
-                (server_id, driver_profile_id, server_id),
+                "FROM driver_profiles dp WHERE dp.id = ?",
+                (driver_profile_id,),
             )
             row = await cursor.fetchone()
 
@@ -806,7 +797,7 @@ class PlacementService:
             )
 
     async def _guard_image_capacity(
-        self, server_id: int, division_id: int, season_id: int, team_name: str
+        self, division_id: int, season_id: int, team_name: str
     ) -> None:
         """Refuse a placement that would outgrow a configured image template.
 
@@ -824,23 +815,23 @@ class PlacementService:
         # The reserve block is guarded separately: it counts reserve drivers, not every
         # seated driver, and its capacity comes from the template rather than from here.
         # It needs the team, because only a placement into the reserve team joins it.
-        await self._guard_reserve_capacity(server_id, division_id, team_name)
+        await self._guard_reserve_capacity(division_id, team_name)
 
         # The attendance sheet's rows are likewise counted from the template rather than
         # declared as a number, so they are invisible to ``declared_capacities()`` below.
-        await self._guard_sheet_capacity(server_id, division_id)
+        await self._guard_sheet_capacity(division_id)
 
         # And so are the driver standings' — both standings catalogues declare
         # ``capacity=None`` and derive their rows from the file. It needs the team too,
         # because a reserve joins no classification.
-        await self._guard_standings_capacity(server_id, division_id, team_name)
+        await self._guard_standings_capacity(division_id, team_name)
 
         capacities = declared_capacities()
         if not capacities:
             return
 
         try:
-            if not await ModuleService(self._db_path).is_images_enabled(server_id):
+            if not await ModuleService(self._db_path).is_images_enabled():
                 return
 
             smallest = min(capacities.values())
@@ -934,7 +925,6 @@ class PlacementService:
 
     async def move_driver(
         self,
-        server_id: int,
         driver_profile_id: int,
         season_id: int,
         from_division_id: int,
@@ -959,12 +949,12 @@ class PlacementService:
 
         Returns a summary dict: from_division, to_division, from_team, to_team.
         """
-        await self._guard_image_capacity(server_id, to_division_id, season_id, team_name)
+        await self._guard_image_capacity(to_division_id, season_id, team_name)
 
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ? AND server_id = ?",
-                (driver_profile_id, server_id),
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
+                (driver_profile_id,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -1035,10 +1025,10 @@ class PlacementService:
                 )
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, ?, 'DRIVER_MOVE', ?, ?, ?)",
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, 'DRIVER_MOVE', ?, ?, ?)",
                 (
-                    server_id, acting_user_id, acting_user_name, to_division_id,
+                    acting_user_id, acting_user_name, to_division_id,
                     json.dumps({"division": divisions[from_division_id]["name"],
                                 "team": source["team_name"]}),
                     json.dumps({"division": divisions[to_division_id]["name"],
@@ -1069,13 +1059,13 @@ class PlacementService:
                     member = None
             if member is not None:
                 old_cfg = (
-                    await self.get_team_role_config(server_id, source["team_name"])
+                    await self.get_team_role_config(source["team_name"])
                     if source["team_name"] else None
                 )
-                new_cfg = await self.get_team_role_config(server_id, team_name)
+                new_cfg = await self.get_team_role_config(team_name)
                 held_role_ids = set()
                 for held in teams_held:
-                    cfg = await self.get_team_role_config(server_id, held)
+                    cfg = await self.get_team_role_config(held)
                     if cfg is not None:
                         held_role_ids.add(cfg.role_id)
                 revoke: list[int] = []
@@ -1103,7 +1093,6 @@ class PlacementService:
 
     async def assign_driver(
         self,
-        server_id: int,
         driver_profile_id: int,
         division_id: int,
         team_name: str,
@@ -1138,18 +1127,18 @@ class PlacementService:
         # FR-028). This is the single choke point through which a driver enters a
         # division, so guarding it covers the signup wizard, manual placement and bulk
         # import alike. Inert while every catalogue is empty.
-        await self._guard_image_capacity(server_id, division_id, season_id, team_name)
+        await self._guard_image_capacity(division_id, season_id, team_name)
 
         # A real driver may not be seated while the server is in test mode: the same
         # choke point keeps the manual command, the signup path and attendance's
         # autoreserve alike from mixing a real roster into a test one.
-        await self._guard_test_mode(server_id, driver_profile_id)
+        await self._guard_test_mode(driver_profile_id)
 
         async with get_connection(self._db_path) as db:
             # 1. Fetch profile and validate state
             cursor = await db.execute(
-                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ? AND server_id = ?",
-                (driver_profile_id, server_id),
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
+                (driver_profile_id,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -1233,10 +1222,9 @@ class PlacementService:
             # Audit log
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, ?, 'DRIVER_ASSIGN', ?, ?, ?)",
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, 'DRIVER_ASSIGN', ?, ?, ?)",
                 (
-                    server_id,
                     acting_user_id,
                     acting_user_name,
                     division_id,
@@ -1264,7 +1252,7 @@ class PlacementService:
         # no lineup. Both follow when placements are confirmed.
         if member is not None and not is_test_driver and is_committed:
             role_ids_to_grant = [div_role_id]
-            team_cfg = await self.get_team_role_config(server_id, team_name)
+            team_cfg = await self.get_team_role_config(team_name)
             if team_cfg is not None:
                 role_ids_to_grant.append(team_cfg.role_id)
             await self._grant_roles(member, *role_ids_to_grant)
@@ -1284,7 +1272,6 @@ class PlacementService:
 
     async def release_driver(
         self,
-        server_id: int,
         driver_profile_id: int,
         division_id: int,
         season_id: int,
@@ -1327,7 +1314,6 @@ class PlacementService:
                     "them with `/driver move`."
                 )
         return await self.unassign_driver(
-            server_id=server_id,
             driver_profile_id=driver_profile_id,
             division_id=division_id,
             season_id=season_id,
@@ -1339,7 +1325,6 @@ class PlacementService:
 
     async def unassign_driver(
         self,
-        server_id: int,
         driver_profile_id: int,
         division_id: int,
         season_id: int,
@@ -1364,8 +1349,8 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             # 1. Validate driver state
             cursor = await db.execute(
-                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ? AND server_id = ?",
-                (driver_profile_id, server_id),
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
+                (driver_profile_id,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -1436,7 +1421,7 @@ class PlacementService:
             # Revoke only if the driver holds no other seat in any team mapped to that role
             team_role_id_to_revoke: int | None = None
             if team_name is not None:
-                team_cfg = await self.get_team_role_config(server_id, team_name)
+                team_cfg = await self.get_team_role_config(team_name)
                 if team_cfg is not None:
                     # Check other assignments that share this role
                     cursor = await db.execute(
@@ -1445,13 +1430,13 @@ class PlacementService:
                         JOIN team_seats ts ON ts.id = dsa.team_seat_id
                         JOIN team_instances ti ON ti.id = ts.team_instance_id
                         JOIN team_role_configs trc
-                            ON trc.server_id = ? AND trc.team_name = ti.name
+                            ON trc.team_name = ti.name
                         WHERE dsa.driver_profile_id = ?
                           AND dsa.season_id = ?
                           AND dsa.division_id != ?
                           AND trc.role_id = ?
                         """,
-                        (server_id, driver_profile_id, season_id, division_id, team_cfg.role_id),
+                        (driver_profile_id, season_id, division_id, team_cfg.role_id),
                     )
                     other_same_role = (await cursor.fetchone())[0]
                     if other_same_role == 0:
@@ -1475,10 +1460,9 @@ class PlacementService:
 
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, ?, 'DRIVER_UNASSIGN', ?, ?, ?)",
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, 'DRIVER_UNASSIGN', ?, ?, ?)",
                 (
-                    server_id,
                     acting_user_id,
                     acting_user_name,
                     division_id,
@@ -1516,7 +1500,6 @@ class PlacementService:
 
     async def revoke_all_placement_roles(
         self,
-        server_id: int,
         driver_profile_id: int,
         season_id: int | None,
         member: discord.Member,
@@ -1549,10 +1532,10 @@ class PlacementService:
                 JOIN team_seats ts ON ts.id = dsa.team_seat_id
                 JOIN team_instances ti ON ti.id = ts.team_instance_id
                 JOIN team_role_configs trc
-                    ON trc.server_id = ? AND trc.team_name = ti.name
+                    ON trc.team_name = ti.name
                 WHERE dsa.driver_profile_id = ? AND dsa.season_id = ?
                 """,
-                (server_id, driver_profile_id, season_id),
+                (driver_profile_id, season_id),
             )
             team_role_rows = await cursor.fetchall()
 
@@ -1566,7 +1549,7 @@ class PlacementService:
     # A driver's roles follow their current account (issue #243)
     # ------------------------------------------------------------------
 
-    async def driver_role_ids(self, server_id: int, driver_profile_id: int) -> set[int]:
+    async def driver_role_ids(self, driver_profile_id: int) -> set[int]:
         """The roles the driver's standing entitles them to, read from state, not from Discord.
 
         The signed-up role while they are Unassigned or Assigned, and the division and team
@@ -1587,8 +1570,7 @@ class PlacementService:
                 DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value
             ):
                 cursor = await db.execute(
-                    "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
-                    (server_id,),
+                    "SELECT signed_up_role_id FROM signup_module_config",
                 )
                 row = await cursor.fetchone()
                 if row is not None and row["signed_up_role_id"]:
@@ -1602,11 +1584,10 @@ class PlacementService:
                 LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
                 LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
                 LEFT JOIN team_role_configs trc
-                    ON trc.server_id = s.server_id AND trc.team_name = ti.name
-                WHERE dsa.driver_profile_id = ? AND dsa.committed = 1
-                  AND s.server_id = ? AND s.status IN ('SETUP', 'ACTIVE')
+                    ON trc.team_name = ti.name
+                WHERE dsa.driver_profile_id = ? AND dsa.committed = 1 AND s.status IN ('SETUP', 'ACTIVE')
                 """,
-                (driver_profile_id, server_id),
+                (driver_profile_id,),
             )
             for row in await cursor.fetchall():
                 for role_id in (row["division_role"], row["team_role"]):
@@ -1617,7 +1598,6 @@ class PlacementService:
     async def move_driver_roles(
         self,
         guild: discord.Guild,
-        server_id: int,
         driver_profile_id: int,
         from_account: str,
         to_account: str,
@@ -1630,7 +1610,7 @@ class PlacementService:
         account is granted from the league's record. Returns what could not be done, for the
         command to report; the account change itself stands either way.
         """
-        role_ids = await self.driver_role_ids(server_id, driver_profile_id)
+        role_ids = await self.driver_role_ids(driver_profile_id)
         if not role_ids:
             return []
         problems: list[str] = []
@@ -1675,7 +1655,6 @@ class PlacementService:
 
     async def sack_driver(
         self,
-        server_id: int,
         driver_profile_id: int,
         season_id: int,
         acting_user_id: int,
@@ -1698,8 +1677,8 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT current_state, former_driver, is_test_driver FROM driver_profiles "
-                "WHERE id = ? AND server_id = ?",
-                (driver_profile_id, server_id),
+                "WHERE id = ?",
+                (driver_profile_id,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -1737,12 +1716,11 @@ class PlacementService:
                 member = None
 
         if member is not None and not is_test_driver:
-            await self.revoke_all_placement_roles(server_id, driver_profile_id, season_id, member)
+            await self.revoke_all_placement_roles(driver_profile_id, season_id, member)
             # Revoke the signed-up role granted at approval
             async with get_connection(self._db_path) as db:
                 cur = await db.execute(
-                    "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
-                    (server_id,),
+                    "SELECT signed_up_role_id FROM signup_module_config",
                 )
                 cfg_row = await cur.fetchone()
             if cfg_row and cfg_row["signed_up_role_id"]:
@@ -1770,10 +1748,9 @@ class PlacementService:
             )
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'DRIVER_SACK', ?, ?, ?)",
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'DRIVER_SACK', ?, ?, ?)",
                 (
-                    server_id,
                     acting_user_id,
                     acting_user_name,
                     json.dumps({"state": current_state.value, "divisions": division_ids}),
@@ -1823,7 +1800,7 @@ class PlacementService:
 
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
-                "SELECT s.server_id, d.name AS div_name, d.lineup_channel_id, d.lineup_message_id "
+                "SELECT d.name AS div_name, d.lineup_channel_id, d.lineup_message_id "
                 "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                 (division_id,),
             )
@@ -1835,7 +1812,6 @@ class PlacementService:
         lineup_channel_id: int = div_row["lineup_channel_id"]
         lineup_message_id: int | None = div_row["lineup_message_id"]
         div_name: str = div_row["div_name"] or str(division_id)
-        server_id: int = div_row["server_id"]
 
         # Resolve the channel
         channel = guild.get_channel(lineup_channel_id)
@@ -1924,9 +1900,9 @@ class PlacementService:
             )
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, ?, 'SIGNUP_LINEUP_POSTED', '', ?, ?)",
-                (server_id, 0, "system", division_id,
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, ?, 'SIGNUP_LINEUP_POSTED', '', ?, ?)",
+                (0, "system", division_id,
                  json.dumps({"channel_id": lineup_channel_id, "division": div_name}), now),
             )
             await db.commit()

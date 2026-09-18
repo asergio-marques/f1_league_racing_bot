@@ -93,7 +93,7 @@ async def test_the_master_toggle_enables_portraits():
     await _unwrap(cog.use_pfp_toggle)(cog, interaction)
 
     bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        SERVER_ID, "use_pfp", True
+        "use_pfp", True
     )
     assert "enabled" in _said(interaction)
 
@@ -105,10 +105,10 @@ async def test_the_master_toggle_disables_portraits_and_stops_the_daily_job():
     await _unwrap(cog.use_pfp_toggle)(cog, interaction)
 
     bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        SERVER_ID, "use_pfp", False
+        "use_pfp", False
     )
     # A job left running against a setting that says no would keep fetching.
-    bot.scheduler_service.cancel_portrait_refresh.assert_called_once_with(SERVER_ID)
+    bot.scheduler_service.cancel_portrait_refresh.assert_called_once_with()
 
 
 async def test_enabling_the_master_toggle_re_arms_a_standing_daily_setting():
@@ -118,7 +118,7 @@ async def test_enabling_the_master_toggle_re_arms_a_standing_daily_setting():
     await _unwrap(cog.use_pfp_toggle)(cog, interaction)
 
     bot.scheduler_service.schedule_portrait_refresh.assert_called_once_with(
-        SERVER_ID, "07:45"
+        "07:45"
     )
 
 
@@ -145,7 +145,7 @@ async def test_prerender_toggles_off_while_the_daily_job_stands():
     await _unwrap(cog.use_pfp_prerender_toggle)(cog, interaction)
 
     bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        SERVER_ID, "pfp_prerender", False
+        "pfp_prerender", False
     )
 
 
@@ -185,7 +185,7 @@ async def test_the_master_toggle_is_never_refused_by_the_rule():
     await _unwrap(cog.use_pfp_toggle)(cog, interaction)
 
     bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        SERVER_ID, "use_pfp", False
+        "use_pfp", False
     )
 
 
@@ -222,9 +222,9 @@ async def test_disabling_the_daily_job_needs_no_modal():
 
     interaction.response.send_modal.assert_not_awaited()
     bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        SERVER_ID, "pfp_daily", False
+        "pfp_daily", False
     )
-    bot.scheduler_service.cancel_portrait_refresh.assert_called_once_with(SERVER_ID)
+    bot.scheduler_service.cancel_portrait_refresh.assert_called_once_with()
 
 
 async def test_an_unreadable_time_changes_nothing():
@@ -263,13 +263,13 @@ async def test_confirming_stores_the_time_enables_the_job_and_arms_it():
     await view.confirm.callback(interaction)
 
     bot.image_config_service.set_field.assert_awaited_once_with(
-        SERVER_ID, "pfp_daily_time", "19:00"
+        "pfp_daily_time", "19:00"
     )
     bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        SERVER_ID, "pfp_daily", True
+        "pfp_daily", True
     )
     bot.scheduler_service.schedule_portrait_refresh.assert_called_once_with(
-        SERVER_ID, "19:00"
+        "19:00"
     )
     assert "19:00 UTC" in _said(interaction)
 
@@ -297,6 +297,6 @@ async def test_a_scheduler_failure_does_not_lose_the_setting():
     await view.confirm.callback(interaction)
 
     bot.image_config_service.set_pfp_flag.assert_awaited_once_with(
-        SERVER_ID, "pfp_daily", True
+        "pfp_daily", True
     )
     assert "enabled" in _said(interaction)

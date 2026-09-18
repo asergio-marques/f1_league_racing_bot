@@ -53,22 +53,22 @@ def _bot(*, module_on=True, aspect_on=True, template_valid=True):
 
 @pytest.mark.asyncio
 async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound():
-    assert await weather_enabled(_bot(), 1, "weather_p2_template") is True
+    assert await weather_enabled(_bot(), "weather_p2_template") is True
 
 
 @pytest.mark.asyncio
 async def test_the_module_being_off_falls_back_to_text():
-    assert await weather_enabled(_bot(module_on=False), 1, "weather_p2_template") is False
+    assert await weather_enabled(_bot(module_on=False), "weather_p2_template") is False
 
 
 @pytest.mark.asyncio
 async def test_the_aspect_being_off_falls_back_to_text():
-    assert await weather_enabled(_bot(aspect_on=False), 1, "weather_p2_template") is False
+    assert await weather_enabled(_bot(aspect_on=False), "weather_p2_template") is False
 
 
 @pytest.mark.asyncio
 async def test_an_invalid_template_falls_back_to_text():
-    assert await weather_enabled(_bot(template_valid=False), 1, "weather_p3_template") is False
+    assert await weather_enabled(_bot(template_valid=False), "weather_p3_template") is False
 
 
 @pytest.mark.asyncio
@@ -84,15 +84,15 @@ async def test_enablement_is_asked_per_template_not_per_aspect():
     bot.image_validity_service.template_reports = AsyncMock(
         return_value={"weather_p3_template": good, "weather_p3_sprint_template": bad}
     )
-    assert await weather_enabled(bot, 1, "weather_p3_template") is True
-    assert await weather_enabled(bot, 1, "weather_p3_sprint_template") is False
+    assert await weather_enabled(bot, "weather_p3_template") is True
+    assert await weather_enabled(bot, "weather_p3_sprint_template") is False
 
 
 @pytest.mark.asyncio
 async def test_a_reader_that_raises_never_breaks_the_posting():
     bot = _bot()
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await weather_enabled(bot, 1, "weather_p1_template") is False
+    assert await weather_enabled(bot, "weather_p1_template") is False
 
 
 # ── 2. Produce before destroy (FR-045, XIV.8) ─────────────────────────────
@@ -115,7 +115,7 @@ async def test_the_superseded_message_is_deleted_only_after_the_new_one_exists(m
     async def _delete(*a, **k):
         order.append("delete")
 
-    async def _post(div, text, server_id=0):
+    async def _post(div, text, enqueue_on_failure=False):
         order.append("post")
         return MagicMock()
 
@@ -126,7 +126,7 @@ async def test_the_superseded_message_is_deleted_only_after_the_new_one_exists(m
     bot.output_router.post_forecast = _post
 
     await forecast_cleanup_service.post_phase_message(
-        bot, round_id=1, division_id=1, server_id=1, channel_id=1,
+        bot, round_id=1, division_id=1, channel_id=1,
         phase_number=2, text="forecast", supersedes=1,
     )
     assert order == ["post", "store", "delete"], order
@@ -140,7 +140,7 @@ async def test_a_failed_post_deletes_nothing(monkeypatch):
     async def _delete(*a, **k):
         deleted.append(a)
 
-    async def _post(div, text, server_id=0):
+    async def _post(div, text, enqueue_on_failure=False):
         return None  # the router's own failure signal
 
     monkeypatch.setattr(forecast_cleanup_service, "delete_forecast_message", _delete)
@@ -150,7 +150,7 @@ async def test_a_failed_post_deletes_nothing(monkeypatch):
     bot.output_router.post_forecast = _post
 
     result = await forecast_cleanup_service.post_phase_message(
-        bot, round_id=1, division_id=1, server_id=1, channel_id=1,
+        bot, round_id=1, division_id=1, channel_id=1,
         phase_number=3, text="forecast", supersedes=2,
     )
     assert result is None
@@ -170,7 +170,7 @@ async def test_the_first_occasion_supersedes_nothing(monkeypatch):
     bot.output_router.post_forecast = AsyncMock(return_value=MagicMock())
 
     await forecast_cleanup_service.post_phase_message(
-        bot, round_id=1, division_id=1, server_id=1, channel_id=1,
+        bot, round_id=1, division_id=1, channel_id=1,
         phase_number=1, text="forecast",
     )
     assert deleted == []
@@ -293,7 +293,7 @@ async def test_a_scheduled_posting_falls_back_rather_than_rejecting():
 
     bot = _render_bot(_decision(posts_image=False, problem_detail="template too small"))
     render = await render_forecast(
-        bot, 1, MagicMock(template_key="weather_p2_template"),
+        bot, MagicMock(template_key="weather_p2_template"),
         origin=PostingOrigin.SCHEDULED,
     )
     assert render.draws is False
@@ -309,7 +309,7 @@ async def test_a_commanded_posting_rejects_rather_than_falling_back():
 
     bot = _render_bot(_decision(rejects=True, problem_detail="missing track_name"))
     render = await render_forecast(
-        bot, 1, MagicMock(template_key="weather_p3_template"),
+        bot, MagicMock(template_key="weather_p3_template"),
         origin=PostingOrigin.COMMANDED,
     )
     assert render.rejects is True
@@ -326,10 +326,10 @@ async def test_a_resolution_fault_rejects_only_when_commanded():
     bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("no config"))
     drawing = MagicMock(template_key="weather_p1_template")
 
-    scheduled = await render_forecast(bot, 1, drawing, origin=PostingOrigin.SCHEDULED)
+    scheduled = await render_forecast(bot, drawing, origin=PostingOrigin.SCHEDULED)
     assert scheduled.draws is False and scheduled.rejects is False
 
-    commanded = await render_forecast(bot, 1, drawing, origin=PostingOrigin.COMMANDED)
+    commanded = await render_forecast(bot, drawing, origin=PostingOrigin.COMMANDED)
     assert commanded.rejects is True
 
 
@@ -338,7 +338,7 @@ async def test_a_successful_render_hands_back_the_png():
     from services.image_weather_post import render_forecast
 
     bot = _render_bot(_decision())
-    render = await render_forecast(bot, 1, MagicMock(template_key="weather_p1_template"))
+    render = await render_forecast(bot, MagicMock(template_key="weather_p1_template"))
     assert render.draws is True
     assert str(render.png) == "/tmp/weather.png"
 
@@ -365,7 +365,7 @@ async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatc
     reported: list = []
     monkeypatch.setattr(
         post, "report_notices",
-        AsyncMock(side_effect=lambda bot, sid, what, n: reported.append((what, list(n)))),
+        AsyncMock(side_effect=lambda bot, what, n: reported.append((what, list(n)))),
     )
     monkeypatch.setattr(post, "report", AsyncMock())
     drawing = MagicMock(
@@ -377,7 +377,7 @@ async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatc
     bot = _attach_bot(notices=["fallback used"])
     bot.image_render_service.render_for_posting.return_value.png_paths = [str(png)]
 
-    result = await post.attach_forecast(bot, round_id=1, phase=2, server_id=1)
+    result = await post.attach_forecast(bot, round_id=1, phase=2)
 
     assert result is not None, "a substituted asset must not stop the graphic"
     assert len(reported) == 1
@@ -410,7 +410,7 @@ async def test_a_problem_is_reported_and_the_text_stands_instead(monkeypatch):
     monkeypatch.setattr(post, "report_notices", AsyncMock())
     monkeypatch.setattr(
         post, "report",
-        AsyncMock(side_effect=lambda bot, sid, what, detail: reported.append(detail)),
+        AsyncMock(side_effect=lambda bot, what, detail: reported.append(detail)),
     )
     drawing = MagicMock(
         template_key="weather_p3_template", division_name="D",
@@ -419,7 +419,7 @@ async def test_a_problem_is_reported_and_the_text_stands_instead(monkeypatch):
     monkeypatch.setattr(post, "build_drawing_for_round", AsyncMock(return_value=drawing))
 
     bot = _attach_bot(draws=False, problem="no fallback in that directory")
-    result = await post.attach_forecast(bot, round_id=1, phase=3, server_id=1)
+    result = await post.attach_forecast(bot, round_id=1, phase=3)
 
     assert result is None, "the caller must post the textual forecast"
     assert reported == ["no fallback in that directory"]

@@ -109,7 +109,7 @@ async def test_a_folder_holding_every_valid_template_is_stored(monkeypatch):
     await _run(cog)
 
     cog._config_service.set_field.assert_awaited_once()
-    assert cog._config_service.set_field.await_args.args[1] == "template_directory"
+    assert cog._config_service.set_field.await_args.args[0] == "template_directory"
     cog._reject_directory.assert_not_awaited()
 
     reply = cog._reply.await_args.args[1]

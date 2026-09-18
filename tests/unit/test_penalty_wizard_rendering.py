@@ -149,6 +149,7 @@ def _state(bot, db_path: str = ":memory:") -> PenaltyReviewState:
 def _bot(config):
     bot = MagicMock()
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=config)
     return bot
 
@@ -225,9 +226,8 @@ async def _make_db(tmp_path, *, attendees=(), test_names=None) -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (1, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -255,9 +255,9 @@ async def _make_db(tmp_path, *, attendees=(), test_names=None) -> str:
                 )
         for uid, name in (test_names or {}).items():
             await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-                "is_test_driver, test_display_name) VALUES (?, ?, 'ACTIVE', 1, ?)",
-                (SERVER_ID, str(uid), name),
+                "INSERT INTO driver_profiles (discord_user_id, current_state, "
+                "is_test_driver, test_display_name) VALUES (?, 'ACTIVE', 1, ?)",
+                (str(uid), name),
             )
         await db.commit()
     return db_path

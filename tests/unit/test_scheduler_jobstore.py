@@ -172,14 +172,14 @@ def test_the_portrait_refresh_is_a_recurring_daily_trigger(workspace):
     _db_path, build = workspace
     service = build()
 
-    service.schedule_portrait_refresh(4242, "03:00")
+    service.schedule_portrait_refresh("03:00")
 
-    job = service._scheduler.get_job("pfp_daily_4242")
+    job = service._scheduler.get_job("pfp_daily")
     assert job is not None
     assert isinstance(job.trigger, CronTrigger)
     fields = {f.name: str(f) for f in job.trigger.fields}
     assert (fields["hour"], fields["minute"]) == ("3", "0")
-    assert job.kwargs == {"server_id": 4242}
+    assert job.kwargs == {}
 
 
 def test_the_portrait_refresh_is_scheduled_in_utc(workspace):
@@ -188,9 +188,9 @@ def test_the_portrait_refresh_is_scheduled_in_utc(workspace):
     _db_path, build = workspace
     service = build()
 
-    service.schedule_portrait_refresh(4242, "23:30")
+    service.schedule_portrait_refresh("23:30")
 
-    assert str(service._scheduler.get_job("pfp_daily_4242").trigger.timezone) == "UTC"
+    assert str(service._scheduler.get_job("pfp_daily").trigger.timezone) == "UTC"
 
 
 async def test_naming_a_new_time_re_arms_rather_than_duplicating(workspace):
@@ -203,10 +203,10 @@ async def test_naming_a_new_time_re_arms_rather_than_duplicating(workspace):
     service = build()
     service.start()
     try:
-        service.schedule_portrait_refresh(4242, "03:00")
-        service.schedule_portrait_refresh(4242, "07:45")
+        service.schedule_portrait_refresh("03:00")
+        service.schedule_portrait_refresh("07:45")
 
-        jobs = [j for j in service._scheduler.get_jobs() if j.id.startswith("pfp_daily_")]
+        jobs = [j for j in service._scheduler.get_jobs() if j.id == "pfp_daily"]
         assert len(jobs) == 1
         fields = {f.name: str(f) for f in jobs[0].trigger.fields}
         assert (fields["hour"], fields["minute"]) == ("7", "45")
@@ -217,12 +217,12 @@ async def test_naming_a_new_time_re_arms_rather_than_duplicating(workspace):
 def test_cancelling_the_portrait_refresh_removes_it_and_tolerates_a_second_call(workspace):
     _db_path, build = workspace
     service = build()
-    service.schedule_portrait_refresh(4242, "03:00")
+    service.schedule_portrait_refresh("03:00")
 
-    service.cancel_portrait_refresh(4242)
-    service.cancel_portrait_refresh(4242)  # never scheduled is not an error
+    service.cancel_portrait_refresh()
+    service.cancel_portrait_refresh()  # never scheduled is not an error
 
-    assert service._scheduler.get_job("pfp_daily_4242") is None
+    assert service._scheduler.get_job("pfp_daily") is None
 
 
 async def test_the_job_delegates_to_the_registered_callback(workspace):
@@ -230,19 +230,19 @@ async def test_the_job_delegates_to_the_registered_callback(workspace):
 
     _db_path, build = workspace
     service = build()
-    seen: list[int] = []
+    seen: list[bool] = []
 
-    async def _cb(server_id: int) -> None:
-        seen.append(server_id)
+    async def _cb() -> None:
+        seen.append(True)
 
     service.register_portrait_refresh_callback(_cb)
     m._GLOBAL_SERVICE = service
     try:
-        await m._portrait_refresh_job(4242)
+        await m._portrait_refresh_job()
     finally:
         m._GLOBAL_SERVICE = None
 
-    assert seen == [4242]
+    assert seen == [True]
 
 
 async def test_the_job_is_silent_where_no_callback_was_registered(workspace):
@@ -252,7 +252,7 @@ async def test_the_job_is_silent_where_no_callback_was_registered(workspace):
     service = build()
     m._GLOBAL_SERVICE = service
     try:
-        await m._portrait_refresh_job(4242)  # must not raise
+        await m._portrait_refresh_job()  # must not raise
     finally:
         m._GLOBAL_SERVICE = None
 

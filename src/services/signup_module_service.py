@@ -26,20 +26,18 @@ class SignupModuleService:
 
     # ── Config ────────────────────────────────────────────────────────
 
-    async def get_config(self, server_id: int) -> SignupModuleConfig | None:
+    async def get_config(self) -> SignupModuleConfig | None:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT server_id, signup_channel_id, base_role_id, signed_up_role_id, "
+                "SELECT signup_channel_id, base_role_id, signed_up_role_id, "
                 "       signups_open, signup_button_message_id, selected_tracks_json, "
                 "       signup_closed_message_id, close_at "
-                "FROM signup_module_config WHERE server_id = ?",
-                (server_id,),
+                "FROM signup_module_config",
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return SignupModuleConfig(
-            server_id=row["server_id"],
             signup_channel_id=row["signup_channel_id"],
             base_role_id=row["base_role_id"],
             signed_up_role_id=row["signed_up_role_id"],
@@ -55,11 +53,11 @@ class SignupModuleService:
             await db.execute(
                 """
                 INSERT INTO signup_module_config
-                    (server_id, signup_channel_id, base_role_id, signed_up_role_id,
+                    (id, signup_channel_id, base_role_id, signed_up_role_id,
                      signups_open, signup_button_message_id, selected_tracks_json,
                      signup_closed_message_id, close_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(server_id) DO UPDATE SET
+                ON CONFLICT(id) DO UPDATE SET
                     signup_channel_id          = excluded.signup_channel_id,
                     base_role_id               = excluded.base_role_id,
                     signed_up_role_id          = excluded.signed_up_role_id,
@@ -70,7 +68,7 @@ class SignupModuleService:
                     close_at                   = excluded.close_at
                 """,
                 (
-                    cfg.server_id,
+                    1,
                     cfg.signup_channel_id,
                     cfg.base_role_id,
                     cfg.signed_up_role_id,
@@ -83,34 +81,30 @@ class SignupModuleService:
             )
             await db.commit()
 
-    async def delete_config(self, server_id: int) -> None:
+    async def delete_config(self) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "DELETE FROM signup_module_config WHERE server_id = ?",
-                (server_id,),
+                "DELETE FROM signup_module_config",
             )
             await db.commit()
 
     # ── Settings ──────────────────────────────────────────────────────
 
-    async def get_settings(self, server_id: int) -> SignupModuleSettings:
+    async def get_settings(self) -> SignupModuleSettings:
         """Return settings row; if missing, return defaults."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT server_id, nationality_required, time_type, time_image_required "
-                "FROM signup_module_settings WHERE server_id = ?",
-                (server_id,),
+                "SELECT nationality_required, time_type, time_image_required "
+                "FROM signup_module_settings",
             )
             row = await cursor.fetchone()
         if row is None:
             return SignupModuleSettings(
-                server_id=server_id,
                 nationality_required=True,
                 time_type="TIME_TRIAL",
                 time_image_required=True,
             )
         return SignupModuleSettings(
-            server_id=row["server_id"],
             nationality_required=bool(row["nationality_required"]),
             time_type=row["time_type"],
             time_image_required=bool(row["time_image_required"]),
@@ -121,15 +115,15 @@ class SignupModuleService:
             await db.execute(
                 """
                 INSERT INTO signup_module_settings
-                    (server_id, nationality_required, time_type, time_image_required)
+                    (id, nationality_required, time_type, time_image_required)
                 VALUES (?, ?, ?, ?)
-                ON CONFLICT(server_id) DO UPDATE SET
+                ON CONFLICT(id) DO UPDATE SET
                     nationality_required = excluded.nationality_required,
                     time_type            = excluded.time_type,
                     time_image_required  = excluded.time_image_required
                 """,
                 (
-                    settings.server_id,
+                    1,
                     int(settings.nationality_required),
                     settings.time_type,
                     int(settings.time_image_required),
@@ -139,7 +133,7 @@ class SignupModuleService:
 
     # ── Availability slots ────────────────────────────────────────────
 
-    async def get_slots(self, server_id: int) -> list[AvailabilitySlot]:
+    async def get_slots(self) -> list[AvailabilitySlot]:
         """Return slots ordered chronologically (Mon→Sun, time asc).
 
         ``slot_sequence_id`` is the display ordinal, always 1..N in that order, and is
@@ -149,17 +143,15 @@ class SignupModuleService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, day_of_week, time_hhmm "
+                "SELECT id, day_of_week, time_hhmm "
                 "FROM signup_availability_slots "
-                "WHERE server_id = ? "
+                " "
                 "ORDER BY day_of_week ASC, time_hhmm ASC",
-                (server_id,),
             )
             rows = await cursor.fetchall()
         return [
             AvailabilitySlot(
                 id=row["id"],
-                server_id=row["server_id"],
                 slot_id=AvailabilitySlot.make_slot_id(row["day_of_week"], row["time_hhmm"]),
                 slot_sequence_id=i,
                 day_of_week=row["day_of_week"],
@@ -169,7 +161,7 @@ class SignupModuleService:
             for i, row in enumerate(rows, start=1)
         ]
 
-    async def add_slot(self, server_id: int, day_of_week: int, time_hhmm: str) -> AvailabilitySlot:
+    async def add_slot(self, day_of_week: int, time_hhmm: str) -> AvailabilitySlot:
         """Insert a slot; raises ValueError on duplicate.
 
         Nothing is renumbered. The display ordinals of later slots do shift, because
@@ -180,9 +172,9 @@ class SignupModuleService:
             try:
                 await db.execute(
                     "INSERT INTO signup_availability_slots "
-                    "(server_id, day_of_week, time_hhmm) "
-                    "VALUES (?, ?, ?)",
-                    (server_id, day_of_week, time_hhmm),
+                    "(day_of_week, time_hhmm) "
+                    "VALUES (?, ?)",
+                    (day_of_week, time_hhmm),
                 )
             except Exception as exc:
                 if "UNIQUE constraint failed" in str(exc):
@@ -193,7 +185,7 @@ class SignupModuleService:
             await db.commit()
 
         # Fetch the newly assigned sequence ID for the inserted slot
-        slots = await self.get_slots(server_id)
+        slots = await self.get_slots()
         inserted = next(
             (s for s in slots if s.day_of_week == day_of_week and s.time_hhmm == time_hhmm),
             None,
@@ -201,7 +193,7 @@ class SignupModuleService:
         assert inserted is not None
         return inserted
 
-    async def remove_slot_by_rank(self, server_id: int, slot_id: int) -> bool:
+    async def remove_slot_by_rank(self, slot_id: int) -> bool:
         """Remove the slot at chronological rank slot_id. Returns False if not found.
 
         The rank is the display ordinal a league types, not anything stored. Removing a
@@ -211,9 +203,8 @@ class SignupModuleService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id FROM signup_availability_slots "
-                "WHERE server_id = ? "
+                " "
                 "ORDER BY day_of_week ASC, time_hhmm ASC",
-                (server_id,),
             )
             rows = await cursor.fetchall()
             if slot_id < 1 or slot_id > len(rows):
@@ -228,18 +219,17 @@ class SignupModuleService:
 
     # ── Window state helpers ──────────────────────────────────────────
 
-    async def get_window_state(self, server_id: int) -> bool:
+    async def get_window_state(self) -> bool:
         """Return True if signups are currently open."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT signups_open FROM signup_module_config WHERE server_id = ?",
-                (server_id,),
+                "SELECT signups_open FROM signup_module_config",
             )
             row = await cursor.fetchone()
         return bool(row["signups_open"]) if row else False
 
     async def set_window_open(
-        self, server_id: int, button_message_id: int, selected_tracks: list[str]
+        self, button_message_id: int, selected_tracks: list[str]
     ) -> None:
         """Open the window, and record it as a window of the server's active season.
 
@@ -253,24 +243,23 @@ class SignupModuleService:
                 "UPDATE signup_module_config "
                 "SET signups_open = 1, signup_button_message_id = ?, selected_tracks_json = ?, "
                 "    signup_closed_message_id = NULL "
-                "WHERE server_id = ?",
-                (button_message_id, json.dumps(selected_tracks), server_id),
+                "",
+                (button_message_id, json.dumps(selected_tracks)),
             )
-            season_id = await self._live_season_id(db, server_id)
+            season_id = await self._live_season_id(db)
             if season_id is not None:
                 await db.execute(
-                    "INSERT INTO signup_windows (server_id, season_id, selected_tracks_json) "
-                    "VALUES (?, ?, ?)",
-                    (server_id, season_id, json.dumps(selected_tracks)),
+                    "INSERT INTO signup_windows (season_id, selected_tracks_json) "
+                    "VALUES (?, ?)",
+                    (season_id, json.dumps(selected_tracks)),
                 )
             await db.commit()
 
     @staticmethod
-    async def _live_season_id(db, server_id: int) -> int | None:
+    async def _live_season_id(db) -> int | None:
         cursor = await db.execute(
-            "SELECT id FROM seasons WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
-            "ORDER BY id DESC LIMIT 1",
-            (server_id,),
+            "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE') "
+            "ORDER BY id DESC LIMIT 1"
         )
         row = await cursor.fetchone()
         return int(row["id"]) if row is not None else None
@@ -297,39 +286,38 @@ class SignupModuleService:
         ]
 
     async def set_window_closed(
-        self, server_id: int, *, closed_msg_id: int | None = None
+        self, *, closed_msg_id: int | None = None
     ) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE signup_module_config "
                 "SET signups_open = 0, signup_button_message_id = NULL, "
                 "    signup_closed_message_id = ?, close_at = NULL "
-                "WHERE server_id = ?",
-                (closed_msg_id, server_id),
+                "",
+                (closed_msg_id,),
             )
             # The window record keeps the close time it carried; only its closing is stamped.
             await db.execute(
                 "UPDATE signup_windows SET closed_at = datetime('now') "
-                "WHERE server_id = ? AND closed_at IS NULL",
-                (server_id,),
+                "WHERE closed_at IS NULL",
             )
             await db.commit()
 
-    async def set_close_at(self, server_id: int, close_at_iso: str | None) -> None:
+    async def set_close_at(self, close_at_iso: str | None) -> None:
         """Persist (or clear) the auto-close ISO 8601 UTC timestamp."""
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE signup_module_config SET close_at = ? WHERE server_id = ?",
-                (close_at_iso, server_id),
+                "UPDATE signup_module_config SET close_at = ?",
+                (close_at_iso,),
             )
             await db.execute(
                 "UPDATE signup_windows SET close_at = ? "
-                "WHERE server_id = ? AND closed_at IS NULL",
-                (close_at_iso, server_id),
+                "WHERE closed_at IS NULL",
+                (close_at_iso,),
             )
             await db.commit()
 
-    async def snapshot_season_config(self, server_id: int, season_id: int) -> None:
+    async def snapshot_season_config(self, season_id: int) -> None:
         """Keep the signup configuration *season_id* is confirmed with (issue #220).
 
         Taken when the season's configuration is confirmed, from which point the module's
@@ -337,8 +325,8 @@ class SignupModuleService:
         signup of the season answered. Taken again only if called again — replaced, not
         duplicated.
         """
-        settings = await self.get_settings(server_id)
-        slots = await self.get_slots(server_id)
+        settings = await self.get_settings()
+        slots = await self.get_slots()
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "INSERT INTO season_signup_config "
@@ -382,55 +370,55 @@ class SignupModuleService:
             "captured_at": row["captured_at"],
         }
 
-    async def save_closed_message_id(self, server_id: int, msg_id: int | None) -> None:
+    async def save_closed_message_id(self, msg_id: int | None) -> None:
         """Persist only the closed-status message ID without altering other fields."""
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE signup_module_config SET signup_closed_message_id = ? "
-                "WHERE server_id = ?",
-                (msg_id, server_id),
+                "",
+                (msg_id,),
             )
             await db.commit()
 
     # Convenience aliases (FR-017)
 
     async def set_signups_open(
-        self, server_id: int, button_message_id: int, selected_tracks: list[str]
+        self, button_message_id: int, selected_tracks: list[str]
     ) -> None:
         """Alias for set_window_open."""
-        await self.set_window_open(server_id, button_message_id, selected_tracks)
+        await self.set_window_open(button_message_id, selected_tracks)
 
     async def set_signups_closed(
-        self, server_id: int, *, closed_msg_id: int | None = None
+        self, *, closed_msg_id: int | None = None
     ) -> None:
         """Alias for set_window_closed."""
-        await self.set_window_closed(server_id, closed_msg_id=closed_msg_id)
+        await self.set_window_closed(closed_msg_id=closed_msg_id)
 
-    async def save_selected_tracks(self, server_id: int, tracks: list[str]) -> None:
+    async def save_selected_tracks(self, tracks: list[str]) -> None:
         """Persist selected_tracks without changing the open/closed state."""
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE signup_module_config SET selected_tracks_json = ? WHERE server_id = ?",
-                (json.dumps(tracks), server_id),
+                "UPDATE signup_module_config SET selected_tracks_json = ?",
+                (json.dumps(tracks),),
             )
             await db.commit()
 
-    async def get_selected_tracks(self, server_id: int) -> list[str]:
+    async def get_selected_tracks(self) -> list[str]:
         """Return the list of selected track IDs for the current signup window."""
-        cfg = await self.get_config(server_id)
+        cfg = await self.get_config()
         return cfg.selected_tracks if cfg else []
 
     # ── SignupRecord CRUD ─────────────────────────────────────────────
 
     _RECORD_COLUMNS = (
-        "id, server_id, season_id, window_id, discord_user_id, discord_username, "
+        "id, season_id, window_id, discord_user_id, discord_username, "
         "server_display_name, nationality, platform, platform_id, availability_slot_ids, "
         "driver_type, preferred_teams, preferred_teammate, lap_times_json, notes, "
         "signup_channel_id, total_lap_ms"
     )
 
     async def get_record(
-        self, server_id: int, discord_user_id: str, season_id: int | None = None
+        self, discord_user_id: str, season_id: int | None = None
     ) -> SignupRecord | None:
         """The driver's latest signup, in *season_id* where one is named.
 
@@ -438,10 +426,9 @@ class SignupModuleService:
         recent of theirs: the one a review, a correction or an approval acts upon.
         """
         query = (
-            f"SELECT {self._RECORD_COLUMNS} FROM signup_records "
-            "WHERE server_id = ? AND discord_user_id = ?"
+            f"SELECT {self._RECORD_COLUMNS} FROM signup_records WHERE discord_user_id = ?"
         )
-        params: list = [server_id, discord_user_id]
+        params: list = [discord_user_id]
         if season_id is not None:
             query += " AND season_id = ?"
             params.append(season_id)
@@ -504,7 +491,7 @@ class SignupModuleService:
 
             season_id = record.season_id
             if season_id is None:
-                season_id = await self._live_season_id(db, record.server_id)
+                season_id = await self._live_season_id(db)
             window_id = record.window_id
             if window_id is None and season_id is not None:
                 cursor = await db.execute(
@@ -516,13 +503,13 @@ class SignupModuleService:
             cursor = await db.execute(
                 """
                 INSERT INTO signup_records
-                    (server_id, season_id, window_id, discord_user_id, discord_username,
+                    (season_id, window_id, discord_user_id, discord_username,
                      server_display_name, nationality, platform, platform_id,
                      availability_slot_ids, driver_type, preferred_teams,
                      preferred_teammate, lap_times_json, notes, signup_channel_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (record.server_id, season_id, window_id, record.discord_user_id, *fields),
+                (season_id, window_id, record.discord_user_id, *fields),
             )
             await db.commit()
             new_id = int(cursor.lastrowid)
@@ -533,7 +520,6 @@ class SignupModuleService:
     def _row_to_signup_record(row) -> SignupRecord:
         return SignupRecord(
             id=row["id"],
-            server_id=row["server_id"],
             discord_user_id=row["discord_user_id"],
             discord_username=row["discord_username"],
             server_display_name=row["server_display_name"],
@@ -555,15 +541,15 @@ class SignupModuleService:
     # ── SignupWizardRecord CRUD ────────────────────────────────────────
 
     async def get_wizard(
-        self, server_id: int, discord_user_id: str
+        self, discord_user_id: str
     ) -> SignupWizardRecord | None:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, discord_user_id, wizard_state, signup_channel_id, "
+                "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
                 "       last_activity_at "
-                "FROM signup_wizard_records WHERE server_id = ? AND discord_user_id = ?",
-                (server_id, discord_user_id),
+                "FROM signup_wizard_records WHERE discord_user_id = ?",
+                (discord_user_id,),
             )
             row = await cursor.fetchone()
         if row is None:
@@ -571,16 +557,16 @@ class SignupModuleService:
         return self._row_to_wizard_record(row)
 
     async def get_wizard_by_channel(
-        self, server_id: int, channel_id: int
+        self, channel_id: int
     ) -> SignupWizardRecord | None:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, discord_user_id, wizard_state, signup_channel_id, "
+                "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
                 "       last_activity_at "
                 "FROM signup_wizard_records "
-                "WHERE server_id = ? AND signup_channel_id = ?",
-                (server_id, channel_id),
+                "WHERE signup_channel_id = ?",
+                (channel_id,),
             )
             row = await cursor.fetchone()
         if row is None:
@@ -596,11 +582,11 @@ class SignupModuleService:
             await db.execute(
                 """
                 INSERT INTO signup_wizard_records
-                    (server_id, discord_user_id, wizard_state, signup_channel_id,
+                    (discord_user_id, wizard_state, signup_channel_id,
                      config_snapshot_json, draft_answers_json, current_lap_track_index,
                      last_activity_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(server_id, discord_user_id) DO UPDATE SET
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(discord_user_id) DO UPDATE SET
                     wizard_state             = excluded.wizard_state,
                     signup_channel_id        = excluded.signup_channel_id,
                     config_snapshot_json     = excluded.config_snapshot_json,
@@ -609,7 +595,6 @@ class SignupModuleService:
                     last_activity_at         = excluded.last_activity_at
                 """,
                 (
-                    wizard.server_id,
                     wizard.discord_user_id,
                     wizard.wizard_state.value,
                     wizard.signup_channel_id,
@@ -621,7 +606,7 @@ class SignupModuleService:
             )
             await db.commit()
 
-    async def mark_approved(self, server_id: int, discord_user_id: str) -> None:
+    async def mark_approved(self, discord_user_id: str) -> None:
         """Mark the latest signup of *discord_user_id* as approved — the one just reviewed.
 
         Read wherever "the driver's signup" is chosen: an approved signup outranks a later one
@@ -630,13 +615,13 @@ class SignupModuleService:
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE signup_records SET approved = 1 WHERE id = ("
-                "  SELECT id FROM signup_records WHERE server_id = ? AND discord_user_id = ?"
+                "  SELECT id FROM signup_records WHERE discord_user_id = ?"
                 "  ORDER BY id DESC LIMIT 1)",
-                (server_id, discord_user_id),
+                (discord_user_id,),
             )
             await db.commit()
 
-    async def withdraw_approval(self, server_id: int, driver_profile_id: int) -> None:
+    async def withdraw_approval(self, driver_profile_id: int) -> None:
         """Clear the approval of the driver's latest approved signup, under any of their accounts.
 
         For an approved driver the league turns down afterwards: the signup was rejected in
@@ -645,15 +630,15 @@ class SignupModuleService:
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE signup_records SET approved = 0 WHERE id = ("
-                "  SELECT id FROM signup_records WHERE server_id = ? AND approved = 1"
+                "  SELECT id FROM signup_records WHERE approved = 1"
                 "  AND discord_user_id IN ("
                 "    SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = ?)"
                 "  ORDER BY id DESC LIMIT 1)",
-                (server_id, driver_profile_id),
+                (driver_profile_id,),
             )
             await db.commit()
 
-    async def rekey_wizard(self, server_id: int, from_account: str, to_account: str) -> None:
+    async def rekey_wizard(self, from_account: str, to_account: str) -> None:
         """Move a wizard record to another account of the same driver (issue #243).
 
         A wizard record is the transient state of one signup and its channel, not a record of
@@ -662,29 +647,28 @@ class SignupModuleService:
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE signup_wizard_records SET discord_user_id = ? "
-                "WHERE server_id = ? AND discord_user_id = ?",
-                (to_account, server_id, from_account),
+                "WHERE discord_user_id = ?",
+                (to_account, from_account),
             )
             await db.commit()
 
-    async def delete_wizard(self, server_id: int, discord_user_id: str) -> None:
+    async def delete_wizard(self, discord_user_id: str) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "DELETE FROM signup_wizard_records WHERE server_id = ? AND discord_user_id = ?",
-                (server_id, discord_user_id),
+                "DELETE FROM signup_wizard_records WHERE discord_user_id = ?",
+                (discord_user_id,),
             )
             await db.commit()
 
-    async def get_all_active_wizards(self, server_id: int) -> list[SignupWizardRecord]:
+    async def get_all_active_wizards(self) -> list[SignupWizardRecord]:
         """Return all wizard records not in UNENGAGED state for a server."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, discord_user_id, wizard_state, signup_channel_id, "
+                "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
                 "       last_activity_at "
                 "FROM signup_wizard_records "
-                "WHERE server_id = ? AND wizard_state != 'UNENGAGED'",
-                (server_id,),
+                "WHERE wizard_state != 'UNENGAGED'",
             )
             rows = await cursor.fetchall()
         return [self._row_to_wizard_record(r) for r in rows]
@@ -693,7 +677,7 @@ class SignupModuleService:
         """Return all non-UNENGAGED wizard records across all servers (for restart recovery)."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, discord_user_id, wizard_state, signup_channel_id, "
+                "SELECT id, discord_user_id, wizard_state, signup_channel_id, "
                 "       config_snapshot_json, draft_answers_json, current_lap_track_index, "
                 "       last_activity_at "
                 "FROM signup_wizard_records WHERE wizard_state != 'UNENGAGED'"
@@ -720,7 +704,6 @@ class SignupModuleService:
             slots = [
                 AvailabilitySlot(
                     id=s["id"],
-                    server_id=s["server_id"],
                     slot_id=s.get("slot_id")
                     or AvailabilitySlot.make_slot_id(s["day_of_week"], s["time_hhmm"]),
                     slot_sequence_id=i,
@@ -740,7 +723,6 @@ class SignupModuleService:
             )
         return SignupWizardRecord(
             id=row["id"],
-            server_id=row["server_id"],
             discord_user_id=row["discord_user_id"],
             wizard_state=WizardState(row["wizard_state"]),
             signup_channel_id=row["signup_channel_id"],
@@ -753,43 +735,42 @@ class SignupModuleService:
     # ── SignupDivisionConfig CRUD ─────────────────────────────────────
 
     async def get_division_config(
-        self, server_id: int, division_id: int
+        self, division_id: int
     ) -> SignupDivisionConfig | None:
         """Return the division config record or None if not set."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, division_id, lineup_channel_id "
-                "FROM signup_division_config WHERE server_id = ? AND division_id = ?",
-                (server_id, division_id),
+                "SELECT id, division_id, lineup_channel_id "
+                "FROM signup_division_config WHERE division_id = ?",
+                (division_id,),
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return SignupDivisionConfig(
             id=row["id"],
-            server_id=row["server_id"],
             division_id=row["division_id"],
             lineup_channel_id=row["lineup_channel_id"],
         )
 
     async def upsert_division_config(
-        self, server_id: int, division_id: int
+        self, division_id: int
     ) -> None:
-        """Ensure a signup_division_config row exists for this server+division."""
+        """Ensure a signup_division_config row exists for this division."""
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "INSERT OR IGNORE INTO signup_division_config (server_id, division_id) VALUES (?, ?)",
-                (server_id, division_id),
+                "INSERT OR IGNORE INTO signup_division_config (division_id) VALUES (?)",
+                (division_id,),
             )
             await db.commit()
 
     # ── Config snapshot ───────────────────────────────────────────────
 
-    async def capture_config_snapshot(self, server_id: int) -> ConfigSnapshot:
+    async def capture_config_snapshot(self) -> ConfigSnapshot:
         """Capture a copy of current settings + slots + selected tracks for wizard isolation."""
-        settings = await self.get_settings(server_id)
-        slots = await self.get_slots(server_id)
-        cfg = await self.get_config(server_id)
+        settings = await self.get_settings()
+        slots = await self.get_slots()
+        cfg = await self.get_config()
         return ConfigSnapshot(
             nationality_required=settings.nationality_required,
             time_type=settings.time_type,
@@ -815,7 +796,6 @@ class SignupModuleService:
             "slots": [
                 {
                     "id": s.id,
-                    "server_id": s.server_id,
                     "slot_id": s.slot_id,
                     "day_of_week": s.day_of_week,
                     "time_hhmm": s.time_hhmm,

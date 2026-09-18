@@ -87,9 +87,9 @@ async def _make_db(tmp_path, name: str = "module_channels") -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'SETUP')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'SETUP')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -186,8 +186,7 @@ async def _audit_rows(db_path: str) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, old_value, new_value, division_id, actor_id "
-            "FROM audit_entries WHERE server_id = ?",
-            (SERVER_ID,),
+            "FROM audit_entries",
         )
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -301,7 +300,7 @@ async def test_the_assignment_is_logged(tmp_path, which):
 
     await _run(cog, which, _interaction())
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "Division 1" in logged
     assert "#notices" in logged
     assert "Manager" in logged
@@ -436,7 +435,7 @@ async def test_the_rsvp_channel_reaches_the_attendance_service(tmp_path):
     await _run(cog, "rsvp", _interaction())
 
     cog.bot.attendance_service.set_rsvp_channel.assert_awaited_once_with(
-        DIVISION_ID, SERVER_ID, CHANNEL_ID
+        DIVISION_ID, CHANNEL_ID
     )
     cog.bot.attendance_service.set_attendance_channel.assert_not_awaited()
 
@@ -450,7 +449,7 @@ async def test_the_attendance_channel_reaches_the_attendance_service(tmp_path):
     await _run(cog, "attendance", _interaction())
 
     cog.bot.attendance_service.set_attendance_channel.assert_awaited_once_with(
-        DIVISION_ID, SERVER_ID, CHANNEL_ID
+        DIVISION_ID, CHANNEL_ID
     )
     cog.bot.attendance_service.set_rsvp_channel.assert_not_awaited()
 

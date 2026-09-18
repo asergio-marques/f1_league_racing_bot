@@ -91,7 +91,7 @@ def _capacity(value: int | None, *, load_error: Exception | None = None):
 async def _overflow(cog, would_hold: int, capacity_value, **kwargs):
     load, catalogue = _capacity(capacity_value, **kwargs)
     with load, catalogue:
-        return await cog._calendar_round_overflow(SERVER_ID, would_hold)
+        return await cog._calendar_round_overflow(would_hold)
 
 
 # ---------------------------------------------------------------------------
@@ -225,9 +225,8 @@ async def _make_season_db(tmp_path, *, rounds_per_division: dict[str, int]) -> s
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (1, ?, 1, '2026-01-01', 'SETUP')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 1, '2026-01-01', 'SETUP')"
         )
         for index, (name, count) in enumerate(rounds_per_division.items(), start=1):
             await db.execute(
@@ -251,7 +250,7 @@ async def _warning(cog, db_path, capacity_value):
     cog.bot.image_config_service.get_config = AsyncMock(return_value=MagicMock())
     load, catalogue = _capacity(capacity_value)
     with load, catalogue:
-        return await cog._calendar_capacity_warning(SERVER_ID, 1)
+        return await cog._calendar_capacity_warning(1)
 
 
 async def test_the_review_warns_where_the_add_refuses(tmp_path):
@@ -339,6 +338,6 @@ async def test_a_review_never_fails_on_the_capacity_check(tmp_path, caplog):
     cog.bot.db_path = db_path
 
     with caplog.at_level("ERROR"):
-        result = await cog._calendar_capacity_warning(SERVER_ID, 1)
+        result = await cog._calendar_capacity_warning(1)
 
     assert result == []

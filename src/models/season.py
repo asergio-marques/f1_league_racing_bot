@@ -103,7 +103,6 @@ class InvalidStageTransition(Exception):
 @dataclass
 class Season:
     id: int
-    server_id: int
     start_date: date
     status: SeasonStatus
     season_number: int = 0

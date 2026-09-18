@@ -82,44 +82,38 @@ def _round_job_suffix(rnd: "Round", season_number: int, division_tier: int) -> s
 _GLOBAL_SERVICE: "SchedulerService | None" = None
 
 
-async def _signup_close_timer_job(server_id: int) -> None:
+#: One league, so one signup window at a time and one timer to close it.
+SIGNUP_CLOSE_JOB_ID = "signup_close"
+
+
+async def _signup_close_timer_job() -> None:
     """Module-level APScheduler callable for signup auto-close — picklable for
     SQLAlchemyJobStore. Delegates to the registered signup-close callback."""
     if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_signup_close_timer_job fired but _GLOBAL_SERVICE is None "
-            "(server_id=%s) — skipping",
-            server_id,
-        )
+        log.warning("_signup_close_timer_job fired but _GLOBAL_SERVICE is None — skipping")
         return
     cb = _GLOBAL_SERVICE._signup_close_callback
     if cb is None:
-        log.warning(
-            "_signup_close_timer_job: no callback registered (server_id=%s) — skipping",
-            server_id,
-        )
+        log.warning("_signup_close_timer_job: no callback registered — skipping")
         return
-    await cb(server_id)
+    await cb()
 
 
-async def _portrait_refresh_job(server_id: int) -> None:
+#: One league, so one daily refresh: the job is named by what it does, not by a server.
+PORTRAIT_REFRESH_JOB_ID = "pfp_daily"
+
+
+async def _portrait_refresh_job() -> None:
     """Module-level APScheduler callable for the daily portrait refresh — picklable for
     SQLAlchemyJobStore. Delegates to the registered portrait-refresh callback."""
     if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_portrait_refresh_job fired but _GLOBAL_SERVICE is None "
-            "(server_id=%s) — skipping",
-            server_id,
-        )
+        log.warning("_portrait_refresh_job fired but _GLOBAL_SERVICE is None — skipping")
         return
     cb = _GLOBAL_SERVICE._portrait_refresh_callback
     if cb is None:
-        log.warning(
-            "_portrait_refresh_job: no callback registered (server_id=%s) — skipping",
-            server_id,
-        )
+        log.warning("_portrait_refresh_job: no callback registered — skipping")
         return
-    await cb(server_id)
+    await cb()
 
 
 async def _weather_phase_job(phase_num: int, round_id: int) -> None:
@@ -611,8 +605,8 @@ class SchedulerService:
             except Exception:
                 pass  # Already fired or removed concurrently
 
-    async def cancel_all_weather_for_server(self, server_id: int) -> None:
-        """Cancel the weather module's jobs for every round in active/setup seasons of *server_id*.
+    async def cancel_all_weather(self) -> None:
+        """Cancel the weather module's jobs for every round in active/setup seasons.
 
         Only the four jobs in ``_WEATHER_JOB_PREFIXES`` are taken. The other four a round
         carries belong to modules that are still switched on and must survive:
@@ -640,8 +634,7 @@ class SchedulerService:
                 "SELECT r.id FROM rounds r "
                 "JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id "
-                "WHERE s.server_id = ? AND s.status IN ('ACTIVE', 'SETUP')",
-                (server_id,),
+                "WHERE s.status IN ('ACTIVE', 'SETUP')",
             )
             rows = await cursor.fetchall()
         for row in rows:
@@ -789,8 +782,8 @@ class SchedulerService:
     # Season-end scheduling
     # ------------------------------------------------------------------
 
-    def cancel_season_end(self, server_id: int) -> None:
-        """Remove the season-end job for *server_id* if it exists.
+    def cancel_season_end(self) -> None:
+        """Remove any season-end job a scheduler store still carries.
 
         Nothing schedules one any more. A season ends when a league manager runs
         `/season complete`, and `schedule_season_end` — along with the timer that armed it seven
@@ -800,12 +793,13 @@ class SchedulerService:
         callable no longer exists is dropped by APScheduler on load, with a warning, rather than
         failing start-up.
         """
-        job_id = f"season_end_{server_id}"
-        try:
-            self._scheduler.remove_job(job_id)
-            log.info("Removed season_end job for server %s", server_id)
-        except Exception:
-            pass  # Already fired or never scheduled
+        for job in list(self._scheduler.get_jobs()):
+            if job.id.startswith("season_end"):
+                try:
+                    self._scheduler.remove_job(job.id)
+                    log.info("Removed %s job", job.id)
+                except Exception:
+                    pass  # Already fired or removed
 
     # ------------------------------------------------------------------
     # Signup auto-close scheduling
@@ -815,8 +809,8 @@ class SchedulerService:
         """Register the coroutine the daily driver-portrait refresh delegates to."""
         self._portrait_refresh_callback = callback
 
-    def schedule_portrait_refresh(self, server_id: int, time_of_day: str) -> None:
-        """Schedule the daily driver-portrait refresh for *server_id* at *time_of_day* UTC.
+    def schedule_portrait_refresh(self, time_of_day: str) -> None:
+        """Schedule the league's daily driver-portrait refresh at *time_of_day* UTC.
 
         **The one recurring trigger in this service, and deliberately so.** Every other job
         here is a one-shot ``DateTrigger`` arming a single event of a round or a season, and
@@ -833,20 +827,19 @@ class SchedulerService:
         ``replace_existing=True`` so that naming a new time re-arms rather than duplicates.
         """
         hour, _, minute = time_of_day.partition(":")
-        job_id = f"pfp_daily_{server_id}"
+        job_id = PORTRAIT_REFRESH_JOB_ID
         self._scheduler.add_job(
             _portrait_refresh_job,
             trigger=CronTrigger(hour=int(hour), minute=int(minute), timezone="UTC"),
             id=job_id,
             replace_existing=True,
-            name=f"Daily driver portrait refresh for server {server_id}",
-            kwargs={"server_id": server_id},
+            name="Daily driver portrait refresh",
         )
         log.info("Scheduled %s at %s UTC daily", job_id, time_of_day)
 
-    def cancel_portrait_refresh(self, server_id: int) -> None:
-        """Remove the daily portrait refresh for *server_id* if it exists."""
-        job_id = f"pfp_daily_{server_id}"
+    def cancel_portrait_refresh(self) -> None:
+        """Remove the daily portrait refresh if it exists."""
+        job_id = PORTRAIT_REFRESH_JOB_ID
         try:
             self._scheduler.remove_job(job_id)
             log.info("Removed %s", job_id)
@@ -856,34 +849,30 @@ class SchedulerService:
     def register_signup_close_callback(self, callback: Callable) -> None:
         """Register the async callable invoked when the signup close timer fires.
 
-        The callable must accept ``(server_id: int)``.
+        The callable takes no arguments.
         Called from bot.py on_ready after the scheduler is started.
         """
         self._signup_close_callback = callback
 
-    def schedule_signup_close_timer(self, server_id: int, close_at_iso: str) -> None:
-        """Schedule a one-shot signup auto-close job for *server_id* at the
-        given ISO 8601 UTC timestamp string.
+    def schedule_signup_close_timer(self, close_at_iso: str) -> None:
+        """Schedule the one-shot signup auto-close job at the given ISO 8601 UTC timestamp.
 
         Uses ``replace_existing=True`` so calling this again re-arms the timer.
         """
         fire_at = datetime.fromisoformat(close_at_iso).replace(tzinfo=timezone.utc)
-        job_id = f"signup_close_{server_id}"
         self._scheduler.add_job(
             _signup_close_timer_job,
             trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
-            id=job_id,
+            id=SIGNUP_CLOSE_JOB_ID,
             replace_existing=True,
-            name=f"Signup auto-close for server {server_id}",
-            kwargs={"server_id": server_id},
+            name="Signup auto-close",
         )
-        log.info("Scheduled signup_close_%s at %s", server_id, fire_at.isoformat())
+        log.info("Scheduled %s at %s", SIGNUP_CLOSE_JOB_ID, fire_at.isoformat())
 
-    def cancel_signup_close_timer(self, server_id: int) -> None:
-        """Remove the signup close timer for *server_id* if it exists."""
-        job_id = f"signup_close_{server_id}"
+    def cancel_signup_close_timer(self) -> None:
+        """Remove the signup close timer if it exists."""
         try:
-            self._scheduler.remove_job(job_id)
-            log.info("Removed signup_close job for server %s", server_id)
+            self._scheduler.remove_job(SIGNUP_CLOSE_JOB_ID)
+            log.info("Removed the %s job", SIGNUP_CLOSE_JOB_ID)
         except Exception:
             pass  # Already fired or never scheduled

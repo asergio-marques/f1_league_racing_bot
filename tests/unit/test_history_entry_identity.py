@@ -69,14 +69,12 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state, "
-            "is_test_driver) VALUES (1, ?, '9000000000000000001', 'ASSIGNED', 1)",
-            (SERVER_ID,),
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+            "is_test_driver) VALUES (1, '9000000000000000001', 'ASSIGNED', 1)"
         )
         await db.execute(
-            "INSERT INTO driver_history_entries (server_id, discord_user_id, driver_profile_id, "
-            "season_number, division_name) VALUES (?, '9000000000000000001', 1, 1, 'Pro')",
-            (SERVER_ID,),
+            "INSERT INTO driver_history_entries (discord_user_id, driver_profile_id, "
+            "season_number, division_name) VALUES ('9000000000000000001', 1, 1, 'Pro')"
         )
         await db.commit()
     return path
@@ -100,11 +98,10 @@ async def test_a_test_driver_created_again_holds_the_history_of_its_identifier(d
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM driver_profiles WHERE id = 1")
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state, "
-            "is_test_driver) VALUES (2, ?, '9000000000000000001', 'ASSIGNED', 1)",
-            (SERVER_ID,),
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+            "is_test_driver) VALUES (2, '9000000000000000001', 'ASSIGNED', 1)"
         )
-        await _reattach_history(db, SERVER_ID, "9000000000000000001", 2)
+        await _reattach_history(db, "9000000000000000001", 2)
         await db.commit()
         cursor = await db.execute("SELECT driver_profile_id FROM driver_history_entries")
         assert [r[0] for r in await cursor.fetchall()] == [2]
@@ -114,7 +111,7 @@ async def test_history_held_by_a_living_profile_is_not_taken(db_path):
     from services.test_roster_service import _reattach_history
 
     async with get_connection(db_path) as db:
-        await _reattach_history(db, SERVER_ID, "9000000000000000001", 99)
+        await _reattach_history(db, "9000000000000000001", 99)
         cursor = await db.execute("SELECT driver_profile_id FROM driver_history_entries")
         assert [r[0] for r in await cursor.fetchall()] == [1]
 
@@ -140,14 +137,14 @@ async def _seed_a_finished_season(db_path: str) -> None:
     """
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, ?, 'ASSIGNED')",
-            (_PROFILE_ID, SERVER_ID, _OLD_USER),
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (?, ?, 'ASSIGNED')",
+            (_PROFILE_ID, _OLD_USER),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (?, ?, '2026-09-17', 'ACTIVE', 4, 'ONGOING')",
-            (_SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (?, '2026-09-17', 'ACTIVE', 4, 'ONGOING')",
+            (_SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, mention_role_id, tier, status) "
@@ -182,7 +179,7 @@ async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path)
 
     await _seed_a_finished_season(db_path)
     await DriverService(db_path).reassign_user_id(
-        SERVER_ID, _OLD_USER, _NEW_USER, 77, "Manager"
+        _OLD_USER, _NEW_USER, 77, "Manager"
     )
 
     await _write_driver_history_entries(

@@ -69,7 +69,7 @@ OLD_CHANNEL = 7199
 
 def _slot(seq, label, slot_id):
     return AvailabilitySlot(
-        id=seq, server_id=SERVER_ID, slot_id=slot_id, slot_sequence_id=seq,
+        id=seq, slot_id=slot_id, slot_sequence_id=seq,
         day_of_week=1, time_hhmm="19:00", display_label=label,
     )
 
@@ -87,7 +87,6 @@ def _snapshot(*, nationality=False, tracks=(), time_type="TIME_TRIAL", image=Fal
 def _wizard(state=WizardState.COLLECTING_PLATFORM, *, channel=OLD_CHANNEL, draft=None, index=0, snapshot=None):
     return SignupWizardRecord(
         id=1,
-        server_id=SERVER_ID,
         discord_user_id=DRIVER,
         wizard_state=state,
         signup_channel_id=channel,
@@ -100,7 +99,7 @@ def _wizard(state=WizardState.COLLECTING_PLATFORM, *, channel=OLD_CHANNEL, draft
 
 def _record():
     return SignupRecord(
-        id=1, server_id=SERVER_ID, discord_user_id=DRIVER, discord_username="racer",
+        id=1, discord_user_id=DRIVER, discord_username="racer",
         server_display_name="Racer", nationality="British", platform="Steam",
         platform_id="racer_steam", availability_slot_ids=["Mon_19_00"], driver_type="FULL_TIME",
         preferred_teams=["Red"], preferred_teammate=None, lap_times={"27": "1:23.456"},
@@ -141,6 +140,7 @@ def _service(*, existing=None, signup_cfg=True, snapshot=None, teams=None, recor
         if teams is not None
         else [SimpleNamespace(name="Red", is_reserve=False), SimpleNamespace(name="Reserves", is_reserve=True)]
     )
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
     svc._get_track_name_map = AsyncMock(return_value={"27": "Silverstone"})
     return svc
@@ -195,7 +195,7 @@ async def test_a_private_channel_is_created_for_the_driver(tmp_path):
     svc = _service()
     guild = _guild()
 
-    channel = await svc.start_wizard(_interaction(guild), SERVER_ID)
+    channel = await svc.start_wizard(_interaction(guild))
 
     assert channel is guild._created
     name = guild.create_text_channel.await_args.args[0]
@@ -209,7 +209,7 @@ async def test_the_channel_is_visible_to_the_driver_and_both_staff_tiers(tmp_pat
     guild = _guild()
     interaction = _interaction(guild)
 
-    await svc.start_wizard(interaction, SERVER_ID)
+    await svc.start_wizard(interaction)
 
     overwrites = guild.create_text_channel.await_args.kwargs["overwrites"]
     assert overwrites[guild.default_role].view_channel is False
@@ -222,7 +222,7 @@ async def test_an_unconfigured_module_starts_nothing(tmp_path):
     svc = _service(signup_cfg=False)
     guild = _guild()
 
-    assert await svc.start_wizard(_interaction(guild), SERVER_ID) is None
+    assert await svc.start_wizard(_interaction(guild)) is None
 
     guild.create_text_channel.assert_not_awaited()
     svc._bot.driver_service.transition.assert_not_awaited()
@@ -231,10 +231,10 @@ async def test_an_unconfigured_module_starts_nothing(tmp_path):
 async def test_the_driver_becomes_pending_signup_completion(tmp_path):
     svc = _service()
 
-    await svc.start_wizard(_interaction(_guild()), SERVER_ID)
+    await svc.start_wizard(_interaction(_guild()))
 
     svc._bot.driver_service.transition.assert_awaited_once_with(
-        SERVER_ID, DRIVER, DriverState.PENDING_SIGNUP_COMPLETION
+        DRIVER, DriverState.PENDING_SIGNUP_COMPLETION
     )
 
 
@@ -243,7 +243,7 @@ async def test_the_wizard_is_saved_with_the_frozen_configuration(tmp_path):
     snapshot = _snapshot(tracks=["27"])
     svc = _service(snapshot=snapshot)
 
-    await svc.start_wizard(_interaction(_guild()), SERVER_ID)
+    await svc.start_wizard(_interaction(_guild()))
 
     wizard = _saved_wizard(svc)
     assert wizard.config_snapshot is snapshot
@@ -255,7 +255,7 @@ async def test_the_team_buttons_leave_the_reserve_team_out(tmp_path):
     """A reserve team is not a team a driver asks to join."""
     svc = _service()
 
-    await svc.start_wizard(_interaction(_guild()), SERVER_ID)
+    await svc.start_wizard(_interaction(_guild()))
 
     assert _saved_wizard(svc).config_snapshot.team_names == ["Red"]
 
@@ -264,7 +264,7 @@ async def test_nationality_is_asked_first_where_the_league_requires_it(tmp_path)
     svc = _service(snapshot=_snapshot(nationality=True))
     guild = _guild()
 
-    await svc.start_wizard(_interaction(guild), SERVER_ID)
+    await svc.start_wizard(_interaction(guild))
 
     assert _saved_wizard(svc).wizard_state == WizardState.COLLECTING_NATIONALITY
     assert "Step 1 — Nationality" in str(guild._created.send.await_args.args[0])
@@ -277,7 +277,7 @@ async def test_platform_is_asked_first_otherwise_and_typing_is_locked(tmp_path):
     guild = _guild()
     interaction = _interaction(guild)
 
-    await svc.start_wizard(interaction, SERVER_ID)
+    await svc.start_wizard(interaction)
 
     assert _saved_wizard(svc).wizard_state == WizardState.COLLECTING_PLATFORM
     permissions = guild._created.set_permissions.await_args
@@ -289,7 +289,7 @@ async def test_the_driver_is_welcomed_by_name(tmp_path):
     svc = _service()
     guild = _guild()
 
-    await svc.start_wizard(_interaction(guild), SERVER_ID)
+    await svc.start_wizard(_interaction(guild))
 
     assert f"Welcome to the signup wizard, <@{DRIVER}>!" in str(guild._created.send.await_args.args[0])
 
@@ -298,10 +298,10 @@ async def test_the_inactivity_timeout_is_armed_for_24_hours(tmp_path):
     svc = _service()
     before = datetime.now(timezone.utc)
 
-    await svc.start_wizard(_interaction(_guild()), SERVER_ID)
+    await svc.start_wizard(_interaction(_guild()))
 
     job = svc._scheduler._scheduler.add_job.call_args
-    assert job.kwargs["id"] == f"wizard_inactivity_{SERVER_ID}_{DRIVER}"
+    assert job.kwargs["id"] == f"wizard_inactivity_{DRIVER}"
     fire_at = job.kwargs["trigger"].run_date
     assert timedelta(hours=23, minutes=59) < fire_at - before < timedelta(hours=24, minutes=1)
 
@@ -309,9 +309,9 @@ async def test_the_inactivity_timeout_is_armed_for_24_hours(tmp_path):
 async def test_starting_is_logged(tmp_path):
     svc = _service()
 
-    await svc.start_wizard(_interaction(_guild()), SERVER_ID)
+    await svc.start_wizard(_interaction(_guild()))
 
-    assert "Signup | Started" in str(svc._output_router.post_log.await_args.args[1])
+    assert "Signup | Started" in str(svc._output_router.post_log.await_args.args[0])
 
 
 async def test_starting_again_deletes_the_abandoned_channel(tmp_path):
@@ -319,7 +319,7 @@ async def test_starting_again_deletes_the_abandoned_channel(tmp_path):
     svc = _service(existing=_wizard())
     guild = _guild(old_channel=old)
 
-    await svc.start_wizard(_interaction(guild), SERVER_ID)
+    await svc.start_wizard(_interaction(guild))
 
     old.delete.assert_awaited_once()
 
@@ -328,13 +328,13 @@ async def test_starting_again_cancels_the_abandoned_wizards_jobs(tmp_path):
     """Left behind, the old timeout would end the wizard the driver is halfway through."""
     svc = _service(existing=_wizard())
     task = MagicMock()
-    svc._correction_tasks[(SERVER_ID, DRIVER)] = task
+    svc._correction_tasks[DRIVER] = task
 
-    await svc.start_wizard(_interaction(_guild(old_channel=_channel(OLD_CHANNEL))), SERVER_ID)
+    await svc.start_wizard(_interaction(_guild(old_channel=_channel(OLD_CHANNEL))))
 
     removed = {c.args[0] for c in svc._scheduler._scheduler.remove_job.call_args_list}
-    assert f"wizard_inactivity_{SERVER_ID}_{DRIVER}" in removed
-    assert f"wizard_channel_delete_{SERVER_ID}_{DRIVER}" in removed
+    assert f"wizard_inactivity_{DRIVER}" in removed
+    assert f"wizard_channel_delete_{DRIVER}" in removed
     task.cancel.assert_called_once()
 
 
@@ -344,7 +344,7 @@ async def test_an_abandoned_channel_already_gone_does_not_stop_the_start(tmp_pat
     svc = _service(existing=_wizard())
     guild = _guild(old_channel=old)
 
-    assert await svc.start_wizard(_interaction(guild), SERVER_ID) is guild._created
+    assert await svc.start_wizard(_interaction(guild)) is guild._created
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +450,7 @@ def test_a_state_with_no_question_says_so_rather_than_raising():
 )
 async def test_each_question_gets_its_own_buttons(state, view_name):
     """A typed step still offers a way out, which is what the withdraw view is."""
-    view = _service()._build_step_view(state, SERVER_ID, DRIVER, ["Red"])
+    view = _service()._build_step_view(state, DRIVER, ["Red"])
 
     assert type(view).__name__ == view_name
 
@@ -482,7 +482,7 @@ async def test_the_driver_goes_back_to_waiting_for_approval(tmp_path):
     )
 
     svc._bot.driver_service.transition.assert_awaited_once_with(
-        SERVER_ID, DRIVER, DriverState.PENDING_ADMIN_APPROVAL
+        DRIVER, DriverState.PENDING_ADMIN_APPROVAL
     )
 
 
@@ -503,7 +503,7 @@ async def test_the_timeout_on_the_correction_is_cancelled(tmp_path):
     await svc._commit_correction(_wizard(draft={"notes": "hi"}), _guild(old_channel=_channel(OLD_CHANNEL)))
 
     removed = {c.args[0] for c in svc._scheduler._scheduler.remove_job.call_args_list}
-    assert f"wizard_inactivity_{SERVER_ID}_{DRIVER}" in removed
+    assert f"wizard_inactivity_{DRIVER}" in removed
 
 
 async def test_a_fresh_review_panel_is_posted(tmp_path):
@@ -562,12 +562,12 @@ async def test_ending_a_signup_holds_the_channel(tmp_path):
     member = MagicMock()
     guild.get_member = MagicMock(return_value=member)
 
-    await svc._trigger_channel_hold(SERVER_ID, DRIVER, guild, "Signups have closed.")
+    await svc._trigger_channel_hold(DRIVER, guild, "Signups have closed.")
 
     assert channel.set_permissions.await_args.kwargs["send_messages"] is False
     channel.send.assert_awaited_once_with("Signups have closed.")
     job = svc._scheduler._scheduler.add_job.call_args
-    assert job.kwargs["id"] == f"wizard_channel_delete_{SERVER_ID}_{DRIVER}"
+    assert job.kwargs["id"] == f"wizard_channel_delete_{DRIVER}"
 
 
 async def test_a_held_channel_is_deleted_in_24_hours(tmp_path):
@@ -576,7 +576,7 @@ async def test_a_held_channel_is_deleted_in_24_hours(tmp_path):
     guild.get_member = MagicMock(return_value=None)
     before = datetime.now(timezone.utc)
 
-    await svc._trigger_channel_hold(SERVER_ID, DRIVER, guild, "ended")
+    await svc._trigger_channel_hold(DRIVER, guild, "ended")
 
     fire_at = svc._scheduler._scheduler.add_job.call_args.kwargs["trigger"].run_date
     assert timedelta(hours=23, minutes=59) < fire_at - before < timedelta(hours=24, minutes=1)
@@ -589,7 +589,7 @@ async def test_a_notice_that_cannot_be_posted_still_schedules_deletion(tmp_path)
     guild = _guild(old_channel=channel)
     guild.get_member = MagicMock(return_value=None)
 
-    await svc._trigger_channel_hold(SERVER_ID, DRIVER, guild, "ended")
+    await svc._trigger_channel_hold(DRIVER, guild, "ended")
 
     svc._scheduler._scheduler.add_job.assert_called_once()
 
@@ -598,7 +598,7 @@ async def test_no_wizard_means_no_hold(tmp_path):
     svc = _service(existing=None)
     guild = _guild()
 
-    await svc._trigger_channel_hold(SERVER_ID, DRIVER, guild, "ended")
+    await svc._trigger_channel_hold(DRIVER, guild, "ended")
 
     svc._scheduler._scheduler.add_job.assert_not_called()
 
@@ -608,10 +608,10 @@ async def test_the_scheduled_deletion_removes_channel_and_wizard(tmp_path):
     svc = _service(existing=_wizard())
     svc._bot.get_guild = MagicMock(return_value=_guild(old_channel=channel))
 
-    await svc._execute_channel_delete(SERVER_ID, DRIVER)
+    await svc._execute_channel_delete(DRIVER)
 
     channel.delete.assert_awaited_once()
-    svc._bot.signup_module_service.delete_wizard.assert_awaited_once_with(SERVER_ID, DRIVER)
+    svc._bot.signup_module_service.delete_wizard.assert_awaited_once_with(DRIVER)
 
 
 async def test_a_channel_that_will_not_delete_still_clears_the_wizard(tmp_path):
@@ -620,7 +620,7 @@ async def test_a_channel_that_will_not_delete_still_clears_the_wizard(tmp_path):
     svc = _service(existing=_wizard())
     svc._bot.get_guild = MagicMock(return_value=_guild(old_channel=channel))
 
-    await svc._execute_channel_delete(SERVER_ID, DRIVER)
+    await svc._execute_channel_delete(DRIVER)
 
     svc._bot.signup_module_service.delete_wizard.assert_awaited_once()
 
@@ -629,6 +629,6 @@ async def test_a_guild_the_bot_has_left_still_clears_the_wizard(tmp_path):
     svc = _service(existing=_wizard())
     svc._bot.get_guild = MagicMock(return_value=None)
 
-    await svc._execute_channel_delete(SERVER_ID, DRIVER)
+    await svc._execute_channel_delete(DRIVER)
 
     svc._bot.signup_module_service.delete_wizard.assert_awaited_once()

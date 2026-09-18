@@ -39,8 +39,8 @@ class PhaseEntry(TypedDict):
 # Toggle
 # ---------------------------------------------------------------------------
 
-async def toggle_test_mode(server_id: int, db_path: str) -> bool:
-    """Flip test_mode_active for *server_id* and return the NEW value.
+async def toggle_test_mode(db_path: str) -> bool:
+    """Flip test_mode_active and return the NEW value.
 
     Uses a single atomic UPDATE so no read-modify-write race can occur.
     Returns False if the server has no config row (bot not initialised).
@@ -49,24 +49,22 @@ async def toggle_test_mode(server_id: int, db_path: str) -> bool:
         await db.execute(
             "UPDATE server_configs "
             "SET test_mode_active = 1 - test_mode_active "
-            "WHERE server_id = ?",
-            (server_id,),
+            "",
         )
         await db.commit()
         cursor = await db.execute(
-            "SELECT test_mode_active FROM server_configs WHERE server_id = ?",
-            (server_id,),
+            "SELECT test_mode_active FROM server_configs",
         )
         row = await cursor.fetchone()
 
     if row is None:
-        log.error("toggle_test_mode: no server_config row for server_id=%s", server_id)
+        log.error("toggle_test_mode: no server_config row")
         return False
     return bool(row["test_mode_active"])
 
 
-async def switch_test_mode_off(server_id: int, bot, *, discard_backup: bool = False) -> int:
-    """Switch test mode off for *server_id*, deleting every driver it created.
+async def switch_test_mode_off(bot, *, discard_backup: bool = False) -> int:
+    """Switch test mode off, deleting every driver it created.
 
     The one way test mode is left, by the toggle in Configuration or by the season it was chosen
     for ending (issue #220). Pending forecast deletions are flushed first, as they were while a
@@ -81,7 +79,7 @@ async def switch_test_mode_off(server_id: int, bot, *, discard_backup: bool = Fa
     """
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
-            "SELECT test_mode_active FROM server_configs WHERE server_id = ?", (server_id,)
+            "SELECT test_mode_active FROM server_configs"
         )
         row = await cursor.fetchone()
     if row is None or not row["test_mode_active"]:
@@ -91,10 +89,10 @@ async def switch_test_mode_off(server_id: int, bot, *, discard_backup: bool = Fa
     from services.test_roster_service import clear_all_test_drivers
 
     try:
-        await flush_pending_deletions(server_id, bot)
+        await flush_pending_deletions(bot)
     except Exception:  # noqa: BLE001 — a stale forecast is not worth staying in test mode
         log.exception("switch_test_mode_off: could not flush pending deletions")
-    removed = await clear_all_test_drivers(server_id, bot.db_path)
+    removed = await clear_all_test_drivers(bot.db_path)
     if discard_backup:
         from services import backup_service
 
@@ -104,14 +102,14 @@ async def switch_test_mode_off(server_id: int, bot, *, discard_backup: bool = Fa
             log.exception("switch_test_mode_off: could not discard the saved backup")
     async with get_connection(bot.db_path) as db:
         await db.execute(
-            "UPDATE server_configs SET test_mode_active = 0 WHERE server_id = ?", (server_id,)
+            "UPDATE server_configs SET test_mode_active = 0"
         )
         await db.commit()
     return removed
 
 
-async def toggle_test_mode_nationality(server_id: int, db_path: str) -> bool:
-    """Flip test_mode_nationality_required for *server_id* and return the NEW value.
+async def toggle_test_mode_nationality(db_path: str) -> bool:
+    """Flip test_mode_nationality_required and return the NEW value.
 
     The test-mode counterpart of the signup nationality switch: while test mode is active
     it stands in for it, so the graphics of a server under test may be seen with flags and
@@ -124,25 +122,23 @@ async def toggle_test_mode_nationality(server_id: int, db_path: str) -> bool:
         await db.execute(
             "UPDATE server_configs "
             "SET test_mode_nationality_required = 1 - test_mode_nationality_required "
-            "WHERE server_id = ?",
-            (server_id,),
+            "",
         )
         await db.commit()
         cursor = await db.execute(
-            "SELECT test_mode_nationality_required FROM server_configs WHERE server_id = ?",
-            (server_id,),
+            "SELECT test_mode_nationality_required FROM server_configs",
         )
         row = await cursor.fetchone()
 
     if row is None:
         log.error(
-            "toggle_test_mode_nationality: no server_config row for server_id=%s", server_id
+            "toggle_test_mode_nationality: no server_config row"
         )
         return False
     return bool(row["test_mode_nationality_required"])
 
 
-async def count_live_real_drivers(server_id: int, db_path: str) -> int:
+async def count_live_real_drivers(db_path: str) -> int:
     """Return how many *live* real drivers this server holds.
 
     A live real driver is a driver_profiles row with is_test_driver = 0 whose state is
@@ -158,8 +154,7 @@ async def count_live_real_drivers(server_id: int, db_path: str) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT COUNT(*) AS n FROM driver_profiles "
-            "WHERE server_id = ? AND is_test_driver = 0 AND current_state != 'NOT_SIGNED_UP'",
-            (server_id,),
+            "WHERE is_test_driver = 0 AND current_state != 'NOT_SIGNED_UP'",
         )
         row = await cursor.fetchone()
 
@@ -171,7 +166,6 @@ async def count_live_real_drivers(server_id: int, db_path: str) -> int:
 # ---------------------------------------------------------------------------
 
 async def get_next_pending_phase(
-    server_id: int,
     db_path: str,
     scheduler_service: Any = None,
 ) -> PhaseEntry | None:
@@ -212,13 +206,11 @@ async def get_next_pending_phase(
             FROM rounds r
             JOIN divisions d ON d.id  = r.division_id
             JOIN seasons   s ON s.id  = d.season_id
-            WHERE s.server_id = ?
-              AND s.status    = 'ACTIVE'
+            WHERE s.status    = 'ACTIVE'
               AND d.status   != 'CANCELLED'
               AND r.status   != 'CANCELLED'
             ORDER BY r.scheduled_at ASC, d.id ASC
             """,
-            (server_id,),
         )
         rows = await cursor.fetchall()
         if not rows:
@@ -235,9 +227,8 @@ async def get_next_pending_phase(
             JOIN rounds r ON r.id = sr.round_id
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
-            WHERE s.server_id = ? AND sr.status = 'ACTIVE'
+            WHERE sr.status = 'ACTIVE'
             """,
-            (server_id,),
         )
         rounds_with_results: set[int] = {r["round_id"] for r in await results_cursor.fetchall()}
 
@@ -290,23 +281,18 @@ async def get_next_pending_phase(
     # earlier-round priority check and the all-misfired DB fallback.
     async with get_connection(db_path) as db:
         rmc_cursor = await db.execute(
-            "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT module_enabled FROM results_module_config",
         )
         rmc_row = await rmc_cursor.fetchone()
         results_module_enabled = bool(rmc_row[0]) if rmc_row else False
 
         wm_cursor = await db.execute(
-            "SELECT weather_module_enabled FROM server_configs WHERE server_id = ?",
-            (server_id,),
+            "SELECT weather_module_enabled FROM server_configs",
         )
         wm_row = await wm_cursor.fetchone()
         weather_module_enabled = bool(wm_row[0]) if wm_row else False
 
-        att_cursor = await db.execute(
-            "SELECT module_enabled FROM attendance_config WHERE server_id = ?",
-            (server_id,),
-        )
+        att_cursor = await db.execute("SELECT module_enabled FROM attendance_config")
         att_row = await att_cursor.fetchone()
         attendance_module_enabled = bool(att_row[0]) if att_row else False
 
@@ -320,9 +306,7 @@ async def get_next_pending_phase(
                 JOIN rounds r ON r.id = rem.round_id
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons s ON s.id = d.season_id
-                WHERE s.server_id = ?
                 """,
-                (server_id,),
             )
             rsvp_state: dict[int, Any] = {
                 r["round_id"]: r for r in await rsvp_cursor.fetchall()
@@ -493,7 +477,6 @@ def _phase_status(done: bool, job_id: str, live_ids: set[str] | None) -> str:
 
 
 async def build_review_summary(
-    server_id: int,
     db_path: str,
     scheduler_service: Any = None,
 ) -> str:
@@ -513,8 +496,7 @@ async def build_review_summary(
     async with get_connection(db_path) as db:
         # Season header
         season_cursor = await db.execute(
-            "SELECT start_date FROM seasons WHERE server_id = ? AND status = 'ACTIVE'",
-            (server_id,),
+            "SELECT start_date FROM seasons WHERE status = 'ACTIVE'",
         )
         season_row = await season_cursor.fetchone()
 
@@ -525,16 +507,12 @@ async def build_review_summary(
 
         # Module-enabled flags
         rmc_cursor = await db.execute(
-            "SELECT module_enabled FROM results_module_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT module_enabled FROM results_module_config",
         )
         rmc_row = await rmc_cursor.fetchone()
         results_module_enabled = bool(rmc_row[0]) if rmc_row else False
 
-        att_cursor = await db.execute(
-            "SELECT module_enabled FROM attendance_config WHERE server_id = ?",
-            (server_id,),
-        )
+        att_cursor = await db.execute("SELECT module_enabled FROM attendance_config")
         att_row = await att_cursor.fetchone()
         attendance_module_enabled = bool(att_row[0]) if att_row else False
 
@@ -556,13 +534,11 @@ async def build_review_summary(
             FROM rounds r
             JOIN divisions d ON d.id  = r.division_id
             JOIN seasons   s ON s.id  = d.season_id
-            WHERE s.server_id = ?
-              AND s.status    = 'ACTIVE'
+            WHERE s.status    = 'ACTIVE'
               AND d.status   != 'CANCELLED'
               AND r.status   != 'CANCELLED'
             ORDER BY d.id ASC, r.scheduled_at ASC
             """,
-            (server_id,),
         )
         rows = await cursor.fetchall()
 
@@ -574,9 +550,8 @@ async def build_review_summary(
             JOIN rounds r ON r.id = sr.round_id
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
-            WHERE s.server_id = ? AND sr.status = 'ACTIVE'
+            WHERE sr.status = 'ACTIVE'
             """,
-            (server_id,),
         )
         rounds_with_results: set[int] = {r["round_id"] for r in await sr_cursor.fetchall()}
 
@@ -589,9 +564,7 @@ async def build_review_summary(
             JOIN rounds r ON r.id = rem.round_id
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
-            WHERE s.server_id = ?
             """,
-            (server_id,),
         )
         rsvp_rows = {
             (r["round_id"], r["division_id"]): r

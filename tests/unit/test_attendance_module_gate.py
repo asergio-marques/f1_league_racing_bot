@@ -70,13 +70,13 @@ async def _make_db(tmp_path, *, attendance_enabled: bool, scheduled_at: datetime
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, module_enabled) VALUES (?, ?)",
-            (SERVER_ID, int(attendance_enabled)),
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (?, ?)",
+            (1, int(attendance_enabled)),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -85,8 +85,8 @@ async def _make_db(tmp_path, *, attendance_enabled: bool, scheduled_at: datetime
         )
         await db.execute(
             "INSERT INTO attendance_division_config "
-            "(division_id, server_id, rsvp_channel_id) VALUES (?, ?, ?)",
-            (DIVISION_ID, SERVER_ID, str(RSVP_CHANNEL_ID)),
+            "(division_id, rsvp_channel_id) VALUES (?, ?)",
+            (DIVISION_ID, str(RSVP_CHANNEL_ID)),
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at) "
@@ -108,9 +108,9 @@ async def _make_db(tmp_path, *, attendance_enabled: bool, scheduled_at: datetime
         for profile_id, name in ((101, "Full Timer"), (102, "Stand In")):
             await db.execute(
                 "INSERT INTO driver_profiles "
-                "(id, server_id, discord_user_id, current_state, is_test_driver, test_display_name) "
-                "VALUES (?, ?, ?, 'ACTIVE', 1, ?)",
-                (profile_id, SERVER_ID, str(profile_id), name),
+                "(id, discord_user_id, current_state, is_test_driver, test_display_name) "
+                "VALUES (?, ?, 'ACTIVE', 1, ?)",
+                (profile_id, str(profile_id), name),
             )
         await db.execute(
             "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "

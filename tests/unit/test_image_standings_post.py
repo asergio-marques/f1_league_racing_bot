@@ -185,21 +185,21 @@ async def test_the_aspect_is_read_per_template_so_one_faulty_half_does_not_stop_
     from services.image_standings_post import standings_enabled
 
     bot = _bot(constructors_valid=False)
-    assert await standings_enabled(bot, 1, DRIVERS) is True
-    assert await standings_enabled(bot, 1, CONSTRUCTORS) is False
+    assert await standings_enabled(bot, DRIVERS) is True
+    assert await standings_enabled(bot, CONSTRUCTORS) is False
 
 
 async def test_the_module_being_off_stands_the_whole_flow_aside():
     from services.image_standings_post import standings_enabled
 
     bot = _bot(module=False)
-    assert await standings_enabled(bot, 1, DRIVERS) is False
+    assert await standings_enabled(bot, DRIVERS) is False
 
 
 async def test_the_toggle_being_off_stands_the_whole_flow_aside():
     from services.image_standings_post import standings_enabled
 
-    assert await standings_enabled(_bot(toggle=False), 1, DRIVERS) is False
+    assert await standings_enabled(_bot(toggle=False), DRIVERS) is False
 
 
 async def test_a_reader_that_raises_falls_back_rather_than_breaking_the_posting():
@@ -207,7 +207,7 @@ async def test_a_reader_that_raises_falls_back_rather_than_breaking_the_posting(
 
     bot = _bot()
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await standings_enabled(bot, 1, DRIVERS) is False
+    assert await standings_enabled(bot, DRIVERS) is False
 
 
 # ── The failure matrix ────────────────────────────────────────────────────
@@ -216,7 +216,7 @@ async def test_a_reader_that_raises_falls_back_rather_than_breaking_the_posting(
 async def test_both_render_so_two_messages_are_posted_and_no_section_falls_back(tmp_path):
     sent = []
 
-    async def render(bot, server_id, drawing, origin):
+    async def render(bot, drawing, origin):
         return _decision(
             png=_drawn(
                 tmp_path,
@@ -240,7 +240,7 @@ async def test_the_drivers_failing_falls_back_to_the_drivers_section_alone(tmp_p
     """The constructors graphic still draws, so its table must not be repeated as text."""
     sent = []
 
-    async def render(bot, server_id, drawing, origin):
+    async def render(bot, drawing, origin):
         if drawing.template_key == DRIVERS:
             return _decision(posts=False, problem=MagicMock(detail="no rows"))
         return _decision(png=_drawn(tmp_path, "constructors"))
@@ -259,7 +259,7 @@ async def test_the_drivers_failing_falls_back_to_the_drivers_section_alone(tmp_p
 async def test_the_constructors_failing_falls_back_to_the_constructors_section_alone(tmp_path):
     sent = []
 
-    async def render(bot, server_id, drawing, origin):
+    async def render(bot, drawing, origin):
         if drawing.template_key == CONSTRUCTORS:
             return _decision(posts=False, problem=MagicMock(detail="no rows"))
         return _decision(png=_drawn(tmp_path, "drivers"))
@@ -310,7 +310,7 @@ async def test_a_commanded_failure_rejects_and_posts_nothing_at_all(tmp_path):
     png.write_bytes(b"x")
     sent = []
 
-    async def render(bot, server_id, drawing, origin):
+    async def render(bot, drawing, origin):
         if drawing.template_key == DRIVERS:
             return _decision(posts=False, rejects=True, problem=MagicMock(detail="bad"))
         return _decision(png=png)
@@ -454,14 +454,14 @@ async def test_a_fault_is_reported_to_the_log_channel_naming_the_championship():
     bot = _bot()
     sent = []
 
-    async def render(bot_, server_id, drawing, origin):
+    async def render(bot_, drawing, origin):
         if drawing.template_key == DRIVERS:
             return _decision(posts=False, problem=MagicMock(detail="a field is missing"))
         return _decision(posts=False, problem=MagicMock(detail="a field is missing"))
 
     await _try_post(bot, _channel(sent), AsyncMock(side_effect=render))
 
-    logged = " ".join(str(call.args[1]) for call in bot.output_router.post_log.await_args_list)
+    logged = " ".join(str(call.args[0]) for call in bot.output_router.post_log.await_args_list)
     assert "drivers standings" in logged
     assert "constructors standings" in logged
     assert "Main round 5" in logged
@@ -490,7 +490,7 @@ async def test_notices_are_reported_alongside_a_graphic_that_did_draw(tmp_path):
         bot, _channel([]), AsyncMock(return_value=_decision(png=png, notices=[notice]))
     )
 
-    logged = " ".join(str(call.args[1]) for call in bot.output_router.post_log.await_args_list)
+    logged = " ".join(str(call.args[0]) for call in bot.output_router.post_log.await_args_list)
     assert "a flag fell back" in logged
     assert "drivers standings" in logged
 
@@ -515,8 +515,8 @@ async def _seed_league(tmp_path):
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 4)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 4)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -549,8 +549,8 @@ async def _seed_league(tmp_path):
             ("Cobalt", 901, [(13, 1)]),
         ):
             await db.execute(
-                "INSERT INTO team_role_configs (server_id, team_name, role_id) "
-                "VALUES (1, ?, ?)",
+                "INSERT INTO team_role_configs (team_name, role_id) "
+                "VALUES (?, ?)",
                 (team_name, role_id),
             )
             cursor = await db.execute(
@@ -561,8 +561,8 @@ async def _seed_league(tmp_path):
             instance_id = cursor.lastrowid
             for user_id, seat_number in drivers:
                 cursor = await db.execute(
-                    "INSERT INTO driver_profiles (server_id, discord_user_id, "
-                    "current_state) VALUES (1, ?, 'ACTIVE')",
+                    "INSERT INTO driver_profiles (discord_user_id, "
+                    "current_state) VALUES (?, 'ACTIVE')",
                     (user_id,),
                 )
                 profile_id = cursor.lastrowid
@@ -633,7 +633,6 @@ async def test_build_drawings_resolves_both_championships_against_real_tables(tm
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,
@@ -670,7 +669,6 @@ async def test_a_drivers_row_names_the_team_its_own_driver_sits_in(tmp_path):
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,
@@ -706,7 +704,6 @@ async def test_the_run_round_fills_its_cells_and_the_unrun_one_empties_them(tmp_
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,
@@ -753,7 +750,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
         return True
 
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(1)
+    await config_service.create_with_defaults()
     validity_service = ImageValidityService(
         config_service, SimpleNamespace(is_images_enabled=_true)
     )
@@ -768,7 +765,6 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,
@@ -781,7 +777,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
         season_number=4,
     )
 
-    config = await config_service.get_config(1)
+    config = await config_service.get_config()
     for drawing in drawings:
         directories, faults = resolve_configured_directories(
             config,
@@ -794,7 +790,6 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
             image_type=drawing.template_key,
         )
         outcome = await bot.image_render_service.render(
-            1,
             drawing.template_key,
             spec_builder_with_faults(build_fill_spec, drawing, directories, faults),
             output_dir=tmp_path,
@@ -823,7 +818,6 @@ async def test_the_constructors_cars_are_allocated_from_the_divisions_own_seats(
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,
@@ -861,8 +855,8 @@ async def _seed(tmp_path, *, cancelled=False):
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 2)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 2)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -1254,16 +1248,15 @@ async def _highlighted_svg(tmp_path):
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
     bot = _bot(db_path)
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(1)
+    await config_service.create_with_defaults()
     # See the docstring: the default points into the league's own gitignored folder.
-    await config_service.set_field(1, "marker_directory", packaged_directory_for("marker"))
+    await config_service.set_field("marker_directory", packaged_directory_for("marker"))
     bot.image_config_service = config_service
 
     drawings = await build_drawings(
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,
@@ -1275,7 +1268,7 @@ async def _highlighted_svg(tmp_path):
         division_name="Alpha",
     )
 
-    config = await config_service.get_config(1)
+    config = await config_service.get_config()
     out = {}
     for drawing in drawings:
         directories, _faults = resolve_configured_directories(

@@ -38,8 +38,8 @@ async def _bootstrap(db_path: str) -> tuple[int, int, int]:
             "VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -410,7 +410,7 @@ async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path)
 
     # and with its only division finished, the season is now completable
     from services.season_service import SeasonService
-    assert await SeasonService(db_path).all_divisions_finished(1) is True
+    assert await SeasonService(db_path).all_divisions_finished() is True
 
 
 # ---------------------------------------------------------------------------

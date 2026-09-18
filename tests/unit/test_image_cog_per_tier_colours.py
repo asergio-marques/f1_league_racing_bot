@@ -54,7 +54,7 @@ def _said(cog) -> str:
 async def test_the_toggle_stores_what_it_was_given():
     cog = _cog()
     await ImageCog._set_per_tier_colours(cog, _interaction(), True)
-    cog._config_service.set_flag.assert_awaited_once_with(1, "per_tier_colour_enabled", True)
+    cog._config_service.set_flag.assert_awaited_once_with("per_tier_colour_enabled", True)
 
 
 async def test_turning_it_on_reports_what_is_still_wanted():
@@ -92,7 +92,7 @@ async def test_a_colour_is_stored_canonically():
     cog = _cog(declared={"accent"})
     await ImageCog._set_tier_colour(cog, _interaction(), "Division 1", "Accent", "#a78bfa")
     cog._config_service.set_tier_colour.assert_awaited_once_with(
-        1, "Division 1", "accent", "#A78BFA"
+        "Division 1", "accent", "#A78BFA"
     )
 
 
@@ -200,7 +200,7 @@ async def test_the_declared_slots_helper_ignores_invalid_templates():
             ),
         }
     )
-    assert await ImageCog._declared_colour_slots(cog, 1) == {"accent"}
+    assert await ImageCog._declared_colour_slots(cog) == {"accent"}
 
 
 def test_the_service_exposes_what_the_commands_call():
@@ -226,7 +226,7 @@ async def test_a_clean_block_is_stored():
         cog, _interaction(), "Division 2", "accent #A78BFA\nink #F7F6F8"
     )
     cog._config_service.set_tier_colours.assert_awaited_once_with(
-        1, "Division 2", {"accent": "#A78BFA", "ink": "#F7F6F8"}
+        "Division 2", {"accent": "#A78BFA", "ink": "#F7F6F8"}
     )
 
 

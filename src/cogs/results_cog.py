@@ -19,6 +19,7 @@ from services.season_points_service import (
     SeasonNotInSetupError,
 )
 from utils.channel_guard import league_admin_only, league_manager_only
+from utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ def _parse_bulk_lines(text: str) -> tuple[list[tuple[int, int]], list[str]]:
 # Bulk modal classes (T013 / T014)
 # ---------------------------------------------------------------------------
 
-class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
+class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
     """Modal for bulk-setting session points in a named config."""
 
     entries: discord.ui.TextInput = discord.ui.TextInput(
@@ -151,13 +152,11 @@ class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
         config_name: str,
         session: app_commands.Choice,
         db_path: str,
-        guild_id: int,
     ) -> None:
         super().__init__()
         self._config_name = config_name
         self._session = session
         self._db_path = db_path
-        self._guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
         await interaction.response.defer(ephemeral=True)
@@ -171,7 +170,6 @@ class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
             try:
                 await points_config_service.set_session_points(
                     self._db_path,
-                    self._guild_id,
                     self._config_name,
                     SessionType(self._session.value),
                     position,
@@ -203,7 +201,6 @@ class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
                 self._session.name,
                 await points_config_service.ordering_warnings(
                     self._db_path,
-                    self._guild_id,
                     self._config_name,
                     SessionType(self._session.value),
                 ),
@@ -214,14 +211,13 @@ class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
 
         if applied:
             await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
-                self._guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /results config bulk-session | {len(applied)} change(s)\n"
                 f"  config: {self._config_name}, session: {self._session.name}",
             )
 
 
-class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points"):
+class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
     """Modal for bulk-amending session points in the modification store."""
 
     entries: discord.ui.TextInput = discord.ui.TextInput(
@@ -237,13 +233,11 @@ class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points")
         config_name: str,
         session: app_commands.Choice,
         db_path: str,
-        guild_id: int,
     ) -> None:
         super().__init__()
         self._config_name = config_name
         self._session = session
         self._db_path = db_path
-        self._guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
         from services.amendment_service import (
@@ -254,7 +248,7 @@ class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points")
 
         await interaction.response.defer(ephemeral=True)
 
-        season = await interaction.client.season_service.get_season_for_server(self._guild_id)  # type: ignore[attr-defined]
+        season = await interaction.client.season_service.get_season_for_server()  # type: ignore[attr-defined]
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -310,14 +304,13 @@ class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points")
 
         if applied:
             await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
-                self._guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /results amend bulk-session | {len(applied)} change(s)\n"
                 f"  config: {self._config_name}, session: {self._session.name}",
             )
 
 
-class XmlImportModal(discord.ui.Modal, title="XML Points Config Import"):
+class XmlImportModal(LeagueModal, title="XML Points Config Import"):
     """Modal for importing a full XML points configuration payload."""
 
     xml_payload: discord.ui.TextInput = discord.ui.TextInput(
@@ -332,12 +325,10 @@ class XmlImportModal(discord.ui.Modal, title="XML Points Config Import"):
         self,
         config_name: str,
         db_path: str,
-        guild_id: int,
     ) -> None:
         super().__init__()
         self._config_name = config_name
         self._db_path = db_path
-        self._guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
         await interaction.response.defer(ephemeral=True)
@@ -346,7 +337,6 @@ class XmlImportModal(discord.ui.Modal, title="XML Points Config Import"):
             self.xml_payload.value,
             self._config_name,
             self._db_path,
-            self._guild_id,
         )
 
 
@@ -355,7 +345,6 @@ async def _run_xml_import(
     xml_text: str,
     config_name: str,
     db_path: str,
-    guild_id: int,
 ) -> None:
     """Shared logic for modal and file-attachment XML import paths.
 
@@ -367,7 +356,6 @@ async def _run_xml_import(
 
     async def _audit(msg: str) -> None:
         await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
-            guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) "
             f"| /results config xml-import | config: {config_name}\n  {msg}",
         )
@@ -395,7 +383,7 @@ async def _run_xml_import(
 
     # --- persist ----------------------------------------------------------
     try:
-        await xml_import_config(db_path, guild_id, config_name, payload)
+        await xml_import_config(db_path, config_name, payload)
     except ConfigNotFoundError:
         await interaction.followup.send(
             f"❌ Config **{config_name}** not found.", ephemeral=True
@@ -432,7 +420,7 @@ async def _run_xml_import(
 # ---------------------------------------------------------------------------
 
 
-class _ConfirmRemoveConfigView(discord.ui.View):
+class _ConfirmRemoveConfigView(LeagueView):
     """Confirm removing a points configuration before anything is deleted.
 
     Shown only where the removal costs the league something beyond the configuration
@@ -484,7 +472,7 @@ class ResultsCog(commands.Cog):
     # ------------------------------------------------------------------
 
     async def _module_gate(self, interaction: discord.Interaction) -> bool:
-        if not await self.bot.module_service.is_results_enabled(interaction.guild_id):
+        if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "\u274c The Results & Standings module is not enabled on this server.",
                 ephemeral=True,
@@ -509,7 +497,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
         try:
-            await points_config_service.create_config(self.bot.db_path, interaction.guild_id, name)
+            await points_config_service.create_config(self.bot.db_path, name)
         except ConfigAlreadyExistsError:
             await interaction.followup.send(
                 f"\u274c A config named **{name}** already exists on this server.", ephemeral=True
@@ -519,7 +507,6 @@ class ResultsCog(commands.Cog):
             f"\u2705 Config **{name}** created. All positions default to 0 points.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config add | Success\n"
             f"  config: {name}",
         )
@@ -552,7 +539,7 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         if not await points_config_service.config_exists(
-            self.bot.db_path, interaction.guild_id, name
+            self.bot.db_path, name
         ):
             await interaction.followup.send(
                 f"\u274c Config **{name}** not found.", ephemeral=True
@@ -560,7 +547,7 @@ class ResultsCog(commands.Cog):
             return
 
         standing = await points_config_service.setup_seasons_linking(
-            self.bot.db_path, interaction.guild_id, name
+            self.bot.db_path, name
         )
         if not standing:
             await self._apply_config_remove(interaction, name)
@@ -586,7 +573,7 @@ class ResultsCog(commands.Cog):
         differ about what removing one does or about what the log records.
         """
         try:
-            await points_config_service.remove_config(self.bot.db_path, interaction.guild_id, name)
+            await points_config_service.remove_config(self.bot.db_path, name)
         except ConfigNotFoundError:
             await interaction.followup.send(
                 f"\u274c Config **{name}** not found.", ephemeral=True
@@ -594,7 +581,6 @@ class ResultsCog(commands.Cog):
             return
         await interaction.followup.send(f"\u2705 Config **{name}** removed.", ephemeral=True)
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config remove | Success\n"
             f"  config: {name}",
         )
@@ -622,7 +608,6 @@ class ResultsCog(commands.Cog):
         try:
             await points_config_service.set_session_points(
                 self.bot.db_path,
-                interaction.guild_id,
                 name,
                 SessionType(session.value),
                 position,
@@ -635,7 +620,7 @@ class ResultsCog(commands.Cog):
             name,
             session.name,
             await points_config_service.ordering_warnings(
-                self.bot.db_path, interaction.guild_id, name, SessionType(session.value)
+                self.bot.db_path, name, SessionType(session.value)
             ),
         )
         await interaction.followup.send(
@@ -644,7 +629,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config session | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, position: {position}, points: {points}",
@@ -670,7 +654,7 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         try:
             await points_config_service.set_fl_bonus(
-                self.bot.db_path, interaction.guild_id, name, SessionType(session.value), points
+                self.bot.db_path, name, SessionType(session.value), points
             )
         except ConfigNotFoundError:
             await interaction.followup.send(f"\u274c Config **{name}** not found.", ephemeral=True)
@@ -685,7 +669,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config fl | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, fl_bonus: {points}",
@@ -711,7 +694,7 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         try:
             await points_config_service.set_fl_position_limit(
-                self.bot.db_path, interaction.guild_id, name, SessionType(session.value), limit
+                self.bot.db_path, name, SessionType(session.value), limit
             )
         except ConfigNotFoundError:
             await interaction.followup.send(f"\u274c Config **{name}** not found.", ephemeral=True)
@@ -726,7 +709,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config fl-plimit | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, fl_position_limit: {limit}",
@@ -739,14 +721,13 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         await interaction.response.defer(ephemeral=True)
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No season found for this server.", ephemeral=True)
             return
         try:
             await season_points_service.attach_config(
                 self.bot.db_path, season.id, name, season.status,
-                server_id=interaction.guild_id,
             )
         except SeasonNotInSetupError:
             await interaction.followup.send(
@@ -764,7 +745,6 @@ class ResultsCog(commands.Cog):
             f"\u2705 Config **{name}** attached to the current season.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config append | Success\n"
             f"  config: {name}",
         )
@@ -776,7 +756,7 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         await interaction.response.defer(ephemeral=True)
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No season found for this server.", ephemeral=True)
             return
@@ -798,7 +778,6 @@ class ResultsCog(commands.Cog):
             f"\u2705 Config **{name}** detached from the current season.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config detach | Success\n"
             f"  config: {name}",
         )
@@ -824,7 +803,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send(
                 "\u274c No active or setup season found.", ephemeral=True
@@ -864,7 +843,7 @@ class ResultsCog(commands.Cog):
             # SETUP — read from server-level config store
             try:
                 raw_entries, raw_fl = await points_config_service.get_config_entries(
-                    self.bot.db_path, interaction.guild_id, name
+                    self.bot.db_path, name
                 )
             except ConfigNotFoundError:
                 await interaction.followup.send(
@@ -914,7 +893,7 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         await interaction.response.send_modal(
-            BulkConfigSessionModal(name, session, self.bot.db_path, interaction.guild_id)
+            BulkConfigSessionModal(name, session, self.bot.db_path)
         )
 
     @config_group.command(
@@ -934,7 +913,7 @@ class ResultsCog(commands.Cog):
 
         if file is None:
             await interaction.response.send_modal(
-                XmlImportModal(name, self.bot.db_path, interaction.guild_id)
+                XmlImportModal(name, self.bot.db_path)
             )
         else:
             await interaction.response.defer(ephemeral=True)
@@ -962,7 +941,7 @@ class ResultsCog(commands.Cog):
                 return
 
             await _run_xml_import(
-                interaction, xml_text, name, self.bot.db_path, interaction.guild_id
+                interaction, xml_text, name, self.bot.db_path
             )
 
     # ------------------------------------------------------------------
@@ -987,7 +966,7 @@ class ResultsCog(commands.Cog):
             get_amendment_state,
         )
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1001,7 +980,6 @@ class ResultsCog(commands.Cog):
                 "\u2705 Amendment mode enabled. Modification store initialised.", ephemeral=True
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend toggle | Success\n"
                 f"  amendment_mode: enabled",
             )
@@ -1010,7 +988,6 @@ class ResultsCog(commands.Cog):
                 await disable_amendment_mode(self.bot.db_path, season.id)
                 await interaction.followup.send("\u2705 Amendment mode disabled.", ephemeral=True)
                 await self.bot.output_router.post_log(
-                    interaction.guild_id,
                     f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend toggle | Success\n"
                     f"  amendment_mode: disabled",
                 )
@@ -1034,7 +1011,7 @@ class ResultsCog(commands.Cog):
             revert_modification_store,
         )
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1049,7 +1026,6 @@ class ResultsCog(commands.Cog):
             "\u2705 Modification store reverted to current season points.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend revert | Success",
         )
 
@@ -1080,7 +1056,7 @@ class ResultsCog(commands.Cog):
             modify_session_points,
         )
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1106,7 +1082,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend session | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, position: {position}, points: {points}",
@@ -1133,7 +1108,7 @@ class ResultsCog(commands.Cog):
 
         from services.amendment_service import AmendmentNotActiveError, modify_fl_bonus
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1148,7 +1123,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend fl | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, fl_bonus: {points}",
@@ -1175,7 +1149,7 @@ class ResultsCog(commands.Cog):
 
         from services.amendment_service import AmendmentNotActiveError, modify_fl_position_limit
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1190,7 +1164,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend fl-plimit | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, fl_position_limit: {limit}",
@@ -1212,7 +1185,7 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         await interaction.response.send_modal(
-            BulkAmendSessionModal(name, session, self.bot.db_path, interaction.guild_id)
+            BulkAmendSessionModal(name, session, self.bot.db_path)
         )
 
     @amend_group.command(name="review", description="Review modification store changes and approve or reject.")
@@ -1246,7 +1219,7 @@ class ResultsCog(commands.Cog):
             validate_modification_ordering,
         )
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1288,7 +1261,7 @@ class ResultsCog(commands.Cog):
                 f"`/division standings-channel`, then run `/results amend review` again."
             )
 
-        class _ReviewView(discord.ui.View):
+        class _ReviewView(LeagueView):
             def __init__(self_v) -> None:
                 super().__init__(timeout=None)
                 self_v.approved = False
@@ -1340,7 +1313,6 @@ class ResultsCog(commands.Cog):
                     ephemeral=True,
                 )
                 await self.bot.output_router.post_log(
-                    interaction.guild_id,
                     f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                     f"| /results amend review | Refused (points out of order)\n"
                     f"  {'; '.join(exc.errors)}",
@@ -1358,7 +1330,6 @@ class ResultsCog(commands.Cog):
                     ephemeral=True,
                 )
                 await self.bot.output_router.post_log(
-                    interaction.guild_id,
                     f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                     f"| /results amend review | Refused (channels not reachable)\n"
                     f"  {'; '.join(exc.faults)}",
@@ -1368,7 +1339,6 @@ class ResultsCog(commands.Cog):
                 "\u2705 Amendment approved. All standings recomputed and reposted.", ephemeral=True
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend review | Success\n"
                 f"  standings recomputed and reposted",
             )
@@ -1389,7 +1359,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1432,7 +1402,6 @@ class ResultsCog(commands.Cog):
             f"\u2705 Reserve visibility for **{division}** set to **{state_str}**.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results reserves toggle | Success\n"
             f"  division: {division}\n"
             f"  reserves_in_standings: {state_str}",
@@ -1454,7 +1423,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1476,7 +1445,6 @@ class ResultsCog(commands.Cog):
                 ephemeral=True,
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results standings sync | Success\n"
                 f"  division: {division}",
             )
@@ -1507,7 +1475,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1529,7 +1497,6 @@ class ResultsCog(commands.Cog):
                 ephemeral=True,
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results rounds sync | Success\n"
                 f"  division: {division}",
             )

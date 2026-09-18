@@ -45,7 +45,7 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(SERVER_ID)
+    await config_service.create_with_defaults()
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),
@@ -56,9 +56,9 @@ async def bot(db_path):
 async def _seed(db_path, *, seat_drivers: bool, teams=("Redline", "Bluewave")):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, ?, 'ACTIVE', 2)",
-            (SERVER_ID, NOW.date().isoformat()),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES (?, 'ACTIVE', 2)",
+            (NOW.date().isoformat(),),
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -85,17 +85,16 @@ async def _seed(db_path, *, seat_drivers: bool, teams=("Redline", "Bluewave")):
                 if not seat_drivers:
                     continue
                 cursor = await db.execute(
-                    "INSERT INTO driver_profiles (server_id, discord_user_id, "
-                    "current_state) VALUES (?, ?, 'ACTIVE')",
-                    (SERVER_ID, user_id),
+                    "INSERT INTO driver_profiles (discord_user_id, "
+                    "current_state) VALUES (?, 'ACTIVE')",
+                    (user_id,),
                 )
                 profile_id = cursor.lastrowid
                 await db.execute(
-                    "INSERT INTO signup_records (server_id, discord_user_id, "
+                    "INSERT INTO signup_records (discord_user_id, "
                     "server_display_name, discord_username, nationality) "
-                    "VALUES (?, ?, ?, ?, 'British')",
+                    "VALUES (?, ?, ?, 'British')",
                     (
-                        SERVER_ID,
                         str(user_id),
                         f"{team_name} Driver {seat_number}",
                         f"d{user_id}",
@@ -127,7 +126,7 @@ class TestASeatedDivision:
         """SC-004 — the reason a lineup template can finally be checked at all."""
         await _seed(db_path, seat_drivers=True)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         requests = await build_lineup_preview(bot, context)
@@ -139,7 +138,7 @@ class TestASeatedDivision:
     async def test_the_drawing_carries_the_leagues_own_driver_names(self, bot, db_path):
         await _seed(db_path, seat_drivers=True)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         names = {d.display_name for d in context.drivers}
@@ -157,7 +156,7 @@ class TestASeatedDivision:
 
         await _seed(db_path, seat_drivers=True)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         drawing = resolve_drawing(
@@ -181,7 +180,7 @@ class TestAnUnseatedDivision:
         """FR-018 — a league that has configured teams but seated nobody still gets a picture."""
         await _seed(db_path, seat_drivers=False)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         assert context.fabricated_drivers is True
@@ -194,7 +193,7 @@ class TestAnUnseatedDivision:
         """The lineup draws seats, not the flat list; an unoccupied seat would draw empty."""
         await _seed(db_path, seat_drivers=False)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         for team in context.teams:
@@ -207,7 +206,7 @@ class TestAnUnseatedDivision:
 
         await _seed(db_path, seat_drivers=False)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         drawing = resolve_drawing(
@@ -232,7 +231,7 @@ class TestAnUnseatedDivision:
         """Only the drivers are invented. The teams are never fabricated."""
         await _seed(db_path, seat_drivers=False, teams=("Vermilion", "Cobalt"))
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         assert {t.name for t in context.teams} == {"Vermilion", "Cobalt", "Reserve"}
@@ -251,10 +250,10 @@ class TestItUsesTheLeaguesOwnDirectories:
 
         await _seed(db_path, seat_drivers=True)
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "resources/defaults/teams"
+            "flag_directory", "resources/defaults/teams"
         )
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         seen = {}

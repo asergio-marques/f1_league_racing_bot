@@ -2,7 +2,7 @@
 
 One entry point:
 
-execute_season_end(server_id, season_id, bot)
+execute_season_end(season_id, bot)
     Archives the season (status → COMPLETED), writes DriverHistoryEntry
     records for every assigned driver, posts each division's final standings
     and attendance sheet, and announces completion in the log channel.  All
@@ -24,6 +24,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from db.database import get_connection
+from utils.league_server import league_guild
 
 if TYPE_CHECKING:
     import discord
@@ -33,7 +34,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None:
+async def execute_season_end(season_id: int, bot: "Bot") -> None:
     """Archive the season and announce completion in the log channel.
 
     All season data is permanently retained (status → COMPLETED).
@@ -42,18 +43,17 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     season_svc = bot.season_service  # type: ignore[attr-defined]
 
     # Idempotency guard: verify the season still exists and is active
-    season = await season_svc.get_confirmed_season(server_id)
+    season = await season_svc.get_confirmed_season()
     if season is None:
         log.info(
-            "execute_season_end: no active season for server %s — already archived.",
-            server_id,
+            "execute_season_end: no active season — already archived.",
         )
         return
 
     # Cancel any pending season-end scheduler job (no-op if already fired)
-    bot.scheduler_service.cancel_season_end(server_id)  # type: ignore[attr-defined]
+    bot.scheduler_service.cancel_season_end()  # type: ignore[attr-defined]
 
-    guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
+    guild = await league_guild(bot)  # type: ignore[attr-defined]
 
     # The season's end, in the order the core specification sets (issue #220).
     # 1. The final classification, per division. The season's last word: each division's
@@ -80,7 +80,6 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
             )
             try:
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    server_id,
                     "\n".join(
                         ["System | Season complete | Final classification", *(
                             f"    - {line}" for line in problems
@@ -97,11 +96,11 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
 
     # 3. The division, team and signup roles of the season's drivers.
     if guild is not None:
-        await _revoke_season_roles(server_id, season.id, guild, bot)
+        await _revoke_season_roles(season.id, guild, bot)
 
     # 4-6. The signup window, the driver pass and test mode, shared with cancelling. The
     # saved test-mode backup goes too: the season it belonged to has been run to its end.
-    await end_of_season_pass(server_id, bot, guild, discard_backup=True)
+    await end_of_season_pass(bot, guild, discard_backup=True)
 
     # 7. Archive: flip status to COMPLETED (all data retained)
     await season_svc.complete_season(season.id)
@@ -110,17 +109,16 @@ async def execute_season_end(server_id: int, season_id: int, bot: "Bot") -> None
     completion_msg = (
         f"System | Season {season.season_number} complete | Success"
     )
-    await bot.output_router.post_log(server_id, completion_msg)  # type: ignore[attr-defined]
+    await bot.output_router.post_log(completion_msg)  # type: ignore[attr-defined]
 
     log.info(
-        "Season %s for server %s archived (COMPLETED).",
+        "Season %s archived (COMPLETED).",
         season_id,
-        server_id,
     )
 
 
 async def end_of_season_pass(
-    server_id: int, bot: "Bot", guild, *, discard_backup: bool = False
+    bot: "Bot", guild, *, discard_backup: bool = False
 ) -> dict:
     """The driver pass, the signup window and test mode: what every end of a season does (#220).
 
@@ -144,18 +142,18 @@ async def end_of_season_pass(
     from services.test_mode_service import switch_test_mode_off
 
     try:
-        signup_cfg = await bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
+        signup_cfg = await bot.signup_module_service.get_config()  # type: ignore[attr-defined]
         if signup_cfg is not None and signup_cfg.signups_open:
             from cogs.module_cog import execute_forced_close
 
-            await execute_forced_close(server_id, bot, audit_action="SIGNUP_SEASON_END_CLOSE")
+            await execute_forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE")
     except Exception:  # noqa: BLE001
         log.exception("end_of_season_pass: could not close the signup window")
 
-    result = await run_driver_pass(bot.db_path, server_id, bot=bot, guild=guild)
+    result = await run_driver_pass(bot.db_path, bot=bot, guild=guild)
 
     try:
-        await switch_test_mode_off(server_id, bot, discard_backup=discard_backup)
+        await switch_test_mode_off(bot, discard_backup=discard_backup)
     except Exception:  # noqa: BLE001
         log.exception("end_of_season_pass: could not switch test mode off")
 
@@ -199,7 +197,6 @@ async def _write_driver_history_entries(
         cursor = await db.execute(
             """
             SELECT m.driver_profile_id,
-                   dp.server_id,
                    dp.discord_user_id,
                    d.id     AS division_id,
                    d.name   AS division_name,
@@ -282,13 +279,12 @@ async def _write_driver_history_entries(
             await db.execute(
                 """
                 INSERT OR IGNORE INTO driver_history_entries
-                    (server_id, discord_user_id, driver_profile_id, season_number,
+                    (discord_user_id, driver_profile_id, season_number,
                      division_name, division_tier, final_position, final_points,
                      points_gap_to_winner, cancelled)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    asgn["server_id"],
                     asgn["discord_user_id"],
                     driver_profile_id,
                     season.season_number,
@@ -310,7 +306,6 @@ async def _write_driver_history_entries(
 
 
 async def _revoke_season_roles(
-    server_id: int,
     season_id: int,
     guild: "discord.Guild",
     bot: "Bot",
@@ -341,8 +336,7 @@ async def _revoke_season_roles(
 
         # Fetch the signed-up role once for the whole loop
         cfg_cur = await db.execute(
-            "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT signed_up_role_id FROM signup_module_config",
         )
         cfg_row = await cfg_cur.fetchone()
 
@@ -358,13 +352,13 @@ async def _revoke_season_roles(
                 member = await guild.fetch_member(discord_uid)
             except discord.HTTPException:
                 log.warning(
-                    "_revoke_season_roles: member %d not found in guild %d — skipping",
-                    discord_uid, server_id,
+                    "_revoke_season_roles: member %d not found — skipping",
+                    discord_uid,
                 )
                 continue
 
         await placement_svc.revoke_all_placement_roles(
-            server_id, driver_profile_id, season_id, member
+            driver_profile_id, season_id, member
         )
         if signed_up_role_id is not None:
             signed_up_role = guild.get_role(signed_up_role_id)

@@ -63,9 +63,9 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (?, ?, '2026-03-01', 'SETUP', 1)",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (?, '2026-03-01', 'SETUP', 1)",
+            (SEASON_ID,),
         )
         await db.commit()
     return path
@@ -147,7 +147,7 @@ def _cog(
     cog.bot = AsyncMock()
     cog.bot.db_path = db_path
     cog._pending = {USER_ID: _pending()}
-    cog._get_pending_for_server = MagicMock(return_value=_pending())
+    cog._get_pending = MagicMock(return_value=_pending())
     # In Placements, every signup settled and every channel set (issue #220; tested in
     # test_placements_confirmation.py).
     from models.season import SeasonStage
@@ -233,7 +233,7 @@ def _replied(interaction) -> str:
 
 def _logged(cog) -> str:
     return "\n".join(
-        str(call.args[1]) for call in cog.bot.output_router.post_log.await_args_list
+        str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list
     )
 
 
@@ -531,7 +531,7 @@ async def test_one_divisions_calendar_failure_does_not_stop_the_others(db_path):
     interaction = _interaction()
     calls: list[int] = []
 
-    async def _post(_bot, _guild, _server, division, *_args, **_kwargs):
+    async def _post(_bot, _guild, division, *_args, **_kwargs):
         calls.append(division.id)
         if division.id == 1:
             raise RuntimeError("template will not draw")
@@ -617,7 +617,7 @@ async def test_a_failed_calendar_report_does_not_fail_the_approval(db_path):
     """
     cog = _cog(db_path)
 
-    async def _fail_the_calendar_report(_server_id, text):
+    async def _fail_the_calendar_report(text):
         if "Calendar image generation" in str(text):
             raise RuntimeError("no log channel")
 

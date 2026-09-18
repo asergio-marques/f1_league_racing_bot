@@ -50,9 +50,8 @@ async def _seed_season(db_path):
     """One SETUP season, one division, one two-seat team and a reserve team."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-03-01', 'SETUP', 1)",
-            (SERVER_ID,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-03-01', 'SETUP', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -77,7 +76,7 @@ async def _seed_season(db_path):
 
 
 async def _add(db_path, name="Mock Alpha", team="Redline", **kwargs):
-    return await add_test_driver(SERVER_ID, name, team, DIVISION, db_path, **kwargs)
+    return await add_test_driver(name, team, DIVISION, db_path, **kwargs)
 
 
 async def _stored_nationality(db_path, profile_id: int):
@@ -142,8 +141,7 @@ class TestAnUnusableNationalityIsRefused:
         async with get_connection(db_path) as db:
             row = await (
                 await db.execute(
-                    "SELECT COUNT(*) AS n FROM driver_profiles WHERE server_id = ?",
-                    (SERVER_ID,),
+                    "SELECT COUNT(*) AS n FROM driver_profiles",
                 )
             ).fetchone()
         assert row["n"] == 0
@@ -168,7 +166,7 @@ class TestTheRosterListCarriesIt:
         await _add(db_path, name="Mock Alpha", nationality="Dutch")
         await _add(db_path, name="Mock Bravo", nationality="brazil")
 
-        drivers = await list_test_drivers(SERVER_ID, DIVISION, db_path)
+        drivers = await list_test_drivers(DIVISION, db_path)
 
         assert [(d["display_name"], d["nationality"]) for d in drivers] == [
             ("Mock Alpha", "Dutch"),
@@ -178,16 +176,16 @@ class TestTheRosterListCarriesIt:
     async def test_a_driver_created_without_one_reports_none(self, db_path):
         await _add(db_path)
 
-        drivers = await list_test_drivers(SERVER_ID, DIVISION, db_path)
+        drivers = await list_test_drivers(DIVISION, db_path)
 
         assert drivers[0]["nationality"] is None
 
     async def test_a_removed_driver_takes_its_nationality_with_it(self, db_path):
         result = await _add(db_path, nationality="Dutch")
 
-        await remove_test_driver(SERVER_ID, result["discord_user_id"], db_path)
+        await remove_test_driver(result["discord_user_id"], db_path)
 
-        assert await list_test_drivers(SERVER_ID, DIVISION, db_path) == []
+        assert await list_test_drivers(DIVISION, db_path) == []
 
 
 # ── The seating rules the nationality sits inside ─────────────────────────

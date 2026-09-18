@@ -70,7 +70,6 @@ class _Interaction:
 def _profile(state: DriverState, *, former_driver: bool = False) -> DriverProfile:
     return DriverProfile(
         id=1,
-        server_id=SERVER_ID,
         discord_user_id=USER_ID,
         current_state=state,
         former_driver=former_driver,
@@ -93,7 +92,7 @@ def _bot(profile: DriverProfile | None):
         ),
         driver_service=SimpleNamespace(
             get_profile=AsyncMock(return_value=profile),
-            current_account=AsyncMock(side_effect=lambda _s, a: str(a)),
+            current_account=AsyncMock(side_effect=lambda a: str(a)),
         ),
         wizard_service=SimpleNamespace(start_wizard=AsyncMock(return_value=None)),
     )
@@ -225,5 +224,5 @@ class TestAPastAccount:
 
         await _press_the_button(bot)
 
-        bot.driver_service.current_account.assert_awaited_once_with(SERVER_ID, USER_ID)
+        bot.driver_service.current_account.assert_awaited_once_with(USER_ID)
         bot.wizard_service.start_wizard.assert_awaited()

@@ -61,7 +61,6 @@ def _wizard(draft: dict | None = None):
 
     return SignupWizardRecord(
         id=1,
-        server_id=SERVER_ID,
         discord_user_id=DRIVER_ID,
         wizard_state=WizardState.COLLECTING_NOTES,
         signup_channel_id=CHANNEL_ID,
@@ -106,6 +105,7 @@ def committer():
     bot = MagicMock()
     bot.signup_module_service = signup_svc
     bot.driver_service = driver_service
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
 
     svc._output_router = MagicMock()
@@ -130,7 +130,7 @@ def committer():
 
 
 async def _commit(ctx):
-    await ctx.svc.commit_wizard(SERVER_ID, DRIVER_ID, ctx.guild)
+    await ctx.svc.commit_wizard(DRIVER_ID, ctx.guild)
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ async def test_a_committed_signup_awaits_admin_approval(committer):
     await _commit(committer)
 
     committer.driver_service.transition.assert_awaited_once()
-    assert committer.driver_service.transition.await_args.args[2] == (
+    assert committer.driver_service.transition.await_args.args[1] == (
         DriverState.PENDING_ADMIN_APPROVAL
     )
 
@@ -266,7 +266,7 @@ async def test_a_missing_channel_still_commits_the_record(committer):
 async def test_a_first_submission_is_logged_as_submitted(committer):
     await _commit(committer)
 
-    assert "Submitted" in committer.svc._output_router.post_log.await_args.args[1]
+    assert "Submitted" in committer.svc._output_router.post_log.await_args.args[0]
 
 
 async def test_a_correction_is_logged_as_a_correction(committer):
@@ -280,7 +280,7 @@ async def test_a_correction_is_logged_as_a_correction(committer):
 
     await _commit(committer)
 
-    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[1]
+    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[0]
 
 
 async def test_a_correction_amends_the_signup_it_was_asked_of(committer):
@@ -315,7 +315,7 @@ async def test_the_prior_state_is_read_before_anything_is_written(committer):
     await _commit(committer)
 
     committer.driver_service.get_profile.assert_awaited_once()
-    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[1]
+    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[0]
 
 
 async def test_a_driver_who_has_left_is_logged_by_id(committer):
@@ -325,4 +325,4 @@ async def test_a_driver_who_has_left_is_logged_by_id(committer):
 
     await _commit(committer)
 
-    assert DRIVER_ID in committer.svc._output_router.post_log.await_args.args[1]
+    assert DRIVER_ID in committer.svc._output_router.post_log.await_args.args[0]

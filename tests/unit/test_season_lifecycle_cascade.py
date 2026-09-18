@@ -53,9 +53,9 @@ async def _seed(db_path, *, divisions=("Div A",), rounds_per_division=2, season_
             (SERVER_ID,),
         )
         cur = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', ?, 1)",
-            (SERVER_ID, season_status),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', ?, 1)",
+            (season_status,),
         )
         season_id = cur.lastrowid
 
@@ -119,8 +119,8 @@ async def test_a_fully_raced_season_can_be_completed(tmp_path) -> None:
         await _set_round_status(db_path, rid, "FINAL")
     await svc.refresh_division_status(div_id)
 
-    assert await svc.all_divisions_finished(SERVER_ID) is True
-    assert await svc.get_outstanding_rounds(SERVER_ID) == []
+    assert await svc.all_divisions_finished() is True
+    assert await svc.get_outstanding_rounds() == []
 
 
 async def test_one_unfinalised_round_holds_the_season_open_and_is_named(tmp_path) -> None:
@@ -132,8 +132,8 @@ async def test_one_unfinalised_round_holds_the_season_open_and_is_named(tmp_path
     await _set_round_status(db_path, round_ids[0], "FINAL")
     await svc.refresh_division_status(div_id)
 
-    assert await svc.all_divisions_finished(SERVER_ID) is False
-    outstanding = await svc.get_outstanding_rounds(SERVER_ID)
+    assert await svc.all_divisions_finished() is False
+    outstanding = await svc.get_outstanding_rounds()
     assert [r["round_number"] for r in outstanding] == [2]
     assert outstanding[0]["division"] == "Div A"
 
@@ -149,8 +149,8 @@ async def test_post_race_penalty_does_not_count_as_finished(tmp_path) -> None:
     await svc.refresh_division_status(div_id)
 
     assert await _division_status(db_path, div_id) == "ACTIVE"
-    assert await svc.all_divisions_finished(SERVER_ID) is False
-    assert [r["round_number"] for r in await svc.get_outstanding_rounds(SERVER_ID)] == [1]
+    assert await svc.all_divisions_finished() is False
+    assert [r["round_number"] for r in await svc.get_outstanding_rounds()] == [1]
 
 
 async def test_a_cancelled_round_does_not_hold_the_season_open(tmp_path) -> None:
@@ -160,11 +160,11 @@ async def test_a_cancelled_round_does_not_hold_the_season_open(tmp_path) -> None
     svc = SeasonService(db_path)
 
     await _set_round_status(db_path, round_ids[0], "FINAL")
-    await svc.cancel_round(round_ids[1], SERVER_ID, ACTOR_ID, ACTOR_NAME)
+    await svc.cancel_round(round_ids[1], ACTOR_ID, ACTOR_NAME)
 
     assert await _division_status(db_path, div_id) == "FINISHED"
-    assert await svc.all_divisions_finished(SERVER_ID) is True
-    assert await svc.get_outstanding_rounds(SERVER_ID) == []
+    assert await svc.all_divisions_finished() is True
+    assert await svc.get_outstanding_rounds() == []
 
 
 async def test_a_cancelled_division_does_not_hold_the_season_open(tmp_path) -> None:
@@ -177,10 +177,10 @@ async def test_a_cancelled_division_does_not_hold_the_season_open(tmp_path) -> N
     for rid in rounds_a:
         await _set_round_status(db_path, rid, "FINAL")
     await svc.refresh_division_status(div_a)
-    await svc.cancel_division(div_b, SERVER_ID, ACTOR_ID, ACTOR_NAME)
+    await svc.cancel_division(div_b, ACTOR_ID, ACTOR_NAME)
 
-    assert await svc.all_divisions_finished(SERVER_ID) is True
-    assert await svc.get_outstanding_rounds(SERVER_ID) == []
+    assert await svc.all_divisions_finished() is True
+    assert await svc.get_outstanding_rounds() == []
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +257,7 @@ async def test_cancelling_a_division_takes_its_unraced_rounds(tmp_path) -> None:
     await _set_round_status(db_path, raced, "FINAL")
     await _set_round_status(db_path, in_appeals, "AWAITING_APPEAL_VERDICTS")
 
-    await svc.cancel_division(div_id, SERVER_ID, ACTOR_ID, ACTOR_NAME)
+    await svc.cancel_division(div_id, ACTOR_ID, ACTOR_NAME)
 
     assert await _division_status(db_path, div_id) == "CANCELLED"
     assert await _round_status(db_path, unraced) == "CANCELLED"
@@ -277,7 +277,7 @@ async def test_cancelling_a_division_audits_its_real_previous_status(tmp_path) -
         await db.execute("UPDATE divisions SET status = 'SETUP' WHERE id = ?", (div_id,))
         await db.commit()
 
-    await svc.cancel_division(div_id, SERVER_ID, ACTOR_ID, ACTOR_NAME)
+    await svc.cancel_division(div_id, ACTOR_ID, ACTOR_NAME)
 
     async with get_connection(db_path) as db:
         cur = await db.execute(
@@ -298,7 +298,7 @@ async def test_cancelling_a_season_cascades_to_divisions_and_unraced_rounds(tmp_
 
     await _set_round_status(db_path, a_raced, "FINAL")
 
-    await svc.cancel_season_cascade(season_id, SERVER_ID, ACTOR_ID, ACTOR_NAME)
+    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
 
     assert await _season_status(db_path, season_id) == "CANCELLED"
     assert await _division_status(db_path, div_a) == "CANCELLED"
@@ -320,12 +320,12 @@ async def test_the_season_row_is_flipped_last(tmp_path) -> None:
     _, (round_id,) = built["Div A"]
     svc = SeasonService(db_path)
 
-    await svc.cancel_season_cascade(season_id, SERVER_ID, ACTOR_ID, ACTOR_NAME)
+    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
     assert await _round_status(db_path, round_id) == "CANCELLED"
 
     # the season is archived now, so the same call is refused from here on
     with pytest.raises(SeasonImmutableError):
-        await svc.cancel_round(round_id, SERVER_ID, ACTOR_ID, ACTOR_NAME)
+        await svc.cancel_round(round_id, ACTOR_ID, ACTOR_NAME)
 
 
 async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tmp_path) -> None:
@@ -334,8 +334,8 @@ async def test_cancelling_a_season_leaves_an_already_cancelled_division_alone(tm
     div_b, (b_round,) = built["Div B"]
     svc = SeasonService(db_path)
 
-    await svc.cancel_division(div_b, SERVER_ID, ACTOR_ID, ACTOR_NAME)
-    await svc.cancel_season_cascade(season_id, SERVER_ID, ACTOR_ID, ACTOR_NAME)
+    await svc.cancel_division(div_b, ACTOR_ID, ACTOR_NAME)
+    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
 
     async with get_connection(db_path) as db:
         cur = await db.execute(
@@ -444,7 +444,11 @@ async def test_the_backfill_reads_each_division_from_its_season(
         division_id = cur.lastrowid
         await db.commit()
 
-    await run_migrations(db_path)
+    # 053 and nothing after it: a later migration rebuilt seasons (061), and it is 053's
+    # backfill that is under test.
+    from tests.support.migration_steps import run_migrations_through
+
+    await run_migrations_through(db_path, "053_lifecycle_states.sql")
 
     assert await _division_status(db_path, division_id) == expected
 
@@ -545,9 +549,9 @@ _NEXT_DISCORD_ID = itertools.count(500000)
 async def _seat_driver(db_path, division_id, season_id, *, name, is_test=0):
     async with get_connection(db_path) as db:
         cur = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "is_test_driver) VALUES (?, ?, 'ASSIGNED', ?)",
-            (SERVER_ID, str(next(_NEXT_DISCORD_ID)), is_test),
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "is_test_driver) VALUES (?, 'ASSIGNED', ?)",
+            (str(next(_NEXT_DISCORD_ID)), is_test),
         )
         profile_id = cur.lastrowid
         await db.execute(
@@ -582,7 +586,7 @@ async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_pat
 
     await _set_round_status(db_path, a_round, "FINAL")
     await svc.refresh_division_status(div_a)
-    await svc.cancel_division(div_b, SERVER_ID, ACTOR_ID, ACTOR_NAME)
+    await svc.cancel_division(div_b, ACTOR_ID, ACTOR_NAME)
 
     bot = MagicMock()
     bot.db_path = db_path
@@ -636,7 +640,7 @@ async def test_cancelling_a_season_records_its_drivers_as_cancelled(tmp_path) ->
     await _write_driver_history_entries(
         MagicMock(id=season_id, season_number=1), bot, force_cancelled=True
     )
-    await svc.cancel_season_cascade(season_id, SERVER_ID, ACTOR_ID, ACTOR_NAME)
+    await svc.cancel_season_cascade(season_id, ACTOR_ID, ACTOR_NAME)
 
     assert await _history(db_path) == [("Div A", 1), ("Div B", 1)]
 
@@ -765,7 +769,7 @@ async def test_without_the_results_module_the_round_ends_when_its_moment_arrives
     assert await _round_status(db_path, round_id) == "FINAL"
     # and the division finishes with it, so the season can be completed
     assert await _division_status(db_path, div_id) == "FINISHED"
-    assert await SeasonService(db_path).all_divisions_finished(SERVER_ID) is True
+    assert await SeasonService(db_path).all_divisions_finished() is True
 
 
 async def test_the_moment_arriving_does_not_disturb_a_round_already_under_way(tmp_path) -> None:

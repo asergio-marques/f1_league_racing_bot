@@ -37,9 +37,9 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (?, ?, '2026-09-17', 'SETUP', 1, 'PLACEMENTS')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (?, '2026-09-17', 'SETUP', 1, 'PLACEMENTS')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, mention_role_id, tier, "
@@ -63,15 +63,15 @@ def _cog(db_path) -> SeasonCog:
 async def _driver(db_path, uid: str, state: str, name: str | None = None):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, ?)",
-            (SERVER_ID, uid, state),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, ?)",
+            (uid, state),
         )
         if name:
             await db.execute(
-                "INSERT INTO signup_records (server_id, season_id, discord_user_id, "
-                "server_display_name) VALUES (?, ?, ?, ?)",
-                (SERVER_ID, SEASON_ID, uid, name),
+                "INSERT INTO signup_records (season_id, discord_user_id, "
+                "server_display_name) VALUES (?, ?, ?)",
+                (SEASON_ID, uid, name),
             )
         await db.commit()
 
@@ -86,7 +86,7 @@ async def test_every_unsettled_signup_is_named(db_path):
     await _driver(db_path, "4", "ASSIGNED", "Placed")
     await _driver(db_path, "5", "NOT_SIGNED_UP", "Left")
 
-    unsettled, _ = await _cog(db_path)._placement_confirmation_faults(SERVER_ID, SEASON_ID)
+    unsettled, _ = await _cog(db_path)._placement_confirmation_faults(SEASON_ID)
 
     joined = "\n".join(unsettled)
     assert len(unsettled) == 3
@@ -96,7 +96,7 @@ async def test_every_unsettled_signup_is_named(db_path):
 
 
 async def test_a_division_missing_its_lineup_or_calendar_channel_is_named(db_path):
-    _, channels = await _cog(db_path)._placement_confirmation_faults(SERVER_ID, SEASON_ID)
+    _, channels = await _cog(db_path)._placement_confirmation_faults(SEASON_ID)
 
     assert channels == ["**Am** has no lineup channel"]
 
@@ -107,7 +107,7 @@ async def test_a_settled_season_with_its_channels_has_no_faults(db_path):
         await db.commit()
     await _driver(db_path, "4", "ASSIGNED")
 
-    assert await _cog(db_path)._placement_confirmation_faults(SERVER_ID, SEASON_ID) == ([], [])
+    assert await _cog(db_path)._placement_confirmation_faults(SEASON_ID) == ([], [])
 
 
 # ── The review and the confirmation refuse ─────────────────────────────────────────
@@ -116,7 +116,7 @@ async def test_a_settled_season_with_its_channels_has_no_faults(db_path):
 @pytest.mark.parametrize("stage", [SeasonStage.CONFIGURATION, SeasonStage.SIGNUPS])
 async def test_the_review_is_refused_outside_placements(db_path, stage):
     cog = _cog(db_path)
-    cog._pending = {USER_ID: SimpleNamespace(server_id=SERVER_ID, season_id=SEASON_ID)}
+    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID)}
     cog.bot.season_service.get_stage = AsyncMock(return_value=stage)
     cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     interaction = MagicMock()
@@ -136,7 +136,7 @@ async def test_the_review_is_refused_outside_placements(db_path, stage):
 async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(db_path):
     await _driver(db_path, "1", "UNASSIGNED", "Alice")
     cog = _cog(db_path)
-    pending = SimpleNamespace(server_id=SERVER_ID, season_id=SEASON_ID, season_number=1)
+    pending = SimpleNamespace(season_id=SEASON_ID, season_number=1)
     cog._pending = {USER_ID: pending}
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog.bot.season_service.get_divisions = AsyncMock(
@@ -159,7 +159,7 @@ async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(
 async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divisions):
     """A season with nothing to race would never reach Pending completion (issue #220)."""
     cog = _cog(db_path)
-    cog._pending = {USER_ID: SimpleNamespace(server_id=SERVER_ID, season_id=SEASON_ID)}
+    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID)}
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog.bot.season_service.get_divisions = AsyncMock(return_value=divisions)
     cog.bot.season_service.transition_to_active = AsyncMock()
@@ -178,7 +178,7 @@ async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divis
 
 async def test_the_confirmation_refuses_a_season_no_longer_in_placements(db_path):
     cog = _cog(db_path)
-    cog._pending = {USER_ID: SimpleNamespace(server_id=SERVER_ID, season_id=SEASON_ID)}
+    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID)}
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.ONGOING)
     cog.bot.season_service.transition_to_active = AsyncMock()
     interaction = MagicMock()
@@ -200,9 +200,9 @@ async def test_confirming_commits_every_placement_of_the_season(db_path):
     async with get_connection(db_path) as db:
         for profile_id in (1, 2):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?, 'ASSIGNED')",
-                (profile_id, SERVER_ID, str(profile_id)),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+                "VALUES (?, ?, 'ASSIGNED')",
+                (profile_id, str(profile_id)),
             )
             await db.execute(
                 "INSERT INTO driver_season_assignments "

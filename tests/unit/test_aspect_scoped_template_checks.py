@@ -89,10 +89,7 @@ def config_missing_verdicts(tmp_path, monkeypatch):
 
     fields = {f.name for f in dataclasses.fields(ImageConfig)}
     values = {name: None for name in fields}
-    values.update(
-        server_id=1,
-        template_directory="resources/_test_templates_missing_verdicts",
-    )
+    values.update(template_directory="resources/_test_templates_missing_verdicts")
     for column, default in TEMPLATE_COLUMNS.items():
         if column in fields:
             values[column] = default
@@ -162,23 +159,23 @@ def _bot(*, module_on=True, toggles=None, reports=None):
 
 
 async def test_an_aspect_that_is_on_could_attach_a_file():
-    assert await aspect_attaches_files(_bot(toggles={"standings": True}), 1, "standings")
+    assert await aspect_attaches_files(_bot(toggles={"standings": True}), "standings")
 
 
 async def test_an_aspect_that_is_off_could_not():
-    assert not await aspect_attaches_files(_bot(toggles={"standings": False}), 1, "standings")
+    assert not await aspect_attaches_files(_bot(toggles={"standings": False}), "standings")
 
 
 async def test_an_aspect_absent_from_the_toggles_could_not():
     """A server with no configuration row attaches nothing, rather than raising."""
-    assert not await aspect_attaches_files(_bot(toggles={}), 1, "standings")
+    assert not await aspect_attaches_files(_bot(toggles={}), "standings")
 
 
 async def test_the_module_being_off_settles_it_whatever_the_toggles_say():
     """A toggle set before the module was switched off still reads as off."""
     bot = _bot(module_on=False, toggles={"standings": True})
 
-    assert not await aspect_attaches_files(bot, 1, "standings")
+    assert not await aspect_attaches_files(bot, "standings")
     bot.image_config_service.get_toggles.assert_not_awaited()
 
 
@@ -186,8 +183,8 @@ async def test_each_aspect_is_asked_for_separately():
     """Standings being on says nothing about the results channel needing Attach Files."""
     bot = _bot(toggles={"standings": True, "results": False})
 
-    assert await aspect_attaches_files(bot, 1, "standings")
-    assert not await aspect_attaches_files(bot, 1, "results")
+    assert await aspect_attaches_files(bot, "standings")
+    assert not await aspect_attaches_files(bot, "results")
 
 
 async def test_template_validity_is_deliberately_not_consulted():
@@ -205,14 +202,14 @@ async def test_template_validity_is_deliberately_not_consulted():
     """
     bot = _bot(toggles={"standings": True}, reports={})
 
-    assert await aspect_attaches_files(bot, 1, "standings"), (
+    assert await aspect_attaches_files(bot, "standings"), (
         "a broken template must not stop the channel being asked for Attach Files"
     )
     bot.image_validity_service.template_reports.assert_not_awaited()
 
 
 async def test_no_bot_in_scope_attaches_nothing():
-    assert not await aspect_attaches_files(None, 1, "standings")
+    assert not await aspect_attaches_files(None, "standings")
 
 
 async def test_a_reader_that_raises_answers_no_rather_than_raising():
@@ -225,4 +222,4 @@ async def test_a_reader_that_raises_answers_no_rather_than_raising():
     bot = _bot(toggles={"standings": True})
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("no config"))
 
-    assert not await aspect_attaches_files(bot, 1, "standings")
+    assert not await aspect_attaches_files(bot, "standings")

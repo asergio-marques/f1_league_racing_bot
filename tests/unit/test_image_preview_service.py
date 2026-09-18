@@ -69,7 +69,7 @@ async def bot(db_path):
     and the database, which is the whole of its dependency surface.
     """
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(SERVER_ID)
+    await config_service.create_with_defaults()
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),
@@ -80,9 +80,9 @@ async def bot(db_path):
 async def _seed_season(db_path, *, season_number: int = 1, status: str = "ACTIVE") -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, ?, ?, ?)",
-            (SERVER_ID, NOW.date().isoformat(), status, season_number),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES (?, ?, ?)",
+            (NOW.date().isoformat(), status, season_number),
         )
         await db.commit()
         return cursor.lastrowid
@@ -150,16 +150,16 @@ async def _seat_driver(
     user_id = 700_000 + seat_number + team_id * 10
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'ACTIVE')",
-            (SERVER_ID, user_id),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'ACTIVE')",
+            (user_id,),
         )
         profile_id = cursor.lastrowid
-        # signup_records is keyed by (server_id, discord_user_id) — it holds no profile id.
+        # signup_records is keyed by discord_user_id — it holds no profile id.
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, server_display_name, "
-            "discord_username, nationality) VALUES (?, ?, ?, ?, ?)",
-            (SERVER_ID, str(user_id), name, name.lower(), nationality),
+            "INSERT INTO signup_records (discord_user_id, server_display_name, "
+            "discord_username, nationality) VALUES (?, ?, ?, ?)",
+            (str(user_id), name, name.lower(), nationality),
         )
         seat = await (
             await db.execute(
@@ -208,7 +208,6 @@ class TestShapes:
 
     def test_a_context_starts_with_empty_collections_and_collects_nationality(self):
         context = PreviewContext(
-            server_id=1,
             season_number=1,
             division_id=1,
             division_name="D",
@@ -224,10 +223,10 @@ class TestShapes:
     def test_two_contexts_do_not_share_their_collections(self):
         """A mutable default shared across contexts would leak one preview into the next."""
         a = PreviewContext(
-            server_id=1, season_number=1, division_id=1, division_name="A", division_tier=1
+            season_number=1, division_id=1, division_name="A", division_tier=1
         )
         b = PreviewContext(
-            server_id=1, season_number=1, division_id=2, division_name="B", division_tier=1
+            season_number=1, division_id=2, division_name="B", division_tier=1
         )
         a.drivers.append(
             PreviewDriver(key=1, display_name="Ada", team_name="T", seat_number=1)
@@ -240,7 +239,7 @@ class TestShapes:
 
 class TestResolution:
     async def test_the_named_division_resolves_with_its_own_identity(self, bot, league):
-        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context = await resolve_context(bot, "Division 1")
 
         assert context.division_id == league.division_id
         assert context.division_name == "Division 1"
@@ -248,17 +247,17 @@ class TestResolution:
         assert context.season_number == 1
 
     async def test_the_name_is_matched_without_regard_to_case_or_padding(self, bot, league):
-        context = await resolve_context(bot, SERVER_ID, "  division 1  ")
+        context = await resolve_context(bot, "  division 1  ")
         assert context.division_id == league.division_id
 
     async def test_a_round_resolves_by_its_number(self, bot, league):
-        context = await resolve_context(bot, SERVER_ID, "Division 1", round_number=2)
+        context = await resolve_context(bot, "Division 1", round_number=2)
 
         assert context.round is not None
         assert context.round.round_number == 2
 
     async def test_no_round_is_resolved_where_none_is_asked_for(self, bot, league):
-        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context = await resolve_context(bot, "Division 1")
         assert context.round is None
 
 
@@ -267,7 +266,7 @@ class TestResolution:
 
 class TestTeamsAndDrivers:
     async def test_the_divisions_own_teams_and_drivers_are_drawn(self, bot, league):
-        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context = await resolve_context(bot, "Division 1")
 
         assert {t.name for t in context.teams} == {"Redline", "Bluewave", "Reserve"}
         assert {d.display_name for d in context.drivers} == {
@@ -288,7 +287,7 @@ class TestTeamsAndDrivers:
         team = await _seed_team(db_path, division_id, "Redline", seats=2)
         await _seat_driver(db_path, season_id, division_id, team, 1, name="Only Driver")
 
-        context = await resolve_context(bot, SERVER_ID, "Half")
+        context = await resolve_context(bot, "Half")
 
         assert context.fabricated_drivers is False
         assert [d.display_name for d in context.drivers] == ["Only Driver"]
@@ -300,7 +299,7 @@ class TestTeamsAndDrivers:
         await _seed_team(db_path, division_id, "Redline", seats=2)
         await _seed_team(db_path, division_id, "Bluewave", seats=2)
 
-        context = await resolve_context(bot, SERVER_ID, "Empty")
+        context = await resolve_context(bot, "Empty")
 
         assert context.fabricated_drivers is True
         assert len(context.drivers) == 4
@@ -314,7 +313,7 @@ class TestTeamsAndDrivers:
         division_id = await _seed_division(db_path, season_id, "Empty")
         await _seed_team(db_path, division_id, "Redline", seats=2)
 
-        context = await resolve_context(bot, SERVER_ID, "Empty")
+        context = await resolve_context(bot, "Empty")
 
         assert context.nationality_collected is True
         assert all(d.nationality for d in context.drivers)
@@ -328,19 +327,19 @@ class TestTeamsAndDrivers:
         await _seed_team(db_path, division_id, "Redline", seats=2)
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO signup_module_settings (server_id, nationality_required, "
+                "INSERT INTO signup_module_settings (id, nationality_required, "
                 "time_type, time_image_required) VALUES (?, 0, 'TIME_TRIAL', 1)",
-                (SERVER_ID,),
+                (1,),
             )
             await db.commit()
 
-        context = await resolve_context(bot, SERVER_ID, "Empty")
+        context = await resolve_context(bot, "Empty")
 
         assert context.nationality_collected is False
         assert all(d.nationality is None for d in context.drivers)
 
     async def test_a_seated_drivers_own_nationality_is_kept(self, bot, league):
-        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context = await resolve_context(bot, "Division 1")
         assert all(d.nationality == "British" for d in context.drivers)
 
 
@@ -357,7 +356,7 @@ class TestRefusals:
         command cannot be submitted without something to resolve them against.
         """
         with pytest.raises(PreviewRefused) as excinfo:
-            await resolve_context(bot, SERVER_ID, "Division 1", kind="calendar")
+            await resolve_context(bot, "Division 1", kind="calendar")
 
         assert "no season to draw" in str(excinfo.value)
 
@@ -371,13 +370,13 @@ class TestRefusals:
         await _seed_division(db_path, season_id, "Old Division")
 
         with pytest.raises(PreviewRefused):
-            await resolve_context(bot, SERVER_ID, "Old Division", kind="calendar")
+            await resolve_context(bot, "Old Division", kind="calendar")
 
     async def test_an_unknown_division_is_refused_and_the_known_ones_named(
         self, bot, league
     ):
         with pytest.raises(PreviewRefused) as caught:
-            await resolve_context(bot, SERVER_ID, "Nonexistent")
+            await resolve_context(bot, "Nonexistent")
         assert caught.value.reason == REASON_NO_DIVISION
         assert "Division 1" in caught.value.message
 
@@ -386,12 +385,12 @@ class TestRefusals:
         await _seed_division(db_path, season_id, "Bare")
 
         with pytest.raises(PreviewRefused) as caught:
-            await resolve_context(bot, SERVER_ID, "Bare", require_rounds=True)
+            await resolve_context(bot, "Bare", require_rounds=True)
         assert caught.value.reason == REASON_NO_ROUNDS
 
     async def test_an_unknown_round_number_is_refused(self, bot, league):
         with pytest.raises(PreviewRefused) as caught:
-            await resolve_context(bot, SERVER_ID, "Division 1", round_number=99)
+            await resolve_context(bot, "Division 1", round_number=99)
         assert caught.value.reason == REASON_NO_ROUND
 
     async def test_a_division_with_only_a_reserve_team_is_refused(self, bot, db_path):
@@ -402,27 +401,27 @@ class TestRefusals:
 
         with pytest.raises(PreviewRefused) as caught:
             await resolve_context(
-                bot, SERVER_ID, "Reserves Only", round_number=1, require_teams=True
+                bot, "Reserves Only", round_number=1, require_teams=True
             )
         assert caught.value.reason == REASON_NO_TEAMS
 
     async def test_a_mystery_round_is_refused_a_forecast(self, bot, league):
         with pytest.raises(PreviewRefused) as caught:
             await resolve_context(
-                bot, SERVER_ID, "Division 1", round_number=3, require_mystery=False
+                bot, "Division 1", round_number=3, require_mystery=False
             )
         assert caught.value.reason == REASON_MYSTERY_ROUND
 
     async def test_a_plain_round_is_refused_the_mystery_notice(self, bot, league):
         with pytest.raises(PreviewRefused) as caught:
             await resolve_context(
-                bot, SERVER_ID, "Division 1", round_number=1, require_mystery=True
+                bot, "Division 1", round_number=1, require_mystery=True
             )
         assert caught.value.reason == REASON_NOT_MYSTERY_ROUND
 
     async def test_a_mystery_round_passes_the_mystery_notice(self, bot, league):
         context = await resolve_context(
-            bot, SERVER_ID, "Division 1", round_number=3, require_mystery=True
+            bot, "Division 1", round_number=3, require_mystery=True
         )
         assert context.round.round_number == 3
 
@@ -438,7 +437,7 @@ class TestRefusals:
 
         with pytest.raises(PreviewRefused) as caught:
             await resolve_context(
-                bot, SERVER_ID, "Teamless", round_number=99, require_teams=True
+                bot, "Teamless", round_number=99, require_teams=True
             )
         assert caught.value.reason == REASON_NO_ROUND
 
@@ -446,7 +445,7 @@ class TestRefusals:
         self, bot, league
     ):
         with pytest.raises(PreviewRefused) as caught:
-            await resolve_context(bot, SERVER_ID, "Nope", round_number=99)
+            await resolve_context(bot, "Nope", round_number=99)
         assert caught.value.reason == REASON_NO_DIVISION
 
 
@@ -464,7 +463,7 @@ class TestNothingRendersBeforeARefusal:
         bot.image_render_service = ExplodingRenderService()
 
         with pytest.raises(PreviewRefused):
-            await resolve_context(bot, SERVER_ID, "Nonexistent")
+            await resolve_context(bot, "Nonexistent")
 
 
 # ── T010: the league's own asset directories ──────────────────────────────
@@ -473,7 +472,7 @@ class TestNothingRendersBeforeARefusal:
 class TestAssetDirectories:
     async def test_the_leagues_configured_directories_are_resolved(self, bot):
         """FR-035 — never the packaged directories the withdrawn command hardcoded."""
-        directories, faults = await resolve_asset_directories(bot, SERVER_ID)
+        directories, faults = await resolve_asset_directories(bot)
 
         assert set(directories) >= {"flag", "track", "team", "weather"}
         assert faults == []
@@ -487,10 +486,10 @@ class TestAssetDirectories:
         cannot point outside it, which the containment test below covers.
         """
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "resources/defaults/teams"
+            "flag_directory", "resources/defaults/teams"
         )
 
-        directories, faults = await resolve_asset_directories(bot, SERVER_ID)
+        directories, faults = await resolve_asset_directories(bot)
 
         assert directories["flag"].name == "teams"
         assert not [f for f in faults if f.asset_class == "flag"]
@@ -498,10 +497,10 @@ class TestAssetDirectories:
     async def test_a_path_escaping_the_project_root_is_reported_with_its_reason(self, bot):
         """FR-038 — not silently omitted and then called an unconfigured class."""
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "../../elsewhere"
+            "flag_directory", "../../elsewhere"
         )
 
-        directories, faults = await resolve_asset_directories(bot, SERVER_ID)
+        directories, faults = await resolve_asset_directories(bot)
 
         assert "flag" not in directories
         fault = next(f for f in faults if f.asset_class == "flag")
@@ -512,17 +511,17 @@ class TestAssetDirectories:
         self, bot
     ):
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "resources/not_a_real_directory"
+            "flag_directory", "resources/not_a_real_directory"
         )
 
-        directories, faults = await resolve_asset_directories(bot, SERVER_ID)
+        directories, faults = await resolve_asset_directories(bot)
 
         assert "flag" in directories
         fault = next(f for f in faults if f.asset_class == "flag")
         assert "does not exist" in fault.reason
 
     async def test_the_context_carries_the_directories_and_their_faults(self, bot, league):
-        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context = await resolve_context(bot, "Division 1")
 
         assert context.asset_directories
         assert isinstance(context.directory_faults, list)
@@ -541,7 +540,7 @@ class TestContextCarriesTheCalendar:
     """
 
     async def test_resolve_context_carries_the_divisions_rounds(self, bot, league):
-        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context = await resolve_context(bot, "Division 1")
 
         assert [r.round_number for r in context.rounds] == [1, 2, 3]
 
@@ -556,7 +555,7 @@ class TestContextCarriesTheCalendar:
         """
         from services.image_calendar_service import CalendarDataError
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context = await resolve_context(bot, "Division 1")
         assert len(context.rounds) == 3
         context.rounds = []
 
@@ -572,7 +571,7 @@ class TestContextCarriesTheCalendar:
         because the calendar resolves a round's country and grand prix name through it and
         refuses a name it cannot find.
         """
-        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context = await resolve_context(bot, "Division 1")
         context.rounds = [r for r in context.rounds if r.round_number in (1, 2)]
         for entry in context.rounds:
             entry.track_name = "Albert Park Circuit"
@@ -585,7 +584,7 @@ class TestContextCarriesTheCalendar:
     async def test_the_attendance_sheet_draws_from_the_context_not_the_database(
         self, bot, league
     ):
-        context = await resolve_context(bot, SERVER_ID, "Division 1", round_number=1)
+        context = await resolve_context(bot, "Division 1", round_number=1)
         seen = list(context.rounds)
         context.rounds = [r for r in seen if r.round_number == 1]
 
@@ -627,7 +626,7 @@ class TestWhichSeasonIsDrawn:
     async def test_a_season_pending_approval_is_drawn(self, bot, db_path):
         await _seed_league(db_path, status="SETUP", season_number=1)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context = await resolve_context(bot, "Division 1")
 
         assert context.season_number == 1
         assert context.season_pending_approval is True
@@ -639,7 +638,7 @@ class TestWhichSeasonIsDrawn:
         """FR-002 — no substitution and no fabrication on account of status alone."""
         await _seed_league(db_path, status="SETUP")
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context = await resolve_context(bot, "Division 1")
 
         assert sorted(d.display_name for d in context.drivers) == [
             "Alice Ardent",
@@ -648,7 +647,7 @@ class TestWhichSeasonIsDrawn:
         assert context.fabricated_drivers is False
 
     async def test_an_approved_season_is_not_flagged_as_pending(self, bot, league):
-        context = await resolve_context(bot, SERVER_ID, "Division 1")
+        context = await resolve_context(bot, "Division 1")
 
         assert context.season_pending_approval is False
 
@@ -667,7 +666,7 @@ class TestWhichSeasonIsDrawn:
                 db_path, status="SETUP", season_number=5, name="NextYear"
             )
 
-        context = await resolve_context(bot, SERVER_ID, "Running")
+        context = await resolve_context(bot, "Running")
         assert context.season_number == 4
         assert context.season_pending_approval is False
 
@@ -678,7 +677,7 @@ class TestWhichSeasonIsDrawn:
         await _seed_league(db_path, status=status, season_number=2)
 
         with pytest.raises(PreviewRefused):
-            await resolve_context(bot, SERVER_ID, "Division 1", kind="calendar")
+            await resolve_context(bot, "Division 1", kind="calendar")
 
 
 class TestRefusalsStillFireOnAPendingSeason:
@@ -688,14 +687,14 @@ class TestRefusalsStillFireOnAPendingSeason:
         await _seed_league(db_path, status="SETUP")
 
         with pytest.raises(PreviewRefused) as excinfo:
-            await resolve_context(bot, SERVER_ID, "Nope")
+            await resolve_context(bot, "Nope")
         assert excinfo.value.reason == REASON_NO_DIVISION
 
     async def test_an_absent_round_is_refused(self, bot, db_path):
         await _seed_league(db_path, status="SETUP")
 
         with pytest.raises(PreviewRefused) as excinfo:
-            await resolve_context(bot, SERVER_ID, "Division 1", round_number=99)
+            await resolve_context(bot, "Division 1", round_number=99)
         assert excinfo.value.reason == REASON_NO_ROUND
 
     async def test_a_division_with_no_round_is_refused_for_the_calendar(
@@ -705,7 +704,7 @@ class TestRefusalsStillFireOnAPendingSeason:
         await _seed_division(db_path, season_id, "Empty")
 
         with pytest.raises(PreviewRefused) as excinfo:
-            await resolve_context(bot, SERVER_ID, "Empty", require_rounds=True)
+            await resolve_context(bot, "Empty", require_rounds=True)
         assert excinfo.value.reason == REASON_NO_ROUNDS
 
     async def test_a_division_with_only_the_reserve_team_is_refused(self, bot, db_path):
@@ -715,7 +714,7 @@ class TestRefusalsStillFireOnAPendingSeason:
         await _seed_team(db_path, division_id, "Reserve", seats=2, reserve=True)
 
         with pytest.raises(PreviewRefused) as excinfo:
-            await resolve_context(bot, SERVER_ID, "Bare", require_teams=True)
+            await resolve_context(bot, "Bare", require_teams=True)
         assert excinfo.value.reason == REASON_NO_TEAMS
 
     async def test_a_forecast_asked_of_a_mystery_round_is_refused(self, bot, db_path):
@@ -723,7 +722,7 @@ class TestRefusalsStillFireOnAPendingSeason:
 
         with pytest.raises(PreviewRefused) as excinfo:
             await resolve_context(
-                bot, SERVER_ID, "Division 1", round_number=3, require_mystery=False
+                bot, "Division 1", round_number=3, require_mystery=False
             )
         assert excinfo.value.reason == REASON_MYSTERY_ROUND
 
@@ -734,6 +733,6 @@ class TestRefusalsStillFireOnAPendingSeason:
 
         with pytest.raises(PreviewRefused) as excinfo:
             await resolve_context(
-                bot, SERVER_ID, "Division 1", round_number=1, require_mystery=True
+                bot, "Division 1", round_number=1, require_mystery=True
             )
         assert excinfo.value.reason == REASON_NOT_MYSTERY_ROUND

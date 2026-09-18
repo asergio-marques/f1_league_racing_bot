@@ -85,11 +85,11 @@ async def _seed(
         )
         if config:
             await db.execute(
-                "INSERT INTO signup_module_config (server_id, signup_channel_id, "
+                "INSERT INTO signup_module_config (id, signup_channel_id, "
                 "base_role_id, signed_up_role_id, signups_open, close_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (
-                    SERVER_ID,
+                    1,
                     channel,
                     base_role,
                     signed_up_role,
@@ -103,16 +103,15 @@ async def _seed(
         for index in range(slots):
             await db.execute(
                 "INSERT INTO signup_availability_slots "
-                "(server_id, day_of_week, time_hhmm) VALUES (?, 1, ?)",
-                (SERVER_ID, f"{19 + index}:00"),
+                "(day_of_week, time_hhmm) VALUES (1, ?)",
+                (f"{19 + index}:00",),
             )
         # The season the window belongs to (issue #220): awaiting its window unless told
         # otherwise, or already in signups where the window stands open.
         await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
-            "VALUES (?, '2026-09-17', ?, 1, ?)",
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-09-17', ?, 1, ?)",
             (
-                SERVER_ID,
                 "ACTIVE" if stage in ("ONGOING", "ONGOING_SIGNUPS", "ONGOING_PLACEMENTS",
                                       "PENDING_COMPLETION") else "SETUP",
                 stage or ("SIGNUPS" if signups_open else "WAITING"),
@@ -121,8 +120,8 @@ async def _seed(
         for offset, state in enumerate(in_progress):
             await db.execute(
                 "INSERT INTO driver_profiles "
-                "(server_id, discord_user_id, current_state) VALUES (?, ?, ?)",
-                (SERVER_ID, str(7000 + offset), state),
+                "(discord_user_id, current_state) VALUES (?, ?)",
+                (str(7000 + offset), state),
             )
         await db.commit()
     return db_path
@@ -133,16 +132,14 @@ def _cog(db_path: str) -> SignupCog:
     bot.db_path = db_path
     bot.signup_module_service = SignupModuleService(db_path)
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.scheduler_service = MagicMock()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
-    async def _server_config(server_id):
+    async def _server_config():
         async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT test_mode_active FROM server_configs WHERE server_id = ?",
-                (server_id,),
-            )
+            cursor = await db.execute("SELECT test_mode_active FROM server_configs")
             row = await cursor.fetchone()
         return MagicMock(test_mode_active=bool(row["test_mode_active"])) if row else None
 
@@ -207,7 +204,7 @@ async def _close(cog, interaction):
 
 
 async def _is_open(db_path: str) -> bool:
-    cfg = await SignupModuleService(db_path).get_config(SERVER_ID)
+    cfg = await SignupModuleService(db_path).get_config()
     return bool(cfg and cfg.signups_open)
 
 
@@ -346,7 +343,7 @@ async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path):
 
     await _open(_cog(db_path), _interaction())
 
-    assert (await live_season_stage(db_path, SERVER_ID))[1].value == "SIGNUPS"
+    assert (await live_season_stage(db_path))[1].value == "SIGNUPS"
 
 
 async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path):
@@ -356,7 +353,7 @@ async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path):
 
     await _open(_cog(db_path), _interaction())
 
-    assert (await live_season_stage(db_path, SERVER_ID))[1].value == "ONGOING_SIGNUPS"
+    assert (await live_season_stage(db_path))[1].value == "ONGOING_SIGNUPS"
 
 
 @pytest.mark.parametrize(
@@ -440,7 +437,7 @@ async def test_a_close_time_arms_the_timer(tmp_path):
     await _open(cog, interaction, close_time=_future(7))
 
     cog.bot.scheduler_service.schedule_signup_close_timer.assert_called_once()
-    cfg = await SignupModuleService(db_path).get_config(SERVER_ID)
+    cfg = await SignupModuleService(db_path).get_config()
     assert cfg.close_at is not None
 
 
@@ -460,8 +457,7 @@ async def test_opening_is_audited_with_the_tracks_chosen(tmp_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type, new_value FROM audit_entries WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT change_type, new_value FROM audit_entries",
         )
         row = await cursor.fetchone()
     assert row["change_type"] == "SIGNUP_OPEN"
@@ -474,8 +470,7 @@ async def test_a_previous_closed_notice_is_taken_down(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE signup_module_config SET signup_closed_message_id = 9001 "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+            "",
         )
         await db.commit()
     interaction = _interaction()
@@ -490,8 +485,7 @@ async def test_a_closed_notice_already_deleted_does_not_stop_the_open(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE signup_module_config SET signup_closed_message_id = 9001 "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+            "",
         )
         await db.commit()
     interaction = _interaction()

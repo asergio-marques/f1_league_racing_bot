@@ -26,7 +26,6 @@ class SessionType(str, enum.Enum):
 @dataclass
 class PointsConfigStore:
     id: int
-    server_id: int
     config_name: str
 
 

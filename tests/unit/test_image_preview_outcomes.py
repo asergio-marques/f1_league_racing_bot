@@ -52,7 +52,7 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(SERVER_ID)
+    await config_service.create_with_defaults()
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),
@@ -70,9 +70,9 @@ async def league(db_path):
     """Two teams of two seated drivers, and rounds of every format."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, ?, 'ACTIVE', 3)",
-            (SERVER_ID, NOW.date().isoformat()),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES (?, 'ACTIVE', 3)",
+            (NOW.date().isoformat(),),
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -110,16 +110,16 @@ async def league(db_path):
                 )
                 seat_id = cursor.lastrowid
                 cursor = await db.execute(
-                    "INSERT INTO driver_profiles (server_id, discord_user_id, "
-                    "current_state) VALUES (?, ?, 'ACTIVE')",
-                    (SERVER_ID, user_id),
+                    "INSERT INTO driver_profiles (discord_user_id, "
+                    "current_state) VALUES (?, 'ACTIVE')",
+                    (user_id,),
                 )
                 profile_id = cursor.lastrowid
                 await db.execute(
-                    "INSERT INTO signup_records (server_id, discord_user_id, "
+                    "INSERT INTO signup_records (discord_user_id, "
                     "server_display_name, discord_username, nationality) "
-                    "VALUES (?, ?, ?, ?, 'British')",
-                    (SERVER_ID, str(user_id), f"{team_name} {seat_number}", "d", ),
+                    "VALUES (?, ?, ?, 'British')",
+                    (str(user_id), f"{team_name} {seat_number}", "d", ),
                 )
                 await db.execute(
                     "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
@@ -134,7 +134,7 @@ async def league(db_path):
 
 async def _context(bot, *, round_number=None, **kwargs):
     return await resolve_context(
-        bot, SERVER_ID, "Premier", round_number=round_number, **kwargs
+        bot, "Premier", round_number=round_number, **kwargs
     )
 
 
@@ -461,9 +461,9 @@ class TestAttendancePreview:
         """FR-028 — the sheet does carry a flag element, and it obeys the switch."""
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO signup_module_settings (server_id, nationality_required, "
+                "INSERT INTO signup_module_settings (id, nationality_required, "
                 "time_type, time_image_required) VALUES (?, 0, 'TIME_TRIAL', 1)",
-                (SERVER_ID,),
+                (1,),
             )
             await db.commit()
 

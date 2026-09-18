@@ -52,6 +52,7 @@ def _make_cog(*, test_mode: bool = True, config_missing: bool = False) -> Season
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(
         return_value=None if config_missing else SimpleNamespace(test_mode_active=test_mode)
     )
@@ -100,7 +101,7 @@ def _answering(answer: str | None):
     """Patch the view so `wait()` returns immediately with *answer* already set."""
 
     class _View:
-        def __init__(self, cog, server_id, timeout=None):
+        def __init__(self, cog, timeout=None):
             self.answer = answer
             self.timeout = timeout
 
@@ -115,7 +116,7 @@ async def _offer(cog, interaction, *, minutes_left: float = 5, state=None, answe
     with patch(
         "services.backup_service.state", return_value=state or _backup_state()
     ), _answering(answer):
-        return await cog._offer_backup_before_approving(interaction, SERVER_ID, deadline)
+        return await cog._offer_backup_before_approving(interaction, deadline)
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +191,7 @@ async def test_the_question_inherits_what_is_left_of_the_review():
     captured: list[float] = []
 
     class _View:
-        def __init__(self, cog_, server_id, timeout=None):
+        def __init__(self, cog_, timeout=None):
             captured.append(timeout)
             self.answer = "skip"
 
@@ -201,7 +202,7 @@ async def test_the_question_inherits_what_is_left_of_the_review():
     with patch("services.backup_service.state", return_value=_backup_state()), patch(
         "cogs.season_cog._BackupBeforeApprovalView", new=_View
     ):
-        await cog._offer_backup_before_approving(interaction, SERVER_ID, deadline)
+        await cog._offer_backup_before_approving(interaction, deadline)
 
     assert captured
     assert 100 < captured[0] <= 120  # what remains of the two minutes, not a fresh window
@@ -344,7 +345,7 @@ async def _view(cog=None, *, scheduler=None):
 
     cog = cog or _make_cog()
     cog.bot.scheduler_service = scheduler
-    return _BackupBeforeApprovalView(cog, SERVER_ID, timeout=60)
+    return _BackupBeforeApprovalView(cog, timeout=60)
 
 
 def _press(view, name, interaction):

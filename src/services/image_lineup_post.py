@@ -61,19 +61,19 @@ class LineupPostOutcome:
         return self.action != NOT_APPLICABLE
 
 
-async def lineup_enabled(bot, server_id: int) -> bool:
+async def lineup_enabled(bot) -> bool:
     """True where the module is on, the `lineup` aspect is on, and a template is named."""
     try:
-        if not await bot.module_service.is_images_enabled(server_id):
+        if not await bot.module_service.is_images_enabled():
             return False
-        toggles = await bot.image_config_service.get_toggles(server_id)
+        toggles = await bot.image_config_service.get_toggles()
         if not toggles.get("lineup"):
             return False
-        reports = await bot.image_validity_service.template_reports(server_id)
+        reports = await bot.image_validity_service.template_reports()
         report = reports.get(LINEUP_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("lineup: enablement check failed for server %s: %s", server_id, exc)
+        log.error("lineup: enablement check failed: %s", exc)
         return False
 
 
@@ -109,7 +109,7 @@ async def build_drawing(bot, guild, division_id: int):
     async with get_connection(bot.db_path) as db:
         division = await (
             await db.execute(
-                "SELECT d.id, d.name, d.tier, s.id AS season_id, s.server_id, s.season_number "
+                "SELECT d.id, d.name, d.tier, s.id AS season_id, s.season_number "
                 "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                 (division_id,),
             )
@@ -170,7 +170,6 @@ async def build_drawing(bot, guild, division_id: int):
                 )
             )
 
-        server_id = division["server_id"]
 
     # The suppression switch (FR-009): a lineup with no flags at all is exactly what a
     # league that switched nationality collection off configured, and raises nothing. Read
@@ -178,7 +177,7 @@ async def build_drawing(bot, guild, division_id: int):
     # own, and its own read the wrong table.
     from services.image_results_post import _nationality_collected
 
-    collected = await _nationality_collected(bot.db_path, server_id)
+    collected = await _nationality_collected(bot.db_path)
 
     # The first link of the name chain is the account's display name on the server *at the
     # moment of generation*, which only the guild can answer (research R9).
@@ -201,7 +200,7 @@ async def build_drawing(bot, guild, division_id: int):
     )
 
 
-async def render_png(bot, server_id: int, guild, division_id: int, origin: PostingOrigin):
+async def render_png(bot, guild, division_id: int, origin: PostingOrigin):
     """Render one division's lineup. Returns the render service's PostingDecision."""
     from services.image_lineup_service import build_fill_spec
     from services.image_render_service import (
@@ -211,7 +210,7 @@ async def render_png(bot, server_id: int, guild, division_id: int, origin: Posti
 
     _division, drawing, members = await build_drawing(bot, guild, division_id)
 
-    config = await bot.image_config_service.get_config(server_id)
+    config = await bot.image_config_service.get_config()
     directories, directory_faults = resolve_configured_directories(
         config,
         (
@@ -229,13 +228,12 @@ async def render_png(bot, server_id: int, guild, division_id: int, origin: Posti
     from services.driver_portrait_service import refresh_before_render
 
     await refresh_before_render(
-        bot, server_id, members, config=config, directory=directories.get("driver")
+        bot, members, config=config, directory=directories.get("driver")
     )
 
     from utils.image_naming import stem_for_drawing
 
     return await bot.image_render_service.render_for_posting(
-        server_id,
         LINEUP_TEMPLATE_KEY,
         spec_builder_with_faults(
             build_fill_spec, drawing, directories, directory_faults
@@ -264,14 +262,13 @@ async def try_post(
     if guild is None:
         return LineupPostOutcome()
 
-    server_id = guild.id
-    if not await lineup_enabled(bot, server_id):
+    if not await lineup_enabled(bot):
         return LineupPostOutcome()
 
     async with get_connection(bot.db_path) as db:
         row = await (
             await db.execute(
-                "SELECT d.name, d.lineup_channel_id, d.lineup_message_id, s.server_id "
+                "SELECT d.name, d.lineup_channel_id, d.lineup_message_id "
                 "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                 (division_id,),
             )
@@ -290,10 +287,10 @@ async def try_post(
         return LineupPostOutcome()
 
     try:
-        decision = await render_png(bot, server_id, guild, division_id, origin)
+        decision = await render_png(bot, guild, division_id, origin)
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
         log.error("lineup: render failed for division %s: %s", division_id, exc)
-        await _report(bot, server_id, row["name"], str(exc))
+        await _report(bot, row["name"], str(exc))
         if origin is PostingOrigin.COMMANDED:
             return LineupPostOutcome(action=REJECTED, message=f"❌ {exc}")
         return LineupPostOutcome()
@@ -309,7 +306,7 @@ async def try_post(
         # An uncommanded posting whose render failed: the caller's textual body runs, and
         # the previously posted message is left exactly where it is until it does.
         if decision.problem is not None:
-            await _report(bot, server_id, row["name"], decision.problem.detail)
+            await _report(bot, row["name"], decision.problem.detail)
         return LineupPostOutcome()
 
     from services.image_render_service import discard_attachment
@@ -344,11 +341,10 @@ async def try_post(
         )
         await db.execute(
             "INSERT INTO audit_entries "
-            "(server_id, actor_id, actor_name, division_id, change_type, old_value, "
+            "(actor_id, actor_name, division_id, change_type, old_value, "
             " new_value, timestamp) "
-            "VALUES (?, 0, 'system', ?, 'SIGNUP_LINEUP_POSTED', '', ?, ?)",
+            "VALUES (0, 'system', ?, 'SIGNUP_LINEUP_POSTED', '', ?, ?)",
             (
-                row["server_id"],
                 division_id,
                 json.dumps(
                     {
@@ -382,12 +378,12 @@ async def render_for_command(bot, guild, division_id: int) -> LineupPostOutcome:
     records no audit entry. That separation is the whole reason it exists beside
     :func:`try_post` rather than being a flag on it.
     """
-    if guild is None or not await lineup_enabled(bot, guild.id):
+    if guild is None or not await lineup_enabled(bot):
         return LineupPostOutcome()
 
     try:
         decision = await render_png(
-            bot, guild.id, guild, division_id, PostingOrigin.COMMANDED
+            bot, guild, division_id, PostingOrigin.COMMANDED
         )
     except Exception as exc:  # noqa: BLE001
         log.error("lineup: command render failed for division %s: %s", division_id, exc)
@@ -405,7 +401,7 @@ async def render_for_command(bot, guild, division_id: int) -> LineupPostOutcome:
     )
 
 
-async def _report(bot, server_id: int, division_name: str, detail: str) -> None:
+async def _report(bot, division_name: str, detail: str) -> None:
     """Send a fault to the server's logging channel, never to the lineup channel.
 
     The lineup channel is read by the drivers of the league and not by its staff
@@ -413,7 +409,6 @@ async def _report(bot, server_id: int, division_name: str, detail: str) -> None:
     """
     try:
         await bot.output_router.post_log(
-            server_id,
             f"Lineup image | {division_name} | {detail}",
         )
     except Exception as exc:  # noqa: BLE001

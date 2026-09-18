@@ -56,8 +56,8 @@ class TestSlotIdFormat:
     async def test_get_slots_populates_slot_id(self, db_path):
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, 5, "21:00")
-        slots = await svc.get_slots(1)
+        await svc.add_slot(5, "21:00")
+        slots = await svc.get_slots()
         assert slots[0].slot_id == "Fri_21_00"
 
 
@@ -65,8 +65,8 @@ class TestSlotAdd:
     async def test_add_happy_path(self, db_path):
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, 1, "14:30")
-        slots = await svc.get_slots(1)
+        await svc.add_slot(1, "14:30")
+        slots = await svc.get_slots()
         assert len(slots) == 1
         assert slots[0].day_of_week == 1
         assert slots[0].time_hhmm == "14:30"
@@ -75,31 +75,31 @@ class TestSlotAdd:
     async def test_add_duplicate_raises(self, db_path):
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, 1, "14:30")
+        await svc.add_slot(1, "14:30")
         with pytest.raises(ValueError, match="already exists"):
-            await svc.add_slot(1, 1, "14:30")
+            await svc.add_slot(1, "14:30")
 
 
 class TestSlotRemove:
     async def test_remove_happy_path(self, db_path):
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, 2, "10:00")
-        result = await svc.remove_slot_by_rank(1, 1)
+        await svc.add_slot(2, "10:00")
+        result = await svc.remove_slot_by_rank(1)
         assert result is True
-        slots = await svc.get_slots(1)
+        slots = await svc.get_slots()
         assert slots == []
 
     async def test_remove_out_of_range_returns_false(self, db_path):
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        result = await svc.remove_slot_by_rank(1, 99)
+        result = await svc.remove_slot_by_rank(99)
         assert result is False
 
     async def test_no_slots_returns_false(self, db_path):
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        result = await svc.remove_slot_by_rank(1, 1)
+        result = await svc.remove_slot_by_rank(1)
         assert result is False
 
 
@@ -108,10 +108,10 @@ class TestChronologicalRanking:
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         # Add out of order
-        await svc.add_slot(1, 3, "19:00")   # Wed 19:00
-        await svc.add_slot(1, 1, "20:00")   # Mon 20:00
-        await svc.add_slot(1, 1, "14:30")   # Mon 14:30
-        slots = await svc.get_slots(1)
+        await svc.add_slot(3, "19:00")   # Wed 19:00
+        await svc.add_slot(1, "20:00")   # Mon 20:00
+        await svc.add_slot(1, "14:30")   # Mon 14:30
+        slots = await svc.get_slots()
         assert len(slots) == 3
         # Ordered chronologically regardless of insertion order
         assert slots[0].day_of_week == 1 and slots[0].time_hhmm == "14:30"
@@ -124,9 +124,9 @@ class TestChronologicalRanking:
         """Wednesday added first, then Monday → Monday gets #1, Wednesday gets #2."""
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, 3, "18:00")   # Wed 18:00 added first
-        await svc.add_slot(1, 1, "17:00")   # Mon 17:00 added second
-        slots = await svc.get_slots(1)
+        await svc.add_slot(3, "18:00")   # Wed 18:00 added first
+        await svc.add_slot(1, "17:00")   # Mon 17:00 added second
+        slots = await svc.get_slots()
         assert slots[0].day_of_week == 1 and slots[0].slot_sequence_id == 1
         assert slots[1].day_of_week == 3 and slots[1].slot_sequence_id == 2
 
@@ -139,14 +139,14 @@ class TestChronologicalRanking:
         """
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, 1, "14:30")   # Mon 14:30 → seq 1
-        await svc.add_slot(1, 1, "20:00")   # Mon 20:00 → seq 2
-        await svc.add_slot(1, 3, "19:00")   # Wed 19:00 → seq 3
+        await svc.add_slot(1, "14:30")   # Mon 14:30 → seq 1
+        await svc.add_slot(1, "20:00")   # Mon 20:00 → seq 2
+        await svc.add_slot(3, "19:00")   # Wed 19:00 → seq 3
         # Remove seq_id 2 (Mon 20:00); remaining: Mon 14:30, Wed 19:00
-        await svc.remove_slot_by_rank(1, 2)
+        await svc.remove_slot_by_rank(2)
         # Add Fri 18:00; new chronological order: Mon 14:30(1), Wed 19:00(2), Fri 18:00(3)
-        await svc.add_slot(1, 5, "18:00")
-        slots = await svc.get_slots(1)
+        await svc.add_slot(5, "18:00")
+        slots = await svc.get_slots()
         assert len(slots) == 3
         assert slots[0].day_of_week == 1 and slots[0].time_hhmm == "14:30" and slots[0].slot_sequence_id == 1
         assert slots[1].day_of_week == 3 and slots[1].time_hhmm == "19:00" and slots[1].slot_sequence_id == 2
@@ -164,21 +164,21 @@ class TestDurableSlotIdentity:
         """Mon 19:00 (#1), Wed 20:00 (#2), Fri 21:00 (#3) — the issue's worked example."""
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        await svc.add_slot(1, 1, "19:00")
-        await svc.add_slot(1, 3, "20:00")
-        await svc.add_slot(1, 5, "21:00")
+        await svc.add_slot(1, "19:00")
+        await svc.add_slot(3, "20:00")
+        await svc.add_slot(5, "21:00")
         return svc
 
     async def test_removing_a_slot_does_not_change_other_slot_ids(self, db_path):
         """A driver picks Friday (#3). Monday is removed. They are still on Friday."""
         svc = await self._friday_league(db_path)
-        slots = await svc.get_slots(1)
+        slots = await svc.get_slots()
         chosen = next(s for s in slots if s.slot_sequence_id == 3).slot_id
         assert chosen == "Fri_21_00"
 
-        await svc.remove_slot_by_rank(1, 1)   # remove Mon 19:00
+        await svc.remove_slot_by_rank(1)   # remove Mon 19:00
 
-        remaining = await svc.get_slots(1)
+        remaining = await svc.get_slots()
         # Friday's display ordinal has moved from 3 to 2 …
         assert [s.slot_sequence_id for s in remaining] == [1, 2]
         # … but the answer still names the same time, and still matches a live slot.
@@ -191,12 +191,12 @@ class TestDurableSlotIdentity:
         """Inserting a slot before the one a driver chose must not move their answer."""
         svc = await self._friday_league(db_path)
         chosen = next(
-            s for s in await svc.get_slots(1) if s.slot_sequence_id == 3
+            s for s in await svc.get_slots() if s.slot_sequence_id == 3
         ).slot_id
 
-        await svc.add_slot(1, 1, "08:00")   # a new Monday morning slot, earliest of all
+        await svc.add_slot(1, "08:00")   # a new Monday morning slot, earliest of all
 
-        after = await svc.get_slots(1)
+        after = await svc.get_slots()
         assert [s.slot_sequence_id for s in after] == [1, 2, 3, 4]
         # Friday is now #4, yet the stored answer resolves to Friday as before.
         assert next(s for s in after if s.slot_id == chosen).time_hhmm == "21:00"
@@ -205,11 +205,11 @@ class TestDurableSlotIdentity:
     async def test_a_re_added_slot_recovers_its_own_answers(self, db_path):
         """Remove a slot and put it back: answers naming it mean the same time again."""
         svc = await self._friday_league(db_path)
-        await svc.remove_slot_by_rank(1, 2)   # remove Wed 20:00
-        assert "Wed_20_00" not in {s.slot_id for s in await svc.get_slots(1)}
+        await svc.remove_slot_by_rank(2)   # remove Wed 20:00
+        assert "Wed_20_00" not in {s.slot_id for s in await svc.get_slots()}
 
-        await svc.add_slot(1, 3, "20:00")
-        assert "Wed_20_00" in {s.slot_id for s in await svc.get_slots(1)}
+        await svc.add_slot(3, "20:00")
+        assert "Wed_20_00" in {s.slot_id for s in await svc.get_slots()}
 
 
 class TestSnapshotStoresTheDurableIdentity:
@@ -228,7 +228,7 @@ class TestSnapshotStoresTheDurableIdentity:
 
         svc = SignupModuleService(db_path)
         await svc.save_wizard(SignupWizardRecord(
-            id=0, server_id=1, discord_user_id="snap",
+            id=0, discord_user_id="snap",
             wizard_state=WizardState.COLLECTING_AVAILABILITY,
             signup_channel_id=888,
             config_snapshot=ConfigSnapshot(
@@ -252,8 +252,8 @@ class TestSnapshotStoresTheDurableIdentity:
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
-            await svc.add_slot(1, day, time_hhmm)
-        await self._saved_snapshot(db_path, await svc.get_slots(1))
+            await svc.add_slot(day, time_hhmm)
+        await self._saved_snapshot(db_path, await svc.get_slots())
 
         async with get_connection(db_path) as db:
             cursor = await db.execute(
@@ -271,10 +271,10 @@ class TestSnapshotStoresTheDurableIdentity:
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
-            await svc.add_slot(1, day, time_hhmm)
-        await self._saved_snapshot(db_path, await svc.get_slots(1))
+            await svc.add_slot(day, time_hhmm)
+        await self._saved_snapshot(db_path, await svc.get_slots())
 
-        snap = (await svc.get_wizard(1, "snap")).config_snapshot
+        snap = (await svc.get_wizard("snap")).config_snapshot
         assert [s.slot_sequence_id for s in snap.slots] == [1, 2, 3]
         assert [s.slot_id for s in snap.slots] == [
             "Mon_19_00", "Wed_20_00", "Fri_21_00",
@@ -286,11 +286,11 @@ class TestSnapshotStoresTheDurableIdentity:
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
-            await svc.add_slot(1, day, time_hhmm)
-        scrambled = list(reversed(await svc.get_slots(1)))
+            await svc.add_slot(day, time_hhmm)
+        scrambled = list(reversed(await svc.get_slots()))
         await self._saved_snapshot(db_path, scrambled)
 
-        snap = (await svc.get_wizard(1, "snap")).config_snapshot
+        snap = (await svc.get_wizard("snap")).config_snapshot
         assert [(s.slot_sequence_id, s.slot_id) for s in snap.slots] == [
             (1, "Mon_19_00"), (2, "Wed_20_00"), (3, "Fri_21_00"),
         ]
@@ -309,24 +309,24 @@ class TestSnapshotStoresTheDurableIdentity:
             "selected_track_ids": [],
             "team_names": [],
             "slots": [
-                {"id": 1, "server_id": 1, "slot_sequence_id": 1,
+                {"id": 1, "slot_sequence_id": 1,
                  "day_of_week": 1, "time_hhmm": "19:00"},
-                {"id": 2, "server_id": 1, "slot_sequence_id": 2,
+                {"id": 2, "slot_sequence_id": 2,
                  "day_of_week": 5, "time_hhmm": "21:00"},
             ],
         }
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO signup_wizard_records (server_id, discord_user_id, "
+                "INSERT INTO signup_wizard_records (discord_user_id, "
                 "wizard_state, signup_channel_id, config_snapshot_json, "
                 "draft_answers_json, current_lap_track_index, last_activity_at) "
-                "VALUES (1, 'legacy', 'COLLECTING_AVAILABILITY', 888, ?, '{}', 0, "
+                "VALUES ('legacy', 'COLLECTING_AVAILABILITY', 888, ?, '{}', 0, "
                 "'2026-01-01T00:00:00')",
                 (json.dumps(legacy),),
             )
             await db.commit()
 
-        snap = (await SignupModuleService(db_path).get_wizard(1, "legacy")).config_snapshot
+        snap = (await SignupModuleService(db_path).get_wizard("legacy")).config_snapshot
         assert [(s.slot_sequence_id, s.slot_id) for s in snap.slots] == [
             (1, "Mon_19_00"), (2, "Fri_21_00"),
         ]
@@ -339,7 +339,6 @@ class TestWindowState:
         from models.signup_module import SignupModuleConfig
         svc = SignupModuleService(db_path)
         cfg = SignupModuleConfig(
-            server_id=1,
             signup_channel_id=100,
             base_role_id=200,
             signed_up_role_id=300,
@@ -352,19 +351,19 @@ class TestWindowState:
 
     async def test_default_window_closed(self, db_path):
         svc = await self._make_config(db_path)
-        assert await svc.get_window_state(1) is False
+        assert await svc.get_window_state() is False
 
     async def test_set_open_then_closed(self, db_path):
         svc = await self._make_config(db_path)
-        await svc.set_window_open(1, button_message_id=999, selected_tracks=["01", "03"])
-        assert await svc.get_window_state(1) is True
-        cfg = await svc.get_config(1)
+        await svc.set_window_open(button_message_id=999, selected_tracks=["01", "03"])
+        assert await svc.get_window_state() is True
+        cfg = await svc.get_config()
         assert cfg.signup_button_message_id == 999
         assert cfg.selected_tracks == ["01", "03"]
 
-        await svc.set_window_closed(1)
-        assert await svc.get_window_state(1) is False
-        cfg2 = await svc.get_config(1)
+        await svc.set_window_closed()
+        assert await svc.get_window_state() is False
+        cfg2 = await svc.get_config()
         assert cfg2.signup_button_message_id is None
 
 
@@ -373,11 +372,10 @@ class TestWindowState:
 # ---------------------------------------------------------------------------
 
 
-def _make_record(server_id: int = 1, user_id: str = "u1") -> "SignupRecord":
+def _make_record(user_id: str = "u1") -> "SignupRecord":
     from models.signup_module import SignupRecord
     return SignupRecord(
         id=0,
-        server_id=server_id,
         discord_user_id=user_id,
         discord_username="TestUser",
         server_display_name="Test User",
@@ -402,7 +400,7 @@ class TestSignupRecordCRUD:
         svc = SignupModuleService(db_path)
         rec = _make_record()
         await svc.save_record(rec)
-        fetched = await svc.get_record(1, "u1")
+        fetched = await svc.get_record("u1")
         assert fetched is not None
         assert fetched.discord_username == "TestUser"
         assert fetched.platform == "Steam"
@@ -412,7 +410,7 @@ class TestSignupRecordCRUD:
     async def test_get_missing_returns_none(self, db_path):
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        assert await svc.get_record(1, "ghost") is None
+        assert await svc.get_record("ghost") is None
 
     async def test_a_second_signup_is_kept_beside_the_first(self, db_path):
         """Records are never overwritten (issue #220): the latest is what a review reads."""
@@ -423,7 +421,7 @@ class TestSignupRecordCRUD:
         second.platform = "PSN"
         await svc.save_record(second)
 
-        fetched = await svc.get_record(1, "u1")
+        fetched = await svc.get_record("u1")
         assert fetched is not None
         assert fetched.platform == "PSN"
         from db.database import get_connection
@@ -438,11 +436,11 @@ class TestSignupRecordCRUD:
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         record_id = await svc.save_record(_make_record())
-        stored = await svc.get_record(1, "u1")
+        stored = await svc.get_record("u1")
         stored.platform = "PSN"
 
         assert await svc.save_record(stored) == record_id
-        fetched = await svc.get_record(1, "u1")
+        fetched = await svc.get_record("u1")
         assert fetched.id == record_id
         assert fetched.platform == "PSN"
 
@@ -452,11 +450,10 @@ class TestSignupRecordCRUD:
 # ---------------------------------------------------------------------------
 
 
-def _make_wizard(server_id: int = 1, user_id: str = "w1") -> "SignupWizardRecord":
+def _make_wizard(user_id: str = "w1") -> "SignupWizardRecord":
     from models.signup_module import SignupWizardRecord, WizardState
     return SignupWizardRecord(
         id=0,
-        server_id=server_id,
         discord_user_id=user_id,
         wizard_state=WizardState.COLLECTING_NATIONALITY,
         signup_channel_id=777,
@@ -476,7 +473,7 @@ class TestSignupWizardRecordCRUD:
         svc = SignupModuleService(db_path)
         wizard = _make_wizard()
         await svc.save_wizard(wizard)
-        fetched = await svc.get_wizard(1, "w1")
+        fetched = await svc.get_wizard("w1")
         assert fetched is not None
         assert fetched.wizard_state == WizardState.COLLECTING_NATIONALITY
         assert fetched.draft_answers == {"nationality": "gb"}
@@ -485,13 +482,13 @@ class TestSignupWizardRecordCRUD:
     async def test_get_missing_returns_none(self, db_path):
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
-        assert await svc.get_wizard(1, "ghost") is None
+        assert await svc.get_wizard("ghost") is None
 
     async def test_get_by_channel(self, db_path):
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.save_wizard(_make_wizard())
-        fetched = await svc.get_wizard_by_channel(1, 777)
+        fetched = await svc.get_wizard_by_channel(777)
         assert fetched is not None
         assert fetched.discord_user_id == "w1"
 
@@ -499,14 +496,14 @@ class TestSignupWizardRecordCRUD:
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.save_wizard(_make_wizard())
-        assert await svc.get_wizard_by_channel(1, 9999) is None
+        assert await svc.get_wizard_by_channel(9999) is None
 
     async def test_delete_wizard(self, db_path):
         from services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.save_wizard(_make_wizard())
-        await svc.delete_wizard(1, "w1")
-        assert await svc.get_wizard(1, "w1") is None
+        await svc.delete_wizard("w1")
+        assert await svc.get_wizard("w1") is None
 
     async def test_get_all_active_wizards_excludes_unengaged(self, db_path):
         from services.signup_module_service import SignupModuleService
@@ -514,14 +511,14 @@ class TestSignupWizardRecordCRUD:
         svc = SignupModuleService(db_path)
         await svc.save_wizard(_make_wizard(user_id="active1"))
         inactive = SignupWizardRecord(
-            id=0, server_id=1, discord_user_id="inactive1",
+            id=0, discord_user_id="inactive1",
             wizard_state=WizardState.UNENGAGED,
             signup_channel_id=None, config_snapshot=None,
             draft_answers={}, current_lap_track_index=0,
             last_activity_at="2025-01-01T00:00:00",
         )
         await svc.save_wizard(inactive)
-        active = await svc.get_all_active_wizards(1)
+        active = await svc.get_all_active_wizards()
         ids = [w.discord_user_id for w in active]
         assert "active1" in ids
         assert "inactive1" not in ids
@@ -544,8 +541,8 @@ class TestConfigSnapshotIsolation:
         )
         svc = SignupModuleService(db_path)
         # Add a slot and capture a snapshot with nationality_required=True
-        await svc.add_slot(1, 1, "20:00")
-        slot = (await svc.get_slots(1))[0]
+        await svc.add_slot(1, "20:00")
+        slot = (await svc.get_slots())[0]
         snapshot = ConfigSnapshot(
             nationality_required=True,
             time_type="TIME_TRIAL",
@@ -554,7 +551,7 @@ class TestConfigSnapshotIsolation:
             slots=[slot],
         )
         wizard = SignupWizardRecord(
-            id=0, server_id=1, discord_user_id="snap1",
+            id=0, discord_user_id="snap1",
             wizard_state=WizardState.COLLECTING_NATIONALITY,
             signup_channel_id=888,
             config_snapshot=snapshot,
@@ -564,7 +561,7 @@ class TestConfigSnapshotIsolation:
         )
         await svc.save_wizard(wizard)
         # The snapshot is serialised to JSON — live config no longer influences it.
-        fetched = await svc.get_wizard(1, "snap1")
+        fetched = await svc.get_wizard("snap1")
         assert fetched is not None
         snap = fetched.config_snapshot
         assert snap is not None

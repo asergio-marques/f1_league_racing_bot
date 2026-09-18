@@ -41,9 +41,8 @@ async def _seed_full(db_path: str, *, server_id: int = 1) -> tuple[int, int, int
             (server_id,),
         )
         await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status) "
-            "VALUES (?, '2026-01-01', 'ACTIVE')",
-            (server_id,),
+            "INSERT INTO seasons (start_date, status) "
+            "VALUES ('2026-01-01', 'ACTIVE')"
         )
         cur = await db.execute("SELECT last_insert_rowid()")
         (season_id,) = await cur.fetchone()
@@ -81,7 +80,7 @@ async def _seed_full(db_path: str, *, server_id: int = 1) -> tuple[int, int, int
 async def _row_count(db_path: str, table: str, server_id: int | None = None) -> int:
     """Return the number of rows in *table*, optionally filtered by server_id."""
     async with get_connection(db_path) as db:
-        if server_id is not None and table in ("server_configs", "seasons", "audit_entries"):
+        if server_id is not None and table in ("server_configs", "audit_entries"):
             cur = await db.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE server_id = ?",
                 (server_id,),
@@ -105,7 +104,7 @@ async def test_partial_reset_deletes_seasons_preserves_config() -> None:
         await _seed_full(db_path, server_id=1)
 
         sched = _FakeScheduler()
-        result = await reset_server_data(1, db_path, sched, full=False)
+        result = await reset_server_data(db_path, sched, full=False)
 
         assert result["seasons_deleted"] == 1
         assert result["divisions_deleted"] == 2
@@ -131,7 +130,7 @@ async def test_full_reset_deletes_server_config() -> None:
         await _seed_full(db_path, server_id=1)
 
         sched = _FakeScheduler()
-        result = await reset_server_data(1, db_path, sched, full=True)
+        result = await reset_server_data(db_path, sched, full=True)
 
         assert result["seasons_deleted"] == 1
 
@@ -158,7 +157,7 @@ async def test_empty_server_returns_zero_counts() -> None:
             await db.commit()
 
         sched = _FakeScheduler()
-        result = await reset_server_data(1, db_path, sched, full=False)
+        result = await reset_server_data(db_path, sched, full=False)
 
         assert result == {"seasons_deleted": 0, "divisions_deleted": 0, "rounds_deleted": 0}
         assert sched.cancelled == []
@@ -175,32 +174,12 @@ async def test_cancel_round_called_once_per_round() -> None:
         _, _, expected_round_count = await _seed_full(db_path, server_id=1)
 
         sched = _FakeScheduler()
-        result = await reset_server_data(1, db_path, sched, full=False)
+        result = await reset_server_data(db_path, sched, full=False)
 
         assert result["rounds_deleted"] == expected_round_count
         assert len(sched.cancelled) == expected_round_count
         # Each round ID appears exactly once
         assert len(set(sched.cancelled)) == expected_round_count
-    finally:
-        os.unlink(db_path)
-
-
-async def test_partial_reset_does_not_affect_other_server() -> None:
-    """Resetting server 1 must not touch server 2's data."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed_full(db_path, server_id=1)
-        await _seed_full(db_path, server_id=2)
-
-        sched = _FakeScheduler()
-        await reset_server_data(1, db_path, sched, full=False)
-
-        # Server 2 season must remain
-        assert await _row_count(db_path, "seasons", server_id=2) == 1
-        # Server 2 config must remain
-        assert await _row_count(db_path, "server_configs", server_id=2) == 1
     finally:
         os.unlink(db_path)
 
@@ -231,7 +210,7 @@ async def test_transaction_rollback_on_error(monkeypatch: pytest.MonkeyPatch) ->
 
         sched = _FakeScheduler()
         with pytest.raises(RuntimeError, match="simulated DB failure"):
-            await reset_server_data(1, db_path, sched, full=False)
+            await reset_server_data(db_path, sched, full=False)
 
         # All season data must still be present (rolled back)
         assert await _row_count(db_path, "seasons", server_id=1) == 1
@@ -259,7 +238,7 @@ async def test_reset_deletes_forecast_messages() -> None:
                 "SELECT r.id, r.division_id FROM rounds r "
                 "JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id "
-                "WHERE s.server_id = 1 LIMIT 1"
+                " LIMIT 1"
             )
             round_id, division_id = await cur.fetchone()
 
@@ -277,7 +256,7 @@ async def test_reset_deletes_forecast_messages() -> None:
 
         sched = _FakeScheduler()
         # Must not raise (previously raised FK constraint failed)
-        await reset_server_data(1, db_path, sched, full=False)
+        await reset_server_data(db_path, sched, full=False)
 
         # forecast_messages must now be empty
         assert await _row_count(db_path, "forecast_messages") == 0

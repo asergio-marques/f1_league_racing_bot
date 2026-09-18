@@ -36,7 +36,6 @@ class DriverProfile:
     """
 
     id: int
-    server_id: int
     discord_user_id: str
     current_state: DriverState
     former_driver: bool

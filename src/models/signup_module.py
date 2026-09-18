@@ -34,7 +34,6 @@ class WizardState(str, Enum):
 
 @dataclass
 class SignupModuleConfig:
-    server_id: int
     signup_channel_id: int | None
     base_role_id: int | None
     signed_up_role_id: int | None
@@ -48,14 +47,12 @@ class SignupModuleConfig:
 @dataclass
 class SignupDivisionConfig:
     id: int
-    server_id: int
     division_id: int
     lineup_channel_id: int | None
 
 
 @dataclass
 class SignupModuleSettings:
-    server_id: int
     nationality_required: bool
     time_type: TimeType
     time_image_required: bool
@@ -65,7 +62,6 @@ class SignupModuleSettings:
 class AvailabilitySlot:
     """
     id               — internal surrogate PK (used for DB deletion).
-    server_id        — owning server.
     slot_id          — the slot's durable identity, "Mon_19_00" (computed on read).
     slot_sequence_id — temporary display ordinal, 1..N in chronological order.
     day_of_week      — 1=Mon … 7=Sun.
@@ -76,7 +72,7 @@ class AvailabilitySlot:
     ``slot_sequence_id``.** The ordinal is recomputed from chronological order on
     every read, so adding or removing a slot renumbers every slot after it; anything
     stored against an ordinal silently comes to mean a different time (issue #126).
-    ``slot_id`` is derived from the day and time, which are unique per server, so it
+    ``slot_id`` is derived from the day and time, which are unique, so it
     cannot drift from the slot it names and a removed-then-re-added slot recovers its
     own answers. The ordinal exists only so a league types ``3`` rather than
     ``Fri_21_00``; it is converted to ``slot_id`` at the input boundary and never
@@ -84,7 +80,6 @@ class AvailabilitySlot:
     """
 
     id: int
-    server_id: int
     slot_id: str
     slot_sequence_id: int
     day_of_week: int
@@ -123,7 +118,6 @@ class SignupRecord:
     which is how a correction amends the signup it was asked of.
     """
     id: int
-    server_id: int
     discord_user_id: str
     discord_username: str | None
     server_display_name: str | None
@@ -147,7 +141,6 @@ class SignupRecord:
 class SignupWizardRecord:
     """In-progress wizard state for a driver on a server."""
     id: int
-    server_id: int
     discord_user_id: str
     wizard_state: WizardState
     signup_channel_id: int | None

@@ -64,9 +64,9 @@ async def _make_db(tmp_path, *, season_status: str = "ACTIVE") -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', ?)",
-            (SEASON_ID, SERVER_ID, season_status),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', ?)",
+            (SEASON_ID, season_status),
         )
         await db.commit()
     return db_path
@@ -216,7 +216,7 @@ async def test_a_season_whose_divisions_have_all_finished_may_complete(tmp_path)
     await _add_division(db_path, 11, status="FINISHED")
     await _add_division(db_path, 12, status="FINISHED")
 
-    assert await SeasonService(db_path).all_divisions_finished(SERVER_ID) is True
+    assert await SeasonService(db_path).all_divisions_finished() is True
 
 
 async def test_a_cancelled_division_does_not_hold_a_season_open(tmp_path):
@@ -225,7 +225,7 @@ async def test_a_cancelled_division_does_not_hold_a_season_open(tmp_path):
     await _add_division(db_path, 11, status="FINISHED")
     await _add_division(db_path, 12, status="CANCELLED")
 
-    assert await SeasonService(db_path).all_divisions_finished(SERVER_ID) is True
+    assert await SeasonService(db_path).all_divisions_finished() is True
 
 
 async def test_an_active_division_holds_the_season_open(tmp_path):
@@ -233,7 +233,7 @@ async def test_an_active_division_holds_the_season_open(tmp_path):
     await _add_division(db_path, 11, status="FINISHED")
     await _add_division(db_path, 12, status="ACTIVE")
 
-    assert await SeasonService(db_path).all_divisions_finished(SERVER_ID) is False
+    assert await SeasonService(db_path).all_divisions_finished() is False
 
 
 async def test_the_gate_asks_about_divisions_not_rounds(tmp_path):
@@ -243,14 +243,7 @@ async def test_the_gate_asks_about_divisions_not_rounds(tmp_path):
     await _add_division(db_path, 11, status="CANCELLED")
     await _add_round(db_path, 11, 1, RoundStatus.AWAITING_RESULTS.value)
 
-    assert await SeasonService(db_path).all_divisions_finished(SERVER_ID) is True
-
-
-async def test_another_server_s_divisions_do_not_hold_this_season_open(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _add_division(db_path, 11, status="FINISHED")
-
-    assert await SeasonService(db_path).all_divisions_finished(SERVER_ID + 1) is True
+    assert await SeasonService(db_path).all_divisions_finished() is True
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +257,7 @@ async def test_every_outstanding_round_is_reported(tmp_path):
     await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
     await _add_round(db_path, 11, 2, RoundStatus.AWAITING_RESULTS.value, track="Monza")
 
-    rounds = await SeasonService(db_path).get_outstanding_rounds(SERVER_ID)
+    rounds = await SeasonService(db_path).get_outstanding_rounds()
 
     assert len(rounds) == 1
     assert rounds[0]["division"] == "Division 1"
@@ -278,7 +271,7 @@ async def test_a_cancelled_round_is_not_outstanding(tmp_path):
     await _add_division(db_path, 11)
     await _add_round(db_path, 11, 1, RoundStatus.CANCELLED.value)
 
-    assert await SeasonService(db_path).get_outstanding_rounds(SERVER_ID) == []
+    assert await SeasonService(db_path).get_outstanding_rounds() == []
 
 
 async def test_a_cancelled_division_s_rounds_are_not_outstanding(tmp_path):
@@ -288,7 +281,7 @@ async def test_a_cancelled_division_s_rounds_are_not_outstanding(tmp_path):
     await _add_division(db_path, 11, status="CANCELLED")
     await _add_round(db_path, 11, 1, RoundStatus.AWAITING_RESULTS.value)
 
-    assert await SeasonService(db_path).get_outstanding_rounds(SERVER_ID) == []
+    assert await SeasonService(db_path).get_outstanding_rounds() == []
 
 
 async def test_outstanding_rounds_are_ordered_for_reading(tmp_path):
@@ -300,7 +293,7 @@ async def test_outstanding_rounds_are_ordered_for_reading(tmp_path):
     await _add_round(db_path, 11, 1, RoundStatus.AWAITING_RESULTS.value)
     await _add_round(db_path, 12, 1, RoundStatus.AWAITING_RESULTS.value)
 
-    rounds = await SeasonService(db_path).get_outstanding_rounds(SERVER_ID)
+    rounds = await SeasonService(db_path).get_outstanding_rounds()
 
     assert [(r["division"], r["round_number"]) for r in rounds] == [
         ("Alpha", 1),
@@ -315,7 +308,7 @@ async def test_a_season_not_running_reports_no_outstanding_rounds(tmp_path):
     await _add_division(db_path, 11)
     await _add_round(db_path, 11, 1, RoundStatus.AWAITING_RESULTS.value)
 
-    assert await SeasonService(db_path).get_outstanding_rounds(SERVER_ID) == []
+    assert await SeasonService(db_path).get_outstanding_rounds() == []
 
 
 @pytest.mark.parametrize("status", OUTSTANDING)
@@ -326,4 +319,4 @@ async def test_each_waiting_state_counts_as_outstanding(tmp_path, status):
     await _add_division(db_path, 11)
     await _add_round(db_path, 11, 1, status)
 
-    assert len(await SeasonService(db_path).get_outstanding_rounds(SERVER_ID)) == 1
+    assert len(await SeasonService(db_path).get_outstanding_rounds()) == 1

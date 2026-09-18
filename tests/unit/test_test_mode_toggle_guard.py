@@ -92,9 +92,9 @@ async def _season(db_path: str, status: str) -> int:
     """A season of *status* with one division, one team and two seats. Returns the team id."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-03-01', ?, 1)",
-            (SERVER_ID, status),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-03-01', ?, 1)",
+            (status,),
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -122,10 +122,9 @@ async def _seat_a_test_driver(db_path: str, team_id: int) -> None:
     """A fake driver in the first free seat of *team_id*, as `/test-mode roster add` leaves one."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
             "is_test_driver, test_display_name) "
-            "VALUES (?, '9000000000000000001', 'ASSIGNED', 1, 'Mock Alpha')",
-            (SERVER_ID,),
+            "VALUES ('9000000000000000001', 'ASSIGNED', 1, 'Mock Alpha')"
         )
         profile_id = cursor.lastrowid
         cursor = await db.execute(
@@ -164,8 +163,7 @@ async def _fake_drivers(db_path: str) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT COUNT(*) AS n FROM driver_profiles "
-            "WHERE server_id = ? AND is_test_driver = 1",
-            (SERVER_ID,),
+            "WHERE is_test_driver = 1",
         )
         return (await cursor.fetchone())["n"]
 
@@ -173,8 +171,7 @@ async def _fake_drivers(db_path: str) -> int:
 async def _open_signups(db_path: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE signup_module_config SET signups_open = 1 WHERE server_id = ?",
-            (SERVER_ID,),
+            "UPDATE signup_module_config SET signups_open = 1",
         )
         await db.commit()
 
@@ -183,8 +180,8 @@ async def _add_driver(db_path: str, user_id: str, state: str, *, test: bool = Fa
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(server_id, discord_user_id, current_state, is_test_driver) VALUES (?, ?, ?, ?)",
-            (SERVER_ID, user_id, state, 1 if test else 0),
+            "(discord_user_id, current_state, is_test_driver) VALUES (?, ?, ?)",
+            (user_id, state, 1 if test else 0),
         )
         await db.commit()
 
@@ -204,14 +201,13 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signup_channel_id, base_role_id, "
+            "INSERT INTO signup_module_config (id, signup_channel_id, base_role_id, "
             "signed_up_role_id, signups_open) VALUES (?, 11, 12, 13, 0)",
-            (SERVER_ID,),
+            (1,),
         )
         await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
-            "VALUES (?, '2026-09-17', 'SETUP', 1, 'CONFIGURATION')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-09-17', 'SETUP', 1, 'CONFIGURATION')"
         )
         await db.commit()
     return path
@@ -340,7 +336,7 @@ async def test_toggling_off_deletes_the_saved_backup(cog, db_path):
     assert not backup_service.backup_path(jobstore).exists()
     assert not backup_service.lock_path(db_path).exists()
     assert "Deleted the saved test-mode backup" in interaction.reply
-    assert "backup: deleted" in cog.bot.output_router.post_log.await_args.args[1]
+    assert "backup: deleted" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 async def test_toggling_off_with_nothing_saved_says_nothing_about_a_backup(cog, db_path):

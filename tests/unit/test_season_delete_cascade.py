@@ -87,9 +87,9 @@ CHILD_TABLES = [
 
 async def _seed_season(db, season_id, division_id, round_id, *, number: int):
     await db.execute(
-        "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-        "VALUES (?, ?, ?, '2026-01-01', ?)",
-        (season_id, SERVER_ID, number, "COMPLETED" if number == 6 else "ACTIVE"),
+        "INSERT INTO seasons (id, season_number, start_date, status) "
+        "VALUES (?, ?, '2026-01-01', ?)",
+        (season_id, number, "COMPLETED" if number == 6 else "ACTIVE"),
     )
     await db.execute(
         "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -147,15 +147,15 @@ async def _seed_season(db, season_id, division_id, round_id, *, number: int):
 
     # ── drivers and teams ───────────────────────────────────────────────────
     cursor = await db.execute(
-        "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-        "is_test_driver) VALUES (?, ?, 'ACTIVE', 0)",
-        (SERVER_ID, str(1000 + number)),
+        "INSERT INTO driver_profiles (discord_user_id, current_state, "
+        "is_test_driver) VALUES (?, 'ACTIVE', 0)",
+        (str(1000 + number),),
     )
     real_profile = cursor.lastrowid
     cursor = await db.execute(
-        "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-        "is_test_driver) VALUES (?, ?, 'ACTIVE', 1)",
-        (SERVER_ID, str(2000 + number)),
+        "INSERT INTO driver_profiles (discord_user_id, current_state, "
+        "is_test_driver) VALUES (?, 'ACTIVE', 1)",
+        (str(2000 + number),),
     )
     test_profile = cursor.lastrowid
     cursor = await db.execute(
@@ -393,9 +393,9 @@ async def test_a_season_with_no_divisions_deletes_cleanly(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'SETUP')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'SETUP')",
+            (SEASON_ID,),
         )
         await db.commit()
 
@@ -416,9 +416,9 @@ async def test_a_division_with_no_rounds_deletes_cleanly(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (?, ?, 1, '2026-01-01', 'SETUP')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (?, 1, '2026-01-01', 'SETUP')",
+            (SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "

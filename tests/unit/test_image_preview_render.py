@@ -90,7 +90,7 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(SERVER_ID)
+    await config_service.create_with_defaults()
     validity_service = ImageValidityService(
         config_service, SimpleNamespace(is_images_enabled=_true)
     )
@@ -116,9 +116,9 @@ async def _true(*args, **kwargs):
 async def league(db_path):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, ?, 'ACTIVE', 1)",
-            (SERVER_ID, NOW.date().isoformat()),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES (?, 'ACTIVE', 1)",
+            (NOW.date().isoformat(),),
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -162,16 +162,16 @@ async def league(db_path):
                 )
                 seat_id = cursor.lastrowid
                 cursor = await db.execute(
-                    "INSERT INTO driver_profiles (server_id, discord_user_id, "
-                    "current_state) VALUES (?, ?, 'ACTIVE')",
-                    (SERVER_ID, user_id),
+                    "INSERT INTO driver_profiles (discord_user_id, "
+                    "current_state) VALUES (?, 'ACTIVE')",
+                    (user_id,),
                 )
                 profile_id = cursor.lastrowid
                 await db.execute(
-                    "INSERT INTO signup_records (server_id, discord_user_id, "
+                    "INSERT INTO signup_records (discord_user_id, "
                     "server_display_name, discord_username, nationality) "
-                    "VALUES (?, ?, ?, 'd', 'British')",
-                    (SERVER_ID, str(user_id), f"{team_name} {seat_number}"),
+                    "VALUES (?, ?, 'd', 'British')",
+                    (str(user_id), f"{team_name} {seat_number}"),
                 )
                 await db.execute(
                     "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
@@ -234,14 +234,14 @@ KINDS = {
 async def test_every_preview_reaches_a_png(bot, league, kind, tmp_path):
     """Rule XIV.14 — the check is against the raster, never the SVG."""
     kwargs, build = KINDS[kind]
-    context = await resolve_context(bot, SERVER_ID, "Premier", **kwargs)
+    context = await resolve_context(bot, "Premier", **kwargs)
 
     requests = await build(bot, context)
     assert requests, f"{kind} produced no picture request"
 
     for label, template_key, spec_builder in requests:
         outcome = await bot.image_render_service.render(
-            SERVER_ID, template_key, spec_builder, output_dir=tmp_path
+            template_key, spec_builder, output_dir=tmp_path
         )
         assert outcome.problem is None, f"{kind} / {label}: {outcome.problem}"
         assert outcome.png_paths, f"{kind} / {label} produced no file"
@@ -266,7 +266,7 @@ async def test_the_standings_preview_draws_the_whole_grid(bot, league, tmp_path)
     over the league's own calendar and drivers for either graphic to render at all.
     """
     context = await resolve_context(
-        bot, SERVER_ID, "Premier", round_number=1, require_teams=True
+        bot, "Premier", round_number=1, require_teams=True
     )
 
     requests = await build_standings_preview(bot, context)
@@ -274,7 +274,7 @@ async def test_the_standings_preview_draws_the_whole_grid(bot, league, tmp_path)
 
     for label, template_key, spec_builder in requests:
         outcome = await bot.image_render_service.render(
-            SERVER_ID, template_key, spec_builder, output_dir=tmp_path
+            template_key, spec_builder, output_dir=tmp_path
         )
         assert outcome.problem is None, f"{label}: {outcome.problem}"
         assert outcome.png_paths, f"{label} produced no file"

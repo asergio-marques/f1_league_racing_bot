@@ -38,13 +38,12 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, autosack_threshold) VALUES (?, 10)",
-            (SERVER_ID,),
+            "INSERT INTO attendance_config (id, autosack_threshold) VALUES (?, 10)",
+            (1,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (1, ?, '2026-01-01', 'ACTIVE', 1, 'ONGOING')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1, 'ONGOING')"
         )
         for division_id, name in ((PRO, "Pro"), (AM, "Am")):
             await db.execute(
@@ -66,9 +65,9 @@ async def db_path(tmp_path):
                 )
         for pid in range(1, 7):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?, 'ASSIGNED')",
-                (pid, SERVER_ID, str(1000 + pid)),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+                "VALUES (?, ?, 'ASSIGNED')",
+                (pid, str(1000 + pid)),
             )
 
         async def seat(pid, team_id, division_id):
@@ -175,7 +174,7 @@ async def _enforce(db_path, *, sack=None, post=None):
             patch("services.verdict_announcement_service.banner_for_round", return_value=None), \
             patch("services.verdict_announcement_service.post_autosanction_announcement",
                   new=AsyncMock()):
-        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, SERVER_ID, 1)
+        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1)
     return posted
 
 
@@ -240,7 +239,7 @@ async def test_autosack_reposts_every_division(db_path):
             patch("services.verdict_announcement_service.banner_for_round", return_value=None), \
             patch("services.verdict_announcement_service.post_autosanction_announcement",
                   new=AsyncMock()):
-        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, SERVER_ID, 1)
+        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1)
 
     posted_divisions = sorted(call.args[4] for call in posted.await_args_list)
     assert posted_divisions == [PRO, AM]

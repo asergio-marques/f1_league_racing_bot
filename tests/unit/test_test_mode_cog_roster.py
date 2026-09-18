@@ -96,9 +96,8 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-03-01', 'SETUP', 1)",
-            (SERVER_ID,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-03-01', 'SETUP', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -160,7 +159,7 @@ class TestTheNationalityCommand:
 
     async def test_it_starts_on(self, cog, db_path):
         """Migration 042 defaults it on, as the setting it parallels defaults on."""
-        config = await cog.bot.config_service.get_server_config(SERVER_ID)
+        config = await cog.bot.config_service.get_server_config()
 
         assert config.test_mode_nationality_required is True
 
@@ -176,13 +175,13 @@ class TestTheNationalityCommand:
     async def test_the_flip_is_persisted(self, cog):
         await _unwrap(test_mode_cog.TestModeCog.nationality)(cog, _Interaction())
 
-        config = await cog.bot.config_service.get_server_config(SERVER_ID)
+        config = await cog.bot.config_service.get_server_config()
         assert config.test_mode_nationality_required is False
 
     async def test_it_is_logged(self, cog):
         await _unwrap(test_mode_cog.TestModeCog.nationality)(cog, _Interaction())
 
-        logged = cog.bot.output_router.post_log.await_args.args[1]
+        logged = cog.bot.output_router.post_log.await_args.args[0]
         assert "/test-mode nationality" in logged
         assert "disabled" in logged
 
@@ -198,7 +197,7 @@ class TestTheNationalityCommand:
         await _unwrap(test_mode_cog.TestModeCog.nationality)(cog, interaction)
 
         assert "only available when test mode is enabled" in interaction.reply
-        config = await cog.bot.config_service.get_server_config(SERVER_ID)
+        config = await cog.bot.config_service.get_server_config()
         assert config.test_mode_nationality_required is True
 
 
@@ -236,7 +235,7 @@ class TestRosterAddTakesANationality:
     async def test_it_reaches_the_log(self, cog):
         await _add(cog, nationality="Dutch")
 
-        assert "nationality: Dutch" in cog.bot.output_router.post_log.await_args.args[1]
+        assert "nationality: Dutch" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 class TestRosterAddWhileTheSwitchIsOff:

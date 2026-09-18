@@ -48,7 +48,7 @@ async def test_the_submission_roster_does_not_admit_an_uncommitted_driver(db_pat
         return_value=[{"name": "Alpha", "role_id": 555, "is_reserve": False}]
     )
 
-    division_driver_ids, *_ = await _build_division_validation_data(DIVISION_ID, 22080, bot)
+    division_driver_ids, *_ = await _build_division_validation_data(DIVISION_ID, bot)
 
     assert division_driver_ids == {1001, 1003}
 

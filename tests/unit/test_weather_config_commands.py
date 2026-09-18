@@ -65,7 +65,7 @@ ALL_SETTERS = [entry[1] for entry in COMMANDS]
 
 def _config(**overrides) -> WeatherPipelineConfig:
     """A configuration carrying the packaged 5 / 2 / 2 horizons."""
-    values = dict(server_id=SERVER_ID, phase_1_days=5, phase_2_days=2, phase_3_hours=2)
+    values = dict(phase_1_days=5, phase_2_days=2, phase_3_hours=2)
     values.update(overrides)
     return WeatherPipelineConfig(**values)
 
@@ -76,7 +76,6 @@ def _season() -> Season:
 
     return Season(
         id=1,
-        server_id=SERVER_ID,
         start_date=date(2026, 1, 1),
         status=SeasonStatus.ACTIVE,
         season_number=1,
@@ -241,7 +240,7 @@ async def test_one_is_accepted(command, setter, value, _log):
         await _invoke(command, cog, interaction, 1)
 
         mocks[setter].assert_awaited_once()
-        assert mocks[setter].await_args.args == (DB_PATH, SERVER_ID, 1)
+        assert mocks[setter].await_args.args == (DB_PATH, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +282,7 @@ async def test_success_reaches_the_service_with_the_value(command, setter, value
         await _invoke(command, cog, interaction, value)
 
         mocks[setter].assert_awaited_once()
-        assert mocks[setter].await_args.args == (DB_PATH, SERVER_ID, value)
+        assert mocks[setter].await_args.args == (DB_PATH, value)
         # Only the command's own setter runs.
         for name in ALL_SETTERS:
             if name != setter:
@@ -326,8 +325,7 @@ async def test_success_is_written_to_the_log_channel(command, setter, value, log
         await _invoke(command, cog, interaction, value)
 
     cog.bot.output_router.post_log.assert_awaited_once()
-    logged_server, logged_text = cog.bot.output_router.post_log.await_args.args
-    assert logged_server == SERVER_ID
+    (logged_text,) = cog.bot.output_router.post_log.await_args.args
     assert log_token in logged_text
     assert str(value) in logged_text
     # The log names who made the change, not merely that it happened.

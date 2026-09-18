@@ -37,6 +37,7 @@ from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from services import track_service
 from utils.time_parsing import parse_time_of_day
 from utils.channel_guard import league_manager_only
+from utils.league_server import LeagueView, is_foreign_guild
 from utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -119,23 +120,21 @@ _MAX_TEAM_BUTTONS = 20  # upper bound for pteam_N stub handlers in registration 
 
 async def _resolve_view_context(
     interaction: discord.Interaction,
-    stored_server_id: int | None,
     stored_user_id: str | None,
 ) -> tuple:
-    """Return (bot, server_id, discord_user_id) for a persistent-view callback.
+    """Return (bot, discord_user_id) for a persistent-view callback.
 
-    When stored values are None (view registered for restart recovery via
+    When the stored value is None (view registered for restart recovery via
     ``bot.add_view``), looks up the wizard by channel ID to identify the
     owning driver.
     """
     bot = interaction.client
-    server_id: int = stored_server_id or interaction.guild_id  # type: ignore[assignment]
     if stored_user_id is not None:
-        return bot, server_id, stored_user_id
+        return bot, stored_user_id
     wizard = await bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
-        server_id, interaction.channel_id
+        interaction.channel_id
     )
-    return bot, server_id, (wizard.discord_user_id if wizard else None)
+    return bot, (wizard.discord_user_id if wizard else None)
 
 
 #: The states a driver may stand in when they press Sign Up having already got a profile,
@@ -163,7 +162,7 @@ APPROVED_STATES = {
 }
 
 
-class SignupButtonView(discord.ui.View):
+class SignupButtonView(LeagueView):
     """Persistent signup button view (T016).
 
     Posted in the signup channel when signups are opened.  The button
@@ -185,12 +184,11 @@ class SignupButtonView(discord.ui.View):
         if not interaction.guild:
             return
         bot = interaction.client  # type: ignore[attr-defined]
-        server_id: int = interaction.guild.id
         discord_user_id = str(interaction.user.id)
 
         # A real driver never joins a server that is under test: test mode and a real
         # league may not share one, and leaving test mode deletes every fake driver.
-        server_cfg = await bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+        server_cfg = await bot.config_service.get_server_config()  # type: ignore[attr-defined]
         if server_cfg is not None and server_cfg.test_mode_active:
             await interaction.response.send_message(
                 "⛔ Signups are closed while this server is in test mode. "
@@ -202,7 +200,7 @@ class SignupButtonView(discord.ui.View):
         # A past account of a driver signs nobody up (issue #243). The signup would be kept
         # under an account the driver no longer uses, and the account belongs to that driver
         # already, so it may not start a profile of its own either.
-        current = await bot.driver_service.current_account(server_id, discord_user_id)  # type: ignore[attr-defined]
+        current = await bot.driver_service.current_account(discord_user_id)  # type: ignore[attr-defined]
         if current != discord_user_id:
             await interaction.response.send_message(
                 f"⛔ This account is a past account of a driver in this league. Sign up from "
@@ -211,7 +209,7 @@ class SignupButtonView(discord.ui.View):
             )
             return
 
-        profile = await bot.driver_service.get_profile(server_id, discord_user_id)  # type: ignore[attr-defined]
+        profile = await bot.driver_service.get_profile(discord_user_id)  # type: ignore[attr-defined]
         if profile is not None and profile.current_state != DriverState.NOT_SIGNED_UP:
             if profile.current_state in IN_PROGRESS_STATES:
                 await interaction.response.send_message(
@@ -233,7 +231,7 @@ class SignupButtonView(discord.ui.View):
             return
 
         await interaction.response.defer(ephemeral=True)
-        channel = await bot.wizard_service.start_wizard(interaction, server_id)  # type: ignore[attr-defined]
+        channel = await bot.wizard_service.start_wizard(interaction)  # type: ignore[attr-defined]
         if channel is None:
             await interaction.followup.send(
                 "❌ Signup module is not configured. Contact an admin.", ephemeral=True
@@ -245,12 +243,11 @@ class SignupButtonView(discord.ui.View):
         )
 
 
-class ConfirmCloseView(discord.ui.View):
+class ConfirmCloseView(LeagueView):
     """Confirmation dialog for closing signups with in-progress drivers (T018)."""
 
-    def __init__(self, server_id: int, bot: commands.Bot) -> None:
+    def __init__(self, bot: commands.Bot) -> None:
         super().__init__(timeout=300)
-        self._server_id = server_id
         self._bot = bot
         self.confirmed = False
 
@@ -262,11 +259,10 @@ class ConfirmCloseView(discord.ui.View):
         self.stop()
         await interaction.response.defer(ephemeral=True)
         await execute_forced_close(
-            self._server_id, self._bot, audit_action="SIGNUP_FORCE_CLOSE"
+            self._bot, audit_action="SIGNUP_FORCE_CLOSE"
         )
         await interaction.followup.send("✅ Signups force-closed.", ephemeral=True)
         await self._bot.output_router.post_log(
-            self._server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close (force) | Success\n"
             f"  in_progress_drivers_discarded: true",
         )
@@ -284,7 +280,7 @@ class ConfirmCloseView(discord.ui.View):
         pass
 
 
-class WithdrawButtonView(discord.ui.View):
+class WithdrawButtonView(LeagueView):
     """Withdrawal button view — visible throughout all in-wizard driver states (T027).
 
     Posted in the private wizard channel immediately after the channel is
@@ -294,12 +290,10 @@ class WithdrawButtonView(discord.ui.View):
 
     def __init__(
         self,
-        server_id: int | None = None,
         discord_user_id: str | None = None,
         bot: commands.Bot | None = None,
     ) -> None:
         super().__init__(timeout=None)
-        self._server_id = server_id
         self._discord_user_id = discord_user_id
         self._bot = bot
 
@@ -312,8 +306,8 @@ class WithdrawButtonView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         """T041: Full implementation — verify user, call wizard_service.withdraw()."""
-        _bot, _server_id, _user_id = await _resolve_view_context(
-            interaction, self._server_id, self._discord_user_id
+        _bot, _user_id = await _resolve_view_context(
+            interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message(
@@ -322,24 +316,22 @@ class WithdrawButtonView(discord.ui.View):
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
-            _server_id, _user_id, interaction.guild
+            _user_id, interaction.guild
         )
         await interaction.followup.send(
             "✅ Your signup has been withdrawn.", ephemeral=True
         )
 
 
-class NoNotesButtonView(discord.ui.View):
+class NoNotesButtonView(LeagueView):
     """Step 9 view — 'No Notes' shortcut alongside Cancel Signup."""
 
     def __init__(
         self,
-        server_id: int | None = None,
         discord_user_id: str | None = None,
         bot: commands.Bot | None = None,
     ) -> None:
         super().__init__(timeout=None)
-        self._server_id = server_id
         self._discord_user_id = discord_user_id
         self._bot = bot
 
@@ -351,8 +343,8 @@ class NoNotesButtonView(discord.ui.View):
     async def no_notes_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        _bot, _server_id, _user_id = await _resolve_view_context(
-            interaction, self._server_id, self._discord_user_id
+        _bot, _user_id = await _resolve_view_context(
+            interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message(
@@ -361,7 +353,7 @@ class NoNotesButtonView(discord.ui.View):
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_no_notes(  # type: ignore[attr-defined]
-            _server_id, _user_id, interaction.guild
+            _user_id, interaction.guild
         )
 
     @discord.ui.button(
@@ -372,8 +364,8 @@ class NoNotesButtonView(discord.ui.View):
     async def cancel_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        _bot, _server_id, _user_id = await _resolve_view_context(
-            interaction, self._server_id, self._discord_user_id
+        _bot, _user_id = await _resolve_view_context(
+            interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message(
@@ -382,37 +374,35 @@ class NoNotesButtonView(discord.ui.View):
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
-            _server_id, _user_id, interaction.guild
+            _user_id, interaction.guild
         )
         await interaction.followup.send(
             "✅ Your signup has been withdrawn.", ephemeral=True
         )
 
 
-class PlatformButtonView(discord.ui.View):
+class PlatformButtonView(LeagueView):
     """Step 2 — one button per platform, plus Cancel Signup."""
 
     def __init__(
         self,
-        server_id: int | None = None,
         discord_user_id: str | None = None,
         bot: commands.Bot | None = None,
     ) -> None:
         super().__init__(timeout=None)
-        self._server_id = server_id
         self._discord_user_id = discord_user_id
         self._bot = bot
 
     async def _pick(self, interaction: discord.Interaction, platform: str) -> None:
-        _bot, _server_id, _user_id = await _resolve_view_context(
-            interaction, self._server_id, self._discord_user_id
+        _bot, _user_id = await _resolve_view_context(
+            interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_platform_button(  # type: ignore[attr-defined]
-            _server_id, _user_id, platform, interaction.guild
+            _user_id, platform, interaction.guild
         )
 
     @discord.ui.button(label="Steam", style=discord.ButtonStyle.secondary, custom_id="plat_steam")
@@ -433,43 +423,41 @@ class PlatformButtonView(discord.ui.View):
 
     @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="plat_cancel")
     async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
-        _bot, _server_id, _user_id = await _resolve_view_context(
-            interaction, self._server_id, self._discord_user_id
+        _bot, _user_id = await _resolve_view_context(
+            interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
-            _server_id, _user_id, interaction.guild
+            _user_id, interaction.guild
         )
         await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
 
 
-class DriverTypeButtonView(discord.ui.View):
+class DriverTypeButtonView(LeagueView):
     """Step 5 — Full-Time / Reserve buttons, plus Cancel Signup."""
 
     def __init__(
         self,
-        server_id: int | None = None,
         discord_user_id: str | None = None,
         bot: commands.Bot | None = None,
     ) -> None:
         super().__init__(timeout=None)
-        self._server_id = server_id
         self._discord_user_id = discord_user_id
         self._bot = bot
 
     async def _pick(self, interaction: discord.Interaction, driver_type: str) -> None:
-        _bot, _server_id, _user_id = await _resolve_view_context(
-            interaction, self._server_id, self._discord_user_id
+        _bot, _user_id = await _resolve_view_context(
+            interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_driver_type_button(  # type: ignore[attr-defined]
-            _server_id, _user_id, driver_type, interaction.guild
+            _user_id, driver_type, interaction.guild
         )
 
     @discord.ui.button(label="Full-Time Driver", style=discord.ButtonStyle.primary, custom_id="dtype_fulltime")
@@ -482,32 +470,30 @@ class DriverTypeButtonView(discord.ui.View):
 
     @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="dtype_cancel")
     async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
-        _bot, _server_id, _user_id = await _resolve_view_context(
-            interaction, self._server_id, self._discord_user_id
+        _bot, _user_id = await _resolve_view_context(
+            interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
-            _server_id, _user_id, interaction.guild
+            _user_id, interaction.guild
         )
         await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
 
 
-class PreferredTeamsButtonView(discord.ui.View):
+class PreferredTeamsButtonView(LeagueView):
     """Step 6 — one button per available team, No Preference, and Cancel Signup."""
 
     def __init__(
         self,
-        server_id: int | None = None,
         discord_user_id: str | None = None,
         bot: commands.Bot | None = None,
         team_names: list[str] | None = None,
         excluded: list[str] | None = None,
     ) -> None:
         super().__init__(timeout=None)
-        self._server_id = server_id
         self._discord_user_id = discord_user_id
         self._bot = bot
 
@@ -555,15 +541,15 @@ class PreferredTeamsButtonView(discord.ui.View):
         the correct team is selected even after a bot restart.
         """
         async def callback(interaction: discord.Interaction) -> None:
-            _bot, _server_id, _user_id = await _resolve_view_context(
-                interaction, self._server_id, self._discord_user_id
+            _bot, _user_id = await _resolve_view_context(
+                interaction, self._discord_user_id
             )
             if _user_id is None or str(interaction.user.id) != _user_id:
                 await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
                 return
             # Resolve team name by index from live wizard state
             wizard = await _bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
-                _server_id, interaction.channel_id
+                interaction.channel_id
             )
             if wizard is None or wizard.config_snapshot is None:
                 await interaction.response.send_message("⛔ Wizard session not found.", ephemeral=True)
@@ -575,74 +561,72 @@ class PreferredTeamsButtonView(discord.ui.View):
                 return
             await interaction.response.defer(ephemeral=True)
             await _bot.wizard_service.handle_preferred_teams_button(  # type: ignore[attr-defined]
-                _server_id, _user_id, available[i], interaction.guild
+                _user_id, available[i], interaction.guild
             )
         return callback
 
     async def _no_preference_callback(self, interaction: discord.Interaction) -> None:
-        _bot, _server_id, _user_id = await _resolve_view_context(
-            interaction, self._server_id, self._discord_user_id
+        _bot, _user_id = await _resolve_view_context(
+            interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_preferred_teams_button(  # type: ignore[attr-defined]
-            _server_id, _user_id, None, interaction.guild
+            _user_id, None, interaction.guild
         )
 
     async def _cancel_callback(self, interaction: discord.Interaction) -> None:
-        _bot, _server_id, _user_id = await _resolve_view_context(
-            interaction, self._server_id, self._discord_user_id
+        _bot, _user_id = await _resolve_view_context(
+            interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
-            _server_id, _user_id, interaction.guild
+            _user_id, interaction.guild
         )
         await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
 
 
-class NoPreferenceTeammateView(discord.ui.View):
+class NoPreferenceTeammateView(LeagueView):
     """Step 7 — No Preference shortcut plus Cancel Signup."""
 
     def __init__(
         self,
-        server_id: int | None = None,
         discord_user_id: str | None = None,
         bot: commands.Bot | None = None,
     ) -> None:
         super().__init__(timeout=None)
-        self._server_id = server_id
         self._discord_user_id = discord_user_id
         self._bot = bot
 
     @discord.ui.button(label="No Preference", style=discord.ButtonStyle.secondary, custom_id="tmmate_nopref")
     async def no_preference(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
-        _bot, _server_id, _user_id = await _resolve_view_context(
-            interaction, self._server_id, self._discord_user_id
+        _bot, _user_id = await _resolve_view_context(
+            interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_no_preference_teammate(  # type: ignore[attr-defined]
-            _server_id, _user_id, interaction.guild
+            _user_id, interaction.guild
         )
 
     @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="tmmate_cancel")
     async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
-        _bot, _server_id, _user_id = await _resolve_view_context(
-            interaction, self._server_id, self._discord_user_id
+        _bot, _user_id = await _resolve_view_context(
+            interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
-            _server_id, _user_id, interaction.guild
+            _user_id, interaction.guild
         )
         await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
 
@@ -656,8 +640,7 @@ class SignupCog(commands.Cog):
         cmd = interaction.command
         if cmd and cmd.name in _EXEMPT_COMMANDS:
             return True
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        enabled = await self.bot.module_service.is_signup_enabled(server_id)
+        enabled = await self.bot.module_service.is_signup_enabled()
         if not enabled:
             await interaction.response.send_message(
                 "⛔ Signup module is not enabled. Use `/module enable signup` first.",
@@ -673,8 +656,10 @@ class SignupCog(commands.Cog):
         """T029: Route messages in wizard channels to the wizard state machine."""
         if message.author.bot or not message.guild:
             return
+        if await is_foreign_guild(self.bot, message.guild.id):
+            return
         wizard = await self.bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
-            message.guild.id, message.channel.id
+            message.channel.id
         )
         if wizard is None or wizard.discord_user_id != str(message.author.id):
             return
@@ -686,9 +671,14 @@ class SignupCog(commands.Cog):
 
         Also posts a log notification for UNASSIGNED and ASSIGNED drivers who
         leave without going through the wizard path.
+
+        Only a member leaving the league's own server counts: the same person leaving another
+        server the bot sits in is nothing to the league.
         """
+        if await is_foreign_guild(self.bot, member.guild.id):
+            return
         await self.bot.wizard_service.handle_member_remove(  # type: ignore[attr-defined]
-            member.guild.id, str(member.id), member.guild
+            str(member.id), member.guild
         )
 
         # Handle UNASSIGNED / ASSIGNED drivers (not covered by wizard_service)
@@ -696,8 +686,8 @@ class SignupCog(commands.Cog):
             async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
                 cursor = await db.execute(
                     "SELECT current_state FROM driver_profiles "
-                    "WHERE server_id = ? AND discord_user_id = ?",
-                    (member.guild.id, str(member.id)),
+                    "WHERE discord_user_id = ?",
+                    (str(member.id),),
                 )
                 row = await cursor.fetchone()
             if row is None:
@@ -710,9 +700,9 @@ class SignupCog(commands.Cog):
                 async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
                     cursor = await db.execute(
                         "SELECT server_display_name, discord_username "
-                        "FROM signup_records WHERE server_id = ? AND discord_user_id = ? "
+                        "FROM signup_records WHERE discord_user_id = ? "
                         "ORDER BY id DESC LIMIT 1",
-                        (member.guild.id, str(member.id)),
+                        (str(member.id),),
                     )
                     rec = await cursor.fetchone()
                 display_name = (
@@ -723,7 +713,6 @@ class SignupCog(commands.Cog):
             except Exception:
                 display_name = member.display_name or str(member.id)
             await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-                member.guild.id,
                 f"Driver left server: **{display_name}** (<@{member.id}>) | state: {state}",
             )
         except Exception:
@@ -772,8 +761,7 @@ class SignupCog(commands.Cog):
         if await self._refuse_while_configuration_fixed(interaction, "/signup config roles"):
             return
         # Deprecated: use /signup base-role and /signup complete-role.
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "❌ Signup module is not configured.", ephemeral=True
@@ -786,15 +774,14 @@ class SignupCog(commands.Cog):
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'SIGNUP_BASE_ROLE_SET', '', ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'SIGNUP_BASE_ROLE_SET', '', ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"base_role_id": base_role.id, "signed_up_role_id": signed_up_role.id}), now),
             )
             await db.commit()
         await interaction.response.send_message("✅ Signup roles configured.", ephemeral=True)
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup config roles | Success\n"
             f"  base_role: {base_role.name} (<@&{base_role.id}>)\n"
             f"  signed_up_role: {signed_up_role.name} (<@&{signed_up_role.id}>)",
@@ -803,9 +790,8 @@ class SignupCog(commands.Cog):
     @config_group.command(name="view", description="View current signup module configuration.")
     @league_manager_only
     async def config_view(self, interaction: discord.Interaction) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        cfg = await self.bot.signup_module_service.get_config(server_id)
-        settings = await self.bot.signup_module_service.get_settings(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
+        settings = await self.bot.signup_module_service.get_settings()
 
         guild = interaction.guild
         assert guild is not None
@@ -848,11 +834,10 @@ class SignupCog(commands.Cog):
     ) -> None:
         if await self._refuse_while_configuration_fixed(interaction, "/signup channel"):
             return
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         guild = interaction.guild
         assert guild is not None
 
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "❌ Signup module is not configured.", ephemeral=True
@@ -868,7 +853,7 @@ class SignupCog(commands.Cog):
             refusal,
         )
 
-        use = await find_channel_use(self.bot.db_path, server_id, channel.id)
+        use = await find_channel_use(self.bot.db_path, channel.id)
         if use is not None:
             await interaction.response.send_message(
                 refusal(
@@ -905,7 +890,7 @@ class SignupCog(commands.Cog):
         # interaction role; it used to be read further up, by the guard against reusing
         # the bot's own command channel, and this line was left orphaned when that guard
         # became the server-wide `find_channel_use` check.
-        server_cfg = await self.bot.config_service.get_server_config(server_id)
+        server_cfg = await self.bot.config_service.get_server_config()
         interaction_role = guild.get_role(server_cfg.interaction_role_id) if server_cfg else None
         # The league admin role gets the same sight of the channel as the interaction role.
         # A league admin holds the league manager tier within their own, so a channel opened
@@ -949,9 +934,9 @@ class SignupCog(commands.Cog):
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'SIGNUP_CHANNEL_SET', ?, ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'SIGNUP_CHANNEL_SET', ?, ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"channel_id": old_channel_id}),
                  json.dumps({"channel_id": channel.id}), now),
             )
@@ -961,7 +946,6 @@ class SignupCog(commands.Cog):
             f"✅ Signup channel set to {channel.mention}.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup channel | Success\n"
             f"  channel: #{channel.name}",
         )
@@ -976,11 +960,10 @@ class SignupCog(commands.Cog):
     ) -> None:
         if await self._refuse_while_configuration_fixed(interaction, "/signup base-role"):
             return
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         guild = interaction.guild
         assert guild is not None
 
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "❌ Signup module is not configured.", ephemeral=True
@@ -1015,9 +998,9 @@ class SignupCog(commands.Cog):
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'SIGNUP_BASE_ROLE_SET', ?, ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'SIGNUP_BASE_ROLE_SET', ?, ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"role_id": old_role_id}),
                  json.dumps({"role_id": role.id}), now),
             )
@@ -1027,7 +1010,6 @@ class SignupCog(commands.Cog):
             f"✅ Signup base role set to {role.mention}.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup base-role | Success\n"
             f"  role: {role.name} (<@&{role.id}>)",
         )
@@ -1042,9 +1024,8 @@ class SignupCog(commands.Cog):
     ) -> None:
         if await self._refuse_while_configuration_fixed(interaction, "/signup complete-role"):
             return
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "❌ Signup module is not configured.", ephemeral=True
@@ -1059,9 +1040,9 @@ class SignupCog(commands.Cog):
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'SIGNUP_COMPLETE_ROLE_SET', ?, ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'SIGNUP_COMPLETE_ROLE_SET', ?, ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"role_id": old_role_id}),
                  json.dumps({"role_id": role.id}), now),
             )
@@ -1071,7 +1052,6 @@ class SignupCog(commands.Cog):
             f"✅ Signup complete role set to {role.mention}.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup complete-role | Success\n"
             f"  role: {role.name} (<@&{role.id}>)",
         )
@@ -1083,8 +1063,7 @@ class SignupCog(commands.Cog):
     async def nationality(self, interaction: discord.Interaction) -> None:
         if await self._refuse_while_configuration_fixed(interaction, "/signup nationality"):
             return
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        settings = await self.bot.signup_module_service.get_settings(server_id)
+        settings = await self.bot.signup_module_service.get_settings()
         old_val = settings.nationality_required
         settings.nationality_required = not old_val
         await self.bot.signup_module_service.save_settings(settings)
@@ -1093,9 +1072,9 @@ class SignupCog(commands.Cog):
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"field": "nationality_required", "value": old_val}),
                  json.dumps({"field": "nationality_required", "value": settings.nationality_required}),
                  now),
@@ -1107,7 +1086,6 @@ class SignupCog(commands.Cog):
             f"✅ Nationality requirement: {state}.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup nationality | Success\n"
             f"  nationality_required: {settings.nationality_required}",
         )
@@ -1119,8 +1097,7 @@ class SignupCog(commands.Cog):
     async def time_type(self, interaction: discord.Interaction) -> None:
         if await self._refuse_while_configuration_fixed(interaction, "/signup time-type"):
             return
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        settings = await self.bot.signup_module_service.get_settings(server_id)
+        settings = await self.bot.signup_module_service.get_settings()
         old_val = settings.time_type
         settings.time_type = (
             "SHORT_QUALIFICATION" if old_val == "TIME_TRIAL" else "TIME_TRIAL"
@@ -1131,9 +1108,9 @@ class SignupCog(commands.Cog):
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"field": "time_type", "value": old_val}),
                  json.dumps({"field": "time_type", "value": settings.time_type}),
                  now),
@@ -1145,7 +1122,6 @@ class SignupCog(commands.Cog):
             f"✅ Time type: **{label}**.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-type | Success\n"
             f"  time_type: {settings.time_type}",
         )
@@ -1157,8 +1133,7 @@ class SignupCog(commands.Cog):
     async def time_image(self, interaction: discord.Interaction) -> None:
         if await self._refuse_while_configuration_fixed(interaction, "/signup time-image"):
             return
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        settings = await self.bot.signup_module_service.get_settings(server_id)
+        settings = await self.bot.signup_module_service.get_settings()
         old_val = settings.time_image_required
         settings.time_image_required = not old_val
         await self.bot.signup_module_service.save_settings(settings)
@@ -1167,9 +1142,9 @@ class SignupCog(commands.Cog):
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'SIGNUP_SETTINGS_CHANGE', ?, ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"field": "time_image_required", "value": old_val}),
                  json.dumps({"field": "time_image_required", "value": settings.time_image_required}),
                  now),
@@ -1181,7 +1156,6 @@ class SignupCog(commands.Cog):
             f"✅ Time image requirement: {state}.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-image | Success\n"
             f"  time_image_required: {settings.time_image_required}",
         )
@@ -1209,8 +1183,7 @@ class SignupCog(commands.Cog):
         """
         from services.season_lifecycle_service import signup_configuration_fixed
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        season_number = await signup_configuration_fixed(self.bot.db_path, server_id)
+        season_number = await signup_configuration_fixed(self.bot.db_path)
         if season_number is None:
             return False
         await interaction.response.send_message(
@@ -1231,13 +1204,12 @@ class SignupCog(commands.Cog):
         day: app_commands.Choice[str],
         time: str,
     ) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         if await self._refuse_while_configuration_fixed(interaction, "/signup time-slot add"):
             return
 
         # Guard: max slots
-        existing_slots = await self.bot.signup_module_service.get_slots(server_id)
+        existing_slots = await self.bot.signup_module_service.get_slots()
         if len(existing_slots) >= _MAX_SLOTS:
             await interaction.response.send_message(
                 f"❌ Maximum of {_MAX_SLOTS} time slots reached.", ephemeral=True
@@ -1255,23 +1227,23 @@ class SignupCog(commands.Cog):
 
         day_int = int(day.value)
         try:
-            await self.bot.signup_module_service.add_slot(server_id, day_int, normalized)
+            await self.bot.signup_module_service.add_slot(day_int, normalized)
         except ValueError:
             await interaction.response.send_message(
                 "❌ That time slot already exists.", ephemeral=True
             )
             return
 
-        updated = await self.bot.signup_module_service.get_slots(server_id)
+        updated = await self.bot.signup_module_service.get_slots()
         new_slot = next((s for s in updated if s.day_of_week == day_int and s.time_hhmm == normalized), None)
 
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'SIGNUP_SLOT_ADD', '', ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'SIGNUP_SLOT_ADD', '', ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  # The durable slot ID, not the display ordinal: an audit entry outlives
                  # the list it was written against.
                  json.dumps({"day": day_int, "time": normalized,
@@ -1283,7 +1255,6 @@ class SignupCog(commands.Cog):
             _format_slots(updated), ephemeral=True
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-slot add | Success\n"
             f"  day: {day.name}\n"
             f"  time: {normalized}",
@@ -1295,12 +1266,11 @@ class SignupCog(commands.Cog):
     async def time_slot_remove(
         self, interaction: discord.Interaction, slot_id: int
     ) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         if await self._refuse_while_configuration_fixed(interaction, "/signup time-slot remove"):
             return
 
-        slots = await self.bot.signup_module_service.get_slots(server_id)
+        slots = await self.bot.signup_module_service.get_slots()
         if not slots:
             await interaction.response.send_message(
                 "❌ No slots configured.", ephemeral=True
@@ -1314,27 +1284,26 @@ class SignupCog(commands.Cog):
             )
             return
 
-        await self.bot.signup_module_service.remove_slot_by_rank(server_id, slot_id)
+        await self.bot.signup_module_service.remove_slot_by_rank(slot_id)
 
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'SIGNUP_SLOT_REMOVE', ?, '', ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'SIGNUP_SLOT_REMOVE', ?, '', ?)",
+                (interaction.user.id, str(interaction.user),
                  # The durable slot ID, not the display ordinal the manager typed.
                  json.dumps({"slot_id": target.slot_id, "day": target.day_of_week,
                              "time": target.time_hhmm}), now),
             )
             await db.commit()
 
-        updated = await self.bot.signup_module_service.get_slots(server_id)
+        updated = await self.bot.signup_module_service.get_slots()
         await interaction.response.send_message(
             _format_slots(updated), ephemeral=True
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup time-slot remove | Success\n"
             f"  slot_id: {slot_id}\n"
             f"  slot: {target.display_label}",
@@ -1343,8 +1312,7 @@ class SignupCog(commands.Cog):
     @time_slot_group.command(name="list", description="List all configured availability time slots.")
     @league_manager_only
     async def time_slot_list(self, interaction: discord.Interaction) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        slots = await self.bot.signup_module_service.get_slots(server_id)
+        slots = await self.bot.signup_module_service.get_slots()
         await interaction.response.send_message(
             _format_slots(slots), ephemeral=True
         )
@@ -1366,8 +1334,7 @@ class SignupCog(commands.Cog):
         anything while one is running, and `set_window_closed` clears it, so a timer armed
         against a closed window could only ever fire a forced close on nothing.
         """
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None or not cfg.signups_open:
             await interaction.response.send_message(
                 "❌ Signups are not currently open, so there is no auto-close time to "
@@ -1388,19 +1355,17 @@ class SignupCog(commands.Cog):
         log_line: str,
     ) -> None:
         """Write the audit row and the log line shared by all three close-time commands."""
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, ?, ?, ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, ?, ?, ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  change_type, old_value, new_value, now),
             )
             await db.commit()
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | {log_line}",
         )
 
@@ -1414,7 +1379,6 @@ class SignupCog(commands.Cog):
     async def close_time_add(
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         cfg = await self._close_time_context(interaction)
         if cfg is None:
             return
@@ -1435,8 +1399,8 @@ class SignupCog(commands.Cog):
             return
         assert close_at_iso is not None
 
-        await self.bot.signup_module_service.set_close_at(server_id, close_at_iso)
-        self.bot.scheduler_service.schedule_signup_close_timer(server_id, close_at_iso)
+        await self.bot.signup_module_service.set_close_at(close_at_iso)
+        self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
 
         armed = datetime.fromisoformat(close_at_iso)
         await interaction.response.send_message(
@@ -1457,7 +1421,6 @@ class SignupCog(commands.Cog):
     )
     @league_manager_only
     async def close_time_cancel(self, interaction: discord.Interaction) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         cfg = await self._close_time_context(interaction)
         if cfg is None:
             return
@@ -1471,8 +1434,8 @@ class SignupCog(commands.Cog):
             return
 
         previous = cfg.close_at
-        self.bot.scheduler_service.cancel_signup_close_timer(server_id)
-        await self.bot.signup_module_service.set_close_at(server_id, None)
+        self.bot.scheduler_service.cancel_signup_close_timer()
+        await self.bot.signup_module_service.set_close_at(None)
 
         await interaction.response.send_message(
             "✅ Auto-close time cleared. Signups stay open until you close them with "
@@ -1497,7 +1460,6 @@ class SignupCog(commands.Cog):
     async def close_time_modify(
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         cfg = await self._close_time_context(interaction)
         if cfg is None:
             return
@@ -1517,9 +1479,9 @@ class SignupCog(commands.Cog):
         assert close_at_iso is not None
 
         previous = cfg.close_at
-        self.bot.scheduler_service.cancel_signup_close_timer(server_id)
-        await self.bot.signup_module_service.set_close_at(server_id, close_at_iso)
-        self.bot.scheduler_service.schedule_signup_close_timer(server_id, close_at_iso)
+        self.bot.scheduler_service.cancel_signup_close_timer()
+        await self.bot.signup_module_service.set_close_at(close_at_iso)
+        self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
 
         armed = datetime.fromisoformat(close_at_iso)
         await interaction.response.send_message(
@@ -1552,12 +1514,11 @@ class SignupCog(commands.Cog):
         track_ids: str | None = None,
         close_time: str | None = None,
     ) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         # Refused under test mode, for the same reason the Sign Up button is: no real
         # driver may sign up while the server is under test, so a window opened now
         # would be one nobody could use.
-        server_cfg = await self.bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+        server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
         if server_cfg is not None and server_cfg.test_mode_active:
             await interaction.response.send_message(
                 "⛔ Signups cannot be opened while test mode is active. "
@@ -1566,7 +1527,7 @@ class SignupCog(commands.Cog):
             )
             return
 
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "❌ Signup module is not configured.", ephemeral=True
@@ -1583,7 +1544,7 @@ class SignupCog(commands.Cog):
         # with no window already run and unplaced (issue #220).
         from services.season_lifecycle_service import WINDOW_OPENS_FROM, live_season_stage
 
-        live = await live_season_stage(self.bot.db_path, server_id)
+        live = await live_season_stage(self.bot.db_path)
         if live is None or live[1] not in WINDOW_OPENS_FROM:
             await interaction.response.send_message(
                 "❌ Signups can only be opened while the season is waiting for its signup "
@@ -1610,7 +1571,7 @@ class SignupCog(commands.Cog):
             return
 
         # Guard: at least one slot configured
-        slots = await self.bot.signup_module_service.get_slots(server_id)
+        slots = await self.bot.signup_module_service.get_slots()
         if not slots:
             await interaction.response.send_message(
                 "❌ At least one availability time slot must be configured before opening signups.",
@@ -1646,7 +1607,7 @@ class SignupCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         # Build and post signup button + info message
-        settings = await self.bot.signup_module_service.get_settings(server_id)
+        settings = await self.bot.signup_module_service.get_settings()
         guild = interaction.guild
         assert guild is not None
         signup_channel = guild.get_channel(cfg.signup_channel_id) if cfg.signup_channel_id else None
@@ -1711,23 +1672,23 @@ class SignupCog(commands.Cog):
             return
 
         await self.bot.signup_module_service.set_window_open(
-            server_id, posted_msg.id, track_list
+            posted_msg.id, track_list
         )
         from services.season_lifecycle_service import advance_on_window_open
 
-        await advance_on_window_open(self.bot.db_path, server_id)
+        await advance_on_window_open(self.bot.db_path)
 
         if close_at_iso:
-            await self.bot.signup_module_service.set_close_at(server_id, close_at_iso)
-            self.bot.scheduler_service.schedule_signup_close_timer(server_id, close_at_iso)
+            await self.bot.signup_module_service.set_close_at(close_at_iso)
+            self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
 
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'SIGNUP_OPEN', '', ?, ?)",
-                (server_id, interaction.user.id, str(interaction.user),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'SIGNUP_OPEN', '', ?, ?)",
+                (interaction.user.id, str(interaction.user),
                  json.dumps({"track_ids": track_list}), now),
             )
             await db.commit()
@@ -1742,7 +1703,6 @@ class SignupCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup open | Success"
             + (f"\n  track_ids: {', '.join(track_list)}" if track_list else ""),
         )
@@ -1752,9 +1712,8 @@ class SignupCog(commands.Cog):
     @signup.command(name="close", description="Close the signup window.")
     @league_manager_only
     async def signup_close(self, interaction: discord.Interaction) -> None:
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None or not cfg.signups_open:
             await interaction.response.send_message(
                 "❌ Signups are not currently open.", ephemeral=True
@@ -1791,18 +1750,17 @@ class SignupCog(commands.Cog):
             placeholders = ",".join("?" for _ in in_progress_states)
             cursor = await db.execute(
                 f"SELECT discord_user_id FROM driver_profiles "
-                f"WHERE server_id = ? AND current_state IN ({placeholders})",
-                (server_id, *in_progress_states),
+                f"WHERE current_state IN ({placeholders})",
+                (*in_progress_states,),
             )
             rows = await cursor.fetchall()
 
         if not rows:
             # No in-progress drivers — immediate close
             await interaction.response.defer(ephemeral=True)
-            await execute_forced_close(server_id, self.bot, audit_action="SIGNUP_CLOSE")
+            await execute_forced_close(self.bot, audit_action="SIGNUP_CLOSE")
             await interaction.followup.send("✅ Signups closed.", ephemeral=True)
             await self.bot.output_router.post_log(
-                server_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close | Success",
             )
             return
@@ -1820,7 +1778,7 @@ class SignupCog(commands.Cog):
         if count > 10:
             driver_list += f"\n…and {count - 10} more"
 
-        view = ConfirmCloseView(server_id, self.bot)
+        view = ConfirmCloseView(self.bot)
         await interaction.response.send_message(
             f"⚠️ **{count} driver(s) are currently in progress:**\n{driver_list}\n\n"
             "Closing signups will transition all in-progress drivers to **Not Signed Up**.\n"
@@ -1846,8 +1804,7 @@ class SignupCog(commands.Cog):
     @league_manager_only
     async def signup_unassigned_list(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
-        drivers = await self.bot.placement_service.get_unassigned_drivers_seeded(server_id)  # type: ignore[attr-defined]
+        drivers = await self.bot.placement_service.get_unassigned_drivers_seeded()  # type: ignore[attr-defined]
         if not drivers:
             await interaction.followup.send(
                 "No unsettled signups found.", ephemeral=True
@@ -1896,13 +1853,12 @@ class SignupCog(commands.Cog):
     @league_manager_only
     async def signup_unassigned_export(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
-        slots = await self.bot.signup_module_service.get_slots(server_id)  # type: ignore[attr-defined]
+        slots = await self.bot.signup_module_service.get_slots()  # type: ignore[attr-defined]
         slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
 
         drivers = await self.bot.placement_service.get_unassigned_drivers_for_export(  # type: ignore[attr-defined]
-            server_id, slots_ordered
+            slots_ordered
         )
         if not drivers:
             await interaction.followup.send("No unsettled signups found.", ephemeral=True)

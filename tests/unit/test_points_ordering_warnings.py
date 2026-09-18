@@ -47,7 +47,7 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.commit()
-    await points_config_service.create_config(path, SERVER_ID, "100%")
+    await points_config_service.create_config(path, "100%")
     return path
 
 
@@ -110,7 +110,7 @@ def _replies(interaction) -> str:
 
 
 async def _points(db_path, position: int) -> int | None:
-    entries, _ = await points_config_service.get_config_entries(db_path, SERVER_ID, "100%")
+    entries, _ = await points_config_service.get_config_entries(db_path, "100%")
     for entry in entries:
         if entry.position == position and entry.session_type is SessionType.FEATURE_RACE:
             return entry.points
@@ -119,7 +119,7 @@ async def _points(db_path, position: int) -> int | None:
 
 async def _set(db_path, position: int, points: int) -> None:
     await points_config_service.set_session_points(
-        db_path, SERVER_ID, "100%", SessionType.FEATURE_RACE, position, points
+        db_path, "100%", SessionType.FEATURE_RACE, position, points
     )
 
 
@@ -154,7 +154,7 @@ async def test_warnings_are_silent_on_a_table_running_down(db_path):
         await _set(db_path, position, points)
 
     warnings = await points_config_service.ordering_warnings(
-        db_path, SERVER_ID, "100%", SessionType.FEATURE_RACE
+        db_path, "100%", SessionType.FEATURE_RACE
     )
 
     assert warnings == []
@@ -166,7 +166,7 @@ async def test_warnings_name_a_lower_position_worth_more(db_path):
     await _set(db_path, 2, 25)
 
     warnings = await points_config_service.ordering_warnings(
-        db_path, SERVER_ID, "100%", SessionType.FEATURE_RACE
+        db_path, "100%", SessionType.FEATURE_RACE
     )
 
     assert warnings == ["position 1 (10 pts) < position 2 (25 pts)"]
@@ -179,14 +179,14 @@ async def test_warnings_read_only_the_session_asked_about(db_path):
     await _set(db_path, 2, 18)
     for position, points in [(1, 1), (2, 3)]:
         await points_config_service.set_session_points(
-            db_path, SERVER_ID, "100%", SessionType.FEATURE_QUALIFYING, position, points
+            db_path, "100%", SessionType.FEATURE_QUALIFYING, position, points
         )
 
     assert await points_config_service.ordering_warnings(
-        db_path, SERVER_ID, "100%", SessionType.FEATURE_RACE
+        db_path, "100%", SessionType.FEATURE_RACE
     ) == []
     assert await points_config_service.ordering_warnings(
-        db_path, SERVER_ID, "100%", SessionType.FEATURE_QUALIFYING
+        db_path, "100%", SessionType.FEATURE_QUALIFYING
     ) != []
 
 
@@ -194,7 +194,7 @@ async def test_warnings_read_only_the_session_asked_about(db_path):
 async def test_warnings_stay_quiet_for_a_config_that_does_not_exist(db_path):
     """The caller has already been told so by ConfigNotFoundError; twice is noise."""
     assert await points_config_service.ordering_warnings(
-        db_path, SERVER_ID, "NO SUCH CONFIG", SessionType.FEATURE_RACE
+        db_path, "NO SUCH CONFIG", SessionType.FEATURE_RACE
     ) == []
 
 
@@ -273,7 +273,7 @@ async def _submit_bulk(db_path, text: str):
     """Build and submit the bulk modal. Async because discord.py 2.5.0 wants a loop."""
     from cogs.results_cog import BulkConfigSessionModal
 
-    modal = BulkConfigSessionModal("100%", _FEATURE_RACE, db_path, SERVER_ID)
+    modal = BulkConfigSessionModal("100%", _FEATURE_RACE, db_path)
     modal.entries._value = text
     interaction = _interaction()
     await modal.on_submit(interaction)
@@ -340,9 +340,8 @@ async def season(db_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
-            (SERVER_ID,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         for position, points in [(1, 25), (2, 18)]:
@@ -410,7 +409,7 @@ async def test_amend_session_says_nothing_extra_about_a_clean_change(db_path, se
 async def test_a_bulk_amend_out_of_order_warns_once_and_stages_every_line(db_path, season):
     from cogs.results_cog import BulkAmendSessionModal
 
-    modal = BulkAmendSessionModal("100%", _FEATURE_RACE, db_path, SERVER_ID)
+    modal = BulkAmendSessionModal("100%", _FEATURE_RACE, db_path)
     modal.entries._value = "1, 10\n2, 25"
     interaction = _interaction()
     interaction.client.season_service.get_season_for_server = AsyncMock(

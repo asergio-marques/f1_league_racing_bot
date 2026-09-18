@@ -91,15 +91,15 @@ async def _seed(db_path: str, drivers) -> None:
         )
         for user_id, display_name, username in drivers:
             await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-                "is_test_driver) VALUES (?, ?, 'FULL_TIME', 0)",
-                (SERVER_ID, str(user_id)),
+                "INSERT INTO driver_profiles (discord_user_id, current_state, "
+                "is_test_driver) VALUES (?, 'FULL_TIME', 0)",
+                (str(user_id),),
             )
             if display_name is not None or username is not None:
                 await db.execute(
-                    "INSERT INTO signup_records (server_id, discord_user_id, "
-                    "discord_username, server_display_name) VALUES (?, ?, ?, ?)",
-                    (SERVER_ID, str(user_id), username, display_name),
+                    "INSERT INTO signup_records (discord_user_id, "
+                    "discord_username, server_display_name) VALUES (?, ?, ?)",
+                    (str(user_id), username, display_name),
                 )
         await db.commit()
 
@@ -121,7 +121,6 @@ async def _draw(
         db_path=db_path,
         round_id=ROUND_ID,
         kind=VerdictKind.PENALTY,
-        server_id=SERVER_ID,
         season_number=1,
         division_name="Pro Division",
         round_number=8,

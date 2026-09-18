@@ -40,7 +40,7 @@ def _make_pending(server_id: int = 1) -> PendingConfig:
             _make_round(3, RoundFormat.MYSTERY, None),
         ],
     )
-    return PendingConfig(server_id=server_id, divisions=[div])
+    return PendingConfig(divisions=[div])
 
 
 def _make_interaction(guild_id: int = 1) -> MagicMock:
@@ -57,6 +57,7 @@ def _make_interaction(guild_id: int = 1) -> MagicMock:
 def _make_cog(pending_cfg: PendingConfig | None) -> tuple[SeasonCog, MagicMock]:
     """Return (cog, bot_mock) with SeasonCog having *pending_cfg* in _pending."""
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))
     bot.season_service.get_divisions = AsyncMock(return_value=[])
@@ -66,7 +67,7 @@ def _make_cog(pending_cfg: PendingConfig | None) -> tuple[SeasonCog, MagicMock]:
 
     cog = SeasonCog(bot)
     if pending_cfg is not None:
-        cog._pending[pending_cfg.server_id] = pending_cfg
+        cog._pending[0] = pending_cfg
     return cog, bot
 
 
@@ -270,4 +271,4 @@ async def test_no_pending_cfg_falls_through_to_db_path() -> None:
     )
 
     # get_confirmed_season is what the DB path calls first
-    bot.season_service.get_confirmed_season.assert_called_once_with(interaction.guild_id)
+    bot.season_service.get_confirmed_season.assert_called_once_with()

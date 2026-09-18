@@ -58,7 +58,7 @@ def stub_image_path(monkeypatch, tmp_path):
         "rendered": [],
     }
 
-    async def _enabled(_bot, _server_id):
+    async def _enabled(_bot):
         return state["enabled"]
 
     async def _build(_bot, **kwargs):
@@ -89,7 +89,7 @@ def stub_image_path(monkeypatch, tmp_path):
             ),
         )
 
-    async def _render(_bot, _server_id, drawing, **_kwargs):
+    async def _render(_bot, drawing, **_kwargs):
         from services.image_verdict_post import VerdictRender
 
         state["rendered"].append(drawing)
@@ -99,10 +99,10 @@ def stub_image_path(monkeypatch, tmp_path):
             problem=state["problem"],
         )
 
-    async def _report(_bot, _server_id, what, detail):
+    async def _report(_bot, what, detail):
         state["reported"].append(("problem", what, detail))
 
-    async def _report_notices(_bot, _server_id, what, notices):
+    async def _report_notices(_bot, what, notices):
         state["reported"].append(("notices", what, list(notices)))
 
     async def _team(_bot, _guild, **_kwargs):
@@ -121,7 +121,6 @@ def stub_image_path(monkeypatch, tmp_path):
 
 async def _send(channel, *, kind=VerdictKind.PENALTY, **overrides):
     values = dict(
-        server_id=99,
         db_path=":memory:",
         round_id=1,
         kind=kind,
@@ -447,7 +446,7 @@ async def test_the_graphic_is_gone_once_the_verdict_has_posted(
 
     png = _render_artifact(tmp_path)
 
-    async def _render(_bot, _server_id, drawing, **_kwargs):
+    async def _render(_bot, drawing, **_kwargs):
         return VerdictRender(png=png, notices=[], problem=None)
 
     monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
@@ -469,7 +468,7 @@ async def test_the_graphic_is_gone_when_the_send_fails(
 
     png = _render_artifact(tmp_path)
 
-    async def _render(_bot, _server_id, drawing, **_kwargs):
+    async def _render(_bot, drawing, **_kwargs):
         return VerdictRender(png=png, notices=[], problem=None)
 
     async def _send_boom(content=None, *, file=None, **_kwargs):

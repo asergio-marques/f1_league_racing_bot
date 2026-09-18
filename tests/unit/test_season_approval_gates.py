@@ -45,13 +45,12 @@ async def _seed_server(db_path: str, server_id: int = 1) -> None:
         await db.commit()
 
 
-async def _seed_setup_season(db_path: str, server_id: int = 1) -> int:
+async def _seed_setup_season(db_path: str) -> int:
     """Insert a SETUP season and return its id."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', 'SETUP', 1)",
-            (server_id,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'SETUP', 1)"
         )
         await db.commit()
         return cursor.lastrowid  # type: ignore[return-value]
@@ -109,11 +108,11 @@ async def _add_points_link(db_path: str, season_id: int, config_name: str = "100
 
 
 async def _check_weather_gate(
-    db_path: str, server_id: int, season_id: int
+    db_path: str, season_id: int
 ) -> list[str]:
     """Return list of division names missing forecast channel (empty = gate passes)."""
     mod_svc = ModuleService(db_path)
-    if not await mod_svc.is_weather_enabled(server_id):
+    if not await mod_svc.is_weather_enabled():
         return []
     svc = SeasonService(db_path)
     divisions = await svc.get_divisions(season_id)
@@ -121,11 +120,11 @@ async def _check_weather_gate(
 
 
 async def _check_rs_gate(
-    db_path: str, server_id: int, season_id: int
+    db_path: str, season_id: int
 ) -> list[str]:
     """Return list of error strings (empty = gate passes)."""
     mod_svc = ModuleService(db_path)
-    if not await mod_svc.is_results_enabled(server_id):
+    if not await mod_svc.is_results_enabled():
         return []
     svc = SeasonService(db_path)
     divs_rs = await svc.get_divisions_with_results_config(season_id)
@@ -159,8 +158,8 @@ class TestNoGatesWhenModulesDisabled:
         await _seed_division(db_path, season_id, forecast_channel_id=None)
 
         # Divisions intentionally have no channels — should not matter
-        assert await _check_weather_gate(db_path, 1, season_id) == []
-        assert await _check_rs_gate(db_path, 1, season_id) == []
+        assert await _check_weather_gate(db_path, season_id) == []
+        assert await _check_rs_gate(db_path, season_id) == []
 
 
 # ---------------------------------------------------------------------------
@@ -176,9 +175,9 @@ class TestWeatherGate:
         await _seed_division(db_path, season_id, "Div A", forecast_channel_id=None)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_weather_enabled(1, True)
+        await mod_svc.set_weather_enabled(True)
 
-        missing = await _check_weather_gate(db_path, 1, season_id)
+        missing = await _check_weather_gate(db_path, season_id)
         assert "Div A" in missing
 
     async def test_passes_when_all_divisions_have_forecast_channel(self, db_path):
@@ -188,9 +187,9 @@ class TestWeatherGate:
         await _seed_division(db_path, season_id, "Div A", forecast_channel_id=999)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_weather_enabled(1, True)
+        await mod_svc.set_weather_enabled(True)
 
-        missing = await _check_weather_gate(db_path, 1, season_id)
+        missing = await _check_weather_gate(db_path, season_id)
         assert missing == []
 
     async def test_only_lists_divisions_missing_channel(self, db_path):
@@ -201,9 +200,9 @@ class TestWeatherGate:
         await _seed_division(db_path, season_id, "Div B", forecast_channel_id=None)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_weather_enabled(1, True)
+        await mod_svc.set_weather_enabled(True)
 
-        missing = await _check_weather_gate(db_path, 1, season_id)
+        missing = await _check_weather_gate(db_path, season_id)
         assert missing == ["Div B"]
 
 
@@ -222,9 +221,9 @@ class TestResultsStandingsGate:
         await _add_points_link(db_path, season_id)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_results_enabled(1, True)
+        await mod_svc.set_results_enabled(True)
 
-        errors = await _check_rs_gate(db_path, 1, season_id)
+        errors = await _check_rs_gate(db_path, season_id)
         assert any("results channel" in e for e in errors)
 
     async def test_blocks_when_division_missing_standings_channel(self, db_path):
@@ -236,9 +235,9 @@ class TestResultsStandingsGate:
         await _add_points_link(db_path, season_id)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_results_enabled(1, True)
+        await mod_svc.set_results_enabled(True)
 
-        errors = await _check_rs_gate(db_path, 1, season_id)
+        errors = await _check_rs_gate(db_path, season_id)
         assert any("standings channel" in e for e in errors)
 
     async def test_blocks_when_no_points_config_attached(self, db_path):
@@ -250,9 +249,9 @@ class TestResultsStandingsGate:
         # Deliberately NOT adding a points link
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_results_enabled(1, True)
+        await mod_svc.set_results_enabled(True)
 
-        errors = await _check_rs_gate(db_path, 1, season_id)
+        errors = await _check_rs_gate(db_path, season_id)
         assert any("points configuration" in e for e in errors)
 
     async def test_passes_when_all_prerequisites_met(self, db_path):
@@ -264,9 +263,9 @@ class TestResultsStandingsGate:
         await _add_points_link(db_path, season_id)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_results_enabled(1, True)
+        await mod_svc.set_results_enabled(True)
 
-        errors = await _check_rs_gate(db_path, 1, season_id)
+        errors = await _check_rs_gate(db_path, season_id)
         assert errors == []
 
     async def test_multiple_error_messages_when_all_missing(self, db_path):
@@ -277,9 +276,9 @@ class TestResultsStandingsGate:
         # No division_results_config row, no points link
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_results_enabled(1, True)
+        await mod_svc.set_results_enabled(True)
 
-        errors = await _check_rs_gate(db_path, 1, season_id)
+        errors = await _check_rs_gate(db_path, season_id)
         assert len(errors) >= 3  # missing results, missing standings, no points config
 
 
@@ -297,14 +296,14 @@ class TestWeatherEnableGuardActiveSeason:
         mod_svc = ModuleService(db_path)
 
         # No active season — weather can be enabled (no gate triggered)
-        active = await svc.get_confirmed_season(1)
+        active = await svc.get_confirmed_season()
         assert active is None  # no season, gate won't fire
 
         # Seed an active season with a division missing a forecast channel
         async with get_connection(db_path) as db:
             cursor = await db.execute(
-                "INSERT INTO seasons (server_id, start_date, status, season_number) "
-                "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+                "INSERT INTO seasons (start_date, status, season_number) "
+                "VALUES ('2026-01-01', 'ACTIVE', 1)"
             )
             season_id = cursor.lastrowid
             await db.execute(
@@ -314,7 +313,7 @@ class TestWeatherEnableGuardActiveSeason:
             )
             await db.commit()
 
-        active = await svc.get_confirmed_season(1)
+        active = await svc.get_confirmed_season()
         assert active is not None
 
         divisions = await svc.get_divisions(active.id)

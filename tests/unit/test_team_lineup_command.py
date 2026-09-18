@@ -361,8 +361,8 @@ async def test_the_reserve_role_is_set(tmp_path):
 
     cog.bot.placement_service.set_team_role_config.assert_awaited_once()
     args = cog.bot.placement_service.set_team_role_config.await_args
-    assert args.args[1] == "Reserve"
-    assert args.args[2] == 4242
+    assert args.args[0] == "Reserve"
+    assert args.args[1] == 4242
     assert "set to" in _sent(interaction)
 
 
@@ -389,7 +389,7 @@ async def test_setting_the_reserve_role_is_logged_with_the_role(tmp_path):
 
     await undecorate(TeamCog.team_reserve_role)(cog, interaction, role)
 
-    logged = cog.bot.output_router.post_log.await_args.args[1]
+    logged = cog.bot.output_router.post_log.await_args.args[0]
     assert "/team reserve-role" in logged
     assert "Reserves" in logged
 
@@ -400,4 +400,4 @@ async def test_clearing_the_reserve_role_is_logged_as_cleared(tmp_path):
 
     await undecorate(TeamCog.team_reserve_role)(cog, interaction, None)
 
-    assert "cleared" in cog.bot.output_router.post_log.await_args.args[1]
+    assert "cleared" in cog.bot.output_router.post_log.await_args.args[0]

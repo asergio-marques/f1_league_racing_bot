@@ -28,8 +28,8 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
     """Create the minimal schema required by the attendance pipeline tests."""
     db.row_factory = aiosqlite.Row
 
-    await db.execute("CREATE TABLE seasons (id INTEGER PRIMARY KEY, server_id INTEGER NOT NULL)")
-    await db.execute("INSERT INTO seasons VALUES (1, 100)")
+    await db.execute("CREATE TABLE seasons (id INTEGER PRIMARY KEY)")
+    await db.execute("INSERT INTO seasons VALUES (1)")
 
     await db.execute(
         """
@@ -82,7 +82,6 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
         """
         CREATE TABLE driver_profiles (
             id INTEGER PRIMARY KEY,
-            server_id INTEGER NOT NULL,
             discord_user_id TEXT NOT NULL
         )
         """
@@ -158,7 +157,7 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
     await db.execute(
         """
         CREATE TABLE attendance_config (
-            server_id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY CHECK (id = 1),
             module_enabled INTEGER NOT NULL DEFAULT 1,
             rsvp_notice_days INTEGER NOT NULL DEFAULT 5,
             rsvp_last_notice_hours INTEGER NOT NULL DEFAULT 24,
@@ -171,13 +170,12 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
         )
         """
     )
-    await db.execute("INSERT INTO attendance_config (server_id) VALUES (100)")
+    await db.execute("INSERT INTO attendance_config (id) VALUES (1)")
 
     await db.execute(
         """
         CREATE TABLE attendance_division_config (
             division_id INTEGER PRIMARY KEY,
-            server_id INTEGER NOT NULL,
             rsvp_channel_id TEXT,
             attendance_channel_id TEXT,
             attendance_message_id TEXT
@@ -225,7 +223,7 @@ async def _setup_division(db, *, division_id=10, full_team_id=1, reserve_team_id
 async def _add_driver(db, *, profile_id, user_id, team_instance_id, division_id=10, season_id=1):
     """Insert a driver profile, seat, and assignment."""
     await db.execute(
-        "INSERT OR IGNORE INTO driver_profiles (id, server_id, discord_user_id) VALUES (?, 100, ?)",
+        "INSERT OR IGNORE INTO driver_profiles (id, discord_user_id) VALUES (?, ?)",
         (profile_id, str(user_id)),
     )
     seat_id = profile_id * 100
@@ -991,12 +989,12 @@ async def _make_two_round_db(tmp_path):
         )
         await db.execute(
             "INSERT INTO attendance_config "
-            "(server_id, no_rsvp_penalty, absent_penalty, no_show_penalty) "
+            "(id, no_rsvp_penalty, absent_penalty, no_show_penalty) "
             "VALUES (1, 2, 1, 3)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -1012,8 +1010,8 @@ async def _make_two_round_db(tmp_path):
         )
         team_instance_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (1, '1001', 'ASSIGNED')"
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES ('1001', 'ASSIGNED')"
         )
         profile_id = cursor.lastrowid
         cursor = await db.execute(
@@ -1096,7 +1094,7 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
     with pytest.raises(RuntimeError):
         await attendance_service.recalculate_attendance_for_round(
             bot=None, guild=None, db_path=db_file,
-            round_id=round_ids[0], division_id=division_id, server_id=1, season_id=1,
+            round_id=round_ids[0], division_id=division_id, season_id=1,
         )
 
     assert len(calls) == 2, "the propagation did not reach a second round"
@@ -1119,7 +1117,7 @@ async def test_a_whole_recalculation_still_lands(tmp_path, monkeypatch):
 
     await attendance_service.recalculate_attendance_for_round(
         bot=None, guild=None, db_path=db_file,
-        round_id=round_ids[0], division_id=division_id, server_id=1, season_id=1,
+        round_id=round_ids[0], division_id=division_id, season_id=1,
     )
 
     # NO_RSVP and did not attend: no_rsvp_penalty + absent_penalty (2 + 1).

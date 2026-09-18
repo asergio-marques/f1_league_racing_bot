@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
+from services.config_service import ConfigService
 from services.signup_module_service import SignupModuleService  # noqa: E402
 from services.wizard_service import WizardService  # noqa: E402
 
@@ -58,19 +59,20 @@ async def _service(tmp_path, *, held: dict[str, int]) -> tuple[WizardService, _S
         )
         for account, channel_id in held.items():
             await db.execute(
-                "INSERT INTO signup_wizard_records (server_id, discord_user_id, wizard_state, "
-                "signup_channel_id) VALUES (?, ?, 'UNENGAGED', ?)",
-                (SERVER_ID, account, channel_id),
+                "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, "
+                "signup_channel_id) VALUES (?, 'UNENGAGED', ?)",
+                (account, channel_id),
             )
         await db.commit()
     scheduler = _Scheduler()
     service = WizardService(db_path, SimpleNamespace(_scheduler=scheduler), MagicMock())
     service.set_bot(SimpleNamespace(
         signup_module_service=SignupModuleService(db_path),
+        config_service=ConfigService(db_path),
         get_guild=lambda _sid: None,
     ))
     for account in held:
-        await service._arm_channel_delete_job(SERVER_ID, account, DUE)
+        await service._arm_channel_delete_job(account, DUE)
     return service, scheduler
 
 
@@ -91,7 +93,7 @@ def _channel() -> MagicMock:
 
 
 async def _channel_of(service: WizardService, account: str) -> int | None:
-    wizard = await service._signup_svc.get_wizard(SERVER_ID, account)
+    wizard = await service._signup_svc.get_wizard(account)
     return None if wizard is None else wizard.signup_channel_id
 
 
@@ -101,15 +103,15 @@ async def test_a_held_channel_moves_with_its_deletion_still_due_when_it_was(tmp_
     channel = _channel()
     guild = _guild({OLD_CHANNEL: channel})
 
-    problems = await service.move_held_channel(SERVER_ID, OLD, NEW, guild)
+    problems = await service.move_held_channel(OLD, NEW, guild)
 
     assert problems == []
     assert await _channel_of(service, NEW) == OLD_CHANNEL
     assert await _channel_of(service, OLD) is None
-    assert set(scheduler.jobs) == {f"wizard_channel_delete_{SERVER_ID}_{NEW}"}
-    job = scheduler.jobs[f"wizard_channel_delete_{SERVER_ID}_{NEW}"]
+    assert set(scheduler.jobs) == {f"wizard_channel_delete_{NEW}"}
+    job = scheduler.jobs[f"wizard_channel_delete_{NEW}"]
     assert job.next_run_time == DUE
-    assert job.kwargs == {"server_id": SERVER_ID, "discord_user_id": NEW}
+    assert job.kwargs == {"discord_user_id": NEW}
     new_member, old_member = guild.members[int(NEW)], guild.members[int(OLD)]
     calls = channel.set_permissions.await_args_list
     assert calls[0].args == (new_member,)
@@ -124,13 +126,13 @@ async def test_a_held_channel_on_the_new_account_is_kept_and_the_other_deleted(t
     guild = _guild({OLD_CHANNEL: old_channel, NEW_CHANNEL: new_channel})
     service._bot.get_guild = lambda _sid: guild
 
-    await service.move_held_channel(SERVER_ID, OLD, NEW, guild)
+    await service.move_held_channel(OLD, NEW, guild)
 
     old_channel.delete.assert_awaited_once()
     new_channel.delete.assert_not_awaited()
     assert await _channel_of(service, OLD) is None
     assert await _channel_of(service, NEW) == NEW_CHANNEL
-    assert set(scheduler.jobs) == {f"wizard_channel_delete_{SERVER_ID}_{NEW}"}
+    assert set(scheduler.jobs) == {f"wizard_channel_delete_{NEW}"}
 
 
 async def test_a_deletion_job_already_gone_is_armed_again(tmp_path):
@@ -139,9 +141,9 @@ async def test_a_deletion_job_already_gone_is_armed_again(tmp_path):
     scheduler.jobs.clear()
     before = datetime.now(timezone.utc)
 
-    await service.move_held_channel(SERVER_ID, OLD, NEW, _guild({}))
+    await service.move_held_channel(OLD, NEW, _guild({}))
 
-    job = scheduler.jobs[f"wizard_channel_delete_{SERVER_ID}_{NEW}"]
+    job = scheduler.jobs[f"wizard_channel_delete_{NEW}"]
     assert before + timedelta(hours=23) < job.next_run_time <= datetime.now(
         timezone.utc
     ) + timedelta(hours=24)
@@ -150,7 +152,7 @@ async def test_a_deletion_job_already_gone_is_armed_again(tmp_path):
 async def test_an_account_holding_no_channel_moves_nothing(tmp_path):
     service, scheduler = await _service(tmp_path, held={})
 
-    assert await service.move_held_channel(SERVER_ID, OLD, NEW, _guild({})) == []
+    assert await service.move_held_channel(OLD, NEW, _guild({})) == []
     assert scheduler.jobs == {}
 
 
@@ -177,6 +179,6 @@ async def test_the_new_job_is_armed_before_the_record_moves(tmp_path):
     service._signup_svc.rekey_wizard = rekey
     service._cancel_channel_delete_job = cancel
 
-    await service.move_held_channel(SERVER_ID, OLD, NEW, _guild({}))
+    await service.move_held_channel(OLD, NEW, _guild({}))
 
     assert order == ["arm new", "re-key", "remove old"]

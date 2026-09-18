@@ -197,39 +197,37 @@ def _write_atomically(path: Path, text: str) -> None:
     os.replace(temp, path)
 
 
-async def _load_owned(db_path: str, server_id: int) -> dict[str, str]:
-    """The portraits this bot owns for *server_id*, as user id -> avatar key."""
+async def _load_owned(db_path: str) -> dict[str, str]:
+    """The portraits this bot owns, as user id -> avatar key."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT discord_user_id, avatar_key FROM driver_portraits WHERE server_id = ?",
-            (server_id,),
+            "SELECT discord_user_id, avatar_key FROM driver_portraits"
         )
         rows = await cursor.fetchall()
     return {str(row["discord_user_id"]): row["avatar_key"] for row in rows}
 
 
-async def _record(db_path: str, server_id: int, user_id: str, key: str, now) -> None:
+async def _record(db_path: str, user_id: str, key: str, now) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_portraits (server_id, discord_user_id, avatar_key, "
-            "fetched_at) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(server_id, discord_user_id) DO UPDATE SET "
+            "INSERT INTO driver_portraits (discord_user_id, avatar_key, fetched_at) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(discord_user_id) DO UPDATE SET "
             "avatar_key = excluded.avatar_key, fetched_at = excluded.fetched_at",
-            (server_id, str(user_id), key, now.isoformat()),
+            (str(user_id), key, now.isoformat()),
         )
         await db.commit()
 
 
-async def _disown(db_path: str, server_id: int, user_id: str) -> None:
+async def _disown(db_path: str, user_id: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "DELETE FROM driver_portraits WHERE server_id = ? AND discord_user_id = ?",
-            (server_id, str(user_id)),
+            "DELETE FROM driver_portraits WHERE discord_user_id = ?", (str(user_id),)
         )
         await db.commit()
 
 
-async def remove_portrait(db_path: str, server_id: int, user_id: str, directory) -> bool:
+async def remove_portrait(db_path: str, user_id: str, directory) -> bool:
     """Remove the portrait this bot obtained for *user_id*, the file and its row together.
 
     Returns whether anything was removed. Two paths want this: a driver who takes their
@@ -249,18 +247,17 @@ async def remove_portrait(db_path: str, server_id: int, user_id: str, directory)
     user_id = str(user_id)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT 1 FROM driver_portraits WHERE server_id = ? AND discord_user_id = ?",
-            (server_id, user_id),
+            "SELECT 1 FROM driver_portraits WHERE discord_user_id = ?", (user_id,)
         )
         if await cursor.fetchone() is None:
             return False
     portrait_path(Path(directory), user_id).unlink(missing_ok=True)
-    await _disown(db_path, server_id, user_id)
+    await _disown(db_path, user_id)
     return True
 
 
-async def assigned_driver_ids(db_path: str, server_id: int) -> list[str]:
-    """The Discord user IDs assigned to a seat in *server_id*'s active season.
+async def assigned_driver_ids(db_path: str) -> list[str]:
+    """The Discord user IDs assigned to a seat in the active season.
 
     Sorted, so the daily refresh works through a roster in a stable order rather than
     whatever order SQLite happens to return -- which matters the moment a run is cut short.
@@ -275,17 +272,16 @@ async def assigned_driver_ids(db_path: str, server_id: int) -> list[str]:
             FROM driver_season_assignments dsa
             JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
             JOIN seasons s ON s.id = dsa.season_id
-            WHERE s.server_id = ? AND s.status = 'ACTIVE'
+            WHERE s.status = 'ACTIVE'
               AND dp.is_test_driver = 0
             """,
-            (server_id,),
         )
         rows = await cursor.fetchall()
     return sorted(str(row["uid"]) for row in rows)
 
 
-async def run_daily_refresh(bot, server_id: int, *, now: datetime | None = None) -> int:
-    """The daily portrait refresh for one server. Returns how many were written.
+async def run_daily_refresh(bot, *, now: datetime | None = None) -> int:
+    """The daily portrait refresh for the league. Returns how many were written.
 
     Unlike the pre-render trigger this has no graphic to scope it, so it works through every
     driver seated in the active season. It also passes no wall-clock budget: nothing is
@@ -295,15 +291,17 @@ async def run_daily_refresh(bot, server_id: int, *, now: datetime | None = None)
     the league never reads.
     """
     try:
-        config = await bot.image_config_service.get_config(server_id)
+        config = await bot.image_config_service.get_config()
         if config is None or not getattr(config, "use_pfp", False):
             return 0
         if not getattr(config, "pfp_daily", False):
             return 0
 
-        guild = bot.get_guild(server_id)
+        from utils.league_server import league_guild
+
+        guild = await league_guild(bot)
         if guild is None:
-            log.warning("driver portraits: server %s is not reachable", server_id)
+            log.warning("driver portraits: the league's server is not reachable")
             return 0
 
         from services.image_render_service import resolve_configured_directories
@@ -318,7 +316,7 @@ async def run_daily_refresh(bot, server_id: int, *, now: datetime | None = None)
             return 0
 
         members = []
-        for user_id in await assigned_driver_ids(bot.db_path, server_id):
+        for user_id in await assigned_driver_ids(bot.db_path):
             member = guild.get_member(int(user_id))
             if member is not None:
                 members.append(member)
@@ -327,7 +325,6 @@ async def run_daily_refresh(bot, server_id: int, *, now: datetime | None = None)
 
         return await refresh_portraits(
             bot.db_path,
-            server_id,
             members,
             directory,
             aspect=portrait_aspect(config),
@@ -335,16 +332,12 @@ async def run_daily_refresh(bot, server_id: int, *, now: datetime | None = None)
             now=now,
         )
     except Exception:  # noqa: BLE001 -- a scheduled job that raises is a job that stops
-        log.warning(
-            "driver portraits: the daily refresh for server %s failed", server_id,
-            exc_info=True,
-        )
+        log.warning("driver portraits: the daily refresh failed", exc_info=True)
         return 0
 
 
 async def refresh_before_render(
     bot,
-    server_id: int,
     members,
     *,
     config=None,
@@ -375,7 +368,7 @@ async def refresh_before_render(
     Returns the number of portraits written, and never raises.
     """
     if config is None:
-        config = await bot.image_config_service.get_config(server_id)
+        config = await bot.image_config_service.get_config()
     # `getattr` rather than attribute access: this function promises never to raise, and a
     # configuration object predating migration 047 carries neither field. Absent reads as
     # off, which is the same answer the defaults give.
@@ -408,7 +401,6 @@ async def refresh_before_render(
 
     return await refresh_portraits(
         bot.db_path,
-        server_id,
         members,
         directory,
         aspect=portrait_aspect(config),
@@ -418,7 +410,6 @@ async def refresh_before_render(
 
 async def refresh_portraits(
     db_path: str,
-    server_id: int,
     members,
     directory,
     *,
@@ -439,7 +430,7 @@ async def refresh_portraits(
     """
     directory = Path(directory)
     now = now or datetime.now(timezone.utc)
-    owned = await _load_owned(db_path, server_id)
+    owned = await _load_owned(db_path)
 
     stale: list = []
     for member in members:
@@ -449,7 +440,7 @@ async def refresh_portraits(
         if not has_own_avatar(member):
             # Removing an avatar reverts the seat to the placeholder, but only where the file
             # is ours to remove — which `remove_portrait` is the one judge of.
-            await remove_portrait(db_path, server_id, user_id, directory)
+            await remove_portrait(db_path, user_id, directory)
             continue
 
         if user_id not in owned and path.exists():
@@ -483,11 +474,7 @@ async def refresh_portraits(
                 # See the module docstring: there is no 429 handling beneath us, so stop
                 # rather than send the rest of the queue into the same wall.
                 abort.set()
-                log.warning(
-                    "driver portraits: abandoning the batch for server %s after %s",
-                    server_id,
-                    exc,
-                )
+                log.warning("driver portraits: abandoning the batch after %s", exc)
                 return
             except Exception:  # noqa: BLE001 -- a portrait never fails a render
                 log.warning(
@@ -506,7 +493,7 @@ async def refresh_portraits(
                 return
 
             await _record(
-                db_path, server_id, str(member.id), portrait_key(asset.key, aspect), now
+                db_path, str(member.id), portrait_key(asset.key, aspect), now
             )
             written += 1
 
@@ -518,9 +505,8 @@ async def refresh_portraits(
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
         log.info(
-            "driver portraits: %s of %s obtained for server %s within the budget",
+            "driver portraits: %s of %s obtained within the budget",
             written,
             len(stale),
-            server_id,
         )
     return written

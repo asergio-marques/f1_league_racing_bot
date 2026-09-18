@@ -202,7 +202,6 @@ async def test_the_render_service_names_the_png_from_the_stem(tmp_path, monkeypa
     )
 
     outcome = await service.render(
-        1,
         _UNCATALOGUED,
         lambda root: FillSpec(root=root, image_type=_UNCATALOGUED),
         output_dir=tmp_path / "out",
@@ -240,7 +239,6 @@ async def test_no_stem_still_falls_back_to_the_template_key(tmp_path, monkeypatc
     )
 
     outcome = await service.render(
-        1,
         _UNCATALOGUED,
         lambda root: FillSpec(root=root, image_type=_UNCATALOGUED),
         output_dir=tmp_path / "out",
@@ -252,7 +250,7 @@ async def test_no_stem_still_falls_back_to_the_template_key(tmp_path, monkeypatc
 def _reports(path):
     """A validity service reporting one valid template resolving to *path*."""
 
-    async def reports(server_id):
+    async def reports():
         return {
             _UNCATALOGUED: SimpleNamespace(
                 valid=True, resolved_path=str(path), reason=None, failed_layer=None

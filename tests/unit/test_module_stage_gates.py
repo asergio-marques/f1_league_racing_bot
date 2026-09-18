@@ -36,9 +36,9 @@ async def _db(tmp_path, stage: SeasonStage | None) -> str:
         )
         if stage is not None:
             await db.execute(
-                "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
-                "VALUES (?, '2026-09-17', ?, 5, ?)",
-                (SERVER_ID, status_of_stage(stage).value, stage.value),
+                "INSERT INTO seasons (start_date, status, season_number, stage) "
+                "VALUES ('2026-09-17', ?, 5, ?)",
+                (status_of_stage(stage).value, stage.value),
             )
         await db.commit()
     return path
