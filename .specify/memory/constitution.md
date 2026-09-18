@@ -1,6 +1,46 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-18 — v12.0.0 → v13.0.0: MAJOR — one bot serves one league (issue #244)]
+  Version change    : 12.0.0 → 13.0.0
+  Bump rationale    : MAJOR. The server stops being a scope inside the bot. A driver profile was
+                      unique within a server and is now unique in the league; module state,
+                      the points store, the archive and every entity were held per server and
+                      are now the league's. A document following the old rule would admit two
+                      leagues in one database, which this one forbids. MINOR was weighed and
+                      rejected: the new rule in Principle I is an addition, but the rest is a
+                      redefinition of the scope every other rule was stated in.
+
+  Modified sections :
+    - Principle I, Trusted Configuration Authority — adds **One bot, one league**: the first
+      initialisation claims the server, any other server is refused every command and event,
+      the bot stays, the full reset frees the claim, the guild is checked once at the entry
+      point and scoped by nothing after it, and the host log warns while the bot sits in more
+      than one server. The rationale gains the 13.0.0 paragraph.
+    - Principle VI (in-scope list items 7 and 12), Principle VII (the log channel), Principle
+      VIII (the profile's key and its rationale), Principle IX (the default team set),
+      Principle X (module state and enablement), Principle XII (the points store) — "per
+      server" and "server scope" become the league's.
+    - Data & State Management — the Season Archive, the performance notes and every entity
+      block lose their `server_id` columns and their per-server keys.
+
+  Why the constitution is the document that moved:
+    - Decided with the user on 2026-09-18 and filed as issue #244. The user rejected keeping
+      server_id as scope behind a single-server guard, because the checks it left could never
+      fail and would mislead a maintainer. Migration 061_one_league.sql took it out of every
+      table but server_configs.
+
+  Added sections    : none. One rule block and one rationale paragraph were added within
+                      Principle I.
+  Removed sections  : none.
+  Deferred items    : none. Noted, not amended: Data & State Management's Track entry still
+                      describes per-server overrides in `track_rpc_params`, a table the bot no
+                      longer reads; that is a separate staleness, not this amendment's.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-18 — v11.0.0 → v12.0.0: MAJOR — a driver owns every account they have held (issue #243)]
   Version change    : 11.0.0 → 12.0.0
   Bump rationale    : MAJOR. A MUST is withdrawn and its opposite imposed: a reassignment
@@ -4440,6 +4480,17 @@ otherwise be unrepairable.
 A server with no league admin role configured MUST refuse every league admin command and MUST
 name the command that sets the role. It MUST NOT fall back to a Discord permission.
 
+**One bot, one league.** One bot MUST serve one league, and a league is one Discord server.
+The first initialisation claims the server; initialisation upon any other server MUST be
+refused. Upon any server but the league's, the bot MUST refuse every command and MUST act on
+no event, and MUST stay rather than leave. Only the full form of the reset frees the claim.
+The league's server MUST be recorded in one place, the single server configuration row, and
+MUST be checked once, at the entry point of every command and event. Nothing past that point
+MAY scope by server: no other table carries a server, and no service takes one. Whenever the
+bot sits in more than one server it MUST warn the host in its own log, at start-up and on
+joining a server. Hosting the bot as the league's own application, with Discord's *Public
+Bot* switch off, is a requirement of installation.
+
 A tier governs the **action**, not only the command. Where the bot offers an action through a
 button of its own, that button MUST ask the tier its action belongs to, which may be higher
 than the tier of the command that posted it. A channel the bot opens to the interaction role
@@ -4464,6 +4515,13 @@ run a championship without being trusted to restructure the server, and may admi
 server without being anywhere near the championship. Reading the permission conflated the
 two, and — because a permission is not a role — it also refused the league's own
 administrators the commands they were meant to hold.
+
+One bot serving one league is the substance of the 13.0.0 amendment. The bot was built to
+serve several leagues from one database, keyed by server throughout, and promised that one
+league never reached another. No league needed it, because a league runs its own bot, and a
+scope that can never differ is a check that can never fail: it misleads the reader it was
+meant to protect. The guard moved to the one place a second server can arrive, the entry
+point, and the scope left everything behind it.
 
 ### II. Multi-Division Isolation
 
@@ -4616,7 +4674,7 @@ domains are formally in-scope as of this version:
    onboarding from first button-press through placement eligibility.
 6. **Driver assignment and placement**: assign/unassign/sack drivers to division-team seats;
    seeded placement queue; division-role grant and revocation.
-7. **Modular feature architecture**: per-server enablement and disablement of optional
+7. **Modular feature architecture**: the league's enablement and disablement of optional
    capability modules (Principle X).
 8. **Race results recording**: round-by-round result entry per division, outcome modifiers
    (DNF, DNS, DSQ), and result amendments with full audit trail.
@@ -4633,7 +4691,7 @@ domains are formally in-scope as of this version:
 12. **Image-based output generation**: SVG template filling and PNG rasterisation for the
     output of information already produced by the results & standings, weather, signup, and
     attendance domains, plus the season, division, round, team, and driver concepts they
-    share; the asset catalogue backing those templates; and per-server enablement of the
+    share; the asset catalogue backing those templates; and the league's enablement of the
     image output path (Principle XIV).
 
 The following domains are **planned future scope** — each will be formally ratified as an
@@ -4666,7 +4724,7 @@ unless explicitly permitted by an active module (see below):
 1. **Per-division weather forecast channel** (one per division, configured at season setup):
    receives only Phase 1, Phase 2, Phase 3 public weather messages, and amendment
    invalidation notices for that division.
-2. **Calculation log channel** (one per server, configured at bot setup): receives all phase
+2. **Calculation log channel** (one for the league, configured at bot setup): receives all phase
    computation logs, configuration mutation confirmations, and audit trail entries.
 
 **Module-introduced channels**: Optional modules (Principle X) MAY register additional
@@ -4688,8 +4746,8 @@ channels and makes it trivial for drivers and admins to find the right informati
 
 ### VIII. Driver Profile Integrity
 
-Every Discord user within a server is represented by at most one driver profile, keyed on
-their Discord User ID in server scope. The following rules are non-negotiable:
+Every Discord user is represented by at most one driver profile, keyed on their Discord User
+ID. The following rules are non-negotiable:
 
 - **State machine enforcement**: A driver's current state MUST only change via the transitions
   in the table below. Any transition not in the approved list MUST be rejected with a clear
@@ -4778,7 +4836,7 @@ stewarding module, which will bring the bar together with the commands that impo
   profile record MUST be retained. Any active signup wizard is cancelled immediately and the
   signup channel deleted without delay.
 
-**Rationale**: The driver profile is a long-lived, server-scoped identity record. Exhaustive
+**Rationale**: The driver profile is a long-lived identity record of the league. Exhaustive
 state enumeration and machine enforcement prevent data loss, support unambiguous auditability,
 and provide a stable framework for all planned lifecycle extensions.
 
@@ -4813,7 +4871,7 @@ point:
   team's history.
 - **Configurable teams**: The standard ten constructor teams (Alpine, Aston Martin, Ferrari,
   Haas, McLaren, Mercedes, Racing Bulls, Red Bull, Sauber, Williams) each carry exactly 2 seats
-  by default. A league manager MAY add or rename configurable teams in the server-level
+  by default. A league manager MAY add or rename configurable teams in the league's
   default set, and a league admin MAY remove one — a removed team taking its seats with it,
   and nothing putting it back — only while no season is live or while the live season is in
   **Configuration**. From the confirmation of a season's configuration to that season's end the
@@ -4849,7 +4907,7 @@ missing Reserve team would produce ambiguous or incorrect league operations.
 ### X. Modular Feature Architecture
 
 The bot is partitioned into foundational and optional modules. Module state MUST be persisted
-per server and MUST survive bot restarts.
+for the league and MUST survive bot restarts.
 
 **Foundational modules** (always active, cannot be disabled):
 - Division and round management
@@ -4857,7 +4915,7 @@ per server and MUST survive bot restarts.
 - Driver profile management
 - Season lifecycle management
 
-**Optional modules** (disabled by default; enabled explicitly per server by a league admin
+**Optional modules** (disabled by default; enabled explicitly by a league admin
 via a dedicated `/module enable <name>` command — or its equivalent structured
 subcommand):
 - **Weather generation module**: arms the three-phase scheduler, registers weather channel
@@ -5042,7 +5100,7 @@ governs the **Results & Standings optional module** (Principle X).
 
 #### Points Configuration Store
 
-- A server maintains a **server points config store**: a keyed set of named configurations.
+- The league maintains a **league points config store**: a keyed set of named configurations.
   Each configuration defines, per session type, the points awarded per finishing position
   and optionally a fastest-lap bonus and a position eligibility limit for that bonus.
 - The default for any position or bonus not explicitly configured is **0 points**. There is
@@ -5053,11 +5111,11 @@ governs the **Results & Standings optional module** (Principle X).
 - Within a single configuration and session type, positions MUST be monotonically
   non-increasing in points (higher position ≥ lower position). Season approval MUST be
   blocked if any configuration attached to the season violates this rule.
-- Named configurations from the server store are **attached** (weakly linked) to a season
+- Named configurations from the league store are **attached** (weakly linked) to a season
   in `SETUP` to form that season's **season points store**. Attachment is a copy-on-approve
   action: on season approval the attached configurations' settings are snapshotted into the
-  season points store and become independent of the server store.
-- Modifications to the server store after a season is approved do NOT affect that season's
+  season points store and become independent of the league store.
+- Modifications to the league store after a season is approved do NOT affect that season's
   store.
 
 #### Result Submission
@@ -7146,15 +7204,15 @@ mixed by Phase 2).
     historical basis for future statistics and reporting features (Principle VI).
 ### Season Archive
 
-A server maintains a **Season Archive**: a persistent, append-only collection of all
-completed seasons for that server. The following rules are non-negotiable:
+The league maintains a **Season Archive**: a persistent, append-only collection of all
+its completed seasons. The following rules are non-negotiable:
 
 - **Append-only**: When a season transitions to `COMPLETED`, the season record and all
   associated data are added to the archive atomically as the final step of the season-end
   transaction. A season already in the archive MUST NOT be deleted, overwritten, or mutated
   by any user command or automated system process.
-- **Zero-to-many cardinality**: A server's archive MAY contain zero or more completed
-  seasons. An empty archive is the canonical initial state for a newly configured server.
+- **Zero-to-many cardinality**: The archive MAY contain zero or more completed
+  seasons. An empty archive is the canonical initial state for a newly configured league.
 - **Full data retention**: Every archived season retains all associated records: division
   configurations, round schedules and amendment history, weather phase outputs, session
   results and driver results, standings snapshots, driver and team seasonal assignments,
@@ -7190,8 +7248,8 @@ for the season persistence increment.
 
 ### New Entities (v2.0.0)
 
-**DriverProfile** (server-scoped, one row per Discord user per server):
-- `discord_user_id` (TEXT, PK within server) — canonical key; may be updated by admin only.
+**DriverProfile** (one row per Discord user in the league):
+- `discord_user_id` (TEXT, unique) — canonical key; may be updated by admin only.
 - `current_state` (ENUM) — enforced by state machine (Principle VIII).
 - `former_driver` (BOOLEAN, default false) — immutability gate (Principle VIII).
 - Current and historical season assignment data linked via a normalized join table,
@@ -7200,20 +7258,20 @@ for the season persistence increment.
 **TeamSeat** (per division, per season):
 - Tracks which driver (if any) occupies each seat of each team in each division.
 - Reserve team rows are auto-created on division creation; configurable team rows follow
-  the server-level default set unless overridden during `SETUP`.
+  the league's default set unless overridden during `SETUP`.
 
-**Season counter** (server-scoped scalar):
-- A single integer per server recording the highest completed-or-cancelled season number.
+**Season counter** (the league's scalar):
+- A single integer recording the highest completed-or-cancelled season number.
   Defaults to 0. Incremented on season cancellation or completion. New seasons display
   this value + 1 as their number.
 
 ### Performance & Storage Considerations
 
 The bot is designed for small-to-medium Discord servers (tens to low hundreds of concurrent
-drivers per server). The projected storage growth per season per division is modest:
+drivers per league). The projected storage growth per season per division is modest:
 
 - **DriverProfile rows**: O(number of ever-signed-up drivers) — expected dozens to low hundreds
-  per server; each row is <1 KB.
+  per league; each row is <1 KB.
 - **TeamSeat rows**: one row per seat per team per division per season; with 10 standard teams
   × 2 seats + Reserve = ~21 rows per division per season.
 - **Audit log rows**: one entry per mutation event; expected hundreds per season; small.
@@ -7221,21 +7279,21 @@ drivers per server). The projected storage growth per season per division is mod
 
 No bulk computation, aggregation queries, or full-table scans are expected in hot paths.
 All primary access patterns are single-row lookups by surrogate key or short-range scans
-by (server_id, season_id, division_id). Standard SQLite indexes on these columns are
+by (season_id, division_id). Standard SQLite indexes on these columns are
 sufficient; no additional caching layer is required at the current scale. If the server
 population grows beyond ~500 concurrent drivers, migrating the backing store from SQLite
 to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
 
 - **SignupRecord rows**: one active record per signed-up or pending driver; cleared on
-  transition to Not Signed Up; expected O(active_drivers) ≤ hundreds per server; each
+  transition to Not Signed Up; expected O(active_drivers) ≤ hundreds per league; each
   row is <2 KB (lap times stored as compact JSON strings).
 - **SignupWizardRecord rows**: one per driver with any wizard history; tiny; same order of
   magnitude as DriverProfile.
-- **TimeSlot rows**: expected single digits to low tens per server; negligible.
+- **TimeSlot rows**: expected single digits to low tens per league; negligible.
 
 ### New Entities (v2.2.0)
 
-**SignupRecord** (per driver per server — at most one active record per driver):
+**SignupRecord** (per driver — at most one active record per driver):
 - Stores the committed signup submission: `discord_username` (TEXT), `display_name` (TEXT),
   `nationality` (TEXT — ISO flag code or "other"), `platform` (ENUM: Steam/EA/Xbox/
   Playstation), `platform_id` (TEXT), `availability_slots` (JSON array of TimeSlot IDs),
@@ -7245,7 +7303,7 @@ to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
 - Linked 1-to-1 with DriverProfile. Fields nulled on transition to Not Signed Up when
   `former_driver = true`; record deleted with DriverProfile when `former_driver = false`.
 
-**SignupWizardRecord** (per driver per server):
+**SignupWizardRecord** (per driver):
 - `wizard_state` (ENUM) — current wizard step; full enumeration defined in the signup
   feature specification.
 - `signup_channel_id` (TEXT, nullable) — Discord channel ID; retained through the 24-hour
@@ -7254,7 +7312,7 @@ to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
   reaching Pending Admin Approval or on any transition to Not Signed Up.
 - Created lazily on first wizard engagement; linked 1-to-1 with DriverProfile.
 
-**SignupConfiguration** (per server, owned by the signup module):
+**SignupConfiguration** (the league's, owned by the signup module):
 - `nationality_required` (BOOLEAN, default true).
 - `time_type` (ENUM: TIME_TRIAL/SHORT_QUALIFICATION, default TIME_TRIAL).
 - `time_image_required` (BOOLEAN, default true).
@@ -7267,8 +7325,8 @@ to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
   an optional close duration; cleared on manual or automatic close; re-armed on bot restart
   if non-null (Principle XI, signup close timer).
 
-**TimeSlot** (per server):
-- `slot_id` (INTEGER, server-scoped auto-increment PK).
+**TimeSlot** (the league's):
+- `slot_id` (INTEGER, auto-increment PK).
 - `day_of_week` (ENUM: Monday–Sunday).
 - `time_of_day` (TEXT, HH:MM 24-hour).
 - IDs are stable; removing a slot does not renumber remaining slots.
@@ -7277,7 +7335,7 @@ to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
 
 **SeasonAssignment** (per driver, per season, per division — formally specifies the
 "normalized join table" referenced in DriverProfile since v2.0.0):
-- `driver_id` (TEXT, FK → DriverProfile within server scope)
+- `driver_id` (TEXT, FK → DriverProfile)
 - `season_id` (INTEGER, FK → Season)
 - `division_id` (INTEGER, FK → Division)
 - `team_seat_id` (INTEGER, FK → TeamSeat, nullable — null until `/driver assign` runs)
@@ -7296,44 +7354,39 @@ superseded by the session-level schema in v2.4.0 below.*
 
 ### New Entities (v2.4.0)
 
-**PointsConfigStore** (per server — the server-level named configuration store):
-- `config_id` (TEXT, server-scoped — user-supplied name/ID, e.g. "100%", "50%")
-- `server_id` (TEXT, FK → Server)
-- One row per named configuration per server. Deleting a config from the store does not
+**PointsConfigStore** (the league's named configuration store):
+- `config_id` (TEXT, unique — user-supplied name/ID, e.g. "100%", "50%")
+- One row per named configuration. Deleting a config from the store does not
   automatically detach it from a season in SETUP.
 
-**PointsConfigEntry** (per server config, per session type, per finishing position):
+**PointsConfigEntry** (per config, per session type, per finishing position):
 - `config_id` (TEXT, FK → PointsConfigStore)
-- `server_id` (TEXT)
 - `session_type` (ENUM: SPRINT_QUALIFYING / SPRINT_RACE / FEATURE_QUALIFYING / FEATURE_RACE)
 - `position` (INTEGER, 1-indexed)
 - `points` (INTEGER, default 0)
-- Uniquely keyed on (server_id, config_id, session_type, position).
+- Uniquely keyed on (config_id, session_type, position).
 
-**PointsConfigFastestLap** (per server config, per race session type):
+**PointsConfigFastestLap** (per config, per race session type):
 - `config_id` (TEXT, FK → PointsConfigStore)
-- `server_id` (TEXT)
 - `session_type` (ENUM: SPRINT_RACE / FEATURE_RACE only)
 - `fl_points` (INTEGER, default 0)
 - `fl_position_limit` (INTEGER, nullable — null means no limit; otherwise driver must finish
   at or above this position to be eligible)
-- Uniquely keyed on (server_id, config_id, session_type).
+- Uniquely keyed on (config_id, session_type).
 
-**SeasonPointsLink** (attachment record — weak link between server config and a season in
+**SeasonPointsLink** (attachment record — weak link between a league config and a season in
 SETUP; discarded on approval after snapshot copied to SeasonPointsStore):
-- `server_id` (TEXT)
 - `season_id` (INTEGER, FK → Season)
 - `config_id` (TEXT, FK → PointsConfigStore)
-- Uniquely keyed on (server_id, season_id, config_id).
+- Uniquely keyed on (season_id, config_id).
 
 **SeasonPointsStore** (season-scoped snapshot of PointsConfigEntry rows — created on season
-approval from the attached SeasonPointsLinks; completely independent of server store):
+approval from the attached SeasonPointsLinks; completely independent of the league store):
 - Mirrors the schema of PointsConfigEntry with an added `season_id` column.
 - Immutable after creation unless the mid-season amendment flow produces an approved
   replacement (at which point existing rows are replaced atomically).
 
-**SeasonAmendmentState** (per server — tracks mid-season points amendment lifecycle):
-- `server_id` (TEXT, PK)
+**SeasonAmendmentState** (the league's — tracks mid-season points amendment lifecycle):
 - `season_id` (INTEGER, FK → Season)
 - `amendment_active` (BOOLEAN, default false — true when `results amend toggle` has
   enabled amendment mode)
@@ -7344,19 +7397,18 @@ approval from the attached SeasonPointsLinks; completely independent of server s
 mirrors SeasonPointsStore schema with an added `season_id` and `is_modification` flag;
 cleared on successful amendment approval or explicit revert).
 
-**ResultsModuleConfig** (per server — module-introduced configuration for the Results &
+**ResultsModuleConfig** (the league's — module-introduced configuration for the Results &
 Standings module):
-- `server_id` (TEXT, PK)
 - `module_enabled` (BOOLEAN, default false)
 - Per-division result and standings channel IDs are stored on a **DivisionResultsConfig**
-  record (per division, per server):
+  record (per division):
   - `division_id` (INTEGER, FK → Division)
   - `results_channel_id` (TEXT, nullable)
   - `standings_channel_id` (TEXT, nullable)
   - `reserves_in_standings` (BOOLEAN, default true — the reserves visibility toggle)
 
 **SessionResult** (per session, per round, per division — top-level result container):
-- `session_result_id` (INTEGER PK, server-scoped auto-increment)
+- `session_result_id` (INTEGER PK, auto-increment)
 - `round_id` (INTEGER, FK → Round)
 - `division_id` (INTEGER, FK → Division)
 - `session_type` (ENUM: SPRINT_QUALIFYING / SPRINT_RACE / FEATURE_QUALIFYING / FEATURE_RACE)
@@ -7367,9 +7419,9 @@ Standings module):
 - `submitted_at` (TEXT — UTC ISO 8601 timestamp)
 
 **DriverSessionResult** (per driver, per SessionResult):
-- `driver_session_result_id` (INTEGER PK, server-scoped auto-increment)
+- `driver_session_result_id` (INTEGER PK, auto-increment)
 - `session_result_id` (INTEGER, FK → SessionResult)
-- `driver_id` (TEXT, FK → DriverProfile within server scope)
+- `driver_id` (TEXT, FK → DriverProfile)
 - `team_id` (INTEGER, FK → Team — the team the driver represented in this session)
 - `finishing_position` (INTEGER, 1-indexed; null for CANCELLED sessions)
 - `outcome_modifier` (ENUM: CLASSIFIED / DNF / DNS / DSQ)
@@ -7391,10 +7443,10 @@ Standings module):
 
 **DriverStandingsSnapshot** (per driver, per round, per division — standings state after
 that round's results are finalised):
-- `snapshot_id` (INTEGER PK, server-scoped auto-increment)
+- `snapshot_id` (INTEGER PK, auto-increment)
 - `round_id` (INTEGER, FK → Round)
 - `division_id` (INTEGER, FK → Division)
-- `driver_id` (TEXT, FK → DriverProfile within server scope)
+- `driver_id` (TEXT, FK → DriverProfile)
 - `total_points` (INTEGER)
 - `position` (INTEGER — driver's rank in the division at this round)
 - `position_finish_counts` (TEXT — JSON map: position integer → finish count integer)
@@ -7403,7 +7455,7 @@ that round's results are finalised):
 
 **TeamStandingsSnapshot** (per team, per round, per division — mirrors DriverStandingsSnapshot
 for team-level aggregates):
-- `snapshot_id` (INTEGER PK, server-scoped auto-increment)
+- `snapshot_id` (INTEGER PK, auto-increment)
 - `round_id` (INTEGER, FK → Round)
 - `division_id` (INTEGER, FK → Division)
 - `team_id` (INTEGER, FK → Team)
@@ -7415,7 +7467,7 @@ for team-level aggregates):
 ### New Entities (v2.7.0)
 
 **PenaltyRecord** (per `DriverSessionResult` — one row per applied penalty):
-- `penalty_id` (INTEGER PK, server-scoped auto-increment)
+- `penalty_id` (INTEGER PK, auto-increment)
 - `driver_session_result_id` (INTEGER, FK → DriverSessionResult)
 - `penalty_type` (ENUM: TIME_PENALTY / DSQ)
 - `time_seconds` (INTEGER, nullable — magnitude in seconds; null for DSQ)
@@ -7431,7 +7483,7 @@ for team-level aggregates):
   migration but are superseded by PenaltyRecord rows.
 
 **AppealRecord** (per `PenaltyRecord` — at most one per penalty lifetime):
-- `appeal_id` (INTEGER PK, server-scoped auto-increment)
+- `appeal_id` (INTEGER PK, auto-increment)
 - `penalty_id` (INTEGER, FK → PenaltyRecord)
 - `status` (ENUM: PENDING / UPHELD / OVERTURNED, default PENDING)
 - `submitted_by` (TEXT — Discord User ID of the driver submitting the appeal)
@@ -7611,26 +7663,24 @@ mechanics of the replacement are user-visible and are specified in
 
 ### New Entities (v2.11.0)
 
-**ImageConfig** (per server, owned by the Image generation module):
-- `server_id` (TEXT, PK)
+**ImageConfig** (the league's one row, owned by the Image generation module):
 - `module_enabled` (BOOLEAN, default false)
 - `asset_root` (TEXT, nullable) — filesystem root for league-supplied assets; null means the
   packaged defaults under `resources/defaults/` are used for every asset class.
 
-**ImageAspectToggle** (per server, per output aspect — nine rows per server):
-- `server_id` (TEXT)
+**ImageAspectToggle** (per output aspect — nine rows):
 - `aspect` (TEXT) — one of `calendar`, `lineup`, `results`, `standings`, `attendance`,
   `rsvp`, `weather`, `verdicts`, `verdict_banner`.
 - `enabled` (BOOLEAN, default false) — whether this aspect is drawn as an image when the
   module is enabled and its source module is enabled. Allows a league to keep text output
   for individual aspects.
-- Uniquely keyed on (server_id, aspect).
+- Uniquely keyed on (aspect).
 
 The aspect is the unit a league toggles; the templates backing it are an implementation
 detail of what the aspect draws. The mapping from aspect to template is a code constant,
 not a table: nine aspects cover sixteen templates (weather alone accounts for six), and
 no command addresses an individual template's toggle. `source_module` is likewise a
-constant per aspect rather than a stored column, since it never varies per server.
+constant per aspect rather than a stored column, since it never varies between leagues.
 
 Render *notices* (Principle XIV.4) are not persisted as their own entity. A notice is carried
 on the outcome of the render that raised it and reported where XIV.4 requires — the calculation
@@ -7644,8 +7694,7 @@ the render, falls back to text output, and is recorded in the existing audit log
 
 ### New Entities (v2.10.0)
 
-**AttendanceConfig** (per server, owned by the Attendance module):
-- `server_id` (TEXT, PK)
+**AttendanceConfig** (the league's one row, owned by the Attendance module):
 - `module_enabled` (BOOLEAN, default false)
 - `rsvp_notice_days` (INTEGER, default 5) — days before a round for RSVP embed posting.
 - `rsvp_last_notice_hours` (INTEGER, default 1) — hours before round for un-RSVP'd ping;
@@ -7663,21 +7712,20 @@ the render, falls back to text output, and is recorded in the existing audit log
 - `autosack_threshold` (INTEGER, nullable — null means disabled) — total attendance points
   at which a driver is automatically removed from all team seats in all divisions.
 
-**AttendanceDivisionConfig** (per server, per division, owned by the Attendance module):
-- `server_id` (TEXT)
+**AttendanceDivisionConfig** (per division, owned by the Attendance module):
 - `division_id` (INTEGER, FK → Division)
 - `rsvp_channel_id` (TEXT, nullable) — channel for RSVP embeds and reserve distribution
   notices. Required before season approval when module is enabled.
 - `attendance_channel_id` (TEXT, nullable) — channel for post-round attendance sheet posts.
   Required before season approval when module is enabled.
-- Uniquely keyed on (server_id, division_id).
+- Uniquely keyed on (division_id).
 
 **DriverRoundAttendance** (per driver, per round, per division — one row per driver per
 round while the Attendance module is enabled):
-- `attendance_id` (INTEGER PK, server-scoped auto-increment)
+- `attendance_id` (INTEGER PK, auto-increment)
 - `round_id` (INTEGER, FK → Round)
 - `division_id` (INTEGER, FK → Division)
-- `driver_id` (TEXT, FK → DriverProfile within server scope)
+- `driver_id` (TEXT, FK → DriverProfile)
 - `rsvp_status` (ENUM: ACCEPTED / TENTATIVE / DECLINED / NO_RSVP, default NO_RSVP)
 - `rsvp_timestamp` (TEXT, nullable — UTC ISO 8601; last time driver set status to
   ACCEPTED; reset each time driver returns to ACCEPTED)
@@ -7691,7 +7739,7 @@ round while the Attendance module is enabled):
   in this division after this round's distribution)
 
 **AttendancePardon** (per driver, per round, per attendance event type):
-- `pardon_id` (INTEGER PK, server-scoped auto-increment)
+- `pardon_id` (INTEGER PK, auto-increment)
 - `attendance_id` (INTEGER, FK → DriverRoundAttendance)
 - `pardon_type` (ENUM: NO_RSVP / ABSENT / NO_SHOW)
 - `justification` (TEXT, nullable — logged to calculation log channel only; never
@@ -7753,16 +7801,15 @@ column are the authoritative structural prerequisites for these queries in the p
 
 *Amendment to SignupDivisionConfig (v2.6.0 entity, updated v2.8.0)*:
 - `lineup_channel_id` removed — migrated to `divisions.lineup_channel_id` (migration 027).
-- Remaining columns: `id`, `server_id`, `division_id`, `UNIQUE(server_id, division_id)`.
+- Remaining columns: `id`, `division_id`, `UNIQUE(division_id)`.
 - The table is retained as an existence record for signup module per-division registrations.
 
 ### New Entities (v2.6.0)
 
-**SignupDivisionConfig** (per server, per division — owned by the signup module):
-- `server_id` (TEXT)
+**SignupDivisionConfig** (per division — owned by the signup module):
 - `division_id` (INTEGER, FK → Division)
 - `lineup_channel_id` (TEXT, nullable) — *removed v2.8.0; migrated to divisions table* (Principle XI).
-- Uniquely keyed on (server_id, division_id). Created lazily on first per-division signup
+- Uniquely keyed on (division_id). Created lazily on first per-division signup
   configuration; if absent, no lineup notices are posted for that division.
 
 *Amendment to SignupConfiguration (v2.2.0 entity, updated v2.6.0)*:
@@ -7797,4 +7844,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 12.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-18
+**Version**: 13.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-18
