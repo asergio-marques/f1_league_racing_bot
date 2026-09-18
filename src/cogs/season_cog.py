@@ -5150,9 +5150,9 @@ class SeasonCog(commands.Cog):
 
         # --- Collect new results ---
         from services.result_submission_service import validate_submission_block
-        from services.result_submission_service import extract_fl_override  # type: ignore[attr-defined]
         from services.result_submission_service import _build_division_validation_data  # type: ignore[attr-defined]
         from services.result_submission_service import other_active_team_assignments
+        from services.result_submission_service import current_accounts, extract_current_fl_override
 
         driver_ids, team_role_ids, reserve_role_id, driver_team_map, reserve_driver_ids = await _build_division_validation_data(
             div.id, interaction.guild_id, interaction.client
@@ -5219,9 +5219,10 @@ class SeasonCog(commands.Cog):
 
             msg = done_task.result()
             lines_raw = [ln.strip() for ln in msg.content.strip().splitlines() if ln.strip()]
-            fl_amend_override: int | None = None
-            if not chosen_session_type.is_qualifying:
-                fl_amend_override, lines_raw = extract_fl_override(lines_raw)
+            current_of = await current_accounts(self.bot.db_path, interaction.guild_id)
+            fl_amend_override, lines_raw = extract_current_fl_override(
+                lines_raw, chosen_session_type, current_of
+            )
             other_assignments = await other_active_team_assignments(
                 self.bot.db_path, rnd.id, chosen_session_type
             )
@@ -5235,6 +5236,7 @@ class SeasonCog(commands.Cog):
                 reserve_driver_ids,
                 amend_format=True,
                 other_active_assignments=other_assignments,
+                current_of=current_of,
             )
             try:
                 await msg.delete()
