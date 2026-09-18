@@ -90,9 +90,46 @@ async def _enable_wal(db: aiosqlite.Connection) -> None:
     log.info("Database journal mode: WAL")
 
 
+class DatabasePredatesBaselineError(RuntimeError):
+    """The database records migrations the bot no longer carries. See `run_migrations`."""
+
+
 async def run_migrations(db_path: str) -> None:
-    """Apply all pending SQL migration files in order."""
+    """Apply all pending SQL migration files in order.
+
+    **The schema starts from one baseline** (issue #254). The 61 migrations that built it
+    before the bot went live were squashed into ``001_baseline.sql``; git keeps them. Until
+    go-live the baseline may be edited in place. From go-live on it is never edited again:
+    every schema change is a new migration numbered after it, carrying a test of its own, and
+    no applied file is ever changed. At go-live, also consider recording a checksum of each
+    applied file and refusing one that has changed since, which would enforce that rule.
+
+    **A database from before the baseline is refused, not migrated.** It records versions
+    such as ``001_initial.sql`` that no longer exist, and the baseline applied over its tables
+    would fail part-way with "table already exists". So any recorded version missing from
+    the migrations directory raises :class:`DatabasePredatesBaselineError` before anything
+    is written — the journal mode included — and the database has to be recreated. The same
+    holds for one migrated by a branch that added a migration this checkout does not carry.
+    """
     async with get_connection(db_path) as db:
+        migration_files = sorted(
+            f for f in os.listdir(_MIGRATIONS_DIR)
+            if f.endswith(".sql") and not f.startswith("__")
+        )
+        cursor = await db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+        )
+        if await cursor.fetchone() is not None:
+            cursor = await db.execute("SELECT version FROM schema_migrations")
+            unknown = sorted({row[0] for row in await cursor.fetchall()} - set(migration_files))
+            if unknown:
+                raise DatabasePredatesBaselineError(
+                    f"{db_path} records migrations this bot does not carry "
+                    f"({', '.join(unknown[:3])}{', …' if len(unknown) > 3 else ''}). It was "
+                    "built before the schema was squashed into one baseline, or by a branch "
+                    "with migrations of its own. Nothing was changed; recreate the database."
+                )
+
         await _enable_wal(db)
         # Ensure the tracking table exists first
         await db.execute(
@@ -108,14 +145,8 @@ async def run_migrations(db_path: str) -> None:
         cursor = await db.execute("SELECT version FROM schema_migrations")
         applied = {row[0] for row in await cursor.fetchall()}
 
-        # Collect and sort migration files
-        migration_files = sorted(
-            f for f in os.listdir(_MIGRATIONS_DIR)
-            if f.endswith(".sql") and not f.startswith("__")
-        )
-
         for filename in migration_files:
-            version = filename  # e.g. "001_initial.sql"
+            version = filename  # e.g. "001_baseline.sql"
             if version in applied:
                 continue
 
