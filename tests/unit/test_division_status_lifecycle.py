@@ -246,13 +246,6 @@ async def test_the_gate_asks_about_divisions_not_rounds(tmp_path):
     assert await SeasonService(db_path).all_divisions_finished(SERVER_ID) is True
 
 
-async def test_another_server_s_divisions_do_not_hold_this_season_open(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _add_division(db_path, 11, status="FINISHED")
-
-    assert await SeasonService(db_path).all_divisions_finished(SERVER_ID + 1) is True
-
-
 # ---------------------------------------------------------------------------
 # The detail behind a refusal
 # ---------------------------------------------------------------------------

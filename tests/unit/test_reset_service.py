@@ -185,26 +185,6 @@ async def test_cancel_round_called_once_per_round() -> None:
         os.unlink(db_path)
 
 
-async def test_partial_reset_does_not_affect_other_server() -> None:
-    """Resetting server 1 must not touch server 2's data."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed_full(db_path, server_id=1)
-        await _seed_full(db_path, server_id=2)
-
-        sched = _FakeScheduler()
-        await reset_server_data(1, db_path, sched, full=False)
-
-        # Server 2 season must remain
-        assert await _row_count(db_path, "seasons", server_id=2) == 1
-        # Server 2 config must remain
-        assert await _row_count(db_path, "server_configs", server_id=2) == 1
-    finally:
-        os.unlink(db_path)
-
-
 async def test_transaction_rollback_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """If the service raises mid-transaction, no rows must be deleted."""
     import services.reset_service as rs

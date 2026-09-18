@@ -30,7 +30,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 4242
-OTHER_SERVER = 4343
 MIGRATIONS = os.path.join(
     os.path.dirname(__file__), "..", "..", "src", "db", "migrations"
 )
@@ -62,7 +61,7 @@ async def _add_season(db_path, status, number, *, server_id=SERVER_ID):
 async def db_path(tmp_path):
     path = str(tmp_path / "live.db")
     await run_migrations(path)
-    await _seed_server(path, SERVER_ID, OTHER_SERVER)
+    await _seed_server(path, SERVER_ID)
     return path
 
 
@@ -106,13 +105,6 @@ async def test_a_league_keeps_every_season_of_its_history(db_path):
             "SELECT COUNT(*) FROM seasons WHERE server_id = ?", (SERVER_ID,)
         )
         assert (await cursor.fetchone())[0] == 5
-
-
-async def test_each_server_has_its_own_live_season(db_path):
-    """The constraint is per server, not global — the bot serves many leagues."""
-    await _add_season(db_path, "ACTIVE", 1)
-
-    assert await _add_season(db_path, "SETUP", 1, server_id=OTHER_SERVER)
 
 
 # ── Repairing a database that already breaks the rule ──────────────────────

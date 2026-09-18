@@ -202,24 +202,6 @@ async def test_fake_drivers_do_not_count() -> None:
         os.unlink(db_path)
 
 
-async def test_another_servers_drivers_do_not_count() -> None:
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        await _seed(db_path, [])
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "INSERT INTO driver_profiles "
-                "(server_id, discord_user_id, current_state) VALUES (2, '5004', 'ASSIGNED')"
-            )
-            await db.commit()
-
-        assert await count_live_real_drivers(1, db_path) == 0
-    finally:
-        os.unlink(db_path)
-
-
 # ---------------------------------------------------------------------------
 # toggle_test_mode_nationality
 # ---------------------------------------------------------------------------

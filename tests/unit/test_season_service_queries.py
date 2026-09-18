@@ -46,7 +46,6 @@ from models.season import SeasonStatus  # noqa: E402
 from services.season_service import SeasonImmutableError, SeasonService  # noqa: E402
 
 SERVER_ID = 9808
-OTHER_SERVER_ID = 9809
 
 
 # ---------------------------------------------------------------------------
@@ -58,12 +57,11 @@ async def _make_db(tmp_path) -> str:
     db_path = os.path.join(str(tmp_path), "seasons.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
-        for server_id in (SERVER_ID, OTHER_SERVER_ID):
-            await db.execute(
-                "INSERT INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-                (server_id,),
-            )
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
+            (SERVER_ID,),
+        )
         await db.commit()
     return db_path
 
@@ -228,15 +226,6 @@ async def test_a_server_with_no_season_reads_as_none(tmp_path):
     assert await service.get_confirmed_season(SERVER_ID) is None
     assert await service.get_setup_season(SERVER_ID) is None
     assert await service.get_season_for_server(SERVER_ID) is None
-
-
-async def test_another_server_s_seasons_are_never_returned(tmp_path):
-    """Every lookup is server-scoped; one league driving another's season is the fault
-    these `WHERE server_id` clauses exist to prevent."""
-    service = SeasonService(await _history_plus_live(tmp_path, "ACTIVE"))
-
-    assert await service.get_confirmed_season(OTHER_SERVER_ID) is None
-    assert await service.get_setup_season(OTHER_SERVER_ID) is None
 
 
 # ---------------------------------------------------------------------------

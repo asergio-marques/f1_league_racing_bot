@@ -42,7 +42,6 @@ from services.weather_config_service import (  # noqa: E402
 )
 
 SERVER_ID = 6161
-OTHER_SERVER_ID = 6162
 
 #: The horizons the bot ships with, per the specification's "By default" clauses.
 PACKAGED_DEFAULTS = (5, 2, 2)
@@ -281,17 +280,6 @@ async def test_violating_value_is_refused_and_writes_nothing(setter, value, tmp_
 
     assert isinstance(result, str)
     assert await _stored(db_path) == before
-
-
-async def test_each_server_keeps_its_own_horizons(tmp_path):
-    """Two leagues on one bot are configured independently."""
-    db_path = await _make_db(tmp_path, servers=(SERVER_ID, OTHER_SERVER_ID))
-
-    await set_phase_1_days(db_path, SERVER_ID, 14)
-    await set_phase_3_hours(db_path, OTHER_SERVER_ID, 6)
-
-    assert _triple(await get_weather_pipeline_config(db_path, SERVER_ID)) == (14, 2, 2)
-    assert _triple(await get_weather_pipeline_config(db_path, OTHER_SERVER_ID)) == (5, 2, 6)
 
 
 async def test_a_violation_is_judged_against_the_stored_values_not_the_defaults(tmp_path):

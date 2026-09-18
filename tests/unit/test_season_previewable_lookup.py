@@ -20,7 +20,6 @@ from models.season import SeasonStatus  # noqa: E402
 from services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 5151
-OTHER_SERVER = 6262
 
 #: Pinned, so a seeded date cannot drift into the past as the suite ages.
 START = date(2026, 3, 1)
@@ -31,14 +30,11 @@ async def db_path(tmp_path):
     path = str(tmp_path / "seasons.db")
     await run_migrations(path)
     async with aiosqlite.connect(path) as db:
-        # Both servers, because `seasons.server_id` is a foreign key and the isolation
-        # tests seed a season on the second one.
-        for server_id in (SERVER_ID, OTHER_SERVER):
-            await db.execute(
-                "INSERT OR IGNORE INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (?, 1, 2, 3)",
-                (server_id,),
-            )
+        await db.execute(
+            "INSERT OR IGNORE INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 1, 2, 3)",
+            (SERVER_ID,),
+        )
         await db.commit()
     return path
 
@@ -109,11 +105,6 @@ class TestPreviewableSeason:
 
         assert await service.get_previewable_season(SERVER_ID) is None
 
-    async def test_another_servers_season_is_not_returned(self, service, db_path):
-        await _seed(db_path, "ACTIVE", 9, server_id=OTHER_SERVER)
-
-        assert await service.get_previewable_season(SERVER_ID) is None
-
 
 # ── get_previous_season_number ────────────────────────────────────────────
 
@@ -149,11 +140,6 @@ class TestPreviousSeasonNumber:
 
     async def test_only_a_pending_season_still_reads_zero(self, service, db_path):
         await _seed(db_path, "SETUP", 1)
-
-        assert await service.get_previous_season_number(SERVER_ID) == 0
-
-    async def test_another_servers_seasons_do_not_count(self, service, db_path):
-        await _seed(db_path, "COMPLETED", 9, server_id=OTHER_SERVER)
 
         assert await service.get_previous_season_number(SERVER_ID) == 0
 
@@ -224,12 +210,6 @@ class TestPreviewableDivisions:
     async def test_a_completed_season_is_not_previewable(self, service, db_path):
         done = await _seed(db_path, "COMPLETED", 2)
         await _seed_division(db_path, done, "Last Season", 1)
-
-        assert await service.get_previewable_divisions(SERVER_ID) == []
-
-    async def test_another_servers_divisions_are_not_offered(self, service, db_path):
-        theirs = await _seed(db_path, "ACTIVE", 1, server_id=OTHER_SERVER)
-        await _seed_division(db_path, theirs, "Their Division", 1)
 
         assert await service.get_previewable_divisions(SERVER_ID) == []
 

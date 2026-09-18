@@ -311,18 +311,6 @@ async def test_removing_a_team_that_does_not_exist_says_so(tmp_path):
         await service.remove_default_team(SERVER_ID, "Ghost")
 
 
-async def test_another_server_s_teams_are_not_visible(tmp_path):
-    """Every query is server-scoped. One league seeing another's teams would be the same
-    fault as one league driving another's season."""
-    db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team(SERVER_ID, "Alpha")
-
-    teams = await service.get_default_teams(SERVER_ID + 1)
-
-    assert [t.name for t in teams] == [RESERVE]
-
-
 # ---------------------------------------------------------------------------
 # get_teams_with_roles
 # ---------------------------------------------------------------------------

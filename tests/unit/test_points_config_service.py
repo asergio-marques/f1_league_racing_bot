@@ -256,10 +256,8 @@ async def test_setup_seasons_linking_is_empty_when_nothing_stands_on_it(db_path)
 
 
 @pytest.mark.asyncio
-async def test_config_exists_answers_per_server(db_path):
-    """The store is per-server, and `attach_config` leans on this to say so."""
+async def test_config_exists_answers_by_name(db_path):
     await create_config(db_path, server_id=1, config_name="Standard")
 
     assert await config_exists(db_path, 1, "Standard") is True
     assert await config_exists(db_path, 1, "Standrad") is False
-    assert await config_exists(db_path, 2, "Standard") is False

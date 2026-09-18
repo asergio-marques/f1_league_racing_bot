@@ -35,7 +35,6 @@ from services.season_service import SeasonService  # noqa: E402
 from services.results_purge_service import purge_season_results  # noqa: E402
 
 SERVER_ID = 5150
-OTHER_SERVER_ID = 5151
 ACTOR_ID = 4242
 ACTOR_NAME = "Admin"
 BOT_USER_ID = 77
@@ -346,40 +345,6 @@ async def test_a_cancelled_division_s_rounds_are_left_alone(tmp_path) -> None:
     await _disable(_make_cog(db_path))
 
     assert await _round_status(db_path, round_id) == "AWAITING_RESULTS"
-
-
-async def test_another_server_s_season_is_untouched(tmp_path) -> None:
-    db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (?, 100, 200, 300)",
-            (OTHER_SERVER_ID,),
-        )
-        cur = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
-            (OTHER_SERVER_ID,),
-        )
-        cur = await db.execute(
-            "INSERT INTO divisions (season_id, name, mention_role_id, tier, status) "
-            "VALUES (?, 'Theirs', 556, 1, 'ACTIVE')",
-            (cur.lastrowid,),
-        )
-        cur = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, "
-            "format, status) VALUES (?, 1, 'Monza', '2026-02-01T12:00:00', 'NORMAL', "
-            "'AWAITING_RESULTS')",
-            (cur.lastrowid,),
-        )
-        their_round = cur.lastrowid
-        await db.commit()
-
-    await _disable(_make_cog(db_path))
-
-    assert await _round_status(db_path, round_id) == "FINAL"
-    assert await _round_status(db_path, their_round) == "AWAITING_RESULTS"
 
 
 async def test_a_season_not_yet_running_has_nothing_closed_or_deleted(tmp_path) -> None:

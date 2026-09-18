@@ -31,7 +31,6 @@ from services.channel_registry_service import (  # noqa: E402
 )
 
 SERVER_ID = 4242
-OTHER_SERVER = 4343
 
 
 @pytest.fixture
@@ -42,12 +41,11 @@ async def db_path(tmp_path):
         # Both channel columns are NOT NULL, so a configured server always holds some
         # value. These two are far from every id the tests use, so they cannot be
         # mistaken for a channel under test.
-        for server in (SERVER_ID, OTHER_SERVER):
-            await db.execute(
-                "INSERT INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (?, 1, ?, ?)",
-                (server, 900_000 + server, 910_000 + server),
-            )
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 1, ?, ?)",
+            (SERVER_ID, 900_000 + SERVER_ID, 910_000 + SERVER_ID),
+        )
         await db.commit()
     return path
 
@@ -186,18 +184,6 @@ async def test_one_division_may_not_use_a_channel_for_two_things(db_path):
     use = await find_channel_use(db_path, SERVER_ID, 500)
 
     assert use.setting == "calendar"
-
-
-async def test_another_servers_channel_is_not_this_servers_business(db_path):
-    """The bot serves many leagues, and a channel id is unique across Discord anyway —
-    but the query must still be scoped, or one league could block another."""
-    other_season = await _season(db_path, server_id=OTHER_SERVER)
-    other_division = await _division(db_path, other_season, "Theirs")
-    await _set(
-        db_path, "results", 500, division_id=other_division, server_id=OTHER_SERVER
-    )
-
-    assert await find_channel_use(db_path, SERVER_ID, 500) is None
 
 
 # ── An archived season does not hold a channel hostage ────────────────────

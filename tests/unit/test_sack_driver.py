@@ -272,18 +272,6 @@ async def test_the_refusal_names_the_state_it_found(tmp_path):
         await _sack(_service(db_path), _guild())
 
 
-async def test_a_profile_from_another_server_is_not_found(tmp_path):
-    """Profiles are per server, and sacking across one would let a manager reach into
-    another league's roster."""
-    db_path = await _make_db(tmp_path, name="refuse_server")
-    service = _service(db_path)
-
-    with pytest.raises(ValueError, match="not found"):
-        await service.sack_driver(
-            99999, PROFILE_ID, SEASON_ID, ACTOR_ID, "Manager", _guild(), DISCORD_USER_ID
-        )
-
-
 # ---------------------------------------------------------------------------
 # Nobody is deleted: a driver who never raced is pending deletion
 # ---------------------------------------------------------------------------

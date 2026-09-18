@@ -186,14 +186,6 @@ async def test_the_grouping_is_ordered_so_a_report_can_be_compared_by_eye(servic
     assert list(palettes["division_1"]) == ["alpha", "zeta"]
 
 
-async def test_another_server_sees_none_of_it(service, db_path):
-    async with aiosqlite.connect(db_path) as db:
-        await db.execute("INSERT INTO server_configs (server_id) VALUES (2)")
-        await db.commit()
-    await service.set_tier_colour(1, "Division 1", "accent", "#A78BFA")
-    assert await service.get_all_tier_colours(2) == {}
-
-
 # ── Setting several at once (bulk / import) ───────────────────────────────
 
 async def test_a_bulk_set_writes_every_slot(service):

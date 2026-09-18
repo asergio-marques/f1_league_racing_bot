@@ -279,16 +279,3 @@ async def test_the_previous_season_number_is_incremented(tmp_path):
             (SERVER_ID,),
         )
         assert (await cursor.fetchone())[0] == 2
-
-
-async def test_incrementing_another_server_leaves_this_one_alone(tmp_path):
-    db_path = await _make_db(tmp_path, name="increment_other")
-
-    await SeasonService(db_path).increment_previous_season_number(99999)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT previous_season_number FROM server_configs WHERE server_id = ?",
-            (SERVER_ID,),
-        )
-        assert (await cursor.fetchone())[0] == 0

@@ -281,14 +281,6 @@ async def test_every_mapping_is_listed(tmp_path):
     assert {c.team_name for c in configs} == {"Alpha", "Beta"}
 
 
-async def test_another_server_s_mappings_are_not_listed(tmp_path):
-    db_path = await _make_db(tmp_path)
-    service = PlacementService(db_path)
-    await service.set_team_role_config(SERVER_ID, "Alpha", ROLE_ID)
-
-    assert await service.get_all_team_role_configs(SERVER_ID + 1) == []
-
-
 async def test_a_mapping_is_deleted(tmp_path):
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)

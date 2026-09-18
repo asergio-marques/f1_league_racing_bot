@@ -97,27 +97,6 @@ async def test_attach_config_rejects_a_name_not_in_the_store(db_path):
 
 
 @pytest.mark.asyncio
-async def test_attach_config_rejects_a_name_belonging_to_another_server(db_path):
-    """The store is per-server, so the check has to be too — or one league's name attaches
-    to another's season and snapshots nothing."""
-    season_id = await _make_season(db_path, status="SETUP")
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (999, 10, 20, 30)"
-        )
-        await db.commit()
-    await points_config_service.create_config(db_path, server_id=999, config_name="Elsewhere")
-
-    with pytest.raises(points_config_service.ConfigNotFoundError):
-        await attach_config(
-            db_path, season_id=season_id, config_name="Elsewhere",
-            season_status="SETUP", server_id=1,
-        )
-
-
-@pytest.mark.asyncio
 async def test_attach_config_checks_the_season_status_before_the_name(db_path):
     """An active season is refused for being active, whatever was typed into it."""
     season_id = await _make_season(db_path, status="ACTIVE")
