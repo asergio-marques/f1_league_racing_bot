@@ -178,7 +178,7 @@ def _permission_calls(interaction) -> list:
 async def test_the_role_is_stored(tmp_path, run, change_type):
     db_path = await _make_db(tmp_path, name=f"store_{change_type}")
     cog = _make_cog(db_path)
-    config = await cog.bot.signup_module_service.get_config(SERVER_ID)
+    config = await cog.bot.signup_module_service.get_config()
 
     await run(cog, _interaction())
 

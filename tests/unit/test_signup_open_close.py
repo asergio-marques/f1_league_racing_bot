@@ -85,11 +85,11 @@ async def _seed(
         )
         if config:
             await db.execute(
-                "INSERT INTO signup_module_config (server_id, signup_channel_id, "
+                "INSERT INTO signup_module_config (id, signup_channel_id, "
                 "base_role_id, signed_up_role_id, signups_open, close_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (
-                    SERVER_ID,
+                    1,
                     channel,
                     base_role,
                     signed_up_role,
@@ -103,8 +103,8 @@ async def _seed(
         for index in range(slots):
             await db.execute(
                 "INSERT INTO signup_availability_slots "
-                "(server_id, day_of_week, time_hhmm) VALUES (?, 1, ?)",
-                (SERVER_ID, f"{19 + index}:00"),
+                "(day_of_week, time_hhmm) VALUES (1, ?)",
+                (f"{19 + index}:00",),
             )
         # The season the window belongs to (issue #220): awaiting its window unless told
         # otherwise, or already in signups where the window stands open.
@@ -207,7 +207,7 @@ async def _close(cog, interaction):
 
 
 async def _is_open(db_path: str) -> bool:
-    cfg = await SignupModuleService(db_path).get_config(SERVER_ID)
+    cfg = await SignupModuleService(db_path).get_config()
     return bool(cfg and cfg.signups_open)
 
 
@@ -440,7 +440,7 @@ async def test_a_close_time_arms_the_timer(tmp_path):
     await _open(cog, interaction, close_time=_future(7))
 
     cog.bot.scheduler_service.schedule_signup_close_timer.assert_called_once()
-    cfg = await SignupModuleService(db_path).get_config(SERVER_ID)
+    cfg = await SignupModuleService(db_path).get_config()
     assert cfg.close_at is not None
 
 
@@ -474,8 +474,7 @@ async def test_a_previous_closed_notice_is_taken_down(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE signup_module_config SET signup_closed_message_id = 9001 "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+            "",
         )
         await db.commit()
     interaction = _interaction()
@@ -490,8 +489,7 @@ async def test_a_closed_notice_already_deleted_does_not_stop_the_open(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE signup_module_config SET signup_closed_message_id = 9001 "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+            "",
         )
         await db.commit()
     interaction = _interaction()

@@ -48,14 +48,14 @@ async def _seed(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open) VALUES (?, 0)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signups_open) VALUES (?, 0)",
+            (1,),
         )
         for day, time_hhmm in slots:
             await db.execute(
-                "INSERT INTO signup_availability_slots (server_id, day_of_week, time_hhmm) "
-                "VALUES (?, ?, ?)",
-                (SERVER_ID, day, time_hhmm),
+                "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) "
+                "VALUES (?, ?)",
+                (day, time_hhmm),
             )
         if stage is not None:
             from models.season import SeasonStage, status_of_stage
@@ -122,7 +122,7 @@ async def _remove(cog, interaction, slot_id=1):
 async def _slot_labels(db_path):
     from services.signup_module_service import SignupModuleService
 
-    return [s.display_label for s in await SignupModuleService(db_path).get_slots(SERVER_ID)]
+    return [s.display_label for s in await SignupModuleService(db_path).get_slots()]
 
 
 # ---------------------------------------------------------------------------

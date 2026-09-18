@@ -147,9 +147,9 @@ async def _seed_history(
 async def _seed_wizard(db_path: str, user_id: str, *, state: str = "COLLECTING") -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_wizard_records (server_id, discord_user_id, wizard_state, "
-            "draft_answers_json) VALUES (?, ?, ?, ?)",
-            (SERVER_ID, user_id, state, '{"platform": "Steam"}'),
+            "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, "
+            "draft_answers_json) VALUES (?, ?, ?)",
+            (user_id, state, '{"platform": "Steam"}'),
         )
         await db.commit()
 
@@ -196,9 +196,9 @@ async def _seed_signup_record(db_path: str, user_id: str = OLD_USER) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO signup_records "
-            "(server_id, discord_user_id, discord_username, server_display_name, platform) "
-            "VALUES (?, ?, 'lewis', 'Lewis Hamilton', 'Steam')",
-            (SERVER_ID, user_id),
+            "(discord_user_id, discord_username, server_display_name, platform) "
+            "VALUES (?, 'lewis', 'Lewis Hamilton', 'Steam')",
+            (user_id,),
         )
         await db.commit()
 
@@ -267,8 +267,8 @@ async def test_a_former_driver_is_kept_with_their_signup(tmp_path):
     assert await _profile_count(db_path) == 1
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT platform FROM signup_records WHERE server_id = ? AND discord_user_id = ?",
-            (SERVER_ID, OLD_USER),
+            "SELECT platform FROM signup_records WHERE discord_user_id = ?",
+            (OLD_USER,),
         )
         row = await cursor.fetchone()
     assert row is not None and row["platform"] is not None

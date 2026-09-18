@@ -105,8 +105,7 @@ async def _nationality_collected(db_path: str, server_id: int) -> bool:
             row = await (
                 await db.execute(
                     "SELECT nationality_required FROM signup_module_settings "
-                    "WHERE server_id = ?",
-                    (server_id,),
+                    "",
                 )
             ).fetchone()
     except Exception:  # noqa: BLE001 — an unreadable switch is not a reason to fail a render
@@ -125,12 +124,10 @@ async def _nationality_collected(db_path: str, server_id: int) -> bool:
 #: they changed account is still what they gave for that season. Within the season an
 #: approved signup outranks a later one that was not — see `SIGNUP_PRECEDENCE_SQL`.
 #:
-#: Takes two parameters, in order: the season's id (None to read the latest of all) and the
-#: server comes from the driver row it is joined to.
+#: Takes one parameter: the season's id (None to read the latest of all).
 SIGNUP_FOR_SEASON_SQL = (
     "(SELECT id FROM signup_records "
-    " WHERE server_id = dp.server_id "
-    "   AND discord_user_id IN "
+    " WHERE discord_user_id IN "
     "       (SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = dp.id) "
     " ORDER BY COALESCE(season_id = ?, 0) DESC, season_id DESC, approved DESC, id DESC "
     " LIMIT 1)"

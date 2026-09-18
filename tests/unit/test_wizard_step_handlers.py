@@ -66,7 +66,6 @@ def _slots():
     return [
         AvailabilitySlot(
             id=41,
-            server_id=1,
             slot_id=AvailabilitySlot.make_slot_id(1, "19:00"),
             slot_sequence_id=1,
             day_of_week=1,
@@ -97,7 +96,6 @@ def wizard_and_service():
 
     wizard = SignupWizardRecord(
         id=1,
-        server_id=1,
         discord_user_id="7",
         wizard_state=WizardState.COLLECTING_PLATFORM,
         signup_channel_id=99,
@@ -125,6 +123,7 @@ def _with_teams(svc, names: list[str]) -> None:
     teams.append(SimpleNamespace(name="Reserve", is_reserve=True))
     bot = MagicMock()
     bot.team_service.get_default_teams = AsyncMock(return_value=teams)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     svc._bot = bot
 
 

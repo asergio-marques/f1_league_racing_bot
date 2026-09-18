@@ -178,14 +178,13 @@ async def test_the_total_is_persisted_against_the_signup(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, discord_username) "
-            "VALUES (?, '4242', 'lewis')",
-            (SERVER_ID,),
+            "INSERT INTO signup_records (discord_user_id, discord_username) "
+            "VALUES ('4242', 'lewis')"
         )
         await db.commit()
 
     total = await PlacementService(db_path).store_total_lap_ms(
-        SERVER_ID, "4242", {"1": "1:00.000", "2": "0:30.500"}
+        "4242", {"1": "1:00.000", "2": "0:30.500"}
     )
 
     assert total == 90_500
@@ -201,13 +200,12 @@ async def test_a_driver_with_no_times_is_stored_as_having_none(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, discord_username) "
-            "VALUES (?, '4242', 'lewis')",
-            (SERVER_ID,),
+            "INSERT INTO signup_records (discord_user_id, discord_username) "
+            "VALUES ('4242', 'lewis')"
         )
         await db.commit()
 
-    assert await PlacementService(db_path).store_total_lap_ms(SERVER_ID, "4242", {}) is None
+    assert await PlacementService(db_path).store_total_lap_ms("4242", {}) is None
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

@@ -38,6 +38,13 @@ _FULL_RESET_TABLES: tuple[str, ...] = (
     "points_config_entries",
     "points_config_store",
     "results_module_config",
+    "signup_availability_slots",
+    "signup_division_config",
+    "signup_module_config",
+    "signup_module_settings",
+    "signup_records",
+    "signup_windows",
+    "signup_wizard_records",
 )
 
 

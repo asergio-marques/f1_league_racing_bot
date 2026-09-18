@@ -64,7 +64,6 @@ def _wizard(**draft):
 
     return SignupWizardRecord(
         id=1,
-        server_id=SERVER_ID,
         discord_user_id=DRIVER_ID,
         wizard_state=WizardState.UNENGAGED,
         signup_channel_id=CHANNEL_ID,
@@ -106,6 +105,7 @@ def correction():
     bot = MagicMock()
     bot.signup_module_service = signup_svc
     bot.driver_service = driver_service
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
 
     member = MagicMock()

@@ -115,9 +115,9 @@ async def _make_db(
             (cursor.lastrowid, PROFILE_ID),
         )
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, "
-            "discord_username, nationality) VALUES (?, ?, 'racer', 'GB')",
-            (SERVER_ID, DISCORD_USER_ID),
+            "INSERT INTO signup_records (discord_user_id, "
+            "discord_username, nationality) VALUES (?, 'racer', 'GB')",
+            (DISCORD_USER_ID,),
         )
         await db.execute(
             "INSERT INTO driver_round_attendance (driver_profile_id, round_id, "
@@ -150,9 +150,9 @@ async def _make_db(
         )
         if signed_up_role is not None:
             await db.execute(
-                "INSERT INTO signup_module_config (server_id, signed_up_role_id) "
+                "INSERT INTO signup_module_config (id, signed_up_role_id) "
                 "VALUES (?, ?)",
-                (SERVER_ID, signed_up_role),
+                (1, signed_up_role),
             )
         await db.commit()
     return db_path
@@ -332,8 +332,8 @@ async def test_a_former_drivers_signup_details_are_kept(tmp_path):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT discord_username, nationality FROM signup_records "
-            "WHERE server_id = ? AND discord_user_id = ?",
-            (SERVER_ID, DISCORD_USER_ID),
+            "WHERE discord_user_id = ?",
+            (DISCORD_USER_ID,),
         )
         row = await cursor.fetchone()
     assert row["discord_username"] is not None

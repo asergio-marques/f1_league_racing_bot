@@ -200,7 +200,7 @@ async def test_an_open_window_is_closed_before_the_pending_placements_are_turned
         assert await lifecycle.wind_down_ongoing(bot, SERVER_ID) is True
 
     closed.assert_awaited_once()
-    bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with(SERVER_ID)
+    bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
 
 
 async def test_a_season_with_a_division_still_running_is_not_wound_down(tmp_path):
@@ -220,8 +220,8 @@ async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_
     await _seed_pending_drivers(path)
     async with get_connection(path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signed_up_role_id) VALUES (?, 555)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signed_up_role_id) VALUES (?, 555)",
+            (1,),
         )
         await db.commit()
     bot = _wind_down_bot(path)

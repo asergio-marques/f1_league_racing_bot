@@ -91,11 +91,10 @@ async def _seed(db_path, *, seat_drivers: bool, teams=("Redline", "Bluewave")):
                 )
                 profile_id = cursor.lastrowid
                 await db.execute(
-                    "INSERT INTO signup_records (server_id, discord_user_id, "
+                    "INSERT INTO signup_records (discord_user_id, "
                     "server_display_name, discord_username, nationality) "
-                    "VALUES (?, ?, ?, ?, 'British')",
+                    "VALUES (?, ?, ?, 'British')",
                     (
-                        SERVER_ID,
                         str(user_id),
                         f"{team_name} Driver {seat_number}",
                         f"d{user_id}",

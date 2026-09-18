@@ -63,9 +63,9 @@ async def _make_db(tmp_path, *, config: bool = True) -> str:
         if config:
             await db.execute(
                 "INSERT INTO signup_module_config "
-                "(server_id, signup_channel_id, base_role_id, signed_up_role_id, signups_open) "
+                "(id, signup_channel_id, base_role_id, signed_up_role_id, signups_open) "
                 "VALUES (?, ?, ?, ?, 0)",
-                (SERVER_ID, CHANNEL_ID, BASE_ROLE_ID, SIGNED_UP_ROLE_ID),
+                (1, CHANNEL_ID, BASE_ROLE_ID, SIGNED_UP_ROLE_ID),
             )
         await db.commit()
     return db_path
@@ -143,11 +143,11 @@ TOGGLES = [
 async def test_a_toggle_flips_the_setting(tmp_path, command, field):
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
-    before = getattr(await cog.bot.signup_module_service.get_settings(SERVER_ID), field)
+    before = getattr(await cog.bot.signup_module_service.get_settings(), field)
 
     await undecorate(getattr(SignupCog, command))(cog, _interaction())
 
-    after = getattr(await cog.bot.signup_module_service.get_settings(SERVER_ID), field)
+    after = getattr(await cog.bot.signup_module_service.get_settings(), field)
     assert after is not before
 
 
@@ -156,12 +156,12 @@ async def test_a_toggle_flips_back(tmp_path, command, field):
     """A toggle that only ever turned something on would leave a league unable to undo it."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
-    before = getattr(await cog.bot.signup_module_service.get_settings(SERVER_ID), field)
+    before = getattr(await cog.bot.signup_module_service.get_settings(), field)
 
     await undecorate(getattr(SignupCog, command))(cog, _interaction())
     await undecorate(getattr(SignupCog, command))(cog, _interaction())
 
-    after = getattr(await cog.bot.signup_module_service.get_settings(SERVER_ID), field)
+    after = getattr(await cog.bot.signup_module_service.get_settings(), field)
     assert after is before
 
 
@@ -191,10 +191,10 @@ async def test_the_time_type_command_swaps_between_the_two_kinds(tmp_path):
     and they are set in different places in the game."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
-    before = (await cog.bot.signup_module_service.get_settings(SERVER_ID)).time_type
+    before = (await cog.bot.signup_module_service.get_settings()).time_type
 
     await undecorate(SignupCog.time_type)(cog, _interaction())
-    after = (await cog.bot.signup_module_service.get_settings(SERVER_ID)).time_type
+    after = (await cog.bot.signup_module_service.get_settings()).time_type
 
     assert {before, after} == {"TIME_TRIAL", "SHORT_QUALIFICATION"}
 
@@ -288,8 +288,7 @@ async def test_an_unconfigured_channel_is_reported_as_not_configured(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE signup_module_config SET signup_channel_id = NULL, base_role_id = NULL "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+            "",
         )
         await db.commit()
     cog = _make_cog(db_path)
@@ -348,8 +347,7 @@ async def test_open_signups_are_reported_as_open(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE signup_module_config SET signups_open = 1 WHERE server_id = ?",
-            (SERVER_ID,),
+            "UPDATE signup_module_config SET signups_open = 1",
         )
         await db.commit()
     cog = _make_cog(db_path)

@@ -264,8 +264,7 @@ async def test_the_signup_area(season):
     before = await _take(season)
     await _assert_only(
         season, before, "signup",
-        "INSERT INTO signup_module_config (server_id, signup_channel_id) VALUES (?, 77)",
-        SERVER_ID,
+        "INSERT INTO signup_module_config (id, signup_channel_id) VALUES (1, 77)",
     )
 
 

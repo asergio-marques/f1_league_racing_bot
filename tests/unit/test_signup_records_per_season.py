@@ -25,7 +25,6 @@ USER = "4242"
 def _record(platform: str = "Steam") -> SignupRecord:
     return SignupRecord(
         id=-1,
-        server_id=SERVER_ID,
         discord_user_id=USER,
         discord_username="racer",
         server_display_name="Racer",
@@ -53,8 +52,8 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open) VALUES (?, 0)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signups_open) VALUES (?, 0)",
+            (1,),
         )
         await db.commit()
     return path
@@ -79,12 +78,12 @@ async def _archive(db_path, season_id: int):
 async def test_a_new_signup_is_kept_under_the_active_season_and_its_window(db_path):
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)
-    await svc.set_window_open(SERVER_ID, 111, ["3"])
+    await svc.set_window_open(111, ["3"])
     window_id = (await svc.get_windows(1))[0]["id"]
 
     await svc.save_record(_record())
 
-    stored = await svc.get_record(SERVER_ID, USER)
+    stored = await svc.get_record(USER)
     assert stored.season_id == 1
     assert stored.window_id == window_id
 
@@ -98,7 +97,7 @@ async def test_signing_up_twice_in_a_season_keeps_both(db_path):
     records = await svc.get_records(1)
 
     assert [r.platform for r in records] == ["Steam", "PSN"]
-    assert (await svc.get_record(SERVER_ID, USER)).platform == "PSN"
+    assert (await svc.get_record(USER)).platform == "PSN"
 
 
 async def test_a_new_season_does_not_overwrite_the_last(db_path):
@@ -112,8 +111,8 @@ async def test_a_new_season_does_not_overwrite_the_last(db_path):
 
     assert [r.platform for r in await svc.get_records(1)] == ["Steam"]
     assert [r.platform for r in await svc.get_records(2)] == ["Xbox"]
-    assert (await svc.get_record(SERVER_ID, USER, season_id=1)).platform == "Steam"
-    assert (await svc.get_record(SERVER_ID, USER)).platform == "Xbox"
+    assert (await svc.get_record(USER, season_id=1)).platform == "Steam"
+    assert (await svc.get_record(USER)).platform == "Xbox"
 
 
 async def test_a_season_deleted_takes_its_signups_with_it(db_path):
@@ -126,7 +125,7 @@ async def test_a_season_deleted_takes_its_signups_with_it(db_path):
         await db.execute("DELETE FROM seasons WHERE id = 1")
         await db.commit()
 
-    assert await svc.get_record(SERVER_ID, USER) is None
+    assert await svc.get_record(USER) is None
 
 
 async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):

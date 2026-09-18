@@ -211,9 +211,9 @@ class TestTheNationalityTally:
         await _seed_test_season(db_path)
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO signup_module_settings (server_id, nationality_required) "
+                "INSERT INTO signup_module_settings (id, nationality_required) "
                 "VALUES (?, 0)",
-                (SERVER_ID,),
+                (1,),
             )
             await db.commit()
 

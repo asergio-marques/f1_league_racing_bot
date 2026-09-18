@@ -55,9 +55,9 @@ async def _make_db(tmp_path, *, name="member_remove", state=None, record=True):
             )
         if record:
             await db.execute(
-                "INSERT INTO signup_records (server_id, discord_user_id, discord_username, "
-                "server_display_name) VALUES (?, ?, 'racer', 'Racer One')",
-                (SERVER_ID, str(DRIVER)),
+                "INSERT INTO signup_records (discord_user_id, discord_username, "
+                "server_display_name) VALUES (?, 'racer', 'Racer One')",
+                (str(DRIVER),),
             )
         await db.commit()
     return db_path

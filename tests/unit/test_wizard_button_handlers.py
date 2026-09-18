@@ -51,7 +51,6 @@ def _wizard(state, **draft):
 
     return SignupWizardRecord(
         id=1,
-        server_id=SERVER_ID,
         discord_user_id=DRIVER_ID,
         wizard_state=state,
         signup_channel_id=CHANNEL_ID,
@@ -95,6 +94,7 @@ def service():
 
     bot = MagicMock()
     bot.signup_module_service = signup_svc
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
 
     return SimpleNamespace(
@@ -122,7 +122,7 @@ async def test_a_platform_button_records_the_platform_and_advances(service):
     wizard = _wizard(WizardState.COLLECTING_PLATFORM)
     _serve(service, wizard)
 
-    await service.svc.handle_platform_button(SERVER_ID, DRIVER_ID, "Steam", service.guild)
+    await service.svc.handle_platform_button(DRIVER_ID, "Steam", service.guild)
 
     assert wizard.draft_answers["platform"] == "Steam"
     assert service.advanced == [wizard]
@@ -136,7 +136,7 @@ async def test_a_platform_button_pressed_on_a_later_step_does_nothing(service):
     wizard = _wizard(WizardState.COLLECTING_DRIVER_TYPE)
     _serve(service, wizard)
 
-    await service.svc.handle_platform_button(SERVER_ID, DRIVER_ID, "Steam", service.guild)
+    await service.svc.handle_platform_button(DRIVER_ID, "Steam", service.guild)
 
     assert "platform" not in wizard.draft_answers
     assert service.advanced == []
@@ -147,7 +147,7 @@ async def test_a_button_from_a_driver_with_no_wizard_does_nothing(service):
     pressed from a cached view before the delete lands."""
     _serve(service, None)
 
-    await service.svc.handle_platform_button(SERVER_ID, DRIVER_ID, "Steam", service.guild)
+    await service.svc.handle_platform_button(DRIVER_ID, "Steam", service.guild)
 
     assert service.advanced == []
 
@@ -159,7 +159,7 @@ async def test_a_button_whose_channel_is_gone_does_not_advance(service):
     _serve(service, wizard)
     service.guild.get_channel = MagicMock(return_value=None)
 
-    await service.svc.handle_platform_button(SERVER_ID, DRIVER_ID, "Steam", service.guild)
+    await service.svc.handle_platform_button(DRIVER_ID, "Steam", service.guild)
 
     assert service.advanced == []
 
@@ -176,7 +176,7 @@ async def test_a_driver_type_button_records_the_type_and_advances(service):
     _serve(service, wizard)
 
     await service.svc.handle_driver_type_button(
-        SERVER_ID, DRIVER_ID, "Reserve Driver", service.guild
+        DRIVER_ID, "Reserve Driver", service.guild
     )
 
     assert wizard.draft_answers["driver_type"] == "Reserve Driver"
@@ -190,7 +190,7 @@ async def test_a_driver_type_button_pressed_on_a_later_step_does_nothing(service
     _serve(service, wizard)
 
     await service.svc.handle_driver_type_button(
-        SERVER_ID, DRIVER_ID, "Reserve Driver", service.guild
+        DRIVER_ID, "Reserve Driver", service.guild
     )
 
     assert "driver_type" not in wizard.draft_answers
@@ -387,7 +387,7 @@ async def test_no_preference_for_a_teammate_records_none_and_advances(service):
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMMATE)
     _serve(service, wizard)
 
-    await service.svc.handle_no_preference_teammate(SERVER_ID, DRIVER_ID, service.guild)
+    await service.svc.handle_no_preference_teammate(DRIVER_ID, service.guild)
 
     assert wizard.draft_answers["preferred_teammate"] is None
     assert service.advanced == [wizard]
@@ -399,7 +399,7 @@ async def test_the_teammate_button_pressed_on_a_later_step_does_nothing(service)
     wizard = _wizard(WizardState.COLLECTING_NOTES)
     _serve(service, wizard)
 
-    await service.svc.handle_no_preference_teammate(SERVER_ID, DRIVER_ID, service.guild)
+    await service.svc.handle_no_preference_teammate(DRIVER_ID, service.guild)
 
     assert "preferred_teammate" not in wizard.draft_answers
     assert service.advanced == []

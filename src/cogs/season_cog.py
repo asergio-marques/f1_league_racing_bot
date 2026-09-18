@@ -1651,7 +1651,7 @@ class SeasonCog(commands.Cog):
             on = "✅ Enabled"
             off = "❌ Disabled"
             if signup_on:
-                signup_cfg = await self.bot.signup_module_service.get_config(interaction.guild_id)  # type: ignore[attr-defined]
+                signup_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
                 if signup_cfg:
                     signup_ch = f"<#{signup_cfg.signup_channel_id}>" if signup_cfg.signup_channel_id else "*(not configured)*"
                     signup_br = f"<@&{signup_cfg.base_role_id}>" if signup_cfg.base_role_id else "*(not configured)*"
@@ -2360,7 +2360,7 @@ class SeasonCog(commands.Cog):
 
         # ── Signup ─────────────────────────────────────────────────────────────
         if await self.bot.module_service.is_signup_enabled(server_id):  # type: ignore[attr-defined]
-            signup_cfg = await self.bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
+            signup_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
             if signup_cfg is None or signup_cfg.signup_channel_id is None:
                 faults.append("The signup module has no **signup channel** — `/signup channel`.")
             if signup_cfg is None or signup_cfg.base_role_id is None:
@@ -2421,9 +2421,9 @@ class SeasonCog(commands.Cog):
 
     async def _signup_review_lines(self, server_id: int) -> list[str]:
         """The signup module's configuration, as both reviews report it."""
-        _s_cfg = await self.bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
-        _s_settings = await self.bot.signup_module_service.get_settings(server_id)  # type: ignore[attr-defined]
-        _s_slots = await self.bot.signup_module_service.get_slots(server_id)  # type: ignore[attr-defined]
+        _s_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
+        _s_settings = await self.bot.signup_module_service.get_settings()  # type: ignore[attr-defined]
+        _s_slots = await self.bot.signup_module_service.get_slots()  # type: ignore[attr-defined]
         _signup_ch = f"<#{_s_cfg.signup_channel_id}>" if _s_cfg and _s_cfg.signup_channel_id else "*(not configured)*"
         _signup_br = f"<@&{_s_cfg.base_role_id}>" if _s_cfg and _s_cfg.base_role_id else "*(not configured)*"
         _signup_cr = f"<@&{_s_cfg.signed_up_role_id}>" if _s_cfg and _s_cfg.signed_up_role_id else "*(not configured)*"
@@ -2669,7 +2669,7 @@ class SeasonCog(commands.Cog):
         if signup_on:
             # The season's signups are made under these settings, fixed from this moment.
             await self.bot.signup_module_service.snapshot_season_config(  # type: ignore[attr-defined]
-                server_id, cfg.season_id
+                cfg.season_id
             )
         try:
             await self.bot.season_service.set_stage(cfg.season_id, target)  # type: ignore[attr-defined]
@@ -2898,7 +2898,7 @@ class SeasonCog(commands.Cog):
         from services.season_end_service import end_of_season_pass
 
         try:
-            self.bot.scheduler_service.cancel_signup_close_timer(server_id)
+            self.bot.scheduler_service.cancel_signup_close_timer()
         except Exception:  # noqa: BLE001 — a timer already gone is the aim
             log.exception("season abort: could not cancel the signup close timer")
         result = await end_of_season_pass(server_id, self.bot, interaction.guild)
@@ -5720,7 +5720,7 @@ class SeasonCog(commands.Cog):
 
         # ── Gate 2b: signup module config prerequisites ───────────────────────
         if await self.bot.module_service.is_signup_enabled(cfg.server_id):
-            signup_cfg = await self.bot.signup_module_service.get_config(cfg.server_id)
+            signup_cfg = await self.bot.signup_module_service.get_config()
             if signup_cfg:
                 missing: list[str] = []
                 if signup_cfg.signup_channel_id is None:

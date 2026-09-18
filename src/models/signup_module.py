@@ -34,7 +34,6 @@ class WizardState(str, Enum):
 
 @dataclass
 class SignupModuleConfig:
-    server_id: int
     signup_channel_id: int | None
     base_role_id: int | None
     signed_up_role_id: int | None
@@ -48,14 +47,12 @@ class SignupModuleConfig:
 @dataclass
 class SignupDivisionConfig:
     id: int
-    server_id: int
     division_id: int
     lineup_channel_id: int | None
 
 
 @dataclass
 class SignupModuleSettings:
-    server_id: int
     nationality_required: bool
     time_type: TimeType
     time_image_required: bool
@@ -65,7 +62,6 @@ class SignupModuleSettings:
 class AvailabilitySlot:
     """
     id               — internal surrogate PK (used for DB deletion).
-    server_id        — owning server.
     slot_id          — the slot's durable identity, "Mon_19_00" (computed on read).
     slot_sequence_id — temporary display ordinal, 1..N in chronological order.
     day_of_week      — 1=Mon … 7=Sun.
@@ -84,7 +80,6 @@ class AvailabilitySlot:
     """
 
     id: int
-    server_id: int
     slot_id: str
     slot_sequence_id: int
     day_of_week: int
@@ -123,7 +118,6 @@ class SignupRecord:
     which is how a correction amends the signup it was asked of.
     """
     id: int
-    server_id: int
     discord_user_id: str
     discord_username: str | None
     server_display_name: str | None
@@ -147,7 +141,6 @@ class SignupRecord:
 class SignupWizardRecord:
     """In-progress wizard state for a driver on a server."""
     id: int
-    server_id: int
     discord_user_id: str
     wizard_state: WizardState
     signup_channel_id: int | None

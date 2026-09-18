@@ -58,9 +58,9 @@ async def _service(tmp_path, *, held: dict[str, int]) -> tuple[WizardService, _S
         )
         for account, channel_id in held.items():
             await db.execute(
-                "INSERT INTO signup_wizard_records (server_id, discord_user_id, wizard_state, "
-                "signup_channel_id) VALUES (?, ?, 'UNENGAGED', ?)",
-                (SERVER_ID, account, channel_id),
+                "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, "
+                "signup_channel_id) VALUES (?, 'UNENGAGED', ?)",
+                (account, channel_id),
             )
         await db.commit()
     scheduler = _Scheduler()
@@ -91,7 +91,7 @@ def _channel() -> MagicMock:
 
 
 async def _channel_of(service: WizardService, account: str) -> int | None:
-    wizard = await service._signup_svc.get_wizard(SERVER_ID, account)
+    wizard = await service._signup_svc.get_wizard(account)
     return None if wizard is None else wizard.signup_channel_id
 
 

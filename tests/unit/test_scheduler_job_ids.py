@@ -254,7 +254,7 @@ def service_with(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "job,args", [(_signup_close_timer_job, (SERVER_ID,)), (_portrait_refresh_job, ())],
+    "job,args", [(_signup_close_timer_job, ()), (_portrait_refresh_job, ())],
     ids=["signup-close", "portrait-refresh"],
 )
 async def test_a_job_firing_before_the_service_exists_is_survived(no_global, job, args, caplog):
@@ -270,9 +270,9 @@ async def test_the_signup_close_timer_calls_its_callback(service_with):
     callback = AsyncMock(return_value=None)
     service_with(signup_close=callback)
 
-    await _signup_close_timer_job(SERVER_ID)
+    await _signup_close_timer_job()
 
-    callback.assert_awaited_once_with(SERVER_ID)
+    callback.assert_awaited_once_with()
 
 
 async def test_the_portrait_refresh_calls_its_callback(service_with):
@@ -285,7 +285,7 @@ async def test_the_portrait_refresh_calls_its_callback(service_with):
 
 
 @pytest.mark.parametrize(
-    "job,args", [(_signup_close_timer_job, (SERVER_ID,)), (_portrait_refresh_job, ())],
+    "job,args", [(_signup_close_timer_job, ()), (_portrait_refresh_job, ())],
     ids=["signup-close", "portrait-refresh"],
 )
 async def test_a_job_with_no_callback_registered_is_survived(service_with, job, args, caplog):

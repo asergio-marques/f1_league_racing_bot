@@ -148,8 +148,8 @@ SIGNUP_PRECEDENCE_SQL = "season_id DESC, approved DESC, id DESC"
 
 #: The id of the signup record that is the driver's — the driver row aliased ``dp``.
 DRIVERS_SIGNUP_OF_DP_SQL = (
-    "(SELECT id FROM signup_records WHERE server_id = dp.server_id "
-    f"AND discord_user_id IN {ACCOUNTS_OF_DP_SQL} "
+    "(SELECT id FROM signup_records "
+    f"WHERE discord_user_id IN {ACCOUNTS_OF_DP_SQL} "
     f"ORDER BY {SIGNUP_PRECEDENCE_SQL} LIMIT 1)"
 )
 
@@ -352,7 +352,7 @@ _HOLDS_THE_LIVE_SEASON = frozenset({DriverState.UNASSIGNED.value, DriverState.AS
 
 
 async def _refuse_a_shared_division(
-    db, server_id: int, ours: set[int], theirs: set[int], who: str
+    db, ours: set[int], theirs: set[int], who: str
 ) -> None:
     shared = sorted(ours & theirs)
     if shared:
@@ -601,8 +601,7 @@ class DriverService:
                         )
                     owner_accounts = await accounts_of_profile(db, owner["id"])
                     await _refuse_a_shared_division(
-                        db, server_id,
-                        await divisions_taken_part_in(db, server_id, driver["id"], driver_accounts),
+                        db, await divisions_taken_part_in(db, server_id, driver["id"], driver_accounts),
                         await divisions_taken_part_in(db, server_id, owner["id"], owner_accounts),
                         f"<@{new_user_id}>",
                     )
@@ -615,8 +614,7 @@ class DriverService:
                     merged_accounts = owner_accounts
                 elif owner is None:
                     await _refuse_a_shared_division(
-                        db, server_id,
-                        await divisions_taken_part_in(db, server_id, driver["id"], driver_accounts),
+                        db, await divisions_taken_part_in(db, server_id, driver["id"], driver_accounts),
                         await divisions_taken_part_in(db, server_id, None, [str(new_user_id)]),
                         f"<@{new_user_id}>",
                     )

@@ -100,15 +100,13 @@ async def test_deleting_the_season_takes_its_signups_windows_and_configuration(t
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO signup_windows (server_id, season_id) VALUES (?, 7)", (SERVER_ID,)
-        )
+            "INSERT INTO signup_windows (season_id) VALUES (7)")
         await db.execute(
             "INSERT INTO season_signup_config (season_id, nationality_required, time_type, "
             "time_image_required) VALUES (7, 1, 'TIME_TRIAL', 1)"
         )
         await db.execute(
-            "INSERT INTO signup_records (server_id, season_id, discord_user_id) VALUES (?, 7, '1')",
-            (SERVER_ID,),
+            "INSERT INTO signup_records (season_id, discord_user_id) VALUES (7, '1')"
         )
         await db.commit()
 

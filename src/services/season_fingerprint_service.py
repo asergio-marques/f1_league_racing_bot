@@ -328,21 +328,18 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                         db,
                         "SELECT signup_channel_id, base_role_id, signed_up_role_id, "
                         "       signups_open, selected_tracks_json, close_at "
-                        "FROM signup_module_config WHERE server_id = ?",
-                        server_id,
+                        "FROM signup_module_config",
                     ),
                     await _rows(
                         db,
                         "SELECT nationality_required, time_type, time_image_required "
-                        "FROM signup_module_settings WHERE server_id = ?",
-                        server_id,
+                        "FROM signup_module_settings",
                     ),
                     await _rows(
                         db,
                         "SELECT id, day_of_week, time_hhmm "
                         "FROM signup_availability_slots "
-                        "WHERE server_id = ? ORDER BY id",
-                        server_id,
+                        " ORDER BY id",
                     ),
                 ]
             )

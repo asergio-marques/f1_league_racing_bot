@@ -80,7 +80,6 @@ async def db_path(tmp_path):
 
             CREATE TABLE signup_records (
                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id            INTEGER NOT NULL,
                 discord_user_id      TEXT NOT NULL,
                 discord_username     TEXT,
                 server_display_name  TEXT,
@@ -96,8 +95,7 @@ async def db_path(tmp_path):
                 signup_channel_id    INTEGER,
                 total_lap_ms         INTEGER,
                 created_at           TEXT,
-                updated_at           TEXT,
-                UNIQUE(server_id, discord_user_id)
+                updated_at           TEXT
             );
             """
         )
@@ -328,7 +326,6 @@ async def db_with_signup(tmp_path):
 
             CREATE TABLE signup_records (
                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id            INTEGER NOT NULL,
                 discord_user_id      TEXT NOT NULL,
                 discord_username     TEXT,
                 server_display_name  TEXT,
@@ -344,8 +341,7 @@ async def db_with_signup(tmp_path):
                 signup_channel_id    INTEGER,
                 total_lap_ms         INTEGER,
                 created_at           TEXT,
-                updated_at           TEXT,
-                UNIQUE(server_id, discord_user_id)
+                updated_at           TEXT
             );
             """
         )
@@ -368,8 +364,8 @@ class TestSignupDataClearing:
             )
             await db.execute(
                 "INSERT INTO signup_records "
-                "(server_id, discord_user_id, discord_username, platform, platform_id) "
-                "VALUES (1, ?, 'TestUser', 'Steam', 'SteamUser123')",
+                "(discord_user_id, discord_username, platform, platform_id) "
+                "VALUES (?, 'TestUser', 'Steam', 'SteamUser123')",
                 (user_id,),
             )
             await db.commit()
@@ -388,7 +384,7 @@ class TestSignupDataClearing:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
                 "SELECT discord_username, platform, platform_id FROM signup_records "
-                "WHERE server_id = 1 AND discord_user_id = 'fd1'"
+                "WHERE discord_user_id = 'fd1'"
             )
             row = await cur.fetchone()
         assert row is not None

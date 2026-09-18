@@ -42,7 +42,6 @@ def _slots():
     return [
         AvailabilitySlot(
             id=surrogate,
-            server_id=1,
             slot_id=AvailabilitySlot.make_slot_id(day, time_hhmm),
             slot_sequence_id=ordinal,
             day_of_week=day,
@@ -73,7 +72,6 @@ def wizard_and_service():
 
     wizard = SignupWizardRecord(
         id=1,
-        server_id=1,
         discord_user_id="7",
         wizard_state=WizardState.COLLECTING_AVAILABILITY,
         signup_channel_id=99,
@@ -158,7 +156,6 @@ def _record(slot_ids):
 
     return SignupRecord(
         id=1,
-        server_id=1,
         discord_user_id="7",
         discord_username="driver#1",
         server_display_name="Driver",

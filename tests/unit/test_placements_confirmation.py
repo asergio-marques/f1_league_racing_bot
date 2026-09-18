@@ -69,9 +69,9 @@ async def _driver(db_path, uid: str, state: str, name: str | None = None):
         )
         if name:
             await db.execute(
-                "INSERT INTO signup_records (server_id, season_id, discord_user_id, "
-                "server_display_name) VALUES (?, ?, ?, ?)",
-                (SERVER_ID, SEASON_ID, uid, name),
+                "INSERT INTO signup_records (season_id, discord_user_id, "
+                "server_display_name) VALUES (?, ?, ?)",
+                (SEASON_ID, uid, name),
             )
         await db.commit()
 

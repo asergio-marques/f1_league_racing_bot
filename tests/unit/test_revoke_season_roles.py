@@ -76,8 +76,8 @@ async def _make_db(tmp_path, *, name="revoke_roles", signed_up_role=SIGNED_UP_RO
             )
         if signed_up_role is not None:
             await db.execute(
-                "INSERT INTO signup_module_config (server_id, signed_up_role_id) VALUES (?, ?)",
-                (SERVER_ID, signed_up_role),
+                "INSERT INTO signup_module_config (id, signed_up_role_id) VALUES (?, ?)",
+                (1, signed_up_role),
             )
         await db.commit()
     return db_path

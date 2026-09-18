@@ -59,7 +59,6 @@ def _wizard(state=None, *, channel_id: int | None = CHANNEL_ID, last_activity: s
 
     return SignupWizardRecord(
         id=1,
-        server_id=SERVER_ID,
         discord_user_id=DRIVER_ID,
         wizard_state=state or WizardState.COLLECTING_PLATFORM,
         signup_channel_id=channel_id,
@@ -112,6 +111,7 @@ def lifecycle():
     bot.signup_module_service = signup_svc
     bot.driver_service = driver_service
     bot.get_guild = MagicMock(return_value=guild)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
 
     svc._output_router = MagicMock()

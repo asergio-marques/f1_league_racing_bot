@@ -83,7 +83,7 @@ _DIVISION_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("attendance", "attendance_division_config", "attendance_channel_id"),
 )
 
-#: The server-wide settings, as (setting key, table, column, server key column).
+#: The league-wide settings, as (setting key, table, column). Each table holds one row.
 _SERVER_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("interaction", "server_configs", "interaction_channel_id"),
     ("log", "server_configs", "log_channel_id"),
@@ -113,8 +113,7 @@ async def find_channel_use(
             if ignore is not None and ignore.setting == setting:
                 continue
             cursor = await db.execute(
-                f"SELECT 1 FROM {table} WHERE server_id = ? AND {column} = ? LIMIT 1",
-                (server_id, channel_id),
+                f"SELECT 1 FROM {table} WHERE {column} = ? LIMIT 1", (channel_id,)
             )
             if await cursor.fetchone() is not None:
                 return ChannelUse(setting)

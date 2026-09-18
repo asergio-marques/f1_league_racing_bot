@@ -116,10 +116,10 @@ async def league(db_path):
                 )
                 profile_id = cursor.lastrowid
                 await db.execute(
-                    "INSERT INTO signup_records (server_id, discord_user_id, "
+                    "INSERT INTO signup_records (discord_user_id, "
                     "server_display_name, discord_username, nationality) "
-                    "VALUES (?, ?, ?, ?, 'British')",
-                    (SERVER_ID, str(user_id), f"{team_name} {seat_number}", "d", ),
+                    "VALUES (?, ?, ?, 'British')",
+                    (str(user_id), f"{team_name} {seat_number}", "d", ),
                 )
                 await db.execute(
                     "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
@@ -461,9 +461,9 @@ class TestAttendancePreview:
         """FR-028 — the sheet does carry a flag element, and it obeys the switch."""
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO signup_module_settings (server_id, nationality_required, "
+                "INSERT INTO signup_module_settings (id, nationality_required, "
                 "time_type, time_image_required) VALUES (?, 0, 'TIME_TRIAL', 1)",
-                (SERVER_ID,),
+                (1,),
             )
             await db.commit()
 

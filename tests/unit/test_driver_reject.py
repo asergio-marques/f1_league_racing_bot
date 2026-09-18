@@ -108,5 +108,5 @@ async def test_turning_a_driver_down_withdraws_their_signups_approval():
     await undecorate(DriverCog.reject)(cog, _interaction(), _member())
 
     cog.bot.signup_module_service.withdraw_approval.assert_awaited_once_with(
-        SERVER_ID, cog.bot.driver_service.get_profile.return_value.id
+        cog.bot.driver_service.get_profile.return_value.id
     )

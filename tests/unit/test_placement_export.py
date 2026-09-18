@@ -40,9 +40,9 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
         )
         for day, time_hhmm in slots or []:
             await db.execute(
-                "INSERT INTO signup_availability_slots (server_id, day_of_week, time_hhmm) "
-                "VALUES (?, ?, ?)",
-                (SERVER_ID, day, time_hhmm),
+                "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) "
+                "VALUES (?, ?)",
+                (day, time_hhmm),
             )
         for i, d in enumerate(drivers, start=1):
             uid = d.get("discord_user_id", str(9000 + i))
@@ -52,12 +52,11 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
                 (i, SERVER_ID, uid, d.get("state", "UNASSIGNED")),
             )
             await db.execute(
-                "INSERT INTO signup_records (server_id, discord_user_id, discord_username, "
+                "INSERT INTO signup_records (discord_user_id, discord_username, "
                 "server_display_name, platform, platform_id, availability_slot_ids, "
                 "driver_type, preferred_teams, total_lap_ms, updated_at, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    SERVER_ID,
                     uid,
                     d.get("discord_username"),
                     d.get("server_display_name"),
@@ -89,7 +88,7 @@ def _signup_service(db_path):
 
 async def _export(db_path):
     """Export exactly as the cog does — live slots, chronologically ordered."""
-    slots = await _signup_service(db_path).get_slots(SERVER_ID)
+    slots = await _signup_service(db_path).get_slots()
     slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
     rows = await _service(db_path).get_unassigned_drivers_for_export(SERVER_ID, slots_ordered)
     return rows, slots_ordered
@@ -134,7 +133,7 @@ class TestSlotPresence:
         ]
         assert marked_before == ["Friday 21:00 UTC"]
 
-        await _signup_service(db_path).remove_slot_by_rank(SERVER_ID, 1)  # remove Monday
+        await _signup_service(db_path).remove_slot_by_rank(1)  # remove Monday
 
         after_rows, after_slots = await _export(db_path)
         marked_after = [
@@ -149,7 +148,7 @@ class TestSlotPresence:
             [{"availability": ["Wed_20_00"]}],
             slots=[(1, "19:00"), (3, "20:00"), (5, "21:00")],
         )
-        await _signup_service(db_path).add_slot(SERVER_ID, 1, "08:00")
+        await _signup_service(db_path).add_slot(1, "08:00")
 
         rows, slots = await _export(db_path)
         marked = [s.display_label for s in slots if rows[0]["slot_presence"][s.slot_sequence_id]]
@@ -162,7 +161,7 @@ class TestSlotPresence:
             [{"availability": ["Mon_19_00"]}],
             slots=[(1, "19:00"), (3, "20:00"), (5, "21:00")],
         )
-        await _signup_service(db_path).remove_slot_by_rank(SERVER_ID, 1)
+        await _signup_service(db_path).remove_slot_by_rank(1)
 
         rows, _ = await _export(db_path)
         assert rows[0]["slot_presence"] == {1: False, 2: False}

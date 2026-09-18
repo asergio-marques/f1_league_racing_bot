@@ -338,7 +338,6 @@ async def test_enabling_signup_writes_a_bare_configuration(tmp_path):
 
     cog.bot.signup_module_service.save_config.assert_awaited_once()
     saved = cog.bot.signup_module_service.save_config.await_args.args[0]
-    assert saved.server_id == SERVER_ID
     assert saved.signup_channel_id is None
     assert saved.signups_open is False
 

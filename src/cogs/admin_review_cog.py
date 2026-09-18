@@ -73,7 +73,7 @@ class AdminReviewView(discord.ui.View):
         _user_id = self._discord_user_id
         if _user_id is None:
             wizard = await _bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
-                _server_id, interaction.channel_id
+                interaction.channel_id
             )
             _user_id = wizard.discord_user_id if wizard else None
         return _bot, _server_id, _user_id
@@ -205,7 +205,7 @@ class CorrectionParameterView(discord.ui.View):
                     _user_id = self._discord_user_id
                     if _user_id is None:
                         wizard = await _bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
-                            _server_id, inter.channel_id
+                            inter.channel_id
                         )
                         _user_id = wizard.discord_user_id if wizard else None
                     if _user_id is None:

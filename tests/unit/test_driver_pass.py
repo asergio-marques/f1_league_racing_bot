@@ -86,9 +86,8 @@ async def db_path(tmp_path):
                 (pid,),
             )
         await db.execute(
-            "INSERT INTO signup_records (server_id, season_id, discord_user_id) "
-            "VALUES (?, 1, '1002')",
-            (SERVER_ID,),
+            "INSERT INTO signup_records (season_id, discord_user_id) "
+            "VALUES (1, '1002')"
         )
         await db.commit()
     return path
@@ -157,8 +156,8 @@ async def test_a_signup_in_review_has_its_channel_closed(db_path):
 async def test_the_signed_up_role_is_revoked_from_a_real_driver(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signed_up_role_id) VALUES (?, 555)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signed_up_role_id) VALUES (?, 555)",
+            (1,),
         )
         await db.commit()
     role = MagicMock()
@@ -203,8 +202,8 @@ async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass(db_path):
 async def test_a_role_discord_will_not_take_back_does_not_stop_the_pass(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signed_up_role_id) VALUES (?, 555)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signed_up_role_id) VALUES (?, 555)",
+            (1,),
         )
         await db.commit()
     role = MagicMock()

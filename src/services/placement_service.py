@@ -320,7 +320,7 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def store_total_lap_ms(
-        self, server_id: int, discord_user_id: str, lap_times: dict[str, str]
+        self, discord_user_id: str, lap_times: dict[str, str]
     ) -> int | None:
         """Compute and persist total_lap_ms on the driver's SignupRecord.
 
@@ -333,8 +333,8 @@ class PlacementService:
             await db.execute(
                 "UPDATE signup_records SET total_lap_ms = ? "
                 "WHERE id = (SELECT MAX(id) FROM signup_records "
-                "            WHERE server_id = ? AND discord_user_id = ?)",
-                (total_ms, server_id, discord_user_id),
+                "            WHERE discord_user_id = ?)",
+                (total_ms, discord_user_id),
             )
             await db.commit()
         return total_ms
@@ -1587,8 +1587,7 @@ class PlacementService:
                 DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value
             ):
                 cursor = await db.execute(
-                    "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
-                    (server_id,),
+                    "SELECT signed_up_role_id FROM signup_module_config",
                 )
                 row = await cursor.fetchone()
                 if row is not None and row["signed_up_role_id"]:
@@ -1741,8 +1740,7 @@ class PlacementService:
             # Revoke the signed-up role granted at approval
             async with get_connection(self._db_path) as db:
                 cur = await db.execute(
-                    "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
-                    (server_id,),
+                    "SELECT signed_up_role_id FROM signup_module_config",
                 )
                 cfg_row = await cur.fetchone()
             if cfg_row and cfg_row["signed_up_role_id"]:

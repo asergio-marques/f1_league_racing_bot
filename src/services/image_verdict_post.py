@@ -107,7 +107,7 @@ async def _driver_nationality(
 ) -> str | None:
     """The nationality recorded for the driver — the datum a flag is resolved from.
 
-    ``signup_records`` is keyed by (server_id, discord_user_id) and carries no
+    ``signup_records`` is keyed by the Discord account and carries no
     driver_profile_id. This joined that phantom column, so the query raised on every
     verdict and the ``except`` returned None: no verdict graphic had ever drawn a driver
     flag. It now joins as the other posting paths join.

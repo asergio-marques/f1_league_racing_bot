@@ -259,7 +259,7 @@ async def test_the_configuration_is_cleared(tmp_path):
 
     await _disable(cog, interaction)
 
-    cog.bot.signup_module_service.delete_config.assert_awaited_once_with(SERVER_ID)
+    cog.bot.signup_module_service.delete_config.assert_awaited_once_with()
     assert "configuration has been cleared" in _replied(interaction)
 
 
@@ -300,7 +300,7 @@ async def test_the_close_timer_is_cancelled(tmp_path):
 
     await _disable(cog, _interaction())
 
-    cog.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with(SERVER_ID)
+    cog.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
 
 
 async def test_every_open_wizards_jobs_are_cancelled(tmp_path):

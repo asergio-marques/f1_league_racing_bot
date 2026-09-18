@@ -378,7 +378,7 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
         for instance in instances:
             seats = await (
                 await db.execute(
-                    # `signup_records` is keyed by (server_id, discord_user_id) and
+                    # `signup_records` is keyed by the Discord account and
                     # carries no driver_profile_id, so this is the join the table admits.
                     # The posting paths joined a phantom column until 2026-08-18 and could
                     # not render at all; they now join as this does.

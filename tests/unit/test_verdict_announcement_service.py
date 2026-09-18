@@ -380,9 +380,9 @@ async def _seed_driver(
         )
         if signup_display_name is not None or signup_username is not None:
             await db.execute(
-                "INSERT INTO signup_records (server_id, discord_user_id, "
-                "discord_username, server_display_name) VALUES (?, ?, ?, ?)",
-                (SERVER_ID, str(DRIVER_ID), signup_username, signup_display_name),
+                "INSERT INTO signup_records (discord_user_id, "
+                "discord_username, server_display_name) VALUES (?, ?, ?)",
+                (str(DRIVER_ID), signup_username, signup_display_name),
             )
         await db.commit()
 

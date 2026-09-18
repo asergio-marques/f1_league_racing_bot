@@ -36,8 +36,8 @@ async def _league(tmp_path, *, state: str = "ASSIGNED", committed: int = 1,
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signed_up_role_id) VALUES (?, ?)",
-            (SERVER_ID, SIGNED_UP_ROLE),
+            "INSERT INTO signup_module_config (id, signed_up_role_id) VALUES (?, ?)",
+            (1, SIGNED_UP_ROLE),
         )
         await db.execute(
             "INSERT INTO seasons (id, server_id, start_date, status, season_number) "

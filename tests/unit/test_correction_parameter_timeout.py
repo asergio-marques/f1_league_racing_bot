@@ -86,7 +86,6 @@ async def _save_wizard(db_path: str, draft: dict) -> None:
     await svc.save_wizard(
         SignupWizardRecord(
             id=-1,
-            server_id=SERVER_ID,
             discord_user_id=DRIVER_ID,
             wizard_state=WizardState.UNENGAGED,
             signup_channel_id=CHANNEL_ID,
@@ -99,7 +98,6 @@ async def _save_wizard(db_path: str, draft: dict) -> None:
     await svc.save_record(
         SignupRecord(
             id=-1,
-            server_id=SERVER_ID,
             discord_user_id=DRIVER_ID,
             discord_username="driver",
             server_display_name="Lewis Hamilton",
@@ -142,6 +140,7 @@ def _build_service(db_path: str, channel, *, signup_enabled: bool = True):
     bot.signup_module_service = SignupModuleService(db_path)
     bot.module_service.is_signup_enabled = AsyncMock(return_value=signup_enabled)
     bot.get_guild = MagicMock(return_value=guild)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
     return svc, guild
 
@@ -160,8 +159,8 @@ async def _draft(db_path: str) -> dict:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT draft_answers_json FROM signup_wizard_records "
-            "WHERE server_id = ? AND discord_user_id = ?",
-            (SERVER_ID, DRIVER_ID),
+            "WHERE discord_user_id = ?",
+            (DRIVER_ID,),
         )
         row = await cursor.fetchone()
     return json.loads(row["draft_answers_json"] or "{}")
@@ -344,9 +343,9 @@ async def test_the_timeout_does_nothing_while_the_signup_module_is_disabled(tmp_
 async def _open_the_window(db_path: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open, close_at) "
+            "INSERT INTO signup_module_config (id, signups_open, close_at) "
             "VALUES (?, 1, NULL)",
-            (SERVER_ID,),
+            (1,),
         )
         await db.commit()
 

@@ -125,6 +125,15 @@ class WizardService:
         assert self._bot is not None, "WizardService.set_bot() not called"
         return self._bot.driver_service  # type: ignore[attr-defined]
 
+    async def _league_server_id(self) -> int | None:
+        """The league's server, for the calls that still take one.
+
+        A wizard no longer records a server: one bot serves one league (issue #244), and the
+        league's server is the one `server_configs` holds.
+        """
+        assert self._bot is not None, "WizardService.set_bot() not called"
+        return await self._bot.config_service.get_league_server_id()  # type: ignore[attr-defined]
+
     @property
     def _signup_svc(self):
         assert self._bot is not None, "WizardService.set_bot() not called"
@@ -220,7 +229,7 @@ class WizardService:
     ) -> None:
         """Delete the wizard channel and clean up the wizard record."""
         svc = self._signup_svc
-        wizard = await svc.get_wizard(server_id, discord_user_id)
+        wizard = await svc.get_wizard(discord_user_id)
         if wizard is None or wizard.signup_channel_id is None:
             return
         guild = self._get_guild(server_id)
@@ -235,7 +244,7 @@ class WizardService:
                         wizard.signup_channel_id,
                         exc,
                     )
-        await svc.delete_wizard(server_id, discord_user_id)
+        await svc.delete_wizard(discord_user_id)
 
     # ------------------------------------------------------------------
     # Inactivity / channel-delete job helpers
@@ -341,10 +350,10 @@ class WizardService:
         """
         svc = self._signup_svc
         problems: list[str] = []
-        held = await svc.get_wizard(server_id, from_account)
+        held = await svc.get_wizard(from_account)
         if held is None or held.signup_channel_id is None:
             return problems
-        theirs = await svc.get_wizard(server_id, to_account)
+        theirs = await svc.get_wizard(to_account)
 
         if theirs is not None and theirs.signup_channel_id is not None:
             await self._cancel_channel_delete_job(server_id, from_account)
@@ -360,9 +369,9 @@ class WizardService:
         if theirs is not None:
             # An abandoned draft on the new account: the transient state of a signup never
             # begun, which would otherwise collide with the record moving in.
-            await svc.delete_wizard(server_id, to_account)
+            await svc.delete_wizard(to_account)
         await self._arm_channel_delete_job(server_id, to_account, fire_at)
-        await svc.rekey_wizard(server_id, from_account, to_account)
+        await svc.rekey_wizard(from_account, to_account)
         await self._cancel_channel_delete_job(server_id, from_account)
 
         channel = guild.get_channel(held.signup_channel_id)
@@ -404,7 +413,7 @@ class WizardService:
         discord_user_id = str(member.id)
 
         # T049: delete any existing wizard channel if present
-        existing = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        existing = await self._signup_svc.get_wizard(discord_user_id)
         if existing and existing.signup_channel_id is not None:
             old_ch = guild.get_channel(existing.signup_channel_id)
             if old_ch is not None:
@@ -420,7 +429,7 @@ class WizardService:
                 self._correction_tasks.pop(ckey).cancel()
 
         # Load configs
-        signup_cfg = await self._signup_svc.get_config(server_id)
+        signup_cfg = await self._signup_svc.get_config()
         server_cfg = await self._bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
         if signup_cfg is None:
             return None
@@ -435,7 +444,7 @@ class WizardService:
         )
 
         # Capture config snapshot
-        snapshot = await self._signup_svc.capture_config_snapshot(server_id)
+        snapshot = await self._signup_svc.capture_config_snapshot()
 
         # Fetch non-reserve default team names for step 6 buttons
         default_teams = await self._bot.team_service.get_default_teams(server_id)  # type: ignore[attr-defined]
@@ -452,7 +461,6 @@ class WizardService:
         # Upsert wizard record
         wizard = SignupWizardRecord(
             id=-1,
-            server_id=server_id,
             discord_user_id=discord_user_id,
             wizard_state=first_state,
             signup_channel_id=channel.id,
@@ -520,7 +528,7 @@ class WizardService:
         guild: discord.Guild,
     ) -> None:
         """Commit draft answers to SignupRecord and post admin review panel."""
-        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None:
             return
 
@@ -533,7 +541,6 @@ class WizardService:
         d = wizard.draft_answers
         record = SignupRecord(
             id=-1,
-            server_id=server_id,
             discord_user_id=discord_user_id,
             discord_username=d.get("discord_username"),
             server_display_name=d.get("server_display_name"),
@@ -550,7 +557,7 @@ class WizardService:
         )
         if is_correction:
             # A correction amends the signup it was asked of, and makes no new one (#220).
-            existing = await self._signup_svc.get_record(server_id, discord_user_id)
+            existing = await self._signup_svc.get_record(discord_user_id)
             if existing is not None:
                 record.id = existing.id
         await self._signup_svc.save_record(record)
@@ -647,7 +654,7 @@ class WizardService:
         and holds the channel for 24 hours before deletion.
         FR-040.
         """
-        signup_cfg = await self._signup_svc.get_config(server_id)
+        signup_cfg = await self._signup_svc.get_config()
         if signup_cfg is None:
             return
 
@@ -662,17 +669,17 @@ class WizardService:
                     log.warning("approve_signup: could not add signed-up role for %s", discord_user_id)
 
         # Compute and persist total_lap_ms before transitioning state
-        signup_record = await self._signup_svc.get_record(server_id, discord_user_id)
+        signup_record = await self._signup_svc.get_record(discord_user_id)
         if signup_record is not None and signup_record.lap_times:
             await self._bot.placement_service.store_total_lap_ms(  # type: ignore[attr-defined]
-                server_id, discord_user_id, signup_record.lap_times
+                discord_user_id, signup_record.lap_times
             )
 
         # Transition driver to UNASSIGNED
         await self._driver_service.transition(
             server_id, discord_user_id, DriverState.UNASSIGNED
         )
-        await self._signup_svc.mark_approved(server_id, discord_user_id)
+        await self._signup_svc.mark_approved(discord_user_id)
 
         await self._cancel_inactivity_job(server_id, discord_user_id)
 
@@ -746,7 +753,7 @@ class WizardService:
         CorrectionParameterView, and arms a 5-minute asyncio timeout.
         FR-042, FR-043.
         """
-        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None:
             return
 
@@ -829,7 +836,7 @@ class WizardService:
         if ckey in self._correction_tasks:
             self._correction_tasks.pop(ckey).cancel()
 
-        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None:
             return
 
@@ -888,7 +895,7 @@ class WizardService:
 
         FR-026, SC-003.
         """
-        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.signup_channel_id is None:
             return
 
@@ -968,7 +975,7 @@ class WizardService:
             DriverState.AWAITING_CORRECTION_PARAMETER,
         }
 
-        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
         wizard_is_active = wizard is not None and wizard.wizard_state != WizardState.UNENGAGED
 
         driver = None
@@ -1014,11 +1021,11 @@ class WizardService:
                     )
 
         if wizard is not None:
-            await self._signup_svc.delete_wizard(server_id, discord_user_id)
+            await self._signup_svc.delete_wizard(discord_user_id)
 
         # Post log notification
         try:
-            signup_record = await self._signup_svc.get_record(server_id, discord_user_id)
+            signup_record = await self._signup_svc.get_record(discord_user_id)
             display_name = (
                 (signup_record.server_display_name or signup_record.discord_username or discord_user_id)
                 if signup_record is not None
@@ -1058,7 +1065,7 @@ class WizardService:
             else:
                 fire_at = now  # No activity recorded — expire immediately
 
-            server_id = wizard.server_id
+            server_id = await self._league_server_id()
             discord_user_id = wizard.discord_user_id
             if fire_at > now:
                 await self._arm_inactivity_job(server_id, discord_user_id, fire_at)
@@ -1106,14 +1113,14 @@ class WizardService:
                 )
 
     async def get_wizard_by_channel(
-        self, server_id: int, channel_id: int
+        self, channel_id: int
     ):  # -> SignupWizardRecord | None
         """Look up an active wizard record by channel ID.
 
         Thin delegation to signup_module_service; exposed here so cogs only
         need a reference to wizard_service.
         """
-        return await self._signup_svc.get_wizard_by_channel(server_id, channel_id)
+        return await self._signup_svc.get_wizard_by_channel(channel_id)
 
     # ------------------------------------------------------------------
     # Validation helpers (implemented in T020–T021)
@@ -1183,6 +1190,7 @@ class WizardService:
         """Core wizard advancement — move to the next state within a known channel."""
         snapshot = wizard.config_snapshot
         assert snapshot is not None
+        server_id = await self._league_server_id()
 
         track_map = await self._get_track_name_map()
         state = wizard.wizard_state
@@ -1232,9 +1240,9 @@ class WizardService:
                 await self._signup_svc.save_wizard(wizard)
                 await channel.send(
                     self._prompt_for_state(state, snapshot, wizard, track_name_map=track_map),
-                    view=self._build_step_view(state, wizard.server_id, wizard.discord_user_id, snapshot.team_names),
+                    view=self._build_step_view(state, server_id, wizard.discord_user_id, snapshot.team_names),
                 )
-                await self._reset_inactivity_job(wizard.server_id, wizard.discord_user_id)
+                await self._reset_inactivity_job(server_id, wizard.discord_user_id)
                 return
 
         # T039: correction mode — commit correction instead of advancing
@@ -1246,13 +1254,13 @@ class WizardService:
         if next_state is None:
             # All steps complete — persist final draft answers before commit reads them back
             await self._signup_svc.save_wizard(wizard)
-            await self.commit_wizard(wizard.server_id, wizard.discord_user_id, guild)
+            await self.commit_wizard(server_id, wizard.discord_user_id, guild)
             return
 
         wizard.wizard_state = next_state
         wizard.last_activity_at = datetime.now(timezone.utc).isoformat()
         await self._signup_svc.save_wizard(wizard)
-        await self._reset_inactivity_job(wizard.server_id, wizard.discord_user_id)
+        await self._reset_inactivity_job(server_id, wizard.discord_user_id)
 
         # Entering a button-only state: revoke send_messages
         if next_state in WizardService._BUTTON_ONLY_STATES:
@@ -1262,7 +1270,7 @@ class WizardService:
 
         await channel.send(
             self._prompt_for_state(next_state, snapshot, wizard, track_name_map=track_map),
-            view=self._build_step_view(next_state, wizard.server_id, wizard.discord_user_id, snapshot.team_names),
+            view=self._build_step_view(next_state, server_id, wizard.discord_user_id, snapshot.team_names),
         )
 
     async def _reset_inactivity_job(self, server_id: int, discord_user_id: str) -> None:
@@ -1299,13 +1307,12 @@ class WizardService:
 
     async def handle_platform_button(
         self,
-        server_id: int,
         discord_user_id: str,
         platform: str,
         guild: discord.Guild,
     ) -> None:
         """Handle a platform button press in Step 2."""
-        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PLATFORM:
             return
         wizard.draft_answers["platform"] = platform
@@ -1318,13 +1325,12 @@ class WizardService:
 
     async def handle_driver_type_button(
         self,
-        server_id: int,
         discord_user_id: str,
         driver_type: str,
         guild: discord.Guild,
     ) -> None:
         """Handle a driver-type button press in Step 5."""
-        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_DRIVER_TYPE:
             return
         wizard.draft_answers["driver_type"] = driver_type
@@ -1343,7 +1349,7 @@ class WizardService:
         guild: discord.Guild,
     ) -> None:
         """Handle a team button or No Preference press in Step 6 (up to 3 sub-steps)."""
-        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PREFERRED_TEAMS:
             return
         if wizard.signup_channel_id is None:
@@ -1400,12 +1406,11 @@ class WizardService:
 
     async def handle_no_preference_teammate(
         self,
-        server_id: int,
         discord_user_id: str,
         guild: discord.Guild,
     ) -> None:
         """Handle the No Preference button press in Step 7."""
-        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PREFERRED_TEAMMATE:
             return
         wizard.draft_answers["preferred_teammate"] = None
@@ -1518,7 +1523,7 @@ class WizardService:
             return
         # Load non-reserve teams
         teams = await self._bot.team_service.get_default_teams(  # type: ignore[attr-defined]
-            wizard.server_id
+            await self._league_server_id()
         )
         non_reserve = [t.name for t in teams if not t.is_reserve]
         # Parse comma/newline-separated list
@@ -1606,7 +1611,7 @@ class WizardService:
         guild: discord.Guild,
     ) -> None:
         """Handle the 'No Notes' button press in Step 9."""
-        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_NOTES:
             return
 
@@ -1788,7 +1793,7 @@ class WizardService:
             return
 
         # Set wizard state back to UNENGAGED
-        wizard = await self._signup_svc.get_wizard(server_id, discord_user_id)
+        wizard = await self._signup_svc.get_wizard(discord_user_id)
         guild = self._get_guild(server_id)
         if wizard is None or guild is None:
             return
@@ -1808,7 +1813,7 @@ class WizardService:
         if wizard.signup_channel_id is not None:
             channel = guild.get_channel(wizard.signup_channel_id)
             if isinstance(channel, discord.TextChannel):
-                record = await self._signup_svc.get_record(server_id, discord_user_id)
+                record = await self._signup_svc.get_record(discord_user_id)
                 if record is not None:
                     from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
                     track_map = await self._get_track_name_map()
@@ -1848,11 +1853,11 @@ class WizardService:
         draft_answers.  Updates the existing SignupRecord with the corrected
         field(s), transitions driver state, and posts a fresh AdminReviewView.
         """
-        server_id = wizard.server_id
+        server_id = await self._league_server_id()
         discord_user_id = wizard.discord_user_id
 
         # Load existing signup record and apply corrections from draft_answers
-        record = await self._signup_svc.get_record(server_id, discord_user_id)
+        record = await self._signup_svc.get_record(discord_user_id)
         if record is None:
             log.warning("_commit_correction: no SignupRecord found for %s/%s", server_id, discord_user_id)
             return

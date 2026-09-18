@@ -41,8 +41,8 @@ async def db_path(tmp_path):
             (SERVER_ID, INTERACTION_ROLE),
         )
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, base_role_id) VALUES (?, ?)",
-            (SERVER_ID, BASE_ROLE),
+            "INSERT INTO signup_module_config (id, base_role_id) VALUES (?, ?)",
+            (1, BASE_ROLE),
         )
         await db.commit()
     return path
@@ -109,8 +109,7 @@ async def test_setting_a_free_channel_stores_it(db_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT signup_channel_id FROM signup_module_config WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT signup_channel_id FROM signup_module_config",
         )
         assert (await cursor.fetchone())[0] == channel.id
 
@@ -144,8 +143,7 @@ async def test_a_channel_already_in_use_is_refused(db_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT signup_channel_id FROM signup_module_config WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT signup_channel_id FROM signup_module_config",
         )
         assert (await cursor.fetchone())[0] is None, "a refused channel was stored"
 

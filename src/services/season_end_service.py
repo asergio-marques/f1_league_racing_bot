@@ -144,7 +144,7 @@ async def end_of_season_pass(
     from services.test_mode_service import switch_test_mode_off
 
     try:
-        signup_cfg = await bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
+        signup_cfg = await bot.signup_module_service.get_config()  # type: ignore[attr-defined]
         if signup_cfg is not None and signup_cfg.signups_open:
             from cogs.module_cog import execute_forced_close
 
@@ -341,8 +341,7 @@ async def _revoke_season_roles(
 
         # Fetch the signed-up role once for the whole loop
         cfg_cur = await db.execute(
-            "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT signed_up_role_id FROM signup_module_config",
         )
         cfg_row = await cfg_cur.fetchone()
 

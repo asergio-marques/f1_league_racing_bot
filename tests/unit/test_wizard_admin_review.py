@@ -56,7 +56,6 @@ def _wizard(**draft):
 
     return SignupWizardRecord(
         id=1,
-        server_id=SERVER_ID,
         discord_user_id=DRIVER_ID,
         # The wizard has no review state of its own — `WizardState` stops at the last
         # question. Awaiting review is carried on the *driver profile*, so a completed
@@ -95,7 +94,7 @@ def review():
     async def _transition(server_id, user_id, state):
         order.append(f"transition:{state.value if hasattr(state, 'value') else state}")
 
-    async def _store_total(server_id, user_id, lap_times):
+    async def _store_total(user_id, lap_times):
         order.append("store_total_lap_ms")
 
     driver_service = MagicMock()
@@ -114,6 +113,7 @@ def review():
     bot.driver_service = driver_service
     bot.signup_module_service = signup_svc
     bot.placement_service.store_total_lap_ms = AsyncMock(side_effect=_store_total)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
 
     svc._output_router = MagicMock()
@@ -457,4 +457,4 @@ async def test_an_approved_signup_is_marked_as_such(review):
     """Issue #243: an approved signup outranks a later one of the driver's that was not."""
     await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
 
-    review.signup_svc.mark_approved.assert_awaited_once_with(SERVER_ID, DRIVER_ID)
+    review.signup_svc.mark_approved.assert_awaited_once_with(DRIVER_ID)

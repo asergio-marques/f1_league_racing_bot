@@ -205,7 +205,7 @@ async def test_confirming_keeps_the_signup_configuration_for_the_season():
     await _cog(bot)._do_confirm_configuration(_interaction())
 
     bot.signup_module_service.snapshot_season_config.assert_awaited_once_with(
-        SERVER_ID, SEASON_ID
+        SEASON_ID
     )
 
 

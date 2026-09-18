@@ -69,7 +69,7 @@ OLD_CHANNEL = 7199
 
 def _slot(seq, label, slot_id):
     return AvailabilitySlot(
-        id=seq, server_id=SERVER_ID, slot_id=slot_id, slot_sequence_id=seq,
+        id=seq, slot_id=slot_id, slot_sequence_id=seq,
         day_of_week=1, time_hhmm="19:00", display_label=label,
     )
 
@@ -87,7 +87,6 @@ def _snapshot(*, nationality=False, tracks=(), time_type="TIME_TRIAL", image=Fal
 def _wizard(state=WizardState.COLLECTING_PLATFORM, *, channel=OLD_CHANNEL, draft=None, index=0, snapshot=None):
     return SignupWizardRecord(
         id=1,
-        server_id=SERVER_ID,
         discord_user_id=DRIVER,
         wizard_state=state,
         signup_channel_id=channel,
@@ -100,7 +99,7 @@ def _wizard(state=WizardState.COLLECTING_PLATFORM, *, channel=OLD_CHANNEL, draft
 
 def _record():
     return SignupRecord(
-        id=1, server_id=SERVER_ID, discord_user_id=DRIVER, discord_username="racer",
+        id=1, discord_user_id=DRIVER, discord_username="racer",
         server_display_name="Racer", nationality="British", platform="Steam",
         platform_id="racer_steam", availability_slot_ids=["Mon_19_00"], driver_type="FULL_TIME",
         preferred_teams=["Red"], preferred_teammate=None, lap_times={"27": "1:23.456"},
@@ -141,6 +140,7 @@ def _service(*, existing=None, signup_cfg=True, snapshot=None, teams=None, recor
         if teams is not None
         else [SimpleNamespace(name="Red", is_reserve=False), SimpleNamespace(name="Reserves", is_reserve=True)]
     )
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
     svc._get_track_name_map = AsyncMock(return_value={"27": "Silverstone"})
     return svc
@@ -611,7 +611,7 @@ async def test_the_scheduled_deletion_removes_channel_and_wizard(tmp_path):
     await svc._execute_channel_delete(SERVER_ID, DRIVER)
 
     channel.delete.assert_awaited_once()
-    svc._bot.signup_module_service.delete_wizard.assert_awaited_once_with(SERVER_ID, DRIVER)
+    svc._bot.signup_module_service.delete_wizard.assert_awaited_once_with(DRIVER)
 
 
 async def test_a_channel_that_will_not_delete_still_clears_the_wizard(tmp_path):

@@ -105,9 +105,9 @@ async def _set(db_path, setting, channel_id, *, division_id=None, server_id=SERV
             )
         elif setting == "signup":
             await db.execute(
-                "INSERT INTO signup_module_config (server_id, signup_channel_id) "
-                "VALUES (?, ?) ON CONFLICT(server_id) DO UPDATE SET signup_channel_id = ?",
-                (server_id, channel_id, channel_id),
+                "INSERT INTO signup_module_config (id, signup_channel_id) "
+                "VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET signup_channel_id = ?",
+                (1, channel_id, channel_id),
             )
         else:
             column = {"interaction": "interaction_channel_id", "log": "log_channel_id"}[

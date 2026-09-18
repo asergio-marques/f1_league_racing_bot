@@ -157,9 +157,9 @@ async def _seat_driver(
         profile_id = cursor.lastrowid
         # signup_records is keyed by (server_id, discord_user_id) — it holds no profile id.
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, server_display_name, "
-            "discord_username, nationality) VALUES (?, ?, ?, ?, ?)",
-            (SERVER_ID, str(user_id), name, name.lower(), nationality),
+            "INSERT INTO signup_records (discord_user_id, server_display_name, "
+            "discord_username, nationality) VALUES (?, ?, ?, ?)",
+            (str(user_id), name, name.lower(), nationality),
         )
         seat = await (
             await db.execute(
@@ -328,9 +328,9 @@ class TestTeamsAndDrivers:
         await _seed_team(db_path, division_id, "Redline", seats=2)
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO signup_module_settings (server_id, nationality_required, "
+                "INSERT INTO signup_module_settings (id, nationality_required, "
                 "time_type, time_image_required) VALUES (?, 0, 'TIME_TRIAL', 1)",
-                (SERVER_ID,),
+                (1,),
             )
             await db.commit()
 

@@ -53,13 +53,11 @@ ROUND_JOBS = [
     ("_rsvp_last_notice_job", "_rsvp_last_notice_callback"),
     ("_rsvp_deadline_job", "_rsvp_deadline_callback"),
 ]
-SERVER_JOBS = [
-    ("_signup_close_timer_job", "_signup_close_callback"),
-]
-ALL_JOBS = ROUND_JOBS + SERVER_JOBS
+ALL_JOBS = ROUND_JOBS
 
 #: Jobs of the league itself, called with nothing: one bot serves one league (issue #244).
 LEAGUE_JOBS = [
+    ("_signup_close_timer_job", "_signup_close_callback"),
     ("_portrait_refresh_job", "_portrait_refresh_callback"),
 ]
 

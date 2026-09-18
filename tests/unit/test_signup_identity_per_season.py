@@ -53,9 +53,9 @@ async def db_path(tmp_path):
         )
         for season_id, name, nationality in ((1, "Old Name", "French"), (2, "New Name", "British")):
             await db.execute(
-                "INSERT INTO signup_records (server_id, season_id, discord_user_id, "
-                "server_display_name, nationality) VALUES (?, ?, ?, ?, ?)",
-                (SERVER_ID, season_id, str(USER), name, nationality),
+                "INSERT INTO signup_records (season_id, discord_user_id, "
+                "server_display_name, nationality) VALUES (?, ?, ?, ?)",
+                (season_id, str(USER), name, nationality),
             )
         await db.commit()
     return path

@@ -271,7 +271,7 @@ async def test_a_closed_notice_is_posted_and_its_id_kept(tmp_path):
 
     assert "Signups are now closed" in str(bot._channel.send.await_args.args[0])
     bot.signup_module_service.set_window_closed.assert_awaited_once_with(
-        SERVER_ID, closed_msg_id=CLOSED_MESSAGE
+        closed_msg_id=CLOSED_MESSAGE
     )
 
 
@@ -282,7 +282,7 @@ async def test_a_notice_that_cannot_be_posted_still_closes_the_window(tmp_path):
     await execute_forced_close(SERVER_ID, bot, audit_action="X")
 
     bot.signup_module_service.set_window_closed.assert_awaited_once_with(
-        SERVER_ID, closed_msg_id=None
+        closed_msg_id=None
     )
 
 
@@ -293,7 +293,7 @@ async def test_a_guild_the_bot_has_left_still_closes_the_window(tmp_path):
     await execute_forced_close(SERVER_ID, bot, audit_action="X")
 
     bot.signup_module_service.set_window_closed.assert_awaited_once_with(
-        SERVER_ID, closed_msg_id=None
+        closed_msg_id=None
     )
 
 

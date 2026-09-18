@@ -39,9 +39,9 @@ async def _make_db(tmp_path) -> tuple[str, int]:
         )
         profile_id = cursor.lastrowid
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, server_display_name, "
-            "nationality, total_lap_ms) VALUES (?, ?, 'Racer', 'PT', 90000)",
-            (SERVER_ID, A),
+            "INSERT INTO signup_records (discord_user_id, server_display_name, "
+            "nationality, total_lap_ms) VALUES (?, 'Racer', 'PT', 90000)",
+            (A,),
         )
         await db.execute(
             "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?", (B, profile_id)
@@ -72,9 +72,9 @@ async def test_the_most_recent_signup_across_accounts_is_the_drivers(tmp_path):
     db_path, _ = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, server_display_name, "
-            "nationality, total_lap_ms) VALUES (?, ?, 'Racer Now', 'BR', 91000)",
-            (SERVER_ID, B),
+            "INSERT INTO signup_records (discord_user_id, server_display_name, "
+            "nationality, total_lap_ms) VALUES (?, 'Racer Now', 'BR', 91000)",
+            (B,),
         )
         await db.commit()
 
@@ -87,9 +87,9 @@ async def test_the_most_recent_signup_across_accounts_is_the_drivers(tmp_path):
 async def _newer_rejected_signup_on_b(db_path: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, server_display_name, "
-            "nationality, total_lap_ms) VALUES (?, ?, 'Rejected Answers', 'BR', 91000)",
-            (SERVER_ID, B),
+            "INSERT INTO signup_records (discord_user_id, server_display_name, "
+            "nationality, total_lap_ms) VALUES (?, 'Rejected Answers', 'BR', 91000)",
+            (B,),
         )
         await db.commit()
 
@@ -97,7 +97,7 @@ async def _newer_rejected_signup_on_b(db_path: str) -> None:
 async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
     """The usual merge: A's signup approved, B's later one rejected. A's is the driver's."""
     db_path, _ = await _make_db(tmp_path)
-    await SignupModuleService(db_path).mark_approved(SERVER_ID, A)
+    await SignupModuleService(db_path).mark_approved(A)
     await _newer_rejected_signup_on_b(db_path)
 
     drivers = await PlacementService(db_path).get_unassigned_drivers_seeded(SERVER_ID)
@@ -109,10 +109,10 @@ async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
 async def test_a_turned_down_signup_no_longer_outranks_the_others(tmp_path):
     db_path, profile_id = await _make_db(tmp_path)
     service = SignupModuleService(db_path)
-    await service.mark_approved(SERVER_ID, A)
+    await service.mark_approved(A)
     await _newer_rejected_signup_on_b(db_path)
 
-    await service.withdraw_approval(SERVER_ID, profile_id)
+    await service.withdraw_approval(profile_id)
 
     assert await _driver_nationality(db_path, SERVER_ID, int(A)) == "BR"
     async with get_connection(db_path) as db:
@@ -124,13 +124,13 @@ async def test_approval_marks_only_the_latest_signup_of_the_account(tmp_path):
     db_path, _ = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, server_display_name) "
-            "VALUES (?, ?, 'Second Go')",
-            (SERVER_ID, A),
+            "INSERT INTO signup_records (discord_user_id, server_display_name) "
+            "VALUES (?, 'Second Go')",
+            (A,),
         )
         await db.commit()
 
-    await SignupModuleService(db_path).mark_approved(SERVER_ID, A)
+    await SignupModuleService(db_path).mark_approved(A)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

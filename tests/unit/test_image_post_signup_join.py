@@ -66,9 +66,9 @@ async def _seed_driver(db_path, *, name: str = "Ada Lovelace", nationality: str 
             (SERVER_ID, USER_ID),
         )
         await db.execute(
-            "INSERT INTO signup_records (server_id, discord_user_id, server_display_name, "
-            "discord_username, nationality) VALUES (?, ?, ?, ?, ?)",
-            (SERVER_ID, str(USER_ID), name, "ada", nationality),
+            "INSERT INTO signup_records (discord_user_id, server_display_name, "
+            "discord_username, nationality) VALUES (?, ?, ?, ?)",
+            (str(USER_ID), name, "ada", nationality),
         )
         await db.commit()
 
@@ -101,7 +101,7 @@ class TestSignupRecordsJoin:
                 ).fetchall()
             }
         assert "driver_profile_id" not in columns
-        assert {"server_id", "discord_user_id"} <= columns
+        assert "discord_user_id" in columns
 
     async def test_nationalities_reads_a_seeded_driver(self, bot, db_path):
         """`_nationalities` is imported by the attendance and verdict paths too."""
@@ -195,10 +195,10 @@ class TestSignupRecordsJoin:
             )
             profile_id = cursor.lastrowid
             await db.execute(
-                "INSERT INTO signup_records (server_id, discord_user_id, "
+                "INSERT INTO signup_records (discord_user_id, "
                 "server_display_name, discord_username, nationality) "
-                "VALUES (?, ?, 'Ada Lovelace', 'ada', 'British')",
-                (SERVER_ID, str(USER_ID)),
+                "VALUES (?, 'Ada Lovelace', 'ada', 'British')",
+                (str(USER_ID),),
             )
             await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
@@ -220,8 +220,7 @@ class TestSignupRecordsJoin:
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
                     "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
                     "LEFT JOIN signup_records sr "
-                    "       ON sr.server_id = dp.server_id "
-                    "      AND sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
+                    "       ON sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
                     "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
                     (division_id, team_id),
                 )
@@ -243,9 +242,9 @@ class TestNationalityCollected:
 
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO signup_module_settings (server_id, nationality_required, "
+                "INSERT INTO signup_module_settings (id, nationality_required, "
                 "time_type, time_image_required) VALUES (?, 0, 'TIME_TRIAL', 1)",
-                (SERVER_ID,),
+                (1,),
             )
             await db.commit()
 
@@ -256,9 +255,9 @@ class TestNationalityCollected:
 
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO signup_module_settings (server_id, nationality_required, "
+                "INSERT INTO signup_module_settings (id, nationality_required, "
                 "time_type, time_image_required) VALUES (?, 1, 'TIME_TRIAL', 1)",
-                (SERVER_ID,),
+                (1,),
             )
             await db.commit()
 
@@ -292,9 +291,9 @@ class TestTheTestModeSwitchStandsIn:
                 (test_mode, test_nationality, SERVER_ID),
             )
             await db.execute(
-                "INSERT INTO signup_module_settings (server_id, nationality_required, "
+                "INSERT INTO signup_module_settings (id, nationality_required, "
                 "time_type, time_image_required) VALUES (?, ?, 'TIME_TRIAL', 1)",
-                (SERVER_ID, signup),
+                (1, signup),
             )
             await db.commit()
 

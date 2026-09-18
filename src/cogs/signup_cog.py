@@ -134,7 +134,7 @@ async def _resolve_view_context(
     if stored_user_id is not None:
         return bot, server_id, stored_user_id
     wizard = await bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
-        server_id, interaction.channel_id
+        interaction.channel_id
     )
     return bot, server_id, (wizard.discord_user_id if wizard else None)
 
@@ -413,7 +413,7 @@ class PlatformButtonView(discord.ui.View):
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_platform_button(  # type: ignore[attr-defined]
-            _server_id, _user_id, platform, interaction.guild
+            _user_id, platform, interaction.guild
         )
 
     @discord.ui.button(label="Steam", style=discord.ButtonStyle.secondary, custom_id="plat_steam")
@@ -470,7 +470,7 @@ class DriverTypeButtonView(discord.ui.View):
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_driver_type_button(  # type: ignore[attr-defined]
-            _server_id, _user_id, driver_type, interaction.guild
+            _user_id, driver_type, interaction.guild
         )
 
     @discord.ui.button(label="Full-Time Driver", style=discord.ButtonStyle.primary, custom_id="dtype_fulltime")
@@ -564,7 +564,7 @@ class PreferredTeamsButtonView(discord.ui.View):
                 return
             # Resolve team name by index from live wizard state
             wizard = await _bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
-                _server_id, interaction.channel_id
+                interaction.channel_id
             )
             if wizard is None or wizard.config_snapshot is None:
                 await interaction.response.send_message("⛔ Wizard session not found.", ephemeral=True)
@@ -630,7 +630,7 @@ class NoPreferenceTeammateView(discord.ui.View):
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_no_preference_teammate(  # type: ignore[attr-defined]
-            _server_id, _user_id, interaction.guild
+            _user_id, interaction.guild
         )
 
     @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="tmmate_cancel")
@@ -677,7 +677,7 @@ class SignupCog(commands.Cog):
         if await is_foreign_guild(self.bot, message.guild.id):
             return
         wizard = await self.bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
-            message.guild.id, message.channel.id
+            message.channel.id
         )
         if wizard is None or wizard.discord_user_id != str(message.author.id):
             return
@@ -718,9 +718,9 @@ class SignupCog(commands.Cog):
                 async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
                     cursor = await db.execute(
                         "SELECT server_display_name, discord_username "
-                        "FROM signup_records WHERE server_id = ? AND discord_user_id = ? "
+                        "FROM signup_records WHERE discord_user_id = ? "
                         "ORDER BY id DESC LIMIT 1",
-                        (member.guild.id, str(member.id)),
+                        (str(member.id),),
                     )
                     rec = await cursor.fetchone()
                 display_name = (
@@ -781,7 +781,7 @@ class SignupCog(commands.Cog):
             return
         # Deprecated: use /signup base-role and /signup complete-role.
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "❌ Signup module is not configured.", ephemeral=True
@@ -812,8 +812,8 @@ class SignupCog(commands.Cog):
     @league_manager_only
     async def config_view(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        cfg = await self.bot.signup_module_service.get_config(server_id)
-        settings = await self.bot.signup_module_service.get_settings(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
+        settings = await self.bot.signup_module_service.get_settings()
 
         guild = interaction.guild
         assert guild is not None
@@ -860,7 +860,7 @@ class SignupCog(commands.Cog):
         guild = interaction.guild
         assert guild is not None
 
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "❌ Signup module is not configured.", ephemeral=True
@@ -988,7 +988,7 @@ class SignupCog(commands.Cog):
         guild = interaction.guild
         assert guild is not None
 
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "❌ Signup module is not configured.", ephemeral=True
@@ -1052,7 +1052,7 @@ class SignupCog(commands.Cog):
             return
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "❌ Signup module is not configured.", ephemeral=True
@@ -1092,7 +1092,7 @@ class SignupCog(commands.Cog):
         if await self._refuse_while_configuration_fixed(interaction, "/signup nationality"):
             return
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        settings = await self.bot.signup_module_service.get_settings(server_id)
+        settings = await self.bot.signup_module_service.get_settings()
         old_val = settings.nationality_required
         settings.nationality_required = not old_val
         await self.bot.signup_module_service.save_settings(settings)
@@ -1128,7 +1128,7 @@ class SignupCog(commands.Cog):
         if await self._refuse_while_configuration_fixed(interaction, "/signup time-type"):
             return
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        settings = await self.bot.signup_module_service.get_settings(server_id)
+        settings = await self.bot.signup_module_service.get_settings()
         old_val = settings.time_type
         settings.time_type = (
             "SHORT_QUALIFICATION" if old_val == "TIME_TRIAL" else "TIME_TRIAL"
@@ -1166,7 +1166,7 @@ class SignupCog(commands.Cog):
         if await self._refuse_while_configuration_fixed(interaction, "/signup time-image"):
             return
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        settings = await self.bot.signup_module_service.get_settings(server_id)
+        settings = await self.bot.signup_module_service.get_settings()
         old_val = settings.time_image_required
         settings.time_image_required = not old_val
         await self.bot.signup_module_service.save_settings(settings)
@@ -1245,7 +1245,7 @@ class SignupCog(commands.Cog):
             return
 
         # Guard: max slots
-        existing_slots = await self.bot.signup_module_service.get_slots(server_id)
+        existing_slots = await self.bot.signup_module_service.get_slots()
         if len(existing_slots) >= _MAX_SLOTS:
             await interaction.response.send_message(
                 f"❌ Maximum of {_MAX_SLOTS} time slots reached.", ephemeral=True
@@ -1263,14 +1263,14 @@ class SignupCog(commands.Cog):
 
         day_int = int(day.value)
         try:
-            await self.bot.signup_module_service.add_slot(server_id, day_int, normalized)
+            await self.bot.signup_module_service.add_slot(day_int, normalized)
         except ValueError:
             await interaction.response.send_message(
                 "❌ That time slot already exists.", ephemeral=True
             )
             return
 
-        updated = await self.bot.signup_module_service.get_slots(server_id)
+        updated = await self.bot.signup_module_service.get_slots()
         new_slot = next((s for s in updated if s.day_of_week == day_int and s.time_hhmm == normalized), None)
 
         now = datetime.now(timezone.utc).isoformat()
@@ -1308,7 +1308,7 @@ class SignupCog(commands.Cog):
         if await self._refuse_while_configuration_fixed(interaction, "/signup time-slot remove"):
             return
 
-        slots = await self.bot.signup_module_service.get_slots(server_id)
+        slots = await self.bot.signup_module_service.get_slots()
         if not slots:
             await interaction.response.send_message(
                 "❌ No slots configured.", ephemeral=True
@@ -1322,7 +1322,7 @@ class SignupCog(commands.Cog):
             )
             return
 
-        await self.bot.signup_module_service.remove_slot_by_rank(server_id, slot_id)
+        await self.bot.signup_module_service.remove_slot_by_rank(slot_id)
 
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
@@ -1337,7 +1337,7 @@ class SignupCog(commands.Cog):
             )
             await db.commit()
 
-        updated = await self.bot.signup_module_service.get_slots(server_id)
+        updated = await self.bot.signup_module_service.get_slots()
         await interaction.response.send_message(
             _format_slots(updated), ephemeral=True
         )
@@ -1352,7 +1352,7 @@ class SignupCog(commands.Cog):
     @league_manager_only
     async def time_slot_list(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        slots = await self.bot.signup_module_service.get_slots(server_id)
+        slots = await self.bot.signup_module_service.get_slots()
         await interaction.response.send_message(
             _format_slots(slots), ephemeral=True
         )
@@ -1375,7 +1375,7 @@ class SignupCog(commands.Cog):
         against a closed window could only ever fire a forced close on nothing.
         """
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None or not cfg.signups_open:
             await interaction.response.send_message(
                 "❌ Signups are not currently open, so there is no auto-close time to "
@@ -1443,8 +1443,8 @@ class SignupCog(commands.Cog):
             return
         assert close_at_iso is not None
 
-        await self.bot.signup_module_service.set_close_at(server_id, close_at_iso)
-        self.bot.scheduler_service.schedule_signup_close_timer(server_id, close_at_iso)
+        await self.bot.signup_module_service.set_close_at(close_at_iso)
+        self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
 
         armed = datetime.fromisoformat(close_at_iso)
         await interaction.response.send_message(
@@ -1479,8 +1479,8 @@ class SignupCog(commands.Cog):
             return
 
         previous = cfg.close_at
-        self.bot.scheduler_service.cancel_signup_close_timer(server_id)
-        await self.bot.signup_module_service.set_close_at(server_id, None)
+        self.bot.scheduler_service.cancel_signup_close_timer()
+        await self.bot.signup_module_service.set_close_at(None)
 
         await interaction.response.send_message(
             "✅ Auto-close time cleared. Signups stay open until you close them with "
@@ -1525,9 +1525,9 @@ class SignupCog(commands.Cog):
         assert close_at_iso is not None
 
         previous = cfg.close_at
-        self.bot.scheduler_service.cancel_signup_close_timer(server_id)
-        await self.bot.signup_module_service.set_close_at(server_id, close_at_iso)
-        self.bot.scheduler_service.schedule_signup_close_timer(server_id, close_at_iso)
+        self.bot.scheduler_service.cancel_signup_close_timer()
+        await self.bot.signup_module_service.set_close_at(close_at_iso)
+        self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
 
         armed = datetime.fromisoformat(close_at_iso)
         await interaction.response.send_message(
@@ -1574,7 +1574,7 @@ class SignupCog(commands.Cog):
             )
             return
 
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "❌ Signup module is not configured.", ephemeral=True
@@ -1618,7 +1618,7 @@ class SignupCog(commands.Cog):
             return
 
         # Guard: at least one slot configured
-        slots = await self.bot.signup_module_service.get_slots(server_id)
+        slots = await self.bot.signup_module_service.get_slots()
         if not slots:
             await interaction.response.send_message(
                 "❌ At least one availability time slot must be configured before opening signups.",
@@ -1654,7 +1654,7 @@ class SignupCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         # Build and post signup button + info message
-        settings = await self.bot.signup_module_service.get_settings(server_id)
+        settings = await self.bot.signup_module_service.get_settings()
         guild = interaction.guild
         assert guild is not None
         signup_channel = guild.get_channel(cfg.signup_channel_id) if cfg.signup_channel_id else None
@@ -1719,15 +1719,15 @@ class SignupCog(commands.Cog):
             return
 
         await self.bot.signup_module_service.set_window_open(
-            server_id, posted_msg.id, track_list
+            posted_msg.id, track_list
         )
         from services.season_lifecycle_service import advance_on_window_open
 
         await advance_on_window_open(self.bot.db_path, server_id)
 
         if close_at_iso:
-            await self.bot.signup_module_service.set_close_at(server_id, close_at_iso)
-            self.bot.scheduler_service.schedule_signup_close_timer(server_id, close_at_iso)
+            await self.bot.signup_module_service.set_close_at(close_at_iso)
+            self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
 
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
@@ -1762,7 +1762,7 @@ class SignupCog(commands.Cog):
     async def signup_close(self, interaction: discord.Interaction) -> None:
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
-        cfg = await self.bot.signup_module_service.get_config(server_id)
+        cfg = await self.bot.signup_module_service.get_config()
         if cfg is None or not cfg.signups_open:
             await interaction.response.send_message(
                 "❌ Signups are not currently open.", ephemeral=True
@@ -1906,7 +1906,7 @@ class SignupCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
-        slots = await self.bot.signup_module_service.get_slots(server_id)  # type: ignore[attr-defined]
+        slots = await self.bot.signup_module_service.get_slots()  # type: ignore[attr-defined]
         slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
 
         drivers = await self.bot.placement_service.get_unassigned_drivers_for_export(  # type: ignore[attr-defined]

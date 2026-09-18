@@ -173,8 +173,7 @@ async def _fake_drivers(db_path: str) -> int:
 async def _open_signups(db_path: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE signup_module_config SET signups_open = 1 WHERE server_id = ?",
-            (SERVER_ID,),
+            "UPDATE signup_module_config SET signups_open = 1",
         )
         await db.commit()
 
@@ -204,9 +203,9 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signup_channel_id, base_role_id, "
+            "INSERT INTO signup_module_config (id, signup_channel_id, base_role_id, "
             "signed_up_role_id, signups_open) VALUES (?, 11, 12, 13, 0)",
-            (SERVER_ID,),
+            (1,),
         )
         await db.execute(
             "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "

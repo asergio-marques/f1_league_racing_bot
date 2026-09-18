@@ -40,7 +40,7 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
     4. Set window closed.
     5. Emit audit entry.
     """
-    cfg = await bot.signup_module_service.get_config(server_id)
+    cfg = await bot.signup_module_service.get_config()
     if cfg is None:
         return
 
@@ -118,7 +118,7 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
                 log.exception("forced_close: could not post closed message")
 
     # 4. Set window closed (persists closed_msg_id)
-    await bot.signup_module_service.set_window_closed(server_id, closed_msg_id=closed_msg_id)
+    await bot.signup_module_service.set_window_closed(closed_msg_id=closed_msg_id)
 
     # 4b. Move the season on (issue #220). Every close reaches here — the command, the
     #     close timer and the restart sweep — so every close moves the season alike. A
@@ -869,7 +869,6 @@ class ModuleCog(commands.Cog):
         # Upsert a bare config row — channel/role fields all NULL
         from models.signup_module import SignupModuleConfig
         new_cfg = SignupModuleConfig(
-            server_id=server_id,
             signup_channel_id=None,
             base_role_id=None,
             signed_up_role_id=None,
@@ -918,14 +917,14 @@ class ModuleCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        signup_cfg = await self.bot.signup_module_service.get_config(server_id)
+        signup_cfg = await self.bot.signup_module_service.get_config()
 
         # Force-close if signups are open
         if signup_cfg and signup_cfg.signups_open:
             await execute_forced_close(server_id, self.bot, audit_action="SIGNUP_FORCE_CLOSE")
 
         # Cancel any active signup close timer
-        self.bot.scheduler_service.cancel_signup_close_timer(server_id)
+        self.bot.scheduler_service.cancel_signup_close_timer()
 
         # Remove bot-applied permission overwrites (only those set by /signup channel)
         if signup_cfg and signup_cfg.signup_channel_id is not None:
@@ -954,7 +953,7 @@ class ModuleCog(commands.Cog):
         # Cancel all wizard inactivity and channel-delete APScheduler jobs for this server
         if signup_cfg:
             active_wizards = await self.bot.signup_module_service.get_all_active_wizards(
-                server_id
+                
             )
             scheduler = self.bot.scheduler_service._scheduler
             for wiz in active_wizards:
@@ -966,7 +965,7 @@ class ModuleCog(commands.Cog):
                         pass
 
         # Delete config (cascades to settings + slots)
-        await self.bot.signup_module_service.delete_config(server_id)
+        await self.bot.signup_module_service.delete_config()
 
         # Set disabled + audit
         await self.bot.module_service.set_signup_enabled(server_id, False)

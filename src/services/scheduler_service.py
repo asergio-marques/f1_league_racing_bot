@@ -82,24 +82,21 @@ def _round_job_suffix(rnd: "Round", season_number: int, division_tier: int) -> s
 _GLOBAL_SERVICE: "SchedulerService | None" = None
 
 
-async def _signup_close_timer_job(server_id: int) -> None:
+#: One league, so one signup window at a time and one timer to close it.
+SIGNUP_CLOSE_JOB_ID = "signup_close"
+
+
+async def _signup_close_timer_job() -> None:
     """Module-level APScheduler callable for signup auto-close — picklable for
     SQLAlchemyJobStore. Delegates to the registered signup-close callback."""
     if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_signup_close_timer_job fired but _GLOBAL_SERVICE is None "
-            "(server_id=%s) — skipping",
-            server_id,
-        )
+        log.warning("_signup_close_timer_job fired but _GLOBAL_SERVICE is None — skipping")
         return
     cb = _GLOBAL_SERVICE._signup_close_callback
     if cb is None:
-        log.warning(
-            "_signup_close_timer_job: no callback registered (server_id=%s) — skipping",
-            server_id,
-        )
+        log.warning("_signup_close_timer_job: no callback registered — skipping")
         return
-    await cb(server_id)
+    await cb()
 
 
 #: One league, so one daily refresh: the job is named by what it does, not by a server.
@@ -852,34 +849,30 @@ class SchedulerService:
     def register_signup_close_callback(self, callback: Callable) -> None:
         """Register the async callable invoked when the signup close timer fires.
 
-        The callable must accept ``(server_id: int)``.
+        The callable takes no arguments.
         Called from bot.py on_ready after the scheduler is started.
         """
         self._signup_close_callback = callback
 
-    def schedule_signup_close_timer(self, server_id: int, close_at_iso: str) -> None:
-        """Schedule a one-shot signup auto-close job for *server_id* at the
-        given ISO 8601 UTC timestamp string.
+    def schedule_signup_close_timer(self, close_at_iso: str) -> None:
+        """Schedule the one-shot signup auto-close job at the given ISO 8601 UTC timestamp.
 
         Uses ``replace_existing=True`` so calling this again re-arms the timer.
         """
         fire_at = datetime.fromisoformat(close_at_iso).replace(tzinfo=timezone.utc)
-        job_id = f"signup_close_{server_id}"
         self._scheduler.add_job(
             _signup_close_timer_job,
             trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
-            id=job_id,
+            id=SIGNUP_CLOSE_JOB_ID,
             replace_existing=True,
-            name=f"Signup auto-close for server {server_id}",
-            kwargs={"server_id": server_id},
+            name="Signup auto-close",
         )
-        log.info("Scheduled signup_close_%s at %s", server_id, fire_at.isoformat())
+        log.info("Scheduled %s at %s", SIGNUP_CLOSE_JOB_ID, fire_at.isoformat())
 
-    def cancel_signup_close_timer(self, server_id: int) -> None:
-        """Remove the signup close timer for *server_id* if it exists."""
-        job_id = f"signup_close_{server_id}"
+    def cancel_signup_close_timer(self) -> None:
+        """Remove the signup close timer if it exists."""
         try:
-            self._scheduler.remove_job(job_id)
-            log.info("Removed signup_close job for server %s", server_id)
+            self._scheduler.remove_job(SIGNUP_CLOSE_JOB_ID)
+            log.info("Removed the %s job", SIGNUP_CLOSE_JOB_ID)
         except Exception:
             pass  # Already fired or never scheduled

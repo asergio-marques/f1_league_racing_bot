@@ -146,8 +146,8 @@ async def test_the_season_is_archived_with_history_for_its_former_driver(db_path
 async def test_an_open_signup_window_is_closed(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signups_open) VALUES (?, 1)",
+            (1,),
         )
         await db.commit()
 
@@ -173,8 +173,8 @@ async def test_test_mode_that_cannot_be_switched_off_does_not_stop_completion(db
 async def test_a_window_that_cannot_be_closed_does_not_keep_test_mode_on(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signups_open) VALUES (?, 1)",
+            (1,),
         )
         await db.commit()
 
@@ -194,8 +194,8 @@ async def test_the_window_is_closed_before_the_driver_pass(db_path):
     """Closed first, so that nobody begins a signup the driver pass has already gone by."""
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (server_id, signups_open) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO signup_module_config (id, signups_open) VALUES (?, 1)",
+            (1,),
         )
         await db.commit()
     order: list[str] = []

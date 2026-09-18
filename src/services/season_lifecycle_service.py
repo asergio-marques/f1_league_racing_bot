@@ -171,8 +171,7 @@ async def turn_down_pending_placements(bot, server_id: int, season_id: int, guil
         )
         drivers = [dict(r) for r in await cursor.fetchall()]
         cursor = await db.execute(
-            "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT signed_up_role_id FROM signup_module_config",
         )
         cfg_row = await cursor.fetchone()
 
@@ -237,12 +236,12 @@ async def wind_down_ongoing(bot, server_id: int) -> bool:
     guild = bot.get_guild(server_id)
     if stage is not SeasonStage.ONGOING:
         try:
-            signup_cfg = await bot.signup_module_service.get_config(server_id)
+            signup_cfg = await bot.signup_module_service.get_config()
             if signup_cfg is not None and signup_cfg.signups_open:
                 from cogs.module_cog import execute_forced_close
 
                 try:
-                    bot.scheduler_service.cancel_signup_close_timer(server_id)
+                    bot.scheduler_service.cancel_signup_close_timer()
                 except Exception:  # noqa: BLE001 — a timer already gone is the aim
                     pass
                 await execute_forced_close(
@@ -468,8 +467,7 @@ async def run_driver_pass(db_path: str, server_id: int, *, bot=None, guild=None)
         )
         to_reset = [dict(r) for r in await cursor.fetchall()]
         cursor = await db.execute(
-            "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
-            (server_id,),
+            "SELECT signed_up_role_id FROM signup_module_config",
         )
         cfg_row = await cursor.fetchone()
     signed_up_role_id = cfg_row["signed_up_role_id"] if cfg_row else None

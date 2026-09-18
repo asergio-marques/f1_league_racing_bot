@@ -116,7 +116,7 @@ async def test_each_platform_button_reports_its_own_platform(button, platform):
 
     interaction.client.wizard_service.handle_platform_button.assert_awaited_once()
     assert (
-        interaction.client.wizard_service.handle_platform_button.await_args.args[2]
+        interaction.client.wizard_service.handle_platform_button.await_args.args[1]
         == platform
     )
 
@@ -223,7 +223,7 @@ async def test_each_driver_type_button_reports_its_own_type(button, driver_type)
     await getattr(type(view), button)(view, interaction, MagicMock())
 
     assert (
-        interaction.client.wizard_service.handle_driver_type_button.await_args.args[2]
+        interaction.client.wizard_service.handle_driver_type_button.await_args.args[1]
         == driver_type
     )
 
