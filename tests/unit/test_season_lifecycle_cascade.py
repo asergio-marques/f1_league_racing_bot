@@ -400,30 +400,12 @@ async def test_the_backfill_reads_each_division_from_its_season(
     tmp_path, season_status, division_status, expected
 ) -> None:
     """Every existing row says 'SETUP', so its season is the only evidence of what it should say."""
-    import os.path
+    from tests.support.migration_steps import migrate_before, run_migrations_through
 
-    migrations_dir = os.path.join(
-        os.path.dirname(__file__), "..", "..", "src", "db", "migrations"
-    )
     db_path = str(tmp_path / "bot.db")
-
-    files = sorted(f for f in os.listdir(migrations_dir) if f.endswith(".sql"))
-    before_053 = [f for f in files if f < "053"]
+    migrate_before(db_path, "053")
 
     async with get_connection(db_path) as db:
-        await db.execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations "
-            "(version TEXT PRIMARY KEY, applied_at TEXT)"
-        )
-        for filename in before_053:
-            with open(os.path.join(migrations_dir, filename), encoding="utf-8") as fh:
-                await db.executescript(fh.read())
-            await db.execute(
-                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, '2026-01-01')",
-                (filename,),
-            )
-            await db.commit()
-
         await db.execute(
             "INSERT INTO server_configs "
             "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
@@ -446,8 +428,6 @@ async def test_the_backfill_reads_each_division_from_its_season(
 
     # 053 and nothing after it: a later migration rebuilt seasons (061), and it is 053's
     # backfill that is under test.
-    from tests.support.migration_steps import run_migrations_through
-
     await run_migrations_through(db_path, "053_lifecycle_states.sql")
 
     assert await _division_status(db_path, division_id) == expected
