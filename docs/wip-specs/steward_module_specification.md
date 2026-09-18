@@ -1,20 +1,43 @@
 # Stewarding module
-- <COMMAND CHANGE> The stewarding module may be enabled via a "module enable" command akin to the weather and signup modules. May only be used by server admins.
-- <COMMAND CHANGE> The stewarding module may be disabled via a "module disable" command akin to the weather, signup, results and attendance modules. May only be used by server admins.
+- <COMMAND CHANGE> The stewarding module may be enabled via a "module enable" command akin to the weather and signup modules. It is a league admin's command.
+- <COMMAND CHANGE> The stewarding module may be disabled via a "module disable" command akin to the weather, signup, results and attendance modules. It is a league admin's command.
 - The stewarding module is disabled by default.
-- The stewarding module may not be enabled once the season is approved.
+- The stewarding module may be enabled until the season's placements are first confirmed, or while the server holds no active season.
+- The stewarding module may be disabled at any time no stewarding cycle stands open in any division. The refusal shall name each division whose cycle is open and when that cycle is due to close.
+- Season bans and league bans shall remain in force while the stewarding module is disabled, as set out under Bans. This is the sole exception to a disabled module ceasing its work: a ban, once on a driver's license, is a fact about the driver and not work of the module.
 - The stewarding module is heavily connected to the results & standings module, but only part of its functionality is to be disabled if the results & standings module is disabled as well.
 - If the stewarding module is enabled, then it shall not be possible to use the penalty and appeal functionality in the results & standings module. This functionality will hereby be governed by the stewarding module.
 - The stewarding module is connected to the attendance module, and modifies its outputs.
 - The stewarding module is connected to the signup module, and modifies its outputs.
-- Stewarding module activation status shall be displayed in the season review.
+- Stewarding module activation status shall be displayed in the configuration review and in the placements review.
 - This module must work with the fake driver rosters used in test mode.
-- The stewarding module introduces two new levels of permission, both of which are impermanent and are applied to different groups of people depending on conditions. These are the head steward (level 3) and steward (level 4) levels of permission.
-- Throughout this document references are made to "league managers" and "league admins". Each one of those is to be understood as users with level 2 permission and level 1 permission respectively.
+- The stewarding module expands the two tiers of authority the core specification sets out to four: the league admin (level 1), the league manager (level 2), the head steward (level 3) and the steward (level 4). The two new levels are impermanent, each being held by whoever the bot holds on the stewarding team, or as its head steward, at the time.
+  - Levels 3 and 4 are independent of levels 1 and 2 and of one another, so as to distribute power and to keep league administration and management from interfering with stewarding. Neither is carried within any other level: a league admin or league manager holds no steward authority unless they also hold a steward role.
+  - A member may hold several levels at once.
+  - The head steward is a steward as well. Level 3 and its role are distinct from level 4 and its role, but the head steward holds both, and only a steward may be made head steward.
+  - The numbers name the levels and do not rank levels 3 and 4 beneath the others.
+- Throughout this document, "league admins" and "league managers" are to be understood as the core specification defines them, level 1 and level 2 respectively. A league admin carries the league manager's level within it, as core sets out.
 
 ## Concepts
-- Driver license - A individual record of a driver's history in the league, onto which the driver's history of warning points, penalty points, discipline points, qualifying bans, race bans, season bans and league bans, including active status and date of incidence, is recorded. Likewise, a tally of the total of each penalty type is kept.
-- Steward - A trusted user with level 4 permission, denoted with a special role which may be different from that of league managers, which are able to see tickets and pass judgement on them.
+- Driver license - An individual record held by each driver profile of the driver's standing in the league. On it are recorded the driver's warning points, penalty points and discipline points, each with its active status and date of incidence, and the driver's bans, as follows:
+  - Active bans - the number of qualifying bans and the number of race bans the driver has yet to serve, whether the driver is season banned, and how many further season bans are stacked behind the active one, and whether they are league banned. A driver holding one or more qualifying bans is qualifying banned, and one holding one or more race bans is race banned.
+  - Ban history - the number of qualifying bans, race bans, season bans and league bans the driver has received throughout their time upon the server. A ban is added to the history the moment it is received.
+  - Likewise, a tally of the total of each penalty type is kept.
+  - The driver license is the state of a driver's bans. A driver is banned while their license holds an active ban, and no driver state bars them otherwise.
+  - A driver license belongs to the driver profile, not to a Discord account. Any of a driver's accounts shall name them wherever this module names a driver — a report, an appeal, a CoC investigation, a vote, a revoke command. A ticket keeps the account it was lodged under, as the core specification requires of every record, and is read as the driver's.
+  - Where two driver profiles are merged, as the core specification allows, their licenses shall be merged into one, so that no sanction is escaped by holding it under another profile:
+    - Warning points, penalty points and discipline points shall all be carried, each keeping its own date of incidence and expiry. Nothing expires or begins again by reason of the merge.
+    - The qualifying bans and race bans each has yet to serve shall be added together, and so shall the counts of their ban histories.
+    - Season bans shall stack as any season bans do. Where either is league banned, the merged driver is league banned, replacing any season ban as a league ban does.
+    - The merged driver shall hold the lower of the two numbers of appeal tokens.
+    - An auto-rule threshold crossed on either license shall be held as crossed on the merged one, so that the merge itself punishes nothing already punished. The merged license shall be checked against the auto-rules at the next cycle close, as any license is.
+    - A merge shall not be refused because either driver is banned, merging being how a league brings a banned driver's other accounts under their ban.
+  - Where another account is made a driver's current one, the season ban and league ban roles shall move to it as the driver's other roles do: taken from the account replaced where it is still in the server, and reported to the league manager where Discord will not move them.
+  - Where another account is made a driver's current one while they are party to an open ticket, the ticket shall follow the driver. Their access to every open ticket channel shall move to the new current account and be taken from the account replaced, and the ticket shall read the new account as the involved driver.
+  - A steward's vote is a record, and keeps the account it was cast under.
+  - A past account of a driver cannot be a steward, head steward or temporary head steward, and shall not be added to the stewarding team. Stewarding authority is thus held only by an account belonging to no driver or by a driver's current account, so that every check this module makes of a steward against a driver compares one person with another.
+  - Where the driver is on the stewarding team, their place on it, and any head steward or temporary head steward appointment, shall move to the new current account with the roles mirroring them.
+- Steward - A trusted user with level 4 permission, being a member of the stewarding team the bot keeps, and denoted with a special role mirroring that team which may be different from that of league managers, which are able to see tickets and pass judgement on them.
 - Head steward - A privileged user with level 3 permission denoted with a special role that serves as the leader of the stewarding team. It is mandatory that a stewarding team has a head steward. They may confer acting head steward responsabilities onto another member of the stewarding team for a temporary period. By default, the head steward is the effective head steward for all tickets.
 - Acting head steward - Also referred to as temporary or temp head steward. A privileged user denoted with a special role with similar privileges as the head steward, which lasts only for a limited amount of time, as a result of being deferred head steward responsabilities temporarily. While a temporary head steward is active, the head steward loses their default status as effective head steward on all tickets and the ability to use commands which require head steward privilege.
 - Effective head steward - The designated head steward for a specific ticket. By default, this is the head steward, or the acting head steward if the latter functionality is in use. This user is able to add or remove drivers from tickets, approve requests to do either, or to approve steward exclusions from tickets. Their vote may also serve as a tie-breaker when outcomes voted for a given ticket are equally split. The effective head steward for a given ticket may change while the stewarding cycle is underway.
@@ -32,7 +55,7 @@
   - Appeal deliberation - Active from the moment the appeal submission ends, and automatically disabled after a configured period of time. Aims to allow stewards to vote on the final verdict, providing justification. After this period is over, the verdicts of all appeals are posted to the configured channel. After this, the round is taken as final, and its results cannot be changed.
 - Conduct investigation cycle - The full process for a Code of Conduct investigation can be initiated by a member of the steward team at any time. This is an informal concept, meaning it is not a strict definition, just an auxiliary name. It kicks off when the head steward (or temporary head steward) initiates a Code of Conduct investigation targeted at one or more specific driver(s), submitting a justification and evidence (which may be private to the steward team or shared with the mentioned drivers).
   - Defense submission - Active from the moment the investigation is triggered, and automatically disabled once a configured period of time elapses. In this stage, the mentioned drivers are allowed to submit defenses and additional evidence relevant to the case opened.
-  - Investigation deliberation - Active once the defense submission ends, and automatically disabled once a configured period of time. Aims to allow stewards to vote on the final verdict, providing justification. After this period is over, the verdict is posted to the configured verdict channel of all divisions the reported drivers are assigned to (if the driver is assigned to two or more divisions, repeating posts must have the indication "(repost)").
+  - Investigation deliberation - Active once the defense submission ends, and automatically disabled once a configured period of time. Aims to allow stewards to vote on the final verdict, providing justification. After this period is over, the verdict is posted as set out under Conduct cycle: the investigation is private, and its verdict public.
 - Involved driver - A group of drivers consisting of all drivers formally added to a report and the driver who triggered the report.
 - Ticket - A user-submitted incidence which may be either a report, an appeal or a Code of Conduct investigation. The former two may be public (seen by any driver of the division to which they pertain) or private (seen only by drivers involved and the stewarding team). The latter is always private to the utmost (only the steward team and the driver involved can see this).
 - Report - May also be referred to as stewards' report. This is an incidence submitted by either a driver or by a member representing the steward team as an anonymous collective, which may refer to one or more other drivers, pertaining to an incident that occurred during the most recent round. A report ticket object to be persisted in the database will be under a round's own persisted object, and must contain the following information:
@@ -77,26 +100,39 @@
 - All configuration changes done with commands usable by the head steward, acting head steward, or other members of the steward team must be logged to the steward log channel.
 
 ### Channels
+- Every channel this module sets is bound by the rule that a channel serves one purpose upon a server, as the core specification sets out. The channels the bot creates for each ticket are set by no command and are not bound by it.
 - <NEW COMMAND> A "division ticket-channel" command will be made available to league managers, which shall have as input a division name and a channel in which drivers for that division can interact to initiate tickets (reports and appeals both).
-  - If a ticket channel is not configured for a division in the season review when the stewarding module is enabled, then the season will fail validation.
-  - Each division's ticket channel will be displayed in the season review much alike other division channels.
+  - If the stewarding module is enabled, confirming the season's placements shall fail if any division lacks a ticket channel.
+  - Each division's ticket channel will be displayed in the placements review much alike other division channels.
 - The stewarding module shall inherit the "division verdicts-channel" command from the results module.
 - <NEW COMMAND> A "division license-channel" command will be made available to league managers, which shall have as input a division name and a channel in which the license information for the drivers of the division will be posted by the bot.
-  - If a license channel is not configured for a division in the season review when the stewarding module is enabled, then the season will fail validation.
-  - Each division's license channel will be displayed in the season review much alike other division channels.
-- <NEW COMMAND> A "division conduct-verdicts-channel" command will be made available to league managers, which shall have as input a channel in which the verdicts for CoC investigations will be posted.
-  - This is only mandatory if the CoC investigations feature is enabled.
+  - If the stewarding module is enabled, confirming the season's placements shall fail if any division lacks a license channel.
+  - Each division's license channel will be displayed in the placements review much alike other division channels.
+- <NEW COMMAND> A "steward conduct-verdicts-channel" command will be made available to league managers, which shall have as input a channel in which the verdicts for CoC investigations will be posted. It is a single channel for the server, and not one per division.
+  - If the CoC investigations feature is enabled, confirming a season's configuration shall fail while this channel is not set.
 - <NEW COMMAND> A "steward command-channel" command will be made available to league managers, which shall have as input a channel in which stewards will be able to input certain special bot commands. These commands must be explicitly marked as steward team actionable in these specifications, otherwise their use will be rejected, and no other commands but those will be accepted in this channel.
 - <NEW COMMAND> A "steward log-channel" command will be made available to league managers, which shall have as input a channel in which ALL commands utilized in the channel configured by "steward command-channel" will be logged for audit purposes, much in the same way they are already done by the log channel input in "bot init".
 
 ### Stewarding team setup
+- The stewarding team is held by the bot as a list, changed only by the commands below. Stewarding authority is held by being on that list, and not by holding a role. The roles configured below mirror the list, for visibility and for the permissions of channels, and the bot keeps them in step with it; a role granted by other means confers nothing.
 - <NEW COMMAND> A "steward team-role" command will be made available to league managers, which shall have as input a user role that will be bestowed to all users designated as stewards.
-  - This command is only valid if no user has steward status.
+  - Where the role is changed while the team has members, the bot shall move every member from the former role to the new one.
   - Upon usage, this command shall be validated to check that the steward role is not the same as the one configured by "steward head-role" or "steward temp-head-role".
-- <NEW COMMAND> A "steward head-role" command will be made available to league managers, which shall have as optional input a user role that will be bestowed to the user designated as head steward.
+- <NEW COMMAND> A "steward head-role" command will be made available to league managers, which shall have as input a user role that will be bestowed to the user designated as head steward.
   - Upon usage, this command shall be validated to check that the head steward role is not assigned to more than 1 user, and that the role is not the same as the one configured by "steward team-role" or "steward temp-head-role".
-  - This command is only valid if no user has head steward status.
-  - If the input role parameter is empty, then head steward functionality is deactivated.
+  - Where the role is changed while a head steward is appointed, the bot shall move them from the former role to the new one.
+- <NEW COMMAND> A "steward add" command will be made available to the head steward and to league admins, which shall have as input a member of the server. The member shall be added to the stewarding team, and given the role configured by "steward team-role".
+  - The command shall be refused for a member already on the team, and for a past account of a driver.
+- <NEW COMMAND> A "steward remove" command will be made available to the head steward and to league admins, which shall have as input a member of the stewarding team. The member shall be removed from the team, and the role configured by "steward team-role" taken from them.
+  - The command shall be refused for the head steward, who shall first be replaced.
+  - A steward removed shall leave the effective stewarding team of every open ticket at once. Any vote they cast shall be discarded, as a vote is upon an exclusion, and where they were a ticket's effective head steward, the ticket shall pass to another as when an effective head steward is reassigned.
+- <NEW COMMAND> A "steward list" command will be made available to stewards, league managers and league admins, which shall have no inputs. In reply, the bot shall post, visible to the user alone, the members of the stewarding team, marking the head steward and any temporary head steward.
+- <NEW COMMAND> A "steward head-assign" command will be made available to league admins, which shall have as input a member of the stewarding team. That member shall be made head steward, and given the role configured by "steward head-role".
+  - The command shall be refused for a member who is not on the stewarding team, the head steward being a steward as well.
+  - Where a head steward is already appointed, they shall be replaced, and shall remain on the team as a steward, the head steward role being taken from them.
+  - Upon a replacement, on every open ticket on which the former head steward was the effective head steward by default, the new head steward shall become so. A ticket whose effective head steward had been reassigned shall keep them. Where the new head steward is an involved driver on an open ticket, or has a conflict of interest upon it, that ticket shall be reassigned as when any effective head steward is so placed.
+  - Upon a replacement, a temporary head steward in post shall remain so, and the new head steward may remove them as any head steward may. Where the temporary head steward is the member made head steward, their temporary appointment shall end.
+- If the stewarding module is enabled, confirming the season's placements shall fail while no head steward is appointed.
 - <NEW COMMAND> A "steward temp-head-role" command will be made available to the head steward to be utilized in the channel configured by "steward command-channel", which shall have as optional input a user role that will be bestowed to the user designated as head steward.
   - Upon usage, this command shall be validated that the role is not the same as the one configured by "steward team-role" or "steward head-role".
   - This command is only valid if no user has temporary head steward status.
@@ -143,7 +179,7 @@
 - <NEW COMMAND> A "steward appeal starting-tokens" command will be made available to league managers, which shall have as input an integer standing for a number of tokens. This value will be the number of appeal tokens assigned to all drivers when they are assigned to a team.
   - By default, this value will be set to 0. This means that, effectively drivers have unlimited appeal abilities.
   - This value also serves as the maximum allowed number of appeal tokens for a given driver.
-  - A driver's number of appeal tokens is reset to this value once their assignment to a team is approved (reserve team include), IF they are not assigned to a team in any division already.
+  - A driver's number of appeal tokens shall be set to this value the first time they are placed in a team in a season, the reserve team included. Being placed again later in the same season shall not change it.
 - <NEW COMMAND> A "steward appeal token-spend" command will be made available to league managers, which shall have as input an integer standing for a number of tokens. This value will be the number of appeal tokens required for a driver to have so they may initiate an appeal regarding a previous report.
   - By default, this value will be set to 0. This means that, effectively drivers have unlimited appeal abilities.
   - This value cannot be greater than that configured by "steward appeal starting-tokens".
@@ -201,7 +237,7 @@
   - Qualifying ban - 0
   - Race ban - 0
   - Season ban - 0
-- <NEW COMMAND> A "steward backup toggle-report" command will be made available to league admins (tier 1), which shall have no inputs. When toggled on, once closed, the content of channels pertaining to reports and appeals will be persisted in disk to a directory.
+- <NEW COMMAND> A "steward backup toggle-report" command will be made available to league admins, which shall have no inputs. When toggled on, once closed, the content of channels pertaining to reports and appeals will be persisted in disk to a directory.
   - This functionality shall be disabled by default.
   - The directory shall be "./tickets" by default (same as used by "steward backup toggle-conmduct").
   - Channel content shall be formatted as a Json file. Each message shall be saved as an individual element, with an ID and display name of the one sending the message associated.
@@ -247,7 +283,7 @@
   - Qualifying ban - 0
   - Race ban - 0
   - Season ban - 0
-- <NEW COMMAND> A "steward backup toggle-conduct" command will be made available to league admins (tier 1), which shall have no inputs. When toggled on, once closed, the content of channels pertaining to Code of Conduct investigations will be persisted in disk to a directory.
+- <NEW COMMAND> A "steward backup toggle-conduct" command will be made available to league admins, which shall have no inputs. When toggled on, once closed, the content of channels pertaining to Code of Conduct investigations will be persisted in disk to a directory.
   - This functionality shall be disabled by default.
   - The directory shall be "./tickets" by default (same as used by "steward backup toggle-report")
   - Channel content shall be formatted as a Json file. Each message shall be saved as an individual element, with an ID and display name of the one sending the message associated.
@@ -334,19 +370,22 @@
 - <NEW COMMAND> A "steward revoke quali-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
   - This command fails if there is no such driver with that ID, if qualifying bans are disabled, or if the driver found does not possess a currently active qualifying ban.
   - This command can only remove one qualifying ban that is yet to be served. A qualifying ban that has already been served cannot be removed from the record.
-  - If the user has multiple qualifying bans, the one acquired most recently will be the one removed from their driver license.
+  - If the user has multiple qualifying bans, one is removed from their driver license.
 - <NEW COMMAND> A "steward revoke race-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
   - This command fails if there is no such driver with that ID, if race bans are disabled, or if the driver found does not possess a currently active race ban.
   - This command can only remove one race ban that is yet to be served. A race ban that has already been served cannot be removed from the record.
-  - If the user has multiple race bans, the one acquired most recently will be the one removed from their driver license.
+  - If the user has multiple race bans, one is removed from their driver license.
 - <NEW COMMAND> A "steward revoke season-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
   - This command fails if there is no such driver with that ID, if season bans are disabled, or if the driver found does not possess a currently active season ban.
-  - This command can only remove one season ban that is yet to be served. A season ban that has already been served cannot be removed from the record.
-  - If the user has multiple season bans, the one acquired most recently will be the one removed from their driver license.
-  - Upon removal of the season ban, if the user does not have at least one active season ban, the season ban role will be removed from them.
+  - This command can only remove a season ban that is still active. A season ban that has already been served cannot be removed from the record.
+  - Where season bans are stacked, only the active one is removed, and the one stacked behind it begins at once.
+  - Upon removal of the season ban, the season ban role will be removed from them, unless a stacked season ban begins in its place.
 - <NEW COMMAND> A "steward revoke league-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
   - This command fails if there is no such driver with that ID, if league bans are disabled, or if the driver found does not possess a currently active league ban.
   - Upon removal of the league ban, the league ban role will be removed from them.
+  - A season ban the league ban replaced shall not be restored.
+- While the stewarding module is disabled, "steward revoke season-ban" and "steward revoke league-ban" shall be available to league admins, and shall be the only commands of this module available. The justification shall be written to the log channel.
+  - Lifting a season or league ban while the module is disabled is left entirely to the league: no ban expires while the module is disabled.
 
 ## Stewarding cycle
 - All inputs of the stewarding cycle must be auditable via the steward log channel. Attempts to file a report (and its data), driver addition/removal to tickets, etc etc etc. All logs must include the display name (and user ID) of the input.
@@ -357,8 +396,25 @@
 - If appeals are enabled, if a report is not appealed by the time the appeal submission phase ends, the incident (report) is deemed closed and final.
 - Once appeal verdicts are posted at the end of the appeal deliberation phase, the incident (appeal and the report it pertains to) is deemed closed and final.
 
+### The cycle moves the round
+- While the stewarding module is enabled, a round's stewarding cycle shall move the round through its states, in place of the review stages of the results & standings module.
+  - Report submission opens at the round's scheduled start, while the round still awaits its results, so that drivers may report an incident as soon as the round is raced and whatever the pace at which its results are entered.
+  - The round is awaiting report verdicts once its results are posted, and until the verdicts of its reports are posted.
+  - It is then awaiting appeal verdicts until the verdicts of its appeals are posted, and becomes final at the close of its cycle.
+  - Where no appeal is lodged, the round becomes final once appeal submission ends.
+  - Where appeals are disabled, the round becomes final once the verdicts of its reports are posted, and never awaits appeal verdicts.
+- A round cancelled before its scheduled start has no stewarding cycle, report submission never having opened for it. A round cannot be cancelled once its scheduled start has passed.
+- A round whose every session is submitted as cancelled shall have its stewarding cycle ended once its results are posted, and its tickets closed without a verdict.
+  - The bot shall post in each such ticket's channel that the round was cancelled and the ticket closed without a verdict. The channel shall then be removed as any closed ticket's channel is.
+  - Tickets so closed shall have no effect upon any driver's license, and shall trigger no auto-rule.
+- Report deliberation shall run in its own time whether or not the round's results have been posted. The verdicts of the round's reports, and the reposting of its results and standings, shall wait until its results are posted, and the cycle shall go no further until they are.
+- The results and standings of the round shall be labelled as the round moves:
+  - Reposted once the report verdicts are posted, they shall carry the Post-Race Penalty Results label, or the Final Results label where appeals are disabled.
+  - Reposted once the appeal verdicts are posted, or once appeal submission ends with no appeal lodged, they shall carry the Final Results label.
+
 ### Report submission
 - At the scheduled start datetime of a round for a given division, the bot shall delete the "default" message, and post a "Report incident" button to the configured ticket channel of the division, without mentioning the division role.
+- Where more than one round of a division has report submission open at once, a separate "Report incident" button shall be posted for each, naming the round it pertains to.
 - At the scheduled start datetime of a round for a given division, a countdown with the period of time configured by "steward report-submission-period" will start. Once this time elapses, the default message shall be displayed once more in the divisions' reports channel, and the "Report incident" button removed.
 - It shall be possible to members of the stewarding team to report an incident in the same manner a regular driver can.
 - When a user presses the "Report incident" button, a modal dialog shall appear, with the following elements:
@@ -500,16 +556,16 @@
 - Once this phase is entered, a single button titled "Vote" is posted by the bot. This button will serve for members of the effective stewarding team to cast, modify, or remove their vote on the outcome of the appeal. The button opens a modal which is as follows:
   - Steward's display name - String - Greyed out, cannot be changed. Display name of the steward that initiated the vote.
   - Appeal ID - String - Greyed out, cannot be changed. Unique ID of the appeal which is being voted on.
-  - Driver - Dropdown - Contains the display names of all drivers, allowing the steward to pick the display name of the driver which is to receive the outcome. Greyed-out if decision is "uphold verdict", or the outcome chosen is NFA.
-  - Decision - Dropdown - Mandatory - A dropdown consisting of two options, "Uphold verdict" and "Change verdict".
-  - Outcome - Dropdown - Optional - Dropdown containing all outcomes currently configured except for the the one dictated in the original report, displaying their IDs, allowing the steward to select 1 of them. Greyed-out if the "Decision" field is not "change verdict".
+  - Driver - Dropdown - Contains the display names of all drivers, allowing the steward to pick the display name of the driver which is to receive the outcome. Greyed-out if decision is "Uphold initial verdict", or the outcome chosen is NFA.
+  - Decision - Dropdown - Mandatory - A dropdown consisting of two options, "Uphold initial verdict" and "Change initial verdict".
+  - Outcome - Dropdown - Optional - Dropdown containing all outcomes currently configured except for the the one dictated in the original report, displaying their IDs, allowing the steward to select 1 of them. Greyed-out if the "Decision" field is not "Change initial verdict".
     - If outcome chosen is NFA, then the driver pick will become "None".
     - PROBLEM WITH THIS DESIGN: same as report deliberation - what if a steward wants to penalize multiple drivers? this current approach stops that.    
   - Infringement - String - Optional - String standing for the ID/number which was allegedly violated. Useful for final verdict write-up.
   - Justification - String - Mandatory - A free form text with a 1000 character limit for the steward to give their reasonings for the vote.
   - Two or three buttons at the bottom - "Cancel", "Remove vote" if the steward is reopening the vote dialog after having voted, and "Confirm".
 - A steward's vote is only valid via "Confirm" if all mandatory fields are filled.
-- If the steward has voted for decision "uphold verdict", their vote is only valid if the driver picked is "None".
+- If the steward has voted for decision "Uphold initial verdict", their vote is only valid if the driver picked is "None".
 - If the steward has voted for outcome NFA, their vote is only valid if the driver picked is "None".
 - Once a steward's vote is deemed valid, all data for the vote will be recorded and persisted.
 - If a steward reopens the vote modal dialog after having voted, the dialog will be pre-filled with their previous data.
@@ -518,7 +574,7 @@
 - If the steward has chosen "Remove vote" upon reopening the dialog, the previously persisted vote information will be deleted, and it will be as if the steward had never voted.
 - At the end of the countdown period for this phase, all stewarding team members except for the effective head steward lose message write permission for the appeal channel.
 - At the end of the countdown period for this phase, all outcomes from votes will be counted. For the purpose of counting, only cast votes will be taken into consideration for the determination of plurality. This means that in a situation where the effective stewarding team for a ticket consists of 9 people, and only 5 of those people have voted, only those 5 votes will be used for assessing the ultimate verdict.
-  - In the context of an appeal, decision "uphold penalty" counts as an outcome.
+  - In the context of an appeal, decision "Uphold initial verdict" counts as an outcome.
 - Driver-outcome pairs are both considered a vote for the purpose of vote tallying. This means that "Driver A-Outcome X" and "Driver B-Outcome X" are votes for two different things.
 - If any one driver-outcome pair reaches plurality without a tie, the ultimate result of the appeal will be that outcome being applied to that driver.
 - If two or more driver-outcome pairs are tied, and the effective head steward has voted in one of them, the ultimate result of the appeal will be the outcome voted by the effective head steward.
@@ -618,7 +674,8 @@
   - Start a timer counting down 1 hour from the moment the buttons are posted; if the effective head steward has not confirmed the justification text once this timer runs out, then the one provided by the bot will be utilized for the verdict post.
 - Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
   - The format of the final output is determined in another section.
-- Only after the final output is determined for the investigation, it will be posted immediately in the channel configured by "division conduct-verdicts-channel".
+- Only after the final output is determined for the investigation, it will be posted immediately in the channel configured by "steward conduct-verdicts-channel", whether or not the user holds a seat and whether or not a season is live.
+  - Where a season is live and the user holds a seat in any of its divisions, full-time or reserve, the verdict shall also be posted in the verdicts channel of each of those divisions, each such post carrying the indication "(repost)".
 - After the verdict is posted successfully, the conduct cycle will be considered closed.
 - After the verdicts are published, if "steward backup toggle-conduct" is toggled on, the content of the channels of all channels will be immediately persisted onto memory, and once successful, the channels will be deleted.
 - After the verdicts are published, if "steward backup toggle-conduct" is toggled off, a 7 day countdown will be initiated, at the end of which the channels will be deleted.
@@ -643,6 +700,15 @@
   - <TBD> - DISCUSS/WEAK POINT - is this harsh? I mean, it's on the drivers, but I wonder if there's a more robust design here.
 
 ## Bans
+- A driver whose license records any sanction, active or not, shall never be deleted. Returning to Not Signed Up, they shall be retained as a former driver is, their license with them, a league having most cause to keep the record of a driver it has sanctioned.
+
+### While the module is disabled
+- Season bans and league bans on a driver's license shall remain in force while the stewarding module is disabled. A driver holding one shall be unable to engage the signup wizard, shall not be assigned to a team, and shall be unable to check in.
+- No season or league ban shall expire while the module is disabled. It shall be lifted only by a league admin revoking it.
+- A season or league ban shall be held while the module is disabled, as qualifying and race bans are: the time and the races that pass while it is disabled shall not count towards its expiry, and the count shall resume where it stood once the module is enabled again.
+  - A season ban expiring upon a season's end whose season ended while the module was disabled shall instead expire upon the end of the first season to end with the module enabled.
+- Qualifying bans and race bans shall be held while the module is disabled: they shall be neither enforced nor served, and shall resume once the module is enabled again.
+
 ### Qualifying bans
 - Whether a driver has a qualifying ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
 - If a driver who is participating in multiple divisions has a qualifying ban, they must serve it in the highest tier division for which they are a full-time driver (assigned to a team that is not the reserve team).
@@ -656,8 +722,9 @@
 - If a driver who has a qualifying ban does not show up for a round (missing in the results of all sessions), then their qualifying ban will be considered unserved, and will carry on to the next round of that division.
 - If a driver who has a qualifying ban fails to serve it properly by setting a valid lap in the feature qualifying session's results, then their qualifying ban will be considered unserved, and will carry on to the next round of that division.
   - Additionally, the failure to serve a qualifying ban properly will trigger the immediate posting of a verdict to the verdicts channel of the division informing of this. The format of this communication will be specified in a different section.
-- As qualifying bans are assigned to a driver's license, they do not expire upon a season's end, and will be enforced in the following season, in the same division tier as it would have been in the present season.
-  - If the driver does not participate in the same division tier in the follow-up season, whether it be because of happenstance or because the division tier ceases existing in the next season, then the qualifying ban will be "upgraded" to the highest division for which the driver is a full-time driver. If the driver does not have a full-time seat in a follow-up season, then the qualifying ban will be applied to the highest division for which the driver is a reserve driver.
+- As qualifying bans are assigned to a driver's license, they do not expire upon a season's end. A qualifying ban not served in the season in which it was received shall be served in whichever later season the driver next takes part in, whether that is the following season or any after it.
+  - In that later season, it shall be served in the highest tier division for which the driver is a full-time driver. If the driver does not have a full-time seat in that season, it shall be served in the highest tier division for which they are a reserve driver.
+  - A driver who takes part in no later season shall keep the qualifying ban pending on their license.
 
 ### Race bans
 - Whether a driver has a race ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
@@ -670,21 +737,31 @@
   - Additionally, a race ban being correctly served will trigger the immediate posting of a verdict to the verdicts channel of the division informing of this. The format of this communication will be specified in a different section.
 - If a driver who has a race ban fails to serve it properly by being listed in the results of any session pertaining to the round in which they must serve the ban, then their race ban will be considered unserved, and will carry on to the next round of that division.
   - Additionally, the failure to serve a race ban properly will trigger the immediate posting of a verdict to the verdicts channel of the division informing of this. The format of this communication will be specified in a different section.
-- As race bans are assigned to a driver's license, they do not expire upon a season's end, and will be enforced in the following season, in the same division tier as it would have been in the present season.
-  - If the driver does not participate in the same division tier in the follow-up season, whether it be because of happenstance or because the division tier ceases existing in the next season, then the race ban will be "upgraded" to the highest division for which the driver is a full-time driver. If the driver does not have a full-time seat in a follow-up season, then the race ban will be applied to the highest division for which the driver is a reserve driver.
+- As race bans are assigned to a driver's license, they do not expire upon a season's end. A race ban not served in the season in which it was received shall be served in whichever later season the driver next takes part in, whether that is the following season or any after it.
+  - In that later season, it shall be served in the highest tier division for which the driver is a full-time driver. If the driver does not have a full-time seat in that season, it shall be served in the highest tier division for which they are a reserve driver.
+  - A driver who takes part in no later season shall keep the race ban pending on their license.
 
 ### Season bans
 - Whether a driver has a season ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
 - If a driver who is currently participating in a division gets a season ban, they will immediately be unassigned from all seats they hold, including Reserve team seats, across all divisions.
+- A driver who gets a season ban shall be returned to Not Signed Up as a sacking returns them: every seat freed, every division, team and signup role revoked.
 - If the attendance module is enabled and any driver has a season ban enforced unto them, their vote in any divisions' check-in will be immediately discarded/deleted by the bot if present, and a message shall be posted to the check-in channel informing that they cannot check-in due to a season ban.
 - If the sign-up module is enabled and any driver has a season ban enforced unto them, any existing sign-ups, completed and uncompleted, will be cancelled and discarded.
 - If the sign-up module is enabled and any driver has a season ban enforced unto them, they will be unable to engage the sign-up wizard.
 - If any driver has a season ban, regardless of sign-up module status, they will be unable to be assigned to a team.
 - Season bans will be considered served after the criteria configured in "steward penalty season-ban-type".
+- Season bans stack. A season ban received while one is active shall begin when the one before it is served, and not before. Where season bans last until a season's end, a second one received during a season shall therefore bar the driver from the whole of the next.
+- A season ban received while the driver is league banned shall be added to their ban history, and shall not be made active.
 
 ### League bans
+- A driver cannot be season banned and league banned at once, the effect of the two being the same. A league ban received by a season-banned driver replaces the season ban, which ceases to be active together with any season bans stacked behind it.
+  - Revoking that league ban shall not restore the season bans it replaced. Timing a revocation is left to the league.
+- A league ban shall ban from the server every Discord account the driver owns, the license being the driver's and not an account's. Every one of them shall be unbanned when the league ban is revoked or its ban from the server ends.
+- The bot cannot know an account that has never been attached to the driver. Where a banned driver returns under such an account, the league shall attach it to them by reassigning or merging as the core specification sets out, and the merged license shall carry the ban to it.
+- An account of a league-banned driver cannot be made current while the ban stands, only a member of the server being able to be made current. The league may revoke the ban first where it must.
 - Whether a driver has a league ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
 - If a driver who is currently participating in a division gets a league ban, they will immediately be unassigned from all seats they hold, including Reserve team seats, across all divisions.
+- A driver who gets a league ban shall be returned to Not Signed Up as a sacking returns them: every seat freed, every division, team and signup role revoked.
 - If the attendance module is enabled and any driver has a league ban enforced unto them, their vote in any divisions' check-in will be immediately discarded/deleted by the bot if present, and a message shall be posted to the check-in channel informing that they cannot check-in due to a league ban.
 - If the sign-up module is enabled and any driver has a league ban enforced unto them, any existing sign-ups, completed and uncompleted, will be cancelled and discarded.
 - If the sign-up module is enabled and any driver has a league ban enforced unto them, they will be unable to engage the sign-up wizard.
@@ -693,38 +770,58 @@
 ## Verdict output
 - The current verdict output is utilized and governed by the results & standings module. The detailed specification below applies to the output of verdicts by the stewarding module only, not interfering with the way the results & standings module works at the moment.
   - The latter's implementation must be used as much as possible, down to the templates.
+  - Where the image module specification describes the verdict graphic or the verdict banner otherwise, this section governs the verdicts this module issues, and the image module specification shall be amended to carry it.
 - This section specifies how the verdicts for reports, appeals, CoC investigations and auto-rule triggering must be shaped and formatted.
-- Verdicts shall be posted sequentially and in alphabetic order of their unique ID.
+- Every verdict shall carry a label naming its kind, in its textual and its image output alike:
+  - Report Verdict - the verdict of a report, in place of the Post-Race Penalty label the results & standings module gives its own.
+  - Appeal Verdict - the verdict of an appeal, in place of the Appeal label the results & standings module gives its own.
+  - Code of Conduct Verdict - the verdict of a CoC investigation.
+  - Automated Ruling - a verdict the bot issues itself: an auto-rule triggered, and a qualifying ban or race ban served or not served.
+  - Attendance Sanction - issued by the attendance module, and unchanged by this one.
+- Every verdict shall show the round it pertains to, or the round that gave rise to it, by its season, division, round number and grand prix name, in its textual and its image output alike.
+  - A Report Verdict and an Appeal Verdict shall show as well the session and lap of the incident.
+  - An Automated Ruling shall show the round whose results or whose cycle close gave rise to it.
+- A Code of Conduct Verdict pertains to no division and to no round, and shall show the season alone: the season live when it is posted, or none between seasons. So shall an Automated Ruling given rise to by a CoC investigation.
+  - In the textual output the lines it has no value for shall be left out. In the image output the fields it has no value for shall be emptied, and removed where the template declares them removable, without any error being reported.
+- A verdict posted again as a repost shall be identical to the original, save the indication "(repost)".
+- The image output of a verdict may carry detail its textual output does not, but shall omit nothing its textual output carries.
+- Verdicts shall be posted sequentially and in alphabetic order of their unique ID, among those of the same kind.
+  - Attendance sanctions are the attendance module's own, carry no such ID, and are not ordered by this rule. They shall keep the place the attendance module gives them: after the verdicts of the batch that gave rise to them, under that batch's header.
   - This means that "S1_D1_R1_001", "S1_D1_R1_002", ""S1_D1_R1_003", ... will be the correct order.
   - For the purpose of appeals, the ID of the report to which they correspond will be taken and suffixed with "-APPEAL".
 - If they pertain to a report, appeal, or auto-rule triggered by either (including auto-rules which were triggered by other auto-rules which were triggered by reports or appeals), verdicts shall be posted in the verdicts channel of the division to which they pertain.
-  - When reports are first posted for a round, the bot will post text that denotes what rounds the reports pertain to by referring to the season, division, round, and Grand Prix name.
-- If they pertain to a Code of Conduct investigation, or auto-rule triggered by a CoC investigation's own verdict (or an auto-rule triggered by auto-rule triggered by CoC inv), verdicts shall be posted in the channel configured by "division conduct-verdicts-channel".
+  - Every batch of verdicts posted together for a round shall be headed by a header naming the round, by its season, division, round number and grand prix name. The report verdicts of a round, its appeal verdicts, and the automated rulings of its cycle close are each a batch of their own, and each shall be headed.
+    - Where the verdict banner aspect of the image module is on, the header is the verdict banner. Where it is off, or the banner cannot be drawn, the header shall be posted as text.
+    - A Code of Conduct Verdict pertains to no round and is headed by none.
+- If they pertain to a Code of Conduct investigation, or auto-rule triggered by a CoC investigation's own verdict (or an auto-rule triggered by auto-rule triggered by CoC inv), verdicts shall be posted as a CoC investigation's verdict is: in the channel configured by "steward conduct-verdicts-channel", and also in the verdicts channel of each division of the live season in which the user holds a seat, marked "(repost)".
 
 ### Textual
 - The textual output of verdicts shall have the following data, all on the same message:
+  - Label of the verdict's kind
   - Unique ID of the report/appeal/CoC investigation
   - Season, division, round number
   - Grand prix name, session name, lap (if session is a race session)
   - Involved drivers
+  - Driver penalised - the driver of the driver-outcome pair the deliberation settled upon, as a mention. "N/A" for a No Further Action outcome.
   - Original complaint (report and appeal both) - Mandatory
   - Outcome (if the outcome has multiple penalties, they shall be separated by commas)
   - Justification given for outcome
 
 ### Image
-- The image output of verdicts shall support the following data fields for the bot to insert information:
+- The image output of verdicts shall be consistent with the visual outputs the image module already draws. As every one of them does, it shall admit the division logo and the per-tier colours the image module provides, and a league's own logo is artwork of its template rather than a field. Its fields shall carry the names, and the optional or mandatory standing, the image module gives the same data on its other graphics — on those linked to a round above all, and on the results graphics first among them. It shall support the following data fields for the bot to insert information:
+  - Label of the verdict's kind - Mandatory
   - Unique ID of the report/appeal/CoC investigation - Mandatory
-  - Season, division, round number - Mandatory
-  - League logo - Optional
-  - Division logo - Optional
-  - Division colors support - Optional
+  - Season number - Optional
+  - Division name - Mandatory
+  - Round number - Mandatory
   - Grand prix name - Optional
-  - Grand prix flag - Optional
+  - Grand prix flag - Optional - drawn as the verdict banner draws the flag of the round
   - Session name - Mandatory
   - Lap (if session is a race session) - Optional
   - Involved drivers - Mandatory - multi field in which multiple display names must be mandatorily supported, but flags and team logos can be optionally supported too
-  - Original complaint (report and appeal both) - Mandatory
-  - Outcome (if the outcome has multiple penalties, they shall be separated by commas) - Mandatory
+  - Driver penalised - Mandatory - the driver of the driver-outcome pair the deliberation settled upon, by their server display name, and their team where the template declares it. Both read "N/A" for a No Further Action outcome.
+  - Original complaint (report and appeal both) - Mandatory - placed where the image module places a verdict's description
+  - Outcome - Mandatory - the sanction, in the descriptive language the textual announcement carries, several penalties being separated by commas
   - Justification given for outcome - Mandatory
 
 ## License sheet output
@@ -746,14 +843,15 @@
   - Season and league bans shall not appear, as once they are handed out, drivers are automatically unassigned from their seats.
 
 ### Image
-- The image output will be similar to that of the attendance sheet. The following data elements shall be allowed:
+- The license sheet shall be an aspect of the image module, following the pattern every other aspect follows:
+  - <COMMAND CHANGE> A "license" value shall be added to the "images config toggle" command, switching the image output of the license sheet on and off. It shall be off by default.
+  - <NEW COMMAND> An "images template license" command shall take in a string standing for the filename of the template license sheet image. By default, the filename shall be "license_template.svg".
+  - While the aspect is off, or where generating the image fails, the license sheet shall be posted as text.
+- The image output will be similar to that of the attendance sheet, and consistent with the visual outputs the image module already draws. As every one of them does, it shall admit the division logo and the per-tier colours the image module provides, and a league's own logo is artwork of its template rather than a field. The following data elements shall be allowed:
   - Season, division - Mandatory
   - After Round X - Mandatory
   - Grand Prix name - Optional
   - Type of post - Mandatory, always "License Information", can be hardcoded
-  - League logo - Optional
-  - Division logo - Optional
-  - Division colors support - Optional
   - Table-list of drivers - Mandatory, with the following columns:
     - Driver display name - Mandatory
     - Driver nationality flag - Optional
