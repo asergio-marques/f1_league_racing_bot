@@ -118,7 +118,7 @@ Each changes that one setting and touches nothing else.
 >
 > `/bot-reset` is **not** one of them. It destroys the settings rather than repairing them, so it asks for the league admin role and is given in the command channel like everything else.
 
-If you would rather start over from nothing, `/bot-reset full:True` clears the configuration and `/bot-init` becomes available again.
+If you would rather start over from nothing, `/bot-reset full:True` clears the configuration and `/bot-init` becomes available again. It also frees the bot's claim on your server, so this is how a league moves to a new server: reset in full, then run `/bot-init` on the new one.
 
 > **A command run in the wrong channel is refused, not ignored.** You get a short message only you can see. If a command seems to do nothing, check which channel you are in first.
 
