@@ -9,7 +9,12 @@ from discord import app_commands
 from discord.ext import commands
 
 from db.database import get_connection
-from services.attendance_service import validate_timing_invariant
+from models.season import ONGOING_STAGES
+from services.attendance_service import (
+    recalculation_faults,
+    sync_attendance,
+    validate_timing_invariant,
+)
 from services.season_lifecycle_service import uncommitted_seat_excluded
 from utils.channel_guard import league_manager_only
 
@@ -376,6 +381,104 @@ class AttendanceCog(commands.Cog):
             f"  Auto-sack threshold: **{_fmt_opt(cfg.autosack_threshold)}**",
         ]
         await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+
+    # ── /attendance sync ───────────────────────────────────────────────────
+
+    @attendance.command(
+        name="sync",
+        description="Recalculate a division's attendance from a round on, and apply any sanction still owed.",
+    )
+    @app_commands.describe(
+        division="Division name",
+        round="Round number to recalculate from; every finalised round after it follows.",
+    )
+    @league_manager_only
+    async def sync(
+        self, interaction: discord.Interaction, division: str, round: int
+    ) -> None:
+        """Finish a run of attendance sanctions that did not all apply (decided 2026-09-18, #239).
+
+        A league manager's, like the thresholds it enforces: it makes no judgement of its own,
+        only applies what the league configured. Refused, with nothing changed, outside the
+        ongoing stages — a sanction then has no seat to take — for a round not yet finalised,
+        and where a channel the recalculation posts to cannot be reached, the gate an
+        amendment's recalculation holds to (#187).
+        """
+        if not await self._guard_module_enabled(interaction):
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
+        if season is None or season.stage not in ONGOING_STAGES:
+            await interaction.followup.send(
+                "\u26d4 `/attendance sync` is available only while the season is ongoing.",
+                ephemeral=True,
+            )
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+        div = next((d for d in divisions if d.name.lower() == division.lower()), None)
+        if div is None:
+            await interaction.followup.send(
+                f"\u274c Division '{division}' not found.", ephemeral=True
+            )
+            return
+
+        db_path = self.bot.db_path  # type: ignore[attr-defined]
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, status FROM rounds WHERE division_id = ? AND round_number = ?",
+                (div.id, round),
+            )
+            round_row = await cursor.fetchone()
+        if round_row is None:
+            await interaction.followup.send(
+                f"\u274c **{div.name}** has no round {round}.", ephemeral=True
+            )
+            return
+        if round_row["status"] not in ("AWAITING_APPEAL_VERDICTS", "FINAL"):
+            await interaction.followup.send(
+                f"\u26d4 Round {round} of **{div.name}** has not had its penalties approved "
+                f"yet, so it holds no attendance to recalculate.",
+                ephemeral=True,
+            )
+            return
+
+        faults = await recalculation_faults(
+            db_path, season.id, interaction.guild, self.bot
+        )
+        if faults:
+            await interaction.followup.send(
+                "\u26d4 Nothing was changed \u2014 the attendance could not be posted:\n\u2022 "
+                + "\n\u2022 ".join(faults),
+                ephemeral=True,
+            )
+            return
+
+        outcome = await sync_attendance(
+            self.bot, interaction.guild, db_path, div.id, round_row["id"], season.id
+        )
+
+        lines = [f"\u2705 Attendance of **{div.name}** recalculated from round {round} on."]
+        if outcome.applied:
+            lines.append("Sanctions applied:")
+            lines += [f"\u2022 {driver} \u2014 {sanction}" for driver, sanction in outcome.applied]
+        elif outcome.complete:
+            lines.append("No sanction was owed.")
+        if not outcome.complete:
+            lines.append("\u26a0\ufe0f Still not applied:")
+            lines += [f"\u2022 {line}" for line in outcome.failure_lines()]
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+        result = "Success" if outcome.complete else "Incomplete"
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+            f"| /attendance sync | {result}\n"
+            f"  division: {div.name}\n"
+            f"  from round: {round}\n"
+            f"  sanctions applied: {len(outcome.applied)}",
+        )
 
 
 # ── RSVP button interaction handler (T011 / T012 / T014) ─────────────────────

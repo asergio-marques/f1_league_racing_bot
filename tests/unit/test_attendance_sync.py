@@ -192,3 +192,150 @@ async def test_sync_is_one_transaction(tmp_path, monkeypatch):
 
     assert calls == round_ids
     assert await _awarded(db_file, round_ids[0]) is None
+
+
+# ---------------------------------------------------------------------------
+# The command
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace  # noqa: E402
+
+from cogs.attendance_cog import AttendanceCog  # noqa: E402
+from models.season import SeasonStage  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
+from utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE  # noqa: E402
+
+
+def _cog(db_path: str, *, stage=SeasonStage.ONGOING) -> AttendanceCog:
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    season = None if stage is None else SimpleNamespace(id=SEASON_ID, stage=stage)
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
+    bot.season_service.get_divisions = AsyncMock(
+        return_value=[SimpleNamespace(id=DIVISION_ID, name="Division 1")]
+    )
+    bot.output_router.post_log = AsyncMock()
+    return AttendanceCog(bot)
+
+
+def _interaction() -> MagicMock:
+    interaction = MagicMock()
+    interaction.user.id = 77
+    interaction.user.display_name = "Manager"
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+async def _invoke(cog, interaction, *, division="division 1", round=1,
+                  faults=(), outcome=None):
+    with patch(
+        "cogs.attendance_cog.recalculation_faults", new=AsyncMock(return_value=list(faults))
+    ), patch(
+        "cogs.attendance_cog.sync_attendance",
+        new=AsyncMock(return_value=outcome or SanctionOutcome()),
+    ) as synced:
+        await undecorate(AttendanceCog.sync)(cog, interaction, division, round)
+    return synced
+
+
+def _replied(interaction) -> str:
+    return "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
+
+
+async def test_the_command_is_a_league_manager_s():
+    """Decided 2026-09-18: it applies only thresholds the league has already configured."""
+    assert getattr(AttendanceCog.sync.callback, TIER_ATTRIBUTE) == LEAGUE_MANAGER
+
+
+@pytest.mark.parametrize("stage", [None, SeasonStage.PLACEMENTS, SeasonStage.PENDING_COMPLETION])
+async def test_it_is_refused_outside_the_ongoing_stages(tmp_path, stage):
+    db_path = await _make_db(tmp_path, autosack=20)
+    interaction = _interaction()
+
+    synced = await _invoke(_cog(db_path, stage=stage), interaction)
+
+    synced.assert_not_awaited()
+    assert "only while the season is ongoing" in _replied(interaction)
+
+
+async def test_an_unknown_division_is_refused(tmp_path):
+    db_path = await _make_db(tmp_path, autosack=20)
+    interaction = _interaction()
+
+    synced = await _invoke(_cog(db_path), interaction, division="Nowhere")
+
+    synced.assert_not_awaited()
+    assert "not found" in _replied(interaction)
+
+
+async def test_an_unknown_round_is_refused(tmp_path):
+    db_path = await _make_db(tmp_path, autosack=20)
+    await _add_rounds(db_path, {})
+    interaction = _interaction()
+
+    synced = await _invoke(_cog(db_path), interaction, round=9)
+
+    synced.assert_not_awaited()
+    assert "has no round 9" in _replied(interaction)
+
+
+async def test_a_round_not_yet_finalised_is_refused(tmp_path):
+    db_path = await _make_db(tmp_path, autosack=20)
+    await _add_rounds(db_path, {2: "AWAITING_REPORT_VERDICTS"})
+    interaction = _interaction()
+
+    synced = await _invoke(_cog(db_path), interaction, round=2)
+
+    synced.assert_not_awaited()
+    assert "has not had its penalties approved" in _replied(interaction)
+
+
+async def test_a_channel_fault_refuses_it_with_nothing_changed(tmp_path):
+    db_path = await _make_db(tmp_path, autosack=20)
+    await _add_rounds(db_path, {})
+    interaction = _interaction()
+
+    synced = await _invoke(
+        _cog(db_path), interaction, faults=["Division 1: the attendance channel is gone"]
+    )
+
+    synced.assert_not_awaited()
+    replied = _replied(interaction)
+    assert "Nothing was changed" in replied
+    assert "the attendance channel is gone" in replied
+
+
+async def test_it_syncs_from_the_named_round_and_lists_what_applied_and_failed(tmp_path):
+    db_path = await _make_db(tmp_path, autosack=20)
+    await _add_rounds(db_path, {2: "FINAL"})
+    interaction = _interaction()
+    cog = _cog(db_path)
+    outcome = SanctionOutcome(
+        applied=[("<@4> (Four)", "autosack")],
+        failed=[("<@5> (Five)", "autoreserve", "the division has no Reserve team")],
+    )
+
+    synced = await _invoke(cog, interaction, round=2, outcome=outcome)
+
+    assert synced.await_args.args[3:] == (DIVISION_ID, 2, SEASON_ID)
+    replied = _replied(interaction)
+    assert "• <@4> (Four) — autosack" in replied
+    assert "Still not applied" in replied
+    assert "• <@5> (Five) — autoreserve: the division has no Reserve team" in replied
+    logged = cog.bot.output_router.post_log.await_args.args[0]
+    assert "/attendance sync | Incomplete" in logged
+
+
+async def test_a_clean_sync_with_nothing_owed_says_so(tmp_path):
+    db_path = await _make_db(tmp_path, autosack=20)
+    await _add_rounds(db_path, {})
+    interaction = _interaction()
+    cog = _cog(db_path)
+
+    await _invoke(cog, interaction)
+
+    assert "No sanction was owed." in _replied(interaction)
+    assert "/attendance sync | Success" in cog.bot.output_router.post_log.await_args.args[0]
