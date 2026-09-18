@@ -321,7 +321,12 @@ async def test_an_amended_round_is_fully_recomputed_not_upgraded(tmp_path, pipel
 
     await _recalculate(db_path)
 
-    recompute.assert_awaited_once_with(db_path, 1, DIVISION_ID)
+    # The positional arguments are the subject; the connection it is handed is not.
+    # Every step of the recalculation now shares one transaction so the propagation
+    # lands whole or not at all (#187), and pinning the connection object here would
+    # tie this test to that mechanism rather than to the rule it is about.
+    recompute.assert_awaited_once()
+    assert recompute.await_args.args == (db_path, 1, DIVISION_ID)
 
 
 async def test_the_sheet_and_the_sanctions_are_both_re_run(tmp_path, pipeline):

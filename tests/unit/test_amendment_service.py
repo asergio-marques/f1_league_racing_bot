@@ -877,16 +877,47 @@ async def _seed_division_with_rounds(path: str, season_id: int):
     return division_id, raced, unraced_round_id
 
 
-def _bot_recording_reposts(reposted: list[tuple]):
-    """A bot stub whose guild is real enough for the repost path to run."""
+#: The stub bot's own Discord user id. The pre-flight looks its member up by it (#187).
+_BOT_USER_ID = 4242
+
+
+def _bot_recording_reposts(reposted: list[tuple], *, missing: tuple[int, ...] = ()):
+    """A bot stub whose guild is real enough for the repost path to run.
+
+    *missing* names channels the guild no longer holds, for the refusal tests: a deleted
+    channel is what ``guild.get_channel`` answers None to.
+
+    The channels are specced as ``discord.TextChannel`` because the approval now checks
+    that what a division points at is something that can be posted in (#187). A bare
+    ``AsyncMock`` is not, and would be refused before any reposting was attempted.
+
+    **A bare ``MagicMock`` grants every permission.** The validation reads permissions with
+    ``getattr(permissions, name, False)``, and a ``MagicMock`` answers any attribute with a
+    truthy child mock — so the object handed back by ``permissions_for`` below means
+    "everything allowed", which is what these tests want: they are about the cascade, not
+    about permissions.
+
+    The trap is in the other direction. A test that means to *deny* a permission must set
+    that attribute to ``False`` by name, and a **misspelt** attribute silently grants
+    instead of denying — leaving a test that reads as though it proves a refusal while
+    actually exercising the success path. Set the attribute, then assert on the fault text,
+    so the test fails if the denial never took.
+    """
+    import discord
     from unittest.mock import AsyncMock, MagicMock
 
     guild = MagicMock()
-    guild.get_member.return_value = None
+    guild.id = 1
+    # The bot's own member resolves — the pre-flight reads its permissions through it — and
+    # nobody else's does, which is what makes the postings below fall back to plain ids for
+    # the drivers. Two different questions asked of one cache (#187).
+    guild.get_member = lambda user_id: MagicMock() if user_id == _BOT_USER_ID else None
     guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
 
     def get_channel(channel_id):
-        channel = AsyncMock()
+        if channel_id in missing:
+            return None
+        channel = MagicMock(spec=discord.TextChannel)
 
         async def fake_send(content=None, **kwargs):
             reposted.append((channel_id, content or ""))
@@ -896,14 +927,19 @@ def _bot_recording_reposts(reposted: list[tuple]):
 
         channel.send = fake_send
         channel.id = channel_id
+        # Everything granted: these tests are about the cascade, not about permissions.
+        channel.permissions_for.return_value = MagicMock()
         return channel
 
     guild.get_channel = get_channel
 
     bot = MagicMock()
+    bot.user.id = _BOT_USER_ID
     bot.get_guild.return_value = guild
     bot.output_router.post_log = AsyncMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    bot.image_config_service.get_toggles = AsyncMock(return_value={})
     return bot
 
 
@@ -985,6 +1021,374 @@ async def test_approve_amendment_still_overwrites_the_points(db_path):
     assert state is not None
     assert not state.amendment_active
     assert not state.modified_flag
+
+
+# ---------------------------------------------------------------------------
+# An amendment that could not be published is refused entire (#187)
+#
+# Either everything succeeds or everything fails. The approval used to overwrite the
+# season's points first and discover afterwards that it could not repost them, swallow
+# that, and tell the league the championship had been republished.
+# ---------------------------------------------------------------------------
+
+
+async def _staged_amendment(path: str, season_id: int) -> None:
+    """Amendment mode on, with one sound change staged and ready to approve."""
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+
+
+async def _season_state(path: str, season_id: int):
+    """The three things a refusal must leave exactly as it found them."""
+    async with get_connection(path) as db:
+        points = await (
+            await db.execute(
+                "SELECT position, points FROM season_points_entries WHERE season_id = ? "
+                "ORDER BY position",
+                (season_id,),
+            )
+        ).fetchall()
+        staged = await (
+            await db.execute(
+                "SELECT position, points FROM season_modification_entries WHERE season_id = ? "
+                "ORDER BY position",
+                (season_id,),
+            )
+        ).fetchall()
+    state = await get_amendment_state(path, season_id)
+    return (
+        [(r["position"], r["points"]) for r in points],
+        [(r["position"], r["points"]) for r in staged],
+        state,
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_amendment_is_refused_when_a_division_channel_is_gone(db_path):
+    """The headline of #187: a deleted standings channel refuses the approval outright.
+
+    Before the fix this returned cleanly, having deleted the season's points, refilled
+    them from the modification store, cleared the store, switched amendment mode off and
+    posted ``AMENDMENT_APPROVED | Success`` — then reposted nothing at all, because
+    ``guild.get_channel`` answers None for a deleted channel and nothing raises.
+    """
+    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await _staged_amendment(path, season_id)
+    before = await _season_state(path, season_id)
+
+    reposted: list[tuple] = []
+    with pytest.raises(AmendmentNotDeliverableError) as excinfo:
+        await approve_amendment(
+            path, season_id, 99, _bot_recording_reposts(reposted, missing=(502,))
+        )
+
+    assert "standings channel" in "; ".join(excinfo.value.faults)
+    assert "Alpha" in "; ".join(excinfo.value.faults)
+    assert reposted == [], "a refused amendment posted to the league's channels"
+    assert await _season_state(path, season_id) == before, (
+        "a refused amendment changed the season"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_refused_amendment_keeps_the_season_points(db_path):
+    """The points are what the refusal exists to protect: after the DELETE nothing
+    could put them back."""
+    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await _staged_amendment(path, season_id)
+
+    with pytest.raises(AmendmentNotDeliverableError):
+        await approve_amendment(
+            path, season_id, 99, _bot_recording_reposts([], missing=(501, 502))
+        )
+
+    async with get_connection(path) as db:
+        row = await (
+            await db.execute(
+                "SELECT points FROM season_points_entries WHERE season_id = ? AND position = 1",
+                (season_id,),
+            )
+        ).fetchone()
+    assert row is not None and row["points"] == 25, "the season's own points were lost"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_amendment_leaves_the_staged_changes_to_repair(db_path):
+    """A manager repairs the channel and approves again; the work must still be there."""
+    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await _staged_amendment(path, season_id)
+
+    with pytest.raises(AmendmentNotDeliverableError):
+        await approve_amendment(
+            path, season_id, 99, _bot_recording_reposts([], missing=(502,))
+        )
+
+    state = await get_amendment_state(path, season_id)
+    assert state is not None
+    assert state.amendment_active, "amendment mode was switched off by a refusal"
+    async with get_connection(path) as db:
+        row = await (
+            await db.execute(
+                "SELECT points FROM season_modification_entries WHERE season_id = ? "
+                "AND position = 1",
+                (season_id,),
+            )
+        ).fetchone()
+    assert row is not None and row["points"] == 30
+
+
+@pytest.mark.asyncio
+async def test_a_refused_amendment_is_not_logged_as_a_success(db_path):
+    """Nothing happened, so the log must not say anything did (#187)."""
+    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await _staged_amendment(path, season_id)
+
+    bot = _bot_recording_reposts([], missing=(502,))
+    with pytest.raises(AmendmentNotDeliverableError):
+        await approve_amendment(path, season_id, 99, bot)
+
+    logged = "\n".join(
+        str(call.args[1]) for call in bot.output_router.post_log.await_args_list
+    )
+    assert "AMENDMENT_APPROVED" not in logged, logged
+
+
+@pytest.mark.asyncio
+async def test_an_amendment_is_refused_when_the_bot_cannot_post(db_path):
+    """The issue's other reproduction path: Send Messages revoked on a live channel."""
+    from unittest.mock import MagicMock
+
+    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await _staged_amendment(path, season_id)
+
+    bot = _bot_recording_reposts([])
+    guild = bot.get_guild.return_value
+    working = guild.get_channel
+
+    def get_channel(channel_id):
+        channel = working(channel_id)
+        permissions = MagicMock()
+        permissions.send_messages = False
+        channel.permissions_for.return_value = permissions
+        return channel
+
+    guild.get_channel = get_channel
+
+    with pytest.raises(AmendmentNotDeliverableError) as excinfo:
+        await approve_amendment(path, season_id, 99, bot)
+
+    assert "Send Messages" in "; ".join(excinfo.value.faults)
+
+
+@pytest.mark.asyncio
+async def test_an_amendment_is_refused_when_the_guild_is_not_in_cache(db_path):
+    """Today this overwrites the points and then silently reposts nothing at all (#187)."""
+    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await _staged_amendment(path, season_id)
+
+    bot = _bot_recording_reposts([])
+    bot.get_guild.return_value = None
+
+    with pytest.raises(AmendmentNotDeliverableError) as excinfo:
+        await approve_amendment(path, season_id, 99, bot)
+
+    assert "not in this server" in "; ".join(excinfo.value.faults)
+    async with get_connection(path) as db:
+        row = await (
+            await db.execute(
+                "SELECT points FROM season_points_entries WHERE season_id = ? AND position = 1",
+                (season_id,),
+            )
+        ).fetchone()
+    assert row is not None and row["points"] == 25
+
+
+@pytest.mark.asyncio
+async def test_a_division_with_no_channels_does_not_refuse_the_amendment(db_path):
+    """The guard against over-refusing: an unconfigured channel is ordinary (#187)."""
+    from services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (?, 'Alpha', 777)",
+            (season_id,),
+        )
+        await db.execute(
+            "INSERT INTO division_results_config "
+            "(division_id, results_channel_id, standings_channel_id) VALUES (?, NULL, NULL)",
+            (cursor.lastrowid,),
+        )
+        await db.commit()
+    await _staged_amendment(path, season_id)
+
+    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+
+    async with get_connection(path) as db:
+        row = await (
+            await db.execute(
+                "SELECT points FROM season_points_entries WHERE season_id = ? AND position = 1",
+                (season_id,),
+            )
+        ).fetchone()
+    assert row is not None and row["points"] == 30, "a sound amendment was refused"
+
+
+@pytest.mark.asyncio
+async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_path):
+    """The approval recalculates attendance too, so its channels are part of the gate."""
+    from unittest.mock import AsyncMock
+
+    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO attendance_config (server_id, autosack_threshold) VALUES (1, 3)"
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, server_id, "
+            "attendance_channel_id) VALUES (?, 1, 601)",
+            (division_id,),
+        )
+        await db.commit()
+    await _staged_amendment(path, season_id)
+
+    bot = _bot_recording_reposts([], missing=(601,))
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+
+    with pytest.raises(AmendmentNotDeliverableError) as excinfo:
+        await approve_amendment(path, season_id, 99, bot)
+
+    assert "attendance channel" in "; ".join(excinfo.value.faults)
+
+
+@pytest.mark.asyncio
+async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(db_path):
+    """A league without the attendance module must not be refused for a channel it has
+    never configured — the same gate the cascade's own recalculation holds to."""
+    from services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO attendance_config (server_id, autosack_threshold) VALUES (1, 3)"
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, server_id, "
+            "attendance_channel_id) VALUES (?, 1, 601)",
+            (division_id,),
+        )
+        await db.commit()
+    await _staged_amendment(path, season_id)
+
+    # 601 is absent, but the module is off, so nothing asks after it.
+    await approve_amendment(path, season_id, 99, _bot_recording_reposts([], missing=(601,)))
+
+    async with get_connection(path) as db:
+        row = await (
+            await db.execute(
+                "SELECT points FROM season_points_entries WHERE season_id = ? AND position = 1",
+                (season_id,),
+            )
+        ).fetchone()
+    assert row is not None and row["points"] == 30, "a sound amendment was refused"
+
+
+@pytest.mark.asyncio
+async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
+    """The log records the approval once the reposting it claims has been done (#187).
+
+    It used to be posted the moment the points were committed, before a single message had
+    been attempted — so ``AMENDMENT_APPROVED | Success`` stood in the log whatever became
+    of the cascade, and a manager reading it had no reason to check the channels.
+    """
+    from unittest.mock import AsyncMock
+
+    from services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await _staged_amendment(path, season_id)
+
+    order: list[str] = []
+    reposted: list[tuple] = []
+    bot = _bot_recording_reposts(reposted)
+    guild = bot.get_guild.return_value
+    working = guild.get_channel
+
+    def get_channel(channel_id):
+        channel = working(channel_id)
+        sent = channel.send
+
+        async def recording_send(content=None, **kwargs):
+            order.append("repost")
+            return await sent(content, **kwargs)
+
+        channel.send = recording_send
+        return channel
+
+    guild.get_channel = get_channel
+
+    async def recording_log(_server_id, content):
+        order.append("log" if "AMENDMENT_APPROVED" in str(content) else "other-log")
+
+    bot.output_router.post_log = AsyncMock(side_effect=recording_log)
+
+    await approve_amendment(path, season_id, 99, bot)
+
+    assert "repost" in order, "nothing was reposted, so the ordering proves nothing"
+    assert order.index("log") > order.index("repost"), order
+    assert order[-1] == "log", f"the approval was not the last thing logged: {order}"
+
+
+@pytest.mark.asyncio
+async def test_the_ordering_refusal_still_comes_first(db_path):
+    """A table out of order is refused as such, not as an undeliverable one — the two
+    refusals name different repairs and must not be confused."""
+    from services.amendment_service import NonMonotonicAmendmentError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 25)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 25)
+
+    with pytest.raises(NonMonotonicAmendmentError):
+        await approve_amendment(
+            path, season_id, 99, _bot_recording_reposts([], missing=(501, 502))
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1081,6 +1485,39 @@ async def test_approve_amendment_refuses_a_table_out_of_order(db_path):
 
     assert raised.value.errors, "the refusal must carry what is wrong with it"
     assert "STD" in raised.value.errors[0]
+
+
+@pytest.mark.asyncio
+async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_ordering(db_path):
+    """Both checks apply; the ordering one is reached first, and nothing is written (#187).
+
+    They are two independent refusals and an exception carries only one, so which is
+    raised is a real decision rather than an accident of control flow. The ordering goes
+    first because it is the staged table's own fault — the manager can repair it from the
+    panel — where an unreachable channel is the server's and may right itself. Pinned
+    because the outcome is what actually matters and is the same either way: refused
+    entire, nothing changed. The panel is the surface that names **both**, which
+    ``test_the_panel_names_both_faults_when_both_apply`` holds.
+    """
+    from services.amendment_service import NonMonotonicAmendmentError, approve_amendment
+
+    path, season_id = db_path
+    await _seed_two_position_table(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 30)
+
+    before = await _season_state(path, season_id)
+    reposted: list[tuple] = []
+    with pytest.raises(NonMonotonicAmendmentError):
+        await approve_amendment(
+            path, season_id, 99, _bot_recording_reposts(reposted, missing=(501, 502))
+        )
+
+    assert not reposted
+    assert await _season_state(path, season_id) == before, (
+        "a refusal for either reason must leave the season exactly as it stood"
+    )
 
 
 @pytest.mark.asyncio

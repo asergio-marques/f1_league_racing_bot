@@ -17,6 +17,11 @@ from models.session_result import (
 )
 from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 from services import standings_service
+from services.channel_registry_service import (
+    SETTING_LABELS,
+    missing_channel_fault,
+    unpostable_channel_fault,
+)
 from utils import results_formatter
 
 log = logging.getLogger(__name__)
@@ -1017,6 +1022,168 @@ async def post_round_results(
         )
 
 
+#: What the repost needs of a channel before it starts, by the names Discord's own
+#: interface uses. ``view_channel`` is listed even though a bot that cannot see a channel
+#: usually cannot send to it either: the two are separate permissions and Discord will
+#: report ``send_messages`` as granted on a channel the bot cannot read, so checking only
+#: the latter would pass a channel nothing can be posted to.
+#:
+#: ``read_message_history`` is here because a repost *replaces* rather than appends — it
+#: finds what it posted last with ``fetch_message``, which needs it. ``manage_messages`` is
+#: deliberately absent: the bot only ever deletes its own messages, which needs no
+#: permission at all.
+_REPOST_PERMISSIONS: tuple[tuple[str, str], ...] = (
+    ("view_channel", "View Channel"),
+    ("send_messages", "Send Messages"),
+    ("read_message_history", "Read Message History"),
+)
+
+#: Asked of a channel that may receive a graphic, in addition to the above.
+_ATTACHMENT_PERMISSION: tuple[str, str] = ("attach_files", "Attach Files")
+
+
+def _bot_member(guild: "discord.Guild", bot):
+    """The bot's own member object in *guild*, or ``None`` where it cannot be resolved.
+
+    **``guild.me`` is deliberately not used here** (#187). It is a property reading
+    ``self._state.user.id``, so where the client has no user yet it raises
+    ``AttributeError`` rather than returning ``None`` — an exception thrown out of a
+    pre-flight check whose whole purpose is to refuse cleanly, which is the one thing it
+    must not do. ``signup_cog`` already takes this guarded form before it does permission
+    arithmetic (``src/cogs/signup_cog.py:870``), and it is the form this check follows.
+
+    Resolving it is not optional: without a member there is no permission arithmetic to do,
+    and both callers treat ``None`` as a fault rather than as leave to assume.
+    """
+    bot_user = getattr(bot, "user", None) if bot is not None else None
+    if bot_user is None:
+        return None
+    return guild.get_member(bot_user.id)
+
+
+def _channel_fault(
+    guild: discord.Guild,
+    bot_member,
+    division_name: str,
+    setting: str,
+    channel_id: int,
+    *,
+    needs_attachment: bool,
+) -> str | None:
+    """The fault standing between the bot and posting to *channel_id*, or None.
+
+    Reads the gateway cache rather than calling Discord, which is what makes it usable as a
+    gate: it is the same reading ``/division results-channel`` already takes before it
+    accepts a channel.
+    """
+    channel = guild.get_channel(channel_id)
+    if channel is None:
+        return missing_channel_fault(division_name, setting, channel_id)
+
+    if not isinstance(channel, discord.TextChannel):
+        label = SETTING_LABELS.get(setting, setting)
+        return (
+            f"**{division_name}** — the {label} channel <#{channel_id}> is not a text "
+            f"channel, so nothing can be posted in it."
+        )
+
+    permissions = channel.permissions_for(bot_member)
+    wanted = list(_REPOST_PERMISSIONS)
+    if needs_attachment:
+        wanted.append(_ATTACHMENT_PERMISSION)
+    missing = [name for attr, name in wanted if not getattr(permissions, attr, False)]
+    if missing:
+        return unpostable_channel_fault(division_name, setting, channel_id, missing)
+    return None
+
+
+async def repost_channel_faults(
+    db_path: str,
+    season_id: int,
+    guild: "discord.Guild | None",
+    bot=None,
+) -> list[str]:
+    """What stands between this season and reposting every division's results (#187).
+
+    Returns the faults as lines a league can read, and an empty list where every division's
+    configured channels are there and can be posted to.
+
+    **Read before anything is written, so that an amendment is refused entire rather than
+    half-made.** The approval of a mid-season amendment overwrites the season's points and
+    then reposts every round of every division against the new numbers. A channel that has
+    been deleted, or one the bot's Send Messages has been revoked on, used to be discovered
+    only once the points were already overwritten — and then swallowed, so the league was
+    told the championship had been republished when none of it had. Establishing it first
+    turns that into a refusal that changes nothing.
+
+    **A channel a division never configured is not a fault.** It has nothing posted for it
+    and the cascade is right to skip it in silence; reporting it would refuse leagues that
+    are correctly configured. Only a channel the league *did* configure and the server no
+    longer holds, or holds and will not accept a posting in, is reported here.
+
+    **The bot's own member object is required, not assumed.** Without it there is no
+    permission arithmetic to do, and guessing would defeat the point of the gate — so an
+    unresolvable bot member is itself a fault rather than a reason to wave the season
+    through.
+    """
+    if guild is None:
+        return [
+            "The bot is not in this server, so nothing can be reposted. "
+            "Check that it is still a member and try again."
+        ]
+
+    bot_member = _bot_member(guild, bot)
+    if bot_member is None:
+        return [
+            "The bot cannot read its own permissions in this server, so it cannot tell "
+            "whether the reposting would succeed. Try again in a moment."
+        ]
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT d.id, d.name,
+                   drc.results_channel_id, drc.standings_channel_id
+            FROM divisions d
+            LEFT JOIN division_results_config drc ON drc.division_id = d.id
+            WHERE d.season_id = ? AND d.status != 'CANCELLED'
+            ORDER BY d.tier, d.id
+            """,
+            (season_id,),
+        )
+        division_rows = await cursor.fetchall()
+
+    # Asked of the image module rather than read out of its configuration here: a posting
+    # service hands the image module an occasion and acts on what comes back, and does not
+    # read its settings (#187, and the layering
+    # `tests/integration/test_image_module_flow.py` holds).
+    from services.image_validity_service import aspect_attaches_files
+
+    results_graphics = await aspect_attaches_files(bot, guild.id, "results")
+    standings_graphics = await aspect_attaches_files(bot, guild.id, "standings")
+
+    faults: list[str] = []
+    for row in division_rows:
+        division_name = row["name"] or f"division {row['id']}"
+        for setting, channel_id, needs_attachment in (
+            ("results", row["results_channel_id"], results_graphics),
+            ("standings", row["standings_channel_id"], standings_graphics),
+        ):
+            if not channel_id:
+                continue
+            fault = _channel_fault(
+                guild,
+                bot_member,
+                division_name,
+                setting,
+                int(channel_id),
+                needs_attachment=needs_attachment,
+            )
+            if fault is not None:
+                faults.append(fault)
+    return faults
+
+
 async def repost_round_results(
     db_path: str,
     round_id: int,
@@ -1025,8 +1192,11 @@ async def repost_round_results(
     label: str | None = None,
     *,
     bot=None,
-) -> None:
+) -> list[str]:
     """Load the division's channels and repost/edit round results and standings.
+
+    Returns the faults it met, as lines a league can read, and an empty list where
+    everything it was asked to do was done.
 
     **The label is derived from the round, not demanded of the caller** (#130). Every
     caller reposts rounds it does not choose — the amendment cascade walks a whole
@@ -1040,11 +1210,28 @@ async def repost_round_results(
     this way but ``post_standings`` does not, and the amendment cascade walks every
     non-cancelled round of the division — future ones included. Without this guard,
     approving an amendment would post standings for rounds that have not been raced.
+
+    **A configured channel that has gone missing is a fault, not a silence** (#187). The
+    two channel guards below used to be bare truthiness tests, which conflated a channel
+    the league never configured with one it configured and has since deleted. The first
+    is no business of this function's — a division with no standings channel has nothing
+    posted for it and is right to be skipped without a word. The second is a fault, and
+    swallowing it is what let a failed amendment cascade report success: no exception is
+    raised by a channel that simply is not there, so the caller's ``except`` never ran
+    and not even the host's log file recorded anything. ``repost_results_for_division``
+    already warns in exactly this case; this function was the outlier.
+
+    A caller that does not care may ignore the return, which is why the missing channel
+    is reported this way rather than raised: ``penalty_service`` reposts one round after
+    applying a penalty and has nowhere to put a fault, and making this raise would turn a
+    stale channel into a failed penalty.
     """
+    faults: list[str] = []
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT d.season_id, drc.results_channel_id, drc.standings_channel_id,
+            SELECT d.season_id, d.name AS division_name,
+                   drc.results_channel_id, drc.standings_channel_id,
                    r.round_number, r.track_name, r.status
             FROM divisions d
             LEFT JOIN division_results_config drc ON drc.division_id = d.id
@@ -1057,8 +1244,9 @@ async def repost_round_results(
 
     if row is None:
         log.warning("repost_round_results: division %s not found", division_id)
-        return
+        return faults
 
+    division_name: str = row["division_name"] or f"division {division_id}"
     results_ch_id: int | None = row["results_channel_id"]
     standings_ch_id: int | None = row["standings_channel_id"]
     round_number: int = row["round_number"]
@@ -1072,16 +1260,26 @@ async def repost_round_results(
             "repost_round_results: round %s has no ACTIVE session results — nothing to repost",
             round_id,
         )
-        return
+        return faults
 
     if results_ch_id:
         rc = guild.get_channel(results_ch_id)
-        if rc:
+        if rc is None:
+            log.warning(
+                "repost_round_results: results channel %s not found in guild", results_ch_id
+            )
+            faults.append(missing_channel_fault(division_name, "results", results_ch_id))
+        else:
             await post_round_results(db_path, round_id, division_id, rc, guild, label, bot=bot)
 
     if standings_ch_id:
         sc = guild.get_channel(standings_ch_id)
-        if sc:
+        if sc is None:
+            log.warning(
+                "repost_round_results: standings channel %s not found in guild", standings_ch_id
+            )
+            faults.append(missing_channel_fault(division_name, "standings", standings_ch_id))
+        else:
             driver_snaps = await driver_standings_for_display(
                 db_path, division_id, round_id, guild, bot
             )
@@ -1094,6 +1292,8 @@ async def repost_round_results(
                 db_path, division_id, round_id, round_number, track_name, sc,
                 driver_snaps, team_snaps, guild, show_reserves, label, bot=bot,
             )
+
+    return faults
 
 
 async def _round_has_posted_results(db_path: str, round_id: int) -> bool:

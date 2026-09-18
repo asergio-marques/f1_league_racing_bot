@@ -32,6 +32,7 @@ from support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 4400
 USER_ID = 88
+_BOT_USER_ID = 4242
 _FEATURE_RACE = SimpleNamespace(name="Feature Race", value="FEATURE_RACE")
 
 
@@ -66,7 +67,40 @@ def _cog(db_path):
     cog.bot = AsyncMock()
     cog.bot.db_path = db_path
     cog._module_gate = AsyncMock(return_value=True)
+    cog.bot.user.id = _BOT_USER_ID
+    cog.bot.get_guild = MagicMock(return_value=_guild())
+    # Both modules off, said in as many words. Left to the whole-bot ``AsyncMock`` above,
+    # ``is_images_enabled`` and ``get_toggles`` answer with further ``AsyncMock``s, and
+    # ``toggles.get("results")`` is then an unawaited **coroutine** — truthy, so the image
+    # module reads as on and every aspect as enabled. A stub that says "off" by accident of
+    # mock semantics says nothing at all.
+    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    cog.bot.image_config_service.get_toggles = AsyncMock(return_value={})
     return cog
+
+
+def _guild():
+    """A guild the bot is in, holds a member in, and has every permission on.
+
+    ``get_guild`` is stubbed as a **``MagicMock``, not an ``AsyncMock``**:
+    ``discord.Client.get_guild`` is an ordinary synchronous cache read, and the whole-bot
+    ``AsyncMock`` above answers every attribute with a coroutine function, which is not what
+    the library does. Nothing reached the guild from these tests until `/results amend
+    review` gained its pre-flight check (#187), so the inaccuracy sat here unexercised and
+    then surfaced as ``'coroutine' object has no attribute 'me'``.
+
+    The season these tests build has no divisions, so the pre-flight finds no channel to
+    object to and stands aside — which is the point. These tests are about the **ordering**
+    refusal, and a guild that produced deliverability faults of its own would refuse for the
+    other reason and let a broken ordering check pass unnoticed. The assertions below name
+    the ordering refusal for the same reason.
+    """
+    guild = MagicMock()
+    guild.id = SERVER_ID
+    guild.get_member = lambda _user_id: MagicMock()
+    guild.get_channel = lambda _channel_id: None
+    return guild
 
 
 def _replies(interaction) -> str:
@@ -404,8 +438,12 @@ async def test_the_review_panel_shows_the_ordering_problem_with_the_diff(db_path
     await undecorate(ResultsCog.amend_review)(cog, interaction)
 
     panel = _replies(interaction)
-    assert "cannot be approved" in panel
+    assert "the points would be out of order" in panel
     assert "Config '100%'" in panel
+    assert "could not be published" not in panel, (
+        "the deliverability refusal fired too, so this test no longer proves the ordering "
+        "one is shown"
+    )
 
 
 def _stop_view(*_args, **kwargs) -> None:
@@ -443,6 +481,10 @@ async def test_pressing_approve_on_an_out_of_order_table_refuses_and_changes_not
     replies = _replies(interaction)
     assert "Amendment not approved" in replies
     assert "Nothing has been changed" in replies
+    # Named, not merely counted: the deliverability refusal (#187) carries both phrases
+    # above word for word, so without this the test would pass on the wrong refusal.
+    assert "the points would be out of order" in replies
+    assert "could not be published" not in replies
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

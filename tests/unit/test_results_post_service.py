@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 import os
+import discord
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -401,10 +402,16 @@ async def _seed_division_for_repost(
     *,
     round_status: str,
     with_session_results: bool = True,
+    results_channel_id: int | None = 501,
+    standings_channel_id: int | None = 502,
 ):
     """A season, a division with both channels configured, and one round.
 
     Returns ``(db_path, division_id, round_id)``.
+
+    Either channel id may be passed as None to seed a division that never configured it,
+    which is a different thing from one whose configured channel has since been deleted
+    (#187) and must not be reported as a fault.
     """
     from db.database import run_migrations, get_connection
 
@@ -428,8 +435,8 @@ async def _seed_division_for_repost(
         division_id = cursor.lastrowid
         await db.execute(
             "INSERT INTO division_results_config "
-            "(division_id, results_channel_id, standings_channel_id) VALUES (?, 501, 502)",
-            (division_id,),
+            "(division_id, results_channel_id, standings_channel_id) VALUES (?, ?, ?)",
+            (division_id, results_channel_id, standings_channel_id),
         )
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
@@ -559,6 +566,484 @@ async def test_repost_round_results_skips_a_round_with_no_results(tmp_path):
     )
 
     assert captured == []
+
+
+# ---------------------------------------------------------------------------
+# repost_round_results — a configured channel that has gone missing is a fault
+# and not a silence (#187)
+# ---------------------------------------------------------------------------
+
+
+def _guild_losing_channels(captured: list[str], *, missing: tuple[int, ...]):
+    """A guild in which the channels named by *missing* are no longer present.
+
+    ``guild.get_channel`` returns None for a deleted channel, which is the whole of the
+    reproduction: nothing raises, so a caller's ``except`` never runs.
+    """
+    guild = _guild_capturing_sends(captured)
+    working = guild.get_channel
+
+    def get_channel(channel_id):
+        if channel_id in missing:
+            return None
+        return working(channel_id)
+
+    guild.get_channel = get_channel
+    return guild
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_a_deleted_results_channel(tmp_path):
+    """A results channel the league configured and has since deleted is named (#187).
+
+    Before the fix the bare ``if rc:`` guard skipped it without raising and without a
+    word in any log, which is how a failed amendment cascade reported success.
+    """
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL"
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id,
+        _guild_losing_channels(captured, missing=(501,)),
+    )
+
+    assert len(faults) == 1, faults
+    assert "results channel" in faults[0]
+    assert "501" in faults[0]
+    assert "Alpha" in faults[0]
+    # The standings half is untouched by the results half's fault.
+    assert captured, "the standings were not reposted despite their channel being fine"
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_a_deleted_standings_channel(tmp_path):
+    """The standings channel is guarded the same way, and reported the same way (#187)."""
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL"
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id,
+        _guild_losing_channels(captured, missing=(502,)),
+    )
+
+    assert len(faults) == 1, faults
+    assert "standings channel" in faults[0]
+    assert "502" in faults[0]
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_both_channels_when_both_are_gone(tmp_path):
+    """Neither channel's fault hides the other's — a manager repairs both at once."""
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL"
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id,
+        _guild_losing_channels(captured, missing=(501, 502)),
+    )
+
+    assert len(faults) == 2, faults
+    assert captured == []
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_nothing_when_it_succeeds(tmp_path):
+    """The honest empty answer: everything asked for was done (#187)."""
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL"
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id, _guild_capturing_sends(captured)
+    )
+
+    assert faults == []
+    assert captured
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_nothing_for_an_unconfigured_channel(tmp_path):
+    """A division that never configured a channel has nothing posted for it (#187).
+
+    This is the guard against over-reporting. A channel left unset is an ordinary
+    configuration and is right to be skipped in silence; only a channel the league
+    *did* configure and the server no longer holds is a fault. Without this
+    distinction the validation built on top of it would refuse correctly configured
+    leagues.
+    """
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="FINAL",
+        results_channel_id=None, standings_channel_id=None,
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id, _guild_capturing_sends(captured)
+    )
+
+    assert faults == []
+    assert captured == []
+
+
+@pytest.mark.asyncio
+async def test_repost_round_results_reports_nothing_for_an_unraced_round(tmp_path):
+    """A round with nothing posted for it raises no fault however its channels stand."""
+    from services.results_post_service import repost_round_results
+
+    db_path, division_id, round_id = await _seed_division_for_repost(
+        tmp_path, round_status="NOT_RUN", with_session_results=False
+    )
+    captured: list[str] = []
+
+    faults = await repost_round_results(
+        db_path, round_id, division_id,
+        _guild_losing_channels(captured, missing=(501, 502)),
+    )
+
+    assert faults == []
+
+
+# ---------------------------------------------------------------------------
+# repost_channel_faults — established before a single row is overwritten (#187)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_season_for_faults(tmp_path, divisions):
+    """A season whose divisions carry the channels *divisions* names.
+
+    *divisions* is ``[(name, results_channel_id, standings_channel_id), ...]``, either id
+    being None for a channel the league never configured.
+
+    Returns ``(db_path, season_id)``.
+    """
+    from db.database import run_migrations, get_connection
+
+    db_path = str(tmp_path / "faults.db")
+    await run_migrations(db_path)
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
+        )
+        cursor = await db.execute(
+            "INSERT INTO seasons (server_id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 2)"
+        )
+        season_id = cursor.lastrowid
+        for tier, (name, results_id, standings_id) in enumerate(divisions):
+            cursor = await db.execute(
+                "INSERT INTO divisions (season_id, name, mention_role_id, tier) "
+                "VALUES (?, ?, 777, ?)",
+                (season_id, name, tier),
+            )
+            division_id = cursor.lastrowid
+            await db.execute(
+                "INSERT INTO division_results_config "
+                "(division_id, results_channel_id, standings_channel_id) VALUES (?, ?, ?)",
+                (division_id, results_id, standings_id),
+            )
+        await db.commit()
+
+    return db_path, season_id
+
+
+def _permissions(**denied):
+    """A permissions object granting everything except the names passed as False.
+
+    A ``MagicMock`` rather than a real ``discord.Permissions``: the Pi runs apt's
+    discord.py 2.5.0 and CI the pinned 2.7.1, and constructing library objects in a test
+    is how a suite comes to pass on one and fail on the other.
+
+    **Granting is the default, so a denial must be spelt correctly.** The validation reads
+    permissions with ``getattr(permissions, name, False)`` and a ``MagicMock`` answers any
+    attribute with a truthy child mock — so every permission is granted until named here.
+    A **misspelt** keyword therefore grants rather than denies, and the test goes green
+    while exercising the success path it was written to rule out. Every caller below pairs
+    its denial with an assertion on the fault text for that reason: if the denial did not
+    take, no fault is raised and the assertion fails rather than the test quietly passing.
+    """
+    permissions = MagicMock()
+    for name, value in denied.items():
+        setattr(permissions, name, value)
+    return permissions
+
+
+def _guild_for_faults(present=(501, 502), *, permissions=None, member=object()):
+    """A guild holding *present* as text channels, each answering *permissions*.
+
+    The bot's own member is stubbed on ``get_member`` rather than on ``guild.me``: the
+    pre-flight resolves it through the member cache, because ``Guild.me`` reads
+    ``self._state.user.id`` and so raises rather than returning ``None`` when the client
+    has no user yet (#187).
+    """
+    guild = MagicMock()
+    guild.id = 1
+    guild.get_member = lambda _user_id: member
+
+    def get_channel(channel_id):
+        if channel_id not in present:
+            return None
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = channel_id
+        channel.permissions_for.return_value = permissions or _permissions()
+        return channel
+
+    guild.get_channel = get_channel
+    return guild
+
+
+def _bot_with_images(*, enabled=False, toggles=None):
+    """A bot whose image module is off by default, so no fault asks for Attach Files.
+
+    ``user.id`` is set explicitly because the pre-flight looks the bot's own member up by
+    it; a test that means to withhold the member sets ``bot.user`` to ``None``.
+    """
+    bot = MagicMock()
+    bot.user.id = 4242
+    bot.module_service.is_images_enabled = AsyncMock(return_value=enabled)
+    bot.image_config_service.get_toggles = AsyncMock(return_value=toggles or {})
+    return bot
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_passes_a_healthy_division(tmp_path):
+    """Nothing is wrong, so nothing is reported and the amendment may proceed (#187)."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
+
+    faults = await repost_channel_faults(
+        db_path, season_id, _guild_for_faults(), _bot_with_images()
+    )
+
+    assert faults == []
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_names_a_deleted_channel(tmp_path):
+    """The first of the issue's two reproduction paths, caught before anything is written."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
+
+    faults = await repost_channel_faults(
+        db_path, season_id, _guild_for_faults(present=(502,)), _bot_with_images()
+    )
+
+    assert len(faults) == 1, faults
+    assert "Alpha" in faults[0]
+    assert "results channel" in faults[0]
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_names_a_channel_the_bot_cannot_post_to(tmp_path):
+    """The issue's other reproduction path: Send Messages revoked on a live channel."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
+
+    faults = await repost_channel_faults(
+        db_path, season_id,
+        _guild_for_faults(permissions=_permissions(send_messages=False)),
+        _bot_with_images(),
+    )
+
+    assert len(faults) == 2, faults
+    assert all("Send Messages" in line for line in faults)
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_wants_read_message_history(tmp_path):
+    """A repost replaces what it posted and finds it with fetch_message, which needs it."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
+
+    faults = await repost_channel_faults(
+        db_path, season_id,
+        _guild_for_faults(permissions=_permissions(read_message_history=False)),
+        _bot_with_images(),
+    )
+
+    assert len(faults) == 1, faults
+    assert "Read Message History" in faults[0]
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_ignores_an_unconfigured_channel(tmp_path):
+    """A division with no standings channel is ordinary configuration, not a fault (#187)."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
+
+    faults = await repost_channel_faults(
+        db_path, season_id, _guild_for_faults(present=(501,)), _bot_with_images()
+    )
+
+    assert faults == []
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_asks_for_attach_files_only_with_graphics(tmp_path):
+    """Attach Files is asked of a league that has the graphics on, and of no other (#187)."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
+    guild = _guild_for_faults(permissions=_permissions(attach_files=False))
+
+    text_only = await repost_channel_faults(
+        db_path, season_id, guild, _bot_with_images(enabled=False)
+    )
+    assert text_only == [], "a text-only league was refused a permission it never uses"
+
+    with_graphics = await repost_channel_faults(
+        db_path, season_id, guild,
+        _bot_with_images(enabled=True, toggles={"results": True, "standings": True}),
+    )
+    assert len(with_graphics) == 2, with_graphics
+    assert all("Attach Files" in line for line in with_graphics)
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_asks_per_aspect(tmp_path):
+    """The standings aspect being on does not ask Attach Files of the results channel."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
+
+    faults = await repost_channel_faults(
+        db_path, season_id,
+        _guild_for_faults(permissions=_permissions(attach_files=False)),
+        _bot_with_images(enabled=True, toggles={"standings": True}),
+    )
+
+    assert len(faults) == 1, faults
+    assert "standings channel" in faults[0]
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_refuses_a_channel_that_is_not_text(tmp_path):
+    """A repointed id could hand the posting a category; both post functions type a
+    TextChannel and nothing else enforces it."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
+    guild = MagicMock()
+    guild.id = 1
+    guild.get_member = lambda _user_id: object()
+    guild.get_channel = lambda channel_id: MagicMock(spec=discord.CategoryChannel)
+
+    faults = await repost_channel_faults(db_path, season_id, guild, _bot_with_images())
+
+    assert len(faults) == 1, faults
+    assert "not a text channel" in faults[0]
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_reports_a_guild_the_bot_cannot_see(tmp_path):
+    """Today this path overwrites the points and silently reposts nothing at all (#187)."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
+
+    faults = await repost_channel_faults(db_path, season_id, None, _bot_with_images())
+
+    assert len(faults) == 1, faults
+    assert "not in this server" in faults[0]
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_refuses_when_the_bot_member_is_unknown(tmp_path):
+    """Without its own member object there is no permission arithmetic to do, and
+    guessing would defeat the gate."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
+
+    # Not in the member cache.
+    faults = await repost_channel_faults(
+        db_path, season_id, _guild_for_faults(member=None), _bot_with_images()
+    )
+    assert len(faults) == 1, faults
+    assert "own permissions" in faults[0]
+
+    # And the other way it can be unresolvable: the client has no user of its own yet.
+    bot = _bot_with_images()
+    bot.user = None
+    faults = await repost_channel_faults(db_path, season_id, _guild_for_faults(), bot)
+    assert len(faults) == 1, faults
+    assert "own permissions" in faults[0]
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_resolves_the_bot_member_from_the_cache(tmp_path):
+    """The bot's own member is looked up by id, never taken from ``guild.me`` (#187)."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
+    guild = _guild_for_faults()
+    looked_up: list[int] = []
+    guild.get_member = lambda user_id: looked_up.append(user_id) or object()
+    bot = _bot_with_images()
+    bot.user.id = 4242
+
+    faults = await repost_channel_faults(db_path, season_id, guild, bot)
+
+    assert faults == []
+    assert looked_up == [4242], "the member was not resolved through the cache by id"
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_names_every_division_at_fault(tmp_path):
+    """Five divisions failing is five things to repair; naming one buries the rest."""
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(
+        tmp_path, [("Alpha", 501, None), ("Beta", 503, None), ("Gamma", 505, None)]
+    )
+
+    faults = await repost_channel_faults(
+        db_path, season_id, _guild_for_faults(present=()), _bot_with_images()
+    )
+
+    assert len(faults) == 3, faults
+    assert [name in " ".join(faults) for name in ("Alpha", "Beta", "Gamma")] == [True] * 3
+
+
+@pytest.mark.asyncio
+async def test_repost_channel_faults_ignores_a_cancelled_division(tmp_path):
+    """A cancelled division is not reposted, so its channels are nobody's concern."""
+    from db.database import get_connection
+    from services.results_post_service import repost_channel_faults
+
+    db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE divisions SET status = 'CANCELLED'")
+        await db.commit()
+
+    faults = await repost_channel_faults(
+        db_path, season_id, _guild_for_faults(present=()), _bot_with_images()
+    )
+
+    assert faults == []
 
 
 # ---------------------------------------------------------------------------

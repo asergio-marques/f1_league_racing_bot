@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -17,6 +18,32 @@ from models.attendance import (
     RsvpEmbedMessage,
 )
 from models.classification_occasion import ClassificationOccasion
+
+
+@asynccontextmanager
+async def _shared_or_own(db_path: str, db):
+    """Yield ``(connection, owned)`` — *db* where a caller supplied one, else a new one.
+
+    ``owned`` says whether the callee should commit: a function handed a connection is one
+    step of somebody else's transaction and must not commit it, or the atomicity the caller
+    opened it for is lost a step at a time.
+
+    **Why the recalculation needs this** (#187). ``recalculate_attendance_for_round``
+    recomputes a round's attendance and then propagates the running total through every
+    finalised round after it, one call apiece. Each call used to open and commit its own
+    connection, so a failure in the middle of that loop left the league's attendance points
+    correct up to round four and stale from round five on — and no command re-runs the
+    recalculation, so there was no way back. Sharing one transaction makes the whole
+    propagation succeed or none of it, which is what the approval it belongs to promises.
+
+    The DB half is pure SQLite with no Discord round-trip in it, so the transaction is
+    short. The posting deliberately stays outside it.
+    """
+    if db is not None:
+        yield db, False
+        return
+    async with get_connection(db_path) as owned:
+        yield owned, True
 
 
 def validate_timing_invariant(
@@ -575,13 +602,18 @@ async def record_attendance_from_results_full_recompute(
     db_path: str,
     round_id: int,
     division_id: int,
+    *,
+    db=None,
 ) -> None:
     """Recompute attended flags without the upgrade-only constraint (FR-028/amendment).
 
     Used exclusively by recalculate_attendance_for_round so that a deliberate result
     correction can flip attended in either direction. Skipped for cancelled rounds.
+
+    *db* joins a transaction the caller already opened, and is then the caller's to commit;
+    see :func:`_shared_or_own`.
     """
-    async with get_connection(db_path) as db:
+    async with _shared_or_own(db_path, db) as (db, _owned):
         # Guard: skip if round is cancelled.
         cursor = await db.execute(
             "SELECT status FROM rounds WHERE id = ?",
@@ -637,18 +669,24 @@ async def record_attendance_from_results_full_recompute(
                 "UPDATE driver_round_attendance SET attended = ? WHERE id = ?",
                 (new_val, row["id"]),
             )
-        await db.commit()
+        if _owned:
+            await db.commit()
 
 
 async def distribute_attendance_points(
     db_path: str,
     round_id: int,
     division_id: int,
+    *,
+    db=None,
 ) -> None:
     """Compute and persist points_awarded and total_points_after for every full-time
     driver in the division for this round (FR-012–FR-015).
+
+    *db* joins a transaction the caller already opened, and is then the caller's to commit;
+    see :func:`_shared_or_own`.
     """
-    async with get_connection(db_path) as db:
+    async with _shared_or_own(db_path, db) as (db, _owned):
         # Guard: skip if round is cancelled (no penalties for cancelled rounds).
         cursor = await db.execute(
             "SELECT status FROM rounds WHERE id = ?",
@@ -825,7 +863,8 @@ async def distribute_attendance_points(
                 (net, total_after, dra_id),
             )
 
-        await db.commit()
+        if _owned:
+            await db.commit()
 
 
 async def post_attendance_sheet(
@@ -1669,15 +1708,28 @@ async def recalculate_attendance_for_round(
     flip attended in either direction (FR-028). Existing AttendancePardon rows are
     preserved (FR-029). total_points_after is propagated forward through any
     subsequent finalized rounds (FR-030).
+
+    **The recompute and the whole propagation are one transaction** (#187). Every step
+    below used to open and commit a connection of its own, so a failure in the middle of
+    the propagation loop left a division's attendance points correct up to one round and
+    stale from the next on — and nothing a league manager can run re-runs this, so there
+    was no route back. Committing once means the recalculation either lands whole or does
+    not land at all.
+
+    The **posting** stays outside that transaction deliberately. It is Discord I/O, and
+    holding a write transaction open across it would block every other writer for as long
+    as Discord took to answer.
     """
-    # FR-028: full recompute without upgrade-only constraint.
-    await record_attendance_from_results_full_recompute(db_path, round_id, division_id)
-
-    # FR-029: pardons are already persisted — just recompute points using them.
-    await distribute_attendance_points(db_path, round_id, division_id)
-
-    # FR-030: propagate total_points_after forward through subsequent rounds.
     async with get_connection(db_path) as db:
+        # FR-028: full recompute without upgrade-only constraint.
+        await record_attendance_from_results_full_recompute(
+            db_path, round_id, division_id, db=db
+        )
+
+        # FR-029: pardons are already persisted — just recompute points using them.
+        await distribute_attendance_points(db_path, round_id, division_id, db=db)
+
+        # FR-030: propagate total_points_after forward through subsequent rounds.
         cursor = await db.execute(
             """
             SELECT id FROM rounds
@@ -1690,10 +1742,101 @@ async def recalculate_attendance_for_round(
         )
         subsequent_rounds = await cursor.fetchall()
 
-    for sub_row in subsequent_rounds:
-        await distribute_attendance_points(db_path, sub_row["id"], division_id)
+        for sub_row in subsequent_rounds:
+            await distribute_attendance_points(
+                db_path, sub_row["id"], division_id, db=db
+            )
+
+        await db.commit()
 
     # FR-031: re-post sheet and re-evaluate sanctions.
     await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
     await enforce_attendance_sanctions(bot, guild, db_path, round_id, division_id, server_id, season_id)
 
+
+
+async def recalculation_faults(
+    db_path: str, season_id: int, guild, bot=None
+) -> list[str]:
+    """What stands between this season and recalculating its attendance (#187).
+
+    Returns the faults as lines a league can read, and an empty list where every division's
+    attendance posting could be made.
+
+    Called by `amendment_service.approval_faults` before an approved amendment writes
+    anything, because the approval recalculates attendance as part of its cascade and a
+    recalculation that cannot be posted used to be swallowed under the same false success
+    as the reposting.
+
+    **The verdicts channel is asked for only where sanctions could actually fall.**
+    ``enforce_attendance_sanctions`` returns immediately when both the autosack and
+    autoreserve thresholds are unset, so a league using neither must not be refused for a
+    channel it will never post to.
+    """
+    from services.image_validity_service import aspect_attaches_files
+    from services.results_post_service import _bot_member, _channel_fault
+
+    if guild is None:
+        # The results half already reports an absent guild; saying it twice would have a
+        # manager repairing one thing from two lines.
+        return []
+
+    bot_member = _bot_member(guild, bot)
+    if bot_member is None:
+        # The results half already refuses on an unresolvable bot member; saying it twice
+        # would have a manager repairing one thing from two lines.
+        return []
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT d.id, d.name,
+                   adc.attendance_channel_id,
+                   drc.penalty_channel_id
+            FROM divisions d
+            LEFT JOIN attendance_division_config adc ON adc.division_id = d.id
+            LEFT JOIN division_results_config drc ON drc.division_id = d.id
+            WHERE d.season_id = ? AND d.status != 'CANCELLED'
+            ORDER BY d.tier, d.id
+            """,
+            (season_id,),
+        )
+        division_rows = await cursor.fetchall()
+
+        cursor = await db.execute(
+            """
+            SELECT ac.autoreserve_threshold, ac.autosack_threshold
+            FROM attendance_config ac
+            JOIN seasons s ON s.server_id = ac.server_id
+            WHERE s.id = ?
+            """,
+            (season_id,),
+        )
+        thresholds = await cursor.fetchone()
+
+    sanctions_possible = bool(
+        thresholds
+        and (thresholds["autoreserve_threshold"] or thresholds["autosack_threshold"])
+    )
+    attendance_graphics = await aspect_attaches_files(bot, guild.id, "attendance")
+
+    faults: list[str] = []
+    for row in division_rows:
+        division_name = row["name"] or f"division {row['id']}"
+        if row["attendance_channel_id"]:
+            fault = _channel_fault(
+                guild, bot_member, division_name, "attendance",
+                int(row["attendance_channel_id"]),
+                needs_attachment=attendance_graphics,
+            )
+            if fault is not None:
+                faults.append(fault)
+        if sanctions_possible and row["penalty_channel_id"]:
+            fault = _channel_fault(
+                guild, bot_member, division_name, "verdicts",
+                int(row["penalty_channel_id"]),
+                needs_attachment=False,
+            )
+            if fault is not None:
+                faults.append(fault)
+    return faults

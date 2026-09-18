@@ -22,7 +22,13 @@ from dataclasses import dataclass
 
 from db.database import get_connection
 
-__all__ = ["ChannelUse", "find_channel_use", "SETTING_LABELS"]
+__all__ = [
+    "ChannelUse",
+    "find_channel_use",
+    "SETTING_LABELS",
+    "missing_channel_fault",
+    "unpostable_channel_fault",
+]
 
 
 #: Every configurable channel, by the label a league reads. The key is what the calling
@@ -157,4 +163,38 @@ def refusal(channel_mention: str, use: ChannelUse, *, same_setting: bool) -> str
         f"❌ {channel_mention} is already the {use.describe()}. "
         f"A channel does one job — pick one that is not in use, or clear the other "
         f"setting first."
+    )
+
+
+def missing_channel_fault(division_name: str, setting: str, channel_id: int) -> str:
+    """The line naming a channel a division has configured and the server no longer holds.
+
+    Phrased here rather than at each call site so that every command reporting it says the
+    same thing of the same fault, and names the channel by the word the command that set it
+    uses. The id is given rather than a ``<#id>`` link because a channel that has been
+    deleted renders as ``#deleted-channel``, which tells a manager nothing about which one
+    it was.
+    """
+    label = SETTING_LABELS.get(setting, setting)
+    return (
+        f"**{division_name}** — the {label} channel (id {channel_id}) is not in the server."
+    )
+
+
+def unpostable_channel_fault(
+    division_name: str, setting: str, channel_id: int, missing: list[str]
+) -> str:
+    """The line naming a channel that is there but which the bot cannot post to.
+
+    *missing* names the permissions it lacks, in the words Discord's own interface uses, so
+    a manager can find them in the channel's settings without translating.
+
+    A ``<#id>`` link is used here and not in :func:`missing_channel_fault` because this
+    channel does exist: the link takes the manager to the thing they have to repair.
+    ``OutputRouter.post_log`` leaves channel links alone, so it survives to the log channel.
+    """
+    label = SETTING_LABELS.get(setting, setting)
+    return (
+        f"**{division_name}** — the bot cannot post in the {label} channel "
+        f"<#{channel_id}>: it is missing {', '.join(missing)}."
     )

@@ -327,6 +327,10 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 
 > **Approving reposts every round that has been raced, and only those.** A round still to come is left alone, and a round that has been raced comes back under the label it already stood at — amending the points does not push a round at Final Results back to provisional. Expect a burst of posting across every division's channels: one round at a time, from the first round of the season, which on a long calendar takes a moment to work through.
 
+> **An amendment the bot cannot publish is refused outright.** Because approving rescores and reposts every division at once, it checks first that it can do all of it: every division's results and standings channels still present and writable, and with attendance on, its attendance channel too — plus the verdicts channel if you use autosack or autoreserve. A channel you have never set is fine and is skipped. A channel that has been **deleted** stops the approval, and so does one the bot cannot post in: it needs **View Channel**, **Send Messages** and **Read Message History** on every one of them — the last because a repost replaces what it posted before rather than adding to it — and **Attach Files** as well on any channel that receives pictures, which means the results and standings channels when you have the images module on with those aspects switched on. The refusal names the permission that is missing, in the same words the channel's own settings use. When it stops: `review` names the division and the channel alongside the diff, pressing Approve refuses, and nothing at all changes — the season keeps its points, your staged changes stay staged, and amendment mode stays on. Set the channel again with `/division results-channel` or `/division standings-channel` and run `/results amend review` again.
+>
+> This is the one place in the bot that behaves the *opposite* way to the opening and final classifications described above, which carry on and report what they could not post. An amendment overwrites the whole season's scoring, so it is all-or-nothing by design: you never end up with half your divisions showing the new points and half the old.
+
 ### Posts that went missing
 
 ```
@@ -399,6 +403,7 @@ Worth knowing so you do not go looking for the setting.
 | `/round results amend` refused | The round has not reached Final Results yet |
 | An amendment that vanished | Known: it is one attempt. A rejection, a failure or five minutes of silence deletes the channel; the log channel holds the reason |
 | A round left unchanged by an approved amendment | It has not been raced, so there was nothing to repost. Only rounds with results are reposted |
+| `/results amend review` refuses, naming a division and a channel | That channel has been deleted, or the bot can no longer post in it. Nothing was changed — set it again with `/division results-channel` or `/division standings-channel` and review again |
 | `/results amend toggle` refused | Changes are staged. Revert or review them first |
 | Text where you expected a picture | The table worked and the drawing did not — often a drawing file with fewer rows than the division needs. The log channel names the reason |
 | `/test-mode advance` refused | A round is submitted but not settled. Finish its penalty and appeals stages |
