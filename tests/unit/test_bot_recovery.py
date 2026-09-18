@@ -6,7 +6,8 @@ require a live bot). The recovery helpers beneath it are not — they take a bot
 and put the world back the way it should be, and none was executed.
 
 This file takes `_recover_orphaned_amend_channels`, the one whose failure mode is a channel
-left behind on every restart.
+left behind on every restart, and `_recover_portrait_refresh_job`, which re-arms the daily
+portrait refresh.
 
 **The database row is deleted before the Discord channel is.** That ordering is the point of
 the function: a crash between the two leaves a channel nobody will clean up, which is
@@ -36,7 +37,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from bot import _recover_orphaned_amend_channels  # noqa: E402
+from bot import _recover_orphaned_amend_channels, _recover_portrait_refresh_job  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 10108
@@ -259,3 +260,48 @@ async def test_each_orphan_is_reported_separately(tmp_path):
     await _recover_orphaned_amend_channels(bot)
 
     assert bot.output_router.post_log.await_count == 2
+
+
+# ---------------------------------------------------------------------------
+# The daily portrait refresh
+# ---------------------------------------------------------------------------
+
+
+async def _portrait_bot(tmp_path, *, use_pfp: int, pfp_daily: int):
+    db_path = os.path.join(str(tmp_path), "portraits.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO image_config (id, use_pfp, pfp_daily, pfp_daily_time) "
+            "VALUES (1, ?, ?, '04:30')",
+            (use_pfp, pfp_daily),
+        )
+        await db.commit()
+    bot = MagicMock()
+    bot.db_path = db_path
+    return bot
+
+
+async def test_the_portrait_refresh_is_re_armed_at_its_own_time(tmp_path):
+    """The job is recurring and in memory only, so a restart loses it until this re-adds it."""
+    bot = await _portrait_bot(tmp_path, use_pfp=1, pfp_daily=1)
+
+    await _recover_portrait_refresh_job(bot)
+
+    bot.scheduler_service.schedule_portrait_refresh.assert_called_once_with("04:30")
+
+
+@pytest.mark.parametrize("use_pfp,pfp_daily", [(0, 1), (1, 0)])
+async def test_a_refresh_the_league_has_not_asked_for_is_not_armed(tmp_path, use_pfp, pfp_daily):
+    bot = await _portrait_bot(tmp_path, use_pfp=use_pfp, pfp_daily=pfp_daily)
+
+    await _recover_portrait_refresh_job(bot)
+
+    bot.scheduler_service.schedule_portrait_refresh.assert_not_called()
+
+
+async def test_a_refresh_that_cannot_be_armed_does_not_stop_the_start(tmp_path):
+    bot = await _portrait_bot(tmp_path, use_pfp=1, pfp_daily=1)
+    bot.scheduler_service.schedule_portrait_refresh.side_effect = ValueError("bad time")
+
+    await _recover_portrait_refresh_job(bot)

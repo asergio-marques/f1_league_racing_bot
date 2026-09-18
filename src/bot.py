@@ -199,22 +199,8 @@ async def main() -> None:
 
         bot.scheduler_service.register_portrait_refresh_callback(_portrait_refresh_cb)
 
-        async def _recover_portrait_refresh_jobs() -> None:
-            from db.database import get_connection as _gc
-            async with _gc(DB_PATH) as _db:
-                _cur = await _db.execute(
-                    "SELECT pfp_daily_time FROM image_config "
-                    "WHERE use_pfp = 1 AND pfp_daily = 1"
-                )
-                _row = await _cur.fetchone()
-            if _row is not None:
-                try:
-                    bot.scheduler_service.schedule_portrait_refresh()
-                except Exception:
-                    log.warning("Failed to re-arm the daily portrait refresh", exc_info=True)
-
         try:
-            await _recover_portrait_refresh_jobs()
+            await _recover_portrait_refresh_job(bot)
         except Exception:
             log.warning("Portrait refresh recovery failed", exc_info=True)
 
@@ -980,6 +966,25 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
                 row["posted_at"],
                 server_id,
             )
+
+
+async def _recover_portrait_refresh_job(bot: commands.Bot) -> None:
+    """Re-arm the daily driver-portrait refresh, where the league has it switched on."""
+    from db.database import get_connection
+
+    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        cursor = await db.execute(
+            "SELECT pfp_daily_time FROM image_config "
+            "WHERE use_pfp = 1 AND pfp_daily = 1"
+        )
+        row = await cursor.fetchone()
+    if row is not None:
+        try:
+            bot.scheduler_service.schedule_portrait_refresh(  # type: ignore[attr-defined]
+                row["pfp_daily_time"]
+            )
+        except Exception:
+            log.warning("Failed to re-arm the daily portrait refresh", exc_info=True)
 
 
 async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
