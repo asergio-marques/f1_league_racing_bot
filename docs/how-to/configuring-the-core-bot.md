@@ -518,25 +518,33 @@ Each takes effect at once, roles and lineup posts included, because the placemen
 ### Changing the account behind a driver
 
 A driver who loses their Discord account, or moves to a new one, keeps everything they have
-earned. Re-key their profile onto the new account:
+earned. Make the new account their current one:
 
 ```
 /driver reassign new_user:@TheirNewAccount old_user_id:123456789012345678
 ```
 
-Name the old account with `old_user` where it is still in the server, or with `old_user_id` —
-the raw snowflake — where it has gone, which is the usual case.
+Name the driver by any account of theirs — with `old_user` where it is still in the server, or
+with `old_user_id`, the raw snowflake, where it has gone, which is the usual case.
 
-Everything the league holds of that driver moves with the profile: every signup they made,
-their results in every session they raced, their standings in every division, and their
-history of every season that has ended. The standings and the history read the same
-afterwards as before, under the new account.
+The old account becomes one of the driver's **past** accounts. Nothing is rewritten: every
+result, standing and history entry keeps the account it was recorded under, and a completed
+season is left exactly as it was. The bot counts the driver once all the same, and names them by
+their new account in everything it draws or posts from then on. A result pasted, a penalty given
+or a check-in pressed under the old account still counts as theirs.
 
-Two things to know before you run it:
+Things to know before you run it:
 
-- **The new account must be a stranger to the league.** It cannot already have a driver
-  profile, and it cannot hold results, standings or history of its own — two drivers' records
-  merged together could never be separated again. Nothing is changed by the refusal.
+- **Finish any signup in progress first.** The command is refused while the driver, or the new
+  account, is collecting answers, in review or in correction. Approve it, reject it or have it
+  withdrawn, then run the command.
+- **The new account must be in the server,** and it cannot be another driver's past account, a
+  driver of its own, or an account holding results, standings or history of its own here.
+  Nothing is changed by a refusal.
+- **You can switch back.** Naming one of the driver's past accounts as `new_user` makes it
+  current again.
+- **A past account cannot press Sign Up.** It is told to use the current account; switch back
+  first if the driver wants to use the old one again.
 - **Their portrait is fetched again, not carried.** A portrait is the picture of the account
   itself, so the old one is discarded and the new account's own is taken before the next
   graphic is drawn. A portrait you put in the driver directory yourself is never touched.

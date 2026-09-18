@@ -104,9 +104,15 @@ def _make_cog(
     bot.driver_service = MagicMock()
     bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
     bot.driver_service.get_profile = AsyncMock(return_value=profile)
+    # The account named as old is taken to be the driver's current one, which it replaces.
     bot.driver_service.reassign_user_id = AsyncMock(
-        return_value=SimpleNamespace(
-            current_state=SimpleNamespace(value="ACTIVE"), former_driver=False
+        side_effect=lambda _server, old, new, *_a: SimpleNamespace(
+            profile=SimpleNamespace(
+                current_state=SimpleNamespace(value="ACTIVE"), former_driver=False
+            ),
+            replaced_account=old,
+            accounts=sorted([old, new]),
+            switched_back=False,
         )
     )
 
@@ -183,7 +189,7 @@ async def test_reassign_accepts_a_mentioned_old_user(tmp_path):
 
     cog.bot.driver_service.reassign_user_id.assert_awaited_once()
     assert cog.bot.driver_service.reassign_user_id.await_args.args[1] == "1"
-    assert "re-keyed successfully" in _replied(interaction)
+    assert "given a new account" in _replied(interaction)
 
 
 async def test_reassign_accepts_a_raw_snowflake_for_the_old_user(tmp_path):
@@ -274,7 +280,7 @@ async def test_reassign_removes_the_portrait_of_the_account_left_behind(
     await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
 
     remover.assert_awaited_once_with("db.sqlite", SERVER_ID, "4242", directory)
-    assert "re-keyed successfully" in _replied(interaction)
+    assert "given a new account" in _replied(interaction)
 
 
 async def test_reassign_leaves_the_portrait_where_no_directory_resolves(
@@ -298,7 +304,7 @@ async def test_reassign_leaves_the_portrait_where_no_directory_resolves(
     await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
 
     remover.assert_not_awaited()
-    assert "re-keyed successfully" in _replied(interaction)
+    assert "given a new account" in _replied(interaction)
 
 
 async def test_reassign_leaves_the_portrait_where_the_league_has_no_image_config(
@@ -331,7 +337,7 @@ async def test_a_portrait_that_cannot_be_removed_does_not_fail_the_re_key(
 
     await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
 
-    assert "re-keyed successfully" in _replied(interaction)
+    assert "given a new account" in _replied(interaction)
     cog.bot.output_router.post_log.assert_awaited()
 
 
@@ -570,3 +576,29 @@ async def test_a_successful_sacking_is_logged(tmp_path):
     await _sack(cog, interaction)
 
     assert "/driver sack" in cog.bot.output_router.post_log.await_args.args[1]
+
+
+async def test_reassign_reports_the_current_and_past_accounts(tmp_path):
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    assert "Current account : <@2>" in _replied(interaction)
+    assert "Past accounts   : <@1>" in _replied(interaction)
+
+
+async def test_a_switch_back_is_reported_as_one(tmp_path):
+    cog = _make_cog()
+    outcome = await cog.bot.driver_service.reassign_user_id(SERVER_ID, "1", "2")
+    outcome.switched_back = True
+    cog.bot.driver_service.reassign_user_id = AsyncMock(return_value=outcome)
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    assert "switched back to a past account" in _replied(interaction)

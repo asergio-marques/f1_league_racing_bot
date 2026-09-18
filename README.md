@@ -911,22 +911,30 @@ Every successful reply echoes the other two deadlines, and the change is written
 
 ### Driver Commands
 
-#### `/driver reassign` — Re-key a driver profile to a new Discord account
+#### `/driver reassign` — Make another Discord account a driver's current one
 *Access: League manager*
 
-Transfers an existing driver profile from one Discord account to another, with **everything the league holds of that driver**: every signup they made, their results in every session they raced, their standings in every division, and their history of every season that has ended. Their standings and their history read the same afterwards as before, under the new account. Provide either `old_user` (mention) or `old_user_id` (raw snowflake) for users who have left the server.
+A driver owns every Discord account they have raced under. One is their **current** account, and every result, standing and graphic names them by it; the others are their **past** accounts, which still identify them — a result pasted, a penalty given, a check-in pressed or a command run under a past account is taken as the driver's. This command makes `new_user` the driver's current account, and the account it replaces joins their past ones.
+
+**Nothing is rewritten.** Every result, standing, signup and history entry keeps the account it was recorded under, and a completed season stays exactly as it was. The driver is counted once all the same, and is named by their current account wherever the bot draws or posts from then on — a completed season's standings drawn again included. Messages already posted are left as they are.
+
+Name the driver by any of their accounts: `old_user` where it is still in the server, or `old_user_id` — the raw snowflake — where it has gone.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `new_user` | Member | ✅ | Target Discord account. Must not already have a driver profile, nor results, standings or history of its own. |
-| `old_user` | Member | — | Mention of the existing Discord user whose profile is to be transferred |
-| `old_user_id` | String | — | Raw Discord snowflake ID, for users who have left the server |
+| `new_user` | Member | ✅ | The account to make current — a new one, or one of the driver's own past accounts. Must be in the server. |
+| `old_user` | Member | — | Any account of the driver's, current or past |
+| `old_user_id` | String | — | Raw Discord snowflake ID of any account of the driver's, for one no longer in the server |
 
-> **Only this league moves.** A person who races in two leagues that share this bot carries only the profile of the league whose manager ran the command.
+> **Switching back is allowed.** Naming one of the driver's own past accounts as `new_user` makes it current again.
 
-> **The driver's portrait is not carried, and does not need to be.** A portrait is the picture of the Discord account itself, so the one taken for the old account is discarded and the new account's own is fetched before the next graphic is drawn. A portrait you placed in the driver directory yourself is never touched.
+> **Refused, changing nothing, when:** `new_user` is already the driver's current account; it is a past account of another driver — an account belongs to one driver; it already holds a driver profile, or results, standings or history of its own; either side is a test-mode driver; or either side has a signup in progress (collecting, in review, or in correction) — finish it, approve or reject it, or have it withdrawn first.
 
-> **Refused where the new account has raced here before.** An account that already holds results, standings or history of its own cannot take another driver's profile — the two records would merge with no way to separate them again. Nothing is changed by the refusal.
+> **A past account cannot sign up.** The Sign Up button refuses it and names the driver's current account. Run this command first if the driver wants to use it again.
+
+> **Only this league moves.** A person who races in two leagues that share this bot keeps their other league's profile untouched.
+
+> **The portrait of the replaced account is discarded.** A portrait is the picture of the Discord account itself, so the one taken for the replaced account goes, and the new current account's own is fetched before the next graphic is drawn. A portrait you placed in the driver directory yourself is never touched.
 
 #### `/driver assign` — Assign a driver to a team and division
 *Access: League manager*

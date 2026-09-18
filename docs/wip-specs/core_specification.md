@@ -459,10 +459,17 @@ it only to place it; the rules governing it belong to its own specification.
 - A league manager shall be able to make another account a driver's current one, so that a person changing account keeps their history. The account it replaces joins the driver's past accounts.
 - Nothing the league holds of the driver shall be rewritten when their account changes. A signup, a result, a standing, a fastest lap and a history entry each keep the account they were written under, and a completed season stays exactly as it was.
 - A driver's results, standings, points, positions and history shall count them once, whichever of their accounts each result stands under. Everything drawn or posted from then on shall name them by their current account — a completed season's results or standings drawn again included. A message already posted is not rewritten.
-- A re-key shall touch nothing of any other league upon the bot. A person who holds a profile in two leagues shall carry only the one whose manager commanded it.
-- A driver's portrait shall not be carried, a portrait being the picture of the account itself. The one obtained for the account left behind shall be discarded, and the new account's own shall be obtained as any driver's is.
-- The new account shall be accepted whether or not it is still a member of the server.
-- A profile shall not be re-keyed onto an account that already holds one, nor onto an account that holds results, standings or history of its own in the league — which would merge two drivers' records into one. Either refusal shall change nothing.
+- Any account of the driver's shall name them wherever a driver is named: a result submitted or resubmitted, a penalty, a pardon, an appeal, an amendment, a command, a check-in. It is read at the moment of use, so a submission or a review already open when the account changes accepts both.
+- The driver may be named to the command by any of their accounts, and one of their own past accounts may be made current again.
+- Only a member of the server may be made current.
+- An account shall belong to one driver in a league. An account that is a past account of another driver shall be refused.
+- The change shall be refused while either the driver or the new account has a signup in progress — collecting, in review, or in correction — and the league manager told to finish or withdraw it first.
+- A test-mode driver shall not be given a real account, nor a real driver a test-mode one.
+- An account shall not be made current where it already holds a driver profile, or results, standings or history of its own in the league. Every refusal shall change nothing.
+- A past account of a driver shall not sign up; the signup button names the driver's current account instead.
+- Only a driver's current account leaving the server is the driver leaving it; a past account leaving changes nothing.
+- A change of account shall touch nothing of any other league upon the bot. A person who holds a profile in two leagues keeps the other league's untouched.
+- A driver's portrait shall not be carried, a portrait being the picture of the account itself. The one obtained for the account replaced shall be discarded, and the new account's own shall be obtained as any driver's is.
 
 ## When the bot stops
 - The bot is a program somebody shall keep running. While it is stopped nothing happens.

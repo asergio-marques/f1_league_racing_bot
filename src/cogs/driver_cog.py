@@ -73,12 +73,12 @@ class DriverCog(commands.Cog):
 
     @driver.command(
         name="reassign",
-        description="Re-key a driver profile from one Discord account to another.",
+        description="Make another Discord account a driver's current one.",
     )
     @app_commands.describe(
-        old_user="The existing Discord user whose profile is to be re-keyed (mention; use old_user_id for departed users).",
-        old_user_id="Raw Discord snowflake ID, for users who have left the server.",
-        new_user="The target Discord account. Must not already have a driver profile.",
+        old_user="Any account of the driver's (mention; use old_user_id for an account no longer in the server).",
+        old_user_id="Raw Discord snowflake ID of any account of the driver's.",
+        new_user="The account to make current: a new one, or one of the driver's past accounts.",
     )
     @league_manager_only
     async def reassign(
@@ -88,7 +88,11 @@ class DriverCog(commands.Cog):
         old_user: discord.Member | None = None,
         old_user_id: str | None = None,
     ) -> None:
-        """Reassign a driver profile between Discord accounts."""
+        """Make *new_user* the current account of the driver the old account names (#243).
+
+        The account it replaces joins the driver's past accounts, and every account the driver
+        has held goes on identifying them. Nothing the league holds is rewritten.
+        """
         # Resolve old user ID — accept Member mention or raw snowflake string
         if old_user is not None:
             resolved_old_id = str(old_user.id)
@@ -107,50 +111,54 @@ class DriverCog(commands.Cog):
         actor_name = str(interaction.user)
 
         try:
-            profile = await self.bot.driver_service.reassign_user_id(  # type: ignore[attr-defined]
+            outcome = await self.bot.driver_service.reassign_user_id(  # type: ignore[attr-defined]
                 server_id, resolved_old_id, new_user_id, actor_id, actor_name
             )
         except ValueError as exc:
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
             return
 
+        profile = outcome.profile
+        replaced = outcome.replaced_account
         former = "Yes" if profile.former_driver else "No"
+        past = [a for a in outcome.accounts if a != new_user_id]
+        how = "switched back to a past account" if outcome.switched_back else "given a new account"
         await interaction.response.send_message(
-            f"✅ Driver profile re-keyed successfully.\n"
-            f"   Old User ID : {resolved_old_id}\n"
-            f"   New User ID : {new_user_id}\n"
-            f"   State       : {profile.current_state.value}\n"
-            f"   Former driver: {former}",
+            f"✅ Driver {how}.\n"
+            f"   Current account : <@{new_user_id}>\n"
+            f"   Past accounts   : {', '.join(f'<@{a}>' for a in past) or '—'}\n"
+            f"   State           : {profile.current_state.value}\n"
+            f"   Former driver   : {former}",
             ephemeral=True,
         )
         # After the reply, so that reading the image configuration and touching the league's
         # directory can never eat into Discord's three seconds.
-        await self._remove_old_portrait(server_id, resolved_old_id)
+        await self._remove_old_portrait(server_id, replaced)
         await self.bot.output_router.post_log(
             server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reassign | Success\n"
-            f"  old_user_id: {resolved_old_id}\n"
-            f"  new_user: {new_user.display_name} (<@{new_user_id}>)",
+            f"  replaced: <@{replaced}>\n"
+            f"  current: {new_user.display_name} (<@{new_user_id}>)\n"
+            f"  accounts: {', '.join(outcome.accounts)}",
         )
         log.info(
-            "Driver profile re-keyed on server %s: %s → %s by %s",
-            server_id, resolved_old_id, new_user_id, actor_name,
+            "Driver account changed on server %s: %s → %s by %s",
+            server_id, replaced, new_user_id, actor_name,
         )
 
     async def _remove_old_portrait(self, server_id: int, discord_user_id: str) -> None:
-        """Delete the portrait the bot obtained for a re-keyed driver's former account.
+        """Delete the portrait the bot obtained for the account a driver has just replaced.
 
-        A portrait is a cache of one Discord account's own profile picture, so unlike the
-        driver's results and history there is nothing here to carry: the new account has a
-        picture of its own, which is obtained before the next graphic is drawn. What is left
-        behind is the old file, sitting in the league's driver directory under an account
-        that will never be drawn again — so it goes (issue #222).
+        A portrait is a cache of one Discord account's own profile picture. Everything is
+        drawn under the driver's current account (issue #243), so the replaced account's file
+        would sit in the league's driver directory drawn by nothing — so it goes (issue #222).
+        Switching back to that account later obtains its picture afresh, as for any driver.
 
         Where the league names no image configuration, or a directory that cannot be
         resolved, the file and its ownership row are **both** left alone. See
         `driver_portrait_service.remove_portrait` for why the row must never go on its own.
 
-        Never raises. The re-key is committed by the time this runs, and a portrait is not
+        Never raises. The reassign is committed by the time this runs, and a portrait is not
         worth reporting a successful command as a failure.
         """
         try:

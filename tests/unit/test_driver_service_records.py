@@ -320,11 +320,11 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
     await _seed_profile(db_path)
     service = DriverService(db_path)
 
-    profile = await service.reassign_user_id(
+    outcome = await service.reassign_user_id(
         SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
     )
 
-    assert profile.discord_user_id == NEW_USER
+    assert outcome.profile.discord_user_id == NEW_USER
     assert await service.get_profile(SERVER_ID, NEW_USER) is not None
     assert await service.get_profile(SERVER_ID, OLD_USER) is None
 
@@ -391,11 +391,11 @@ async def test_another_league_s_racing_does_not_refuse_a_re_key(tmp_path):
     await _seed_history(db_path, NEW_USER, server_id=OTHER_SERVER)
     service = DriverService(db_path)
 
-    profile = await service.reassign_user_id(
+    outcome = await service.reassign_user_id(
         SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
     )
 
-    assert profile.discord_user_id == NEW_USER
+    assert outcome.profile.discord_user_id == NEW_USER
 
 
 async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
