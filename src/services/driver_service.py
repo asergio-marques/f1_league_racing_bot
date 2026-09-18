@@ -93,18 +93,140 @@ def _row_to_profile(row) -> DriverProfile:
 
 
 async def resolve_driver_profile_id(server_id: int, discord_user_id: int, db) -> int | None:
-    """Return driver_profiles.id for the given discord_user_id and server_id.
+    """Return the id of the driver who holds *discord_user_id* on *server_id*, or None.
 
+    Any account the driver has held identifies them, not only the current one (issue #243).
     Accepts an open aiosqlite connection so callers can reuse an existing transaction.
-    Returns None if no matching profile is found.
     """
     cursor = await db.execute(
-        "SELECT id FROM driver_profiles "
-        "WHERE server_id = ? AND CAST(discord_user_id AS INTEGER) = ?",
-        (server_id, discord_user_id),
+        "SELECT driver_profile_id FROM driver_accounts "
+        "WHERE server_id = ? AND discord_user_id = ?",
+        (server_id, str(discord_user_id)),
     )
     row = await cursor.fetchone()
     return row[0] if row else None
+
+
+# ---------------------------------------------------------------------------
+# A driver's accounts (issue #243)
+# ---------------------------------------------------------------------------
+#
+# A driver owns every Discord account they have raced under; `driver_accounts` lists them
+# and `driver_profiles.discord_user_id` names the current one. A stored record keeps the
+# account it was written under, so the rest of the bot applies three rules, through the
+# helpers below:
+#
+# - an account arriving from Discord — a command, a pasted result, a button — is mapped to
+#   the current account *first* (`current_account_of`), and everything after runs as before;
+# - finding a stored record from an account matches every account of the driver
+#   (`accounts_of`);
+# - reading stored records for counting or drawing maps each to the current account
+#   (`current_account_map`), so a driver is counted once and named by the account in use.
+#
+# An account no driver holds maps to itself throughout: a record of a driver since deleted
+# still reads exactly as it was written.
+#
+# Accounts bind as TEXT, matching the column. The results tables hold them as INTEGER, and
+# the maps are keyed by int for that reason; an account that is not a number cannot appear
+# in those tables and is left out of the maps.
+
+
+#: Every account of the driver row aliased ``dp``, for matching a record written under any of
+#: them — `discord_user_id IN {ACCOUNTS_OF_DP_SQL}`. A driver's signups are kept under the
+#: account each was made from, so "the driver's latest signup" is the latest across all.
+ACCOUNTS_OF_DP_SQL = (
+    "(SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = dp.id)"
+)
+
+
+async def accounts_of(db, server_id: int, discord_user_id) -> list[str]:
+    """Every account of the driver holding *discord_user_id*, or just that account.
+
+    Sorted, so a caller building SQL from it binds in a stable order.
+    """
+    cursor = await db.execute(
+        "SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = ("
+        "  SELECT driver_profile_id FROM driver_accounts"
+        "  WHERE server_id = ? AND discord_user_id = ?"
+        ") ORDER BY discord_user_id",
+        (server_id, str(discord_user_id)),
+    )
+    rows = await cursor.fetchall()
+    return [str(r[0]) for r in rows] or [str(discord_user_id)]
+
+
+async def accounts_of_profile(db, profile_id: int) -> list[str]:
+    """Every account *profile_id* has held, current included, sorted."""
+    cursor = await db.execute(
+        "SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = ? "
+        "ORDER BY discord_user_id",
+        (profile_id,),
+    )
+    return [str(r[0]) for r in await cursor.fetchall()]
+
+
+async def current_account_of(db, server_id: int, discord_user_id) -> str:
+    """The current account of the driver holding *discord_user_id*; the account itself if none."""
+    cursor = await db.execute(
+        "SELECT dp.discord_user_id FROM driver_accounts da "
+        "JOIN driver_profiles dp ON dp.id = da.driver_profile_id "
+        "WHERE da.server_id = ? AND da.discord_user_id = ?",
+        (server_id, str(discord_user_id)),
+    )
+    row = await cursor.fetchone()
+    return str(row[0]) if row else str(discord_user_id)
+
+
+async def current_account_map(db, server_id: int) -> dict[int, int]:
+    """Every *past* account on *server_id* → its driver's current account, as ints.
+
+    A current account is absent, as is any account no driver holds: look up with
+    ``mapping.get(uid, uid)``. Carrying only the accounts that differ keeps the map to the
+    handful of drivers who ever changed account.
+    """
+    cursor = await db.execute(
+        "SELECT da.discord_user_id AS account, dp.discord_user_id AS current "
+        "FROM driver_accounts da JOIN driver_profiles dp ON dp.id = da.driver_profile_id "
+        "WHERE da.server_id = ? AND da.discord_user_id != dp.discord_user_id",
+        (server_id,),
+    )
+    mapping: dict[int, int] = {}
+    for row in await cursor.fetchall():
+        try:
+            mapping[int(row["account"])] = int(row["current"])
+        except (TypeError, ValueError):
+            continue
+    return mapping
+
+
+async def _server_of_division(db, division_id: int) -> int | None:
+    cursor = await db.execute(
+        "SELECT s.server_id FROM divisions d JOIN seasons s ON s.id = d.season_id "
+        "WHERE d.id = ?",
+        (division_id,),
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else None
+
+
+async def accounts_of_in_division(db, division_id: int, discord_user_id) -> list[str]:
+    """`accounts_of` for the server *division_id* belongs to."""
+    server_id = await _server_of_division(db, division_id)
+    if server_id is None:
+        return [str(discord_user_id)]
+    return await accounts_of(db, server_id, discord_user_id)
+
+
+async def current_account_map_for_division(db, division_id: int) -> dict[int, int]:
+    """`current_account_map` for the server *division_id* belongs to.
+
+    For the readers of the results and standings tables, which reach their server only
+    through the division. An unknown division maps nothing.
+    """
+    server_id = await _server_of_division(db, division_id)
+    if server_id is None:
+        return {}
+    return await current_account_map(db, server_id)
 
 
 #: The divisions of one server, for re-keying rows that carry no server of their own.
@@ -178,6 +300,11 @@ class DriverService:
         if row is None:
             return None
         return _row_to_profile(row)
+
+    async def current_account(self, server_id: int, discord_user_id) -> str:
+        """The current account of the driver holding *discord_user_id*; see `current_account_of`."""
+        async with get_connection(self._db_path) as db:
+            return await current_account_of(db, server_id, discord_user_id)
 
     async def _create_profile(
         self,

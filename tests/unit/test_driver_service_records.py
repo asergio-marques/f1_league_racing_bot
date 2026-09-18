@@ -737,6 +737,11 @@ _DRIVER_COLUMNS: dict[tuple[str, str], str] = {
     ("driver_round_attendance", "driver_profile_id"): "keyed by the profile",
     ("driver_season_assignments", "driver_profile_id"): "keyed by the profile",
     ("team_seats", "driver_profile_id"): "keyed by the profile",
+    ("driver_accounts", "discord_user_id"): (
+        "the list of the driver's accounts itself (issue #243): the migration 059 triggers "
+        "add the new account to it, and the old one stays listed"
+    ),
+    ("driver_accounts", "driver_profile_id"): "keyed by the profile",
 }
 
 
