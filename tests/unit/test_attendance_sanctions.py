@@ -532,6 +532,37 @@ async def test_the_outcome_names_every_applied_and_failed_sanction(
     assert outcome.failure_lines() == [f"<@{second}> (Second) — autoreserve: no roles"]
 
 
+async def test_an_incomplete_run_is_posted_to_the_log_channel_with_the_sync_line(
+    tmp_path, announcer, sheet
+):
+    """#239. The failures reach the log channel, where a league can read them, each driver by
+    name and ending on the command that finishes the job."""
+    db_path = await _make_db(tmp_path, autoreserve=10, autosack=None, with_reserve_team=False)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 12})
+    bot = _make_bot(db_path)
+
+    await _run(bot, db_path)
+
+    logged = _logged(bot)
+    assert "ATTENDANCE_SANCTIONS | Incomplete" in logged
+    assert (
+        f"<@{FULL_TIME_PROFILE}> (Full Timer) — autoreserve: the division has no Reserve team"
+        in logged
+    )
+    assert "`/attendance sync division:Division 1 round:1`" in logged
+
+
+async def test_a_clean_run_posts_no_incomplete_line(tmp_path, announcer, sheet):
+    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
+    bot = _make_bot(db_path)
+
+    outcome = await _run(bot, db_path)
+
+    assert outcome.complete
+    assert "Incomplete" not in _logged(bot)
+
+
 async def test_a_sanction_applied_but_not_announced_is_reported_as_such(
     tmp_path, announcer, sheet
 ):

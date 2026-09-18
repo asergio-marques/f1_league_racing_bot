@@ -1715,7 +1715,25 @@ async def enforce_attendance_sanctions(
                     f"could not be posted again: {exc}"
                 )
 
+    if not outcome.complete:
+        lines = "\n".join(f"  {line}" for line in outcome.failure_lines())
+        try:
+            await bot.output_router.post_log(  # type: ignore[attr-defined]
+                f"ATTENDANCE_SANCTIONS | Incomplete\n{lines}\n"
+                f"  {await sync_hint(db_path, division_id, round_id)}",
+            )
+        except Exception:  # noqa: BLE001 — the caller still reports the outcome it is handed
+            log.exception("enforce_attendance_sanctions: could not log the incomplete run")
     return outcome
+
+
+async def sync_hint(db_path: str, division_id: int, round_id: int) -> str:
+    """The line telling a manager how to finish a run of sanctions that did not all apply."""
+    return (
+        "Repair the cause, then run `/attendance sync "
+        f"division:{await _division_name(db_path, division_id)} "
+        f"round:{await _round_number(db_path, round_id)}`."
+    )
 
 
 def _failure_reason(exc: Exception, *, applied: bool) -> str:
