@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
@@ -143,6 +144,20 @@ def test_one_server_raises_no_warning(caplog):
         warn_if_serving_several(bot)
 
     assert caplog.records == []
+
+
+@pytest.mark.parametrize("event", ["on_ready", "on_guild_join"])
+async def test_the_host_is_warned_at_start_up_and_on_joining_a_server(event, monkeypatch):
+    import bot as bot_module
+
+    warned = MagicMock()
+    monkeypatch.setattr(bot_module, "warn_if_serving_several", warned)
+    bot = create_bot()
+
+    for listener in bot.extra_events[event]:
+        await listener(*([MagicMock()] if event == "on_guild_join" else []))
+
+    warned.assert_called_once_with(bot)
 
 
 # ── The event listeners, which the tree does not see ──────────────────────

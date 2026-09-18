@@ -8,7 +8,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-from utils.league_server import LeagueCommandTree
+from utils.league_server import LeagueCommandTree, warn_if_serving_several
 from utils.log_filters import install_late_autocomplete_filter
 
 load_dotenv()
@@ -40,6 +40,13 @@ def create_bot() -> commands.Bot:
         command_prefix="!", intents=intents, help_command=None, tree_cls=LeagueCommandTree
     )
     bot.db_path = DB_PATH  # type: ignore[attr-defined]
+
+    # Tell the host whenever the bot finds itself in more than one server (issue #244).
+    async def _warn_if_serving_several(*_: object) -> None:
+        warn_if_serving_several(bot)
+
+    bot.add_listener(_warn_if_serving_several, "on_ready")
+    bot.add_listener(_warn_if_serving_several, "on_guild_join")
 
     return bot
 
