@@ -68,7 +68,10 @@ def _bot(*, test_mode: bool):
         config_service=SimpleNamespace(
             get_server_config=AsyncMock(return_value=_config(test_mode=test_mode))
         ),
-        driver_service=SimpleNamespace(get_profile=AsyncMock(return_value=None)),
+        driver_service=SimpleNamespace(
+            get_profile=AsyncMock(return_value=None),
+            current_account=AsyncMock(side_effect=lambda _s, a: str(a)),
+        ),
         wizard_service=SimpleNamespace(start_wizard=AsyncMock(return_value=None)),
         signup_module_service=SimpleNamespace(get_config=AsyncMock(return_value=None)),
         output_router=SimpleNamespace(post_log=AsyncMock()),

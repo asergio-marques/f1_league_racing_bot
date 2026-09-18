@@ -59,6 +59,7 @@ existing whether or not this module is enabled.
 
 ## Signup wizard
 ### Wizard flow
+    - The signup button shall refuse an account that is a past account of a driver of the league, and name the driver's current account: a signup is made from the account the driver uses now, and a league manager may make a past account current again with the "driver reassign" command.
     - Once the signup button is pressed by someone in the "not signed up" state, the bot will create a new channel titled "username-signup", in which the signup wizard shall be engaged. This channel shall be visible only to the user who engaged the signup wizard, the holders of the interaction role and the holders of the league admin role.
     - A league manager and a league admin alike shall be able to type at will in the signup channels of all drivers.
     - The start of the signup wizard shall change the state of the driver from "not signed up" to "pending signup completion".
@@ -121,7 +122,7 @@ existing whether or not this module is enabled.
 - The signups of a driver deleted by the driver pass shall remain with the season, identified by the driver's Discord account.
 - The season's signup configuration — its time slots, its time type, and which questions were asked — shall be kept with the season as it stood when the configuration was confirmed, and each window's tracks and close time shall be kept with the window, so that a signup kept remains readable. A driver's availability names the season's slots, and their times name the window's tracks.
 - The signups of an aborted season shall be deleted with it.
-- The "driver reassign" command shall carry every signup of the profile to its new account.
+- A signup shall keep the Discord account it was made from, and shall belong to the driver whichever of their accounts that is (see *A driver's accounts* in [the core specification](core_specification.md)). Where a driver holds more than one signup to a season, under one account or several, their signup to it is the most recent approved one, or the most recent of all where none was approved. A signup is approved when a league manager approves it, and ceases to be when the approved driver is turned down.
 - Wherever the bot names a driver from their signup, or reads the nationality they gave in it, it shall read the driver's signup to the season concerned: the graphics of a season, and the notice that a driver has left the server, alike. A driver created by test mode holds no signup, and their nationality shall be read from the driver profile as before.
 
 The name of the commands is an example and only tentative. If further commands are required, please inform.

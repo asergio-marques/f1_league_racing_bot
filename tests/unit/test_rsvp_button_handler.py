@@ -612,3 +612,26 @@ async def test_an_answer_is_still_recorded_when_the_call_cannot_be_found(tmp_pat
 
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
     assert "has been updated" in _reply(interaction)
+
+
+# ---------------------------------------------------------------------------
+# Any account names the driver (issue #243)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_press_from_a_drivers_past_account_answers_for_the_driver(tmp_path):
+    """The full-time driver has moved to a new account, and presses from the old one."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
+    new_account = 9301
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
+            (str(new_account), FULL_TIME_PROFILE),
+        )
+        await db.commit()
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+
+    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
+    assert "has been updated" in _reply(interaction)

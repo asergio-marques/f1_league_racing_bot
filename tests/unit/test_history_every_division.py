@@ -118,3 +118,38 @@ async def test_a_driver_deleted_takes_their_memberships_with_them(db_path):
         await db.commit()
 
     assert await _memberships(db_path) == []
+
+
+async def test_a_driver_who_changed_account_after_the_last_round_keeps_their_standing(db_path):
+    """E40 (issue #243): the final round's standing stands under the account the driver left.
+
+    The history entry reads it all the same, and names the driver by the account they use now.
+    """
+    await _seat(db_path, PRO, "Alpha")
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id FROM driver_profiles WHERE id = ?", (PROFILE_ID,)
+        )
+        past = (await cursor.fetchone())[0]
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
+            "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00')",
+            (PRO,),
+        )
+        await db.execute(
+            "INSERT INTO driver_standings_snapshots "
+            "(round_id, division_id, driver_user_id, standing_position, total_points) "
+            "VALUES (?, ?, ?, 3, 42)",
+            (cursor.lastrowid, PRO, int(past)),
+        )
+        await db.execute(
+            "UPDATE driver_profiles SET discord_user_id = '777001' WHERE id = ?", (PROFILE_ID,)
+        )
+        await db.commit()
+
+    assert await _history(db_path) == ["Pro"]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, final_position, final_points FROM driver_history_entries"
+        )
+        assert [tuple(r) for r in await cursor.fetchall()] == [("777001", 3, 42)]

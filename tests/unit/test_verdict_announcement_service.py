@@ -592,3 +592,31 @@ async def test_autosanction_message_still_carries_the_mention(tmp_path, capture_
     assert file is None
     assert f"<@{DRIVER_ID}> (Mock Driver)" in content
     assert "Moved to Reserve" in content
+
+
+@pytest.mark.asyncio
+async def test_a_verdict_on_a_result_under_a_past_account_names_the_current_one(
+    tmp_path, capture_drawings
+):
+    """E7 (issue #243): the result stands under DRIVER_ID, and the driver has moved on."""
+    from db.database import get_connection
+
+    db_path = str(tmp_path / "test.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET discord_user_id = '31337' WHERE server_id = ?",
+            (SERVER_ID,),
+        )
+        await db.commit()
+
+    channel = _Channel(_Member("Ada on Server"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"])]
+    )
+
+    assert [content for content, _file in channel.sent] == ["<@31337>"]

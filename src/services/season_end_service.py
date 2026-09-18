@@ -256,14 +256,17 @@ async def _write_driver_history_entries(
             # the whole answer however the cancellation was ordered.
             cancelled = 1 if (force_cancelled or asgn["division_status"] == "CANCELLED") else 0
 
-            # Fetch the most recent standings snapshot for this driver × division
+            # Fetch the most recent standings snapshot for this driver × division, under
+            # whichever of their accounts it stands (issue #243): a driver who changed
+            # account after the last round finished it under the old one.
             cursor = await db.execute(
                 """
                 SELECT dss.total_points, dss.standing_position
                 FROM driver_standings_snapshots dss
                 JOIN rounds r ON r.id = dss.round_id
-                JOIN driver_profiles dp ON CAST(dp.discord_user_id AS INTEGER) = dss.driver_user_id
-                WHERE dss.division_id = ? AND dp.id = ?
+                JOIN driver_accounts da
+                  ON CAST(da.discord_user_id AS INTEGER) = dss.driver_user_id
+                WHERE dss.division_id = ? AND da.driver_profile_id = ?
                 ORDER BY r.round_number DESC
                 LIMIT 1
                 """,

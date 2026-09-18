@@ -9,7 +9,7 @@ import discord
 
 from db.database import get_connection
 from models.driver_profile import DriverProfile, DriverState
-from services.driver_service import write_transition
+from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
 from models.signup_module import AvailabilitySlot
 from models.team import TeamRoleConfig
 
@@ -436,13 +436,9 @@ class PlacementService:
                     sr.total_lap_ms,
                     sr.created_at           AS submitted_at
                 FROM driver_profiles dp
-                -- The driver's latest signup: records are kept, never overwritten (#220).
-                LEFT JOIN signup_records sr
-                    ON sr.id = (
-                        SELECT MAX(id) FROM signup_records
-                        WHERE server_id = dp.server_id
-                          AND discord_user_id = dp.discord_user_id
-                    )
+                -- The driver's signup: records are kept, never overwritten (#220), and an
+                -- approved one outranks a later one that was not (#243).
+                LEFT JOIN signup_records sr ON sr.id = {drivers_signup}
                 WHERE dp.server_id = ?
                   AND dp.current_state IN ({unsettled})
                 ORDER BY
@@ -452,7 +448,7 @@ class PlacementService:
                     -- was made, which a correction never moves.
                     sr.created_at ASC,
                     sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL),
+                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL),
                 (server_id,),
             )
             rows = await cursor.fetchall()
@@ -513,13 +509,9 @@ class PlacementService:
                     sr.total_lap_ms,
                     sr.created_at           AS submitted_at
                 FROM driver_profiles dp
-                -- The driver's latest signup: records are kept, never overwritten (#220).
-                LEFT JOIN signup_records sr
-                    ON sr.id = (
-                        SELECT MAX(id) FROM signup_records
-                        WHERE server_id = dp.server_id
-                          AND discord_user_id = dp.discord_user_id
-                    )
+                -- The driver's signup: records are kept, never overwritten (#220), and an
+                -- approved one outranks a later one that was not (#243).
+                LEFT JOIN signup_records sr ON sr.id = {drivers_signup}
                 WHERE dp.server_id = ?
                   AND dp.current_state IN ({unsettled})
                 ORDER BY
@@ -529,7 +521,7 @@ class PlacementService:
                     -- was made, which a correction never moves.
                     sr.created_at ASC,
                     sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL),
+                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL),
                 (server_id,),
             )
             rows = await cursor.fetchall()
@@ -1569,6 +1561,113 @@ class PlacementService:
         }
         if all_role_ids:
             await self._revoke_roles(member, *all_role_ids)
+
+    # ------------------------------------------------------------------
+    # A driver's roles follow their current account (issue #243)
+    # ------------------------------------------------------------------
+
+    async def driver_role_ids(self, server_id: int, driver_profile_id: int) -> set[int]:
+        """The roles the driver's standing entitles them to, read from state, not from Discord.
+
+        The signed-up role while they are Unassigned or Assigned, and the division and team
+        roles of every confirmed placement in the live season — exactly what approval and
+        confirming placements grant. A test-mode driver holds no roles. Read from the league's
+        own record so that it answers even when the account holding the roles has left.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
+                (driver_profile_id,),
+            )
+            profile = await cursor.fetchone()
+            if profile is None or profile["is_test_driver"]:
+                return set()
+            roles: set[int] = set()
+            if profile["current_state"] in (
+                DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value
+            ):
+                cursor = await db.execute(
+                    "SELECT signed_up_role_id FROM signup_module_config WHERE server_id = ?",
+                    (server_id,),
+                )
+                row = await cursor.fetchone()
+                if row is not None and row["signed_up_role_id"]:
+                    roles.add(int(row["signed_up_role_id"]))
+            cursor = await db.execute(
+                """
+                SELECT d.mention_role_id AS division_role, trc.role_id AS team_role
+                FROM driver_season_assignments dsa
+                JOIN seasons s ON s.id = dsa.season_id
+                JOIN divisions d ON d.id = dsa.division_id
+                LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
+                LEFT JOIN team_role_configs trc
+                    ON trc.server_id = s.server_id AND trc.team_name = ti.name
+                WHERE dsa.driver_profile_id = ? AND dsa.committed = 1
+                  AND s.server_id = ? AND s.status IN ('SETUP', 'ACTIVE')
+                """,
+                (driver_profile_id, server_id),
+            )
+            for row in await cursor.fetchall():
+                for role_id in (row["division_role"], row["team_role"]):
+                    if role_id:
+                        roles.add(int(role_id))
+        return roles
+
+    async def move_driver_roles(
+        self,
+        guild: discord.Guild,
+        server_id: int,
+        driver_profile_id: int,
+        from_account: str,
+        to_account: str,
+    ) -> list[str]:
+        """Give the driver's roles to *to_account* and take them from *from_account*.
+
+        Called once a reassign has made *to_account* current. The roles are those the
+        driver's standing entitles them to (`driver_role_ids`), so a replaced account that
+        has already left the server costs nothing: its removal is skipped, and the new
+        account is granted from the league's record. Returns what could not be done, for the
+        command to report; the account change itself stands either way.
+        """
+        role_ids = await self.driver_role_ids(server_id, driver_profile_id)
+        if not role_ids:
+            return []
+        problems: list[str] = []
+        roles = []
+        for role_id in sorted(role_ids):
+            role = guild.get_role(role_id)
+            if role is None:
+                problems.append(f"role {role_id} no longer exists")
+            else:
+                roles.append(role)
+
+        async def _member(account: str):
+            member = guild.get_member(int(account))
+            if member is None:
+                try:
+                    member = await guild.fetch_member(int(account))
+                except discord.HTTPException:
+                    member = None
+            return member
+
+        new_member = await _member(to_account)
+        if new_member is None:
+            problems.append(f"<@{to_account}> is not in the server to receive the roles")
+        elif roles:
+            try:
+                await new_member.add_roles(*roles, reason="Driver's current account changed")
+            except discord.HTTPException as exc:
+                problems.append(f"the roles could not be given to <@{to_account}>: {exc}")
+        old_member = await _member(from_account)
+        if old_member is not None and roles:
+            held = [r for r in roles if r in getattr(old_member, "roles", [])]
+            if held:
+                try:
+                    await old_member.remove_roles(*held, reason="Driver's current account changed")
+                except discord.HTTPException as exc:
+                    problems.append(f"the roles could not be taken from <@{from_account}>: {exc}")
+        return problems
 
     # ------------------------------------------------------------------
     # Sack driver (T015)

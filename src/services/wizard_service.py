@@ -315,6 +315,73 @@ class WizardService:
             pass
 
     # ------------------------------------------------------------------
+    # A held channel follows the driver's current account (issue #243)
+    # ------------------------------------------------------------------
+
+    async def move_held_channel(
+        self, server_id: int, from_account: str, to_account: str, guild: discord.Guild
+    ) -> list[str]:
+        """Move the driver's held signup channel, and its deletion, to their new current account.
+
+        After an approval or a rejection the channel stays open, read-only, for 24 hours. A
+        reassign cannot happen while a signup is still in progress, so any channel the
+        replaced account holds is such a held one. It moves to the new account, and its
+        deletion is kept at the moment it was already due.
+
+        Where the new account holds a held channel of its own, that one is kept and the
+        replaced account's is deleted at once: its final message has been posted, and the
+        driver can keep only one (decided 2026-09-18).
+
+        **The order is what survives a crash part-way.** The new deletion job is armed first,
+        then the record re-keyed, then the old job removed. At every point one job can find
+        the record — a job whose record has moved simply finds none — and the channel is
+        never left with nothing to delete it.
+
+        Returns what Discord would not allow, for the command to report.
+        """
+        svc = self._signup_svc
+        problems: list[str] = []
+        held = await svc.get_wizard(server_id, from_account)
+        if held is None or held.signup_channel_id is None:
+            return problems
+        theirs = await svc.get_wizard(server_id, to_account)
+
+        if theirs is not None and theirs.signup_channel_id is not None:
+            await self._cancel_channel_delete_job(server_id, from_account)
+            await self._execute_channel_delete(server_id, from_account)
+            return problems
+
+        job = self._scheduler._scheduler.get_job(
+            self._channel_delete_job_id(server_id, from_account)
+        )
+        fire_at = getattr(job, "next_run_time", None) or (
+            datetime.now(timezone.utc) + timedelta(hours=24)
+        )
+        if theirs is not None:
+            # An abandoned draft on the new account: the transient state of a signup never
+            # begun, which would otherwise collide with the record moving in.
+            await svc.delete_wizard(server_id, to_account)
+        await self._arm_channel_delete_job(server_id, to_account, fire_at)
+        await svc.rekey_wizard(server_id, from_account, to_account)
+        await self._cancel_channel_delete_job(server_id, from_account)
+
+        channel = guild.get_channel(held.signup_channel_id)
+        if channel is None:
+            return problems
+        try:
+            new_member = guild.get_member(int(to_account))
+            if new_member is not None:
+                await self._revoke_driver_write(channel, new_member)
+            old_member = guild.get_member(int(from_account))
+            if old_member is not None:
+                await channel.set_permissions(
+                    old_member, overwrite=None, reason="Driver's current account changed"
+                )
+        except discord.HTTPException as exc:
+            problems.append(f"the signup channel's permissions could not be moved: {exc}")
+        return problems
+
+    # ------------------------------------------------------------------
     # Public API stubs (implementations in T020–T049)
     # ------------------------------------------------------------------
 
@@ -605,6 +672,7 @@ class WizardService:
         await self._driver_service.transition(
             server_id, discord_user_id, DriverState.UNASSIGNED
         )
+        await self._signup_svc.mark_approved(server_id, discord_user_id)
 
         await self._cancel_inactivity_job(server_id, discord_user_id)
 

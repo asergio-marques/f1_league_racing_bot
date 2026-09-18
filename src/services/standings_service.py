@@ -186,6 +186,12 @@ async def compute_driver_standings(
             ),
         )
         rows = await cursor.fetchall()
+        # A result keeps the account it was recorded under, and a driver who changed account
+        # mid-season stands under two. Both are theirs and are counted as one driver, under
+        # the account they use now (issue #243).
+        from services.driver_service import current_account_map_for_division
+
+        current_of = await current_account_map_for_division(db, division_id)
 
     # Aggregate
     total_points: dict[int, int] = defaultdict(int)
@@ -197,7 +203,7 @@ async def compute_driver_standings(
     race_participants: set[int] = set()
 
     for row in rows:
-        uid: int = row["driver_user_id"]
+        uid: int = current_of.get(row["driver_user_id"], row["driver_user_id"])
         pts = (row["points_awarded"] or 0) + (row["fastest_lap_bonus"] or 0)
         total_points[uid] += pts
         race_participants.add(uid)
@@ -587,6 +593,76 @@ async def opening_team_standings(
 # Persistence
 # ---------------------------------------------------------------------------
 
+async def _drop_superseded_driver_rows(db, driver_snaps: list[DriverStandingsSnapshot]) -> None:
+    """Delete a recomputed round's rows standing under an account the driver has since left.
+
+    A round's standings are recomputed whenever a penalty, an appeal or an amendment lands in
+    it or before it. A driver who changed account since the round was first computed now
+    stands under their current account (issue #243), and the upsert below would leave their
+    old row beside the new one: the same driver twice in one round. Only such rows go — a
+    past account whose driver's current one the recomputation names. Any other row the
+    recomputation leaves out is left as it was. Only a live season is ever recomputed, so
+    this never touches a completed one.
+
+    The message ids of the posted standings live on the round's top row. Where that row is
+    one being dropped, they are carried onto the new top row.
+    """
+    by_round: dict[tuple[int, int], set[int]] = defaultdict(set)
+    for snap in driver_snaps:
+        by_round[(snap.round_id, snap.division_id)].add(int(snap.driver_user_id))
+    for (round_id, division_id), kept in by_round.items():
+        cursor = await db.execute(
+            "SELECT driver_user_id, standings_message_id, constructor_standings_message_id "
+            "FROM driver_standings_snapshots WHERE round_id = ? AND division_id = ?",
+            (round_id, division_id),
+        )
+        existing = await cursor.fetchall()
+        from services.driver_service import current_account_map_for_division
+
+        current_of = await current_account_map_for_division(db, division_id)
+        dropped = [
+            r for r in existing
+            if int(r["driver_user_id"]) in current_of
+            and current_of[int(r["driver_user_id"])] in kept
+        ]
+        if not dropped:
+            continue
+        carried = next(
+            (
+                (r["standings_message_id"], r["constructor_standings_message_id"])
+                for r in dropped
+                if r["standings_message_id"] or r["constructor_standings_message_id"]
+            ),
+            None,
+        )
+        placeholders = ",".join("?" for _ in dropped)
+        await db.execute(
+            f"DELETE FROM driver_standings_snapshots WHERE round_id = ? AND division_id = ? "
+            f"AND driver_user_id IN ({placeholders})",
+            (round_id, division_id, *[r["driver_user_id"] for r in dropped]),
+        )
+        if carried is not None:
+            top = min(
+                (s for s in driver_snaps
+                 if (s.round_id, s.division_id) == (round_id, division_id)),
+                key=lambda s: s.standing_position,
+            )
+            await db.execute(
+                "INSERT INTO driver_standings_snapshots "
+                "(round_id, division_id, driver_user_id, standing_position, total_points) "
+                "VALUES (?, ?, ?, ?, 0) "
+                "ON CONFLICT(round_id, division_id, driver_user_id) DO NOTHING",
+                (round_id, division_id, top.driver_user_id, top.standing_position),
+            )
+            await db.execute(
+                "UPDATE driver_standings_snapshots SET "
+                "standings_message_id = COALESCE(standings_message_id, ?), "
+                "constructor_standings_message_id = COALESCE(constructor_standings_message_id, ?) "
+                "WHERE round_id = ? AND division_id = ? AND driver_user_id = ?",
+                (carried[0], carried[1], round_id, division_id, top.driver_user_id),
+            )
+
+
 async def persist_snapshots(
     db_path: str,
     driver_snaps: list[DriverStandingsSnapshot],
@@ -596,6 +672,8 @@ async def persist_snapshots(
     from services.driver_service import resolve_driver_profile_id
 
     async with get_connection(db_path) as db:
+        await _drop_superseded_driver_rows(db, driver_snaps)
+
         # Cache server_id per division_id (all snaps in a batch are typically one division)
         _server_id_cache: dict[int, int | None] = {}
 
@@ -853,7 +931,17 @@ async def previous_standing_positions(
             (division_id, reference),
         )
         rows = await cursor.fetchall()
-    return {row["entry_key"]: row["standing_position"] for row in rows}
+        # The reference round may stand under an account the driver has since left; the
+        # position is theirs all the same (issue #243).
+        current_of: dict[int, int] = {}
+        if not teams:
+            from services.driver_service import current_account_map_for_division
+
+            current_of = await current_account_map_for_division(db, division_id)
+    return {
+        current_of.get(row["entry_key"], row["entry_key"]): row["standing_position"]
+        for row in rows
+    }
 
 
 def derive_movement(

@@ -6,6 +6,7 @@ import logging
 import discord
 
 from db.database import get_connection
+from services.driver_service import current_account_map_for_division
 from models.classification_occasion import ClassificationOccasion
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from models.session_result import (
@@ -880,7 +881,20 @@ async def _load_driver_rows(
 
     Returns list[QualifyingSessionResult] for qualifying, list[RaceSessionResult]
     for race.
+
+    Each row names the driver by the account they use **now**, not the one it was recorded
+    under (issue #243): the rows are read for drawing and posting only, and everything drawn
+    names a driver by their current account — a completed season's results drawn again
+    included. Nothing stored is altered. A caller writing results back must read them itself.
     """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT division_id FROM session_results WHERE id = ?", (session_result_id,)
+        )
+        header = await cursor.fetchone()
+        current_of = (
+            await current_account_map_for_division(db, header["division_id"]) if header else {}
+        )
 
     if session_type.is_qualifying:
         async with get_connection(db_path) as db:
@@ -896,7 +910,7 @@ async def _load_driver_rows(
             QualifyingSessionResult(
                 id=r["id"],
                 session_result_id=r["session_result_id"],
-                driver_user_id=r["driver_user_id"],
+                driver_user_id=current_of.get(r["driver_user_id"], r["driver_user_id"]),
                 team_role_id=r["team_role_id"],
                 finishing_position=r["finishing_position"],
                 outcome=OutcomeModifier(r["outcome"]),
@@ -924,7 +938,7 @@ async def _load_driver_rows(
         RaceSessionResult(
             id=r["id"],
             session_result_id=r["session_result_id"],
-            driver_user_id=r["driver_user_id"],
+            driver_user_id=current_of.get(r["driver_user_id"], r["driver_user_id"]),
             team_role_id=r["team_role_id"],
             finishing_position=r["finishing_position"],
             outcome=OutcomeModifier(r["outcome"]),

@@ -34,18 +34,51 @@ class DriverCog(commands.Cog):
         default_permissions=None,
     )
 
+    async def _current_member(
+        self, interaction: discord.Interaction, user: discord.Member
+    ) -> discord.Member | None:
+        """The member behind the current account of the driver *user* names (issue #243).
+
+        Any account a driver has held names them, so a manager may give a command one the
+        driver has since left. Everything the command does — the roles, the lineup, the
+        log — belongs to the account the driver uses now, so it is swapped in here, before
+        anything reads it. An account no driver holds is returned as it came.
+
+        Where the current account is no longer in the server there is no member to act on,
+        and the command is refused with the manager told so; returns None, having replied.
+        """
+        current = await self.bot.driver_service.current_account(  # type: ignore[attr-defined]
+            interaction.guild_id, user.id
+        )
+        if current == str(user.id):
+            return user
+        guild = interaction.guild
+        member = guild.get_member(int(current)) if guild is not None else None
+        if member is None and guild is not None:
+            try:
+                member = await guild.fetch_member(int(current))
+            except discord.HTTPException:
+                member = None
+        if member is None:
+            await interaction.followup.send(
+                f"⛔ <@{user.id}> is a past account of a driver whose current account, "
+                f"<@{current}>, is not in the server.",
+                ephemeral=True,
+            )
+        return member
+
     # ------------------------------------------------------------------
     # /driver reassign
     # ------------------------------------------------------------------
 
     @driver.command(
         name="reassign",
-        description="Re-key a driver profile from one Discord account to another.",
+        description="Make another Discord account a driver's current one.",
     )
     @app_commands.describe(
-        old_user="The existing Discord user whose profile is to be re-keyed (mention; use old_user_id for departed users).",
-        old_user_id="Raw Discord snowflake ID, for users who have left the server.",
-        new_user="The target Discord account. Must not already have a driver profile.",
+        old_user="Any account of the driver's (mention; use old_user_id for an account no longer in the server).",
+        old_user_id="Raw Discord snowflake ID of any account of the driver's.",
+        new_user="The account to make current: a new one, or one of the driver's past accounts.",
     )
     @league_manager_only
     async def reassign(
@@ -55,7 +88,11 @@ class DriverCog(commands.Cog):
         old_user: discord.Member | None = None,
         old_user_id: str | None = None,
     ) -> None:
-        """Reassign a driver profile between Discord accounts."""
+        """Make *new_user* the current account of the driver the old account names (#243).
+
+        The account it replaces joins the driver's past accounts, and every account the driver
+        has held goes on identifying them. Nothing the league holds is rewritten.
+        """
         # Resolve old user ID — accept Member mention or raw snowflake string
         if old_user is not None:
             resolved_old_id = str(old_user.id)
@@ -73,51 +110,86 @@ class DriverCog(commands.Cog):
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
+        # Deferred: moving roles and a signup channel talks to Discord several times over.
+        await interaction.response.defer(ephemeral=True)
         try:
-            profile = await self.bot.driver_service.reassign_user_id(  # type: ignore[attr-defined]
+            outcome = await self.bot.driver_service.reassign_user_id(  # type: ignore[attr-defined]
                 server_id, resolved_old_id, new_user_id, actor_id, actor_name
             )
         except ValueError as exc:
-            await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
+            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
             return
 
+        profile = outcome.profile
+        replaced = outcome.replaced_account
+
+        # The account change is committed. What follows is Discord's side of it, and a failure
+        # there is reported rather than undoing it.
+        problems: list[str] = []
+        if interaction.guild is not None:
+            try:
+                problems += await self.bot.placement_service.move_driver_roles(  # type: ignore[attr-defined]
+                    interaction.guild, server_id, profile.id, replaced, new_user_id
+                )
+            except Exception as exc:  # noqa: BLE001 — the reassign stands whatever Discord says
+                log.exception("reassign: could not move the roles of driver %s", profile.id)
+                problems.append(f"the roles could not be moved: {exc}")
+            try:
+                problems += await self.bot.wizard_service.move_held_channel(  # type: ignore[attr-defined]
+                    server_id, replaced, new_user_id, interaction.guild
+                )
+            except Exception as exc:  # noqa: BLE001 — as the roles
+                log.exception("reassign: could not move the signup channel of %s", replaced)
+                problems.append(f"the signup channel could not be moved: {exc}")
+
         former = "Yes" if profile.former_driver else "No"
-        await interaction.response.send_message(
-            f"✅ Driver profile re-keyed successfully.\n"
-            f"   Old User ID : {resolved_old_id}\n"
-            f"   New User ID : {new_user_id}\n"
-            f"   State       : {profile.current_state.value}\n"
-            f"   Former driver: {former}",
-            ephemeral=True,
+        past = [a for a in outcome.accounts if a != new_user_id]
+        how = "switched back to a past account" if outcome.switched_back else "given a new account"
+        if outcome.merged_accounts:
+            how = (
+                "merged with the driver on "
+                + ", ".join(f"<@{a}>" for a in outcome.merged_accounts)
+                + ", and given that account"
+            )
+        reply = (
+            f"✅ Driver {how}.\n"
+            f"   Current account : <@{new_user_id}>\n"
+            f"   Past accounts   : {', '.join(f'<@{a}>' for a in past) or '—'}\n"
+            f"   State           : {profile.current_state.value}\n"
+            f"   Former driver   : {former}"
         )
+        if problems:
+            reply += "\n⚠️ Done, but on Discord:\n" + "\n".join(f"• {p}" for p in problems)
+        await interaction.followup.send(reply, ephemeral=True)
         # After the reply, so that reading the image configuration and touching the league's
         # directory can never eat into Discord's three seconds.
-        await self._remove_old_portrait(server_id, resolved_old_id)
+        await self._remove_old_portrait(server_id, replaced)
         await self.bot.output_router.post_log(
             server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reassign | Success\n"
-            f"  old_user_id: {resolved_old_id}\n"
-            f"  new_user: {new_user.display_name} (<@{new_user_id}>)",
+            f"  replaced: <@{replaced}>\n"
+            f"  current: {new_user.display_name} (<@{new_user_id}>)\n"
+            f"  accounts: {', '.join(outcome.accounts)}"
+            + "".join(f"\n  not done: {p}" for p in problems),
         )
         log.info(
-            "Driver profile re-keyed on server %s: %s → %s by %s",
-            server_id, resolved_old_id, new_user_id, actor_name,
+            "Driver account changed on server %s: %s → %s by %s",
+            server_id, replaced, new_user_id, actor_name,
         )
 
     async def _remove_old_portrait(self, server_id: int, discord_user_id: str) -> None:
-        """Delete the portrait the bot obtained for a re-keyed driver's former account.
+        """Delete the portrait the bot obtained for the account a driver has just replaced.
 
-        A portrait is a cache of one Discord account's own profile picture, so unlike the
-        driver's results and history there is nothing here to carry: the new account has a
-        picture of its own, which is obtained before the next graphic is drawn. What is left
-        behind is the old file, sitting in the league's driver directory under an account
-        that will never be drawn again — so it goes (issue #222).
+        A portrait is a cache of one Discord account's own profile picture. Everything is
+        drawn under the driver's current account (issue #243), so the replaced account's file
+        would sit in the league's driver directory drawn by nothing — so it goes (issue #222).
+        Switching back to that account later obtains its picture afresh, as for any driver.
 
         Where the league names no image configuration, or a directory that cannot be
         resolved, the file and its ownership row are **both** left alone. See
         `driver_portrait_service.remove_portrait` for why the row must never go on its own.
 
-        Never raises. The re-key is committed by the time this runs, and a portrait is not
+        Never raises. The reassign is committed by the time this runs, and a portrait is not
         worth reporting a successful command as a failure.
         """
         try:
@@ -167,6 +239,9 @@ class DriverCog(commands.Cog):
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
@@ -265,6 +340,9 @@ class DriverCog(commands.Cog):
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
@@ -367,6 +445,9 @@ class DriverCog(commands.Cog):
         """
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
 
         season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
         if season is None or season.stage not in ONGOING_STAGES:
@@ -456,6 +537,9 @@ class DriverCog(commands.Cog):
         """Release a committed driver from one division (issue #220), in the ongoing stages."""
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
 
         season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
         if season is None or season.stage not in ONGOING_STAGES:
@@ -528,6 +612,9 @@ class DriverCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
 
         season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
         if season is None or season.stage not in _PLACING_STAGES:
@@ -547,6 +634,9 @@ class DriverCog(commands.Cog):
 
         await self.bot.driver_service.transition(  # type: ignore[attr-defined]
             server_id, str(user.id), DriverState.NOT_SIGNED_UP
+        )
+        await self.bot.signup_module_service.withdraw_approval(  # type: ignore[attr-defined]
+            server_id, profile.id
         )
 
         signup_cfg = await self.bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
@@ -588,6 +678,9 @@ class DriverCog(commands.Cog):
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
+        user = await self._current_member(interaction, user)
+        if user is None:
+            return
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 

@@ -1336,3 +1336,123 @@ async def test_a_cascade_orders_every_round_it_rewrites_on_the_same_names(db_pat
 
     assert await _stored_order(db_path, div_id, r1) == [2, 1]
     assert await _stored_order(db_path, div_id, r2) == [2, 1]
+
+
+# ── A driver who changed account mid-season (issue #243) ─────────────────────────
+
+from services.standings_service import compute_and_persist_round  # noqa: E402
+
+PAST, NOW = 5101, 5102
+
+
+async def _driver_moved(db, server_id: int = 1) -> None:
+    """A driver on PAST who has since made NOW their current account."""
+    cursor = await db.execute(
+        "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
+        "VALUES (?, ?, 'ASSIGNED')",
+        (server_id, str(PAST)),
+    )
+    await db.execute(
+        "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
+        (str(NOW), cursor.lastrowid),
+    )
+
+
+@pytest.mark.asyncio
+async def test_results_under_two_accounts_are_counted_as_one_driver(db_path):
+    """Round 1 raced on PAST, round 2 on NOW: one line, under NOW, with every point."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db)
+        await _driver_moved(db)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await _result(db, sr1, PAST, pos=1, pts=25)
+        await _result(db, sr1, 333, pos=2, pts=18)
+        r2 = await _round(db, div_id, 2)
+        sr2 = await _session(db, r2, div_id)
+        await _result(db, sr2, NOW, pos=2, pts=18)
+        await _result(db, sr2, 333, pos=1, pts=25)
+        await db.commit()
+
+    snaps = await compute_driver_standings(db_path, div_id, r2)
+
+    by_uid = {s.driver_user_id: s for s in snaps}
+    assert set(by_uid) == {NOW, 333}
+    assert by_uid[NOW].total_points == 43
+    assert by_uid[NOW].finish_counts == {1: 1, 2: 1}
+    # 43 each; the countback is level, and NOW's P1 came first.
+    assert by_uid[NOW].standing_position == 1
+
+
+@pytest.mark.asyncio
+async def test_the_previous_position_is_read_through_a_past_account(db_path):
+    """E10: the reference round stands under PAST; the arrow is drawn for NOW."""
+    async with get_connection(db_path) as db:
+        division_id, rounds = await _division_with_rounds(db, 2)
+        await _driver_moved(db)
+        await _snapshot(db, division_id, rounds[0], {PAST: 1, 8: 2})
+        await db.commit()
+
+    previous = await previous_standing_positions(db_path, division_id, rounds[1])
+
+    assert previous == {NOW: 1, 8: 2}
+
+
+@pytest.mark.asyncio
+async def test_a_recompute_leaves_no_row_under_the_past_account(db_path):
+    """E9: round 1 was computed under PAST; recomputed after the switch it stands under NOW
+    alone, and the posted message's id moves with the top row."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db)
+        r1 = await _round(db, div_id, 1)
+        await _result(db, await _session(db, r1, div_id), PAST, pos=1, pts=25)
+        await db.commit()
+    await compute_and_persist_round(db_path, r1, div_id)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_standings_snapshots SET standings_message_id = 4444, "
+            "constructor_standings_message_id = 5555 WHERE round_id = ?",
+            (r1,),
+        )
+        await _driver_moved(db)
+        await db.commit()
+
+    await compute_and_persist_round(db_path, r1, div_id)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id, total_points, standings_message_id, "
+            "constructor_standings_message_id FROM driver_standings_snapshots "
+            "WHERE round_id = ?",
+            (r1,),
+        )
+        rows = [tuple(r) for r in await cursor.fetchall()]
+    assert rows == [(NOW, 25, 4444, 5555)]
+
+
+@pytest.mark.asyncio
+async def test_a_recompute_leaves_a_row_it_no_longer_names_for_another_reason(db_path):
+    """Only a row superseded by an account change is dropped. A driver the recomputation
+    leaves out for any other reason — here one whose only result was removed — keeps the row
+    they had, exactly as before issue #243."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db)
+        r1 = await _round(db, div_id, 1)
+        sr1 = await _session(db, r1, div_id)
+        await _result(db, sr1, 111, pos=1, pts=25)
+        await _result(db, sr1, 222, pos=2, pts=18)
+        await db.commit()
+    await compute_and_persist_round(db_path, r1, div_id)
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM race_session_results WHERE driver_user_id = 222")
+        await db.commit()
+
+    await compute_and_persist_round(db_path, r1, div_id)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id FROM driver_standings_snapshots WHERE round_id = ? "
+            "ORDER BY driver_user_id",
+            (r1,),
+        )
+        assert [r[0] for r in await cursor.fetchall()] == [111, 222]

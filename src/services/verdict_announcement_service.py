@@ -12,6 +12,7 @@ from pathlib import Path
 import discord
 
 from db.database import get_connection
+from services.driver_service import current_account_map_for_division
 from models.points_config import SessionType
 from services import image_verdict_post
 from services.image_verdict_service import VerdictKind
@@ -453,6 +454,14 @@ async def post_penalty_announcements(
                 log.warning("post_penalty_announcements: no result context for record %r", record)
                 continue
 
+            # The verdict names the driver by the account they use now, whichever the
+            # result was recorded under (issue #243).
+            async with get_connection(db_path) as db:
+                current_of = await current_account_map_for_division(
+                    db, result_ctx["division_id"]
+                )
+            driver_discord_id = current_of.get(int(driver_discord_id), int(driver_discord_id))
+
             round_number: int = result_ctx["round_number"]
             session_type_str: str = result_ctx["session_type"]
             is_sprint: bool = str(result_ctx["format"]).upper() == "SPRINT"
@@ -570,6 +579,14 @@ async def post_appeal_announcements(
             if not result_ctx:
                 log.warning("post_appeal_announcements: no result context for record %r", record)
                 continue
+
+            # The verdict names the driver by the account they use now, whichever the
+            # result was recorded under (issue #243).
+            async with get_connection(db_path) as db:
+                current_of = await current_account_map_for_division(
+                    db, result_ctx["division_id"]
+                )
+            driver_discord_id = current_of.get(int(driver_discord_id), int(driver_discord_id))
 
             round_number: int = result_ctx["round_number"]
             session_type_str: str = result_ctx["session_type"]

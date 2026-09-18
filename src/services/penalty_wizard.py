@@ -17,6 +17,7 @@ import discord
 
 from db.database import get_connection
 from models.points_config import SessionType
+from services.driver_service import accounts_of_in_division, current_account_map_for_division
 from services.penalty_service import StagedPenalty, validate_penalty_input, _time_to_ms
 from utils.channel_guard import is_league_manager
 
@@ -155,6 +156,17 @@ def _pen_label(sp: StagedPenalty) -> str:
     return f"+{sp.penalty_seconds}s" if sp.penalty_seconds > 0 else f"{sp.penalty_seconds}s"
 
 
+async def _shown(state: PenaltyReviewState, driver_user_id: int) -> int:
+    """The account a message names *driver_user_id*'s driver by: the one they use now.
+
+    A staged penalty carries the account its result row stands under, which is what applies
+    it; the driver may have moved on from that account since (issue #243).
+    """
+    async with get_connection(state.db_path) as db:
+        current_of = await current_account_map_for_division(db, state.division_id)
+    return current_of.get(driver_user_id, driver_user_id)
+
+
 # ---------------------------------------------------------------------------
 # Prompt rendering
 # ---------------------------------------------------------------------------
@@ -169,11 +181,11 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
         "",
     ]
 
-    # Collect all user IDs that may need test_display_name resolution.
-    staged_user_ids = {sp.driver_user_id for sp in state.staged}
-    staged_user_ids.update(sp.driver_user_id for sp in state.staged_pardons)
 
     async with get_connection(state.db_path) as db:
+        # A result keeps the account it was recorded under; the prompt names the driver by
+        # the account they use now (issue #243).
+        current_of = await current_account_map_for_division(db, state.division_id)
         cursor = await db.execute(
             """
             SELECT DISTINCT driver_user_id, NULL AS test_display_name
@@ -192,8 +204,11 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
             (state.round_id, state.round_id),
         )
         pre_attendees = await cursor.fetchall()
-        # Fetch test display names separately
-        all_uids = [r["driver_user_id"] for r in pre_attendees]
+        # Fetch test display names separately. One driver under two accounts is one attendee.
+        all_uids = list(dict.fromkeys(
+            current_of.get(int(r["driver_user_id"]), int(r["driver_user_id"]))
+            for r in pre_attendees
+        ))
         test_name_map: dict[int, str | None] = {}
         if all_uids:
             ph2 = ",".join("?" * len(all_uids))
@@ -207,12 +222,16 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
 
         import dataclasses as _dc
         attendee_rows = [
-            type("_Row", (), {"driver_user_id": int(r["driver_user_id"]),
-                              "test_display_name": test_name_map.get(int(r["driver_user_id"]))})()  # noqa
-            for r in pre_attendees
+            type("_Row", (), {"driver_user_id": uid,
+                              "test_display_name": test_name_map.get(uid)})()  # noqa
+            for uid in all_uids
         ]
 
         # Bulk-fetch test display names for staged penalty/pardon drivers.
+        staged_user_ids = {current_of.get(sp.driver_user_id, sp.driver_user_id) for sp in state.staged}
+        staged_user_ids.update(
+            current_of.get(sp.driver_user_id, sp.driver_user_id) for sp in state.staged_pardons
+        )
         test_names: dict[int, str | None] = {}
         if staged_user_ids:
             placeholders = ",".join("?" * len(staged_user_ids))
@@ -225,6 +244,7 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
                 test_names[int(row["discord_user_id"])] = row["test_display_name"]
 
     def _mention(user_id: int, name: str | None = None) -> str:
+        user_id = current_of.get(user_id, user_id)
         display = name if name is not None else test_names.get(user_id)
         return f"<@{user_id}>" + (f" ({display})" if display else "")
 
@@ -291,12 +311,15 @@ async def _render_appeals_prompt_content(state: PenaltyReviewState) -> str:
         "",
     ]
     if state.staged_appeals:
+        async with get_connection(state.db_path) as db:
+            current_of = await current_account_map_for_division(db, state.division_id)
         lines.append(f"**Staged Corrections ({len(state.staged_appeals)}):**")
         for i, sp in enumerate(state.staged_appeals, 1):
             pl = _pen_label(sp)
             sl = sp.session_type.value.replace("_", " ").title()
+            shown = current_of.get(sp.driver_user_id, sp.driver_user_id)
             lines.append(
-                f"  {i}. <@{sp.driver_user_id}> | {sl} | **{pl}**  ← Remove #{i} below"
+                f"  {i}. <@{shown}> | {sl} | **{pl}**  ← Remove #{i} below"
             )
     else:
         lines.append(
@@ -442,8 +465,20 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
             )
             return
 
-        # Verify the driver is in the selected session's results (T017 check c)
-        # Prefer new result tables; fall back to legacy driver_session_results.
+        # Verify the driver is in the selected session's results (T017 check c).
+        #
+        # Any account the driver has held names them, and the result may stand under one
+        # they have since left (issue #243). The row is found by every account of theirs,
+        # and the penalty is staged under the account the row holds — which is the one it
+        # is applied by — while every message names the account they use now.
+        async with get_connection(self.state.db_path) as db:
+            accounts = await accounts_of_in_division(db, self.state.division_id, driver_user_id)
+            shown_user_id = int(
+                (await current_account_map_for_division(db, self.state.division_id)).get(
+                    driver_user_id, driver_user_id
+                )
+            )
+        in_accounts = ",".join("?" for _ in accounts)
         current_time_ms: int | None = None
         current_time_penalty_s: int = 0
         driver_found = False
@@ -451,19 +486,21 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
         if not self.session_type.is_qualifying:
             async with get_connection(self.state.db_path) as db:
                 cursor = await db.execute(
-                    """
-                    SELECT rsr.base_time_ms, rsr.ingame_time_penalties_ms,
+                    f"""
+                    SELECT rsr.driver_user_id,
+                           rsr.base_time_ms, rsr.ingame_time_penalties_ms,
                            rsr.postrace_time_penalties_ms, rsr.appeal_time_penalties_ms
                     FROM session_results sr
                     JOIN race_session_results rsr ON rsr.session_result_id = sr.id
                     WHERE sr.round_id = ? AND sr.session_type = ? AND sr.status = 'ACTIVE'
-                      AND rsr.driver_user_id = ?
+                      AND rsr.driver_user_id IN ({in_accounts})
                     """,
-                    (self.state.round_id, self.session_type.value, driver_user_id),
+                    (self.state.round_id, self.session_type.value, *accounts),
                 )
                 rsr_row = await cursor.fetchone()
                 if rsr_row is not None:
                     driver_found = True
+                    driver_user_id = int(rsr_row["driver_user_id"])
                     base_ms = rsr_row["base_time_ms"]
                     ingame_ms = rsr_row["ingame_time_penalties_ms"] or 0
                     postrace_ms = rsr_row["postrace_time_penalties_ms"] or 0
@@ -474,20 +511,23 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
         else:
             async with get_connection(self.state.db_path) as db:
                 cursor = await db.execute(
-                    """
-                    SELECT 1 FROM session_results sr
+                    f"""
+                    SELECT qsr.driver_user_id FROM session_results sr
                     JOIN qualifying_session_results qsr ON qsr.session_result_id = sr.id
                     WHERE sr.round_id = ? AND sr.session_type = ? AND sr.status = 'ACTIVE'
-                      AND qsr.driver_user_id = ?
+                      AND qsr.driver_user_id IN ({in_accounts})
                     """,
-                    (self.state.round_id, self.session_type.value, driver_user_id),
+                    (self.state.round_id, self.session_type.value, *accounts),
                 )
-                driver_found = (await cursor.fetchone()) is not None
+                qsr_row = await cursor.fetchone()
+                driver_found = qsr_row is not None
+                if qsr_row is not None:
+                    driver_user_id = int(qsr_row["driver_user_id"])
 
         if not driver_found:
             sl = self.session_type.value.replace("_", " ").title()
             await interaction.followup.send(
-                f"❌ <@{driver_user_id}> was not found in the **{sl}** results.",
+                f"❌ <@{shown_user_id}> was not found in the **{sl}** results.",
                 ephemeral=True,
             )
             return
@@ -535,7 +575,7 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
         sl = self.session_type.value.replace("_", " ").title()
         action = "Correction" if self.use_appeals_staging else "Penalty"
         await interaction.followup.send(
-            f"\u2705 Staged {action}: <@{driver_user_id}> | {sl} | **{pl}**",
+            f"\u2705 Staged {action}: <@{shown_user_id}> | {sl} | **{pl}**",
             ephemeral=True,
         )
 
@@ -601,7 +641,7 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
         justification = self.justification_input.value.strip()
 
         from db.database import get_connection
-        from services.driver_service import resolve_driver_profile_id
+        from services.driver_service import current_account_of, resolve_driver_profile_id
 
         async with get_connection(self.state.db_path) as db:
             # --- Check round is not already finalized (FR-011) ---
@@ -626,6 +666,10 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
                     ephemeral=True,
                 )
                 return
+            # Any account the driver has held names them; the pardon is staged, and every
+            # message names them, by the one they use now (issue #243). It is matched to
+            # the round through the profile, so the account it names changes nothing else.
+            driver_user_id = int(await current_account_of(db, server_id, driver_user_id))
 
             # --- Fetch DRA row ---
             cursor = await db.execute(
@@ -799,7 +843,7 @@ async def _show_approval_step(
         for i, sp in enumerate(state.staged, 1):
             pl = _pen_label(sp)
             sl = sp.session_type.value.replace("_", " ").title()
-            lines.append(f"{i}. <@{sp.driver_user_id}> | {sl} | **{pl}**")
+            lines.append(f"{i}. <@{await _shown(state, sp.driver_user_id)}> | {sl} | **{pl}**")
         content = "\n".join(lines)
     else:
         content = (
@@ -878,7 +922,8 @@ class PenaltyReviewView(discord.ui.View):
                 await _refresh_prompt(self.state)
                 pl = _pen_label(removed)
                 await interaction.followup.send(
-                    f"🗑️ Removed: <@{removed.driver_user_id}> | {pl}", ephemeral=True
+                    f"🗑️ Removed: <@{await _shown(self.state, removed.driver_user_id)}> | {pl}",
+                    ephemeral=True,
                 )
             else:
                 await interaction.response.send_message(
@@ -1146,7 +1191,7 @@ class AppealsReviewView(discord.ui.View):
                 await _refresh_appeals_prompt(self.state)
                 pl = _pen_label(removed)
                 await interaction.followup.send(
-                    f"\U0001f5d1\ufe0f Removed: <@{removed.driver_user_id}> | {pl}",
+                    f"\U0001f5d1\ufe0f Removed: <@{await _shown(self.state, removed.driver_user_id)}> | {pl}",
                     ephemeral=True,
                 )
             else:

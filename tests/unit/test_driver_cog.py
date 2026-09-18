@@ -100,12 +100,24 @@ def _make_cog(
         return_value={"team_name": "Alpha", "division_name": "Division 1"}
     )
     bot.placement_service.sack_driver = AsyncMock(return_value=None)
+    bot.placement_service.move_driver_roles = AsyncMock(return_value=[])
+    bot.wizard_service.move_held_channel = AsyncMock(return_value=[])
 
     bot.driver_service = MagicMock()
+    bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
     bot.driver_service.get_profile = AsyncMock(return_value=profile)
+    # The account named as old is taken to be the driver's current one, which it replaces.
     bot.driver_service.reassign_user_id = AsyncMock(
-        return_value=SimpleNamespace(
-            current_state=SimpleNamespace(value="ACTIVE"), former_driver=False
+        side_effect=lambda _server, old, new, *_a: SimpleNamespace(
+            profile=SimpleNamespace(
+                id=PROFILE_ID,
+                current_state=SimpleNamespace(value="ACTIVE"),
+                former_driver=False,
+            ),
+            replaced_account=old,
+            accounts=sorted([old, new]),
+            switched_back=False,
+            merged_accounts=None,
         )
     )
 
@@ -182,7 +194,7 @@ async def test_reassign_accepts_a_mentioned_old_user(tmp_path):
 
     cog.bot.driver_service.reassign_user_id.assert_awaited_once()
     assert cog.bot.driver_service.reassign_user_id.await_args.args[1] == "1"
-    assert "re-keyed successfully" in _replied(interaction)
+    assert "given a new account" in _replied(interaction)
 
 
 async def test_reassign_accepts_a_raw_snowflake_for_the_old_user(tmp_path):
@@ -273,7 +285,7 @@ async def test_reassign_removes_the_portrait_of_the_account_left_behind(
     await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
 
     remover.assert_awaited_once_with("db.sqlite", SERVER_ID, "4242", directory)
-    assert "re-keyed successfully" in _replied(interaction)
+    assert "given a new account" in _replied(interaction)
 
 
 async def test_reassign_leaves_the_portrait_where_no_directory_resolves(
@@ -297,7 +309,7 @@ async def test_reassign_leaves_the_portrait_where_no_directory_resolves(
     await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
 
     remover.assert_not_awaited()
-    assert "re-keyed successfully" in _replied(interaction)
+    assert "given a new account" in _replied(interaction)
 
 
 async def test_reassign_leaves_the_portrait_where_the_league_has_no_image_config(
@@ -330,7 +342,7 @@ async def test_a_portrait_that_cannot_be_removed_does_not_fail_the_re_key(
 
     await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
 
-    assert "re-keyed successfully" in _replied(interaction)
+    assert "given a new account" in _replied(interaction)
     cog.bot.output_router.post_log.assert_awaited()
 
 
@@ -569,3 +581,86 @@ async def test_a_successful_sacking_is_logged(tmp_path):
     await _sack(cog, interaction)
 
     assert "/driver sack" in cog.bot.output_router.post_log.await_args.args[1]
+
+
+async def test_reassign_reports_the_current_and_past_accounts(tmp_path):
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    assert "Current account : <@2>" in _replied(interaction)
+    assert "Past accounts   : <@1>" in _replied(interaction)
+
+
+async def test_a_switch_back_is_reported_as_one(tmp_path):
+    cog = _make_cog()
+    outcome = await cog.bot.driver_service.reassign_user_id(SERVER_ID, "1", "2")
+    outcome.switched_back = True
+    cog.bot.driver_service.reassign_user_id = AsyncMock(return_value=outcome)
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    assert "switched back to a past account" in _replied(interaction)
+
+
+async def test_reassign_moves_the_roles_to_the_new_current_account(tmp_path):
+    """Issue #243: from the account replaced to the one made current."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    args = cog.bot.placement_service.move_driver_roles.await_args.args
+    assert args == (interaction.guild, SERVER_ID, PROFILE_ID, "1", "2")
+
+
+async def test_roles_discord_would_not_move_are_reported_and_the_reassign_stands(tmp_path):
+    """E44."""
+    cog = _make_cog()
+    cog.bot.placement_service.move_driver_roles = AsyncMock(
+        return_value=["the roles could not be given to <@2>: Missing Permissions"]
+    )
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    assert "given a new account" in _replied(interaction)
+    assert "Missing Permissions" in _replied(interaction)
+    assert "not done: the roles could not be given" in cog.bot.output_router.post_log.await_args.args[1]
+
+
+async def test_reassign_moves_a_held_signup_channel_to_the_new_current_account(tmp_path):
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    cog.bot.wizard_service.move_held_channel.assert_awaited_once_with(
+        SERVER_ID, "1", "2", interaction.guild
+    )
+
+
+async def test_a_merge_is_reported_as_one(tmp_path):
+    cog = _make_cog()
+    outcome = await cog.bot.driver_service.reassign_user_id(SERVER_ID, "1", "2")
+    outcome.merged_accounts = ["2", "3"]
+    cog.bot.driver_service.reassign_user_id = AsyncMock(return_value=outcome)
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    assert "merged with the driver on <@2>, <@3>" in _replied(interaction)

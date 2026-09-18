@@ -633,6 +633,35 @@ async def _abandon_interrupted_resubmission(
     )
 
 
+async def staged_penalties_warning(db_path: str, server_id: int, entries: list[dict]) -> str:
+    """The notice posted when the bot restarted part-way through finalising a penalty review.
+
+    Each entry names the account its result stands under, which applied it; the notice names
+    the driver by the account they use now (issue #243).
+    """
+    from db.database import get_connection
+    from services.driver_service import current_account_map
+
+    async with get_connection(db_path) as db:
+        current_of = await current_account_map(db, server_id)
+    lines = [
+        "⚠️ **The bot restarted mid-finalization.** "
+        "The penalties listed below were **already applied to the results** "
+        "before the crash. Do **not** re-add them — just approve as-is to finalize.",
+        "",
+    ]
+    for e in entries:
+        stype = e.get("session_type", "?").replace("_", " ").title()
+        ptype = e.get("penalty_type", "?")
+        psecs = e.get("penalty_seconds")
+        uid = e.get("driver_user_id", "?")
+        if isinstance(uid, int):
+            uid = current_of.get(uid, uid)
+        label = f"+{psecs}s" if ptype == "TIME" and psecs is not None else ptype
+        lines.append(f"• <@{uid}> | {stype} | **{label}**")
+    return "\n".join(lines)
+
+
 async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
     """Close any submission channels left open by a previous bot process.
 
@@ -759,20 +788,9 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                     import json as _json
                     try:
                         entries = _json.loads(staged_penalties_json)
-                        lines = [
-                            "⚠️ **The bot restarted mid-finalization.** "
-                            "The penalties listed below were **already applied to the results** "
-                            "before the crash. Do **not** re-add them — just approve as-is to finalize.",
-                            "",
-                        ]
-                        for e in entries:
-                            stype = e.get("session_type", "?").replace("_", " ").title()
-                            ptype = e.get("penalty_type", "?")
-                            psecs = e.get("penalty_seconds")
-                            uid = e.get("driver_user_id", "?")
-                            label = f"+{psecs}s" if ptype == "TIME" and psecs is not None else ptype
-                            lines.append(f"• <@{uid}> | {stype} | **{label}**")
-                        await channel.send("\n".join(lines))
+                        await channel.send(
+                            await staged_penalties_warning(bot.db_path, server_id, entries)
+                        )
                     except Exception:
                         log.exception(
                             "Recovery: failed to post staged_penalties warning for round %s", round_id

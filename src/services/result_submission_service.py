@@ -5,7 +5,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Mapping
 
 import discord
 
@@ -940,6 +940,11 @@ async def _snapshot_staged_drivers(
             (round_id, *driver_ids, round_id, *driver_ids),
         )
         dsr_rows = await cursor.fetchall()
+        # The standings are keyed by the account a driver uses now; a staged penalty by the
+        # one its result stands under (issue #243).
+        from services.driver_service import current_account_map_for_division
+
+        current_of = await current_account_map_for_division(db, division_id)
 
     # Get total_points from latest standings snapshot
     driver_snaps = await compute_driver_standings(db_path, division_id, round_id)
@@ -952,7 +957,7 @@ async def _snapshot_staged_drivers(
             {
                 "driver_user_id": uid,
                 "finishing_position": r["finishing_position"],
-                "total_points": pts_map.get(uid, 0),
+                "total_points": pts_map.get(current_of.get(uid, uid), 0),
                 "post_race_time_penalties": r["postrace_time_penalties_ms"],
             }
         )
@@ -1647,6 +1652,23 @@ def extract_fl_override(lines: list[str]) -> tuple[int | None, list[str]]:
     return int(m.group(1)), lines[1:]
 
 
+def extract_current_fl_override(
+    lines: list[str], session_type: SessionType, current_of: Mapping[int, int]
+) -> tuple[int | None, list[str]]:
+    """`extract_fl_override` for a race session, the holder moved onto their current account.
+
+    The rows of the paste are moved onto current accounts by `validate_submission_block`, so
+    the override has to be moved the same way or `FL: <@old>` would not be found among rows
+    that now read `<@new>` (issue #243). A qualifying session carries no override.
+    """
+    if session_type.is_qualifying:
+        return None, lines
+    fl_override, lines = extract_fl_override(lines)
+    if fl_override is not None:
+        fl_override = current_of.get(fl_override, fl_override)
+    return fl_override, lines
+
+
 def validate_submission_block(
     lines: list[str],
     session_type: SessionType,
@@ -1657,6 +1679,7 @@ def validate_submission_block(
     reserve_driver_ids: set[int] | None = None,
     amend_format: bool = False,
     other_active_assignments: dict[int, tuple[int, str]] | None = None,
+    current_of: Mapping[int, int] | None = None,
 ) -> list[ParsedQualifyingRow | ParsedRaceRow] | list[str]:
     """Validate all result lines for a session.
 
@@ -1666,6 +1689,11 @@ def validate_submission_block(
     max 2 drivers per team per session; and, where *other_active_assignments* is given, that
     no driver disagrees with another ACTIVE session of the same round about which team they
     raced for.
+
+    *current_of* maps a driver's past accounts to their current one (issue #243). Any account
+    names the driver, so each row is moved onto the current account before anything is
+    checked: the seats are held under it, and the row is stored under it. Two rows naming
+    one driver by two accounts are then the same driver twice, and refused as such.
     """
     if reserve_driver_ids is None:
         reserve_driver_ids = set()
@@ -1695,6 +1723,10 @@ def validate_submission_block(
 
     if errors:
         return errors
+
+    if current_of:
+        for row in parsed_rows:
+            row.driver_user_id = current_of.get(row.driver_user_id, row.driver_user_id)
 
     # Positions must be contiguous from 1
     positions = sorted(r.position for r in parsed_rows)
@@ -2107,10 +2139,33 @@ async def other_active_team_assignments(
         )
         rows = await cursor.fetchall()
 
+        # A session recorded before the driver changed account stands under the old one;
+        # the check compares drivers, so both are read as the account in use (issue #243).
+        from services.driver_service import current_account_map
+
+        cursor = await db.execute(
+            "SELECT s.server_id FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
+            (round_id,),
+        )
+        server_row = await cursor.fetchone()
+        current_of = (
+            await current_account_map(db, server_row["server_id"]) if server_row else {}
+        )
+
     result: dict[int, tuple[int, str]] = {}
     for row in rows:
-        result.setdefault(row["driver_user_id"], (row["team_role_id"], row["session_type"]))
+        uid = current_of.get(row["driver_user_id"], row["driver_user_id"])
+        result.setdefault(uid, (row["team_role_id"], row["session_type"]))
     return result
+
+
+async def current_accounts(db_path: str, server_id: int) -> dict[int, int]:
+    """`driver_service.current_account_map` on a connection of its own, for the paste paths."""
+    from services.driver_service import current_account_map
+
+    async with get_connection(db_path) as db:
+        return await current_account_map(db, server_id)
 
 
 def _make_slug(name: str) -> str:
@@ -2678,9 +2733,8 @@ async def run_result_submission_job(round_id: int, bot) -> None:
 
             # Validate the block
             lines = content.splitlines()
-            fl_override: int | None = None
-            if not session_type.is_qualifying:
-                fl_override, lines = extract_fl_override(lines)
+            current_of = await current_accounts(db_path, server_id)
+            fl_override, lines = extract_current_fl_override(lines, session_type, current_of)
             other_assignments = await other_active_team_assignments(
                 db_path, round_id, session_type
             )
@@ -2693,6 +2747,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 driver_team_map,
                 reserve_driver_ids,
                 other_active_assignments=other_assignments,
+                current_of=current_of,
             )
 
             if isinstance(result[0] if result else None, str):
@@ -3264,9 +3319,8 @@ async def _resubmit_collection_task(
                 break
 
             lines = content.splitlines()
-            fl_override: int | None = None
-            if not session_type.is_qualifying:
-                fl_override, lines = extract_fl_override(lines)
+            current_of = await current_accounts(db_path, server_id)
+            fl_override, lines = extract_current_fl_override(lines, session_type, current_of)
             # Checked against the sessions of this resubmission, not the round's stored
             # results: those are the ones being replaced, and may be wrong in exactly the way
             # that made the manager resubmit.
@@ -3275,6 +3329,7 @@ async def _resubmit_collection_task(
                 lines, session_type, division_driver_ids, team_role_ids,
                 reserve_team_role_id, driver_team_map, reserve_driver_ids,
                 other_active_assignments=other_assignments,
+                current_of=current_of,
             )
 
             if isinstance(result[0] if result else None, str):

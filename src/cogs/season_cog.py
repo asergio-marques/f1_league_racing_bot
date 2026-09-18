@@ -2165,6 +2165,7 @@ class SeasonCog(commands.Cog):
         missing its lineup or calendar channel. The review withholds its button on either,
         and the confirmation refuses on either, from this one reading.
         """
+        from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL
         from services.season_lifecycle_service import UNSETTLED_STATES
 
         placeholders = ",".join("?" for _ in UNSETTLED_STATES)
@@ -2172,9 +2173,7 @@ class SeasonCog(commands.Cog):
             cursor = await db.execute(
                 f"SELECT dp.discord_user_id, dp.current_state, sr.server_display_name "
                 f"FROM driver_profiles dp "
-                f"LEFT JOIN signup_records sr ON sr.id = ("
-                f"    SELECT MAX(id) FROM signup_records "
-                f"    WHERE server_id = dp.server_id AND discord_user_id = dp.discord_user_id) "
+                f"LEFT JOIN signup_records sr ON sr.id = {DRIVERS_SIGNUP_OF_DP_SQL} "
                 f"WHERE dp.server_id = ? AND dp.current_state IN ({placeholders}) "
                 f"ORDER BY dp.current_state, dp.discord_user_id",
                 (server_id, *UNSETTLED_STATES),
@@ -5149,9 +5148,9 @@ class SeasonCog(commands.Cog):
 
         # --- Collect new results ---
         from services.result_submission_service import validate_submission_block
-        from services.result_submission_service import extract_fl_override  # type: ignore[attr-defined]
         from services.result_submission_service import _build_division_validation_data  # type: ignore[attr-defined]
         from services.result_submission_service import other_active_team_assignments
+        from services.result_submission_service import current_accounts, extract_current_fl_override
 
         driver_ids, team_role_ids, reserve_role_id, driver_team_map, reserve_driver_ids = await _build_division_validation_data(
             div.id, interaction.guild_id, interaction.client
@@ -5218,9 +5217,10 @@ class SeasonCog(commands.Cog):
 
             msg = done_task.result()
             lines_raw = [ln.strip() for ln in msg.content.strip().splitlines() if ln.strip()]
-            fl_amend_override: int | None = None
-            if not chosen_session_type.is_qualifying:
-                fl_amend_override, lines_raw = extract_fl_override(lines_raw)
+            current_of = await current_accounts(self.bot.db_path, interaction.guild_id)
+            fl_amend_override, lines_raw = extract_current_fl_override(
+                lines_raw, chosen_session_type, current_of
+            )
             other_assignments = await other_active_team_assignments(
                 self.bot.db_path, rnd.id, chosen_session_type
             )
@@ -5234,6 +5234,7 @@ class SeasonCog(commands.Cog):
                 reserve_driver_ids,
                 amend_format=True,
                 other_active_assignments=other_assignments,
+                current_of=current_of,
             )
             try:
                 await msg.delete()

@@ -94,6 +94,7 @@ async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
 
     cog = DriverCog.__new__(DriverCog)
     cog.bot = MagicMock()
+    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
     cog.bot.season_service.get_confirmed_season = AsyncMock(
         return_value=SimpleNamespace(id=1, stage=SeasonStage(stage_name))
     )

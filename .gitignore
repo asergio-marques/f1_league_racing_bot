@@ -233,6 +233,10 @@ poc/
 # worth keeping once a worktree is removed.
 .claude/worktrees/
 
+# Claude Code's per-user settings for this checkout — a personal permission allowlist, never
+# meant to be shared. `.claude/settings.json` is the shared one.
+.claude/settings.local.json
+
 # Data generator output — regenerated on every run, never committed
 tools/data-generator/roster.csv
 tools/data-generator/roster_old.csv

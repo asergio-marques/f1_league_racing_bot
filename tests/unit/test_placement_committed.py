@@ -193,6 +193,8 @@ async def test_the_placement_commands_are_refused_outside_the_placing_stages(com
 
     cog = DriverCog.__new__(DriverCog)
     cog.bot = MagicMock()
+    # Any account names the driver (issue #243); these tests name the current one.
+    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
     cog.bot.season_service.get_setup_or_active_season = AsyncMock(
         return_value=SimpleNamespace(id=1, stage=SeasonStage(stage_name))
     )
