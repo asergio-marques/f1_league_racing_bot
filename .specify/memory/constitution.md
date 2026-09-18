@@ -1,6 +1,29 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-18 — v11.0.0 → v12.0.0: MAJOR — a driver owns every account they have held (issue #243)]
+  Version change    : 11.0.0 → 12.0.0
+  Bump rationale    : MAJOR. A MUST is withdrawn and its opposite imposed: a reassignment
+                      carried every signup record and overwrote the stored username and display
+                      name, and now MUST NOT rewrite any record. A document following the old
+                      rule would do exactly what this one forbids.
+
+  Modified sections :
+    - Principle VIII, User ID reassignment → **A driver's accounts** — the profile owns a list
+      of accounts, one current and all identifying the driver; a reassignment rewrites nothing;
+      an account belongs to one driver per league; two profiles merge, refused where both hold
+      the live season or share a season's division; roles and a held signup channel follow the
+      current account.
+
+  Why the constitution is the document that moved:
+    - Decided with the user on 2026-09-18 and filed as issue #243. The carry rule of issue #222
+      rewrote completed seasons, against the rule that one is immutable, and was refused once
+      the new account had signed up — the usual case.
+
+  Added sections    : none.
+  Removed sections  : none. One bullet of Principle VIII was reworded in place.
+  Deferred items    : none.
+
 [2026-09-17 — v10.1.0 → v11.0.0: MAJOR — the driver has no ban states (issue #221)]
   Version change    : 10.1.0 → 11.0.0
   Bump rationale    : MAJOR. Two states are removed from the Principle VIII enumeration and four
@@ -4735,10 +4758,16 @@ stewarding module, which will bring the bar together with the commands that impo
   signups are kept. The driver pass MUST NOT delete a test driver; test drivers are deleted
   when test mode is switched off, their history entries kept by their identifier, so that a
   test driver created again under the same identifier holds them.
-- **User ID reassignment**: A league manager may change the Discord User ID.
-  Both old and new IDs MUST be logged as an audit event (Principle V). Upon reassignment,
-  the stored Discord username and server display name MUST be overwritten by those of the
-  new account, and every signup record of the profile MUST be carried to the new account.
+- **A driver's accounts**: A driver profile owns every Discord account the driver has held.
+  One is current; any of them identifies the driver. A league manager may make another
+  account current, the replaced one joining the past accounts, and may make a past account
+  current again. The replaced and the new account MUST be logged as an audit event
+  (Principle V). A reassignment MUST NOT rewrite any record: signups, results, standings and
+  history keep the account they were written under, and every reader maps a past account to
+  the current one. An account MUST belong to at most one driver in a league. Naming another
+  driver's current account merges the two profiles, and the merge MUST be refused where both
+  hold a seat or a signup in the live season or both took part in one season's division. The
+  driver's roles and any held signup channel MUST move to the current account.
 - **Test-mode overrides**: When test mode is active, league admins MAY directly set
   `former_driver` to `true` or `false`, and MAY assign *Not Signed Up* drivers directly to
   *Unassigned* or *Assigned*. All such overrides MUST produce audit log entries.
@@ -7768,4 +7797,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 11.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-17
+**Version**: 12.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-18
