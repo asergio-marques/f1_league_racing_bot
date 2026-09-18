@@ -147,6 +147,21 @@
 - After the attendance total is posted, it shall be verified whether any driver has crossed the autoreserve limits; if they are deemed to have done so, they will be moved to the reserve team of the same division, as the command moving a driver moves them.
 - After the attendance total is posted, it shall be verified whether any driver has crossed the autosack limits; if they are deemed to have done so, they will be sacked: removed from all their driving roles in all divisions, full-time or otherwise, losing their driver role (the one automatically given out when a signup is approved). The sheet of every division they held a seat in shall then be posted again.
 
+### Sanctions that do not apply
+- Every driver over a threshold shall be attempted, whatever befell the driver before them. A sanction that fails shall never stop the others, and a sanction already applied shall never be undone.
+- A division with no reserve team shall be a failure of the autoreserve of each driver owed one, not a sanction silently passed over.
+- Where any sanction did not apply, or applied but could not be announced, the log channel shall be told in one entry naming each driver, the sanction and the reason, ending with the "attendance sync" command that finishes the job. The league manager whose action set the sanctions off — the approval of a penalty review, or of an amendment — shall be told the same in the reply to that action, which shall no longer report a plain success.
+- A run of the sanctions that cannot begin at all, the league's server being unreachable or the run failing outright, shall be reported the same way.
+
+### Resynchronising attendance
+- <NEW COMMAND> An "attendance sync" command shall be made available to league managers, which shall have as input a division name and a round number.
+    - It shall be available only while the season is in one of the three ongoing stages, and only for a round whose penalties have been approved. It shall be refused otherwise, with nothing changed.
+    - It shall be refused, with nothing changed, where any channel the recalculation posts to cannot be reached, as the approval of an amendment is.
+    - It shall recalculate the attendance of every round of the division from the one given onwards whose penalties have been approved, from their results, as one change that lands whole or not at all. Rounds before the one given shall be left alone.
+    - It shall then post the sheet of the latest of those rounds, and enforce the sanctions against that round.
+    - It shall be safe to run again: a driver already sacked or already in the reserve team shall not be sanctioned a second time, so a second run applies only what the first did not.
+    - The reply shall list the sanctions applied and any still not applied, and the run shall be written to the log channel.
+
 ## Test mode
 - A "test-mode rsvp set-status" command shall be available to league managers, which will take as its parameter the name of a division (mandatory). This will serve to set the RSVP status of fake drivers in test mode.
     - The command shall require the division to belong to a season in one of the three ongoing states and to have a check-in call currently posted; it shall be refused otherwise.

@@ -214,6 +214,7 @@
     - Where any of it cannot be done, the approval shall be refused and shall change nothing at all: not the season's points, not the modification store, not the amending mode.
     - "results amend review" shall name the division and the channel at fault alongside the staged changes, so the fault is visible while the decision is being taken, and shall say which command repairs it.
     - The attendance recalculation an approval performs shall be applied entire or not at all, the running totals of every later round included.
+    - The attendance sanctions the recalculation sets off are the one exception: a sanction that does not apply shall not undo the approval. The reply to the approval shall list each such sanction and the "attendance sync" command that finishes it, as the attendance module specification describes.
 - An approval shall not be recorded as a success before the reposting it claims has been done.
 - If rejected, nothing happens. The modification store will remain as it is, and the amending mode will remain active.
 
