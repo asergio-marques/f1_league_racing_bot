@@ -10,6 +10,7 @@ migrates to the head, which is the one version these tests cannot use.
 """
 from __future__ import annotations
 
+import itertools
 import os
 import sqlite3
 
@@ -24,19 +25,69 @@ def _files() -> list[str]:
     )
 
 
-def migrate_before(db_path: str, version: str) -> None:
-    """Apply every migration whose file name sorts before *version*, e.g. ``"061"``."""
+#: Schemas built before a migration, by `(version, the files before it)`. See `migrate_before`.
+_BEFORE: dict[tuple[str, tuple[str, ...]], str] = {}
+_SCRATCH: str | None = None
+_BUILT = itertools.count()
+
+
+def _build_before(db_path: str, version: str, files: list[str]) -> None:
+    """Apply *files* to a new database at *db_path*, recording each as `run_migrations` does."""
     db = sqlite3.connect(db_path)
     try:
         db.execute("PRAGMA foreign_keys = ON")
-        for name in _files():
-            if name >= version:
-                break
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations "
+            "(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+        for name in files:
             with open(os.path.join(MIGRATIONS_DIR, name), encoding="utf-8") as fh:
                 db.executescript(fh.read())
+            db.execute(
+                "INSERT OR IGNORE INTO schema_migrations VALUES (?, '2026-01-01')", (name,)
+            )
         db.commit()
     finally:
         db.close()
+
+
+def migrate_before(db_path: str, version: str) -> None:
+    """Stand the schema as it was before the migration starting *version*, e.g. ``"061"``.
+
+    **Built once per session and copied thereafter** (issue #252). Raising the chain costs a
+    commit per statement — `executescript` commits before it runs and each statement is its
+    own transaction — which Linux absorbs and a Windows runner does not: 35 tests building it
+    afresh took the Windows job past its timeout. So the first call for a version builds it
+    into scratch, and every later one copies the file, as `tests/conftest.py`'s template does
+    for the full schema. The key carries the set of files before *version*, so a test that
+    hides migrations from the directory still gets the schema those files make.
+
+    ``schema_migrations`` records every file applied, as `run_migrations` would, so
+    `run_migrations_through` carries on from a copy. The scratch directory carries the prefix
+    `tests/conftest.py` sweeps at session start, so a killed run leaves nothing behind.
+
+    *db_path* must not already hold data: a copy would destroy it.
+    """
+    import atexit
+    import shutil
+    import tempfile
+
+    global _SCRATCH
+
+    if os.path.exists(db_path) and os.path.getsize(db_path):
+        raise ValueError(f"migrate_before would overwrite a database holding data: {db_path}")
+
+    files = [name for name in _files() if name < version]
+    key = (version, tuple(files))
+    template = _BEFORE.get(key)
+    if template is None:
+        if _SCRATCH is None:
+            _SCRATCH = tempfile.mkdtemp(prefix="f1-schema-before-")
+            atexit.register(shutil.rmtree, _SCRATCH, ignore_errors=True)
+        template = os.path.join(_SCRATCH, f"{next(_BUILT)}-before-{version}.db")
+        _build_before(template, version, files)
+        _BEFORE[key] = template
+    shutil.copyfile(template, db_path)
 
 
 def apply(db_path: str, version: str) -> None:
