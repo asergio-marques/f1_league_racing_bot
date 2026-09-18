@@ -101,10 +101,10 @@ async def _make_db(
                 teams[team] = cursor.lastrowid
             profile_id += 1
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, "
+                "INSERT INTO driver_profiles (id, discord_user_id, "
                 "current_state, is_test_driver, test_display_name) "
-                "VALUES (?, ?, ?, 'ASSIGNED', ?, ?)",
-                (profile_id, SERVER_ID, str(user_id), int(is_test), display),
+                "VALUES (?, ?, 'ASSIGNED', ?, ?)",
+                (profile_id, str(user_id), int(is_test), display),
             )
             cursor = await db.execute(
                 "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "

@@ -136,9 +136,9 @@ async def _make_db(
         ):
             await db.execute(
                 "INSERT INTO driver_profiles "
-                "(id, server_id, discord_user_id, current_state, is_test_driver, "
-                "test_display_name) VALUES (?, ?, ?, 'ACTIVE', 1, ?)",
-                (profile_id, SERVER_ID, str(profile_id), name),
+                "(id, discord_user_id, current_state, is_test_driver, "
+                "test_display_name) VALUES (?, ?, 'ACTIVE', 1, ?)",
+                (profile_id, str(profile_id), name),
             )
 
         await db.execute(
@@ -373,9 +373,9 @@ async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(id, server_id, discord_user_id, current_state, is_test_driver, "
-            "test_display_name) VALUES (?, ?, ?, 'ASSIGNED', 1, 'No Show')",
-            (second_profile, SERVER_ID, str(second_profile)),
+            "(id, discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES (?, ?, 'ASSIGNED', 1, 'No Show')",
+            (second_profile, str(second_profile)),
         )
         await db.execute(
             "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "

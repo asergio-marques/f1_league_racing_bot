@@ -561,8 +561,8 @@ async def _seed_league(tmp_path):
             instance_id = cursor.lastrowid
             for user_id, seat_number in drivers:
                 cursor = await db.execute(
-                    "INSERT INTO driver_profiles (server_id, discord_user_id, "
-                    "current_state) VALUES (1, ?, 'ACTIVE')",
+                    "INSERT INTO driver_profiles (discord_user_id, "
+                    "current_state) VALUES (?, 'ACTIVE')",
                     (user_id,),
                 )
                 profile_id = cursor.lastrowid

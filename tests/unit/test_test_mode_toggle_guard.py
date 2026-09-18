@@ -122,10 +122,9 @@ async def _seat_a_test_driver(db_path: str, team_id: int) -> None:
     """A fake driver in the first free seat of *team_id*, as `/test-mode roster add` leaves one."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
             "is_test_driver, test_display_name) "
-            "VALUES (?, '9000000000000000001', 'ASSIGNED', 1, 'Mock Alpha')",
-            (SERVER_ID,),
+            "VALUES ('9000000000000000001', 'ASSIGNED', 1, 'Mock Alpha')"
         )
         profile_id = cursor.lastrowid
         cursor = await db.execute(
@@ -164,8 +163,7 @@ async def _fake_drivers(db_path: str) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT COUNT(*) AS n FROM driver_profiles "
-            "WHERE server_id = ? AND is_test_driver = 1",
-            (SERVER_ID,),
+            "WHERE is_test_driver = 1",
         )
         return (await cursor.fetchone())["n"]
 
@@ -182,8 +180,8 @@ async def _add_driver(db_path: str, user_id: str, state: str, *, test: bool = Fa
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(server_id, discord_user_id, current_state, is_test_driver) VALUES (?, ?, ?, ?)",
-            (SERVER_ID, user_id, state, 1 if test else 0),
+            "(discord_user_id, current_state, is_test_driver) VALUES (?, ?, ?)",
+            (user_id, state, 1 if test else 0),
         )
         await db.commit()
 

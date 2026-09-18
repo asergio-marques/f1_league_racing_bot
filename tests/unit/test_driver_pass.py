@@ -59,9 +59,9 @@ async def db_path(tmp_path):
         ]
         for pid, uid, state, former, test in drivers:
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state, "
-                "former_driver, is_test_driver) VALUES (?, ?, ?, ?, ?, ?)",
-                (pid, SERVER_ID, uid, state, former, test),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+                "former_driver, is_test_driver) VALUES (?, ?, ?, ?, ?)",
+                (pid, uid, state, former, test),
             )
         for pid in (1, 2, 7):
             cursor = await db.execute(
@@ -76,9 +76,9 @@ async def db_path(tmp_path):
                 (pid, cursor.lastrowid),
             )
             await db.execute(
-                "INSERT INTO driver_history_entries (server_id, discord_user_id, "
-                "driver_profile_id, season_number, division_name) VALUES (?, ?, ?, 1, 'Pro')",
-                (SERVER_ID, str(1000 + pid), pid),
+                "INSERT INTO driver_history_entries (discord_user_id, "
+                "driver_profile_id, season_number, division_name) VALUES (?, ?, 1, 'Pro')",
+                (str(1000 + pid), pid),
             )
             await db.execute(
                 "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id) "

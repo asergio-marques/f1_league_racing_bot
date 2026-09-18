@@ -48,9 +48,9 @@ async def _season(db_path, stage: SeasonStage) -> int:
 async def _driver(db_path, uid: str, state: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, ?)",
-            (SERVER_ID, uid, state),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, ?)",
+            (uid, state),
         )
         await db.commit()
 

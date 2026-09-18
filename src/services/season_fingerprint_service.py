@@ -205,9 +205,8 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                 await _rows(
                     db,
                     "SELECT id, discord_user_id, current_state FROM driver_profiles "
-                    f"WHERE server_id = ? AND current_state IN ({','.join('?' for _ in UNSETTLED_STATES)}) "
+                    f"WHERE current_state IN ({','.join('?' for _ in UNSETTLED_STATES)}) "
                     "ORDER BY id",
-                    server_id,
                     *UNSETTLED_STATES,
                 )
             )

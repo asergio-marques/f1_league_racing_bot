@@ -27,7 +27,7 @@ def _cog(stage: SeasonStage, state: DriverState = DriverState.UNASSIGNED) -> Dri
     cog = DriverCog.__new__(DriverCog)
     cog.bot = MagicMock()
     # Any account names the driver (issue #243); these tests name the current one.
-    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
+    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
     cog.bot.season_service.get_setup_or_active_season = AsyncMock(
         return_value=SimpleNamespace(id=1, stage=stage)
     )
@@ -68,7 +68,7 @@ async def test_an_unassigned_driver_is_turned_down_and_loses_the_signed_up_role(
     await undecorate(DriverCog.reject)(cog, _interaction(), member)
 
     cog.bot.driver_service.transition.assert_awaited_once_with(
-        SERVER_ID, "4242", DriverState.NOT_SIGNED_UP
+        "4242", DriverState.NOT_SIGNED_UP
     )
     member.remove_roles.assert_awaited_once()
 

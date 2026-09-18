@@ -103,7 +103,7 @@ async def _round_context(db_path: str, round_id: int) -> dict:
 
 
 async def _driver_nationality(
-    db_path: str, server_id: int, discord_user_id: int, round_id: int | None = None
+    db_path: str, discord_user_id: int, round_id: int | None = None
 ) -> str | None:
     """The nationality recorded for the driver — the datum a flag is resolved from.
 
@@ -140,11 +140,10 @@ async def _driver_nationality(
                 FROM driver_profiles dp
                 LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL}
                 WHERE dp.id = (
-                    SELECT driver_profile_id FROM driver_accounts
-                    WHERE server_id = ? AND discord_user_id = ?
+                    SELECT driver_profile_id FROM driver_accounts WHERE discord_user_id = ?
                 )
                 """.format(SIGNUP_FOR_SEASON_SQL=SIGNUP_FOR_SEASON_SQL),
-                (season_id, server_id, str(discord_user_id)),
+                (season_id, str(discord_user_id)),
             )
             row = await cursor.fetchone()
     except Exception:  # noqa: BLE001
@@ -259,7 +258,7 @@ async def build_drawing(
     from services.image_verdict_service import resolve_mentions
 
     context = await _round_context(db_path, round_id)
-    nationality = await _driver_nationality(db_path, server_id, driver_discord_id, round_id)
+    nationality = await _driver_nationality(db_path, driver_discord_id, round_id)
 
     # Whether the league collects nationality at all. A league that switched it off draws no
     # flag and is told nothing (XIV.4's configured absence); one that collects it and holds

@@ -96,7 +96,6 @@ class TestModeCog(commands.Cog):
         )
         if config is not None and not config.test_mode_active:
             real_drivers = await count_live_real_drivers(
-                interaction.guild_id,
                 self.bot.db_path,  # type: ignore[attr-defined]
             )
             if real_drivers:
@@ -156,7 +155,7 @@ class TestModeCog(commands.Cog):
             from services.forecast_cleanup_service import flush_pending_deletions
             await flush_pending_deletions(interaction.guild_id, self.bot)  # type: ignore[attr-defined]
             from services.test_roster_service import clear_all_test_drivers
-            removed = await clear_all_test_drivers(interaction.guild_id, self.bot.db_path)  # type: ignore[attr-defined]
+            removed = await clear_all_test_drivers(self.bot.db_path)  # type: ignore[attr-defined]
             if removed:
                 log.info(
                     "Test mode disabled: cleared %d fake driver(s) for server %s",
@@ -978,7 +977,6 @@ class TestModeCog(commands.Cog):
         from services.test_roster_service import remove_test_driver
 
         result = await remove_test_driver(
-            server_id=interaction.guild_id,
             discord_user_id=discord_uid,
             db_path=self.bot.db_path,  # type: ignore[attr-defined]
         )
@@ -1292,8 +1290,8 @@ class _RsvpBulkSetModal(discord.ui.Modal, title="Bulk Set RSVP Statuses"):
             async with _gc(self._bot.db_path) as db:  # type: ignore[attr-defined]
                 cur = await db.execute(
                     "SELECT id FROM driver_profiles "
-                    "WHERE server_id = ? AND CAST(discord_user_id AS INTEGER) = ?",
-                    (guild_id, discord_uid),
+                    "WHERE CAST(discord_user_id AS INTEGER) = ?",
+                    (discord_uid,),
                 )
                 profile_row = await cur.fetchone()
 

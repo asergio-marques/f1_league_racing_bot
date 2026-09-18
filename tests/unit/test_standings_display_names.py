@@ -90,9 +90,9 @@ async def _add_test_driver(db_path: str, user_id: int, name: str | None) -> None
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(server_id, discord_user_id, current_state, is_test_driver, test_display_name) "
-            "VALUES (?, ?, 'ACTIVE', 1, ?)",
-            (SERVER_ID, str(user_id), name),
+            "(discord_user_id, current_state, is_test_driver, test_display_name) "
+            "VALUES (?, 'ACTIVE', 1, ?)",
+            (str(user_id), name),
         )
         await db.commit()
 
@@ -101,9 +101,9 @@ async def _add_real_driver(db_path: str, user_id: int) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(server_id, discord_user_id, current_state, is_test_driver) "
-            "VALUES (?, ?, 'ACTIVE', 0)",
-            (SERVER_ID, str(user_id)),
+            "(discord_user_id, current_state, is_test_driver) "
+            "VALUES (?, 'ACTIVE', 0)",
+            (str(user_id),),
         )
         await db.commit()
 

@@ -690,7 +690,7 @@ async def persist_snapshots(
             snap_profile_id: int | None = None
             if server_id is not None:
                 snap_profile_id = await resolve_driver_profile_id(
-                    server_id, snap.driver_user_id, db
+                    snap.driver_user_id, db
                 )
             await db.execute(
                 """

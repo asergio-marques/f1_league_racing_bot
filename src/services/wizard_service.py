@@ -476,7 +476,7 @@ class WizardService:
 
         # Transition driver to PENDING_SIGNUP_COMPLETION
         await self._driver_service.transition(
-            server_id, discord_user_id, DriverState.PENDING_SIGNUP_COMPLETION
+            discord_user_id, DriverState.PENDING_SIGNUP_COMPLETION
         )
 
         # Arm inactivity job (+24 h)
@@ -532,7 +532,7 @@ class WizardService:
         if wizard is None:
             return
 
-        prior_profile = await self._driver_service.get_profile(server_id, discord_user_id)
+        prior_profile = await self._driver_service.get_profile(discord_user_id)
         is_correction = (
             prior_profile is not None
             and prior_profile.current_state == DriverState.PENDING_DRIVER_CORRECTION
@@ -564,7 +564,7 @@ class WizardService:
 
         # Transition driver
         await self._driver_service.transition(
-            server_id, discord_user_id, DriverState.PENDING_ADMIN_APPROVAL
+            discord_user_id, DriverState.PENDING_ADMIN_APPROVAL
         )
 
         # Set wizard state to UNENGAGED
@@ -629,7 +629,7 @@ class WizardService:
         # Transition driver to NOT_SIGNED_UP
         try:
             await self._driver_service.transition(
-                server_id, discord_user_id, DriverState.NOT_SIGNED_UP
+                discord_user_id, DriverState.NOT_SIGNED_UP
             )
         except Exception:
             log.warning("withdraw: driver transition failed for %s/%s", server_id, discord_user_id)
@@ -677,7 +677,7 @@ class WizardService:
 
         # Transition driver to UNASSIGNED
         await self._driver_service.transition(
-            server_id, discord_user_id, DriverState.UNASSIGNED
+            discord_user_id, DriverState.UNASSIGNED
         )
         await self._signup_svc.mark_approved(discord_user_id)
 
@@ -720,7 +720,7 @@ class WizardService:
 
         try:
             await self._driver_service.transition(
-                server_id, discord_user_id, DriverState.NOT_SIGNED_UP
+                discord_user_id, DriverState.NOT_SIGNED_UP
             )
         except Exception:
             log.warning("reject_signup: driver transition failed for %s/%s", server_id, discord_user_id)
@@ -758,7 +758,7 @@ class WizardService:
             return
 
         await self._driver_service.transition(
-            server_id, discord_user_id, DriverState.AWAITING_CORRECTION_PARAMETER
+            discord_user_id, DriverState.AWAITING_CORRECTION_PARAMETER
         )
 
         # Post CorrectionParameterView in the wizard channel
@@ -842,7 +842,7 @@ class WizardService:
 
         # Transition driver to PENDING_DRIVER_CORRECTION
         await self._driver_service.transition(
-            server_id, discord_user_id, DriverState.PENDING_DRIVER_CORRECTION
+            discord_user_id, DriverState.PENDING_DRIVER_CORRECTION
         )
 
         # Configure wizard for single-field re-collection
@@ -941,7 +941,7 @@ class WizardService:
 
         try:
             await self._driver_service.transition(
-                server_id, discord_user_id, DriverState.NOT_SIGNED_UP
+                discord_user_id, DriverState.NOT_SIGNED_UP
             )
         except Exception:
             log.warning(
@@ -980,7 +980,7 @@ class WizardService:
 
         driver = None
         if not wizard_is_active:
-            driver = await self._driver_service.get_profile(server_id, discord_user_id)
+            driver = await self._driver_service.get_profile(discord_user_id)
             if driver is None or driver.current_state not in _ACTIVE_STATES_UNENGAGED_WIZARD:
                 return
 
@@ -1000,7 +1000,7 @@ class WizardService:
         # Transition driver to NOT_SIGNED_UP
         try:
             await self._driver_service.transition(
-                server_id, discord_user_id, DriverState.NOT_SIGNED_UP
+                discord_user_id, DriverState.NOT_SIGNED_UP
             )
         except Exception:
             log.warning(
@@ -1094,22 +1094,22 @@ class WizardService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT server_id, discord_user_id FROM driver_profiles "
-                "WHERE current_state = ?",
+                "SELECT discord_user_id FROM driver_profiles WHERE current_state = ?",
                 (DriverState.AWAITING_CORRECTION_PARAMETER.value,),
             )
             rows = await cursor.fetchall()
+        server_id = await self._league_server_id()
 
         for row in rows:
             try:
                 await self._correction_timeout_callback(
-                    row["server_id"], row["discord_user_id"], after_restart=True
+                    server_id, row["discord_user_id"], after_restart=True
                 )
             except Exception:
                 # One league's missing guild or deleted channel must not strand the rest.
                 log.exception(
                     "recover_correction_timeouts: could not release %s/%s",
-                    row["server_id"], row["discord_user_id"],
+                    server_id, row["discord_user_id"],
                 )
 
     async def get_wizard_by_channel(
@@ -1783,7 +1783,7 @@ class WizardService:
         # Transition driver back to PENDING_ADMIN_APPROVAL
         try:
             await self._driver_service.transition(
-                server_id, discord_user_id, DriverState.PENDING_ADMIN_APPROVAL
+                discord_user_id, DriverState.PENDING_ADMIN_APPROVAL
             )
         except Exception:
             log.warning(
@@ -1880,7 +1880,7 @@ class WizardService:
 
         # Transition driver back to PENDING_ADMIN_APPROVAL
         await self._driver_service.transition(
-            server_id, discord_user_id, DriverState.PENDING_ADMIN_APPROVAL
+            discord_user_id, DriverState.PENDING_ADMIN_APPROVAL
         )
 
         # Clear correction state from wizard record

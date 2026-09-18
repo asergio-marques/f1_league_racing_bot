@@ -49,9 +49,9 @@ async def db_path(tmp_path):
         )
         for profile_id, uid, committed in ((1, "1001", 1), (2, "1002", 0), (3, "1003", None)):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?, 'ASSIGNED')",
-                (profile_id, SERVER_ID, uid),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+                "VALUES (?, ?, 'ASSIGNED')",
+                (profile_id, uid),
             )
             cursor = await db.execute(
                 "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "

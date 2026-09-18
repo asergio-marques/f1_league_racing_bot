@@ -63,9 +63,9 @@ def _cog(db_path) -> SeasonCog:
 async def _driver(db_path, uid: str, state: str, name: str | None = None):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, ?)",
-            (SERVER_ID, uid, state),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, ?)",
+            (uid, state),
         )
         if name:
             await db.execute(
@@ -200,9 +200,9 @@ async def test_confirming_commits_every_placement_of_the_season(db_path):
     async with get_connection(db_path) as db:
         for profile_id in (1, 2):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?, 'ASSIGNED')",
-                (profile_id, SERVER_ID, str(profile_id)),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+                "VALUES (?, ?, 'ASSIGNED')",
+                (profile_id, str(profile_id)),
             )
             await db.execute(
                 "INSERT INTO driver_season_assignments "

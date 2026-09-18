@@ -369,10 +369,9 @@ async def _seed_driver(
 
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "is_test_driver, test_display_name) VALUES (?, ?, 'FULL_TIME', ?, ?)",
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "is_test_driver, test_display_name) VALUES (?, 'FULL_TIME', ?, ?)",
             (
-                SERVER_ID,
                 str(DRIVER_ID),
                 1 if test_display_name else 0,
                 test_display_name,
@@ -606,8 +605,7 @@ async def test_a_verdict_on_a_result_under_a_past_account_names_the_current_one(
     await _seed_driver(db_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE driver_profiles SET discord_user_id = '31337' WHERE server_id = ?",
-            (SERVER_ID,),
+            "UPDATE driver_profiles SET discord_user_id = '31337'",
         )
         await db.commit()
 

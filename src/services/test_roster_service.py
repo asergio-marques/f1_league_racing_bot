@@ -81,7 +81,7 @@ async def _next_synthetic_id(db_path: str) -> int:
     return _SYNTHETIC_ID_BASE + 1 if current_max is None else current_max + 1
 
 
-async def _reattach_history(db, server_id: int, discord_user_id: str, profile_id: int) -> None:
+async def _reattach_history(db, discord_user_id: str, profile_id: int) -> None:
     """Give a driver created by test mode the history an earlier one of the same identifier left.
 
     Test mode deletes its drivers when it is switched off, and keeps their history entries
@@ -90,8 +90,8 @@ async def _reattach_history(db, server_id: int, discord_user_id: str, profile_id
     """
     await db.execute(
         "UPDATE driver_history_entries SET driver_profile_id = ? "
-        "WHERE server_id = ? AND discord_user_id = ? AND driver_profile_id IS NULL",
-        (profile_id, server_id, discord_user_id),
+        "WHERE discord_user_id = ? AND driver_profile_id IS NULL",
+        (profile_id, discord_user_id),
     )
 
 
@@ -224,15 +224,15 @@ async def add_test_driver(
         try:
             profile_cursor = await db.execute(
                 "INSERT INTO driver_profiles "
-                "(server_id, discord_user_id, current_state, former_driver, is_test_driver, "
+                "(discord_user_id, current_state, former_driver, is_test_driver, "
                 " test_display_name, test_nationality) "
-                "VALUES (?, ?, 'ASSIGNED', 0, 1, ?, ?)",
-                (server_id, uid_str, driver_name, canonical_nationality),
+                "VALUES (?, 'ASSIGNED', 0, 1, ?, ?)",
+                (uid_str, driver_name, canonical_nationality),
             )
             profile_id: int = profile_cursor.lastrowid  # type: ignore[assignment]
         except Exception as exc:
             return f"Failed to create driver profile: {exc}"
-        await _reattach_history(db, server_id, uid_str, profile_id)
+        await _reattach_history(db, uid_str, profile_id)
 
         # Occupy the seat
         await db.execute(
@@ -341,8 +341,8 @@ async def add_test_drivers_in_bulk(
         # one thing worth naming precisely: it means the file has already been imported.
         for driver in drivers:
             cursor = await db.execute(
-                "SELECT 1 FROM driver_profiles WHERE server_id = ? AND discord_user_id = ?",
-                (server_id, str(driver.discord_user_id)),
+                "SELECT 1 FROM driver_profiles WHERE discord_user_id = ?",
+                (str(driver.discord_user_id),),
             )
             if await cursor.fetchone():
                 errors.append(
@@ -420,18 +420,17 @@ async def add_test_drivers_in_bulk(
 
             profile_cursor = await db.execute(
                 "INSERT INTO driver_profiles "
-                "(server_id, discord_user_id, current_state, former_driver, is_test_driver, "
+                "(discord_user_id, current_state, former_driver, is_test_driver, "
                 " test_display_name, test_nationality) "
-                "VALUES (?, ?, 'ASSIGNED', 0, 1, ?, ?)",
+                "VALUES (?, 'ASSIGNED', 0, 1, ?, ?)",
                 (
-                    server_id,
                     str(driver.discord_user_id),
                     driver.driver_name,
                     canonical[driver.line],
                 ),
             )
             profile_id = profile_cursor.lastrowid
-            await _reattach_history(db, server_id, str(driver.discord_user_id), profile_id)
+            await _reattach_history(db, str(driver.discord_user_id), profile_id)
 
             await db.execute(
                 "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
@@ -523,7 +522,6 @@ async def clear_test_drivers(
 
 
 async def remove_test_driver(
-    server_id: int,
     discord_user_id: int,
     db_path: str,
 ) -> str | dict:
@@ -541,11 +539,10 @@ async def remove_test_driver(
             FROM driver_profiles dp
             LEFT JOIN team_seats ts ON ts.driver_profile_id = dp.id
             LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
-            WHERE dp.server_id = ?
-              AND CAST(dp.discord_user_id AS INTEGER) = ?
+            WHERE CAST(dp.discord_user_id AS INTEGER) = ?
               AND dp.is_test_driver = 1
             """,
-            (server_id, discord_user_id),
+            (discord_user_id,),
         )
         row = await cursor.fetchone()
 
@@ -576,7 +573,7 @@ async def remove_test_driver(
     return {"display_name": display_name, "team_name": team_name}
 
 
-async def clear_all_test_drivers(server_id: int, db_path: str) -> int:
+async def clear_all_test_drivers(db_path: str) -> int:
     """Remove every driver created by test mode on the server, keeping their history.
 
     Every one of them, seated or not and in whatever season — switching test mode off deletes
@@ -589,8 +586,7 @@ async def clear_all_test_drivers(server_id: int, db_path: str) -> int:
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM driver_profiles WHERE server_id = ? AND is_test_driver = 1",
-            (server_id,),
+            "SELECT id FROM driver_profiles WHERE is_test_driver = 1",
         )
         profile_ids = [r["id"] for r in await cursor.fetchall()]
         await delete_driver_profiles(db, profile_ids, keep_history=True)

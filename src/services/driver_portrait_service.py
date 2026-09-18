@@ -272,10 +272,9 @@ async def assigned_driver_ids(db_path: str, server_id: int) -> list[str]:
             FROM driver_season_assignments dsa
             JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
             JOIN seasons s ON s.id = dsa.season_id
-            WHERE s.server_id = ? AND s.status = 'ACTIVE'
+            WHERE s.status = 'ACTIVE'
               AND dp.is_test_driver = 0
             """,
-            (server_id,),
         )
         rows = await cursor.fetchall()
     return sorted(str(row["uid"]) for row in rows)

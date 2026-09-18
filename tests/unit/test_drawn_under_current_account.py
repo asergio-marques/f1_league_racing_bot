@@ -63,9 +63,9 @@ async def _completed_season(tmp_path) -> str:
                 (uid, pos),
             )
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "former_driver) VALUES (?, ?, 'NOT_SIGNED_UP', 1)",
-            (SERVER_ID, str(PAST)),
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "former_driver) VALUES (?, 'NOT_SIGNED_UP', 1)",
+            (str(PAST),),
         )
         await db.execute(
             "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",

@@ -117,9 +117,9 @@ async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
         async def occupy(seat_id: int) -> None:
             nonlocal next_user_id
             cursor = await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, 'ASSIGNED')",
-                (SERVER_ID, str(next_user_id)),
+                "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                "VALUES (?, 'ASSIGNED')",
+                (str(next_user_id),),
             )
             next_user_id += 1
             profile_id = cursor.lastrowid
@@ -145,9 +145,8 @@ async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
 
         # The driver every test then tries to place.
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-            "VALUES (9999, ?, '8888', 'UNASSIGNED')",
-            (SERVER_ID,),
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (9999, '8888', 'UNASSIGNED')"
         )
         await db.commit()
 

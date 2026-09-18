@@ -454,7 +454,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     from services.driver_service import resolve_driver_profile_id
 
     async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
-        resolved_profile_id = await resolve_driver_profile_id(guild_id, discord_user_id, db)
+        resolved_profile_id = await resolve_driver_profile_id(discord_user_id, db)
 
         if resolved_profile_id is None:
             await interaction.response.send_message(

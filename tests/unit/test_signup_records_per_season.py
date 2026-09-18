@@ -138,9 +138,9 @@ async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
     await _season(db_path, 1)
     await svc.save_record(_record())
     drivers = DriverService(db_path)
-    await drivers.transition(SERVER_ID, USER, DriverState.PENDING_SIGNUP_COMPLETION)
+    await drivers.transition(USER, DriverState.PENDING_SIGNUP_COMPLETION)
 
-    await drivers.transition(SERVER_ID, USER, DriverState.NOT_SIGNED_UP)
+    await drivers.transition(USER, DriverState.NOT_SIGNED_UP)
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM driver_profiles")
         await db.commit()

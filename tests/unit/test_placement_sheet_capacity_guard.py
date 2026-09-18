@@ -96,9 +96,9 @@ async def _seed(tmp_path, *, drivers: int, reserves: int = 0):
         async def seat(instance_id: int, seat_number: int) -> None:
             nonlocal user_id
             cursor = await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, 'ASSIGNED')",
-                (SERVER_ID, str(user_id)),
+                "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                "VALUES (?, 'ASSIGNED')",
+                (str(user_id),),
             )
             user_id += 1
             profile_id = cursor.lastrowid

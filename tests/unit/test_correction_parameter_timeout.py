@@ -71,9 +71,9 @@ async def _seed(tmp_path, *, state: str = "AWAITING_CORRECTION_PARAMETER") -> st
             (SERVER_ID, 111, 222, 333),
         )
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, ?)",
-            (SERVER_ID, DRIVER_ID, state),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, ?)",
+            (DRIVER_ID, state),
         )
         await db.commit()
     return db_path
@@ -148,8 +148,8 @@ def _build_service(db_path: str, channel, *, signup_enabled: bool = True):
 async def _state(db_path: str) -> str:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT current_state FROM driver_profiles WHERE server_id = ? AND discord_user_id = ?",
-            (SERVER_ID, DRIVER_ID),
+            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?",
+            (DRIVER_ID,),
         )
         row = await cursor.fetchone()
     return row["current_state"]

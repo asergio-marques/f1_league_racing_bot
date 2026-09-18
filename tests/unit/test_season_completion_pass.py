@@ -75,9 +75,9 @@ async def db_path(tmp_path):
         for pid, uid, former, test in ((1, "1001", 1, 0), (2, "1002", 0, 0),
                                         (3, "9000000000000000003", 0, 1)):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state, "
-                "former_driver, is_test_driver) VALUES (?, ?, ?, 'ASSIGNED', ?, ?)",
-                (pid, SERVER_ID, uid, former, test),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+                "former_driver, is_test_driver) VALUES (?, ?, 'ASSIGNED', ?, ?)",
+                (pid, uid, former, test),
             )
             cursor = await db.execute(
                 "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
@@ -116,7 +116,7 @@ async def test_completion_leaves_no_live_driver_to_hold_test_mode_shut(db_path):
     """The defect behind `/test-mode toggle` refusing between seasons."""
     await _complete(db_path)
 
-    assert await count_live_real_drivers(SERVER_ID, db_path) == 0
+    assert await count_live_real_drivers(db_path) == 0
 
 
 async def test_completion_switches_test_mode_off(db_path):

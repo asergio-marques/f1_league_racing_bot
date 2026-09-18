@@ -45,7 +45,7 @@ def _cog(
     cog = DriverCog.__new__(DriverCog)
     cog.bot = MagicMock()
     # Any account names the driver (issue #243); these tests name the current one.
-    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
+    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
     cog.bot.season_service.get_confirmed_season = AsyncMock(
         return_value=SimpleNamespace(id=SEASON_ID, stage=stage)
     )
@@ -261,7 +261,7 @@ async def test_a_rejection_stands_when_the_signed_up_role_cannot_be_removed():
     cog = DriverCog.__new__(DriverCog)
     cog.bot = MagicMock()
     # Any account names the driver (issue #243); these tests name the current one.
-    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
+    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
     cog.bot.season_service.get_setup_or_active_season = AsyncMock(
         return_value=SimpleNamespace(id=SEASON_ID, stage=SeasonStage.PLACEMENTS)
     )
@@ -284,7 +284,7 @@ async def test_a_rejection_stands_when_the_signed_up_role_cannot_be_removed():
     await undecorate(DriverCog.reject)(cog, interaction, member)
 
     cog.bot.driver_service.transition.assert_awaited_once_with(
-        SERVER_ID, str(USER_ID), DriverState.NOT_SIGNED_UP
+        str(USER_ID), DriverState.NOT_SIGNED_UP
     )
     assert _reply(interaction).startswith("✅ Turned down **Racer**")
 

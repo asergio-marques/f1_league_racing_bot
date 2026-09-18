@@ -53,15 +53,15 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
         placeholders = ",".join("?" for _ in in_progress_states)
         cursor = await db.execute(
             f"SELECT discord_user_id FROM driver_profiles "
-            f"WHERE server_id = ? AND current_state IN ({placeholders})",
-            (server_id, *[s.value for s in in_progress_states]),
+            f"WHERE current_state IN ({placeholders})",
+            (*[s.value for s in in_progress_states],),
         )
         rows = await cursor.fetchall()
 
     for row in rows:
         try:
             await bot.driver_service.transition(
-                server_id, row["discord_user_id"], DriverState.NOT_SIGNED_UP
+                row["discord_user_id"], DriverState.NOT_SIGNED_UP
             )
         except Exception:
             log.exception("forced_close: failed to transition driver %s", row["discord_user_id"])

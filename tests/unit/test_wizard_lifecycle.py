@@ -128,7 +128,7 @@ def lifecycle():
 
 def _transitioned_to(ctx) -> list[str]:
     return [
-        call.args[2].value if hasattr(call.args[2], "value") else str(call.args[2])
+        call.args[1].value if hasattr(call.args[1], "value") else str(call.args[1])
         for call in ctx.driver_service.transition.await_args_list
     ]
 

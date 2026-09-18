@@ -94,7 +94,7 @@ async def switch_test_mode_off(server_id: int, bot, *, discard_backup: bool = Fa
         await flush_pending_deletions(server_id, bot)
     except Exception:  # noqa: BLE001 — a stale forecast is not worth staying in test mode
         log.exception("switch_test_mode_off: could not flush pending deletions")
-    removed = await clear_all_test_drivers(server_id, bot.db_path)
+    removed = await clear_all_test_drivers(bot.db_path)
     if discard_backup:
         from services import backup_service
 
@@ -142,7 +142,7 @@ async def toggle_test_mode_nationality(server_id: int, db_path: str) -> bool:
     return bool(row["test_mode_nationality_required"])
 
 
-async def count_live_real_drivers(server_id: int, db_path: str) -> int:
+async def count_live_real_drivers(db_path: str) -> int:
     """Return how many *live* real drivers this server holds.
 
     A live real driver is a driver_profiles row with is_test_driver = 0 whose state is
@@ -158,8 +158,7 @@ async def count_live_real_drivers(server_id: int, db_path: str) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT COUNT(*) AS n FROM driver_profiles "
-            "WHERE server_id = ? AND is_test_driver = 0 AND current_state != 'NOT_SIGNED_UP'",
-            (server_id,),
+            "WHERE is_test_driver = 0 AND current_state != 'NOT_SIGNED_UP'",
         )
         row = await cursor.fetchone()
 

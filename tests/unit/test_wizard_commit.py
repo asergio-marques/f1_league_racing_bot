@@ -179,7 +179,7 @@ async def test_a_committed_signup_awaits_admin_approval(committer):
     await _commit(committer)
 
     committer.driver_service.transition.assert_awaited_once()
-    assert committer.driver_service.transition.await_args.args[2] == (
+    assert committer.driver_service.transition.await_args.args[1] == (
         DriverState.PENDING_ADMIN_APPROVAL
     )
 

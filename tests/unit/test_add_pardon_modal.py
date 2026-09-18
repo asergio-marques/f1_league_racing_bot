@@ -104,9 +104,9 @@ async def _make_db(
             (ROUND_ID, DIVISION_ID, round_status),
         )
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, ?, 'ASSIGNED')",
-            (PROFILE_ID, SERVER_ID, str(DRIVER_USER_ID)),
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (?, ?, 'ASSIGNED')",
+            (PROFILE_ID, str(DRIVER_USER_ID)),
         )
         if attendance_row:
             await db.execute(

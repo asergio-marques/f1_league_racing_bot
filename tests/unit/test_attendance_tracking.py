@@ -224,7 +224,7 @@ async def _setup_division(db, *, division_id=10, full_team_id=1, reserve_team_id
 async def _add_driver(db, *, profile_id, user_id, team_instance_id, division_id=10, season_id=1):
     """Insert a driver profile, seat, and assignment."""
     await db.execute(
-        "INSERT OR IGNORE INTO driver_profiles (id, server_id, discord_user_id) VALUES (?, 100, ?)",
+        "INSERT OR IGNORE INTO driver_profiles (id, discord_user_id) VALUES (?, ?)",
         (profile_id, str(user_id)),
     )
     seat_id = profile_id * 100
@@ -1011,8 +1011,8 @@ async def _make_two_round_db(tmp_path):
         )
         team_instance_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (1, '1001', 'ASSIGNED')"
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES ('1001', 'ASSIGNED')"
         )
         profile_id = cursor.lastrowid
         cursor = await db.execute(

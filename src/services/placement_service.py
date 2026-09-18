@@ -411,7 +411,7 @@ class PlacementService:
     # Seeded unassigned listing (T008)
     # ------------------------------------------------------------------
 
-    async def get_unassigned_drivers_seeded(self, server_id: int) -> list[dict]:
+    async def get_unassigned_drivers_seeded(self) -> list[dict]:
         """Return every unsettled signup: Unassigned drivers in seed order, then the rest.
 
         Unassigned drivers are seeded by total_lap_ms ASC NULLS LAST, then by the moment their
@@ -439,8 +439,7 @@ class PlacementService:
                 -- The driver's signup: records are kept, never overwritten (#220), and an
                 -- approved one outranks a later one that was not (#243).
                 LEFT JOIN signup_records sr ON sr.id = {drivers_signup}
-                WHERE dp.server_id = ?
-                  AND dp.current_state IN ({unsettled})
+                WHERE dp.current_state IN ({unsettled})
                 ORDER BY
                     dp.current_state = 'UNASSIGNED' DESC,
                     sr.total_lap_ms ASC NULLS LAST,
@@ -448,8 +447,7 @@ class PlacementService:
                     -- was made, which a correction never moves.
                     sr.created_at ASC,
                     sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL),
-                (server_id,),
+                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL)
             )
             rows = await cursor.fetchall()
 
@@ -477,7 +475,7 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def get_unassigned_drivers_for_export(
-        self, server_id: int, slots: list[AvailabilitySlot]
+        self, slots: list[AvailabilitySlot]
     ) -> list[dict]:
         """Return every unsettled signup, as the seeded listing orders it, enriched for CSV.
 
@@ -512,8 +510,7 @@ class PlacementService:
                 -- The driver's signup: records are kept, never overwritten (#220), and an
                 -- approved one outranks a later one that was not (#243).
                 LEFT JOIN signup_records sr ON sr.id = {drivers_signup}
-                WHERE dp.server_id = ?
-                  AND dp.current_state IN ({unsettled})
+                WHERE dp.current_state IN ({unsettled})
                 ORDER BY
                     dp.current_state = 'UNASSIGNED' DESC,
                     sr.total_lap_ms ASC NULLS LAST,
@@ -521,8 +518,7 @@ class PlacementService:
                     -- was made, which a correction never moves.
                     sr.created_at ASC,
                     sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL),
-                (server_id,),
+                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL)
             )
             rows = await cursor.fetchall()
 
@@ -772,7 +768,7 @@ class PlacementService:
                 f"the standings would silently drop a driver."
             )
 
-    async def _guard_test_mode(self, server_id: int, driver_profile_id: int) -> None:
+    async def _guard_test_mode(self, driver_profile_id: int) -> None:
         """Refuse to seat a *real* driver while the server is in test mode.
 
         Test mode and a real league may not share a server, so a real driver never enters
@@ -786,11 +782,11 @@ class PlacementService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT (SELECT test_mode_active FROM server_configs WHERE server_id = ?) "
+                "SELECT (SELECT test_mode_active FROM server_configs) "
                 "           AS test_mode_active, "
                 "       dp.is_test_driver "
-                "FROM driver_profiles dp WHERE dp.id = ? AND dp.server_id = ?",
-                (server_id, driver_profile_id, server_id),
+                "FROM driver_profiles dp WHERE dp.id = ?",
+                (driver_profile_id,),
             )
             row = await cursor.fetchone()
 
@@ -963,8 +959,8 @@ class PlacementService:
 
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ? AND server_id = ?",
-                (driver_profile_id, server_id),
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
+                (driver_profile_id,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -1143,13 +1139,13 @@ class PlacementService:
         # A real driver may not be seated while the server is in test mode: the same
         # choke point keeps the manual command, the signup path and attendance's
         # autoreserve alike from mixing a real roster into a test one.
-        await self._guard_test_mode(server_id, driver_profile_id)
+        await self._guard_test_mode(driver_profile_id)
 
         async with get_connection(self._db_path) as db:
             # 1. Fetch profile and validate state
             cursor = await db.execute(
-                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ? AND server_id = ?",
-                (driver_profile_id, server_id),
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
+                (driver_profile_id,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -1364,8 +1360,8 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             # 1. Validate driver state
             cursor = await db.execute(
-                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ? AND server_id = ?",
-                (driver_profile_id, server_id),
+                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
+                (driver_profile_id,),
             )
             row = await cursor.fetchone()
             if row is None:
@@ -1697,8 +1693,8 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT current_state, former_driver, is_test_driver FROM driver_profiles "
-                "WHERE id = ? AND server_id = ?",
-                (driver_profile_id, server_id),
+                "WHERE id = ?",
+                (driver_profile_id,),
             )
             row = await cursor.fetchone()
             if row is None:

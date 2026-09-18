@@ -85,9 +85,9 @@ async def _make_db(tmp_path, *, state: str = "ASSIGNED") -> str:
             )
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(id, server_id, discord_user_id, current_state, is_test_driver) "
-            "VALUES (?, ?, '4242', ?, 0)",
-            (PROFILE_ID, SERVER_ID, state),
+            "(id, discord_user_id, current_state, is_test_driver) "
+            "VALUES (?, '4242', ?, 0)",
+            (PROFILE_ID, state),
         )
         await db.commit()
     return db_path

@@ -49,9 +49,9 @@ async def _make_db(tmp_path, *, name="member_remove", state=None, record=True):
         )
         if state is not None:
             await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?)",
-                (SERVER_ID, str(DRIVER), state),
+                "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                "VALUES (?, ?)",
+                (str(DRIVER), state),
             )
         if record:
             await db.execute(

@@ -203,7 +203,7 @@ class SignupButtonView(discord.ui.View):
         # A past account of a driver signs nobody up (issue #243). The signup would be kept
         # under an account the driver no longer uses, and the account belongs to that driver
         # already, so it may not start a profile of its own either.
-        current = await bot.driver_service.current_account(server_id, discord_user_id)  # type: ignore[attr-defined]
+        current = await bot.driver_service.current_account(discord_user_id)  # type: ignore[attr-defined]
         if current != discord_user_id:
             await interaction.response.send_message(
                 f"⛔ This account is a past account of a driver in this league. Sign up from "
@@ -212,7 +212,7 @@ class SignupButtonView(discord.ui.View):
             )
             return
 
-        profile = await bot.driver_service.get_profile(server_id, discord_user_id)  # type: ignore[attr-defined]
+        profile = await bot.driver_service.get_profile(discord_user_id)  # type: ignore[attr-defined]
         if profile is not None and profile.current_state != DriverState.NOT_SIGNED_UP:
             if profile.current_state in IN_PROGRESS_STATES:
                 await interaction.response.send_message(
@@ -704,8 +704,8 @@ class SignupCog(commands.Cog):
             async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
                 cursor = await db.execute(
                     "SELECT current_state FROM driver_profiles "
-                    "WHERE server_id = ? AND discord_user_id = ?",
-                    (member.guild.id, str(member.id)),
+                    "WHERE discord_user_id = ?",
+                    (str(member.id),),
                 )
                 row = await cursor.fetchone()
             if row is None:
@@ -1799,8 +1799,8 @@ class SignupCog(commands.Cog):
             placeholders = ",".join("?" for _ in in_progress_states)
             cursor = await db.execute(
                 f"SELECT discord_user_id FROM driver_profiles "
-                f"WHERE server_id = ? AND current_state IN ({placeholders})",
-                (server_id, *in_progress_states),
+                f"WHERE current_state IN ({placeholders})",
+                (*in_progress_states,),
             )
             rows = await cursor.fetchall()
 
@@ -1855,7 +1855,7 @@ class SignupCog(commands.Cog):
     async def signup_unassigned_list(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        drivers = await self.bot.placement_service.get_unassigned_drivers_seeded(server_id)  # type: ignore[attr-defined]
+        drivers = await self.bot.placement_service.get_unassigned_drivers_seeded()  # type: ignore[attr-defined]
         if not drivers:
             await interaction.followup.send(
                 "No unsettled signups found.", ephemeral=True
@@ -1910,7 +1910,7 @@ class SignupCog(commands.Cog):
         slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
 
         drivers = await self.bot.placement_service.get_unassigned_drivers_for_export(  # type: ignore[attr-defined]
-            server_id, slots_ordered
+            slots_ordered
         )
         if not drivers:
             await interaction.followup.send("No unsettled signups found.", ephemeral=True)

@@ -294,9 +294,8 @@ async def _seat_real_driver(db_path, season_id, *, team="Redline", seat_number=1
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO driver_profiles "
-            "(server_id, discord_user_id, current_state, former_driver, is_test_driver) "
-            "VALUES (?, '123456789012345678', 'ASSIGNED', 0, 0)",
-            (SERVER_ID,),
+            "(discord_user_id, current_state, former_driver, is_test_driver) "
+            "VALUES ('123456789012345678', 'ASSIGNED', 0, 0)"
         )
         profile_id = cursor.lastrowid
         cursor = await db.execute(

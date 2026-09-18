@@ -116,9 +116,9 @@ async def _seed_full_division(
             (division_id * 10, division_id),
         )
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, ?, 'ACTIVE')",
-            (division_id, SERVER_ID, str(4000 + division_id)),
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (?, ?, 'ACTIVE')",
+            (division_id, str(4000 + division_id)),
         )
         await db.execute(
             "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "

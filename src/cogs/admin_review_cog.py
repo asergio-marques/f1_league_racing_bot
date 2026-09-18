@@ -93,7 +93,7 @@ class AdminReviewView(discord.ui.View):
             return False, None, None, None
         # Race-condition guard: driver must still be in PENDING_ADMIN_APPROVAL
         profile = await _bot.driver_service.get_profile(  # type: ignore[attr-defined]
-            _server_id, _user_id
+            _user_id
         )
         if profile is None or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL:
             await interaction.response.send_message(

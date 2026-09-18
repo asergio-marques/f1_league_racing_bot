@@ -468,7 +468,7 @@ async def test_compute_driver_standings_includes_zero_pt_non_reserve(db_path):
         await _result(db, sr1, 111, pos=1, pts=25)
         # Driver 222 has a seat in a non-reserve team instance but no results
         cur = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) VALUES (10, 222, 'ACTIVE')"
+            "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES (222, 'ACTIVE')"
         )
         dp_id = cur.lastrowid
         cur = await db.execute(
@@ -498,7 +498,7 @@ async def test_compute_driver_standings_excludes_zero_pt_reserve(db_path):
         await _result(db, sr1, 111, pos=1, pts=25)
         # Driver 333 is in a reserve team instance with no results
         cur = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) VALUES (11, 333, 'ACTIVE')"
+            "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES (333, 'ACTIVE')"
         )
         dp_id = cur.lastrowid
         cur = await db.execute(
@@ -629,7 +629,7 @@ async def test_dnf_driver_ranks_above_non_participant(db_path):
 
         # Driver 222 has a non-reserve seat (so they appear even with 0 pts) but no results
         cur = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) VALUES (21, 222, 'ACTIVE')"
+            "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES (222, 'ACTIVE')"
         )
         dp_id = cur.lastrowid
         cur = await db.execute(
@@ -885,15 +885,20 @@ async def _seat(db, div_id: int, server_id: int, team: str, drivers: list[tuple[
             (server_id, team, role_id),
         )
     for seat_number, (user_id, _name) in enumerate(drivers, start=1):
-        cur = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'ACTIVE')",
-            (server_id, user_id),
+        # One driver per account across the league, so a driver seated in a second
+        # division is the same profile, not a second one.
+        await db.execute(
+            "INSERT OR IGNORE INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'ACTIVE')",
+            (user_id,),
         )
+        profile_id = (await (await db.execute(
+            "SELECT id FROM driver_profiles WHERE discord_user_id = ?", (str(user_id),)
+        )).fetchone())[0]
         await db.execute(
             "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
             "VALUES (?, ?, ?)",
-            (ti_id, seat_number, cur.lastrowid),
+            (ti_id, seat_number, profile_id),
         )
     return ti_id
 
@@ -1348,9 +1353,9 @@ PAST, NOW = 5101, 5102
 async def _driver_moved(db, server_id: int = 1) -> None:
     """A driver on PAST who has since made NOW their current account."""
     cursor = await db.execute(
-        "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-        "VALUES (?, ?, 'ASSIGNED')",
-        (server_id, str(PAST)),
+        "INSERT INTO driver_profiles (discord_user_id, current_state) "
+        "VALUES (?, 'ASSIGNED')",
+        (str(PAST),),
     )
     await db.execute(
         "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",

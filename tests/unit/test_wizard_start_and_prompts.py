@@ -234,7 +234,7 @@ async def test_the_driver_becomes_pending_signup_completion(tmp_path):
     await svc.start_wizard(_interaction(_guild()), SERVER_ID)
 
     svc._bot.driver_service.transition.assert_awaited_once_with(
-        SERVER_ID, DRIVER, DriverState.PENDING_SIGNUP_COMPLETION
+        DRIVER, DriverState.PENDING_SIGNUP_COMPLETION
     )
 
 
@@ -482,7 +482,7 @@ async def test_the_driver_goes_back_to_waiting_for_approval(tmp_path):
     )
 
     svc._bot.driver_service.transition.assert_awaited_once_with(
-        SERVER_ID, DRIVER, DriverState.PENDING_ADMIN_APPROVAL
+        DRIVER, DriverState.PENDING_ADMIN_APPROVAL
     )
 
 

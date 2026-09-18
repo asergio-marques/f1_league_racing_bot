@@ -33,9 +33,9 @@ async def _make_db(tmp_path) -> tuple[str, int]:
             (SERVER_ID,),
         )
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'UNASSIGNED')",
-            (SERVER_ID, A),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'UNASSIGNED')",
+            (A,),
         )
         profile_id = cursor.lastrowid
         await db.execute(
@@ -53,7 +53,7 @@ async def _make_db(tmp_path) -> tuple[str, int]:
 async def test_placement_still_finds_a_signup_made_on_a_past_account(tmp_path):
     db_path, _ = await _make_db(tmp_path)
 
-    drivers = await PlacementService(db_path).get_unassigned_drivers_seeded(SERVER_ID)
+    drivers = await PlacementService(db_path).get_unassigned_drivers_seeded()
 
     assert [(d["discord_user_id"], d["server_display_name"]) for d in drivers] == [
         (B, "Racer")
@@ -63,8 +63,8 @@ async def test_placement_still_finds_a_signup_made_on_a_past_account(tmp_path):
 async def test_the_nationality_is_found_from_either_account(tmp_path):
     db_path, _ = await _make_db(tmp_path)
 
-    assert await _driver_nationality(db_path, SERVER_ID, int(A)) == "PT"
-    assert await _driver_nationality(db_path, SERVER_ID, int(B)) == "PT"
+    assert await _driver_nationality(db_path, int(A)) == "PT"
+    assert await _driver_nationality(db_path, int(B)) == "PT"
 
 
 async def test_the_most_recent_signup_across_accounts_is_the_drivers(tmp_path):
@@ -78,10 +78,10 @@ async def test_the_most_recent_signup_across_accounts_is_the_drivers(tmp_path):
         )
         await db.commit()
 
-    drivers = await PlacementService(db_path).get_unassigned_drivers_seeded(SERVER_ID)
+    drivers = await PlacementService(db_path).get_unassigned_drivers_seeded()
 
     assert drivers[0]["server_display_name"] == "Racer Now"
-    assert await _driver_nationality(db_path, SERVER_ID, int(A)) == "BR"
+    assert await _driver_nationality(db_path, int(A)) == "BR"
 
 
 async def _newer_rejected_signup_on_b(db_path: str) -> None:
@@ -100,10 +100,10 @@ async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
     await SignupModuleService(db_path).mark_approved(A)
     await _newer_rejected_signup_on_b(db_path)
 
-    drivers = await PlacementService(db_path).get_unassigned_drivers_seeded(SERVER_ID)
+    drivers = await PlacementService(db_path).get_unassigned_drivers_seeded()
 
     assert drivers[0]["server_display_name"] == "Racer"
-    assert await _driver_nationality(db_path, SERVER_ID, int(B)) == "PT"
+    assert await _driver_nationality(db_path, int(B)) == "PT"
 
 
 async def test_a_turned_down_signup_no_longer_outranks_the_others(tmp_path):
@@ -114,7 +114,7 @@ async def test_a_turned_down_signup_no_longer_outranks_the_others(tmp_path):
 
     await service.withdraw_approval(profile_id)
 
-    assert await _driver_nationality(db_path, SERVER_ID, int(A)) == "BR"
+    assert await _driver_nationality(db_path, int(A)) == "BR"
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT SUM(approved) FROM signup_records")
         assert (await cursor.fetchone())[0] == 0

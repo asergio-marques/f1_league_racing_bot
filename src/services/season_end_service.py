@@ -199,7 +199,6 @@ async def _write_driver_history_entries(
         cursor = await db.execute(
             """
             SELECT m.driver_profile_id,
-                   dp.server_id,
                    dp.discord_user_id,
                    d.id     AS division_id,
                    d.name   AS division_name,
@@ -282,13 +281,12 @@ async def _write_driver_history_entries(
             await db.execute(
                 """
                 INSERT OR IGNORE INTO driver_history_entries
-                    (server_id, discord_user_id, driver_profile_id, season_number,
+                    (discord_user_id, driver_profile_id, season_number,
                      division_name, division_tier, final_position, final_points,
                      points_gap_to_winner, cancelled)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    asgn["server_id"],
                     asgn["discord_user_id"],
                     driver_profile_id,
                     season.season_number,

@@ -66,9 +66,9 @@ async def db_path(tmp_path):
                 (SERVER_ID, team, role),
             )
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, '4242', 'ASSIGNED')",
-            (PROFILE_ID, SERVER_ID),
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (?, '4242', 'ASSIGNED')",
+            (PROFILE_ID,),
         )
         await db.commit()
     return path
@@ -200,9 +200,9 @@ async def test_a_move_into_a_full_team_is_refused_and_changes_nothing(db_path):
     async with get_connection(db_path) as db:
         for profile_id in (6, 7):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?, 'ASSIGNED')",
-                (profile_id, SERVER_ID, str(profile_id)),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+                "VALUES (?, ?, 'ASSIGNED')",
+                (profile_id, str(profile_id)),
             )
         await db.commit()
     await _seat(db_path, PRO, "Bravo", 6)
@@ -223,7 +223,7 @@ async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
     cog = DriverCog.__new__(DriverCog)
     cog.bot = MagicMock()
     # Any account names the driver (issue #243); these tests name the current one.
-    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
+    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
     cog.bot.season_service.get_confirmed_season = AsyncMock(
         return_value=SimpleNamespace(id=1, stage=SeasonStage(stage_name))
     )

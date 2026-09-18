@@ -104,7 +104,7 @@ def _make_cog(
     bot.wizard_service.move_held_channel = AsyncMock(return_value=[])
 
     bot.driver_service = MagicMock()
-    bot.driver_service.current_account = AsyncMock(side_effect=lambda _s, a: str(a))
+    bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
     bot.driver_service.get_profile = AsyncMock(return_value=profile)
     # The account named as old is taken to be the driver's current one, which it replaces.
     bot.driver_service.reassign_user_id = AsyncMock(

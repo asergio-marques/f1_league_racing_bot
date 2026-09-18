@@ -2175,9 +2175,9 @@ class SeasonCog(commands.Cog):
                 f"SELECT dp.discord_user_id, dp.current_state, sr.server_display_name "
                 f"FROM driver_profiles dp "
                 f"LEFT JOIN signup_records sr ON sr.id = {DRIVERS_SIGNUP_OF_DP_SQL} "
-                f"WHERE dp.server_id = ? AND dp.current_state IN ({placeholders}) "
+                f"WHERE dp.current_state IN ({placeholders}) "
                 f"ORDER BY dp.current_state, dp.discord_user_id",
-                (server_id, *UNSETTLED_STATES),
+                (*UNSETTLED_STATES,),
             )
             unsettled_rows = await cursor.fetchall()
             cursor = await db.execute(
@@ -5218,7 +5218,7 @@ class SeasonCog(commands.Cog):
 
             msg = done_task.result()
             lines_raw = [ln.strip() for ln in msg.content.strip().splitlines() if ln.strip()]
-            current_of = await current_accounts(self.bot.db_path, interaction.guild_id)
+            current_of = await current_accounts(self.bot.db_path)
             fl_amend_override, lines_raw = extract_current_fl_override(
                 lines_raw, chosen_session_type, current_of
             )

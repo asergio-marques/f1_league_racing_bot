@@ -88,11 +88,10 @@ async def _make_db(
             (ROUND_ID, DIVISION_ID),
         )
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state, "
-            "former_driver, is_test_driver) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+            "former_driver, is_test_driver) VALUES (?, ?, ?, ?, ?)",
             (
                 PROFILE_ID,
-                SERVER_ID,
                 DISCORD_USER_ID,
                 state.value,
                 int(former_driver),

@@ -255,9 +255,9 @@ async def _make_db(tmp_path, *, attendees=(), test_names=None) -> str:
                 )
         for uid, name in (test_names or {}).items():
             await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-                "is_test_driver, test_display_name) VALUES (?, ?, 'ACTIVE', 1, ?)",
-                (SERVER_ID, str(uid), name),
+                "INSERT INTO driver_profiles (discord_user_id, current_state, "
+                "is_test_driver, test_display_name) VALUES (?, 'ACTIVE', 1, ?)",
+                (str(uid), name),
             )
         await db.commit()
     return db_path

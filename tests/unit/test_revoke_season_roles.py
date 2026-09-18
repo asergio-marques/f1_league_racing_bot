@@ -65,9 +65,9 @@ async def _make_db(tmp_path, *, name="revoke_roles", signed_up_role=SIGNED_UP_RO
             )
         for profile_id, uid, is_test, season_id in drivers:
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state, "
-                "is_test_driver) VALUES (?, ?, ?, 'ASSIGNED', ?)",
-                (profile_id, SERVER_ID, str(uid), is_test),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+                "is_test_driver) VALUES (?, ?, 'ASSIGNED', ?)",
+                (profile_id, str(uid), is_test),
             )
             await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "

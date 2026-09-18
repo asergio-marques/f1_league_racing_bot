@@ -91,9 +91,9 @@ async def _seed(db_path: str, drivers) -> None:
         )
         for user_id, display_name, username in drivers:
             await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-                "is_test_driver) VALUES (?, ?, 'FULL_TIME', 0)",
-                (SERVER_ID, str(user_id)),
+                "INSERT INTO driver_profiles (discord_user_id, current_state, "
+                "is_test_driver) VALUES (?, 'FULL_TIME', 0)",
+                (str(user_id),),
             )
             if display_name is not None or username is not None:
                 await db.execute(

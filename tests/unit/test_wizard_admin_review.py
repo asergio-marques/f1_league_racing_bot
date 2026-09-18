@@ -91,7 +91,7 @@ def review():
     svc._cancel_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
     svc._trigger_channel_hold = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
-    async def _transition(server_id, user_id, state):
+    async def _transition(user_id, state):
         order.append(f"transition:{state.value if hasattr(state, 'value') else state}")
 
     async def _store_total(user_id, lap_times):

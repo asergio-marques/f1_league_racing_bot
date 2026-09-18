@@ -100,9 +100,9 @@ async def _make_db(
             )
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(id, server_id, discord_user_id, current_state, is_test_driver) "
-            "VALUES (?, ?, '4242', ?, ?)",
-            (PROFILE_ID, SERVER_ID, state, int(is_test_driver)),
+            "(id, discord_user_id, current_state, is_test_driver) "
+            "VALUES (?, '4242', ?, ?)",
+            (PROFILE_ID, state, int(is_test_driver)),
         )
         await db.commit()
     return db_path
@@ -158,9 +158,9 @@ async def _add_driver(db_path: str, profile_id: int, state: str = "UNASSIGNED") 
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(id, server_id, discord_user_id, current_state, is_test_driver) "
-            "VALUES (?, ?, ?, ?, 0)",
-            (profile_id, SERVER_ID, str(4000 + profile_id), state),
+            "(id, discord_user_id, current_state, is_test_driver) "
+            "VALUES (?, ?, ?, 0)",
+            (profile_id, str(4000 + profile_id), state),
         )
         await db.commit()
 

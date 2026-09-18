@@ -139,9 +139,9 @@ async def _seed_pending_drivers(path):
         for pid, state, committed in ((1, "ASSIGNED", 1), (2, "ASSIGNED", 0),
                                       (3, "UNASSIGNED", None), (4, "PENDING_ADMIN_APPROVAL", None)):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?, ?)",
-                (pid, SERVER_ID, str(1000 + pid), state),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+                "VALUES (?, ?, ?)",
+                (pid, str(1000 + pid), state),
             )
             if committed is not None:
                 cursor = await db.execute(

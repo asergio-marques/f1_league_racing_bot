@@ -118,8 +118,8 @@ async def _seed(
 
         async def seat(team_instance_id: int, seat_number: int, user_id: int) -> None:
             cursor = await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-                "VALUES (1, ?, 'ACTIVE')",
+                "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                "VALUES (?, 'ACTIVE')",
                 (user_id,),
             )
             profile_id = cursor.lastrowid

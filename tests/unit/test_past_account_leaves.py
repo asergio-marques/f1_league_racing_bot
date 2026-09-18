@@ -24,9 +24,9 @@ async def _cog(tmp_path) -> SignupCog:
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'ASSIGNED')",
-            (SERVER_ID, PAST),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'ASSIGNED')",
+            (PAST,),
         )
         await db.execute(
             "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",

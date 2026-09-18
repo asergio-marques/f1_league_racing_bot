@@ -136,10 +136,10 @@ async def _seed_history(
 ) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_history_entries (server_id, discord_user_id, season_number, "
+            "INSERT INTO driver_history_entries (discord_user_id, season_number, "
             "division_name, division_tier, final_position, final_points) "
-            "VALUES (?, ?, ?, 'Pro', 1, 2, 88)",
-            (server_id, user_id, season),
+            "VALUES (?, ?, 'Pro', 1, 2, 88)",
+            (user_id, season),
         )
         await db.commit()
 
@@ -185,8 +185,8 @@ async def _seed_profile(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO driver_profiles "
-            "(server_id, discord_user_id, current_state, former_driver) VALUES (?, ?, ?, ?)",
-            (server_id, user_id, state, int(former)),
+            "(discord_user_id, current_state, former_driver) VALUES (?, ?, ?)",
+            (user_id, state, int(former)),
         )
         await db.commit()
         return cursor.lastrowid
@@ -206,7 +206,7 @@ async def _seed_signup_record(db_path: str, user_id: str = OLD_USER) -> None:
 async def _profile_count(db_path: str) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT COUNT(*) AS n FROM driver_profiles WHERE server_id = ?", (SERVER_ID,)
+            "SELECT COUNT(*) AS n FROM driver_profiles"
         )
         return (await cursor.fetchone())["n"]
 
@@ -231,7 +231,7 @@ async def test_a_user_with_no_profile_reads_as_none(tmp_path):
     than an error."""
     service = DriverService(await _make_db(tmp_path))
 
-    assert await service.get_profile(SERVER_ID, OLD_USER) is None
+    assert await service.get_profile(OLD_USER) is None
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +246,7 @@ async def test_an_ordinary_driver_is_kept_pending_deletion(tmp_path):
     await _seed_profile(db_path, state="UNASSIGNED", former=False)
     service = DriverService(db_path)
 
-    result = await service.transition(SERVER_ID, OLD_USER, DriverState.NOT_SIGNED_UP)
+    result = await service.transition(OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert result is not None
     assert result.current_state is DriverState.NOT_SIGNED_UP
@@ -261,7 +261,7 @@ async def test_a_former_driver_is_kept_with_their_signup(tmp_path):
     await _seed_signup_record(db_path)
     service = DriverService(db_path)
 
-    result = await service.transition(SERVER_ID, OLD_USER, DriverState.NOT_SIGNED_UP)
+    result = await service.transition(OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert result is not None
     assert await _profile_count(db_path) == 1
@@ -281,7 +281,7 @@ async def test_a_transition_from_no_profile_creates_one(tmp_path):
     service = DriverService(db_path)
 
     profile = await service.transition(
-        SERVER_ID, OLD_USER, DriverState.PENDING_SIGNUP_COMPLETION
+        OLD_USER, DriverState.PENDING_SIGNUP_COMPLETION
     )
 
     assert profile is not None
@@ -295,7 +295,7 @@ async def test_a_disallowed_transition_from_no_profile_names_what_is_allowed(tmp
     service = DriverService(db_path)
 
     with pytest.raises(ValueError, match="Allowed targets"):
-        await service.transition(SERVER_ID, OLD_USER, DriverState.ASSIGNED)
+        await service.transition(OLD_USER, DriverState.ASSIGNED)
 
 
 # ---------------------------------------------------------------------------
@@ -314,8 +314,8 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
     )
 
     assert outcome.profile.discord_user_id == NEW_USER
-    assert await service.get_profile(SERVER_ID, NEW_USER) is not None
-    assert await service.get_profile(SERVER_ID, OLD_USER) is None
+    assert await service.get_profile(NEW_USER) is not None
+    assert await service.get_profile(OLD_USER) is None
 
 
 async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):
@@ -386,7 +386,7 @@ async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
             SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
         )
 
-    assert await service.get_profile(SERVER_ID, OLD_USER) is not None
+    assert await service.get_profile(OLD_USER) is not None
     assert await _standings_users(db_path) == [
         (LEAGUE, int(OLD_USER)),
         (LEAGUE, int(NEW_USER)),
@@ -405,7 +405,7 @@ async def test_a_refused_re_key_changes_nothing(tmp_path):
             SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
         )
 
-    assert await service.get_profile(SERVER_ID, OLD_USER) is not None
+    assert await service.get_profile(OLD_USER) is not None
     assert await _audit(db_path) == []
 
 
@@ -442,7 +442,7 @@ async def test_the_former_driver_flag_is_set_and_reports_both_values(tmp_path):
     )
 
     assert (old, new) == (False, True)
-    profile = await service.get_profile(SERVER_ID, OLD_USER)
+    profile = await service.get_profile(OLD_USER)
     assert profile.former_driver is True
 
 
@@ -457,7 +457,7 @@ async def test_the_former_driver_flag_can_be_cleared_again(tmp_path):
     )
 
     assert (old, new) == (True, False)
-    profile = await service.get_profile(SERVER_ID, OLD_USER)
+    profile = await service.get_profile(OLD_USER)
     assert profile.former_driver is False
 
 
@@ -492,7 +492,7 @@ async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_pat
     service = DriverService(db_path)
     await service.set_former_driver(SERVER_ID, OLD_USER, True, ACTOR_ID, "Manager")
 
-    await service.transition(SERVER_ID, OLD_USER, DriverState.NOT_SIGNED_UP)
+    await service.transition(OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert await _profile_count(db_path) == 1
 

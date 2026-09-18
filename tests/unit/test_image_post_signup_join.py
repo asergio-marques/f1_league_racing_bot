@@ -61,9 +61,9 @@ async def bot(db_path):
 async def _seed_driver(db_path, *, name: str = "Ada Lovelace", nationality: str = "British"):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'ACTIVE')",
-            (SERVER_ID, USER_ID),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'ACTIVE')",
+            (USER_ID,),
         )
         await db.execute(
             "INSERT INTO signup_records (discord_user_id, server_display_name, "
@@ -77,10 +77,10 @@ async def _seed_test_driver(db_path, *, name: str = "Mock Alpha", nationality=No
     """A mock driver as `/test-mode roster add` makes one: no signup record at all."""
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
             "is_test_driver, test_display_name, test_nationality) "
-            "VALUES (?, ?, 'ASSIGNED', 1, ?, ?)",
-            (SERVER_ID, str(TEST_USER_ID), name, nationality),
+            "VALUES (?, 'ASSIGNED', 1, ?, ?)",
+            (str(TEST_USER_ID), name, nationality),
         )
         await db.commit()
 
@@ -144,13 +144,13 @@ class TestSignupRecordsJoin:
         await _seed_driver(db_path, nationality="Dutch")
         await _seed_test_driver(db_path, nationality="Italian")
 
-        assert await _driver_nationality(db_path, SERVER_ID, USER_ID) == "Dutch"
-        assert await _driver_nationality(db_path, SERVER_ID, TEST_USER_ID) == "Italian"
+        assert await _driver_nationality(db_path, USER_ID) == "Dutch"
+        assert await _driver_nationality(db_path, TEST_USER_ID) == "Italian"
 
     async def test_the_verdict_lookup_yields_none_for_an_unknown_driver(self, db_path):
         from services.image_verdict_post import _driver_nationality
 
-        assert await _driver_nationality(db_path, SERVER_ID, USER_ID) is None
+        assert await _driver_nationality(db_path, USER_ID) is None
 
     async def test_driver_names_reads_a_seeded_driver(self, bot, db_path):
         """The second corrected site, in the results path."""
@@ -189,9 +189,9 @@ class TestSignupRecordsJoin:
             )
             seat_id = cursor.lastrowid
             cursor = await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, 'ACTIVE')",
-                (SERVER_ID, USER_ID),
+                "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                "VALUES (?, 'ACTIVE')",
+                (USER_ID,),
             )
             profile_id = cursor.lastrowid
             await db.execute(

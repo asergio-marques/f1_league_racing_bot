@@ -48,7 +48,7 @@ class DriverCog(commands.Cog):
         and the command is refused with the manager told so; returns None, having replied.
         """
         current = await self.bot.driver_service.current_account(  # type: ignore[attr-defined]
-            interaction.guild_id, user.id
+            user.id
         )
         if current == str(user.id):
             return user
@@ -275,7 +275,7 @@ class DriverCog(commands.Cog):
 
         # Fetch the driver profile
         profile = await self.bot.driver_service.get_profile(  # type: ignore[attr-defined]
-            server_id, str(user.id)
+            str(user.id)
         )
         if profile is None:
             await interaction.followup.send(
@@ -373,7 +373,7 @@ class DriverCog(commands.Cog):
         division_id, _division_name = resolved
 
         profile = await self.bot.driver_service.get_profile(  # type: ignore[attr-defined]
-            server_id, str(user.id)
+            str(user.id)
         )
         if profile is None:
             await interaction.followup.send(
@@ -477,7 +477,7 @@ class DriverCog(commands.Cog):
                 )
                 return
 
-        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        profile = await self.bot.driver_service.get_profile(str(user.id))  # type: ignore[attr-defined]
         if profile is None:
             await interaction.followup.send(
                 f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
@@ -558,7 +558,7 @@ class DriverCog(commands.Cog):
             )
             return
 
-        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        profile = await self.bot.driver_service.get_profile(str(user.id))  # type: ignore[attr-defined]
         if profile is None:
             await interaction.followup.send(
                 f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
@@ -623,7 +623,7 @@ class DriverCog(commands.Cog):
             )
             return
 
-        profile = await self.bot.driver_service.get_profile(server_id, str(user.id))  # type: ignore[attr-defined]
+        profile = await self.bot.driver_service.get_profile(str(user.id))  # type: ignore[attr-defined]
         if profile is None or profile.current_state is not DriverState.UNASSIGNED:
             await interaction.followup.send(
                 f"⛔ **{user.display_name}** is not an Unassigned driver. A placed driver is "
@@ -633,7 +633,7 @@ class DriverCog(commands.Cog):
             return
 
         await self.bot.driver_service.transition(  # type: ignore[attr-defined]
-            server_id, str(user.id), DriverState.NOT_SIGNED_UP
+            str(user.id), DriverState.NOT_SIGNED_UP
         )
         await self.bot.signup_module_service.withdraw_approval(  # type: ignore[attr-defined]
             profile.id
@@ -696,7 +696,7 @@ class DriverCog(commands.Cog):
             return
 
         profile = await self.bot.driver_service.get_profile(  # type: ignore[attr-defined]
-            server_id, str(user.id)
+            str(user.id)
         )
         if profile is None:
             await interaction.followup.send(

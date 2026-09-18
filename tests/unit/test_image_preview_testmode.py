@@ -229,8 +229,7 @@ class TestTheNationalityTally:
             profile = await (
                 await db.execute(
                     "SELECT id FROM driver_profiles "
-                    "WHERE server_id = ? AND is_test_driver = 1 LIMIT 1",
-                    (SERVER_ID,),
+                    "WHERE is_test_driver = 1 LIMIT 1",
                 )
             ).fetchone()
             await db.execute(

@@ -52,9 +52,9 @@ async def _profile(db_path: str, account: str, *, state: str = "UNASSIGNED",
                    test: bool = False) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "is_test_driver) VALUES (?, ?, ?, ?)",
-            (SERVER_ID, account, state, int(test)),
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "is_test_driver) VALUES (?, ?, ?)",
+            (account, state, int(test)),
         )
         await db.commit()
         return cursor.lastrowid
@@ -123,7 +123,7 @@ async def test_a_past_account_may_be_made_current_again(tmp_path):
     assert outcome.switched_back is True
     assert outcome.replaced_account == B
     assert outcome.accounts == [A, B]
-    assert (await DriverService(db_path).get_profile(SERVER_ID, A)).id == outcome.profile.id
+    assert (await DriverService(db_path).get_profile(A)).id == outcome.profile.id
 
 
 async def test_a_reassign_is_audited_with_the_account_replaced(tmp_path):

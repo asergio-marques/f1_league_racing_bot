@@ -1089,9 +1089,9 @@ async def _seed_two_tied_drivers(tmp_path, server_id: int = 300):
         team_id = cur.lastrowid
         for seat_number, user_id in enumerate((1, 2), start=1):
             cur = await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, 'ACTIVE')",
-                (server_id, user_id),
+                "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                "VALUES (?, 'ACTIVE')",
+                (user_id,),
             )
             await db.execute(
                 "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "

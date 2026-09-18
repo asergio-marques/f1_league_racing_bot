@@ -66,9 +66,9 @@ async def db_path(tmp_path):
                 )
         for pid in range(1, 7):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?, 'ASSIGNED')",
-                (pid, SERVER_ID, str(1000 + pid)),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+                "VALUES (?, ?, 'ASSIGNED')",
+                (pid, str(1000 + pid)),
             )
 
         async def seat(pid, team_id, division_id):

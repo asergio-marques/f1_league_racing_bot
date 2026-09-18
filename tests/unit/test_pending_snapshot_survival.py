@@ -406,9 +406,8 @@ async def test_seated_drivers_are_held_for_restoration(tmp_path):
     div_id = await _division_id(db_path, first)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-            "VALUES (1, ?, '4242', 'ASSIGNED')",
-            (SERVER_ID,),
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (1, '4242', 'ASSIGNED')"
         )
         await db.execute(
             "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "

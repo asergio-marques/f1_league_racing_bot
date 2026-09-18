@@ -73,9 +73,9 @@ async def _make_db(tmp_path, *, name: str = "rsvp_bulk") -> str:
         )
         for discord_uid, profile_id in DRIVERS.items():
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, "
-                "current_state, is_test_driver) VALUES (?, ?, ?, 'ASSIGNED', 1)",
-                (profile_id, SERVER_ID, str(discord_uid)),
+                "INSERT INTO driver_profiles (id, discord_user_id, "
+                "current_state, is_test_driver) VALUES (?, ?, 'ASSIGNED', 1)",
+                (profile_id, str(discord_uid)),
             )
         await db.commit()
     return db_path

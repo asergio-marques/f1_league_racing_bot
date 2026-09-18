@@ -52,9 +52,9 @@ async def db_path(tmp_path):
                                         (2, "9000000000000000002", 1, False),
                                         (3, "4242", 0, True)):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state, "
-                "is_test_driver) VALUES (?, ?, ?, 'ASSIGNED', ?)",
-                (pid, SERVER_ID, uid, test),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+                "is_test_driver) VALUES (?, ?, 'ASSIGNED', ?)",
+                (pid, uid, test),
             )
             if seated:
                 cursor = await db.execute(
@@ -73,9 +73,9 @@ async def db_path(tmp_path):
                     (pid,),
                 )
             await db.execute(
-                "INSERT INTO driver_history_entries (server_id, discord_user_id, "
-                "driver_profile_id, season_number, division_name) VALUES (?, ?, ?, 1, 'Pro')",
-                (SERVER_ID, uid, pid),
+                "INSERT INTO driver_history_entries (discord_user_id, "
+                "driver_profile_id, season_number, division_name) VALUES (?, ?, 1, 'Pro')",
+                (uid, pid),
             )
         await db.commit()
     return path
@@ -88,14 +88,14 @@ async def _profiles(db_path):
 
 
 async def test_every_fake_driver_is_deleted_seated_or_not_and_the_real_one_kept(db_path):
-    assert await clear_all_test_drivers(SERVER_ID, db_path) == 2
+    assert await clear_all_test_drivers(db_path) == 2
 
     assert await _profiles(db_path) == [3]
 
 
 async def test_a_fake_driver_who_raced_is_deleted_all_the_same(db_path):
     """Attendance and placements held them: the deletion lets go of both."""
-    await clear_all_test_drivers(SERVER_ID, db_path)
+    await clear_all_test_drivers(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -105,7 +105,7 @@ async def test_a_fake_driver_who_raced_is_deleted_all_the_same(db_path):
 
 
 async def test_their_history_is_kept_by_identifier(db_path):
-    await clear_all_test_drivers(SERVER_ID, db_path)
+    await clear_all_test_drivers(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

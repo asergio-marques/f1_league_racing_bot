@@ -65,9 +65,8 @@ async def season(tmp_path):
         )
         seat_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "former_driver, is_test_driver) VALUES (?, '123', 'ASSIGNED', 0, 0)",
-            (SERVER_ID,),
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "former_driver, is_test_driver) VALUES ('123', 'ASSIGNED', 0, 0)"
         )
         profile_id = cursor.lastrowid
         await db.execute(
@@ -210,9 +209,8 @@ async def test_a_signup_settled_after_the_report_is_part_of_the_unsettled_signup
     change to what would be confirmed."""
     await _change(
         season,
-        "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-        "VALUES (900, ?, '900', 'PENDING_ADMIN_APPROVAL')",
-        SERVER_ID,
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+        "VALUES (900, '900', 'PENDING_ADMIN_APPROVAL')",
     )
     before = await _take(season)
     await _assert_only(

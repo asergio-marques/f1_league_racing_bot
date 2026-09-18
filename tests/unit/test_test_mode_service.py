@@ -138,7 +138,7 @@ async def _add_driver(db_path: str, user_id: str, state: str, *, test: bool = Fa
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(server_id, discord_user_id, current_state, is_test_driver) VALUES (1, ?, ?, ?)",
+            "(discord_user_id, current_state, is_test_driver) VALUES (?, ?, ?)",
             (user_id, state, 1 if test else 0),
         )
         await db.commit()
@@ -151,7 +151,7 @@ async def test_an_empty_server_holds_no_real_drivers() -> None:
         await run_migrations(db_path)
         await _seed(db_path, [])
 
-        assert await count_live_real_drivers(1, db_path) == 0
+        assert await count_live_real_drivers(db_path) == 0
     finally:
         os.unlink(db_path)
 
@@ -169,7 +169,7 @@ async def test_every_live_state_counts(state: str) -> None:
         await _seed(db_path, [])
         await _add_driver(db_path, "5001", state)
 
-        assert await count_live_real_drivers(1, db_path) == 1
+        assert await count_live_real_drivers(db_path) == 1
     finally:
         os.unlink(db_path)
 
@@ -183,7 +183,7 @@ async def test_a_former_driver_does_not_count() -> None:
         await _seed(db_path, [])
         await _add_driver(db_path, "5002", "NOT_SIGNED_UP")
 
-        assert await count_live_real_drivers(1, db_path) == 0
+        assert await count_live_real_drivers(db_path) == 0
     finally:
         os.unlink(db_path)
 
@@ -197,7 +197,7 @@ async def test_fake_drivers_do_not_count() -> None:
         await _add_driver(db_path, "9000000000000000001", "ASSIGNED", test=True)
         await _add_driver(db_path, "5003", "ASSIGNED")
 
-        assert await count_live_real_drivers(1, db_path) == 1
+        assert await count_live_real_drivers(db_path) == 1
     finally:
         os.unlink(db_path)
 

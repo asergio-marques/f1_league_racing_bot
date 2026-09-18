@@ -124,11 +124,10 @@ async def _make_db(
         for profile_id, team_id, seat_id, seat_number in seats:
             await db.execute(
                 "INSERT INTO driver_profiles "
-                "(id, server_id, discord_user_id, current_state, is_test_driver, "
-                "test_display_name) VALUES (?, ?, ?, 'ACTIVE', 1, ?)",
+                "(id, discord_user_id, current_state, is_test_driver, "
+                "test_display_name) VALUES (?, ?, 'ACTIVE', 1, ?)",
                 (
                     profile_id,
-                    SERVER_ID,
                     str(profile_id),
                     f"Driver {profile_id}" if named else None,
                 ),

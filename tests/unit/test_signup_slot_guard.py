@@ -68,9 +68,9 @@ async def _seed(
             )
         for i in range(1, unassigned + 1):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?, 'UNASSIGNED')",
-                (i, SERVER_ID, str(9000 + i)),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+                "VALUES (?, ?, 'UNASSIGNED')",
+                (i, str(9000 + i)),
             )
         await db.commit()
     return path

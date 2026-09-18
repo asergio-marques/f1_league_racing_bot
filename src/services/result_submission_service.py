@@ -1046,7 +1046,7 @@ async def _save_session_result_in_tx(
         driver_profile_id: int | None = None
         if server_id_for_profile is not None:
             driver_profile_id = await resolve_driver_profile_id(
-                server_id_for_profile, row["driver_user_id"], db
+                row["driver_user_id"], db
             )
         _profile_id_map[row["driver_user_id"]] = driver_profile_id
         if driver_profile_id is not None:
@@ -1156,7 +1156,7 @@ async def amend_session_result(
             drv_profile_id: int | None = None
             if server_id_for_profile is not None and driver_user_id is not None:
                 drv_profile_id = await resolve_driver_profile_id(
-                    server_id_for_profile, driver_user_id, db
+                    driver_user_id, db
                 )
             if driver_user_id is not None:
                 _amend_profile_map[driver_user_id] = drv_profile_id
@@ -2150,7 +2150,7 @@ async def other_active_team_assignments(
         )
         server_row = await cursor.fetchone()
         current_of = (
-            await current_account_map(db, server_row["server_id"]) if server_row else {}
+            await current_account_map(db) if server_row else {}
         )
 
     result: dict[int, tuple[int, str]] = {}
@@ -2160,12 +2160,12 @@ async def other_active_team_assignments(
     return result
 
 
-async def current_accounts(db_path: str, server_id: int) -> dict[int, int]:
+async def current_accounts(db_path: str) -> dict[int, int]:
     """`driver_service.current_account_map` on a connection of its own, for the paste paths."""
     from services.driver_service import current_account_map
 
     async with get_connection(db_path) as db:
-        return await current_account_map(db, server_id)
+        return await current_account_map(db)
 
 
 def _make_slug(name: str) -> str:
@@ -2733,7 +2733,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
 
             # Validate the block
             lines = content.splitlines()
-            current_of = await current_accounts(db_path, server_id)
+            current_of = await current_accounts(db_path)
             fl_override, lines = extract_current_fl_override(lines, session_type, current_of)
             other_assignments = await other_active_team_assignments(
                 db_path, round_id, session_type
@@ -3319,7 +3319,7 @@ async def _resubmit_collection_task(
                 break
 
             lines = content.splitlines()
-            current_of = await current_accounts(db_path, server_id)
+            current_of = await current_accounts(db_path)
             fl_override, lines = extract_current_fl_override(lines, session_type, current_of)
             # Checked against the sessions of this resubmission, not the round's stored
             # results: those are the ones being replaced, and may be wrong in exactly the way

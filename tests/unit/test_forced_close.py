@@ -61,9 +61,9 @@ async def _make_db(tmp_path, *, name="forced_close", drivers=()):
         )
         for uid, state in drivers:
             await db.execute(
-                "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-                "VALUES (?, ?, ?)",
-                (SERVER_ID, uid, state.value),
+                "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                "VALUES (?, ?)",
+                (uid, state.value),
             )
         await db.commit()
     return db_path
@@ -132,7 +132,7 @@ async def test_a_driver_still_filling_in_the_wizard_is_turned_away(tmp_path):
     await execute_forced_close(SERVER_ID, bot, audit_action="SIGNUP_FORCE_CLOSE")
 
     bot.driver_service.transition.assert_awaited_once_with(
-        SERVER_ID, "101", DriverState.NOT_SIGNED_UP
+        "101", DriverState.NOT_SIGNED_UP
     )
 
 

@@ -47,9 +47,9 @@ async def db_path(tmp_path):
             "'2025-06-01T14:00:00')"
         )
         await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'ASSIGNED')",
-            (SERVER_ID, str(USER)),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'ASSIGNED')",
+            (str(USER),),
         )
         for season_id, name, nationality in ((1, "Old Name", "French"), (2, "New Name", "British")):
             await db.execute(
@@ -94,5 +94,5 @@ async def test_a_season_holding_no_signup_falls_back_to_the_latest(db_path):
 
 
 async def test_a_verdict_reads_the_nationality_of_its_rounds_season(db_path):
-    assert await _driver_nationality(db_path, SERVER_ID, USER, 111) == "French"
-    assert await _driver_nationality(db_path, SERVER_ID, USER) == "British"
+    assert await _driver_nationality(db_path, USER, 111) == "French"
+    assert await _driver_nationality(db_path, USER) == "British"

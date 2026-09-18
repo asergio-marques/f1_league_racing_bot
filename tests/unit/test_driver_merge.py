@@ -68,9 +68,9 @@ async def _profile(db_path: str, account: str, *, state: str = "NOT_SIGNED_UP",
                    former: bool = False, server_id: int = SERVER_ID) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "former_driver) VALUES (?, ?, ?, ?)",
-            (server_id, account, state, int(former)),
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "former_driver) VALUES (?, ?, ?)",
+            (account, state, int(former)),
         )
         await db.commit()
         return cursor.lastrowid
@@ -101,9 +101,9 @@ async def _raced(db_path: str, account: str, division: int, profile_id: int | No
 async def _history(db_path: str, profile_id: int, account: str, division_name: str = "Pro") -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO driver_history_entries (server_id, discord_user_id, driver_profile_id, "
-            "season_number, division_name) VALUES (?, ?, ?, 1, ?)",
-            (SERVER_ID, account, profile_id, division_name),
+            "INSERT INTO driver_history_entries (discord_user_id, driver_profile_id, "
+            "season_number, division_name) VALUES (?, ?, 1, ?)",
+            (account, profile_id, division_name),
         )
         await db.commit()
 
@@ -129,8 +129,7 @@ async def _profiles(db_path: str) -> list[tuple]:
     async with get_connection(db_path) as db:
         rows = await (await db.execute(
             "SELECT id, discord_user_id, current_state, former_driver FROM driver_profiles "
-            "WHERE server_id = ? ORDER BY id",
-            (SERVER_ID,),
+            " ORDER BY id",
         )).fetchall()
     return [tuple(r) for r in rows]
 
@@ -242,7 +241,7 @@ async def test_leftover_results_elsewhere_become_the_drivers(tmp_path):
 
     assert outcome.accounts == [A, B]
     async with get_connection(db_path) as db:
-        assert await driver_service.resolve_driver_profile_id(SERVER_ID, int(B), db) == a
+        assert await driver_service.resolve_driver_profile_id(int(B), db) == a
 
 
 # ── Merges refused ─────────────────────────────────────────────────────────

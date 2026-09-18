@@ -104,9 +104,9 @@ async def _make_db(tmp_path, *, name: str = "amend_result", season_status: str =
         )
         for profile_id, driver in ((31, 101), (32, 102), (33, 103)):
             await db.execute(
-                "INSERT INTO driver_profiles (id, server_id, discord_user_id, current_state, "
-                "former_driver) VALUES (?, ?, ?, 'ASSIGNED', 0)",
-                (profile_id, SERVER_ID, str(driver)),
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+                "former_driver) VALUES (?, ?, 'ASSIGNED', 0)",
+                (profile_id, str(driver)),
             )
         await db.commit()
     return db_path

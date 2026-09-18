@@ -72,14 +72,14 @@ async def live_season_stage(db_path: str, server_id: int) -> tuple[int, SeasonSt
     return int(row["id"]), SeasonStage(row["stage"])
 
 
-async def count_unsettled_signups(db_path: str, server_id: int) -> int:
+async def count_unsettled_signups(db_path: str) -> int:
     """How many drivers of *server_id* hold a signup not yet placed or turned down."""
     placeholders = ",".join("?" for _ in UNSETTLED_STATES)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"SELECT COUNT(*) AS n FROM driver_profiles "
-            f"WHERE server_id = ? AND current_state IN ({placeholders})",
-            (server_id, *UNSETTLED_STATES),
+            f"WHERE current_state IN ({placeholders})",
+            (*UNSETTLED_STATES,),
         )
         row = await cursor.fetchone()
     return int(row["n"]) if row is not None else 0
@@ -131,7 +131,7 @@ async def advance_on_window_close(db_path: str, server_id: int) -> SeasonStage |
     if stage is SeasonStage.SIGNUPS:
         target = SeasonStage.PLACEMENTS
     elif stage is SeasonStage.ONGOING_SIGNUPS:
-        unsettled = await count_unsettled_signups(db_path, server_id)
+        unsettled = await count_unsettled_signups(db_path)
         target = SeasonStage.ONGOING_PLACEMENTS if unsettled else SeasonStage.ONGOING
     else:
         return None
@@ -158,7 +158,7 @@ async def turn_down_pending_placements(bot, server_id: int, season_id: int, guil
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
-            f"WHERE server_id = ? AND ("
+            f"WHERE ("
             f"  current_state IN ({placeholders}) "
             f"  OR (current_state = 'ASSIGNED' AND id IN ("
             f"      SELECT driver_profile_id FROM driver_season_assignments "
@@ -167,7 +167,7 @@ async def turn_down_pending_placements(bot, server_id: int, season_id: int, guil
             f"      SELECT driver_profile_id FROM driver_season_assignments "
             f"      WHERE season_id = ? AND committed = 1))"
             f") ORDER BY id",
-            (server_id, *UNSETTLED_STATES, season_id, season_id),
+            (*UNSETTLED_STATES, season_id, season_id),
         )
         drivers = [dict(r) for r in await cursor.fetchall()]
         cursor = await db.execute(
@@ -462,8 +462,8 @@ async def run_driver_pass(db_path: str, server_id: int, *, bot=None, guild=None)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"SELECT id, discord_user_id, current_state, is_test_driver FROM driver_profiles "
-            f"WHERE server_id = ? AND current_state IN ({placeholders})",
-            (server_id, *DRIVER_PASS_STATES),
+            f"WHERE current_state IN ({placeholders})",
+            (*DRIVER_PASS_STATES,),
         )
         to_reset = [dict(r) for r in await cursor.fetchall()]
         cursor = await db.execute(
@@ -489,9 +489,8 @@ async def run_driver_pass(db_path: str, server_id: int, *, bot=None, guild=None)
                 DriverState.NOT_SIGNED_UP,
             )
         cursor = await db.execute(
-            "SELECT id FROM driver_profiles WHERE server_id = ? AND is_test_driver = 0 "
+            "SELECT id FROM driver_profiles WHERE is_test_driver = 0 "
             "AND former_driver = 0 AND current_state = 'NOT_SIGNED_UP'",
-            (server_id,),
         )
         pending_deletion = [r["id"] for r in await cursor.fetchall()]
         await delete_driver_profiles(db, pending_deletion, keep_history=False)

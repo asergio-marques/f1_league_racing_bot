@@ -121,8 +121,8 @@ async def _seed(
         for offset, state in enumerate(in_progress):
             await db.execute(
                 "INSERT INTO driver_profiles "
-                "(server_id, discord_user_id, current_state) VALUES (?, ?, ?)",
-                (SERVER_ID, str(7000 + offset), state),
+                "(discord_user_id, current_state) VALUES (?, ?)",
+                (str(7000 + offset), state),
             )
         await db.commit()
     return db_path

@@ -181,7 +181,7 @@ async def test_the_driver_is_asked_to_correct_rather_than_to_sign_up_again(corre
 
     await _select(correction, "platform")
 
-    assert correction.driver_service.transition.await_args.args[2] == (
+    assert correction.driver_service.transition.await_args.args[1] == (
         DriverState.PENDING_DRIVER_CORRECTION
     )
 

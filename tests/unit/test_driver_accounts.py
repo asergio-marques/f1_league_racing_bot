@@ -52,9 +52,9 @@ async def _make_db(tmp_path) -> str:
 async def _profile(db_path: str, account: str, server_id: int = SERVER_ID) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'UNASSIGNED')",
-            (server_id, account),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'UNASSIGNED')",
+            (account,),
         )
         await db.commit()
         return cursor.lastrowid
@@ -71,8 +71,8 @@ async def _make_current(db_path: str, profile_id: int, account: str) -> None:
 async def _listed(db_path: str) -> list[tuple]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT server_id, driver_profile_id, discord_user_id FROM driver_accounts "
-            "ORDER BY server_id, driver_profile_id, discord_user_id"
+            "SELECT driver_profile_id, discord_user_id FROM driver_accounts "
+            "ORDER BY driver_profile_id, discord_user_id"
         )
         return [tuple(r) for r in await cursor.fetchall()]
 
@@ -85,23 +85,23 @@ async def _listed(db_path: str) -> list[tuple]:
 async def test_creating_a_profile_lists_its_account(tmp_path):
     db_path = await _make_db(tmp_path)
     pid = await _profile(db_path, A)
-    assert await _listed(db_path) == [(SERVER_ID, pid, A)]
+    assert await _listed(db_path) == [(pid, A)]
 
 
 async def test_a_profile_created_by_the_service_lists_its_account(tmp_path):
     """The service's own creation path, which a raw INSERT above does not exercise."""
     db_path = await _make_db(tmp_path)
     profile = await DriverService(db_path).transition(
-        SERVER_ID, A, DriverState.PENDING_SIGNUP_COMPLETION
+        A, DriverState.PENDING_SIGNUP_COMPLETION
     )
-    assert await _listed(db_path) == [(SERVER_ID, profile.id, A)]
+    assert await _listed(db_path) == [(profile.id, A)]
 
 
 async def test_changing_the_current_account_keeps_the_old_one_listed(tmp_path):
     db_path = await _make_db(tmp_path)
     pid = await _profile(db_path, A)
     await _make_current(db_path, pid, B)
-    assert await _listed(db_path) == [(SERVER_ID, pid, A), (SERVER_ID, pid, B)]
+    assert await _listed(db_path) == [(pid, A), (pid, B)]
 
 
 async def test_switching_back_to_a_past_account_adds_nothing(tmp_path):
@@ -110,9 +110,9 @@ async def test_switching_back_to_a_past_account_adds_nothing(tmp_path):
     pid = await _profile(db_path, A)
     await _make_current(db_path, pid, B)
     await _make_current(db_path, pid, A)
-    assert await _listed(db_path) == [(SERVER_ID, pid, A), (SERVER_ID, pid, B)]
+    assert await _listed(db_path) == [(pid, A), (pid, B)]
     async with get_connection(db_path) as db:
-        assert await current_account_of(db, SERVER_ID, B) == A
+        assert await current_account_of(db, B) == A
 
 
 async def test_a_profile_cannot_be_created_on_another_drivers_past_account(tmp_path):
@@ -122,7 +122,7 @@ async def test_a_profile_cannot_be_created_on_another_drivers_past_account(tmp_p
     await _make_current(db_path, pid, B)
     with pytest.raises(sqlite3.IntegrityError):
         await _profile(db_path, A)
-    assert await _listed(db_path) == [(SERVER_ID, pid, A), (SERVER_ID, pid, B)]
+    assert await _listed(db_path) == [(pid, A), (pid, B)]
 
 
 async def test_a_profile_cannot_take_another_drivers_past_account_as_current(tmp_path):
@@ -156,9 +156,9 @@ async def test_resolve_driver_profile_id_finds_the_driver_by_any_account(tmp_pat
     pid = await _profile(db_path, A)
     await _make_current(db_path, pid, B)
     async with get_connection(db_path) as db:
-        assert await resolve_driver_profile_id(SERVER_ID, int(A), db) == pid
-        assert await resolve_driver_profile_id(SERVER_ID, int(B), db) == pid
-        assert await resolve_driver_profile_id(SERVER_ID, int(C), db) is None
+        assert await resolve_driver_profile_id(int(A), db) == pid
+        assert await resolve_driver_profile_id(int(B), db) == pid
+        assert await resolve_driver_profile_id(int(C), db) is None
 
 
 async def test_accounts_of_lists_the_whole_driver_from_any_account(tmp_path):
@@ -166,16 +166,16 @@ async def test_accounts_of_lists_the_whole_driver_from_any_account(tmp_path):
     pid = await _profile(db_path, A)
     await _make_current(db_path, pid, B)
     async with get_connection(db_path) as db:
-        assert await accounts_of(db, SERVER_ID, A) == [A, B]
-        assert await accounts_of(db, SERVER_ID, int(B)) == [A, B]
+        assert await accounts_of(db, A) == [A, B]
+        assert await accounts_of(db, int(B)) == [A, B]
         assert await accounts_of_profile(db, pid) == [A, B]
 
 
 async def test_accounts_of_an_account_nobody_holds_is_that_account(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
-        assert await accounts_of(db, SERVER_ID, C) == [C]
-        assert await current_account_of(db, SERVER_ID, C) == C
+        assert await accounts_of(db, C) == [C]
+        assert await current_account_of(db, C) == C
 
 
 async def test_current_account_map_carries_only_past_accounts(tmp_path):
@@ -184,7 +184,7 @@ async def test_current_account_map_carries_only_past_accounts(tmp_path):
     await _make_current(db_path, moved, B)
     await _profile(db_path, C)
     async with get_connection(db_path) as db:
-        assert await current_account_map(db, SERVER_ID) == {int(A): int(B)}
+        assert await current_account_map(db) == {int(A): int(B)}
 
 
 async def test_current_account_map_for_division_reaches_its_server(tmp_path):
@@ -216,5 +216,5 @@ async def test_get_profile_answers_only_to_the_current_account(tmp_path):
     pid = await _profile(db_path, A)
     await _make_current(db_path, pid, B)
     svc = DriverService(db_path)
-    assert (await svc.get_profile(SERVER_ID, B)).id == pid
-    assert await svc.get_profile(SERVER_ID, A) is None
+    assert (await svc.get_profile(B)).id == pid
+    assert await svc.get_profile(A) is None

@@ -545,9 +545,9 @@ _NEXT_DISCORD_ID = itertools.count(500000)
 async def _seat_driver(db_path, division_id, season_id, *, name, is_test=0):
     async with get_connection(db_path) as db:
         cur = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "is_test_driver) VALUES (?, ?, 'ASSIGNED', ?)",
-            (SERVER_ID, str(next(_NEXT_DISCORD_ID)), is_test),
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "is_test_driver) VALUES (?, 'ASSIGNED', ?)",
+            (str(next(_NEXT_DISCORD_ID)), is_test),
         )
         profile_id = cur.lastrowid
         await db.execute(

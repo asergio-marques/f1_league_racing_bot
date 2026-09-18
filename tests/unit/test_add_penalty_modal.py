@@ -427,9 +427,9 @@ async def _driver_moved_on(db_path: str) -> None:
     """The driver raced as DRIVER and has since made NEW_ACCOUNT their current account."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'ASSIGNED')",
-            (SERVER_ID, str(DRIVER)),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'ASSIGNED')",
+            (str(DRIVER),),
         )
         await db.execute(
             "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",

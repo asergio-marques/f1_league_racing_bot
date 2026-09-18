@@ -659,7 +659,7 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
                 return
 
             # --- Resolve driver profile ID ---
-            profile_id = await resolve_driver_profile_id(server_id, driver_user_id, db)
+            profile_id = await resolve_driver_profile_id(driver_user_id, db)
             if profile_id is None:
                 await interaction.followup.send(
                     f"❌ No driver profile found for user ID `{driver_user_id}` in this server.",
@@ -669,7 +669,7 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
             # Any account the driver has held names them; the pardon is staged, and every
             # message names them, by the one they use now (issue #243). It is matched to
             # the round through the profile, so the account it names changes nothing else.
-            driver_user_id = int(await current_account_of(db, server_id, driver_user_id))
+            driver_user_id = int(await current_account_of(db, driver_user_id))
 
             # --- Fetch DRA row ---
             cursor = await db.execute(

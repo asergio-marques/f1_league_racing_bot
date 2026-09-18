@@ -142,8 +142,7 @@ class TestAnUnusableNationalityIsRefused:
         async with get_connection(db_path) as db:
             row = await (
                 await db.execute(
-                    "SELECT COUNT(*) AS n FROM driver_profiles WHERE server_id = ?",
-                    (SERVER_ID,),
+                    "SELECT COUNT(*) AS n FROM driver_profiles",
                 )
             ).fetchone()
         assert row["n"] == 0
@@ -185,7 +184,7 @@ class TestTheRosterListCarriesIt:
     async def test_a_removed_driver_takes_its_nationality_with_it(self, db_path):
         result = await _add(db_path, nationality="Dutch")
 
-        await remove_test_driver(SERVER_ID, result["discord_user_id"], db_path)
+        await remove_test_driver(result["discord_user_id"], db_path)
 
         assert await list_test_drivers(SERVER_ID, DIVISION, db_path) == []
 

@@ -150,9 +150,9 @@ async def _seat_driver(
     user_id = 700_000 + seat_number + team_id * 10
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'ACTIVE')",
-            (SERVER_ID, user_id),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'ACTIVE')",
+            (user_id,),
         )
         profile_id = cursor.lastrowid
         # signup_records is keyed by (server_id, discord_user_id) — it holds no profile id.

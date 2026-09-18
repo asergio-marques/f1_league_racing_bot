@@ -210,7 +210,7 @@ async def test_leaving_test_mode_keeps_the_seeded_configs(db_path, season_id):
     await ensure_test_configs(season_id, db_path)
 
     # The whole of what disabling test mode does to stored data.
-    await clear_all_test_drivers(SERVER_ID, db_path)
+    await clear_all_test_drivers(db_path)
 
     entries, fl = await points_config_service.get_config_entries(
         db_path, "Standard"

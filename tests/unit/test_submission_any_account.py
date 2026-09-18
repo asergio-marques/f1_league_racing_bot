@@ -97,9 +97,9 @@ async def _db_with_a_session_under_the_past_account(tmp_path) -> tuple[str, int]
             (PAST, TEAM_A),
         )
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state) "
-            "VALUES (?, ?, 'ASSIGNED')",
-            (SERVER_ID, str(PAST)),
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'ASSIGNED')",
+            (str(PAST),),
         )
         await db.execute(
             "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
@@ -120,11 +120,10 @@ async def test_another_session_under_a_past_account_reads_as_the_current_one(tmp
     assert assignments == {NOW: (TEAM_A, "FEATURE_QUALIFYING")}
 
 
-async def test_current_accounts_maps_the_servers_past_accounts(tmp_path):
+async def test_current_accounts_maps_the_leagues_past_accounts(tmp_path):
     db_path, _ = await _db_with_a_session_under_the_past_account(tmp_path)
 
-    assert await current_accounts(db_path, SERVER_ID) == {PAST: NOW}
-    assert await current_accounts(db_path, SERVER_ID + 1) == {}
+    assert await current_accounts(db_path) == {PAST: NOW}
 
 
 def test_an_fl_override_naming_a_past_account_names_the_current_one():

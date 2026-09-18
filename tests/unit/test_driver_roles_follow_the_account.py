@@ -58,9 +58,9 @@ async def _league(tmp_path, *, state: str = "ASSIGNED", committed: int = 1,
             (SERVER_ID, TEAM_ROLE),
         )
         cursor = await db.execute(
-            "INSERT INTO driver_profiles (server_id, discord_user_id, current_state, "
-            "is_test_driver) VALUES (?, ?, ?, ?)",
-            (SERVER_ID, NEW, state, int(test)),
+            "INSERT INTO driver_profiles (discord_user_id, current_state, "
+            "is_test_driver) VALUES (?, ?, ?)",
+            (NEW, state, int(test)),
         )
         profile_id = cursor.lastrowid
         await db.execute(

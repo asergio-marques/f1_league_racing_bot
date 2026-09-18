@@ -650,7 +650,7 @@ async def staged_penalties_warning(db_path: str, server_id: int, entries: list[d
     from services.driver_service import current_account_map
 
     async with get_connection(db_path) as db:
-        current_of = await current_account_map(db, server_id)
+        current_of = await current_account_map(db)
     lines = [
         "⚠️ **The bot restarted mid-finalization.** "
         "The penalties listed below were **already applied to the results** "

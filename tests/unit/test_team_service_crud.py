@@ -570,8 +570,7 @@ async def test_a_filled_seat_carries_its_driver(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "
-            "(id, server_id, discord_user_id, current_state) VALUES (77, ?, '4242', 'ACTIVE')",
-            (SERVER_ID,),
+            "(id, discord_user_id, current_state) VALUES (77, '4242', 'ACTIVE')"
         )
         await db.execute(
             "UPDATE team_seats SET driver_profile_id = 77 "
