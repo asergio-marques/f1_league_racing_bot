@@ -13,7 +13,7 @@ Made using GitHub Copilot Spec Kit and Claude as an experiment.
 ## Prerequisites
 
 - Python 3.10 or higher (3.13 recommended — it is what CI runs)
-- A Discord Bot Token ([Discord Developer Portal](https://discord.com/developers/applications))
+- A Discord Bot Token ([Discord Developer Portal](https://discord.com/developers/applications)), for a bot application of the league's own — see [One bot, one server](#one-bot-one-server)
 
 ---
 
@@ -133,6 +133,17 @@ These must be enabled in the **Discord Developer Portal → Bot → Privileged G
 
 ---
 
+## One bot, one server
+
+One bot serves one league, and a league is one Discord server. Host a bot application for your league alone and add it to that one server.
+
+- **Switch *Public Bot* off** in the **Discord Developer Portal → Bot**. Then only the application's owner can add the bot to a server, and nobody else can invite it into theirs.
+- **The first `/bot-init` claims the server.** From then on the bot answers commands there and nowhere else. On any other server it stays, but refuses every command with *"⛔ This bot serves another server's league and takes no commands here."* and ignores everything that happens there.
+- **The host log warns you.** Whenever the bot sits in more than one server, it logs a warning at startup and each time it joins a server, naming every server it is in. Remove it from the ones that are not the league's.
+- **Moving the league to another server** takes `/bot-reset full:True`, which frees the claim, then `/bot-init` on the new server. Driver profiles and the team list survive a full reset, so the new server inherits them.
+
+---
+
 ## First-time Server Setup
 
 After inviting the bot, somebody holding Discord's **Administrator** permission must run:
@@ -205,6 +216,8 @@ Exempt from the interaction-channel rule, since no channel is configured until i
 
 **It runs once.** A second `/bot-init` on a configured server is refused, not applied — it names the four commands below instead. To start over entirely, `/bot-reset full:True` removes the configuration first.
 
+**It claims the server.** Once one server is set up, `/bot-init` on any other is refused like every command there — see [One bot, one server](#one-bot-one-server). Where two servers race to run it first, the loser is told *"⛔ This bot already serves the league on another server. One bot serves one league."*
+
 It also seeds the team list with the **Reserve** team, which has unlimited seats and cannot be removed or renamed. No other team is created — build the rest of the list with `/team add`.
 
 ---
@@ -258,7 +271,7 @@ Removes all season data for this server. Use `full:True` to also wipe the bot co
 
 **Partial reset** (`full:False`, the default): deletes all seasons, divisions, rounds, sessions, phase results, and audit entries.  Bot configuration (channel, role) is preserved; the bot remains usable immediately.
 
-**Full reset** (`full:True`): additionally deletes the bot configuration row.  Run `/bot-init` to re-configure the bot for this server.
+**Full reset** (`full:True`): additionally deletes the bot configuration row, which frees the bot's claim on the server.  Run `/bot-init` to re-configure the bot, on this server or another.
 
 ---
 
@@ -803,7 +816,7 @@ Save the whole database and return to it later, so a state reached once while te
 | `/test-mode backup status` | Whether a backup exists, when it was taken, its size, whether it can still be read, and whether it is locked |
 | `/test-mode backup restore` | Puts the saved backup back. Asks you to confirm first |
 
-> **Test mode is required, not just recommended.** These copy and replace the whole database file — which holds every server the bot serves — so they are refused outright unless the server is in test mode. Test mode itself will not switch on while a real driver sits in a live season, so a server that can run these has no real league to lose.
+> **Test mode is required, not just recommended.** These copy and replace the whole database file — which holds the whole league — so they are refused outright unless the server is in test mode. Test mode itself will not switch on while a real driver sits in a live season, so a server that can run these has no real league to lose.
 
 > **A restore needs a restart.** The bot holds both databases open while it runs, so nothing can be swapped underneath it. `/test-mode backup restore` checks the backup, keeps a copy of what is live as `bot.prerestore.db`, and stages the swap — which happens the next time the bot starts. Under a service that is automatic; from a terminal, stop it and run it again.
 
@@ -937,8 +950,6 @@ Name the driver by any of their accounts: `old_user` where it is still in the se
 > **Refused, changing nothing, when:** `new_user` is already the driver's current account; it is a past account of another driver — an account belongs to one driver; both sides hold a seat or a signup in the live season; both took part in the same division of the same season — by a confirmed seat or by results — which would put one person in one season's standings twice (the same division name in different seasons is fine); either side is a test-mode driver; or either side has a signup in progress (collecting, in review, or in correction) — finish it, approve or reject it, or have it withdrawn first. An account with no driver of its own but leftover results here is held to the same division rule.
 
 > **A past account cannot sign up.** The Sign Up button refuses it and names the driver's current account. Run this command first if the driver wants to use it again.
-
-> **Only this league moves.** A person who races in two leagues that share this bot keeps their other league's profile untouched.
 
 > **The portrait of the replaced account is discarded.** A portrait is the picture of the Discord account itself, so the one taken for the replaced account goes, and the new current account's own is fetched before the next graphic is drawn. A portrait you placed in the driver directory yourself is never touched.
 
@@ -2396,7 +2407,7 @@ Seven of the twelve draw no team and no driver — `calendar`, `rsvp`, `verdict-
 
 No parameters. Returns the ID, circuit name and Grand Prix name of every track the bot carries, ephemerally.
 
-This is the only `/track` command. The circuit list is **fixed**: a league can neither add a circuit of its own nor retune one, and the per-server μ/σ overrides that earlier versions allowed have been removed along with the data they were stored in.
+This is the only `/track` command. The circuit list is **fixed**: a league can neither add a circuit of its own nor retune one, and the μ/σ overrides that earlier versions allowed have been removed along with the data they were stored in.
 
 ---
 
@@ -2480,7 +2491,7 @@ The Beta distribution changes shape depending on the derived parameters α = μ�
 
 ### Packaged values
 
-All 28 circuits ship with pre-tuned values. They are the same on every server and cannot be overridden.
+All 28 circuits ship with pre-tuned values. They are the same for every league and cannot be overridden.
 
 ---
 
@@ -2496,7 +2507,7 @@ Three phases fire automatically per round (non-Mystery formats only). There is n
 | Phase 2 | T-2 days | `/weather config phase-2-deadline` | Rain/mixed/sunny slot per session |
 | Phase 3 | T-2 hours | `/weather config phase-3-deadline` | Slot-by-slot weather labels per session |
 
-The horizons shown are the packaged defaults, **not** fixed values — each is configurable per server, subject to the ordering rule in [Weather Module Commands](#weather-module-commands). A season runs on the values stored when it was approved.
+The horizons shown are the packaged defaults, **not** fixed values — each is configurable, subject to the ordering rule in [Weather Module Commands](#weather-module-commands). A season runs on the values stored when it was approved.
 
 Each phase's message **supersedes** the previous one: the earlier forecast is deleted only once the new one has posted, so a failed publish never leaves a division with no forecast at all. The Phase 3 message is deleted 24 hours after the round starts.
 
