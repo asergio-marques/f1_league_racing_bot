@@ -8,13 +8,13 @@ from __future__ import annotations
 import os
 import sys
 
-import aiosqlite
 import pytest
 
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from db.database import run_migrations  # noqa: E402
 from models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS  # noqa: E402
 from models.image_module import ImageConfig  # noqa: E402
 from services.image_config_service import (  # noqa: E402
@@ -25,37 +25,10 @@ from services.image_config_service import (  # noqa: E402
     pfp_change_refusal,
 )
 
-_MIGRATIONS_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "src", "db", "migrations"
-)
-
-#: Every migration that defines or redefines `image_config`, in order. Named rather than
-#: globbed because the rest of the schema is not needed here -- but *all* of them must be
-#: applied, or this fixture asserts defaults the shipped bot no longer has.
-_MIGRATIONS = (
-    "039_image_module.sql",
-    "043_league_asset_directories.sql",
-    "044_standings_highlight_directory.sql",
-    "045_marks_join_the_markers.sql",
-    "047_driver_portraits.sql",
-    "048_division_logo_directory.sql",
-    "051_per_tier_colours.sql",
-    "052_verdict_banner_template.sql",
-    "063_image_tables_lose_the_server.sql",
-)
-
-
 @pytest.fixture
 async def db_path(tmp_path):
     path = str(tmp_path / "test.db")
-
-    async with aiosqlite.connect(path) as db:
-        await db.execute("CREATE TABLE server_configs (server_id INTEGER PRIMARY KEY)")
-        await db.execute("INSERT INTO server_configs (server_id) VALUES (1)")
-        for filename in _MIGRATIONS:
-            with open(os.path.join(_MIGRATIONS_DIR, filename), encoding="utf-8") as fh:
-                await db.executescript(fh.read())
-        await db.commit()
+    await run_migrations(path)
     return path
 
 

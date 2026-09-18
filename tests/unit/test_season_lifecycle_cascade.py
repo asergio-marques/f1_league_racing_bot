@@ -444,7 +444,7 @@ async def test_the_backfill_reads_each_division_from_its_season(
         division_id = cur.lastrowid
         await db.commit()
 
-    # 053 and nothing after it: a later migration rebuilt seasons (068), and it is 053's
+    # 053 and nothing after it: a later migration rebuilt seasons (061), and it is 053's
     # backfill that is under test.
     from tests.support.migration_steps import run_migrations_through
 
