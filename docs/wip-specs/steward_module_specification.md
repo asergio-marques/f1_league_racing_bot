@@ -598,6 +598,10 @@
   - If a verdict was changed in an appeal in comparison to the original report, the time penalty value displayed in the appeals column should take the latter into consideration (e.g. a penalty of 5 seconds that was rescinded should show as -5s in the appeal column)
 
 ### Cycle close
+- The close of a cycle shall be applied entire or not at all. Before anything is written to any driver's license, the bot shall establish that every channel the close will post to exists and can be posted to: the division's verdicts, results, standings and license channels.
+  - Where any of them cannot be posted to, nothing shall be written, and the cycle shall wait at its close. The steward log channel and the log channel shall name the division and the channel at fault, and the command that repairs it.
+  - Once the channel is repaired, the close shall go ahead.
+  - The close shall not be recorded as done before the postings it claims have been made.
 - Once all tickets for a given round of a given division reach this stage, warning points, penalty points, qualifying bans, race bans, season bans and league bans are made effective and added to a driver's license. After this is done, it will be checked whether the driving licenses of any driver infringe upon any of the auto-rules configured.
   - Auto-rule handling is specified in another section.
 - Once auto-rules are verified, the previous license sheet shall be deleted, and an updated one, with the penalties of the latest round updated, will be posted.
