@@ -233,8 +233,8 @@ async def remove_portrait(db_path: str, server_id: int, user_id: str, directory)
     """Remove the portrait this bot obtained for *user_id*, the file and its row together.
 
     Returns whether anything was removed. Two paths want this: a driver who takes their
-    profile picture down, whose seat reverts to the placeholder, and a driver re-keyed onto
-    another account, whose old portrait is that account's picture and not theirs (issue #222).
+    profile picture down, whose seat reverts to the placeholder, and a driver given another
+    current account, whose replaced account is drawn by nothing (issues #222 and #243).
 
     **Only where the file is ours to remove.** `driver_portraits` is the ownership register:
     a portrait with no row was placed by the league itself, and migration 047 is explicit
