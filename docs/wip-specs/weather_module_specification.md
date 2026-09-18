@@ -45,7 +45,7 @@
 - The three deadlines shall be displayed in the configuration review and the placements review. No dedicated command to read them back shall be provided.
 
 ### Track parameters
-- Each circuit carries a mean rain probability (μ) and a dispersion (σ), both packaged with the bot and identical on every server.
+- Each circuit carries a mean rain probability (μ) and a dispersion (σ), both packaged with the bot and identical for every league.
 - Neither value shall be configurable by a league manager, and no command to override them shall be provided.
 - A "track list" command shall be available to league managers, returning the identifier, circuit name and Grand Prix name of every circuit the bot carries.
 

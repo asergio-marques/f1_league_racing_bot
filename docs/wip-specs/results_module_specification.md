@@ -10,7 +10,7 @@
 - <NEW COMMAND> There will be a new "standings channel" command that has as input a division name and a channel on which standings shall be posted by the bot, formatted.
 - There shall be a "verdicts channel" command that has as input a division name and a channel on which penalty and appeal verdicts shall be posted by the bot. Automatic attendance sanctions are announced in the same channel.
 - If the results & standings module is enabled, confirming a season's placements shall fail if any division lacks a results channel, a standings channel or a verdicts channel, or if no points configuration is attached to the season. Each missing item shall be named individually.
-    - The confirmation shall also fail if a points configuration attached to the season no longer exists in the server points schema store, naming each such configuration and saying how to put it right. A season shall never be left unconfirmable without being told why.
+    - The confirmation shall also fail if a points configuration attached to the season no longer exists in the league points schema store, naming each such configuration and saying how to put it right. A season shall never be left unconfirmable without being told why.
 - It shall not be possible to enable the results & standings module once the season's placements have been confirmed.
 - Disabling the results & standings module shall remain possible once the season's placements have been confirmed. A league that finds its results unworkable part-way through a championship shall be able to stop running them, and shall not be held to the module until the season ends.
 - Disabling the results & standings module once the season's placements have been confirmed shall destroy that season's results entire: every classification recorded, every standing computed from them, and every results and standings message already posted shall be deleted. The module's configuration shall be kept — the points configurations, the season's own copy of them, and each division's results, standings and verdicts channels — those being settings rather than output. Penalty and appeal verdicts already announced shall remain where they were posted, the bot holding no record by which to delete them.
@@ -21,10 +21,9 @@
 ## Results
 ### Design
 #### Points configurations
-- There is no default points position configuration for a server (every position of every possible session gives 0 points).
-- Each server has their own configuration.
+- There is no default points position configuration for a league (every position of every possible session gives 0 points).
 - The schema of points configuration is as follows:
-    - Server
+    - League
         |
         --> Points schema store
             |
@@ -65,15 +64,15 @@
             --> Modification schema store
 
     END
-- The design shall follow the idea that a league manager may add, remove or modify the configurations in the schema store, then attach and detach them from a season whose placements are yet to be first confirmed via a "weak link". Once the season's placements are first confirmed from the "placements review", the attached configurations' settings are copied over to the season's points schema store and remain completely independent of the server's configuration.
+- The design shall follow the idea that a league manager may add, remove or modify the configurations in the schema store, then attach and detach them from a season whose placements are yet to be first confirmed via a "weak link". Once the season's placements are first confirmed from the "placements review", the attached configurations' settings are copied over to the season's points schema store and remain completely independent of the league's configuration.
     - In practice, this means that any changes done while there is no season, or before a season's placements are first confirmed, will be valid to any season whose placements are confirmed in the future, regardless of whether the modified configuration is attached or not.
-    - However, once the season's placements have been confirmed, the modifications done to the configurations in the server points schema store are NOT applied to the season's own configuration of the same name.
+    - However, once the season's placements have been confirmed, the modifications done to the configurations in the league points schema store are NOT applied to the season's own configuration of the same name.
 - There shall be the possibility to amend a points system mid-season, but it will require higher permissions. Once an amending session is started (by enabling amending), a copy of the season's current points schema store will be made and placed in a "modification schema store". Any changes made will be done to this "modification store". Only upon review and approval will the settings in the modification store overwrite the points schema store of the season completely. After they are overwritten, all results and standings posted after every round of every division shall be reposted taking into consideration the new values.
     - The higher permission is the league admin's tier, and it is asked of the review command that carries the approval. Starting an amending session, making changes to the modification store and discarding them are a league manager's; reviewing them is not, the review and the approval being one command. Approval overwrites the season's points entire and nothing undoes it.
 
 #### Results and standings
 - The schema for results and standings is as follows:
-    - Server
+    - League
         |
         --> Division
             |
@@ -157,14 +156,14 @@
 - If no command is used to specify the number of points obtained by finishing in a given position, session type, and configuration, 0 points is to be assumed.
 
 #### Adding, removing, modifying point configurations
-- <NEW COMMAND> A "results config add" command will intake a string which shall be the name of the points configuration to be saved in the server points schema store. The string will serve as the ID of the configuration.
-    - Adding a points config to the server points schema store does not automatically append it to a season whose placements are yet to be confirmed.
-- <NEW COMMAND> A "results config remove" command will intake a string which is the ID of the points configuration to be removed from the server points schema store. It is a league admin's: the configuration is deleted outright and nothing puts one back.
+- <NEW COMMAND> A "results config add" command will intake a string which shall be the name of the points configuration to be saved in the league points schema store. The string will serve as the ID of the configuration.
+    - Adding a points config to the league points schema store does not automatically append it to a season whose placements are yet to be confirmed.
+- <NEW COMMAND> A "results config remove" command will intake a string which is the ID of the points configuration to be removed from the league points schema store. It is a league admin's: the configuration is deleted outright and nothing puts one back.
     - Removing a points config shall also detach it from any season **whose placements are yet to be first confirmed**, so that no season is left attached to a configuration that does not exist. A season whose placements have been confirmed shall keep its attachment: it holds its own copy of the points, taken at that confirmation, and that copy is what its results are scored and chosen from.
     - Where a season whose placements are yet to be first confirmed stands on the configuration, the command shall name that season, state that the season will be left needing another configuration before its placements can be confirmed, and shall delete nothing until the manager confirms. Where no such season is attached, it shall remove the configuration without asking.
-- <NEW COMMAND> A "results config session" command will intake the string that IDs the points configuration in the server points schema store to be changed, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race), an integer signifying position, and an integer signifying the number of points gained.
-- <NEW COMMAND> A "results config fl" command will intake the string that IDs the points configuration to be changed in the server points schema store, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race) and an integer signifying the number of points gained for having the shortest lap time in a session. The session types "Sprint Quali" and "Feature Quali" are invalid for this command.
-- <NEW COMMAND> A "results config fl-plimit" command will intake the string that IDs the points configuration to be changed in the server points schema store, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race) and an integer signifying the lowest valid position for which a driver is eligible for fastest-lap points (e.g. if this is configured to 10, then if the 11th place driver gets the fastest lap, then they get no points). The session types "Sprint Quali" and "Feature Quali" are invalid for this command.
+- <NEW COMMAND> A "results config session" command will intake the string that IDs the points configuration in the league points schema store to be changed, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race), an integer signifying position, and an integer signifying the number of points gained.
+- <NEW COMMAND> A "results config fl" command will intake the string that IDs the points configuration to be changed in the league points schema store, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race) and an integer signifying the number of points gained for having the shortest lap time in a session. The session types "Sprint Quali" and "Feature Quali" are invalid for this command.
+- <NEW COMMAND> A "results config fl-plimit" command will intake the string that IDs the points configuration to be changed in the league points schema store, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race) and an integer signifying the lowest valid position for which a driver is eligible for fastest-lap points (e.g. if this is configured to 10, then if the 11th place driver gets the fastest lap, then they get no points). The session types "Sprint Quali" and "Feature Quali" are invalid for this command.
 - For a given configuration and a given session type, a lower finishing position shall never be worth as much as or more than the position above it. Two positive values tying is a violation of this; positions worth nothing below the points-paying places are not.
     - A command that sets points shall apply the change and then report that the table is out of order, naming every position at fault. It shall not refuse the change. Filling a table in passes through states that are momentarily out of order — a position set before the one above it, a table repaired from the bottom up — and refusing them would put ordinary ways of building a table out of reach.
     - The refusal falls where a table stops being a draft: the first confirmation of a season's placements, and the approval of a mid-season amendment.
@@ -180,14 +179,14 @@
 
 #### Linking configs to seasons
 - <NEW COMMAND> A "results config append" command will intake the string that IDs the points configuration to be applied to the current season. The command is only valid if there is a season whose placements are yet to be first confirmed; if there is no season, or once the season's placements have been confirmed, this command fails.
-    - The command shall fail if no configuration of that name exists in the server points schema store, and shall say so. A name that was mistyped shall never be reported as attached.
+    - The command shall fail if no configuration of that name exists in the league points schema store, and shall say so. A name that was mistyped shall never be reported as attached.
     - There may be multiple points configurations attached to one season.
     - If the configuration input in "results config append" already exists in the current season, then the current season's configuration will be overwritten.
 - <NEW COMMAND> A "results config detach" command will intake the string that IDs the points configuration to be removed from the current season. The command is only valid if there is a season whose placements are yet to be first confirmed; if there is no season, or once the season's placements have been confirmed, this command fails.
 
 #### Confirming placements and points configs
 - <MODIFY COMMAND> All points configurations shall be listed when the "season config-review" or the "season placements-review" command is invoked, identifying them by name. Each of the checks below shall be made by both reviews, and shall refuse both the confirmation of the configuration and the confirmation of placements.
-    - Any of them that no longer exists in the server points schema store shall be named as such and reported as blocking confirmation, and the review shall not offer the placements for confirmation while one stands. The review and the confirmation shall judge this identically.
+    - Any of them that no longer exists in the league points schema store shall be named as such and reported as blocking confirmation, and the review shall not offer the placements for confirmation while one stands. The review and the confirmation shall judge this identically.
 - For a given configuration and a given session type, if a higher position is configured to yield less or the same points as a lower position (e.g. 1st = 25, 2nd = 0, 3rd = 15), confirming a season's placements will fail, and the bot shall post a text message informing as to why.
     - This shall be judged on the configurations attached to the season as they stand at the moment of the first confirmation of the season's placements.
     - The "season placements-review" command shall report the same fault, naming every position at fault, and shall not offer the placements for confirmation while one stands. The review and the confirmation shall judge this identically.
@@ -220,7 +219,7 @@
 
 #### Viewing configs after placements are confirmed
 - <NEW COMMAND> A "results config view" will view the many points configurations applied to the current season. There is one mandatory input, the name/ID of the points configuration, and one optional input, the session type whose points configuration is to be posted; if this optional parameter is omitted, then the configuration for all sessions pertaining to the input name/ID shall be posted.
-- Until the season's placements are first confirmed, the command reads the server points schema store; once they are, it reads the season's own store.
+- Until the season's placements are first confirmed, the command reads the league points schema store; once they are, it reads the season's own store.
 - When listing points configuration for any session, if all positions beyond a certain point yield 0 points, then they shall all be listed as "xth+" to prevent repetition.
 
 ### Submitting round results
