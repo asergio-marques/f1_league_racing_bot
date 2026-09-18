@@ -538,9 +538,15 @@ Things to know before you run it:
 - **Finish any signup in progress first.** The command is refused while the driver, or the new
   account, is collecting answers, in review or in correction. Approve it, reject it or have it
   withdrawn, then run the command.
-- **The new account must be in the server,** and it cannot be another driver's past account, a
-  driver of its own, or an account holding results, standings or history of its own here.
+- **The new account must be in the server,** and it cannot be another driver's past account.
   Nothing is changed by a refusal.
+- **If the new account has signed up already, the two merge.** This is the usual case: the
+  driver signed up again on the new account before you noticed. Deal with that signup first —
+  reject it if the driver is still seated on the old account — then run the command. The two
+  become one driver; the one holding the live season's seat or signup is kept and the other's
+  results and history join it. It is refused where both hold the live season, or where both
+  took part in the same division of the same season, since one person cannot stand twice in
+  one season's standings.
 - **The roles follow the account.** The signed-up, division and team roles move to the new
   account and come off the old one, if it is still in the server. The reply lists anything
   Discord would not let the bot do — usually a role above the bot's own.

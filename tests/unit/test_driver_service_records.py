@@ -15,8 +15,8 @@ the other's work.
 issue #243 it rewrites nothing: the profile's current account changes, the old one stays in
 the driver's list of accounts, and every record keeps the account it was written under.
 `test_a_re_key_rewrites_no_record_of_the_driver` compares the whole database to hold that.
-Three things refuse it — no profile at the old account, a profile already at the new one, or
-racing records of its own at the new one — and each refusal leaves everything as it was.
+`test_driver_reassign.py` pins what refuses it and what merges; the refusals kept here are
+the ones about records, and each leaves everything as it was.
 
 **Both write audit entries carrying the old and the new value.** They are the league's only
 record of a manager re-keying or re-flagging a driver, which are the two commands that can
@@ -339,46 +339,50 @@ async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):
         )
 
 
-async def test_re_keying_onto_an_occupied_account_is_refused(tmp_path):
-    """Two profiles sharing one Discord id would break every lookup in the bot, all of
-    which are by that id."""
+async def test_two_drivers_both_in_the_live_season_are_not_merged(tmp_path):
+    """The new account is a driver of its own, and both are signed up for the live season.
+    Merging them is the one thing an account holding a profile could mean (issue #243), and
+    two live signups cannot be one driver."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
     await _seed_profile(db_path, user_id=NEW_USER)
     service = DriverService(db_path)
 
-    with pytest.raises(ValueError, match="already has a driver profile"):
+    with pytest.raises(ValueError, match="both hold a seat or a signup"):
         await service.reassign_user_id(
             SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
         )
 
 
-async def test_a_re_key_onto_an_account_that_raced_is_refused(tmp_path):
-    """The new account holds no profile but holds racing of its own — a driver deleted for
-    never having raced a round in full. Carrying a second person's results onto it would
-    merge two drivers' records with nothing to separate them again."""
+async def test_an_account_whose_leftover_results_share_a_division_is_refused(tmp_path):
+    """The new account holds no profile but results of its own — a driver deleted for never
+    having raced a round in full — in the very division the driver raced. Joined, one person
+    would stand twice in that season's standings (issue #243)."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
+    await _seed_results(db_path, user_id=OLD_USER)
     await _seed_results(db_path, user_id=NEW_USER)
     service = DriverService(db_path)
 
-    with pytest.raises(ValueError, match="results, standings or history of their own"):
+    with pytest.raises(ValueError, match="both took part in Season 1 Pro"):
         await service.reassign_user_id(
             SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
         )
 
 
-async def test_a_re_key_onto_an_account_holding_history_is_refused(tmp_path):
-    """History outlives the profile, so an account with none may still hold seasons of it."""
+async def test_an_account_holding_only_history_of_its_own_is_accepted(tmp_path):
+    """Nothing is rewritten, so leftover history under the new account simply becomes the
+    driver's — it shares no division with anything of theirs (issue #243)."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
     await _seed_history(db_path, NEW_USER)
     service = DriverService(db_path)
 
-    with pytest.raises(ValueError, match="results, standings or history of their own"):
-        await service.reassign_user_id(
-            SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-        )
+    outcome = await service.reassign_user_id(
+        SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+    )
+
+    assert outcome.profile.discord_user_id == NEW_USER
 
 
 async def test_another_league_s_racing_does_not_refuse_a_re_key(tmp_path):

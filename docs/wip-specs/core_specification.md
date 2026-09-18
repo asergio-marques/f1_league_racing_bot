@@ -467,7 +467,9 @@ it only to place it; the rules governing it belong to its own specification.
 - An account shall belong to one driver in a league. An account that is a past account of another driver shall be refused.
 - The change shall be refused while either the driver or the new account has a signup in progress — collecting, in review, or in correction — and the league manager told to finish or withdraw it first.
 - A test-mode driver shall not be given a real account, nor a real driver a test-mode one.
-- An account shall not be made current where it already holds a driver profile, or results, standings or history of its own in the league. Every refusal shall change nothing.
+- Where the new account is another driver's current account, the two shall be merged into one driver owning every account of both. The one holding a seat or a signup in the live season is kept — otherwise the driver named — and the other's results, history, seats, attendance and former-driver flag join it.
+- The merge shall be refused where both hold a seat or a signup in the live season, and where both took part in the same division — one season's division, by a confirmed seat or by results — so that no one stands twice in one season's standings. The same division in name across different seasons is no obstacle, and different divisions of one season are allowed.
+- An account holding no driver profile but results or standings of its own in the league shall be refused on the same rule; otherwise its records become the driver's. Every refusal shall change nothing.
 - A past account of a driver shall not sign up; the signup button names the driver's current account instead.
 - Only a driver's current account leaving the server is the driver leaving it; a past account leaving changes nothing.
 - A change of account shall touch nothing of any other league upon the bot. A person who holds a profile in two leagues keeps the other league's untouched.

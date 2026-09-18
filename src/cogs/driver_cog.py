@@ -145,6 +145,12 @@ class DriverCog(commands.Cog):
         former = "Yes" if profile.former_driver else "No"
         past = [a for a in outcome.accounts if a != new_user_id]
         how = "switched back to a past account" if outcome.switched_back else "given a new account"
+        if outcome.merged_accounts:
+            how = (
+                "merged with the driver on "
+                + ", ".join(f"<@{a}>" for a in outcome.merged_accounts)
+                + ", and given that account"
+            )
         reply = (
             f"✅ Driver {how}.\n"
             f"   Current account : <@{new_user_id}>\n"

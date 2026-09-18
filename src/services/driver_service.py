@@ -245,40 +245,69 @@ _SESSIONS_OF_SERVER_SQL = (
 )
 
 
-async def account_holds_racing_records(db, server_id: int, discord_user_id: str) -> bool:
-    """Whether *discord_user_id* holds results, standings or history of its own on *server_id*.
+async def divisions_taken_part_in(
+    db, server_id: int, profile_id: int | None, accounts: list[str]
+) -> set[int]:
+    """Every division on *server_id* the identity took part in: by a confirmed seat, or by a
+    result or a standing under any of *accounts*.
 
-    Asked of the account a profile is about to be re-keyed onto, which by then is known to
-    hold no profile — so any such rows belong to a driver whose profile was deleted, a driver
-    who never raced a round in full but may well have been entered as a did-not-start. Moving
-    a second person's racing onto them would merge two people's records into one history with
-    nothing to separate them again, which is a worse outcome than refusing.
+    A division belongs to one season, so two identities sharing one is one person in one
+    season's standings twice — which is what a merge must not produce (decided 2026-09-18).
+    *profile_id* is None for an account no driver holds, whose leftover records are all there
+    is of it.
     """
-    cursor = await db.execute(
-        f"""
-        SELECT EXISTS (
-            SELECT 1 FROM driver_standings_snapshots
-            WHERE driver_user_id = ? AND division_id IN ({_DIVISIONS_OF_SERVER_SQL})
-        ) OR EXISTS (
-            SELECT 1 FROM race_session_results
-            WHERE driver_user_id = ? AND session_result_id IN ({_SESSIONS_OF_SERVER_SQL})
-        ) OR EXISTS (
-            SELECT 1 FROM qualifying_session_results
-            WHERE driver_user_id = ? AND session_result_id IN ({_SESSIONS_OF_SERVER_SQL})
-        ) OR EXISTS (
-            SELECT 1 FROM driver_history_entries
-            WHERE server_id = ? AND discord_user_id = ?
+    divisions: set[int] = set()
+    if profile_id is not None:
+        cursor = await db.execute(
+            "SELECT division_id FROM driver_division_memberships WHERE driver_profile_id = ?",
+            (profile_id,),
         )
-        """,
-        (
-            discord_user_id, server_id,
-            discord_user_id, server_id,
-            discord_user_id, server_id,
-            server_id, discord_user_id,
-        ),
+        divisions |= {r[0] for r in await cursor.fetchall()}
+    if accounts:
+        marks = ",".join("?" for _ in accounts)
+        cursor = await db.execute(
+            f"""
+            SELECT sr.division_id FROM race_session_results x
+            JOIN session_results sr ON sr.id = x.session_result_id
+            WHERE x.driver_user_id IN ({marks}) AND sr.division_id IN ({_DIVISIONS_OF_SERVER_SQL})
+            UNION
+            SELECT sr.division_id FROM qualifying_session_results x
+            JOIN session_results sr ON sr.id = x.session_result_id
+            WHERE x.driver_user_id IN ({marks}) AND sr.division_id IN ({_DIVISIONS_OF_SERVER_SQL})
+            UNION
+            SELECT division_id FROM driver_standings_snapshots
+            WHERE driver_user_id IN ({marks}) AND division_id IN ({_DIVISIONS_OF_SERVER_SQL})
+            """,
+            (*accounts, server_id, *accounts, server_id, *accounts, server_id),
+        )
+        divisions |= {r[0] for r in await cursor.fetchall()}
+    return divisions
+
+
+async def _describe_division(db, division_id: int) -> str:
+    cursor = await db.execute(
+        "SELECT s.season_number, d.name FROM divisions d JOIN seasons s ON s.id = d.season_id "
+        "WHERE d.id = ?",
+        (division_id,),
     )
     row = await cursor.fetchone()
-    return bool(row[0])
+    return f"Season {row[0]} {row[1]}" if row else f"division {division_id}"
+
+
+#: Every column naming a driver by their profile, which a merge moves onto the driver kept.
+#: The division memberships come first: moving a placement fires migration 057's trigger,
+#: which would otherwise add the membership a second time.
+_PROFILE_COLUMNS = (
+    "driver_division_memberships",
+    "team_seats",
+    "driver_season_assignments",
+    "driver_history_entries",
+    "driver_round_attendance",
+    "driver_standings_snapshots",
+    "race_session_results",
+    "qualifying_session_results",
+    "driver_accounts",
+)
 
 
 #: The states of a driver whose signup is under way: collecting their answers, in review, or
@@ -303,6 +332,49 @@ async def _profile_holding(db, server_id: int, discord_user_id):
     return await cursor.fetchone()
 
 
+#: The states in which a driver holds a signup or a seat in the live season. Two profiles both
+#: in one of these cannot become one driver (issue #243).
+_HOLDS_THE_LIVE_SEASON = frozenset({DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value})
+
+
+async def _refuse_a_shared_division(
+    db, server_id: int, ours: set[int], theirs: set[int], who: str
+) -> None:
+    shared = sorted(ours & theirs)
+    if shared:
+        raise ValueError(
+            f"This driver and {who} both took part in {await _describe_division(db, shared[0])}. "
+            "One person cannot stand twice in one season's standings, so the accounts cannot "
+            "be joined."
+        )
+
+
+async def _merge(db, kept, absorbed, actor_id: int, actor_name: str) -> None:
+    """Fold the *absorbed* profile into the *kept* one, within the caller's transaction.
+
+    Every column naming the absorbed driver by profile is moved onto the kept one, its
+    accounts with them; the former-driver flag is kept if either held it; and the absorbed
+    profile is deleted. The refusals before this guarantee no two rows collide on a key.
+    Nothing naming a driver by account is touched.
+    """
+    for table in _PROFILE_COLUMNS:
+        await db.execute(
+            f"UPDATE {table} SET driver_profile_id = ? WHERE driver_profile_id = ?",
+            (kept["id"], absorbed["id"]),
+        )
+    await db.execute(
+        "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND ? = 1",
+        (kept["id"], int(bool(absorbed["former_driver"]))),
+    )
+    await db.execute("DELETE FROM driver_profiles WHERE id = ?", (absorbed["id"],))
+    await db.execute(
+        "INSERT INTO audit_entries "
+        "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, "
+        "timestamp) VALUES (?, ?, ?, NULL, 'DRIVER_PROFILES_MERGED', ?, ?, datetime('now'))",
+        (kept["server_id"], actor_id, actor_name, str(absorbed["id"]), str(kept["id"])),
+    )
+
+
 def _refuse_a_signup_in_progress(row, who: str) -> None:
     if row["current_state"] in SIGNUP_IN_PROGRESS:
         raise ValueError(
@@ -323,6 +395,8 @@ class ReassignOutcome:
     accounts: list[str]
     #: Whether the new account was one of the driver's own past accounts.
     switched_back: bool = False
+    #: The accounts of a second profile merged into this one, where the new account had one.
+    merged_accounts: list[str] | None = None
 
 
 class DriverService:
@@ -449,10 +523,19 @@ class DriverService:
         *old_user_id* may be any account of the driver's, current or past. Naming one of the
         driver's own past accounts as *new_user_id* makes it current again.
 
+        Where *new_user_id* is another profile's current account, the two are **merged** into
+        one driver owning both lists of accounts. The profile holding the live season's seat
+        or signup is the one kept, the driver named otherwise; the other's links — seats,
+        placements, attendance, history, results — move onto it, as does its former-driver
+        flag, and it is deleted.
+
         Refused, with nothing changed, when: no driver holds *old_user_id*; *new_user_id* is
         already the driver's current account; it is a past account of another driver; either
-        side is a test-mode driver; either side has a signup in progress; or — until a merge
-        is possible — it holds a profile or racing records of its own.
+        side is a test-mode driver; either side has a signup in progress; both sides hold a
+        seat or a signup in the live season; or both took part in one division — one
+        season's division, by a confirmed seat or by results. That last applies as much to an
+        account no driver holds whose leftover results sit in such a division: one person
+        would stand twice in one season's standings (decided 2026-09-18).
 
         The checks and the write share one `BEGIN IMMEDIATE` transaction, so a signup begun or
         a second reassign given in between cannot slip past a check that has already passed.
@@ -490,24 +573,43 @@ class DriverService:
                             "be merged with a real one."
                         )
                 _refuse_a_signup_in_progress(driver, "this driver")
+                driver_accounts = await accounts_of_profile(db, driver["id"])
+                merged_accounts: list[str] | None = None
+                kept = driver
                 if owner is not None and not switched_back:
                     _refuse_a_signup_in_progress(owner, f"<@{new_user_id}>")
-                    raise ValueError(
-                        f"User {new_user_id} already has a driver profile on this server. "
-                        "Reassignment is not permitted."
+                    if driver["current_state"] in _HOLDS_THE_LIVE_SEASON and (
+                        owner["current_state"] in _HOLDS_THE_LIVE_SEASON
+                    ):
+                        raise ValueError(
+                            f"This driver and <@{new_user_id}> both hold a seat or a signup in "
+                            "the live season, so they cannot be merged into one driver."
+                        )
+                    owner_accounts = await accounts_of_profile(db, owner["id"])
+                    await _refuse_a_shared_division(
+                        db, server_id,
+                        await divisions_taken_part_in(db, server_id, driver["id"], driver_accounts),
+                        await divisions_taken_part_in(db, server_id, owner["id"], owner_accounts),
+                        f"<@{new_user_id}>",
                     )
-                if owner is None and await account_holds_racing_records(
-                    db, server_id, new_user_id
-                ):
-                    raise ValueError(
-                        f"User {new_user_id} already holds results, standings or history of "
-                        "their own in this league. Adding that account to this driver would "
-                        "merge two drivers' records, and is not permitted."
+                    kept, absorbed = (
+                        (owner, driver)
+                        if owner["current_state"] in _HOLDS_THE_LIVE_SEASON
+                        else (driver, owner)
+                    )
+                    await _merge(db, kept, absorbed, actor_id, actor_name)
+                    merged_accounts = owner_accounts
+                elif owner is None:
+                    await _refuse_a_shared_division(
+                        db, server_id,
+                        await divisions_taken_part_in(db, server_id, driver["id"], driver_accounts),
+                        await divisions_taken_part_in(db, server_id, None, [str(new_user_id)]),
+                        f"<@{new_user_id}>",
                     )
 
                 await db.execute(
                     "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
-                    (str(new_user_id), driver["id"]),
+                    (str(new_user_id), kept["id"]),
                 )
                 await db.execute(
                     "INSERT INTO audit_entries "
@@ -516,18 +618,23 @@ class DriverService:
                     "VALUES (?, ?, ?, NULL, 'DRIVER_USER_ID_REASSIGN', ?, ?, datetime('now'))",
                     (server_id, actor_id, actor_name, replaced, str(new_user_id)),
                 )
-                accounts = await accounts_of_profile(db, driver["id"])
+                accounts = await accounts_of_profile(db, kept["id"])
+                cursor = await db.execute(
+                    "SELECT id, server_id, discord_user_id, current_state, former_driver "
+                    "FROM driver_profiles WHERE id = ?",
+                    (kept["id"],),
+                )
+                profile = _row_to_profile(await cursor.fetchone())
                 await db.commit()
             except BaseException:
                 await db.rollback()
                 raise
-        profile = _row_to_profile(driver)
-        profile.discord_user_id = str(new_user_id)
         return ReassignOutcome(
             profile=profile,
             replaced_account=replaced,
             accounts=accounts,
             switched_back=switched_back,
+            merged_accounts=merged_accounts,
         )
 
     # ------------------------------------------------------------------

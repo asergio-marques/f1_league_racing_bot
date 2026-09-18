@@ -117,6 +117,7 @@ def _make_cog(
             replaced_account=old,
             accounts=sorted([old, new]),
             switched_back=False,
+            merged_accounts=None,
         )
     )
 
@@ -649,3 +650,17 @@ async def test_reassign_moves_a_held_signup_channel_to_the_new_current_account(t
     cog.bot.wizard_service.move_held_channel.assert_awaited_once_with(
         SERVER_ID, "1", "2", interaction.guild
     )
+
+
+async def test_a_merge_is_reported_as_one(tmp_path):
+    cog = _make_cog()
+    outcome = await cog.bot.driver_service.reassign_user_id(SERVER_ID, "1", "2")
+    outcome.merged_accounts = ["2", "3"]
+    cog.bot.driver_service.reassign_user_id = AsyncMock(return_value=outcome)
+    interaction = _interaction()
+
+    await undecorate(DriverCog.reassign)(
+        cog, interaction, _member(2, "New"), _member(1, "Old"), None
+    )
+
+    assert "merged with the driver on <@2>, <@3>" in _replied(interaction)

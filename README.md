@@ -932,7 +932,9 @@ Name the driver by any of their accounts: `old_user` where it is still in the se
 
 > **So does a held signup channel.** A signup channel still open after its approval or rejection moves to the new account and is deleted when it was already due. If the new account has a held channel of its own, that one is kept and the other is deleted at once.
 
-> **Refused, changing nothing, when:** `new_user` is already the driver's current account; it is a past account of another driver — an account belongs to one driver; it already holds a driver profile, or results, standings or history of its own; either side is a test-mode driver; or either side has a signup in progress (collecting, in review, or in correction) — finish it, approve or reject it, or have it withdrawn first.
+> **Naming another driver's account merges the two.** Where `new_user` is already a driver of its own — the usual case, a driver who signed up again on a new account before you noticed — the two become one driver owning every account of both. The one holding a seat or a signup in the live season is kept, and the other's results, history, seats and former-driver flag join it.
+
+> **Refused, changing nothing, when:** `new_user` is already the driver's current account; it is a past account of another driver — an account belongs to one driver; both sides hold a seat or a signup in the live season; both took part in the same division of the same season — by a confirmed seat or by results — which would put one person in one season's standings twice (the same division name in different seasons is fine); either side is a test-mode driver; or either side has a signup in progress (collecting, in review, or in correction) — finish it, approve or reject it, or have it withdrawn first. An account with no driver of its own but leftover results here is held to the same division rule.
 
 > **A past account cannot sign up.** The Sign Up button refuses it and names the driver's current account. Run this command first if the driver wants to use it again.
 
