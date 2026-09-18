@@ -174,7 +174,7 @@ async def _enforce(db_path, *, sack=None, post=None):
             patch("services.verdict_announcement_service.banner_for_round", return_value=None), \
             patch("services.verdict_announcement_service.post_autosanction_announcement",
                   new=AsyncMock()):
-        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, SERVER_ID, 1)
+        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1)
     return posted
 
 
@@ -239,7 +239,7 @@ async def test_autosack_reposts_every_division(db_path):
             patch("services.verdict_announcement_service.banner_for_round", return_value=None), \
             patch("services.verdict_announcement_service.post_autosanction_announcement",
                   new=AsyncMock()):
-        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, SERVER_ID, 1)
+        await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1)
 
     posted_divisions = sorted(call.args[4] for call in posted.await_args_list)
     assert posted_divisions == [PRO, AM]

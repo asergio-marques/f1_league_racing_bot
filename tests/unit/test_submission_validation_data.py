@@ -53,7 +53,6 @@ from models.points_config import SessionType  # noqa: E402
 from services.result_submission_service import (  # noqa: E402
     _build_division_validation_data,
     _get_round_context,
-    _get_server_id_for_round,
     _make_slug,
     other_active_team_assignments,
 )
@@ -149,7 +148,7 @@ def _bot(teams: list[dict], roles: dict[str, int | None]):
 
 
 async def _build(teams, roles):
-    return await _build_division_validation_data(DIVISION_ID, SERVER_ID, _bot(teams, roles))
+    return await _build_division_validation_data(DIVISION_ID, _bot(teams, roles))
 
 
 def _standard():
@@ -405,7 +404,6 @@ async def test_a_round_resolves_to_its_season_and_division(tmp_path):
 
     ctx = await _get_round_context(db_path, ROUND_ID)
 
-    assert ctx["server_id"] == SERVER_ID
     assert ctx["season_number"] == 7
     assert ctx["round_number"] == 3
     assert ctx["division_name"] == "Pro Division"
@@ -429,14 +427,6 @@ async def test_an_unknown_round_is_refused_rather_than_posted_empty(tmp_path):
 
     with pytest.raises(ValueError, match="Round 404"):
         await _get_round_context(db_path, 404)
-
-
-async def test_the_server_is_resolved_through_the_same_chain(tmp_path):
-    """A round knows its division, not its server — and the server is what every posting
-    path needs to find a channel."""
-    db_path = await _make_db(tmp_path, name="validation_server")
-
-    assert await _get_server_id_for_round(db_path, ROUND_ID) == SERVER_ID
 
 
 # ---------------------------------------------------------------------------

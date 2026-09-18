@@ -32,7 +32,7 @@ def _cog(stage: SeasonStage | None) -> SeasonCog:
     )
     cog.bot.season_service.delete_season = AsyncMock()
     cog.bot.output_router.post_log = AsyncMock()
-    cog._pending = {42: PendingConfig(server_id=SERVER_ID, season_id=7)}
+    cog._pending = {42: PendingConfig(season_id=7)}
     return cog
 
 
@@ -159,6 +159,6 @@ async def test_aborting_keeps_the_saved_test_mode_backup(tmp_path):
     bot.scheduler_service._jobstore_path = str(jobstore)
 
     with patch("services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()):
-        await end_of_season_pass(SERVER_ID, bot, None)
+        await end_of_season_pass(bot, None)
 
     assert backup_service.backup_path(db_path).read_bytes() == b"saved"

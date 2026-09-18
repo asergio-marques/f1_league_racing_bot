@@ -77,7 +77,7 @@ async def test_a_division_still_running_holds_the_season_ongoing(tmp_path):
 async def test_cancelling_the_last_running_division_leaves_the_season_pending_completion(tmp_path):
     path = await _db(tmp_path, divisions=(("ACTIVE", "NOT_RUN"), ("FINISHED", None)))
 
-    await SeasonService(path).cancel_division(1, SERVER_ID, 1, "Admin")
+    await SeasonService(path).cancel_division(1, 1, "Admin")
 
     assert await _stage(path) is SeasonStage.PENDING_COMPLETION
 
@@ -120,6 +120,7 @@ def _wind_down_bot(path, *, signups_open=False):
     from unittest.mock import AsyncMock, MagicMock
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = path
     bot.get_guild = MagicMock(return_value=None)
     bot.signup_module_service.get_config = AsyncMock(
@@ -170,7 +171,7 @@ async def test_a_season_whose_divisions_are_done_is_wound_down_to_pending_comple
     path = await _db(tmp_path, stage=stage, divisions=(("FINISHED", None), ("CANCELLED", None)))
     await _seed_pending_drivers(path)
 
-    assert await lifecycle.wind_down_ongoing(_wind_down_bot(path), SERVER_ID) is True
+    assert await lifecycle.wind_down_ongoing(_wind_down_bot(path)) is True
 
     assert await _stage(path) is SeasonStage.PENDING_COMPLETION
     assert await _states(path) == {
@@ -197,7 +198,7 @@ async def test_an_open_window_is_closed_before_the_pending_placements_are_turned
     bot = _wind_down_bot(path, signups_open=True)
 
     with patch("cogs.module_cog.execute_forced_close", new=AsyncMock()) as closed:
-        assert await lifecycle.wind_down_ongoing(bot, SERVER_ID) is True
+        assert await lifecycle.wind_down_ongoing(bot) is True
 
     closed.assert_awaited_once()
     bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
@@ -207,7 +208,7 @@ async def test_a_season_with_a_division_still_running_is_not_wound_down(tmp_path
     path = await _db(tmp_path, stage=SeasonStage.ONGOING_PLACEMENTS)
     await _seed_pending_drivers(path)
 
-    assert await lifecycle.wind_down_ongoing(_wind_down_bot(path), SERVER_ID) is False
+    assert await lifecycle.wind_down_ongoing(_wind_down_bot(path)) is False
 
     assert await _stage(path) is SeasonStage.ONGOING_PLACEMENTS
     assert (await _states(path))[3] == "UNASSIGNED"
@@ -235,13 +236,13 @@ async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_
     guild.get_role = MagicMock(return_value=role)
     bot.get_guild = MagicMock(return_value=guild)
 
-    await lifecycle.wind_down_ongoing(bot, SERVER_ID)
+    await lifecycle.wind_down_ongoing(bot)
 
-    held = [c.args[1] for c in bot.wizard_service._trigger_channel_hold.await_args_list]
+    held = [c.args[0] for c in bot.wizard_service._trigger_channel_hold.await_args_list]
     assert held == ["1004"]
     # The two approved drivers turned down lose the signed-up role; the committed one keeps it.
     assert member.remove_roles.await_count == 2
-    assert "pending placements turned down: 3" in bot.output_router.post_log.await_args.args[1]
+    assert "pending placements turned down: 3" in bot.output_router.post_log.await_args.args[0]
 
 
 async def test_completing_winds_a_finished_season_down_first(tmp_path):

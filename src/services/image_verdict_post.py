@@ -54,7 +54,7 @@ class VerdictRender:
         return self.png is not None
 
 
-async def verdicts_enabled(bot, server_id: int) -> bool:
+async def verdicts_enabled(bot) -> bool:
     """True where the module is on, the ``verdicts`` aspect is on, and the template is valid."""
     try:
         if not await bot.module_service.is_images_enabled():
@@ -66,7 +66,7 @@ async def verdicts_enabled(bot, server_id: int) -> bool:
         report = reports.get(VERDICTS_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("verdicts: enablement check failed for server %s: %s", server_id, exc)
+        log.error("verdicts: enablement check failed: %s", exc)
         return False
 
 
@@ -152,7 +152,7 @@ async def _driver_nationality(
 
 
 async def team_name_for_entry(
-    bot, guild, *, server_id: int, division_id: int, role_id: int | None
+    bot, guild, *, division_id: int, role_id: int | None
 ) -> str | None:
     """The team whose car the driver drove, resolved as the results graphic resolves it.
 
@@ -168,7 +168,7 @@ async def team_name_for_entry(
     try:
         from services.image_results_post import _team_names
 
-        names = await _team_names(bot, guild, server_id, division_id, [int(role_id)])
+        names = await _team_names(bot, guild, division_id, [int(role_id)])
     except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
         log.warning("verdicts: team name unreadable for role %s: %s", role_id, exc)
         return None
@@ -232,7 +232,6 @@ async def build_drawing(
     db_path: str,
     round_id: int,
     kind: VerdictKind,
-    server_id: int,
     season_number,
     division_name: str,
     round_number,
@@ -265,7 +264,7 @@ async def build_drawing(
     # none for this driver has an ordinary emptied optional field, and is told.
     from services.image_results_post import _nationality_collected
 
-    collected = await _nationality_collected(db_path, server_id)
+    collected = await _nationality_collected(db_path)
 
     # A mention a person wrote into free text is resolved in place to the name it addresses —
     # the driver that mention names, and not the driver being sanctioned (#142). The graphic
@@ -305,7 +304,6 @@ async def build_drawing(
 
 async def render_verdict(
     bot,
-    server_id: int,
     drawing: VerdictDrawing,
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
@@ -331,7 +329,6 @@ async def render_verdict(
         from utils.image_naming import stem_for_drawing
 
         decision = await bot.image_render_service.render_for_posting(
-            server_id,
             VERDICTS_TEMPLATE_KEY,
             spec_builder_with_faults(
                 build_fill_spec, drawing, directories, directory_faults
@@ -342,7 +339,7 @@ async def render_verdict(
             filename_stem=stem_for_drawing(drawing, VERDICTS_TEMPLATE_KEY),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("verdicts: render failed for server %s: %s", server_id, exc)
+        log.error("verdicts: render failed: %s", exc)
         return VerdictRender(problem=str(exc), rejects=origin is PostingOrigin.COMMANDED)
 
     if decision.rejects:
@@ -400,15 +397,15 @@ def describe(
     return " · ".join(parts)
 
 
-async def report(bot, server_id: int, what: str, detail: str) -> None:
+async def report(bot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a verdicts channel."""
     from services.image_results_post import report as _report
 
-    await _report(bot, server_id, what, detail)
+    await _report(bot, what, detail)
 
 
-async def report_notices(bot, server_id: int, what: str, notices) -> None:
+async def report_notices(bot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4)."""
     from services.image_results_post import report_notices as _report_notices
 
-    await _report_notices(bot, server_id, what, notices)
+    await _report_notices(bot, what, notices)

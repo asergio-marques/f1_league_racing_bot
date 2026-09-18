@@ -148,7 +148,7 @@ async def test_a_seated_reserve_does_count_against_the_sheet_rows(tmp_path):
     service = _service(db_path, template)
 
     with pytest.raises(ValueError) as excinfo:
-        await service._guard_sheet_capacity(SERVER_ID, division_id)
+        await service._guard_sheet_capacity(division_id)
 
     assert "3" in str(excinfo.value), "both the driver and the reserve are counted"
 
@@ -160,7 +160,7 @@ async def test_a_reserve_placement_is_measured_against_the_sheet_rows(tmp_path):
     service = _service(db_path, template)
 
     with pytest.raises(ValueError) as excinfo:
-        await service._guard_sheet_capacity(SERVER_ID, division_id)
+        await service._guard_sheet_capacity(division_id)
 
     assert "**not** assigned" in str(excinfo.value)
 
@@ -186,7 +186,7 @@ async def test_an_assignment_within_the_rows_is_allowed(tmp_path):
     template = _template_file(tmp_path, rows=8)
     service = _service(db_path, template)
 
-    await service._guard_sheet_capacity(SERVER_ID, division_id)
+    await service._guard_sheet_capacity(division_id)
 
 
 async def test_the_attendance_aspect_being_off_lets_every_assignment_through(tmp_path):
@@ -194,7 +194,7 @@ async def test_the_attendance_aspect_being_off_lets_every_assignment_through(tmp
     template = _template_file(tmp_path, rows=2)
     service = _service(db_path, template, toggle=False)
 
-    await service._guard_sheet_capacity(SERVER_ID, division_id)
+    await service._guard_sheet_capacity(division_id)
 
 
 async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
@@ -206,11 +206,11 @@ async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
         side_effect=RuntimeError("boom")
     )
 
-    await service._guard_sheet_capacity(SERVER_ID, division_id)
+    await service._guard_sheet_capacity(division_id)
 
 
 async def test_no_bot_means_no_guard(tmp_path):
     from services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
-    await PlacementService(db_path)._guard_sheet_capacity(SERVER_ID, division_id)
+    await PlacementService(db_path)._guard_sheet_capacity(division_id)

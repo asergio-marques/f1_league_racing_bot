@@ -72,7 +72,7 @@ class AvailabilitySlot:
     ``slot_sequence_id``.** The ordinal is recomputed from chronological order on
     every read, so adding or removing a slot renumbers every slot after it; anything
     stored against an ordinal silently comes to mean a different time (issue #126).
-    ``slot_id`` is derived from the day and time, which are unique per server, so it
+    ``slot_id`` is derived from the day and time, which are unique, so it
     cannot drift from the slot it names and a removed-then-re-added slot recovers its
     own answers. The ordinal exists only so a league types ``3`` rather than
     ``Fri_21_00``; it is converted to ``slot_id`` at the input boundary and never

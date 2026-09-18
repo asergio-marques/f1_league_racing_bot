@@ -8,7 +8,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-from utils.league_server import LeagueCommandTree, warn_if_serving_several
+from utils.league_server import league_guild, LeagueCommandTree, warn_if_serving_several
 from utils.log_filters import install_late_autocomplete_filter
 
 load_dotenv()
@@ -211,10 +211,7 @@ async def main() -> None:
 
         async def _signup_close_cb() -> None:
             from cogs.module_cog import execute_forced_close
-            server_id = await bot.config_service.get_league_server_id()
-            if server_id is None:
-                return
-            await execute_forced_close(server_id, bot, audit_action="SIGNUP_AUTO_CLOSE")
+            await execute_forced_close(bot, audit_action="SIGNUP_AUTO_CLOSE")
 
         bot.scheduler_service.register_signup_close_callback(_signup_close_cb)
 
@@ -224,8 +221,7 @@ async def main() -> None:
                     "SELECT close_at FROM signup_module_config WHERE close_at IS NOT NULL"
                 )
                 _row = await _cur.fetchone()
-            _server_id = await bot.config_service.get_league_server_id()
-            if _row is None or _server_id is None:
+            if _row is None:
                 return
             now_utc = _dt.now(_tz.utc)
             _close_at_iso = _row["close_at"]
@@ -239,7 +235,7 @@ async def main() -> None:
             if _close_dt <= now_utc:
                 log.info("on_ready: signup close_at is past — running forced close")
                 from cogs.module_cog import execute_forced_close
-                await execute_forced_close(_server_id, bot, audit_action="SIGNUP_AUTO_CLOSE")
+                await execute_forced_close(bot, audit_action="SIGNUP_AUTO_CLOSE")
             else:
                 from services.scheduler_service import SIGNUP_CLOSE_JOB_ID
                 if bot.scheduler_service._scheduler.get_job(SIGNUP_CLOSE_JOB_ID) is None:
@@ -413,7 +409,7 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
             """
             SELECT r.id, r.scheduled_at,
                    r.phase1_done, r.phase2_done, r.phase3_done,
-                   r.format, (SELECT server_id FROM server_configs LIMIT 1) AS server_id
+                   r.format
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
@@ -424,13 +420,13 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
         rows = await cursor.fetchall()
 
     for row in rows:
-        round_id, scheduled_at_str, p1, p2, p3, fmt, server_id = row
+        round_id, scheduled_at_str, p1, p2, p3, fmt = row
         scheduled_at = datetime.fromisoformat(scheduled_at_str)
         if scheduled_at.tzinfo is None:
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
         # Only recover phases for servers with weather module active
-        if not await bot.module_service.is_weather_enabled(server_id):  # type: ignore[attr-defined]
+        if not await bot.module_service.is_weather_enabled():  # type: ignore[attr-defined]
             continue
 
         if cfg is None:
@@ -480,8 +476,7 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
         log.exception("_recover_rsvp_views_and_deadlines: failed to fetch embed messages")
         return
 
-    # The embed rows carry no server_id, so resolve the rounds whose server still has the
-    # module enabled and re-arm only those.
+    # Re-arm nothing while the attendance module is disabled.
     try:
         async with _gc(bot.db_path) as db:  # type: ignore[attr-defined]
             cur = await db.execute(
@@ -489,10 +484,7 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
                 SELECT DISTINCT rem.round_id
                   FROM rsvp_embed_messages rem
                   JOIN rounds r ON r.id = rem.round_id
-                  JOIN divisions d ON d.id = r.division_id
-                  JOIN seasons s ON s.id = d.season_id
-                  CROSS JOIN attendance_config ac
-                 WHERE ac.module_enabled = 1
+                 WHERE EXISTS (SELECT 1 FROM attendance_config WHERE module_enabled = 1)
                 """
             )
             enabled_round_ids = {r[0] for r in await cur.fetchall()}
@@ -626,7 +618,7 @@ async def _abandon_interrupted_resubmission(
     )
 
 
-async def staged_penalties_warning(db_path: str, server_id: int, entries: list[dict]) -> str:
+async def staged_penalties_warning(db_path: str, entries: list[dict]) -> str:
     """The notice posted when the bot restarted part-way through finalising a penalty review.
 
     Each entry names the account its result stands under, which applied it; the notice names
@@ -689,7 +681,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
                    rsc.results_posted, rsc.staged_penalties, rsc.prompt_message_id,
                    rsc.resubmitting, rsc.resubmit_prompt_message_id,
-                   r.division_id, r.status, (SELECT server_id FROM server_configs LIMIT 1) AS server_id
+                   r.division_id, r.status
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
             JOIN divisions d ON d.id  = r.division_id
@@ -710,17 +702,16 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         resubmit_prompt_message_id: int | None = row["resubmit_prompt_message_id"]
         division_id: int = row["division_id"]
         round_status: str = row["status"] or ""
-        server_id: int = row["server_id"]
 
-        guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
+        guild = await league_guild(bot)  # type: ignore[attr-defined]
 
         if in_penalty_review and round_status == "AWAITING_APPEAL_VERDICTS":
             # The bot restarted while a round was awaiting appeals review.
             # Re-post the AppealsReviewView prompt to the submission channel.
             if guild is None:
                 log.warning(
-                    "Recovery: guild %s not in cache, cannot restore appeals review for round %s",
-                    server_id, round_id,
+                    "Recovery: the league's server is not in the cache, cannot restore appeals review for round %s",
+                    round_id,
                 )
                 continue
             channel = guild.get_channel(channel_id)
@@ -756,8 +747,8 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
             # Re-post the penalty review prompt instead of deleting the channel.
             if guild is None:
                 log.warning(
-                    "Recovery: guild %s not in cache, cannot restore penalty review for round %s",
-                    server_id, round_id,
+                    "Recovery: the league's server is not in the cache, cannot restore penalty review for round %s",
+                    round_id,
                 )
                 continue
             channel = guild.get_channel(channel_id)
@@ -782,7 +773,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                     try:
                         entries = _json.loads(staged_penalties_json)
                         await channel.send(
-                            await staged_penalties_warning(bot.db_path, server_id, entries)
+                            await staged_penalties_warning(bot.db_path, entries)
                         )
                     except Exception:
                         log.exception(
@@ -840,9 +831,9 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
 
         if guild is None:
             log.warning(
-                "Recovery: guild %s not in cache for round %s — "
+                "Recovery: the league's server is not in the cache for round %s — "
                 "submission row cleared but wizard not re-triggered",
-                server_id, round_id,
+                round_id,
             )
             continue
 
@@ -870,7 +861,6 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                 _rrow = await _rcur.fetchone()
             _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
             await bot.output_router.post_log(  # type: ignore[attr-defined]
-                server_id,
                 f"System | Bot restarted mid-result-submission | Notice\n"
                 f"  round: {_round_label}\n"
                 "  Sessions submitted before restart have been cleared. "
@@ -900,7 +890,7 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
     try:
         async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
             cursor = await db.execute(
-                "SELECT server_id, channel_id, message_id, reviewer_id, posted_at "
+                "SELECT channel_id, message_id, reviewer_id, posted_at "
                 "FROM season_review_prompts"
             )
             prompts = await cursor.fetchall()
@@ -909,7 +899,6 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
         return
 
     for row in prompts:
-        server_id = int(row["server_id"])
         # Fetched rather than only read from the cache. A cache miss and a deleted channel
         # are indistinguishable to `get_channel`, and the row is cleared either way — so a
         # miss would drop the only record of a message still standing, which is precisely
@@ -921,11 +910,7 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
             except (discord.NotFound, discord.Forbidden):
                 channel = None
             except discord.HTTPException as exc:
-                log.warning(
-                    "could not fetch the channel of a standing review in guild %s: %s",
-                    server_id,
-                    exc,
-                )
+                log.warning("could not fetch the channel of a standing review: %s", exc)
                 channel = None
         if channel is not None:
             try:
@@ -936,11 +921,7 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
                 # cleared below regardless, which is the point of the sweep.
                 pass
             except (discord.HTTPException, discord.Forbidden) as exc:
-                log.warning(
-                    "could not delete the expired review prompt in guild %s: %s",
-                    server_id,
-                    exc,
-                )
+                log.warning("could not delete the expired review prompt: %s", exc)
             try:
                 await channel.send(
                     f"⏱️ <@{int(row['reviewer_id'])}> your review expired while the bot was "
@@ -948,24 +929,18 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
                     f"or `/season placements-review` again, whichever you were answering."
                 )
             except (discord.HTTPException, discord.Forbidden) as exc:
-                log.warning(
-                    "could not post the review expiry notice in guild %s: %s", server_id, exc
-                )
+                log.warning("could not post the review expiry notice: %s", exc)
 
         try:
             async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
                 await db.execute(
-                    "DELETE FROM season_review_prompts WHERE server_id = ?", (server_id,)
+                    "DELETE FROM season_review_prompts"
                 )
                 await db.commit()
         except Exception:
-            log.exception("could not clear the review prompt for guild %s", server_id)
+            log.exception("could not clear the season review prompt")
         else:
-            log.info(
-                "cleared a season review prompt posted at %s in guild %s",
-                row["posted_at"],
-                server_id,
-            )
+            log.info("cleared a season review prompt posted at %s", row["posted_at"])
 
 
 async def _recover_portrait_refresh_job(bot: commands.Bot) -> None:
@@ -1004,7 +979,6 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
         orphans = await cursor.fetchall()
 
     # The league's server is the one configured; the rows no longer say.
-    server_id = await bot.config_service.get_league_server_id()  # type: ignore[attr-defined]
 
     for row in orphans:
         row_id: int = row["id"]
@@ -1020,7 +994,7 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
             await db.commit()
 
         # Delete the Discord channel.
-        guild = bot.get_guild(server_id) if server_id is not None else None  # type: ignore[attr-defined]
+        guild = await league_guild(bot)  # type: ignore[attr-defined]
         if guild is not None:
             channel = guild.get_channel(channel_id)
             if channel is not None:
@@ -1041,7 +1015,6 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
                 _rrow = await _rcur.fetchone()
             _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
             await bot.output_router.post_log(  # type: ignore[attr-defined]
-                server_id,
                 f"System | Bot restarted mid-amendment | Notice\n"
                 f"  round: {_round_label}, session: {session_type.replace('_', ' ').title()}\n"
                 "  Amendment channel deleted. Please re-run /round results amend.",

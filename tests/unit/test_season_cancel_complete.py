@@ -352,7 +352,7 @@ async def test_every_scheduled_job_is_cancelled():
         await _cancel(cog, _interaction())
 
     assert cog.bot.scheduler_service.cancel_round.call_count == 2
-    cog.bot.scheduler_service.cancel_season_end.assert_called_once_with(SERVER_ID)
+    cog.bot.scheduler_service.cancel_season_end.assert_called_once_with()
 
 
 async def test_the_season_s_roles_are_revoked():

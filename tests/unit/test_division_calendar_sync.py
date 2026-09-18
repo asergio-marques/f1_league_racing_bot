@@ -169,7 +169,7 @@ async def test_render_notices_are_shown_and_logged(tmp_path):
     await _sync(cog, interaction, posting=_posting(notices=["round 12 did not fit"]))
 
     assert "round 12 did not fit" in _replied(interaction)
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "notice: round 12 did not fit" in logged
 
 
@@ -178,7 +178,7 @@ async def test_a_successful_sync_is_logged(tmp_path):
 
     await _sync(cog, _interaction())
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "/division calendar-sync | Success" in logged
     assert "posted as: text" in logged
 

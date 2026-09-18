@@ -49,18 +49,15 @@ _FULL_RESET_TABLES: tuple[str, ...] = (
 
 
 async def reset_server_data(
-    server_id: int,
     db_path: str,
     scheduler_service: "SchedulerService",
     *,
     full: bool = False,
 ) -> dict[str, int]:
-    """Delete season data (and optionally server config) for *server_id*.
+    """Delete the league's season data, and optionally its configuration.
 
     Parameters
     ----------
-    server_id:
-        Discord guild ID whose data is to be deleted.
     db_path:
         Path to the SQLite database file.
     scheduler_service:
@@ -68,7 +65,7 @@ async def reset_server_data(
         *before* rows are deleted.
     full:
         When ``True``, also deletes the ``server_configs`` row, effectively
-        factory-resetting the bot for this server.
+        factory-resetting the bot and freeing its claim on the server.
 
     Returns
     -------
@@ -191,24 +188,21 @@ async def reset_server_data(
         seasons_deleted: int = seasons_cur.rowcount  # type: ignore[assignment]
 
         await db.execute(
-            "DELETE FROM audit_entries WHERE server_id = ?",
-            (server_id,),
+            "DELETE FROM audit_entries",
         )
 
         if full:
             for table in _FULL_RESET_TABLES:
                 await db.execute(f"DELETE FROM {table}")
             await db.execute(
-                "DELETE FROM server_configs WHERE server_id = ?",
-                (server_id,),
+                "DELETE FROM server_configs",
             )
 
         await db.commit()
 
     log.info(
-        "Reset server %s: %d season(s), %d division(s), %d round(s) deleted "
+        "Reset: %d season(s), %d division(s), %d round(s) deleted "
         "(full=%s)",
-        server_id,
         seasons_deleted,
         len(division_ids),
         len(round_ids),

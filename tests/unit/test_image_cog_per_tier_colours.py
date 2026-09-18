@@ -200,7 +200,7 @@ async def test_the_declared_slots_helper_ignores_invalid_templates():
             ),
         }
     )
-    assert await ImageCog._declared_colour_slots(cog, 1) == {"accent"}
+    assert await ImageCog._declared_colour_slots(cog) == {"accent"}
 
 
 def test_the_service_exposes_what_the_commands_call():

@@ -73,7 +73,7 @@ async def test_no_question_outside_test_mode():
     interaction = _interaction()
 
     assert await cog._offer_backup_before_approving(
-        interaction, SERVER_ID, _later(300)
+        interaction, _later(300)
     ) is True
     interaction.followup.send.assert_not_awaited()
 
@@ -84,7 +84,7 @@ async def test_no_question_where_the_server_has_no_configuration():
     interaction = _interaction()
 
     assert await cog._offer_backup_before_approving(
-        interaction, SERVER_ID, _later(300)
+        interaction, _later(300)
     ) is True
 
 
@@ -103,7 +103,7 @@ async def test_the_question_is_asked_under_test_mode(monkeypatch):
     monkeypatch.setattr(_BackupBeforeApprovalView, "__init__", _answered)
 
     assert await cog._offer_backup_before_approving(
-        interaction, SERVER_ID, _later(300)
+        interaction, _later(300)
     ) is True
     assert "Save the databases" in _reply(interaction)
 
@@ -127,7 +127,7 @@ async def test_the_question_is_given_what_is_left_of_the_window(monkeypatch):
     monkeypatch.setattr(_BackupBeforeApprovalView, "__init__", _capture)
     monkeypatch.setattr(_BackupBeforeApprovalView, "wait", AsyncMock())
 
-    await cog._offer_backup_before_approving(_interaction(), SERVER_ID, _later(60))
+    await cog._offer_backup_before_approving(_interaction(), _later(60))
 
     assert 55 < captured["timeout"] <= 60, captured["timeout"]
 
@@ -138,7 +138,7 @@ async def test_an_already_expired_window_approves_nothing():
     interaction = _interaction()
 
     assert await cog._offer_backup_before_approving(
-        interaction, SERVER_ID, _later(-1)
+        interaction, _later(-1)
     ) is False
     assert "Nothing has been approved" in _reply(interaction)
 
@@ -150,7 +150,7 @@ async def test_silence_expires_the_approval(monkeypatch):
     monkeypatch.setattr(_BackupBeforeApprovalView, "wait", AsyncMock())
 
     assert await cog._offer_backup_before_approving(
-        interaction, SERVER_ID, _later(300)
+        interaction, _later(300)
     ) is False
     assert "expired" in _reply(interaction)
     assert "Nothing has been approved" in _reply(interaction)
@@ -169,7 +169,7 @@ async def _answered(cog, monkeypatch, answer: str):
 
     monkeypatch.setattr(_BackupBeforeApprovalView, "__init__", _set)
     monkeypatch.setattr(_BackupBeforeApprovalView, "wait", AsyncMock())
-    result = await cog._offer_backup_before_approving(interaction, SERVER_ID, _later(300))
+    result = await cog._offer_backup_before_approving(interaction, _later(300))
     return result, interaction
 
 
@@ -196,7 +196,7 @@ async def test_cancelling_approves_nothing(monkeypatch):
 
 
 def _view(cog, timeout: float = 300):
-    return _BackupBeforeApprovalView(cog, SERVER_ID, timeout=timeout)
+    return _BackupBeforeApprovalView(cog, timeout=timeout)
 
 
 async def test_the_view_offers_three_answers():

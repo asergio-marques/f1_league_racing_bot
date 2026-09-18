@@ -39,13 +39,13 @@ async def db_path(tmp_path):
     return path
 
 
-async def _store(path: str, *, server_id: int = SERVER_ID) -> None:
+async def _store(path: str) -> None:
     async with get_connection(path) as db:
         await db.execute(
             "INSERT INTO season_review_prompts "
-            "(server_id, season_id, channel_id, message_id, reviewer_id, posted_at) "
+            "(id, season_id, channel_id, message_id, reviewer_id, posted_at) "
             "VALUES (?, 1, ?, ?, ?, '2026-09-07T12:00:00+00:00')",
-            (server_id, CHANNEL_ID, MESSAGE_ID, REVIEWER_ID),
+            (1, CHANNEL_ID, MESSAGE_ID, REVIEWER_ID),
         )
         await db.commit()
 
@@ -170,18 +170,6 @@ async def test_a_refused_delete_does_not_stop_the_sweep(db_path):
     await _recover_expired_review_prompts(_bot(db_path, channel))
 
     assert await _rows(db_path) == []
-
-
-async def test_every_server_is_swept(db_path):
-    """One row per server, and a restart clears all of them."""
-    await _store(db_path)
-    await _store(db_path, server_id=SERVER_ID + 1)
-    channel, _ = _channel()
-
-    await _recover_expired_review_prompts(_bot(db_path, channel))
-
-    assert await _rows(db_path) == []
-    assert channel.send.await_count == 2
 
 
 async def test_nothing_standing_does_nothing(db_path):

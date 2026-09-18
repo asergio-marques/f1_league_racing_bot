@@ -168,7 +168,7 @@ async def test_an_assignment_past_the_drivers_template_rows_is_refused(tmp_path)
     service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
 
     with pytest.raises(ValueError) as excinfo:
-        await service._guard_standings_capacity(1, division_id, ORDINARY)
+        await service._guard_standings_capacity(division_id, ORDINARY)
 
     message = str(excinfo.value)
     assert "3 drivers" in message
@@ -183,7 +183,7 @@ async def test_an_assignment_within_the_rows_is_allowed(tmp_path):
     template = _template_file(tmp_path, DRIVERS, rows=5)
     service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
 
-    await service._guard_standings_capacity(1, division_id, ORDINARY)
+    await service._guard_standings_capacity(division_id, ORDINARY)
 
 
 async def test_the_toggle_being_off_lets_every_assignment_through(tmp_path):
@@ -196,7 +196,7 @@ async def test_the_toggle_being_off_lets_every_assignment_through(tmp_path):
         db_path, bot=_bot(db_path, {DRIVERS: _report(template)}, toggle=False)
     )
 
-    await service._guard_standings_capacity(1, division_id, ORDINARY)
+    await service._guard_standings_capacity(division_id, ORDINARY)
 
 
 async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
@@ -210,14 +210,14 @@ async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
     )
     service = PlacementService(db_path, bot=bot)
 
-    await service._guard_standings_capacity(1, division_id, ORDINARY)
+    await service._guard_standings_capacity(division_id, ORDINARY)
 
 
 async def test_no_bot_means_no_guard(tmp_path):
     from services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
-    await PlacementService(db_path)._guard_standings_capacity(1, division_id, ORDINARY)
+    await PlacementService(db_path)._guard_standings_capacity(division_id, ORDINARY)
 
 
 # ── The reserve team is no part of a classification (#140) ───────────────
@@ -236,7 +236,7 @@ async def test_a_seated_reserve_is_not_counted_against_the_standings_rows(tmp_pa
     template = _template_file(tmp_path, DRIVERS, rows=2)
     service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
 
-    await service._guard_standings_capacity(1, division_id, ORDINARY)
+    await service._guard_standings_capacity(division_id, ORDINARY)
 
 
 async def test_the_rows_still_bound_the_classified_drivers(tmp_path):
@@ -248,7 +248,7 @@ async def test_the_rows_still_bound_the_classified_drivers(tmp_path):
     service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
 
     with pytest.raises(ValueError) as excinfo:
-        await service._guard_standings_capacity(1, division_id, ORDINARY)
+        await service._guard_standings_capacity(division_id, ORDINARY)
 
     assert "3 drivers" in str(excinfo.value), "the two reserves are not among them"
 
@@ -261,7 +261,7 @@ async def test_a_reserve_placement_is_not_measured_against_the_standings_rows(tm
     template = _template_file(tmp_path, DRIVERS, rows=2)
     service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
 
-    await service._guard_standings_capacity(1, division_id, RESERVE)
+    await service._guard_standings_capacity(division_id, RESERVE)
 
 
 async def test_an_unknown_team_is_left_to_the_check_that_reports_it(tmp_path):
@@ -272,7 +272,7 @@ async def test_an_unknown_team_is_left_to_the_check_that_reports_it(tmp_path):
     template = _template_file(tmp_path, DRIVERS, rows=2)
     service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
 
-    await service._guard_standings_capacity(1, division_id, "No Such Team")
+    await service._guard_standings_capacity(division_id, "No Such Team")
 
 
 # ── At the season review (FR-043, FR-045) ─────────────────────────────────

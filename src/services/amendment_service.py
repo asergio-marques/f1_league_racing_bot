@@ -17,6 +17,7 @@ from db.database import get_connection
 from models.round import RoundFormat
 from services.season_service import SeasonImmutableError
 from utils.points_ordering import ordering_message, ordering_violations
+from utils.league_server import league_guild
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
@@ -93,7 +94,7 @@ class AmendmentService:
                 # ``r.*`` already carries rounds.division_id, which is the one every reader
                 # below wants. Asking ``divisions`` for a division_id of its own — that table
                 # has only ``id`` — made this statement raise on every amendment.
-                "SELECT r.*, (SELECT server_id FROM server_configs LIMIT 1) AS server_id, "
+                "SELECT r.*, "
                 "       d.forecast_channel_id, d.mention_role_id, d.tier AS division_tier, "
                 "       s.status AS season_status, s.season_number "
                 "FROM rounds r "
@@ -112,7 +113,6 @@ class AmendmentService:
                 f"Round {round_id} belongs to an archived season and cannot be amended."
             )
 
-        server_id: int = row["server_id"]
         track_name: str = row["track_name"] or "Unknown"
         any_phase_done = bool(row["phase1_done"] or row["phase2_done"] or row["phase3_done"])
 
@@ -202,12 +202,11 @@ class AmendmentService:
                 await db.execute(
                     """
                     INSERT INTO audit_entries
-                        (server_id, actor_id, actor_name, division_id, change_type,
+                        (actor_id, actor_name, division_id, change_type,
                          old_value, new_value, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        server_id,
                         actor.id,
                         str(actor),
                         row["division_id"],
@@ -281,7 +280,7 @@ class AmendmentService:
         # drivers; we must not fire the mystery notice retroactively (FR-009).
         # For non-mystery rounds we always re-schedule; overdue phases are
         # immediately re-run below.
-        _weather_on = await bot.module_service.is_weather_enabled(server_id)
+        _weather_on = await bot.module_service.is_weather_enabled()
         if _weather_on:
             from models.round import RoundFormat as _RoundFormat
             if updated_round.format != _RoundFormat.MYSTERY or now < p1_horizon:
@@ -309,7 +308,7 @@ class AmendmentService:
         # runs for every round whatever the modules, closing it as FINAL where results are off.
         # Without it the round never leaves NOT_RUN, its division never finishes and its season
         # can never be completed — which is why it is armed here whatever the results module
-        # says, exactly as ``cancel_all_weather_for_server`` refuses to cancel it.
+        # says, exactly as ``cancel_all_weather`` refuses to cancel it.
         if not _weather_on:
             bot.scheduler_service.schedule_result_submission_jobs(
                 [updated_round],
@@ -395,7 +394,7 @@ class AmendmentService:
             # second route.
             if _weather_on:
                 await bot.output_router.post_forecast(
-                    _Div(), invalidation_message(amended_track), server_id=server_id
+                    _Div(), invalidation_message(amended_track), enqueue_on_failure=True
                 )
 
         # The audit line is not weather output and does not wait on a forecast having been
@@ -404,7 +403,6 @@ class AmendmentService:
             f"  {f}: {old_value} → {db_value}" for f, old_value, db_value in applied
         )
         await bot.output_router.post_log(
-            server_id,
             f"{actor.display_name} (<@{actor.id}>) | /round amend (field) | Success\n"
             f"  round: {updated_round.round_number}\n"
             f"{_changed}",
@@ -764,16 +762,11 @@ async def get_modification_store_diff(db_path: str, season_id: int) -> str:
     return header + "\n" + "\n".join(lines)
 
 
-async def _server_id_of_season(db_path: str, season_id: int) -> int | None:
-    """The server a season belongs to, read before the approval writes anything."""
+async def _season_exists(db_path: str, season_id: int) -> bool:
+    """Whether the season can be read, checked before the approval writes anything."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT server_id FROM server_configs WHERE EXISTS "
-            "(SELECT 1 FROM seasons WHERE id = ?) LIMIT 1",
-            (season_id,),
-        )
-        row = await cursor.fetchone()
-    return int(row["server_id"]) if row else None
+        cursor = await db.execute("SELECT 1 FROM seasons WHERE id = ?", (season_id,))
+        return await cursor.fetchone() is not None
 
 
 async def approval_faults(db_path: str, season_id: int, bot) -> list[str]:
@@ -796,11 +789,10 @@ async def approval_faults(db_path: str, season_id: int, bot) -> list[str]:
     """
     from services import results_post_service
 
-    server_id = await _server_id_of_season(db_path, season_id)
-    if server_id is None:
+    if not await _season_exists(db_path, season_id):
         return ["The season could not be read, so nothing was changed."]
 
-    guild = bot.get_guild(server_id) if bot is not None else None
+    guild = (await league_guild(bot)) if bot is not None else None
     faults = await results_post_service.repost_channel_faults(
         db_path, season_id, guild, bot
     )
@@ -903,12 +895,10 @@ async def approve_amendment(
             "UPDATE season_amendment_state SET amendment_active = 0, modified_flag = 0 WHERE season_id = ?",
             (season_id,),
         )
-        # Fetch server_id for audit log
-        cursor = await db.execute("SELECT server_id FROM server_configs LIMIT 1")
-        srv_row = await cursor.fetchone()
+        # Whether the bot is set up at all: there is no log channel to report to otherwise.
+        cursor = await db.execute("SELECT 1 FROM server_configs LIMIT 1")
+        set_up = await cursor.fetchone() is not None
         await db.commit()
-
-    server_id = int(srv_row["server_id"]) if srv_row else None
 
     # Cascade-recompute all divisions
     from services import results_post_service
@@ -918,7 +908,7 @@ async def approve_amendment(
         )
         div_rows = await cursor.fetchall()
 
-    guild = bot.get_guild(server_id) if server_id else None
+    guild = await league_guild(bot)
 
     for div_row in div_rows:
         division_id = div_row["id"]
@@ -960,7 +950,7 @@ async def approve_amendment(
                     )
 
         # T018: Attendance recalculation (033-attendance-tracking).
-        if guild and server_id and await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+        if guild and set_up and await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
             from services.attendance_service import recalculate_attendance_for_round
 
             # Find the most recently finalized round per division to recalculate.
@@ -981,7 +971,7 @@ async def approve_amendment(
                     await recalculate_attendance_for_round(
                         bot, guild, db_path,
                         latest_row["id"], division_id,
-                        server_id, season_id,
+                        season_id,
                     )
                 except Exception:
                     log.exception(
@@ -994,9 +984,8 @@ async def approve_amendment(
     # recorded `AMENDMENT_APPROVED | Success` for an approval whose reposting had not
     # started and might not survive. The season's approval logs its own success at the end
     # for the same reason (`season_end_service.execute_season_end`).
-    if server_id:
+    if set_up:
         await bot.output_router.post_log(
-            server_id,
             f"<@{approved_by}> | AMENDMENT_APPROVED | Success\n"
             f"  season_id: {season_id}"
         )

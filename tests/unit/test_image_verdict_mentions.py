@@ -121,7 +121,6 @@ async def _draw(
         db_path=db_path,
         round_id=ROUND_ID,
         kind=VerdictKind.PENALTY,
-        server_id=SERVER_ID,
         season_number=1,
         division_name="Pro Division",
         round_number=8,

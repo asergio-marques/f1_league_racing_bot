@@ -44,7 +44,7 @@ async def _may_review_signup(interaction: discord.Interaction) -> bool:
         return False
     bot = interaction.client  # type: ignore[attr-defined]
     try:
-        server_cfg = await bot.config_service.get_server_config(interaction.guild.id)  # type: ignore[attr-defined]
+        server_cfg = await bot.config_service.get_server_config()  # type: ignore[attr-defined]
     except Exception:
         return False
     if server_cfg is None:
@@ -60,37 +60,35 @@ class AdminReviewView(discord.ui.View):
     FR-039, A-004.
     """
 
-    def __init__(self, server_id: int | None = None, discord_user_id: str | None = None, bot: commands.Bot | None = None) -> None:
+    def __init__(self, discord_user_id: str | None = None, bot: commands.Bot | None = None) -> None:
         super().__init__(timeout=None)
-        self._server_id = server_id
         self._discord_user_id = discord_user_id
         self._bot = bot
 
     async def _resolve(self, interaction: discord.Interaction):
-        """Return (bot, server_id, discord_user_id) resolving from channel when not stored."""
+        """Return (bot, discord_user_id) resolving from channel when not stored."""
         _bot = self._bot or interaction.client
-        _server_id: int = self._server_id or interaction.guild_id  # type: ignore[assignment]
         _user_id = self._discord_user_id
         if _user_id is None:
             wizard = await _bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
                 interaction.channel_id
             )
             _user_id = wizard.discord_user_id if wizard else None
-        return _bot, _server_id, _user_id
+        return _bot, _user_id
 
     async def _guard(self, interaction: discord.Interaction):
-        """Check permissions and race-condition guard.  Returns (True, bot, server_id, user_id) to proceed."""
+        """Check permissions and race-condition guard.  Returns (True, bot, user_id) to proceed."""
         if not await _may_review_signup(interaction):
             await interaction.response.send_message(
                 "⛔ Insufficient permissions.", ephemeral=True
             )
-            return False, None, None, None
-        _bot, _server_id, _user_id = await self._resolve(interaction)
+            return False, None, None
+        _bot, _user_id = await self._resolve(interaction)
         if _user_id is None:
             await interaction.response.send_message(
                 "⛔ Could not identify driver for this signup.", ephemeral=True
             )
-            return False, None, None, None
+            return False, None, None
         # Race-condition guard: driver must still be in PENDING_ADMIN_APPROVAL
         profile = await _bot.driver_service.get_profile(  # type: ignore[attr-defined]
             _user_id
@@ -99,19 +97,19 @@ class AdminReviewView(discord.ui.View):
             await interaction.response.send_message(
                 "⛔ This signup has already been actioned.", ephemeral=True
             )
-            return False, None, None, None
-        return True, _bot, _server_id, _user_id
+            return False, None, None
+        return True, _bot, _user_id
 
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, custom_id="admin_approve")
     async def approve_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        ok, _bot, _server_id, _user_id = await self._guard(interaction)
+        ok, _bot, _user_id = await self._guard(interaction)
         if not ok:
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.approve_signup(  # type: ignore[attr-defined]
-            _server_id, _user_id, interaction.guild, interaction.user
+            _user_id, interaction.guild, interaction.user
         )
         await interaction.followup.send("✅ Signup approved.", ephemeral=True)
 
@@ -119,13 +117,12 @@ class AdminReviewView(discord.ui.View):
     async def request_changes_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        ok, _bot, _server_id, _user_id = await self._guard(interaction)
+        ok, _bot, _user_id = await self._guard(interaction)
         if not ok:
             return
         await interaction.response.defer(ephemeral=True)
         _PENDING_REASONS[(interaction.channel_id, interaction.user.id)] = {
             "action": "request_changes",
-            "server_id": _server_id,
             "discord_user_id": _user_id,
             "actor": interaction.user,
             "guild": interaction.guild,
@@ -141,13 +138,12 @@ class AdminReviewView(discord.ui.View):
     async def reject_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        ok, _bot, _server_id, _user_id = await self._guard(interaction)
+        ok, _bot, _user_id = await self._guard(interaction)
         if not ok:
             return
         await interaction.response.defer(ephemeral=True)
         _PENDING_REASONS[(interaction.channel_id, interaction.user.id)] = {
             "action": "reject",
-            "server_id": _server_id,
             "discord_user_id": _user_id,
             "actor": interaction.user,
             "guild": interaction.guild,
@@ -180,9 +176,8 @@ class CorrectionParameterView(discord.ui.View):
         ("Notes",               "notes"),
     ]
 
-    def __init__(self, server_id: int | None = None, discord_user_id: str | None = None, bot: commands.Bot | None = None) -> None:
+    def __init__(self, discord_user_id: str | None = None, bot: commands.Bot | None = None) -> None:
         super().__init__(timeout=None)  # persistent — logical timeout enforced by asyncio task
-        self._server_id = server_id
         self._discord_user_id = discord_user_id
         self._bot = bot
 
@@ -201,7 +196,6 @@ class CorrectionParameterView(discord.ui.View):
                         )
                         return
                     _bot = self._bot or inter.client
-                    _server_id: int = self._server_id or inter.guild_id  # type: ignore[assignment]
                     _user_id = self._discord_user_id
                     if _user_id is None:
                         wizard = await _bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
@@ -215,7 +209,7 @@ class CorrectionParameterView(discord.ui.View):
                         return
                     await inter.response.defer(ephemeral=True)
                     await _bot.wizard_service.select_correction_parameter(  # type: ignore[attr-defined]
-                        _server_id, _user_id, p, inter.guild
+                        _user_id, p, inter.guild
                     )
                     await inter.followup.send(
                         f"✅ Re-collecting **{p.replace('_', ' ')}**.", ephemeral=True
@@ -255,13 +249,12 @@ class AdminReviewCog(commands.Cog):
         followup: discord.Webhook = pending["followup"]
         if action == "request_changes":
             await self.bot.wizard_service.request_changes(  # type: ignore[attr-defined]
-                pending["server_id"], pending["discord_user_id"],
-                pending["guild"], pending["actor"], reason=reason,
+                pending["discord_user_id"], pending["guild"], pending["actor"], reason=reason,
             )
             await followup.send("✅ Correction requested.", ephemeral=True)
         elif action == "reject":
             await self.bot.wizard_service.reject_signup(  # type: ignore[attr-defined]
-                pending["server_id"], pending["discord_user_id"],
+                pending["discord_user_id"],
                 pending["guild"], pending["actor"], reason=reason,
             )
             await followup.send("✅ Signup rejected.", ephemeral=True)

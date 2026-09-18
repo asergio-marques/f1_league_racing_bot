@@ -211,7 +211,7 @@ async def test_a_first_team_pick_is_recorded_and_the_next_is_offered(service):
     _serve(service, wizard)
 
     await service.svc.handle_preferred_teams_button(
-        SERVER_ID, DRIVER_ID, "Alpha", service.guild
+        DRIVER_ID, "Alpha", service.guild
     )
 
     assert wizard.draft_answers["preferred_teams"] == ["Alpha"]
@@ -229,7 +229,7 @@ async def test_the_next_prompt_names_the_ordinal_and_the_picks_so_far(service):
     _serve(service, wizard)
 
     await service.svc.handle_preferred_teams_button(
-        SERVER_ID, DRIVER_ID, "Alpha", service.guild
+        DRIVER_ID, "Alpha", service.guild
     )
 
     prompt = service.channel.send.await_args.args[0]
@@ -246,7 +246,7 @@ async def test_a_team_already_picked_is_not_offered_again(service):
     _serve(service, wizard)
 
     await service.svc.handle_preferred_teams_button(
-        SERVER_ID, DRIVER_ID, "Alpha", service.guild
+        DRIVER_ID, "Alpha", service.guild
     )
 
     view = service.channel.send.await_args.kwargs["view"]
@@ -266,7 +266,7 @@ async def test_a_third_pick_ends_the_loop(service):
     _serve(service, wizard)
 
     await service.svc.handle_preferred_teams_button(
-        SERVER_ID, DRIVER_ID, "Gamma", service.guild
+        DRIVER_ID, "Gamma", service.guild
     )
 
     assert wizard.draft_answers["preferred_teams"] == ["Alpha", "Beta", "Gamma"]
@@ -284,7 +284,7 @@ async def test_running_out_of_teams_ends_the_loop(service):
     _serve(service, wizard)
 
     await service.svc.handle_preferred_teams_button(
-        SERVER_ID, DRIVER_ID, "Beta", service.guild
+        DRIVER_ID, "Beta", service.guild
     )
 
     assert service.advanced == [wizard]
@@ -304,7 +304,7 @@ async def test_no_preference_ends_the_loop_keeping_the_picks_so_far(service):
     _serve(service, wizard)
 
     await service.svc.handle_preferred_teams_button(
-        SERVER_ID, DRIVER_ID, None, service.guild
+        DRIVER_ID, None, service.guild
     )
 
     assert wizard.draft_answers["preferred_teams"] == ["Alpha"]
@@ -318,7 +318,7 @@ async def test_no_preference_with_no_picks_at_all_stores_an_empty_list(service):
     _serve(service, wizard)
 
     await service.svc.handle_preferred_teams_button(
-        SERVER_ID, DRIVER_ID, None, service.guild
+        DRIVER_ID, None, service.guild
     )
 
     assert wizard.draft_answers["preferred_teams"] == []
@@ -339,7 +339,7 @@ async def test_the_sub_step_counter_is_cleared_when_the_loop_ends(service, team)
     _serve(service, wizard)
 
     await service.svc.handle_preferred_teams_button(
-        SERVER_ID, DRIVER_ID, team, service.guild
+        DRIVER_ID, team, service.guild
     )
 
     assert "_pref_teams_step" not in wizard.draft_answers
@@ -354,7 +354,7 @@ async def test_a_continuing_loop_saves_the_wizard_and_resets_the_timeout(service
     _serve(service, wizard)
 
     await service.svc.handle_preferred_teams_button(
-        SERVER_ID, DRIVER_ID, "Alpha", service.guild
+        DRIVER_ID, "Alpha", service.guild
     )
 
     service.signup_svc.save_wizard.assert_awaited_once()
@@ -369,7 +369,7 @@ async def test_a_team_button_pressed_on_a_later_step_does_nothing(service):
     _serve(service, wizard)
 
     await service.svc.handle_preferred_teams_button(
-        SERVER_ID, DRIVER_ID, "Alpha", service.guild
+        DRIVER_ID, "Alpha", service.guild
     )
 
     assert "preferred_teams" not in wizard.draft_answers

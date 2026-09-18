@@ -123,7 +123,7 @@ async def test_switching_off_clears_the_flag_and_the_drivers(db_path):
     with patch(
         "services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()
     ) as flushed:
-        assert await switch_test_mode_off(SERVER_ID, bot) == 2
+        assert await switch_test_mode_off(bot) == 2
 
     flushed.assert_awaited_once()
     assert await _profiles(db_path) == [3]
@@ -139,7 +139,7 @@ async def test_a_server_not_in_test_mode_is_left_alone(db_path):
         await db.execute("UPDATE server_configs SET test_mode_active = 0")
         await db.commit()
 
-    assert await switch_test_mode_off(SERVER_ID, SimpleNamespace(db_path=db_path)) == 0
+    assert await switch_test_mode_off(SimpleNamespace(db_path=db_path)) == 0
     assert await _profiles(db_path) == [1, 2, 3]
 
 
@@ -150,7 +150,7 @@ async def test_a_flush_that_fails_still_switches_test_mode_off(db_path):
         "services.forecast_cleanup_service.flush_pending_deletions",
         new=AsyncMock(side_effect=RuntimeError("channel gone")),
     ):
-        assert await switch_test_mode_off(SERVER_ID, bot) == 2
+        assert await switch_test_mode_off(bot) == 2
 
     assert await _profiles(db_path) == [3]
 

@@ -186,8 +186,7 @@ async def _audit_rows(db_path: str) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, old_value, new_value, division_id, actor_id "
-            "FROM audit_entries WHERE server_id = ?",
-            (SERVER_ID,),
+            "FROM audit_entries",
         )
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -301,7 +300,7 @@ async def test_the_assignment_is_logged(tmp_path, which):
 
     await _run(cog, which, _interaction())
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "Division 1" in logged
     assert "#notices" in logged
     assert "Manager" in logged

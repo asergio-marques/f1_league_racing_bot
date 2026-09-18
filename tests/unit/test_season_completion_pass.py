@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.season_end_service import execute_season_end  # noqa: E402
+from services.config_service import ConfigService  # noqa: E402
 from services.season_service import SeasonService  # noqa: E402
 from services.signup_module_service import SignupModuleService  # noqa: E402
 from services.test_mode_service import count_live_real_drivers  # noqa: E402
@@ -26,7 +27,7 @@ SERVER_ID = 22150
 
 
 class _Scheduler:
-    def cancel_season_end(self, server_id):
+    def cancel_season_end(self):
         pass
 
 
@@ -34,7 +35,7 @@ class _Router:
     def __init__(self):
         self.logged: list[str] = []
 
-    async def post_log(self, server_id, content):
+    async def post_log(self, content):
         self.logged.append(content)
 
 
@@ -42,6 +43,7 @@ def _bot(db_path):
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),
+        config_service=ConfigService(db_path),
         signup_module_service=SignupModuleService(db_path),
         scheduler_service=_Scheduler(),
         output_router=_Router(),
@@ -96,7 +98,7 @@ async def db_path(tmp_path):
 async def _complete(db_path):
     bot = _bot(db_path)
     with patch("services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()):
-        await execute_season_end(SERVER_ID, 1, bot)
+        await execute_season_end(1, bot)
     return bot
 
 

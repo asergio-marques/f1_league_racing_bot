@@ -252,7 +252,7 @@ def capture_drawings(monkeypatch, tmp_path):
 
     state = {"enabled": True, "built": []}
 
-    async def _enabled(_bot, _server_id):
+    async def _enabled(_bot):
         return state["enabled"]
 
     async def _build(_bot, **kwargs):
@@ -283,7 +283,7 @@ def capture_drawings(monkeypatch, tmp_path):
             ),
         )
 
-    async def _render(_bot, _server_id, drawing, **_kwargs):
+    async def _render(_bot, drawing, **_kwargs):
         from services.image_verdict_post import VerdictRender
 
         return VerdictRender(png=png, notices=[], problem=None)

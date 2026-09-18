@@ -41,7 +41,6 @@ async def _assign(service, **kwargs):
     service.get_team_role_config = AsyncMock(return_value=None)
     with patch.object(PlacementService, "_guard_test_mode", new=AsyncMock(return_value=None)):
         return await service.assign_driver(
-            server_id=SERVER_ID,
             driver_profile_id=PROFILE_ID,
             division_id=DIVISION_ID,
             team_name="Alpha",
@@ -59,7 +58,6 @@ async def _unassign(service, **kwargs):
     service._revoke_roles = AsyncMock(return_value=None)
     service.get_team_role_config = AsyncMock(return_value=None)
     return await service.unassign_driver(
-        server_id=SERVER_ID,
         driver_profile_id=PROFILE_ID,
         division_id=DIVISION_ID,
         season_id=SEASON_ID,
@@ -136,7 +134,7 @@ async def test_a_committed_driver_is_refused_where_only_uncommitted_ones_may_be_
     with pytest.raises(ValueError, match="confirmed placement"):
         with patch.object(PlacementService, "_guard_test_mode", new=AsyncMock(return_value=None)):
             await service.assign_driver(
-                server_id=SERVER_ID, driver_profile_id=PROFILE_ID, division_id=12,
+                driver_profile_id=PROFILE_ID, division_id=12,
                 team_name="Alpha", season_id=SEASON_ID, acting_user_id=1,
                 acting_user_name="Manager", guild=_guild(), discord_user_id="4242",
                 committed=False, uncommitted_only=True,
@@ -232,7 +230,7 @@ async def test_a_committed_placement_of_a_member_who_left_grants_nothing(tmp_pat
 
     with patch.object(PlacementService, "_guard_test_mode", new=AsyncMock(return_value=None)):
         result = await service.assign_driver(
-            server_id=SERVER_ID, driver_profile_id=PROFILE_ID, division_id=DIVISION_ID,
+            driver_profile_id=PROFILE_ID, division_id=DIVISION_ID,
             team_name="Alpha", season_id=SEASON_ID, acting_user_id=1,
             acting_user_name="Manager", guild=guild, discord_user_id="4242",
         )

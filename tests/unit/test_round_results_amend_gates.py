@@ -124,6 +124,7 @@ def _make_cog(
         return_value=rounds if rounds is not None else [_round()]
     )
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=None)
 
     cog = SeasonCog.__new__(SeasonCog)

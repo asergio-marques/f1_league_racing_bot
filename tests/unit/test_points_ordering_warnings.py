@@ -273,7 +273,7 @@ async def _submit_bulk(db_path, text: str):
     """Build and submit the bulk modal. Async because discord.py 2.5.0 wants a loop."""
     from cogs.results_cog import BulkConfigSessionModal
 
-    modal = BulkConfigSessionModal("100%", _FEATURE_RACE, db_path, SERVER_ID)
+    modal = BulkConfigSessionModal("100%", _FEATURE_RACE, db_path)
     modal.entries._value = text
     interaction = _interaction()
     await modal.on_submit(interaction)
@@ -409,7 +409,7 @@ async def test_amend_session_says_nothing_extra_about_a_clean_change(db_path, se
 async def test_a_bulk_amend_out_of_order_warns_once_and_stages_every_line(db_path, season):
     from cogs.results_cog import BulkAmendSessionModal
 
-    modal = BulkAmendSessionModal("100%", _FEATURE_RACE, db_path, SERVER_ID)
+    modal = BulkAmendSessionModal("100%", _FEATURE_RACE, db_path)
     modal.entries._value = "1, 10\n2, 25"
     interaction = _interaction()
     interaction.client.season_service.get_season_for_server = AsyncMock(

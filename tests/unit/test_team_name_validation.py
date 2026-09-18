@@ -192,7 +192,7 @@ async def _review_problems(tmp_path, server_teams, division_teams):
     path = tmp_path / "review.db"
     await _seed(path, server_teams, division_teams)
     cog = _MagicMock(bot=_MagicMock(db_path=str(path)))
-    return await SeasonCog._team_name_problems(cog, server_id=1, season_id=1)
+    return await SeasonCog._team_name_problems(cog, season_id=1)
 
 
 @pytest.mark.asyncio

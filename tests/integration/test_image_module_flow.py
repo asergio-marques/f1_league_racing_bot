@@ -485,8 +485,8 @@ async def test_season_review_and_config_view_agree(
     season_cog = SeasonCog.__new__(SeasonCog)
     season_cog.bot = bot
 
-    view_lines = await image_cog.build_aspect_section(SERVER_ID)
-    review_lines = await season_cog._build_image_review_section(SERVER_ID)
+    view_lines = await image_cog.build_aspect_section()
+    review_lines = await season_cog._build_image_review_section()
 
     def aspect_lines(lines):
         """The eight aspect lines, and the reasons hanging off them.
@@ -631,7 +631,7 @@ async def test_aspect_section_footer_names_only_pending_aspects(
     cog = ImageCog.__new__(ImageCog)
     cog.bot = bot
 
-    lines = await cog.build_aspect_section(SERVER_ID)
+    lines = await cog.build_aspect_section()
     footer = "\n".join(ln for ln in lines if ln.startswith("_"))
 
     if not PENDING_POSTING_ASPECTS:
@@ -864,7 +864,7 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
     await config_service.set_aspect("calendar", True)
 
     validity = ImageValidityService(config_service, module_service)
-    statuses = {s.aspect: s for s in await validity.aspect_statuses(SERVER_ID)}
+    statuses = {s.aspect: s for s in await validity.aspect_statuses()}
 
     assert statuses["calendar"].state == STATE_ENABLED_INVALID
     line = next(
@@ -1040,7 +1040,7 @@ async def test_contrast_is_measured_against_the_declared_background(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast(SERVER_ID, "#000000")
+    ratio, background, problem = await cog._measure_fastest_lap_contrast("#000000")
 
     assert problem is None
     assert background == "#FFFFFF"
@@ -1064,7 +1064,7 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast(SERVER_ID, "#FFFFFF")
+    ratio, background, problem = await cog._measure_fastest_lap_contrast("#FFFFFF")
 
     assert problem is None
     assert background == "#000000"
@@ -1080,7 +1080,7 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
     await config_service.set_field("results_race_template", "gone.svg")
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast(SERVER_ID, "#A020F0")
+    ratio, background, problem = await cog._measure_fastest_lap_contrast("#A020F0")
 
     assert ratio is None and background is None
     assert "invalid" in problem.lower()
@@ -1098,7 +1098,7 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast(SERVER_ID, "#A020F0")
+    ratio, background, problem = await cog._measure_fastest_lap_contrast("#A020F0")
 
     assert ratio is None and background is None
     assert "fastest_lap_background" in problem
@@ -1122,7 +1122,7 @@ async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast(SERVER_ID, "#A020F0")
+    ratio, background, problem = await cog._measure_fastest_lap_contrast("#A020F0")
 
     assert ratio is None and background is None
     assert "not" in problem.lower() and "plain colour" in problem.lower()
@@ -1283,7 +1283,7 @@ async def test_aspect_enabled_while_source_module_disabled(
     assert await module_service.is_results_enabled() is False
 
     validity = ImageValidityService(config_service, module_service)
-    statuses = {s.aspect: s for s in await validity.aspect_statuses(SERVER_ID)}
+    statuses = {s.aspect: s for s in await validity.aspect_statuses()}
 
     standings = statuses["standings"]
     assert standings.state == STATE_ENABLED_INVALID
@@ -1611,7 +1611,7 @@ def failing_render_service(db_path, config_service, module_service, monkeypatch)
 @pytest.mark.asyncio
 async def test_commanded_posting_rejects_and_posts_nothing(failing_render_service):
     decision = await failing_render_service.render_for_posting(
-        SERVER_ID, "calendar_template", lambda root: None,
+        "calendar_template", lambda root: None,
         posting_origin=PostingOrigin.COMMANDED,
     )
 
@@ -1624,7 +1624,7 @@ async def test_commanded_posting_rejects_and_posts_nothing(failing_render_servic
 @pytest.mark.asyncio
 async def test_scheduled_posting_falls_back_to_text(failing_render_service):
     decision = await failing_render_service.render_for_posting(
-        SERVER_ID, "calendar_template", lambda root: None,
+        "calendar_template", lambda root: None,
         posting_origin=PostingOrigin.SCHEDULED,
     )
 
@@ -1637,11 +1637,11 @@ async def test_scheduled_posting_falls_back_to_text(failing_render_service):
 async def test_the_two_origins_differ_on_the_identical_fault(failing_render_service):
     """SC-007 stated directly."""
     commanded = await failing_render_service.render_for_posting(
-        SERVER_ID, "calendar_template", lambda root: None,
+        "calendar_template", lambda root: None,
         posting_origin=PostingOrigin.COMMANDED,
     )
     scheduled = await failing_render_service.render_for_posting(
-        SERVER_ID, "calendar_template", lambda root: None,
+        "calendar_template", lambda root: None,
         posting_origin=PostingOrigin.SCHEDULED,
     )
 
@@ -1654,12 +1654,12 @@ async def test_posting_origin_is_required_and_never_inferred(failing_render_serv
     """A new call site must state which it is; there is no default to fall into."""
     with pytest.raises(TypeError):
         await failing_render_service.render_for_posting(
-            SERVER_ID, "calendar_template", lambda root: None,
+            "calendar_template", lambda root: None,
         )
 
     with pytest.raises(TypeError):
         await failing_render_service.render_for_posting(
-            SERVER_ID, "calendar_template", lambda root: None,
+            "calendar_template", lambda root: None,
             posting_origin="COMMANDED",  # a string is not the enum
         )
 
@@ -1679,7 +1679,7 @@ async def test_an_internal_problem_tells_the_user_nothing_to_act_on(
     service = _render_service(config_service, module_service)
 
     decision = await service.render_for_posting(
-        SERVER_ID, "no_such_template", lambda root: None,
+        "no_such_template", lambda root: None,
         posting_origin=PostingOrigin.COMMANDED,
     )
 
@@ -1706,7 +1706,6 @@ async def test_a_clean_render_posts_the_image(
     # is a caller that never posts and so never discards, and it litters the host's
     # temporary directory on every run.
     decision = await service.render_for_posting(
-        SERVER_ID,
         "calendar_template",
         lambda root: build_spec("calendar_template", root),
         posting_origin=PostingOrigin.SCHEDULED,
@@ -1913,7 +1912,6 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     await vas._send_verdict(
         bot,
         channel,
-        server_id=SERVER_ID,
         db_path=db_path,
         round_id=1,
         kind=VerdictKind.PENALTY,
@@ -1964,7 +1962,6 @@ async def test_the_verdict_toggle_off_posts_the_textual_announcement(
     await vas._send_verdict(
         bot,
         channel,
-        server_id=SERVER_ID,
         db_path=db_path,
         round_id=1,
         kind=VerdictKind.PENALTY,

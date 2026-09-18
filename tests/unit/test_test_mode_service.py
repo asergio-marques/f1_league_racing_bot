@@ -98,7 +98,7 @@ async def test_toggle_enables_test_mode() -> None:
     try:
         await run_migrations(db_path)
         await _seed(db_path, [])
-        result = await toggle_test_mode(1, db_path)
+        result = await toggle_test_mode(db_path)
         assert result is True
     finally:
         os.unlink(db_path)
@@ -111,8 +111,8 @@ async def test_toggle_disables_test_mode() -> None:
     try:
         await run_migrations(db_path)
         await _seed(db_path, [])
-        await toggle_test_mode(1, db_path)   # enable
-        result = await toggle_test_mode(1, db_path)  # disable
+        await toggle_test_mode(db_path)   # enable
+        result = await toggle_test_mode(db_path)  # disable
         assert result is False
     finally:
         os.unlink(db_path)
@@ -124,7 +124,7 @@ async def test_toggle_missing_config_returns_false() -> None:
         db_path = tmp.name
     try:
         await run_migrations(db_path)  # no seed — no server_config row
-        result = await toggle_test_mode(999, db_path)
+        result = await toggle_test_mode(db_path)
         assert result is False
     finally:
         os.unlink(db_path)
@@ -232,8 +232,8 @@ async def test_nationality_toggle_disables_then_enables() -> None:
     try:
         await run_migrations(db_path)
         await _seed(db_path, [])
-        assert await toggle_test_mode_nationality(1, db_path) is False
-        assert await toggle_test_mode_nationality(1, db_path) is True
+        assert await toggle_test_mode_nationality(db_path) is False
+        assert await toggle_test_mode_nationality(db_path) is True
     finally:
         os.unlink(db_path)
 
@@ -245,8 +245,8 @@ async def test_nationality_toggle_leaves_test_mode_itself_alone() -> None:
     try:
         await run_migrations(db_path)
         await _seed(db_path, [])
-        await toggle_test_mode(1, db_path)  # enable test mode
-        await toggle_test_mode_nationality(1, db_path)
+        await toggle_test_mode(db_path)  # enable test mode
+        await toggle_test_mode_nationality(db_path)
         async with get_connection(db_path) as db:
             row = await (
                 await db.execute(
@@ -263,7 +263,7 @@ async def test_nationality_toggle_missing_config_returns_false() -> None:
         db_path = tmp.name
     try:
         await run_migrations(db_path)  # no seed — no server_config row
-        assert await toggle_test_mode_nationality(999, db_path) is False
+        assert await toggle_test_mode_nationality(db_path) is False
     finally:
         os.unlink(db_path)
 
@@ -281,7 +281,7 @@ async def test_empty_queue_returns_none() -> None:
         await _seed(db_path, [
             {"phase1_done": 1, "phase2_done": 1, "phase3_done": 1},
         ])
-        result = await get_next_pending_phase(1, db_path)
+        result = await get_next_pending_phase(db_path)
         assert result is None
     finally:
         os.unlink(db_path)
@@ -296,7 +296,7 @@ async def test_mystery_round_notice_pending_returns_entry() -> None:
         await _seed(db_path, [
             {"format": "MYSTERY", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
         ])
-        result = await get_next_pending_phase(1, db_path)
+        result = await get_next_pending_phase(db_path)
         assert result is not None
         assert result["phase_number"] == 0
     finally:
@@ -312,7 +312,7 @@ async def test_mystery_round_notice_done_excluded() -> None:
         await _seed(db_path, [
             {"format": "MYSTERY", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
         ])
-        result = await get_next_pending_phase(1, db_path)
+        result = await get_next_pending_phase(db_path)
         assert result is None
     finally:
         os.unlink(db_path)
@@ -327,7 +327,7 @@ async def test_phase_number_ordering_within_round() -> None:
         await _seed(db_path, [
             {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
         ])
-        result = await get_next_pending_phase(1, db_path)
+        result = await get_next_pending_phase(db_path)
         assert result is not None
         assert result["phase_number"] == 2
     finally:
@@ -350,7 +350,7 @@ async def test_earliest_scheduled_round_comes_first() -> None:
             {"track_name": "Monza",   "scheduled_at": later,   "phase1_done": 0},
             {"track_name": "Bahrain", "scheduled_at": earlier, "phase1_done": 0},
         ])
-        result = await get_next_pending_phase(1, db_path)
+        result = await get_next_pending_phase(db_path)
         assert result is not None
         assert result["track_name"] == "Bahrain"
         assert result["phase_number"] == 1
@@ -382,7 +382,7 @@ async def test_division_id_tiebreak_same_scheduled_at() -> None:
                 "phase1_done": 0,
             },
         ])
-        result = await get_next_pending_phase(1, db_path)
+        result = await get_next_pending_phase(db_path)
         assert result is not None
         assert result["division_id"] == 1
         assert result["track_name"] == "Bahrain"
@@ -408,7 +408,7 @@ async def test_no_active_season_returns_none() -> None:
             )
             await db.commit()
 
-        result = await get_next_pending_phase(1, db_path)
+        result = await get_next_pending_phase(db_path)
         assert result is None
     finally:
         os.unlink(db_path)
@@ -423,7 +423,7 @@ async def test_returns_phase1_for_fresh_round() -> None:
         await _seed(db_path, [
             {"track_name": "Japan", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
         ])
-        result = await get_next_pending_phase(1, db_path)
+        result = await get_next_pending_phase(db_path)
         assert result is not None
         assert result["phase_number"] == 1
         assert result["track_name"] == "Japan"
@@ -540,7 +540,7 @@ async def test_misfired_fallback_returns_phase1() -> None:
         await _seed_with_weather(db_path, [
             {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
         ])
-        result = await get_next_pending_phase(1, db_path, _StubScheduler())
+        result = await get_next_pending_phase(db_path, _StubScheduler())
         assert result is not None
         assert result["phase_number"] == 1
         assert result["track_name"] == "Monza"
@@ -557,7 +557,7 @@ async def test_misfired_fallback_respects_phase_flags() -> None:
         await _seed_with_weather(db_path, [
             {"track_name": "Spa", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
         ])
-        result = await get_next_pending_phase(1, db_path, _StubScheduler())
+        result = await get_next_pending_phase(db_path, _StubScheduler())
         assert result is not None
         assert result["phase_number"] == 2
     finally:
@@ -574,7 +574,7 @@ async def test_misfired_fallback_weather_disabled_skips_phases() -> None:
         await _seed(db_path, [
             {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
         ])
-        result = await get_next_pending_phase(1, db_path, _StubScheduler())
+        result = await get_next_pending_phase(db_path, _StubScheduler())
         assert result is None
     finally:
         os.unlink(db_path)
@@ -596,14 +596,14 @@ async def test_misfired_fallback_canonical_order() -> None:
         stub = _StubScheduler()
 
         # Step 1 — phase 1
-        r = await get_next_pending_phase(1, db_path, stub)
+        r = await get_next_pending_phase(db_path, stub)
         assert r is not None and r["phase_number"] == 1
         async with get_connection(db_path) as db:
             await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = 1")
             await db.commit()
 
         # Step 2 — RSVP notice (phase 5)
-        r = await get_next_pending_phase(1, db_path, stub)
+        r = await get_next_pending_phase(db_path, stub)
         assert r is not None and r["phase_number"] == 5
         async with get_connection(db_path) as db:
             await db.execute(
@@ -614,14 +614,14 @@ async def test_misfired_fallback_canonical_order() -> None:
             await db.commit()
 
         # Step 3 — phase 2
-        r = await get_next_pending_phase(1, db_path, stub)
+        r = await get_next_pending_phase(db_path, stub)
         assert r is not None and r["phase_number"] == 2
         async with get_connection(db_path) as db:
             await db.execute("UPDATE rounds SET phase2_done = 1 WHERE id = 1")
             await db.commit()
 
         # Step 4 — RSVP last-notice (phase 6)
-        r = await get_next_pending_phase(1, db_path, stub)
+        r = await get_next_pending_phase(db_path, stub)
         assert r is not None and r["phase_number"] == 6
         async with get_connection(db_path) as db:
             await db.execute(
@@ -631,14 +631,14 @@ async def test_misfired_fallback_canonical_order() -> None:
             await db.commit()
 
         # Step 5 — phase 3
-        r = await get_next_pending_phase(1, db_path, stub)
+        r = await get_next_pending_phase(db_path, stub)
         assert r is not None and r["phase_number"] == 3
         async with get_connection(db_path) as db:
             await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = 1")
             await db.commit()
 
         # Step 6 — RSVP deadline (phase 7)
-        r = await get_next_pending_phase(1, db_path, stub)
+        r = await get_next_pending_phase(db_path, stub)
         assert r is not None and r["phase_number"] == 7
     finally:
         os.unlink(db_path)
@@ -668,7 +668,7 @@ async def test_earlier_misfired_round_beats_later_scheduler_job() -> None:
             "phase_number": 1,
             "next_run_time": datetime.now(timezone.utc) + timedelta(days=5),
         }])
-        result = await get_next_pending_phase(1, db_path, stub)
+        result = await get_next_pending_phase(db_path, stub)
         assert result is not None
         assert result["track_name"] == "Bahrain"   # earlier round wins
         assert result["phase_number"] == 1

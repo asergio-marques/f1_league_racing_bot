@@ -1098,7 +1098,7 @@ def build_aspect_statuses(
     return statuses
 
 
-async def aspect_attaches_files(bot, server_id: int, aspect: str) -> bool:
+async def aspect_attaches_files(bot, aspect: str) -> bool:
     """Whether *aspect* could cause a file to be attached to a posting on this server.
 
     **This predicate deliberately does NOT check template validity, and must not be
@@ -1146,8 +1146,7 @@ async def aspect_attaches_files(bot, server_id: int, aspect: str) -> bool:
         return bool(toggles.get(aspect))
     except Exception as exc:  # noqa: BLE001 — never refuse a posting's pre-flight on this
         log.error(
-            "aspect_attaches_files: image enablement check failed for server %s: %s",
-            server_id,
+            "aspect_attaches_files: image enablement check failed: %s",
             exc,
         )
         return False
@@ -1325,17 +1324,17 @@ class ImageValidityService:
             return {}
         return evaluate_directories(config)
 
-    async def disabled_source_modules(self, server_id: int) -> set[str]:
+    async def disabled_source_modules(self) -> set[str]:
         disabled: set[str] = set()
         if not await self._module_service.is_results_enabled():
             disabled.add("results")
         if not await self._module_service.is_attendance_enabled():
             disabled.add("attendance")
-        if not await self._module_service.is_weather_enabled(server_id):
+        if not await self._module_service.is_weather_enabled():
             disabled.add("weather")
         return disabled
 
-    async def aspect_statuses(self, server_id: int) -> list[AspectStatus]:
+    async def aspect_statuses(self) -> list[AspectStatus]:
         from services.image_render_service import converter_available
 
         reports = await self.template_reports()
@@ -1343,13 +1342,13 @@ class ImageValidityService:
         return build_aspect_statuses(
             toggles,
             reports,
-            disabled_source_modules=await self.disabled_source_modules(server_id),
+            disabled_source_modules=await self.disabled_source_modules(),
             converter_available=converter_available(),
-            colour_shortfall=await self.colour_shortfall(server_id, reports),
+            colour_shortfall=await self.colour_shortfall(reports),
         )
 
     async def colour_shortfall(
-        self, server_id: int, reports: dict[str, ValidityReport] | None = None
+        self, reports: dict[str, ValidityReport] | None = None
     ) -> dict[str, list[str]]:
         """Every per-tier colour a configured template wants and no tier has set (051).
 
@@ -1365,7 +1364,7 @@ class ImageValidityService:
         return colour_shortfall(
             reports,
             await self._config_service.get_all_tier_colours(),
-            await self._config_service.season_division_names(server_id),
+            await self._config_service.season_division_names(),
         )
 
     @staticmethod

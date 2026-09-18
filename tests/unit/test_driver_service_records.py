@@ -215,8 +215,7 @@ async def _audit(db_path: str) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, old_value, new_value, actor_id FROM audit_entries "
-            "WHERE server_id = ? ORDER BY id",
-            (SERVER_ID,),
+            " ORDER BY id",
         )
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -310,7 +309,7 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
     service = DriverService(db_path)
 
     outcome = await service.reassign_user_id(
-        SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
     )
 
     assert outcome.profile.discord_user_id == NEW_USER
@@ -324,7 +323,7 @@ async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):
 
     with pytest.raises(ValueError, match="No driver profile"):
         await service.reassign_user_id(
-            SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
         )
 
 
@@ -339,7 +338,7 @@ async def test_two_drivers_both_in_the_live_season_are_not_merged(tmp_path):
 
     with pytest.raises(ValueError, match="both hold a seat or a signup"):
         await service.reassign_user_id(
-            SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
         )
 
 
@@ -355,7 +354,7 @@ async def test_an_account_whose_leftover_results_share_a_division_is_refused(tmp
 
     with pytest.raises(ValueError, match="both took part in Season 1 Pro"):
         await service.reassign_user_id(
-            SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
         )
 
 
@@ -368,7 +367,7 @@ async def test_an_account_holding_only_history_of_its_own_is_accepted(tmp_path):
     service = DriverService(db_path)
 
     outcome = await service.reassign_user_id(
-        SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
     )
 
     assert outcome.profile.discord_user_id == NEW_USER
@@ -383,7 +382,7 @@ async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
 
     with pytest.raises(ValueError):
         await service.reassign_user_id(
-            SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
         )
 
     assert await service.get_profile(OLD_USER) is not None
@@ -402,7 +401,7 @@ async def test_a_refused_re_key_changes_nothing(tmp_path):
 
     with pytest.raises(ValueError):
         await service.reassign_user_id(
-            SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
         )
 
     assert await service.get_profile(OLD_USER) is not None
@@ -415,7 +414,7 @@ async def test_a_re_key_is_audited_with_both_accounts(tmp_path):
     await _seed_profile(db_path)
 
     await DriverService(db_path).reassign_user_id(
-        SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
     )
 
     entry = (await _audit(db_path))[0]
@@ -438,7 +437,7 @@ async def test_the_former_driver_flag_is_set_and_reports_both_values(tmp_path):
     service = DriverService(db_path)
 
     old, new = await service.set_former_driver(
-        SERVER_ID, OLD_USER, True, ACTOR_ID, "Manager"
+        OLD_USER, True, ACTOR_ID, "Manager"
     )
 
     assert (old, new) == (False, True)
@@ -453,7 +452,7 @@ async def test_the_former_driver_flag_can_be_cleared_again(tmp_path):
     service = DriverService(db_path)
 
     old, new = await service.set_former_driver(
-        SERVER_ID, OLD_USER, False, ACTOR_ID, "Manager"
+        OLD_USER, False, ACTOR_ID, "Manager"
     )
 
     assert (old, new) == (True, False)
@@ -467,7 +466,7 @@ async def test_setting_the_flag_for_a_user_with_no_profile_is_refused(tmp_path):
 
     with pytest.raises(ValueError, match="No driver profile"):
         await service.set_former_driver(
-            SERVER_ID, OLD_USER, True, ACTOR_ID, "Manager"
+            OLD_USER, True, ACTOR_ID, "Manager"
         )
 
 
@@ -476,7 +475,7 @@ async def test_setting_the_flag_is_audited(tmp_path):
     await _seed_profile(db_path, former=False)
 
     await DriverService(db_path).set_former_driver(
-        SERVER_ID, OLD_USER, True, ACTOR_ID, "Manager"
+        OLD_USER, True, ACTOR_ID, "Manager"
     )
 
     entry = (await _audit(db_path))[0]
@@ -490,7 +489,7 @@ async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_pat
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, state="UNASSIGNED", former=False)
     service = DriverService(db_path)
-    await service.set_former_driver(SERVER_ID, OLD_USER, True, ACTOR_ID, "Manager")
+    await service.set_former_driver(OLD_USER, True, ACTOR_ID, "Manager")
 
     await service.transition(OLD_USER, DriverState.NOT_SIGNED_UP)
 
@@ -502,10 +501,10 @@ async def test_the_flag_is_set_through_a_past_account(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path)
     service = DriverService(db_path)
-    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+    await service.reassign_user_id(OLD_USER, NEW_USER, ACTOR_ID, "Manager")
 
     assert await service.set_former_driver(
-        SERVER_ID, OLD_USER, True, ACTOR_ID, "Manager"
+        OLD_USER, True, ACTOR_ID, "Manager"
     ) == (False, True)
 
 
@@ -561,7 +560,7 @@ async def test_a_re_key_rewrites_no_record_of_the_driver(tmp_path):
     before = await _every_other_row(db_path)
 
     await DriverService(db_path).reassign_user_id(
-        SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
     )
 
     assert await _every_other_row(db_path) == before
@@ -572,7 +571,7 @@ async def test_a_re_key_keeps_the_old_account_listed(tmp_path):
     profile_id = await _seed_profile(db_path)
 
     await DriverService(db_path).reassign_user_id(
-        SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager"
+        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
     )
 
     async with get_connection(db_path) as db:

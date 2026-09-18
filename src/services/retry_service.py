@@ -35,7 +35,6 @@ RETRY_WARN_THRESHOLD: int = 12  # ~1 hour at 5-min intervals
 
 async def enqueue(
     db_path: str,
-    server_id: int,
     channel_id: int,
     content: str,
     failure_reason: str,
@@ -46,16 +45,16 @@ async def enqueue(
         await db.execute(
             """
             INSERT INTO pending_messages
-                (server_id, channel_id, content, failure_reason, enqueued_at,
+                (channel_id, content, failure_reason, enqueued_at,
                  retry_count, last_attempted_at)
-            VALUES (?, ?, ?, ?, ?, 0, NULL)
+            VALUES (?, ?, ?, ?, 0, NULL)
             """,
-            (server_id, channel_id, content, failure_reason, now),
+            (channel_id, content, failure_reason, now),
         )
         await db.commit()
     log.warning(
-        "Enqueued failed message for retry: server=%s channel=%s reason=%s",
-        server_id, channel_id, failure_reason,
+        "Enqueued failed message for retry: channel=%s reason=%s",
+        channel_id, failure_reason,
     )
 
 
@@ -67,7 +66,7 @@ async def get_all_pending(db_path: str) -> list[PendingMessage]:
     """Return all pending retry entries ordered by enqueue time (oldest first)."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id, server_id, channel_id, content, failure_reason, "
+            "SELECT id, channel_id, content, failure_reason, "
             "       enqueued_at, retry_count, last_attempted_at "
             "FROM pending_messages "
             "ORDER BY enqueued_at ASC"
@@ -82,7 +81,6 @@ async def get_all_pending(db_path: str) -> list[PendingMessage]:
         result.append(
             PendingMessage(
                 id=row["id"],
-                server_id=row["server_id"],
                 channel_id=row["channel_id"],
                 content=row["content"],
                 failure_reason=row["failure_reason"],
@@ -157,7 +155,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "Bot") -> bool:
             f"{entry.retry_count} time(s) since {discord_ts(entry.enqueued_at)}. "
             f"Original failure: {entry.failure_reason}"
         )
-        _safe_post_log(bot, entry.server_id, warn_msg)
+        _safe_post_log(bot, warn_msg)
 
     # --- Resolve channel ---
     channel = bot.get_channel(entry.channel_id)
@@ -204,7 +202,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "Bot") -> bool:
         f"Retries taken: {entry.retry_count}. "
         f"Delivered at: {discord_ts(now_str)}."
     )
-    _safe_post_log(bot, entry.server_id, success_msg)
+    _safe_post_log(bot, success_msg)
     return True
 
 
@@ -212,7 +210,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "Bot") -> bool:
 # T018 — internal helper: best-effort log-channel post
 # ---------------------------------------------------------------------------
 
-def _safe_post_log(bot: "Bot", server_id: int, message: str) -> None:
+def _safe_post_log(bot: "Bot", message: str) -> None:
     """Schedule a fire-and-forget post_log call.
 
     Uses asyncio.ensure_future so the caller does not need to await it.
@@ -223,11 +221,8 @@ def _safe_post_log(bot: "Bot", server_id: int, message: str) -> None:
 
     async def _post() -> None:
         try:
-            await bot.output_router.post_log(server_id, message)  # type: ignore[attr-defined]
+            await bot.output_router.post_log(message)  # type: ignore[attr-defined]
         except Exception as exc:
-            log.warning(
-                "_safe_post_log: failed to post log notification "
-                "(server=%s): %s", server_id, exc,
-            )
+            log.warning("_safe_post_log: failed to post log notification: %s", exc)
 
     asyncio.ensure_future(_post())

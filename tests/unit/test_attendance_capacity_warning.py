@@ -114,7 +114,7 @@ async def _warn(cog, *, columns=24, sessions=4, error=None):
     with patch("utils.svg_document.load_svg", new=MagicMock()), patch(
         "models.image_catalogues.catalogue_for", new=MagicMock(return_value=catalogue)
     ):
-        return await cog._attendance_capacity_warning(SERVER_ID, SEASON_ID)
+        return await cog._attendance_capacity_warning(SEASON_ID)
 
 
 # ---------------------------------------------------------------------------

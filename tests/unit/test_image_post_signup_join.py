@@ -247,7 +247,7 @@ class TestNationalityCollected:
             )
             await db.commit()
 
-        assert await _nationality_collected(db_path, SERVER_ID) is False
+        assert await _nationality_collected(db_path) is False
 
     async def test_a_league_that_collects_is_observed(self, db_path):
         from services.image_results_post import _nationality_collected
@@ -260,19 +260,19 @@ class TestNationalityCollected:
             )
             await db.commit()
 
-        assert await _nationality_collected(db_path, SERVER_ID) is True
+        assert await _nationality_collected(db_path) is True
 
     async def test_a_league_with_no_row_collects(self, db_path):
         """The documented default, and what a league without the signup module gets."""
         from services.image_results_post import _nationality_collected
 
-        assert await _nationality_collected(db_path, SERVER_ID) is True
+        assert await _nationality_collected(db_path) is True
 
     async def test_an_unreadable_switch_collects(self, db_path):
         """A broken reader is not a reason to fail a render."""
         from services.image_results_post import _nationality_collected
 
-        assert await _nationality_collected("no/such/database.db", SERVER_ID) is True
+        assert await _nationality_collected("no/such/database.db") is True
 
 
 class TestTheTestModeSwitchStandsIn:
@@ -301,21 +301,21 @@ class TestTheTestModeSwitchStandsIn:
 
         await self._set(db_path, test_mode=1, test_nationality=0, signup=1)
 
-        assert await _nationality_collected(db_path, SERVER_ID) is False
+        assert await _nationality_collected(db_path) is False
 
     async def test_it_wins_in_the_other_direction_too(self, db_path):
         from services.image_results_post import _nationality_collected
 
         await self._set(db_path, test_mode=1, test_nationality=1, signup=0)
 
-        assert await _nationality_collected(db_path, SERVER_ID) is True
+        assert await _nationality_collected(db_path) is True
 
     async def test_the_signup_switch_governs_outside_test_mode(self, db_path):
         from services.image_results_post import _nationality_collected
 
         await self._set(db_path, test_mode=0, test_nationality=0, signup=1)
 
-        assert await _nationality_collected(db_path, SERVER_ID) is True
+        assert await _nationality_collected(db_path) is True
 
     async def test_the_switch_defaults_on_for_a_server_already_configured(self, db_path):
         """Migration 042 fills the existing rows in place, so no wipe is needed."""
@@ -328,7 +328,7 @@ class TestTheTestModeSwitchStandsIn:
             )
             await db.commit()
 
-        assert await _nationality_collected(db_path, SERVER_ID) is True
+        assert await _nationality_collected(db_path) is True
 
     async def test_the_preview_reads_it_through_the_same_reader(self, bot, db_path):
         """The preview's copy is a shim, not a second implementation."""
@@ -336,4 +336,4 @@ class TestTheTestModeSwitchStandsIn:
 
         await self._set(db_path, test_mode=1, test_nationality=0, signup=1)
 
-        assert await preview_read(bot, SERVER_ID) is False
+        assert await preview_read(bot) is False

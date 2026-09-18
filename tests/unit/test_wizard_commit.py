@@ -130,7 +130,7 @@ def committer():
 
 
 async def _commit(ctx):
-    await ctx.svc.commit_wizard(SERVER_ID, DRIVER_ID, ctx.guild)
+    await ctx.svc.commit_wizard(DRIVER_ID, ctx.guild)
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +266,7 @@ async def test_a_missing_channel_still_commits_the_record(committer):
 async def test_a_first_submission_is_logged_as_submitted(committer):
     await _commit(committer)
 
-    assert "Submitted" in committer.svc._output_router.post_log.await_args.args[1]
+    assert "Submitted" in committer.svc._output_router.post_log.await_args.args[0]
 
 
 async def test_a_correction_is_logged_as_a_correction(committer):
@@ -280,7 +280,7 @@ async def test_a_correction_is_logged_as_a_correction(committer):
 
     await _commit(committer)
 
-    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[1]
+    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[0]
 
 
 async def test_a_correction_amends_the_signup_it_was_asked_of(committer):
@@ -315,7 +315,7 @@ async def test_the_prior_state_is_read_before_anything_is_written(committer):
     await _commit(committer)
 
     committer.driver_service.get_profile.assert_awaited_once()
-    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[1]
+    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[0]
 
 
 async def test_a_driver_who_has_left_is_logged_by_id(committer):
@@ -325,4 +325,4 @@ async def test_a_driver_who_has_left_is_logged_by_id(committer):
 
     await _commit(committer)
 
-    assert DRIVER_ID in committer.svc._output_router.post_log.await_args.args[1]
+    assert DRIVER_ID in committer.svc._output_router.post_log.await_args.args[0]

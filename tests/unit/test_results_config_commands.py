@@ -213,7 +213,7 @@ async def test_a_created_configuration_is_logged_by_name():
     with _service():
         await _add(cog, interaction)
 
-    logged = cog.bot.output_router.post_log.await_args.args[1]
+    logged = cog.bot.output_router.post_log.await_args.args[0]
     assert "config add" in logged
     assert CONFIG in logged
 
@@ -377,8 +377,8 @@ async def test_both_routes_log_the_removal_identically():
         await type(view).confirm(view, confirmed, MagicMock())
 
     assert (
-        straight_cog.bot.output_router.post_log.await_args.args[1]
-        == confirmed_cog.bot.output_router.post_log.await_args.args[1]
+        straight_cog.bot.output_router.post_log.await_args.args[0]
+        == confirmed_cog.bot.output_router.post_log.await_args.args[0]
     )
 
 

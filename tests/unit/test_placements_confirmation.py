@@ -86,7 +86,7 @@ async def test_every_unsettled_signup_is_named(db_path):
     await _driver(db_path, "4", "ASSIGNED", "Placed")
     await _driver(db_path, "5", "NOT_SIGNED_UP", "Left")
 
-    unsettled, _ = await _cog(db_path)._placement_confirmation_faults(SERVER_ID, SEASON_ID)
+    unsettled, _ = await _cog(db_path)._placement_confirmation_faults(SEASON_ID)
 
     joined = "\n".join(unsettled)
     assert len(unsettled) == 3
@@ -96,7 +96,7 @@ async def test_every_unsettled_signup_is_named(db_path):
 
 
 async def test_a_division_missing_its_lineup_or_calendar_channel_is_named(db_path):
-    _, channels = await _cog(db_path)._placement_confirmation_faults(SERVER_ID, SEASON_ID)
+    _, channels = await _cog(db_path)._placement_confirmation_faults(SEASON_ID)
 
     assert channels == ["**Am** has no lineup channel"]
 
@@ -107,7 +107,7 @@ async def test_a_settled_season_with_its_channels_has_no_faults(db_path):
         await db.commit()
     await _driver(db_path, "4", "ASSIGNED")
 
-    assert await _cog(db_path)._placement_confirmation_faults(SERVER_ID, SEASON_ID) == ([], [])
+    assert await _cog(db_path)._placement_confirmation_faults(SEASON_ID) == ([], [])
 
 
 # ── The review and the confirmation refuse ─────────────────────────────────────────

@@ -86,6 +86,7 @@ _UNSET = object()
 
 def _bot(db_path, *, config=_UNSET, channel=None, guild=True, transition_error=None):
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.signup_module_service = MagicMock()
     bot.signup_module_service.get_config = AsyncMock(
@@ -129,7 +130,7 @@ async def test_a_driver_still_filling_in_the_wizard_is_turned_away(tmp_path):
     )
     bot = _bot(db_path)
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="SIGNUP_FORCE_CLOSE")
+    await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
 
     bot.driver_service.transition.assert_awaited_once_with(
         "101", DriverState.NOT_SIGNED_UP
@@ -151,7 +152,7 @@ async def test_a_driver_awaiting_approval_is_left_alone(tmp_path, state):
     db_path = await _make_db(tmp_path, name=f"fc_{state.value}", drivers=[("101", state)])
     bot = _bot(db_path)
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="SIGNUP_FORCE_CLOSE")
+    await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
 
     bot.driver_service.transition.assert_not_awaited()
     bot.wizard_service._trigger_channel_hold.assert_not_awaited()
@@ -164,12 +165,12 @@ async def test_a_turned_away_drivers_jobs_are_removed(tmp_path):
     )
     bot = _bot(db_path)
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     removed = {c.args[0] for c in bot.scheduler_service._scheduler.remove_job.call_args_list}
     assert removed == {
-        f"wizard_inactivity_{SERVER_ID}_101",
-        f"wizard_channel_delete_{SERVER_ID}_101",
+        f"wizard_inactivity_101",
+        f"wizard_channel_delete_101",
     }
 
 
@@ -180,7 +181,7 @@ async def test_a_job_already_gone_is_stepped_over(tmp_path):
     bot = _bot(db_path)
     bot.scheduler_service._scheduler.remove_job = MagicMock(side_effect=Exception("no job"))
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     bot.signup_module_service.set_window_closed.assert_awaited_once()
 
@@ -192,11 +193,11 @@ async def test_a_turned_away_driver_is_told_and_their_channel_held(tmp_path):
     )
     bot = _bot(db_path)
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     hold = bot.wizard_service._trigger_channel_hold.await_args
-    assert hold.args[1] == "101"
-    assert "Signups have closed" in hold.args[3]
+    assert hold.args[0] == "101"
+    assert "Signups have closed" in hold.args[2]
 
 
 async def test_a_failing_transition_does_not_stop_the_close(tmp_path):
@@ -205,7 +206,7 @@ async def test_a_failing_transition_does_not_stop_the_close(tmp_path):
     )
     bot = _bot(db_path, transition_error=RuntimeError("db locked"))
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     bot.signup_module_service.set_window_closed.assert_awaited_once()
 
@@ -217,7 +218,7 @@ async def test_a_failing_channel_hold_does_not_stop_the_close(tmp_path):
     bot = _bot(db_path)
     bot.wizard_service._trigger_channel_hold = AsyncMock(side_effect=RuntimeError("gone"))
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     bot.signup_module_service.set_window_closed.assert_awaited_once()
 
@@ -231,7 +232,7 @@ async def test_the_signup_button_is_deleted(tmp_path):
     db_path = await _make_db(tmp_path, name="fc_button")
     bot = _bot(db_path)
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     bot._channel.fetch_message.assert_awaited_once_with(BUTTON_MESSAGE)
     bot._channel._button.delete.assert_awaited_once()
@@ -245,7 +246,7 @@ async def test_a_button_that_cannot_be_deleted_does_not_stop_the_close(tmp_path,
     db_path = await _make_db(tmp_path, name=f"fc_buttonfail_{type(error).__name__}")
     bot = _bot(db_path, channel=_channel(fetch_error=error))
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     bot.signup_module_service.set_window_closed.assert_awaited_once()
 
@@ -257,7 +258,7 @@ async def test_a_window_with_no_button_deletes_nothing(tmp_path):
         config=SimpleNamespace(signup_channel_id=SIGNUP_CHANNEL, signup_button_message_id=None),
     )
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     bot._channel.fetch_message.assert_not_awaited()
 
@@ -267,7 +268,7 @@ async def test_a_closed_notice_is_posted_and_its_id_kept(tmp_path):
     db_path = await _make_db(tmp_path, name="fc_notice")
     bot = _bot(db_path)
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     assert "Signups are now closed" in str(bot._channel.send.await_args.args[0])
     bot.signup_module_service.set_window_closed.assert_awaited_once_with(
@@ -279,7 +280,7 @@ async def test_a_notice_that_cannot_be_posted_still_closes_the_window(tmp_path):
     db_path = await _make_db(tmp_path, name="fc_noticefail")
     bot = _bot(db_path, channel=_channel(send_error=RuntimeError("forbidden")))
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     bot.signup_module_service.set_window_closed.assert_awaited_once_with(
         closed_msg_id=None
@@ -290,7 +291,7 @@ async def test_a_guild_the_bot_has_left_still_closes_the_window(tmp_path):
     db_path = await _make_db(tmp_path, name="fc_noguild")
     bot = _bot(db_path, guild=False)
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     bot.signup_module_service.set_window_closed.assert_awaited_once_with(
         closed_msg_id=None
@@ -301,7 +302,7 @@ async def test_the_close_is_audited_under_the_callers_action(tmp_path):
     """The same sub-flow serves three callers, and the audit says which one closed it."""
     db_path = await _make_db(tmp_path, name="fc_audit")
 
-    await execute_forced_close(SERVER_ID, _bot(db_path), audit_action="SIGNUP_TIMER_CLOSE")
+    await execute_forced_close(_bot(db_path), audit_action="SIGNUP_TIMER_CLOSE")
 
     assert await _audit(db_path) == [("SIGNUP_TIMER_CLOSE", "open", "closed", "system")]
 
@@ -310,7 +311,7 @@ async def test_a_server_with_no_signup_configuration_does_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="fc_noconfig")
     bot = _bot(db_path, config=None)
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="X")
+    await execute_forced_close(bot, audit_action="X")
 
     bot.signup_module_service.set_window_closed.assert_not_awaited()
     assert await _audit(db_path) == []

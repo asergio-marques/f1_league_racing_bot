@@ -88,7 +88,7 @@ class TestOutputRouterEnqueuesOnFailure:
         )
         mock_bot.get_channel.return_value = mock_channel
 
-        result = await router._send(1234, "hello", server_id=99, fallback_label="forecast")
+        result = await router._send(1234, "hello", enqueue_on_failure=True, fallback_label="forecast")
 
         assert result is None
         assert await _row_count(db_path) == 1
@@ -106,7 +106,7 @@ class TestOutputRouterEnqueuesOnFailure:
         )
         mock_bot.get_channel.return_value = mock_channel
 
-        await router._send(1234, "hello", server_id=99, fallback_label="forecast")
+        await router._send(1234, "hello", enqueue_on_failure=True, fallback_label="forecast")
 
         assert await _row_count(db_path) == 1
 
@@ -123,13 +123,13 @@ class TestOutputRouterEnqueuesOnFailure:
         )
         mock_bot.get_channel.return_value = mock_channel
 
-        await router._send(1234, "hello", server_id=99, fallback_label="forecast")
+        await router._send(1234, "hello", enqueue_on_failure=True, fallback_label="forecast")
 
         assert await _row_count(db_path) == 0
 
     @pytest.mark.asyncio
-    async def test_no_enqueue_when_server_id_zero(self, tmp_path):
-        """server_id=0 (unknown) means we cannot attribute the entry; skip enqueue."""
+    async def test_no_enqueue_when_the_caller_does_not_want_one(self, tmp_path):
+        """The interaction-channel last resort asks for no retry, and gets none."""
         db_path = await _make_db(str(tmp_path))
 
         mock_bot = MagicMock()
@@ -140,7 +140,7 @@ class TestOutputRouterEnqueuesOnFailure:
         )
         mock_bot.get_channel.return_value = mock_channel
 
-        await router._send(1234, "hello", server_id=0, fallback_label="log")
+        await router._send(1234, "hello", enqueue_on_failure=False, fallback_label="log")
 
         assert await _row_count(db_path) == 0
 
@@ -154,7 +154,7 @@ class TestAttemptDeliverySuccess:
     @pytest.mark.asyncio
     async def test_successful_delivery_returns_true(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 555, "test message content", "503")
+        await enqueue(db_path, 555, "test message content", "503")
         pending = await get_all_pending(db_path)
         entry = pending[0]
 
@@ -168,7 +168,7 @@ class TestAttemptDeliverySuccess:
     @pytest.mark.asyncio
     async def test_successful_delivery_removes_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 555, "test message content", "503")
+        await enqueue(db_path, 555, "test message content", "503")
         pending = await get_all_pending(db_path)
         entry = pending[0]
 
@@ -182,7 +182,7 @@ class TestAttemptDeliverySuccess:
     @pytest.mark.asyncio
     async def test_successful_delivery_sends_to_correct_channel(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 555, "hello world", "503")
+        await enqueue(db_path, 555, "hello world", "503")
         pending = await get_all_pending(db_path)
         entry = pending[0]
 
@@ -203,7 +203,7 @@ class TestAttemptDeliveryFailure:
     @pytest.mark.asyncio
     async def test_send_failure_returns_false(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 555, "msg", "503")
+        await enqueue(db_path, 555, "msg", "503")
         pending = await get_all_pending(db_path)
         entry = pending[0]
 
@@ -218,7 +218,7 @@ class TestAttemptDeliveryFailure:
     @pytest.mark.asyncio
     async def test_send_failure_increments_retry_count(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 555, "msg", "503")
+        await enqueue(db_path, 555, "msg", "503")
         pending = await get_all_pending(db_path)
         entry = pending[0]
 
@@ -239,7 +239,7 @@ class TestAttemptDeliveryFailure:
     @pytest.mark.asyncio
     async def test_send_failure_does_not_delete_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 555, "msg", "503")
+        await enqueue(db_path, 555, "msg", "503")
         pending = await get_all_pending(db_path)
         entry = pending[0]
 
@@ -254,7 +254,7 @@ class TestAttemptDeliveryFailure:
     @pytest.mark.asyncio
     async def test_channel_not_found_increments_retry(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 555, "msg", "503")
+        await enqueue(db_path, 555, "msg", "503")
         pending = await get_all_pending(db_path)
         entry = pending[0]
 
@@ -283,7 +283,7 @@ class TestRetryWarningThreshold:
     async def test_warning_posted_at_threshold(self, tmp_path):
         """When retry_count >= RETRY_WARN_THRESHOLD, _safe_post_log is called with a warning."""
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 555, "stuck message", "503")
+        await enqueue(db_path, 555, "stuck message", "503")
         pending = await get_all_pending(db_path)
         entry = pending[0]
 
@@ -302,15 +302,15 @@ class TestRetryWarningThreshold:
             await attempt_delivery(entry_at_threshold, bot)
 
         assert mock_safe_log.call_count >= 1
-        # First call is the warning; args are (bot, server_id, message)
-        warn_message = mock_safe_log.call_args_list[0][0][2]
+        # First call is the warning; args are (bot, message)
+        warn_message = mock_safe_log.call_args_list[0][0][1]
         assert "Stuck retry" in warn_message
 
     @pytest.mark.asyncio
     async def test_no_warning_below_threshold(self, tmp_path):
         """Under the threshold, _safe_post_log is never called."""
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 555, "msg", "503")
+        await enqueue(db_path, 555, "msg", "503")
         pending = await get_all_pending(db_path)
         entry = pending[0]
 

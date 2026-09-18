@@ -234,7 +234,7 @@ KINDS = {
 async def test_every_preview_reaches_a_png(bot, league, kind, tmp_path):
     """Rule XIV.14 — the check is against the raster, never the SVG."""
     kwargs, build = KINDS[kind]
-    context = await resolve_context(bot, SERVER_ID, "Premier", **kwargs)
+    context = await resolve_context(bot, "Premier", **kwargs)
 
     requests = await build(bot, context)
     assert requests, f"{kind} produced no picture request"
@@ -266,7 +266,7 @@ async def test_the_standings_preview_draws_the_whole_grid(bot, league, tmp_path)
     over the league's own calendar and drivers for either graphic to render at all.
     """
     context = await resolve_context(
-        bot, SERVER_ID, "Premier", round_number=1, require_teams=True
+        bot, "Premier", round_number=1, require_teams=True
     )
 
     requests = await build_standings_preview(bot, context)

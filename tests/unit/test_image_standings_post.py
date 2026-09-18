@@ -185,21 +185,21 @@ async def test_the_aspect_is_read_per_template_so_one_faulty_half_does_not_stop_
     from services.image_standings_post import standings_enabled
 
     bot = _bot(constructors_valid=False)
-    assert await standings_enabled(bot, 1, DRIVERS) is True
-    assert await standings_enabled(bot, 1, CONSTRUCTORS) is False
+    assert await standings_enabled(bot, DRIVERS) is True
+    assert await standings_enabled(bot, CONSTRUCTORS) is False
 
 
 async def test_the_module_being_off_stands_the_whole_flow_aside():
     from services.image_standings_post import standings_enabled
 
     bot = _bot(module=False)
-    assert await standings_enabled(bot, 1, DRIVERS) is False
+    assert await standings_enabled(bot, DRIVERS) is False
 
 
 async def test_the_toggle_being_off_stands_the_whole_flow_aside():
     from services.image_standings_post import standings_enabled
 
-    assert await standings_enabled(_bot(toggle=False), 1, DRIVERS) is False
+    assert await standings_enabled(_bot(toggle=False), DRIVERS) is False
 
 
 async def test_a_reader_that_raises_falls_back_rather_than_breaking_the_posting():
@@ -207,7 +207,7 @@ async def test_a_reader_that_raises_falls_back_rather_than_breaking_the_posting(
 
     bot = _bot()
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await standings_enabled(bot, 1, DRIVERS) is False
+    assert await standings_enabled(bot, DRIVERS) is False
 
 
 # ── The failure matrix ────────────────────────────────────────────────────
@@ -216,7 +216,7 @@ async def test_a_reader_that_raises_falls_back_rather_than_breaking_the_posting(
 async def test_both_render_so_two_messages_are_posted_and_no_section_falls_back(tmp_path):
     sent = []
 
-    async def render(bot, server_id, drawing, origin):
+    async def render(bot, drawing, origin):
         return _decision(
             png=_drawn(
                 tmp_path,
@@ -240,7 +240,7 @@ async def test_the_drivers_failing_falls_back_to_the_drivers_section_alone(tmp_p
     """The constructors graphic still draws, so its table must not be repeated as text."""
     sent = []
 
-    async def render(bot, server_id, drawing, origin):
+    async def render(bot, drawing, origin):
         if drawing.template_key == DRIVERS:
             return _decision(posts=False, problem=MagicMock(detail="no rows"))
         return _decision(png=_drawn(tmp_path, "constructors"))
@@ -259,7 +259,7 @@ async def test_the_drivers_failing_falls_back_to_the_drivers_section_alone(tmp_p
 async def test_the_constructors_failing_falls_back_to_the_constructors_section_alone(tmp_path):
     sent = []
 
-    async def render(bot, server_id, drawing, origin):
+    async def render(bot, drawing, origin):
         if drawing.template_key == CONSTRUCTORS:
             return _decision(posts=False, problem=MagicMock(detail="no rows"))
         return _decision(png=_drawn(tmp_path, "drivers"))
@@ -310,7 +310,7 @@ async def test_a_commanded_failure_rejects_and_posts_nothing_at_all(tmp_path):
     png.write_bytes(b"x")
     sent = []
 
-    async def render(bot, server_id, drawing, origin):
+    async def render(bot, drawing, origin):
         if drawing.template_key == DRIVERS:
             return _decision(posts=False, rejects=True, problem=MagicMock(detail="bad"))
         return _decision(png=png)
@@ -454,14 +454,14 @@ async def test_a_fault_is_reported_to_the_log_channel_naming_the_championship():
     bot = _bot()
     sent = []
 
-    async def render(bot_, server_id, drawing, origin):
+    async def render(bot_, drawing, origin):
         if drawing.template_key == DRIVERS:
             return _decision(posts=False, problem=MagicMock(detail="a field is missing"))
         return _decision(posts=False, problem=MagicMock(detail="a field is missing"))
 
     await _try_post(bot, _channel(sent), AsyncMock(side_effect=render))
 
-    logged = " ".join(str(call.args[1]) for call in bot.output_router.post_log.await_args_list)
+    logged = " ".join(str(call.args[0]) for call in bot.output_router.post_log.await_args_list)
     assert "drivers standings" in logged
     assert "constructors standings" in logged
     assert "Main round 5" in logged
@@ -490,7 +490,7 @@ async def test_notices_are_reported_alongside_a_graphic_that_did_draw(tmp_path):
         bot, _channel([]), AsyncMock(return_value=_decision(png=png, notices=[notice]))
     )
 
-    logged = " ".join(str(call.args[1]) for call in bot.output_router.post_log.await_args_list)
+    logged = " ".join(str(call.args[0]) for call in bot.output_router.post_log.await_args_list)
     assert "a flag fell back" in logged
     assert "drivers standings" in logged
 
@@ -633,7 +633,6 @@ async def test_build_drawings_resolves_both_championships_against_real_tables(tm
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,
@@ -670,7 +669,6 @@ async def test_a_drivers_row_names_the_team_its_own_driver_sits_in(tmp_path):
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,
@@ -706,7 +704,6 @@ async def test_the_run_round_fills_its_cells_and_the_unrun_one_empties_them(tmp_
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,
@@ -768,7 +765,6 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,
@@ -822,7 +818,6 @@ async def test_the_constructors_cars_are_allocated_from_the_divisions_own_seats(
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,
@@ -1262,7 +1257,6 @@ async def _highlighted_svg(tmp_path):
         bot,
         _guild(),
         db_path=db_path,
-        server_id=1,
         division_id=division_id,
         round_id=round_ids[0],
         round_number=1,

@@ -68,7 +68,6 @@ def _round(track_name="Silverstone Circuit", fmt="NORMAL"):
 
 def _context(round_obj=None, **overrides):
     values = dict(
-        server_id=1,
         season_number=5,
         division_id=1,
         division_name="Elite",

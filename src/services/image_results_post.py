@@ -54,7 +54,7 @@ class ResultsPostOutcome:
         return self.action != NOT_APPLICABLE
 
 
-async def results_enabled(bot, server_id: int, template_key: str) -> bool:
+async def results_enabled(bot, template_key: str) -> bool:
     """True where the module is on, the `results` aspect is on, and *template_key* is valid.
 
     The aspect is what a league toggles; the two templates behind it are checked one at a
@@ -71,11 +71,11 @@ async def results_enabled(bot, server_id: int, template_key: str) -> bool:
         report = reports.get(template_key)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("results: enablement check failed for server %s: %s", server_id, exc)
+        log.error("results: enablement check failed: %s", exc)
         return False
 
 
-async def _nationality_collected(db_path: str, server_id: int) -> bool:
+async def _nationality_collected(db_path: str) -> bool:
     """Whether the league collects a driver's nationality at all.
 
     Where it does not, a graphic with no flags is exactly what was configured and raises
@@ -95,8 +95,7 @@ async def _nationality_collected(db_path: str, server_id: int) -> bool:
             config = await (
                 await db.execute(
                     "SELECT test_mode_active, test_mode_nationality_required "
-                    "FROM server_configs WHERE server_id = ?",
-                    (server_id,),
+                    "FROM server_configs",
                 )
             ).fetchone()
             if config is not None and config["test_mode_active"]:
@@ -225,7 +224,7 @@ async def _nationalities(
 
 
 async def _team_names(
-    bot, guild, server_id: int, division_id: int, role_ids: list[int]
+    bot, guild, division_id: int, role_ids: list[int]
 ) -> dict[int, str]:
     """The name of the division's team holding each role, falling back to the role's own.
 
@@ -284,7 +283,6 @@ async def build_drawing(
     """Resolve one session into a ResultsDrawing, or raise ResultsDataError."""
     from services.image_results_service import resolve_drawing
 
-    server_id = guild.id if guild is not None else 0
     user_ids = [row.driver_user_id for row in driver_rows]
     role_ids = [row.team_role_id for row in driver_rows]
 
@@ -305,18 +303,18 @@ async def build_drawing(
             bot, guild, user_ids, division_id=session_result.division_id
         ),
         team_names=await _team_names(
-            bot, guild, server_id, session_result.division_id, role_ids
+            bot, guild, session_result.division_id, role_ids
         ),
         nationalities=await _nationalities(
             bot, user_ids, division_id=session_result.division_id
         ),
         dsq_phase_map=dsq_phase_map or {},
         fastest_lap_colour=getattr(config, "fastest_lap_colour", None),
-        nationality_collected=await _nationality_collected(bot.db_path, server_id),
+        nationality_collected=await _nationality_collected(bot.db_path),
     )
 
 
-async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
+async def render_png(bot, drawing, origin: PostingOrigin):
     """Render one session's results. Returns the render service's PostingDecision."""
     from services.image_results_service import build_fill_spec
     from services.image_render_service import (
@@ -341,7 +339,6 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
     # `feature_qualifying_results` rather than the template's `qualifying_results`,
     # which would not say which of a sprint weekend's two qualifyings was drawn.
     return await bot.image_render_service.render_for_posting(
-        server_id,
         drawing.template_key,
         spec_builder_with_faults(
             build_fill_spec, drawing, directories, directory_faults
@@ -388,7 +385,6 @@ async def try_post(
     if bot is None or guild is None or channel is None:
         return ResultsPostOutcome()
 
-    server_id = guild.id
     try:
         from services.image_results_service import template_key_for
 
@@ -397,7 +393,7 @@ async def try_post(
         log.error("results: unknown session type %s: %s", session_result.session_type, exc)
         return ResultsPostOutcome()
 
-    if not await results_enabled(bot, server_id, template_key):
+    if not await results_enabled(bot, template_key):
         return ResultsPostOutcome()
 
     session_label = f"{division_name} round {round_number}"
@@ -418,10 +414,10 @@ async def try_post(
             season_number=season_number,
             dsq_phase_map=dsq_phase_map,
         )
-        decision = await render_png(bot, server_id, drawing, origin)
+        decision = await render_png(bot, drawing, origin)
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
         log.error("results: render failed for session %s: %s", session_result.id, exc)
-        await report(bot, server_id, drawing_label(drawing=None, fallback=session_label), str(exc))
+        await report(bot, drawing_label(drawing=None, fallback=session_label), str(exc))
         if origin is PostingOrigin.COMMANDED:
             return ResultsPostOutcome(action=REJECTED, message=f"❌ {exc}")
         return ResultsPostOutcome()
@@ -441,7 +437,6 @@ async def try_post(
         if decision.problem is not None:
             await report(
                 bot,
-                server_id,
                 f"{session_label} — {drawing.session_name}",
                 decision.problem.detail,
             )
@@ -482,7 +477,7 @@ async def try_post(
 
     if decision.notices:
         await report_notices(
-            bot, server_id, f"{session_label} — {drawing.session_name}", decision.notices
+            bot, f"{session_label} — {drawing.session_name}", decision.notices
         )
 
     # No ``png_path``: the file was discarded the moment the send returned, and handing
@@ -499,17 +494,17 @@ def drawing_label(*, drawing, fallback: str) -> str:
     return f"{fallback} — {drawing.session_name}"
 
 
-async def report(bot, server_id: int, what: str, detail: str) -> None:
+async def report(bot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, and never to a driver-read channel."""
     try:
         await bot.output_router.post_log(
-            server_id, f"⚠️ Results image — {what}: {detail}"
+            f"⚠️ Results image — {what}: {detail}"
         )
     except Exception as exc:  # noqa: BLE001
         log.error("results: could not report to the log channel: %s", exc)
 
 
-async def report_notices(bot, server_id: int, what: str, notices) -> None:
+async def report_notices(bot, what: str, notices) -> None:
     """Report every non-fatal degradation, naming the session it pertains to.
 
     `what` reaches the log as the block's subject. It used to be accepted and dropped,
@@ -520,6 +515,6 @@ async def report_notices(bot, server_id: int, what: str, notices) -> None:
     try:
         from services.image_render_service import ImageRenderService
 
-        await ImageRenderService.report_notices(bot, server_id, notices, subject=what)
+        await ImageRenderService.report_notices(bot, notices, subject=what)
     except Exception as exc:  # noqa: BLE001
         log.error("results: could not report notices: %s", exc)

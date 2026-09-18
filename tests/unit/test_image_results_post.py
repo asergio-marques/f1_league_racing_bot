@@ -352,7 +352,7 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
         )
 
     bot.output_router.post_log.assert_awaited()
-    reported = bot.output_router.post_log.await_args.args[1]
+    reported = bot.output_router.post_log.await_args.args[0]
     assert "Main" in reported and "5" in reported and "Race" in reported
     assert "no such field" in reported
     # And nothing of the sort reached the results channel.
@@ -450,8 +450,8 @@ async def test_enablement_is_answered_for_the_named_template_alone(tmp_path):
         }
     )
 
-    assert await results_enabled(bot, 1, "results_qualifying_template")
-    assert not await results_enabled(bot, 1, "results_race_template")
+    assert await results_enabled(bot, "results_qualifying_template")
+    assert not await results_enabled(bot, "results_race_template")
 
 
 async def test_an_unreadable_toggle_never_breaks_a_posting(tmp_path):
@@ -459,7 +459,7 @@ async def test_an_unreadable_toggle_never_breaks_a_posting(tmp_path):
 
     bot = MagicMock()
     bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError("db gone"))
-    assert not await results_enabled(bot, 1, "results_race_template")
+    assert not await results_enabled(bot, "results_race_template")
 
 
 # ── The lifecycle: result_status reaches the drawing (T028) ───────────────

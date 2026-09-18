@@ -40,7 +40,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 import services.scheduler_service as scheduler_module  # noqa: E402
 from services.scheduler_service import SchedulerService  # noqa: E402
 
-SERVER_ID = 13708
 
 
 @pytest.fixture(autouse=True)
@@ -268,7 +267,6 @@ def test_re_arming_the_signup_timer_replaces_it():
     "cancel,args,job_id",
     [
         ("cancel_signup_close_timer", (), "signup_close"),
-        ("cancel_season_end", (SERVER_ID,), f"season_end_{SERVER_ID}"),
         ("cancel_job", ("weather_p1_x",), "weather_p1_x"),
     ],
 )
@@ -284,7 +282,6 @@ def test_a_cancellation_removes_its_job(cancel, args, job_id):
     "cancel,args",
     [
         ("cancel_signup_close_timer", ()),
-        ("cancel_season_end", (SERVER_ID,)),
         ("cancel_job", ("gone",)),
     ],
 )
@@ -294,3 +291,27 @@ def test_cancelling_what_is_not_scheduled_is_not_an_error(cancel, args):
     service._scheduler.remove_job = MagicMock(side_effect=Exception("No job by the id"))
 
     getattr(service, cancel)(*args)  # must not raise
+
+
+def test_cancelling_the_season_end_removes_every_season_end_job_and_nothing_else():
+    """A store written by an older version keyed the job by server, so the id is matched on
+    its prefix."""
+    service = _service()
+    service._scheduler.get_jobs = MagicMock(return_value=[
+        SimpleNamespace(id="season_end_4242"),
+        SimpleNamespace(id="season_end"),
+        SimpleNamespace(id="signup_close"),
+    ])
+
+    service.cancel_season_end()
+
+    removed = [c.args[0] for c in service._scheduler.remove_job.call_args_list]
+    assert removed == ["season_end_4242", "season_end"]
+
+
+def test_a_season_end_job_that_will_not_go_is_stepped_over():
+    service = _service()
+    service._scheduler.get_jobs = MagicMock(return_value=[SimpleNamespace(id="season_end_1")])
+    service._scheduler.remove_job = MagicMock(side_effect=Exception("No job by the id"))
+
+    service.cancel_season_end()  # must not raise

@@ -98,7 +98,7 @@ def _function_source(name: str) -> str:
 async def test_a_season_whose_configs_all_exist_raises_nothing(db_path):
     await _attach_real(db_path, "Standard")
 
-    assert await _cog(db_path)._missing_points_config_problems(SERVER_ID, SEASON_ID) == []
+    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == []
 
 
 @pytest.mark.asyncio
@@ -107,7 +107,7 @@ async def test_a_mistyped_name_is_found(db_path):
     await _attach_real(db_path, "Standard")
     await _attach_phantom(db_path, "Standrad")
 
-    assert await _cog(db_path)._missing_points_config_problems(SERVER_ID, SEASON_ID) == [
+    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == [
         "Standrad"
     ]
 
@@ -122,7 +122,7 @@ async def test_a_config_removed_from_under_the_season_is_found(db_path):
         )
         await db.commit()
 
-    assert await _cog(db_path)._missing_points_config_problems(SERVER_ID, SEASON_ID) == [
+    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == [
         "Standard"
     ]
 
@@ -130,7 +130,7 @@ async def test_a_config_removed_from_under_the_season_is_found(db_path):
 @pytest.mark.asyncio
 async def test_a_season_with_nothing_attached_raises_nothing_here(db_path):
     """"Nothing attached" is the prerequisite gate's complaint, not this one's."""
-    assert await _cog(db_path)._missing_points_config_problems(SERVER_ID, SEASON_ID) == []
+    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == []
 
 
 # ── The two surfaces read the same helper ─────────────────────────────────

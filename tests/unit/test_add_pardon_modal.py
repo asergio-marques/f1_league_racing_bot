@@ -294,7 +294,7 @@ async def test_the_justification_is_logged(tmp_path):
 
     await _submit(state, justification="Power cut on the night")
 
-    logged = str(state.bot.output_router.post_log.await_args.args[1])
+    logged = str(state.bot.output_router.post_log.await_args.args[0])
     assert "ATTENDANCE_PARDON_STAGED" in logged
     assert "Power cut on the night" in logged
     assert "Pro" in logged

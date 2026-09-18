@@ -39,8 +39,8 @@ class PhaseEntry(TypedDict):
 # Toggle
 # ---------------------------------------------------------------------------
 
-async def toggle_test_mode(server_id: int, db_path: str) -> bool:
-    """Flip test_mode_active for *server_id* and return the NEW value.
+async def toggle_test_mode(db_path: str) -> bool:
+    """Flip test_mode_active and return the NEW value.
 
     Uses a single atomic UPDATE so no read-modify-write race can occur.
     Returns False if the server has no config row (bot not initialised).
@@ -49,24 +49,22 @@ async def toggle_test_mode(server_id: int, db_path: str) -> bool:
         await db.execute(
             "UPDATE server_configs "
             "SET test_mode_active = 1 - test_mode_active "
-            "WHERE server_id = ?",
-            (server_id,),
+            "",
         )
         await db.commit()
         cursor = await db.execute(
-            "SELECT test_mode_active FROM server_configs WHERE server_id = ?",
-            (server_id,),
+            "SELECT test_mode_active FROM server_configs",
         )
         row = await cursor.fetchone()
 
     if row is None:
-        log.error("toggle_test_mode: no server_config row for server_id=%s", server_id)
+        log.error("toggle_test_mode: no server_config row")
         return False
     return bool(row["test_mode_active"])
 
 
-async def switch_test_mode_off(server_id: int, bot, *, discard_backup: bool = False) -> int:
-    """Switch test mode off for *server_id*, deleting every driver it created.
+async def switch_test_mode_off(bot, *, discard_backup: bool = False) -> int:
+    """Switch test mode off, deleting every driver it created.
 
     The one way test mode is left, by the toggle in Configuration or by the season it was chosen
     for ending (issue #220). Pending forecast deletions are flushed first, as they were while a
@@ -81,7 +79,7 @@ async def switch_test_mode_off(server_id: int, bot, *, discard_backup: bool = Fa
     """
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
-            "SELECT test_mode_active FROM server_configs WHERE server_id = ?", (server_id,)
+            "SELECT test_mode_active FROM server_configs"
         )
         row = await cursor.fetchone()
     if row is None or not row["test_mode_active"]:
@@ -91,7 +89,7 @@ async def switch_test_mode_off(server_id: int, bot, *, discard_backup: bool = Fa
     from services.test_roster_service import clear_all_test_drivers
 
     try:
-        await flush_pending_deletions(server_id, bot)
+        await flush_pending_deletions(bot)
     except Exception:  # noqa: BLE001 — a stale forecast is not worth staying in test mode
         log.exception("switch_test_mode_off: could not flush pending deletions")
     removed = await clear_all_test_drivers(bot.db_path)
@@ -104,14 +102,14 @@ async def switch_test_mode_off(server_id: int, bot, *, discard_backup: bool = Fa
             log.exception("switch_test_mode_off: could not discard the saved backup")
     async with get_connection(bot.db_path) as db:
         await db.execute(
-            "UPDATE server_configs SET test_mode_active = 0 WHERE server_id = ?", (server_id,)
+            "UPDATE server_configs SET test_mode_active = 0"
         )
         await db.commit()
     return removed
 
 
-async def toggle_test_mode_nationality(server_id: int, db_path: str) -> bool:
-    """Flip test_mode_nationality_required for *server_id* and return the NEW value.
+async def toggle_test_mode_nationality(db_path: str) -> bool:
+    """Flip test_mode_nationality_required and return the NEW value.
 
     The test-mode counterpart of the signup nationality switch: while test mode is active
     it stands in for it, so the graphics of a server under test may be seen with flags and
@@ -124,19 +122,17 @@ async def toggle_test_mode_nationality(server_id: int, db_path: str) -> bool:
         await db.execute(
             "UPDATE server_configs "
             "SET test_mode_nationality_required = 1 - test_mode_nationality_required "
-            "WHERE server_id = ?",
-            (server_id,),
+            "",
         )
         await db.commit()
         cursor = await db.execute(
-            "SELECT test_mode_nationality_required FROM server_configs WHERE server_id = ?",
-            (server_id,),
+            "SELECT test_mode_nationality_required FROM server_configs",
         )
         row = await cursor.fetchone()
 
     if row is None:
         log.error(
-            "toggle_test_mode_nationality: no server_config row for server_id=%s", server_id
+            "toggle_test_mode_nationality: no server_config row"
         )
         return False
     return bool(row["test_mode_nationality_required"])
@@ -170,7 +166,6 @@ async def count_live_real_drivers(db_path: str) -> int:
 # ---------------------------------------------------------------------------
 
 async def get_next_pending_phase(
-    server_id: int,
     db_path: str,
     scheduler_service: Any = None,
 ) -> PhaseEntry | None:
@@ -292,8 +287,7 @@ async def get_next_pending_phase(
         results_module_enabled = bool(rmc_row[0]) if rmc_row else False
 
         wm_cursor = await db.execute(
-            "SELECT weather_module_enabled FROM server_configs WHERE server_id = ?",
-            (server_id,),
+            "SELECT weather_module_enabled FROM server_configs",
         )
         wm_row = await wm_cursor.fetchone()
         weather_module_enabled = bool(wm_row[0]) if wm_row else False

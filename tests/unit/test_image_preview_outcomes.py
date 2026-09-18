@@ -134,7 +134,7 @@ async def league(db_path):
 
 async def _context(bot, *, round_number=None, **kwargs):
     return await resolve_context(
-        bot, SERVER_ID, "Premier", round_number=round_number, **kwargs
+        bot, "Premier", round_number=round_number, **kwargs
     )
 
 

@@ -149,6 +149,7 @@ def _state(bot, db_path: str = ":memory:") -> PenaltyReviewState:
 def _bot(config):
     bot = MagicMock()
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=config)
     return bot
 

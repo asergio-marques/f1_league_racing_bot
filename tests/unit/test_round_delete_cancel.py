@@ -115,7 +115,7 @@ def _make_cog(
 
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
-    cog._get_pending_for_server = MagicMock(return_value=None)
+    cog._get_pending = MagicMock(return_value=None)
     cog._reload_pending_from_db = AsyncMock(return_value=None)
     cog._setup_season_id = setup_season_id
     return cog
@@ -255,7 +255,7 @@ async def test_the_pending_setup_is_reloaded_after_a_delete():
     """The season being built lives in memory as well as in the database; leaving the
     in-memory copy stale would have the review show a round that no longer exists."""
     cog = _make_cog()
-    cog._get_pending_for_server = MagicMock(return_value=MagicMock())
+    cog._get_pending = MagicMock(return_value=MagicMock())
     interaction = _interaction()
 
     await _delete(cog, interaction)
@@ -268,7 +268,7 @@ async def test_a_delete_is_logged_with_the_division_and_round():
 
     await _delete(cog, _interaction())
 
-    logged = cog.bot.output_router.post_log.await_args.args[1]
+    logged = cog.bot.output_router.post_log.await_args.args[0]
     assert "/round delete" in logged
     assert "Division 1" in logged
 
@@ -391,7 +391,7 @@ async def test_cancelling_a_round_winds_a_finished_season_down():
     await _cancel(cog, interaction)
 
     cog.bot.season_service.wind_down_ongoing.assert_awaited_once_with(
-        cog.bot, interaction.guild_id
+        cog.bot
     )
 
 

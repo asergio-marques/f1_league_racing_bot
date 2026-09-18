@@ -119,16 +119,16 @@ def flow(monkeypatch, tmp_path):
     async def _team(_bot, _guild, **_kwargs):
         return None
 
-    async def _enabled(_bot, _server_id):
+    async def _enabled(_bot):
         return state["banner_enabled"]
 
-    async def _render(_bot, _server_id, _drawing, **_kwargs):
+    async def _render(_bot, _drawing, **_kwargs):
         return banner.BannerRender(
             png=state["png"] if state["banner_draws"] else None,
             problem=state["banner_problem"],
         )
 
-    async def _report(_bot, _server_id, _what, _detail):
+    async def _report(_bot, _what, _detail):
         return None
 
     def _discard(render, attachment=None):
@@ -378,10 +378,10 @@ def sanction(monkeypatch, tmp_path):
         state["sent_verdicts"].append(kwargs)
         await channel.send(f"<@{kwargs['driver_discord_id']}>")
 
-    async def _enabled(_bot, _server_id):
+    async def _enabled(_bot):
         return True
 
-    async def _render(_bot, _server_id, _drawing, **_kwargs):
+    async def _render(_bot, _drawing, **_kwargs):
         return banner.BannerRender(png=state["png"])
 
     monkeypatch.setattr(vas, "get_connection", _connection)

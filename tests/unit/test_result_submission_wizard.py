@@ -140,10 +140,12 @@ def _bot(
     results_channel_present=True,
 ):
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(
             interaction_channel_id=100, interaction_role_id=900, league_admin_role_id=901
@@ -217,7 +219,7 @@ def _said(channel) -> str:
 
 
 def _logged(bot) -> str:
-    return "\n".join(str(c.args[1]) for c in bot.output_router.post_log.await_args_list)
+    return "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
 
 
 async def _round_status(db_path):

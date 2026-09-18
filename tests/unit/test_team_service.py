@@ -177,7 +177,7 @@ class TestGetSetupSeasonTeamNames:
         season_id = await _add_season_with_divisions(db_path, 1)
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_setup_season_team_names(1, season_id)
+        result = await svc.get_setup_season_team_names(season_id)
         assert result == set()
 
     async def test_returns_team_names_present_in_divisions(self, db_path):
@@ -186,7 +186,7 @@ class TestGetSetupSeasonTeamNames:
         await _add_team_instance(db_path, season_id, "Alpine")
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_setup_season_team_names(1, season_id)
+        result = await svc.get_setup_season_team_names(season_id)
         assert result == {"Ferrari", "Alpine"}
 
     async def test_excludes_reserve_teams(self, db_path):
@@ -195,7 +195,7 @@ class TestGetSetupSeasonTeamNames:
         await _add_team_instance(db_path, season_id, "Reserve", is_reserve=1)
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_setup_season_team_names(1, season_id)
+        result = await svc.get_setup_season_team_names(season_id)
         assert "Reserve" not in result
         assert "Ferrari" in result
 
@@ -204,6 +204,6 @@ class TestGetSetupSeasonTeamNames:
         await _add_team_instance(db_path, season_id, "Ferrari")
         from services.team_service import TeamService
         svc = TeamService(db_path)
-        result = await svc.get_setup_season_team_names(1, season_id)
+        result = await svc.get_setup_season_team_names(season_id)
         # Ferrari appears in both divisions but should only appear once in set
         assert result == {"Ferrari"}

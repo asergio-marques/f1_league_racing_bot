@@ -99,7 +99,7 @@ async def _states(db_path) -> dict[int, str]:
 
 
 async def test_the_pass_resets_and_deletes_as_the_rules_say(db_path):
-    result = await run_driver_pass(db_path, SERVER_ID)
+    result = await run_driver_pass(db_path)
 
     assert await _states(db_path) == {
         1: "NOT_SIGNED_UP",
@@ -109,7 +109,7 @@ async def test_the_pass_resets_and_deletes_as_the_rules_say(db_path):
 
 
 async def test_a_deleted_driver_leaves_no_placement_or_history_but_keeps_their_signup(db_path):
-    await run_driver_pass(db_path, SERVER_ID)
+    await run_driver_pass(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -127,7 +127,7 @@ async def test_a_deleted_driver_leaves_no_placement_or_history_but_keeps_their_s
 
 
 async def test_a_former_driver_keeps_their_placement_and_history(db_path):
-    await run_driver_pass(db_path, SERVER_ID)
+    await run_driver_pass(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -146,9 +146,9 @@ async def test_a_signup_in_review_has_its_channel_closed(db_path):
     guild = MagicMock()
     guild.get_member = MagicMock(return_value=None)
 
-    await run_driver_pass(db_path, SERVER_ID, bot=bot, guild=guild)
+    await run_driver_pass(db_path, bot=bot, guild=guild)
 
-    held = [c.args[1] for c in bot.wizard_service._trigger_channel_hold.await_args_list]
+    held = [c.args[0] for c in bot.wizard_service._trigger_channel_hold.await_args_list]
     assert held == ["1004"]
 
 
@@ -167,7 +167,7 @@ async def test_the_signed_up_role_is_revoked_from_a_real_driver(db_path):
     guild.get_member = MagicMock(return_value=member)
     guild.get_role = MagicMock(return_value=role)
 
-    await run_driver_pass(db_path, SERVER_ID, guild=guild)
+    await run_driver_pass(db_path, guild=guild)
 
     # The two Assigned real drivers and the Unassigned one; not the test driver.
     assert member.remove_roles.await_count == 3
@@ -180,7 +180,7 @@ async def test_a_signup_channel_that_cannot_be_closed_does_not_stop_the_pass(db_
     guild = MagicMock()
     guild.get_member = MagicMock(return_value=None)
 
-    await run_driver_pass(db_path, SERVER_ID, bot=bot, guild=guild)
+    await run_driver_pass(db_path, bot=bot, guild=guild)
 
     assert (await _states(db_path)).get(4) is None, "the driver in review is still deleted"
 
@@ -192,7 +192,7 @@ async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass(db_path):
     guild = MagicMock()
     guild.get_member = MagicMock(return_value=None)
 
-    await run_driver_pass(db_path, SERVER_ID, bot=bot, guild=guild)
+    await run_driver_pass(db_path, bot=bot, guild=guild)
 
     bot.wizard_service._trigger_channel_hold.assert_awaited_once()
     assert (await _states(db_path))[1] == "NOT_SIGNED_UP"
@@ -213,7 +213,7 @@ async def test_a_role_discord_will_not_take_back_does_not_stop_the_pass(db_path)
     guild.get_member = MagicMock(return_value=member)
     guild.get_role = MagicMock(return_value=role)
 
-    await run_driver_pass(db_path, SERVER_ID, guild=guild)
+    await run_driver_pass(db_path, guild=guild)
 
     assert member.remove_roles.await_count == 3
     assert (await _states(db_path))[1] == "NOT_SIGNED_UP"
@@ -232,7 +232,7 @@ async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatc
 
     monkeypatch.setattr(driver_service, "write_transition", recording)
 
-    await run_driver_pass(db_path, SERVER_ID)
+    await run_driver_pass(db_path)
 
     assert sorted(seen) == [
         (1, "ASSIGNED", "NOT_SIGNED_UP"),
@@ -246,7 +246,7 @@ async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatc
 async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
     import json
 
-    await run_driver_pass(db_path, SERVER_ID)
+    await run_driver_pass(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

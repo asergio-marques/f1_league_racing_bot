@@ -126,7 +126,7 @@ class TestASeatedDivision:
         """SC-004 — the reason a lineup template can finally be checked at all."""
         await _seed(db_path, seat_drivers=True)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         requests = await build_lineup_preview(bot, context)
@@ -138,7 +138,7 @@ class TestASeatedDivision:
     async def test_the_drawing_carries_the_leagues_own_driver_names(self, bot, db_path):
         await _seed(db_path, seat_drivers=True)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         names = {d.display_name for d in context.drivers}
@@ -156,7 +156,7 @@ class TestASeatedDivision:
 
         await _seed(db_path, seat_drivers=True)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         drawing = resolve_drawing(
@@ -180,7 +180,7 @@ class TestAnUnseatedDivision:
         """FR-018 — a league that has configured teams but seated nobody still gets a picture."""
         await _seed(db_path, seat_drivers=False)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         assert context.fabricated_drivers is True
@@ -193,7 +193,7 @@ class TestAnUnseatedDivision:
         """The lineup draws seats, not the flat list; an unoccupied seat would draw empty."""
         await _seed(db_path, seat_drivers=False)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         for team in context.teams:
@@ -206,7 +206,7 @@ class TestAnUnseatedDivision:
 
         await _seed(db_path, seat_drivers=False)
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         drawing = resolve_drawing(
@@ -231,7 +231,7 @@ class TestAnUnseatedDivision:
         """Only the drivers are invented. The teams are never fabricated."""
         await _seed(db_path, seat_drivers=False, teams=("Vermilion", "Cobalt"))
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         assert {t.name for t in context.teams} == {"Vermilion", "Cobalt", "Reserve"}
@@ -253,7 +253,7 @@ class TestItUsesTheLeaguesOwnDirectories:
             "flag_directory", "resources/defaults/teams"
         )
         context = await resolve_context(
-            bot, SERVER_ID, "Premier", require_teams=True
+            bot, "Premier", require_teams=True
         )
 
         seen = {}

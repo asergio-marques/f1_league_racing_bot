@@ -512,7 +512,7 @@ class ImageCog(commands.Cog):
                 interaction, config, "pfp_daily", False, "Daily driver-portrait updates"
             ):
                 self.bot.scheduler_service.cancel_portrait_refresh(  # type: ignore[attr-defined]
-                    
+
                 )
             return
 
@@ -525,7 +525,6 @@ class ImageCog(commands.Cog):
         """Record a configuration mutation to the calculation log (Principle V)."""
         try:
             await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /images config | {detail}",
             )
@@ -915,7 +914,6 @@ class ImageCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
 
-        server_id = interaction.guild_id
         label = ASPECT_LABELS[aspect.value]
 
         # Switching *off* is always allowed: the output reverts to text, which needs no
@@ -933,7 +931,7 @@ class ImageCog(commands.Cog):
         # that withholds the season's approval, and posts nothing where a driver would
         # otherwise have read text. The check is made against the configured directory,
         # so it answers for the files the league actually has.
-        blocking = await self._aspect_blocking_reasons_if_enabled(server_id, aspect.value)
+        blocking = await self._aspect_blocking_reasons_if_enabled(aspect.value)
         if blocking:
             body = "\n".join(f"  • {reason}" for reason in blocking)
             await self._reply(
@@ -954,15 +952,15 @@ class ImageCog(commands.Cog):
         await self._reply(interaction, "\n".join(lines))
         await self._log(interaction, f"{label} image output enabled")
 
-    async def _aspect_blocking_reasons(self, server_id: int, aspect: str) -> list[str]:
-        statuses = await self._validity_service.aspect_statuses(server_id)
+    async def _aspect_blocking_reasons(self, aspect: str) -> list[str]:
+        statuses = await self._validity_service.aspect_statuses()
         for status in statuses:
             if status.aspect == aspect:
                 return status.blocking_reasons
         return []
 
     async def _aspect_blocking_reasons_if_enabled(
-        self, server_id: int, aspect: str
+        self, aspect: str
     ) -> list[str]:
         """What would stop *aspect* drawing, asked while it is still switched off.
 
@@ -982,15 +980,13 @@ class ImageCog(commands.Cog):
         statuses = build_aspect_statuses(
             toggles,
             reports,
-            disabled_source_modules=await self._validity_service.disabled_source_modules(
-                server_id
-            ),
+            disabled_source_modules=await self._validity_service.disabled_source_modules(),
             converter_available=converter_available(),
             # The shortfall is passed here too, and must be: this builds its own status
             # list rather than calling `aspect_statuses`, so an aspect could otherwise be
             # switched on while a template of it wanted a colour no tier had set (051).
             colour_shortfall=await self._validity_service.colour_shortfall(
-                server_id, reports
+                reports
             ),
         )
         for status in statuses:
@@ -1032,7 +1028,7 @@ class ImageCog(commands.Cog):
 
         # 3. Measure and report the contrast against the template's own background.
         ratio, background, problem = await self._measure_fastest_lap_contrast(
-            interaction.guild_id, canonical
+            canonical
         )
 
         if ratio is None:
@@ -1085,9 +1081,7 @@ class ImageCog(commands.Cog):
             # Switching on is the moment the shortfall becomes real. Saying so here beats
             # letting it be discovered at the season review, which is the worst moment to
             # find out a graphic will not post.
-            shortfall = await self._validity_service.colour_shortfall(
-                interaction.guild_id
-            )
+            shortfall = await self._validity_service.colour_shortfall()
             if shortfall:
                 lines.append("")
                 lines.append("⚠️ These are wanted before your graphics will draw:")
@@ -1155,7 +1149,7 @@ class ImageCog(commands.Cog):
         # A slot no template marks is stored all the same and merely reported, exactly as
         # an unmeasurable fastest-lap contrast is: the input is the league's, and a slot
         # may reasonably be set before the template that uses it is drawn.
-        declared = await self._declared_colour_slots(interaction.guild_id)
+        declared = await self._declared_colour_slots()
         if canonical_slot not in declared:
             lines.append(
                 f"ℹ️ No template of yours marks `{canonical_slot}` yet, so nothing will "
@@ -1212,7 +1206,7 @@ class ImageCog(commands.Cog):
         lines = [f"✅ **{division}** — {written} colour(s) set."]
         lines += [f"  • `{slot}` = `{colour}`" for slot, colour in colours.items()]
 
-        declared = await self._declared_colour_slots(interaction.guild_id)
+        declared = await self._declared_colour_slots()
         unknown = sorted(set(colours) - declared)
         if unknown:
             lines.append(
@@ -1299,7 +1293,7 @@ class ImageCog(commands.Cog):
             f"{len(problems)} rejected",
         )
 
-    async def _declared_colour_slots(self, server_id: int) -> set[str]:
+    async def _declared_colour_slots(self) -> set[str]:
         """Every colour slot any valid template of this server marks.
 
         Read off the validity reports, which carry it from the parse Layer 1 already did,
@@ -1314,7 +1308,7 @@ class ImageCog(commands.Cog):
         }
 
     async def _measure_fastest_lap_contrast(
-        self, server_id: int, colour: str
+        self, colour: str
     ) -> tuple[float | None, str | None, str | None]:
         """Return (ratio, background, problem).
 
@@ -1494,11 +1488,11 @@ class ImageCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        text = await self.build_configuration_report(interaction.guild_id)
+        text = await self.build_configuration_report()
         for chunk in _chunk(text):
             await interaction.followup.send(chunk, ephemeral=True)
 
-    async def build_configuration_report(self, server_id: int) -> str:
+    async def build_configuration_report(self) -> str:
         """Render the configuration and its validity.
 
         `/season placements-review` renders the aspect section from the same `AspectStatus` list, so
@@ -1571,12 +1565,12 @@ class ImageCog(commands.Cog):
             "",
         ]
 
-        lines += await self.build_tier_colour_section(server_id, config)
+        lines += await self.build_tier_colour_section(config)
 
-        lines += await self.build_aspect_section(server_id)
+        lines += await self.build_aspect_section()
         return "\n".join(lines)
 
-    async def build_tier_colour_section(self, server_id: int, config) -> list[str]:
+    async def build_tier_colour_section(self, config) -> list[str]:
         """The per-tier colours, listed here rather than behind a command of their own (051).
 
         The `config` group holds seventeen of Discord's twenty-five subcommands and a third
@@ -1610,9 +1604,9 @@ class ImageCog(commands.Cog):
         lines.append("")
         return lines
 
-    async def build_aspect_section(self, server_id: int) -> list[str]:
+    async def build_aspect_section(self) -> list[str]:
         """The eight aspects in their three states (FR-031, FR-032)."""
-        statuses = await self._validity_service.aspect_statuses(server_id)
+        statuses = await self._validity_service.aspect_statuses()
 
         lines = ["**Output aspects**"]
         for status in statuses:
@@ -1720,7 +1714,6 @@ class ImageCog(commands.Cog):
         try:
             context = await resolve_context(
                 self.bot,
-                interaction.guild_id,
                 division,
                 guild=interaction.guild,
                 round_number=round_number,
@@ -2214,7 +2207,7 @@ class ImageCog(commands.Cog):
             from services.image_render_service import grouped_notice_lines
 
             logged = await ImageRenderService.report_notices(
-                self.bot, interaction.guild_id, all_notices
+                self.bot, all_notices
             )
 
             heading = "⚠️ **Notices** — the render survived these:"

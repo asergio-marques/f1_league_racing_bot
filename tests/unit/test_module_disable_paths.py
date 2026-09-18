@@ -134,8 +134,7 @@ def _replied(interaction) -> str:
 async def _audit_types(db_path: str) -> list[str]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type FROM audit_entries WHERE server_id = ? ORDER BY id",
-            (SERVER_ID,),
+            "SELECT change_type FROM audit_entries ORDER BY id",
         )
         return [r["change_type"] for r in await cursor.fetchall()]
 
@@ -166,7 +165,7 @@ async def test_disabling_images_clears_the_flag(tmp_path):
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    await cog._disable_images(interaction, SERVER_ID)
+    await cog._disable_images(interaction)
 
     cog.bot.module_service.set_images_enabled.assert_awaited_once_with(False)
 
@@ -180,7 +179,7 @@ async def test_disabling_images_keeps_the_configuration(tmp_path):
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    await cog._disable_images(interaction, SERVER_ID)
+    await cog._disable_images(interaction)
 
     replied = _replied(interaction)
     assert "configuration is kept" in replied
@@ -192,7 +191,7 @@ async def test_disabling_images_says_what_happens_to_the_output(tmp_path):
     db_path = await _make_db(tmp_path)
     interaction = _interaction()
 
-    await _make_cog(db_path)._disable_images(interaction, SERVER_ID)
+    await _make_cog(db_path)._disable_images(interaction)
 
     assert "reverts to text output" in _replied(interaction)
 
@@ -202,7 +201,7 @@ async def test_disabling_images_twice_does_no_work(tmp_path):
     cog = _make_cog(db_path, images_enabled=False)
     interaction = _interaction()
 
-    await cog._disable_images(interaction, SERVER_ID)
+    await cog._disable_images(interaction)
 
     assert "already disabled" in _replied(interaction)
     cog.bot.module_service.set_images_enabled.assert_not_awaited()
@@ -212,7 +211,7 @@ async def test_disabling_images_twice_does_no_work(tmp_path):
 async def test_disabling_images_is_audited(tmp_path):
     db_path = await _make_db(tmp_path)
 
-    await _make_cog(db_path)._disable_images(_interaction(), SERVER_ID)
+    await _make_cog(db_path)._disable_images(_interaction())
 
     assert await _audit_types(db_path) == ["IMAGE_MODULE_DISABLED"]
 
@@ -333,7 +332,7 @@ async def test_enabling_signup_writes_a_bare_configuration(tmp_path):
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, signup_enabled=False)
 
-    await cog._enable_signup(_interaction(), SERVER_ID)
+    await cog._enable_signup(_interaction())
 
     cog.bot.signup_module_service.save_config.assert_awaited_once()
     saved = cog.bot.signup_module_service.save_config.await_args.args[0]
@@ -348,7 +347,7 @@ async def test_enabling_signup_names_the_three_commands_that_follow(tmp_path):
     cog = _make_cog(db_path, signup_enabled=False)
     interaction = _interaction()
 
-    await cog._enable_signup(interaction, SERVER_ID)
+    await cog._enable_signup(interaction)
 
     replied = _replied(interaction)
     for command in ("/signup channel", "/signup base-role", "/signup complete-role"):
@@ -362,7 +361,7 @@ async def test_enabling_signup_twice_does_no_work(tmp_path):
     cog = _make_cog(db_path, signup_enabled=True)
     interaction = _interaction()
 
-    await cog._enable_signup(interaction, SERVER_ID)
+    await cog._enable_signup(interaction)
 
     assert "already enabled" in _replied(interaction)
     cog.bot.signup_module_service.save_config.assert_not_awaited()
@@ -374,6 +373,6 @@ async def test_disabling_signup_twice_does_no_work(tmp_path):
     cog = _make_cog(db_path, signup_enabled=False)
     interaction = _interaction()
 
-    await cog._disable_signup(interaction, SERVER_ID)
+    await cog._disable_signup(interaction)
 
     assert "already disabled" in _replied(interaction)

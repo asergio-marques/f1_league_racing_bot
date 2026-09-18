@@ -84,6 +84,7 @@ class _FakeChannel:
 
 def _make_bot(db_path: str, *, guild: bool = True) -> MagicMock:
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
@@ -283,7 +284,7 @@ async def _count(db_path: str, table: str) -> int:
 async def _disable(cog: ModuleCog, server_id: int = SERVER_ID) -> MagicMock:
     """Run the disable through the confirmation, as a league manager would."""
     interaction = _make_interaction()
-    await cog._apply_results_disable(interaction, server_id, cascade_attendance=False)
+    await cog._apply_results_disable(interaction, cascade_attendance=False)
     return interaction
 
 
@@ -426,7 +427,7 @@ async def test_a_verdict_does_not_block_the_delete(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_APPEAL_VERDICTS",))
     assert await _count(db_path, "penalty_records") == 1
 
-    report = await purge_season_results(db_path, SERVER_ID, _make_bot(db_path))
+    report = await purge_season_results(db_path, _make_bot(db_path))
 
     assert report["sessions"] == 1
     assert await _count(db_path, "penalty_records") == 0
@@ -451,7 +452,7 @@ async def test_an_open_submission_channel_is_closed(tmp_path) -> None:
     submission_channel = _FakeChannel(8000)
     cog.bot.channels[8000] = submission_channel
 
-    report = await purge_season_results(db_path, SERVER_ID, cog.bot)
+    report = await purge_season_results(db_path, cog.bot)
 
     assert report["submission_channels"] == 1
     assert submission_channel.deleted is True
@@ -509,7 +510,7 @@ async def test_a_running_season_is_confirmed_even_with_attendance_off(tmp_path) 
     cog = _make_cog(db_path)
     interaction = _make_interaction()
 
-    await cog._disable_results(interaction, SERVER_ID)
+    await cog._disable_results(interaction)
 
     warning = interaction.response.send_message.await_args.args[0]
     assert "destroys this season's results" in warning
@@ -526,7 +527,7 @@ async def test_the_warning_says_verdicts_cannot_be_taken_back(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     interaction = _make_interaction()
 
-    await _make_cog(db_path)._disable_results(interaction, SERVER_ID)
+    await _make_cog(db_path)._disable_results(interaction)
 
     assert "verdicts channel" in interaction.response.send_message.await_args.args[0]
 
@@ -535,7 +536,7 @@ async def test_confirming_erases_the_season(tmp_path) -> None:
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     cog = _make_cog(db_path)
     view = _ConfirmDisableResultsView(
-        cog, ACTOR_ID, SERVER_ID, cascade_attendance=False
+        cog, ACTOR_ID, cascade_attendance=False
     )
 
     await view.confirm.callback(_make_interaction())
@@ -548,7 +549,7 @@ async def test_cancelling_erases_nothing(tmp_path) -> None:
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     cog = _make_cog(db_path)
     view = _ConfirmDisableResultsView(
-        cog, ACTOR_ID, SERVER_ID, cascade_attendance=False
+        cog, ACTOR_ID, cascade_attendance=False
     )
     interaction = _make_interaction()
 

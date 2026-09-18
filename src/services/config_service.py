@@ -16,7 +16,7 @@ class ConfigService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
 
-    async def get_server_config(self, server_id: int) -> ServerConfig | None:
+    async def get_server_config(self) -> ServerConfig | None:
         """Return the ServerConfig for *server_id*, or None if not configured."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -24,8 +24,7 @@ class ConfigService:
                 "       log_channel_id, league_admin_role_id, test_mode_active, "
                 "       test_mode_nationality_required, "
                 "       weather_module_enabled, signup_module_enabled "
-                "FROM server_configs WHERE server_id = ?",
-                (server_id,),
+                "FROM server_configs",
             )
             row = await cursor.fetchone()
 
@@ -108,7 +107,7 @@ class ConfigService:
         "league_admin_role_id",
     }
 
-    async def set_core_setting(self, server_id: int, column: str, value: int) -> bool:
+    async def set_core_setting(self, column: str, value: int) -> bool:
         """Write one core-config column, leaving every other column untouched.
 
         One column at a time is the point: test mode, the module flags and the other three
@@ -121,10 +120,7 @@ class ConfigService:
             raise ValueError(f"{column!r} is not a core setting")
 
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                f"UPDATE server_configs SET {column} = ? WHERE server_id = ?",
-                (value, server_id),
-            )
+            cursor = await db.execute(f"UPDATE server_configs SET {column} = ?", (value,))
             await db.commit()
             return cursor.rowcount > 0
 

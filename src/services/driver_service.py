@@ -93,7 +93,7 @@ def _row_to_profile(row) -> DriverProfile:
 
 
 async def resolve_driver_profile_id(discord_user_id: int, db) -> int | None:
-    """Return the id of the driver who holds *discord_user_id* on *server_id*, or None.
+    """Return the id of the driver who holds *discord_user_id*, or None.
 
     Any account the driver has held identifies them, not only the current one (issue #243).
     Accepts an open aiosqlite connection so callers can reuse an existing transaction.
@@ -192,7 +192,7 @@ async def current_account_of(db, discord_user_id) -> str:
 
 
 async def current_account_map(db) -> dict[int, int]:
-    """Every *past* account on *server_id* → its driver's current account, as ints.
+    """Every *past* account → its driver's current account, as ints.
 
     A current account is absent, as is any account no driver holds: look up with
     ``mapping.get(uid, uid)``. Carrying only the accounts that differ keeps the map to the
@@ -212,32 +212,24 @@ async def current_account_map(db) -> dict[int, int]:
     return mapping
 
 
-async def _server_of_division(db, division_id: int) -> int | None:
-    cursor = await db.execute(
-        "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM divisions d JOIN seasons s ON s.id = d.season_id "
-        "WHERE d.id = ?",
-        (division_id,),
-    )
-    row = await cursor.fetchone()
-    return row[0] if row else None
+async def _division_exists(db, division_id: int) -> bool:
+    cursor = await db.execute("SELECT 1 FROM divisions WHERE id = ?", (division_id,))
+    return await cursor.fetchone() is not None
 
 
 async def accounts_of_in_division(db, division_id: int, discord_user_id) -> list[str]:
-    """`accounts_of` for the server *division_id* belongs to."""
-    server_id = await _server_of_division(db, division_id)
-    if server_id is None:
+    """`accounts_of`, for a reader holding a division. An unknown division knows only the
+    account it was given."""
+    if not await _division_exists(db, division_id):
         return [str(discord_user_id)]
     return await accounts_of(db, discord_user_id)
 
 
 async def current_account_map_for_division(db, division_id: int) -> dict[int, int]:
-    """`current_account_map` for the server *division_id* belongs to.
-
-    For the readers of the results and standings tables, which reach their server only
-    through the division. An unknown division maps nothing.
+    """`current_account_map`, for the readers of the results and standings tables, which
+    hold a division. An unknown division maps nothing.
     """
-    server_id = await _server_of_division(db, division_id)
-    if server_id is None:
+    if not await _division_exists(db, division_id):
         return {}
     return await current_account_map(db)
 
@@ -366,8 +358,8 @@ async def _merge(db, kept, absorbed, actor_id: int, actor_name: str) -> None:
     await db.execute("DELETE FROM driver_profiles WHERE id = ?", (absorbed["id"],))
     await db.execute(
         "INSERT INTO audit_entries "
-        "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, "
-        "timestamp) VALUES ((SELECT server_id FROM server_configs LIMIT 1), ?, ?, NULL, "
+        "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
+        "timestamp) VALUES (?, ?, NULL, "
         "'DRIVER_PROFILES_MERGED', ?, ?, datetime('now'))",
         (actor_id, actor_name, str(absorbed["id"]), str(kept["id"])),
     )
@@ -498,7 +490,6 @@ class DriverService:
 
     async def reassign_user_id(
         self,
-        server_id: int,
         old_user_id: str,
         new_user_id: str,
         actor_id: int,
@@ -606,10 +597,10 @@ class DriverService:
                 )
                 await db.execute(
                     "INSERT INTO audit_entries "
-                    "(server_id, actor_id, actor_name, division_id, change_type, old_value, "
+                    "(actor_id, actor_name, division_id, change_type, old_value, "
                     "new_value, timestamp) "
-                    "VALUES (?, ?, ?, NULL, 'DRIVER_USER_ID_REASSIGN', ?, ?, datetime('now'))",
-                    (server_id, actor_id, actor_name, replaced, str(new_user_id)),
+                    "VALUES (?, ?, NULL, 'DRIVER_USER_ID_REASSIGN', ?, ?, datetime('now'))",
+                    (actor_id, actor_name, replaced, str(new_user_id)),
                 )
                 accounts = await accounts_of_profile(db, kept["id"])
                 cursor = await db.execute(
@@ -636,7 +627,6 @@ class DriverService:
 
     async def set_former_driver(
         self,
-        server_id: int,
         discord_user_id: str,
         value: bool,
         actor_id: int,
@@ -661,9 +651,9 @@ class DriverService:
             )
             await db.execute(
                 "INSERT INTO audit_entries "
-                "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, NULL, 'TEST_FORMER_DRIVER_FLAG_SET', ?, ?, datetime('now'))",
-                (server_id, actor_id, actor_name, str(old_value), str(value)),
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+                "VALUES (?, ?, NULL, 'TEST_FORMER_DRIVER_FLAG_SET', ?, ?, datetime('now'))",
+                (actor_id, actor_name, str(old_value), str(value)),
             )
             await db.commit()
         return old_value, value

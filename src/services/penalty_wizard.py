@@ -124,7 +124,7 @@ async def _is_league_manager(
     """
     if not isinstance(interaction.user, discord.Member):
         return False
-    config = await bot.config_service.get_server_config(interaction.guild_id)
+    config = await bot.config_service.get_server_config()
     if config is None:
         return False
     return is_league_manager(config, interaction.user)
@@ -617,7 +617,6 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         # --- Parse driver user ID ---
         raw_id = self.driver_id_input.value.strip()
@@ -781,7 +780,6 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
 
         # --- Log justification to calc-log channel only (FR-010) ---
         await self.state.bot.output_router.post_log(  # type: ignore[attr-defined]
-            server_id,
             f"ATTENDANCE_PARDON_STAGED | <@{interaction.user.id}> granted {pardon_type} pardon\n"
             f"  driver: <@{driver_user_id}> | round: {self.state.round_number} "
             f"({self.state.division_name})\n"

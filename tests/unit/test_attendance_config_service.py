@@ -307,7 +307,6 @@ async def _recalculate(db_path: str, round_id: int = 1) -> None:
         db_path=db_path,
         round_id=round_id,
         division_id=DIVISION_ID,
-        server_id=SERVER_ID,
         season_id=SEASON_ID,
     )
 

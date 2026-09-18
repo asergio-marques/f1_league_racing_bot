@@ -325,8 +325,7 @@ async def test_success_is_written_to_the_log_channel(command, setter, value, log
         await _invoke(command, cog, interaction, value)
 
     cog.bot.output_router.post_log.assert_awaited_once()
-    logged_server, logged_text = cog.bot.output_router.post_log.await_args.args
-    assert logged_server == SERVER_ID
+    (logged_text,) = cog.bot.output_router.post_log.await_args.args
     assert log_token in logged_text
     assert str(value) in logged_text
     # The log names who made the change, not merely that it happened.

@@ -336,7 +336,7 @@ async def test_toggling_off_deletes_the_saved_backup(cog, db_path):
     assert not backup_service.backup_path(jobstore).exists()
     assert not backup_service.lock_path(db_path).exists()
     assert "Deleted the saved test-mode backup" in interaction.reply
-    assert "backup: deleted" in cog.bot.output_router.post_log.await_args.args[1]
+    assert "backup: deleted" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 async def test_toggling_off_with_nothing_saved_says_nothing_about_a_backup(cog, db_path):

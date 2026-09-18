@@ -87,7 +87,7 @@ async def test_a_driver_released_from_a_division_keeps_its_history(db_path):
     service.get_team_role_config = AsyncMock(return_value=None)
 
     await service.release_driver(
-        server_id=SERVER_ID, driver_profile_id=PROFILE_ID, division_id=AM,
+        driver_profile_id=PROFILE_ID, division_id=AM,
         season_id=SEASON_ID, acting_user_id=1, acting_user_name="Manager", guild=_guild(),
         discord_user_id="4242",
     )
@@ -103,7 +103,7 @@ async def test_a_sacked_driver_keeps_the_history_of_the_divisions_they_raced_in(
     guild.get_member = MagicMock(return_value=None)
     guild.fetch_member = AsyncMock(return_value=None)
 
-    await service.sack_driver(SERVER_ID, PROFILE_ID, SEASON_ID, 1, "Manager", guild, "4242")
+    await service.sack_driver(PROFILE_ID, SEASON_ID, 1, "Manager", guild, "4242")
 
     assert await _history(db_path) == ["Pro"]
 

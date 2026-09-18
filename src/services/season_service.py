@@ -55,8 +55,8 @@ class SeasonService:
     async def create_season(self, start_date: date | None = None) -> Season:
         """Insert a new SETUP season and return it.
 
-        Raises ``sqlite3.IntegrityError`` where the server already holds a live season:
-        migration 049 permits one SETUP-or-ACTIVE row per server, and this method applies
+        Raises ``sqlite3.IntegrityError`` where the league already holds a live season:
+        the schema permits one SETUP-or-ACTIVE row, and this method applies
         none of the checks `/season setup` makes before its own writes. Nothing in
         ``src/`` calls it — season setup writes its season through
         :meth:`save_pending_snapshot` — so any new caller wants those checks first.
@@ -78,7 +78,7 @@ class SeasonService:
         )
 
     async def get_confirmed_season(self) -> Season | None:
-        """Return the ACTIVE season for *server_id*, or None.
+        """Return the ACTIVE season, or None.
 
         ACTIVE is every stage from the first confirmation of placements to the season's
         completion or cancellation: the three ongoing stages and Pending completion. This was
@@ -99,7 +99,7 @@ class SeasonService:
         return _row_to_season(row)
 
     async def get_season_for_server(self) -> Season | None:
-        """Return the most recent season for *server_id* regardless of status.
+        """Return the most recent season regardless of status.
 
         Used by channel assignment commands that should work in any season state.
         Returns the season with the highest id for the server.
@@ -115,7 +115,7 @@ class SeasonService:
         return _row_to_season(row)
 
     async def get_setup_or_active_season(self) -> Season | None:
-        """Return the live (SETUP or ACTIVE) season for *server_id*, or None.
+        """Return the live (SETUP or ACTIVE) season, or None.
 
         A server holds at most one, enforced by the partial unique index migration 049
         builds, so the two states cannot both be present and there is nothing to choose
@@ -159,14 +159,14 @@ class SeasonService:
         return _row_to_season(row)
 
     async def get_previous_season_number(self) -> int:
-        """The highest season number *server_id* has already committed, or 0.
+        """The highest season number the league has already committed, or 0.
 
         "Committed" means the number has been issued and cannot be re-used — every status
         but SETUP. A season still in setup holds a provisional number and is excluded, so
         that a league drafting its next season does not push the count forward twice.
 
         Not `server_configs.previous_season_number`, which is written by nothing and reads
-        0 on every server whatever its history.
+        0 whatever the league's history.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -179,7 +179,7 @@ class SeasonService:
         return int(row["highest"])
 
     async def get_setup_season(self) -> Season | None:
-        """Return the SETUP season for *server_id*, or None."""
+        """Return the SETUP season, or None."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, start_date, status, season_number, stage FROM seasons "
@@ -191,7 +191,7 @@ class SeasonService:
         return _row_to_season(row)
 
     async def has_existing_season(self) -> bool:
-        """Return True if any season row exists for *server_id* (any status)."""
+        """Return True if any season row exists (any status)."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT 1 FROM seasons LIMIT 1",
@@ -200,7 +200,7 @@ class SeasonService:
         return row is not None
 
     async def has_active_or_completed_season(self) -> bool:
-        """Return True if an ACTIVE or COMPLETED season exists for *server_id*."""
+        """Return True if an ACTIVE or COMPLETED season exists."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT 1 FROM seasons WHERE status IN ('ACTIVE', 'COMPLETED') LIMIT 1",
@@ -209,7 +209,7 @@ class SeasonService:
         return row is not None
 
     async def has_active_or_setup_season(self) -> bool:
-        """Return True if an ACTIVE or SETUP season exists for *server_id*."""
+        """Return True if an ACTIVE or SETUP season exists."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT 1 FROM seasons WHERE status IN ('ACTIVE', 'SETUP') LIMIT 1",
@@ -218,7 +218,7 @@ class SeasonService:
         return row is not None
 
     async def count_completed_seasons(self) -> int:
-        """Return the count of COMPLETED seasons for *server_id*."""
+        """Return the count of COMPLETED seasons."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT COUNT(id) FROM seasons WHERE status = 'COMPLETED'",
@@ -227,7 +227,7 @@ class SeasonService:
         return row[0] if row else 0
 
     async def count_persisted_seasons(self) -> int:
-        """Return the count of all persisted (non-SETUP) seasons for *server_id*.
+        """Return the count of all persisted (non-SETUP) seasons.
 
         Includes ACTIVE, COMPLETED, and CANCELLED seasons — every season whose
         number has already been committed.
@@ -310,7 +310,7 @@ class SeasonService:
         game_edition: int = 0,
         initial_stage: SeasonStage | None = None,
     ) -> tuple[int, int]:
-        """Atomically replace the SETUP season snapshot for *server_id* in the DB.
+        """Atomically replace the SETUP season snapshot in the DB.
 
         Rebuilds everything beneath the season row (if *existing_season_id* is non-zero)
         and re-inserts the full pending config. *initial_stage* is the stage a season
@@ -717,8 +717,7 @@ class SeasonService:
         """Return raw data for every SETUP-status season to rebuild PendingConfig on startup."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, start_date, season_number, game_edition, "
-                "(SELECT server_id FROM server_configs LIMIT 1) AS server_id "
+                "SELECT id, start_date, season_number, game_edition "
                 "FROM seasons WHERE status = 'SETUP'"
             )
             season_rows = await cursor.fetchall()
@@ -761,7 +760,6 @@ class SeasonService:
 
                 result.append({
                     "season_id": season_id,
-                    "server_id": s_row["server_id"],
                     "start_date": date.fromisoformat(s_row["start_date"]),
                     "season_number": s_row["season_number"] if "season_number" in s_row.keys() else 0,
                     "game_edition": s_row["game_edition"] if "game_edition" in s_row.keys() else 0,
@@ -770,14 +768,13 @@ class SeasonService:
 
         return result
 
-    async def increment_previous_season_number(self, server_id: int) -> None:
+    async def increment_previous_season_number(self) -> None:
         """Increment server_configs.previous_season_number by 1."""
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE server_configs "
                 "SET previous_season_number = previous_season_number + 1 "
-                "WHERE server_id = ?",
-                (server_id,),
+                "",
             )
             await db.commit()
 
@@ -845,7 +842,7 @@ class SeasonService:
 
         return await advance_to_pending_completion(self._db_path, season_id)
 
-    async def wind_down_ongoing(self, bot, server_id: int) -> bool:
+    async def wind_down_ongoing(self, bot) -> bool:
         """Take a season whose every division is done out of the ongoing stages (issue #220).
 
         Its signup window closed, its pending placements turned down, and on to Pending
@@ -854,7 +851,7 @@ class SeasonService:
         """
         from services.season_lifecycle_service import wind_down_ongoing
 
-        return await wind_down_ongoing(bot, server_id)
+        return await wind_down_ongoing(bot)
 
     async def refresh_division_status(self, division_id: int) -> bool:
         """Move a division ACTIVE -> FINISHED once none of its rounds is outstanding.
@@ -909,7 +906,6 @@ class SeasonService:
 
     async def end_rounds_awaiting_results(
         self,
-        server_id: int,
         actor_id: int,
         actor_name: str,
     ) -> list[dict]:
@@ -960,12 +956,11 @@ class SeasonService:
                 await db.execute(
                     """
                     INSERT INTO audit_entries
-                        (server_id, actor_id, actor_name, division_id, change_type,
+                        (actor_id, actor_name, division_id, change_type,
                          old_value, new_value, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        server_id,
                         actor_id,
                         actor_name,
                         row["division_id"],
@@ -1434,7 +1429,6 @@ class SeasonService:
         self,
         db,
         division_id: int,
-        server_id: int,
         actor_id: int,
         actor_name: str,
         now: datetime,
@@ -1472,12 +1466,12 @@ class SeasonService:
             await db.execute(
                 """
                 INSERT INTO audit_entries
-                    (server_id, actor_id, actor_name, division_id, change_type,
+                    (actor_id, actor_name, division_id, change_type,
                      old_value, new_value, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    server_id, actor_id, actor_name, division_id,
+                    actor_id, actor_name, division_id,
                     "round.status", "ACTIVE", "CANCELLED", now.isoformat(),
                 ),
             )
@@ -1489,12 +1483,11 @@ class SeasonService:
         await db.execute(
             """
             INSERT INTO audit_entries
-                (server_id, actor_id, actor_name, division_id, change_type,
+                (actor_id, actor_name, division_id, change_type,
                  old_value, new_value, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                server_id,
                 actor_id,
                 actor_name,
                 division_id,
@@ -1508,7 +1501,6 @@ class SeasonService:
     async def cancel_division(
         self,
         division_id: int,
-        server_id: int,
         actor_id: int,
         actor_name: str,
     ) -> None:
@@ -1522,7 +1514,7 @@ class SeasonService:
         now = datetime.now(timezone.utc)
         async with get_connection(self._db_path) as db:
             await self._cancel_division_on(
-                db, division_id, server_id, actor_id, actor_name, now
+                db, division_id, actor_id, actor_name, now
             )
             await db.commit()
             cursor = await db.execute(
@@ -1539,7 +1531,6 @@ class SeasonService:
     async def cancel_season_cascade(
         self,
         season_id: int,
-        server_id: int,
         actor_id: int,
         actor_name: str,
     ) -> None:
@@ -1562,7 +1553,7 @@ class SeasonService:
 
             for division_id in division_ids:
                 await self._cancel_division_on(
-                    db, division_id, server_id, actor_id, actor_name, now
+                    db, division_id, actor_id, actor_name, now
                 )
 
             await db.execute(
@@ -1741,7 +1732,6 @@ class SeasonService:
     async def cancel_round(
         self,
         round_id: int,
-        server_id: int,
         actor_id: int,
         actor_name: str,
     ) -> None:
@@ -1774,12 +1764,11 @@ class SeasonService:
             await db.execute(
                 """
                 INSERT INTO audit_entries
-                    (server_id, actor_id, actor_name, division_id, change_type,
+                    (actor_id, actor_name, division_id, change_type,
                      old_value, new_value, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    server_id,
                     actor_id,
                     actor_name,
                     division_id,

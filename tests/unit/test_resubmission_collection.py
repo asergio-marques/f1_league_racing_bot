@@ -147,10 +147,12 @@ def _channel():
 
 def _bot(db_path, pastes, *, guild=True):
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=SimpleNamespace())
     bot.wait_for = AsyncMock(side_effect=[_message(p) for p in pastes])
     bot.get_guild = MagicMock(return_value=MagicMock() if guild else None)
@@ -597,7 +599,7 @@ async def test_cancelling_the_resubmission_is_logged(tmp_path):
 
     await _run(bot, cancel_view=view)
 
-    logged = "\n".join(str(c.args[1]) for c in bot.output_router.post_log.await_args_list)
+    logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
     assert f"<@{MANAGER}> | RESULTS_RESUBMISSION | Cancelled" in logged
 
 
@@ -663,7 +665,9 @@ async def test_a_paste_is_still_collected_when_nobody_presses_cancel(tmp_path):
 async def test_cancel_refuses_somebody_without_the_tier(monkeypatch):
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: False)
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=MagicMock())
     view = ResubmissionCancelView(SimpleNamespace(db_path="", bot=bot))
     interaction = MagicMock()
@@ -681,7 +685,9 @@ async def test_cancel_refuses_somebody_without_the_tier(monkeypatch):
 async def test_cancel_pressed_by_a_league_manager_stops_the_resubmission(monkeypatch):
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: True)
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=MagicMock())
     view = ResubmissionCancelView(SimpleNamespace(db_path="", bot=bot))
     interaction = MagicMock()

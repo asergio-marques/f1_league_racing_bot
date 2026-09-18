@@ -127,6 +127,7 @@ def _race_row(driver: int, position: int, *, total_time: str = "1:30:00.000", **
 
 def _bot(*, guild=True):
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.get_guild = MagicMock(return_value=MagicMock() if guild else None)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
@@ -447,7 +448,7 @@ async def test_the_amendment_is_logged(tmp_path):
 
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
-    logged = str(stubs["bot"].output_router.post_log.await_args.args[1])
+    logged = str(stubs["bot"].output_router.post_log.await_args.args[0])
     assert "RESULT_AMENDED" in logged
     assert f"<@{AMENDER}>" in logged
     assert "round: 3" in logged

@@ -324,8 +324,8 @@ async def xml_import_config(
 ) -> None:
     """Atomically upsert all position and fastest-lap rows from *payload*.
 
-    Raises :class:`ConfigNotFoundError` if *config_name* does not exist for
-    *server_id*.  All writes happen inside a single DB connection; the
+    Raises :class:`ConfigNotFoundError` if *config_name* does not exist.
+    All writes happen inside a single DB connection; the
     aiosqlite context manager rolls back automatically on any exception before
     ``db.commit()``.
     """

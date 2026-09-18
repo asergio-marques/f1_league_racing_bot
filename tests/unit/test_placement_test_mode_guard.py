@@ -84,7 +84,6 @@ async def test_the_guard_runs_before_a_placement(tmp_path):
 
     with pytest.raises(ValueError) as excinfo:
         await service.assign_driver(
-            server_id=SERVER_ID,
             driver_profile_id=1,
             division_id=1,
             team_name="Redline",

@@ -92,7 +92,7 @@ class CalendarPosting:
         return self.problem is not None and not self.posted_as_image
 
 
-async def image_calendar_wanted(bot, server_id: int) -> bool:
+async def image_calendar_wanted(bot) -> bool:
     """Whether this server conveys its calendar as a graphic.
 
     Both gates must be open: the module enabled, and the `calendar` aspect toggled on.
@@ -104,13 +104,12 @@ async def image_calendar_wanted(bot, server_id: int) -> bool:
         return await bot.image_config_service.is_aspect_enabled(CALENDAR_ASPECT)
     except Exception:  # noqa: BLE001
         # A fault in the gate must never lose a league its calendar: fall to the text.
-        log.exception("calendar: could not read the image gates for server %s", server_id)
+        log.exception("calendar: could not read the image gates")
         return False
 
 
 async def render_calendar_image(
     bot,
-    server_id: int,
     division,
     rounds,
     tracks,
@@ -176,7 +175,7 @@ async def render_calendar_image(
         from services.image_render_service import ImageRenderService
 
         await ImageRenderService.report_notices(
-            bot, server_id, outcome.notices, subject=f"calendar — {division.name}"
+            bot, outcome.notices, subject=f"calendar — {division.name}"
         )
 
     return outcome
@@ -210,7 +209,6 @@ class CalendarCommandOutcome:
 
 async def render_for_command(
     bot,
-    server_id: int,
     division,
     rounds,
     tracks,
@@ -228,12 +226,12 @@ async def render_for_command(
 
     The caller owns the returned path and must ``discard_render`` it.
     """
-    if not await image_calendar_wanted(bot, server_id):
+    if not await image_calendar_wanted(bot):
         return CalendarCommandOutcome()
 
     try:
         outcome = await render_calendar_image(
-            bot, server_id, division, rounds, tracks, season_number=season_number
+            bot, division, rounds, tracks, season_number=season_number
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
         log.exception("calendar: command render raised for division %s", division.id)
@@ -322,7 +320,6 @@ async def replace_calendar_message(
 async def post_division_calendar(
     bot,
     guild,
-    server_id: int,
     division,
     rounds,
     tracks,
@@ -357,10 +354,10 @@ async def post_division_calendar(
     # removed whichever way this ends — posted, refused to a commanded caller, or lost to
     # a Discord fault that sends the textual calendar to the retry queue instead.
     try:
-        if await image_calendar_wanted(bot, server_id):
+        if await image_calendar_wanted(bot):
             try:
                 outcome = await render_calendar_image(
-                    bot, server_id, division, rounds, tracks, season_number=season_number
+                    bot, division, rounds, tracks, season_number=season_number
                 )
             except Exception as exc:  # noqa: BLE001
                 log.exception("calendar: render raised for division %s", division.id)
@@ -400,7 +397,6 @@ async def post_division_calendar(
             try:
                 await retry_service.enqueue(
                     bot.db_path,
-                    server_id,
                     division.calendar_channel_id,
                     textual_calendar(division.name, rounds),
                     f"calendar post failed: {exc}",

@@ -96,6 +96,7 @@ async def _base_db(tmp_path, name: str, *, season_status: str = "ACTIVE") -> str
 
 def _stub_bot(db_path: str, *, weather_enabled: bool = True, guild=None, channel=None):
     stub = MagicMock()
+    stub.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     stub.db_path = db_path
     stub.module_service = MagicMock()
     stub.module_service.is_weather_enabled = AsyncMock(return_value=weather_enabled)
@@ -304,10 +305,10 @@ async def test_a_naive_scheduled_time_is_read_as_utc(tmp_path):
 async def _seed_prompt(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO season_review_prompts (server_id, season_id, channel_id, "
+            "INSERT INTO season_review_prompts (id, season_id, channel_id, "
             "message_id, reviewer_id, posted_at) "
             "VALUES (?, ?, ?, ?, ?, '2026-02-01T00:00:00+00:00')",
-            (SERVER_ID, SEASON_ID, CHANNEL_ID, MESSAGE_ID, REVIEWER_ID),
+            (1, SEASON_ID, CHANNEL_ID, MESSAGE_ID, REVIEWER_ID),
         )
         await db.commit()
 
@@ -530,7 +531,7 @@ async def test_the_league_manager_is_told_to_re_run_the_command(tmp_path):
 
     await bot_module._recover_orphaned_amend_channels(stub)
 
-    logged = str(stub.output_router.post_log.await_args.args[1])
+    logged = str(stub.output_router.post_log.await_args.args[0])
     assert "restarted mid-amendment" in logged
     assert "/round results amend" in logged
 
@@ -543,7 +544,7 @@ async def test_the_notice_names_the_round_and_the_session(tmp_path):
 
     await bot_module._recover_orphaned_amend_channels(stub)
 
-    logged = str(stub.output_router.post_log.await_args.args[1])
+    logged = str(stub.output_router.post_log.await_args.args[0])
     assert "R3" in logged
     assert "Feature Race" in logged
 

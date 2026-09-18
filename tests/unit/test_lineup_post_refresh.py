@@ -182,8 +182,7 @@ async def _audit(db_path) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, new_value, actor_name FROM audit_entries "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+            "",
         )
         return [dict(r) for r in await cursor.fetchall()]
 

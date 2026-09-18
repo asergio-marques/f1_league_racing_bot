@@ -175,7 +175,7 @@ async def test_nothing_is_demanded_while_the_feature_is_off():
     from services.image_validity_service import ImageValidityService
 
     service = ImageValidityService(config_service, MagicMock())
-    assert await service.colour_shortfall(1, {CALENDAR: _report(slots={"accent"})}) == {}
+    assert await service.colour_shortfall({CALENDAR: _report(slots={"accent"})}) == {}
     config_service.get_all_tier_colours.assert_not_awaited()
     config_service.season_division_names.assert_not_awaited()
 
@@ -191,7 +191,7 @@ async def test_the_shortfall_is_computed_once_the_feature_is_on():
     from services.image_validity_service import ImageValidityService
 
     service = ImageValidityService(config_service, MagicMock())
-    shortfall = await service.colour_shortfall(1, {CALENDAR: _report(slots={"accent"})})
+    shortfall = await service.colour_shortfall({CALENDAR: _report(slots={"accent"})})
     assert CALENDAR in shortfall
 
 
@@ -251,7 +251,7 @@ async def test_the_approval_gate_flattens_the_same_shortfall():
     cog.bot.image_validity_service.colour_shortfall = AsyncMock(
         return_value={CALENDAR: ["`accent` is not set for **Division 1**"]}
     )
-    problems = await SeasonCog._colour_shortfall_problems(cog, 1)
+    problems = await SeasonCog._colour_shortfall_problems(cog)
     assert problems == [f"`{CALENDAR}` — `accent` is not set for **Division 1**"]
 
 
@@ -261,7 +261,7 @@ async def test_the_approval_gate_is_silent_when_nothing_is_short():
     cog = MagicMock(spec=SeasonCog)
     cog.bot = MagicMock()
     cog.bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
-    assert await SeasonCog._colour_shortfall_problems(cog, 1) == []
+    assert await SeasonCog._colour_shortfall_problems(cog) == []
 
 
 async def test_a_reader_fault_never_refuses_a_season():
@@ -273,7 +273,7 @@ async def test_a_reader_fault_never_refuses_a_season():
     cog.bot.image_validity_service.colour_shortfall = AsyncMock(
         side_effect=RuntimeError("db is gone")
     )
-    assert await SeasonCog._colour_shortfall_problems(cog, 1) == []
+    assert await SeasonCog._colour_shortfall_problems(cog) == []
 
 
 def test_approval_is_gated_on_it():
@@ -283,5 +283,5 @@ def test_approval_is_gated_on_it():
     from cogs.season_cog import SeasonCog
 
     source = inspect.getsource(SeasonCog)
-    assert "_colour_shortfall_problems(cfg.server_id)" in source
+    assert "_colour_shortfall_problems()" in source
     assert "Season cannot be approved" in source

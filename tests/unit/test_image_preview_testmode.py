@@ -142,7 +142,7 @@ class TestMockDriversAreDrawnByTheirMockName:
     async def test_every_mock_name_is_drawn(self, bot, db_path, status):
         await _seed_test_season(db_path, status=status)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert sorted(d.display_name for d in context.drivers) == sorted(MOCK_NAMES)
 
@@ -150,7 +150,7 @@ class TestMockDriversAreDrawnByTheirMockName:
         """The lineup draws the seats, not the flat list, so both must be right."""
         await _seed_test_season(db_path)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         seated = [
             seat.server_display_name or seat.test_display_name
@@ -166,7 +166,7 @@ class TestMockDriversAreDrawnByTheirMockName:
         await _seed_test_season(db_path)
 
         context = await resolve_context(
-            bot, SERVER_ID, "Division 1", round_number=1, kind=kind
+            bot, "Division 1", round_number=1, kind=kind
         )
 
         assert sorted(d.display_name for d in context.drivers) == sorted(MOCK_NAMES)
@@ -175,7 +175,7 @@ class TestMockDriversAreDrawnByTheirMockName:
         """FR-027 — a mock driver is a seated driver, not an empty seat."""
         await _seed_test_season(db_path)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.fabricated_drivers is False
         assert all(not d.fabricated for d in context.drivers)
@@ -190,7 +190,7 @@ class TestTheNationalityTally:
     async def test_mock_drivers_are_counted(self, bot, db_path):
         await _seed_test_season(db_path)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.nationality_collected is True
         assert context.drivers_without_nationality == len(MOCK_NAMES)
@@ -200,7 +200,7 @@ class TestTheNationalityTally:
     ):
         await _seed_test_season(db_path)
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert all(d.nationality in (None, "") for d in context.drivers)
 
@@ -216,7 +216,7 @@ class TestTheNationalityTally:
             )
             await db.commit()
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.nationality_collected is False
         assert context.drivers_without_nationality == 0
@@ -237,7 +237,7 @@ class TestTheNationalityTally:
             )
             await db.commit()
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.drivers_without_nationality == len(MOCK_NAMES) - 1
 
@@ -247,7 +247,7 @@ class TestTheNationalityTally:
         """The whole point of the column: a mock driver has a flag of its own."""
         await _seed_test_season(db_path, nationalities=("british", "Dutch", "brazil"))
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.drivers_without_nationality == 0
         # Stored canonically, whatever form the roster command was given.
@@ -271,7 +271,7 @@ class TestTheNationalityTally:
             )
             await db.commit()
 
-        context = await resolve_context(bot, SERVER_ID, "Division 1", kind="lineup")
+        context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.nationality_collected is False
         assert context.drivers_without_nationality == 0

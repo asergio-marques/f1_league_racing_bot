@@ -50,7 +50,7 @@ async def _row_count(db_path: str) -> int:
 async def _fetch_all_rows(db_path: str) -> list:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id, server_id, channel_id, content, failure_reason, "
+            "SELECT id, channel_id, content, failure_reason, "
             "       enqueued_at, retry_count, last_attempted_at "
             "FROM pending_messages ORDER BY enqueued_at ASC"
         )
@@ -75,18 +75,17 @@ class TestEnqueue:
     @pytest.mark.asyncio
     async def test_inserts_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, server_id=1, channel_id=100, content="hello", failure_reason="503")
+        await enqueue(db_path, channel_id=100, content="hello", failure_reason="503")
         assert await _row_count(db_path) == 1
 
     @pytest.mark.asyncio
     async def test_row_has_correct_fields(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
         before = datetime.now(timezone.utc)
-        await enqueue(db_path, server_id=42, channel_id=999, content="test msg", failure_reason="upstream error")
+        await enqueue(db_path, channel_id=999, content="test msg", failure_reason="upstream error")
         rows = await _fetch_all_rows(db_path)
         assert len(rows) == 1
         r = rows[0]
-        assert r["server_id"] == 42
         assert r["channel_id"] == 999
         assert r["content"] == "test msg"
         assert r["failure_reason"] == "upstream error"
@@ -98,8 +97,8 @@ class TestEnqueue:
     @pytest.mark.asyncio
     async def test_multiple_enqueues_create_separate_rows(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 100, "msg A", "err A")
-        await enqueue(db_path, 1, 200, "msg B", "err B")
+        await enqueue(db_path, 100, "msg A", "err A")
+        await enqueue(db_path, 200, "msg B", "err B")
         assert await _row_count(db_path) == 2
 
 
@@ -118,8 +117,8 @@ class TestGetAllPending:
     @pytest.mark.asyncio
     async def test_returns_all_rows(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 100, "msg A", "err")
-        await enqueue(db_path, 1, 200, "msg B", "err")
+        await enqueue(db_path, 100, "msg A", "err")
+        await enqueue(db_path, 200, "msg B", "err")
         result = await get_all_pending(db_path)
         assert len(result) == 2
 
@@ -129,12 +128,12 @@ class TestGetAllPending:
         # Insert two rows with manually set enqueued_at timestamps
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO pending_messages (server_id, channel_id, content, failure_reason, enqueued_at, retry_count) "
-                "VALUES (1, 100, 'first', 'err', '2026-01-01T10:00:00+00:00', 0)"
+                "INSERT INTO pending_messages (channel_id, content, failure_reason, enqueued_at, retry_count) "
+                "VALUES (100, 'first', 'err', '2026-01-01T10:00:00+00:00', 0)"
             )
             await db.execute(
-                "INSERT INTO pending_messages (server_id, channel_id, content, failure_reason, enqueued_at, retry_count) "
-                "VALUES (1, 200, 'second', 'err', '2026-01-01T09:00:00+00:00', 0)"
+                "INSERT INTO pending_messages (channel_id, content, failure_reason, enqueued_at, retry_count) "
+                "VALUES (200, 'second', 'err', '2026-01-01T09:00:00+00:00', 0)"
             )
             await db.commit()
         result = await get_all_pending(db_path)
@@ -144,10 +143,9 @@ class TestGetAllPending:
     @pytest.mark.asyncio
     async def test_pending_message_fields_populated(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, server_id=7, channel_id=77, content="hello", failure_reason="503")
+        await enqueue(db_path, channel_id=77, content="hello", failure_reason="503")
         result = await get_all_pending(db_path)
         pm = result[0]
-        assert pm.server_id == 7
         assert pm.channel_id == 77
         assert pm.content == "hello"
         assert pm.failure_reason == "503"
@@ -165,7 +163,7 @@ class TestMarkDelivered:
     @pytest.mark.asyncio
     async def test_deletes_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 100, "msg", "err")
+        await enqueue(db_path, 100, "msg", "err")
         rows = await _fetch_all_rows(db_path)
         entry_id = rows[0]["id"]
         await mark_delivered(db_path, entry_id)
@@ -174,8 +172,8 @@ class TestMarkDelivered:
     @pytest.mark.asyncio
     async def test_only_deletes_targeted_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 100, "msg A", "err")
-        await enqueue(db_path, 1, 200, "msg B", "err")
+        await enqueue(db_path, 100, "msg A", "err")
+        await enqueue(db_path, 200, "msg B", "err")
         rows = await _fetch_all_rows(db_path)
         first_id = rows[0]["id"]
         await mark_delivered(db_path, first_id)
@@ -199,7 +197,7 @@ class TestMarkFailed:
     @pytest.mark.asyncio
     async def test_increments_retry_count(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 100, "msg", "err")
+        await enqueue(db_path, 100, "msg", "err")
         rows = await _fetch_all_rows(db_path)
         entry_id = rows[0]["id"]
 
@@ -212,7 +210,7 @@ class TestMarkFailed:
     async def test_sets_last_attempted_at(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
         before = datetime.now(timezone.utc)
-        await enqueue(db_path, 1, 100, "msg", "err")
+        await enqueue(db_path, 100, "msg", "err")
         rows = await _fetch_all_rows(db_path)
         entry_id = rows[0]["id"]
 
@@ -225,7 +223,7 @@ class TestMarkFailed:
     @pytest.mark.asyncio
     async def test_does_not_delete_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 100, "msg", "err")
+        await enqueue(db_path, 100, "msg", "err")
         rows = await _fetch_all_rows(db_path)
         entry_id = rows[0]["id"]
         await mark_failed(db_path, entry_id)
@@ -234,7 +232,7 @@ class TestMarkFailed:
     @pytest.mark.asyncio
     async def test_multiple_failures_accumulate(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 1, 100, "msg", "err")
+        await enqueue(db_path, 100, "msg", "err")
         rows = await _fetch_all_rows(db_path)
         entry_id = rows[0]["id"]
 

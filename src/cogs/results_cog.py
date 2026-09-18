@@ -151,13 +151,11 @@ class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
         config_name: str,
         session: app_commands.Choice,
         db_path: str,
-        guild_id: int,
     ) -> None:
         super().__init__()
         self._config_name = config_name
         self._session = session
         self._db_path = db_path
-        self._guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
         await interaction.response.defer(ephemeral=True)
@@ -212,7 +210,6 @@ class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
 
         if applied:
             await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
-                self._guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /results config bulk-session | {len(applied)} change(s)\n"
                 f"  config: {self._config_name}, session: {self._session.name}",
@@ -235,13 +232,11 @@ class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points")
         config_name: str,
         session: app_commands.Choice,
         db_path: str,
-        guild_id: int,
     ) -> None:
         super().__init__()
         self._config_name = config_name
         self._session = session
         self._db_path = db_path
-        self._guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
         from services.amendment_service import (
@@ -308,7 +303,6 @@ class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points")
 
         if applied:
             await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
-                self._guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /results amend bulk-session | {len(applied)} change(s)\n"
                 f"  config: {self._config_name}, session: {self._session.name}",
@@ -330,12 +324,10 @@ class XmlImportModal(discord.ui.Modal, title="XML Points Config Import"):
         self,
         config_name: str,
         db_path: str,
-        guild_id: int,
     ) -> None:
         super().__init__()
         self._config_name = config_name
         self._db_path = db_path
-        self._guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
         await interaction.response.defer(ephemeral=True)
@@ -344,7 +336,6 @@ class XmlImportModal(discord.ui.Modal, title="XML Points Config Import"):
             self.xml_payload.value,
             self._config_name,
             self._db_path,
-            self._guild_id,
         )
 
 
@@ -353,7 +344,6 @@ async def _run_xml_import(
     xml_text: str,
     config_name: str,
     db_path: str,
-    guild_id: int,
 ) -> None:
     """Shared logic for modal and file-attachment XML import paths.
 
@@ -365,7 +355,6 @@ async def _run_xml_import(
 
     async def _audit(msg: str) -> None:
         await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
-            guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) "
             f"| /results config xml-import | config: {config_name}\n  {msg}",
         )
@@ -517,7 +506,6 @@ class ResultsCog(commands.Cog):
             f"\u2705 Config **{name}** created. All positions default to 0 points.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config add | Success\n"
             f"  config: {name}",
         )
@@ -592,7 +580,6 @@ class ResultsCog(commands.Cog):
             return
         await interaction.followup.send(f"\u2705 Config **{name}** removed.", ephemeral=True)
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config remove | Success\n"
             f"  config: {name}",
         )
@@ -641,7 +628,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config session | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, position: {position}, points: {points}",
@@ -682,7 +668,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config fl | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, fl_bonus: {points}",
@@ -723,7 +708,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config fl-plimit | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, fl_position_limit: {limit}",
@@ -760,7 +744,6 @@ class ResultsCog(commands.Cog):
             f"\u2705 Config **{name}** attached to the current season.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config append | Success\n"
             f"  config: {name}",
         )
@@ -794,7 +777,6 @@ class ResultsCog(commands.Cog):
             f"\u2705 Config **{name}** detached from the current season.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config detach | Success\n"
             f"  config: {name}",
         )
@@ -910,7 +892,7 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         await interaction.response.send_modal(
-            BulkConfigSessionModal(name, session, self.bot.db_path, interaction.guild_id)
+            BulkConfigSessionModal(name, session, self.bot.db_path)
         )
 
     @config_group.command(
@@ -930,7 +912,7 @@ class ResultsCog(commands.Cog):
 
         if file is None:
             await interaction.response.send_modal(
-                XmlImportModal(name, self.bot.db_path, interaction.guild_id)
+                XmlImportModal(name, self.bot.db_path)
             )
         else:
             await interaction.response.defer(ephemeral=True)
@@ -958,7 +940,7 @@ class ResultsCog(commands.Cog):
                 return
 
             await _run_xml_import(
-                interaction, xml_text, name, self.bot.db_path, interaction.guild_id
+                interaction, xml_text, name, self.bot.db_path
             )
 
     # ------------------------------------------------------------------
@@ -997,7 +979,6 @@ class ResultsCog(commands.Cog):
                 "\u2705 Amendment mode enabled. Modification store initialised.", ephemeral=True
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend toggle | Success\n"
                 f"  amendment_mode: enabled",
             )
@@ -1006,7 +987,6 @@ class ResultsCog(commands.Cog):
                 await disable_amendment_mode(self.bot.db_path, season.id)
                 await interaction.followup.send("\u2705 Amendment mode disabled.", ephemeral=True)
                 await self.bot.output_router.post_log(
-                    interaction.guild_id,
                     f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend toggle | Success\n"
                     f"  amendment_mode: disabled",
                 )
@@ -1045,7 +1025,6 @@ class ResultsCog(commands.Cog):
             "\u2705 Modification store reverted to current season points.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend revert | Success",
         )
 
@@ -1102,7 +1081,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend session | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, position: {position}, points: {points}",
@@ -1144,7 +1122,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend fl | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, fl_bonus: {points}",
@@ -1186,7 +1163,6 @@ class ResultsCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend fl-plimit | Success\n"
             f"  config: {name}\n"
             f"  session: {session.name}, fl_position_limit: {limit}",
@@ -1208,7 +1184,7 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         await interaction.response.send_modal(
-            BulkAmendSessionModal(name, session, self.bot.db_path, interaction.guild_id)
+            BulkAmendSessionModal(name, session, self.bot.db_path)
         )
 
     @amend_group.command(name="review", description="Review modification store changes and approve or reject.")
@@ -1336,7 +1312,6 @@ class ResultsCog(commands.Cog):
                     ephemeral=True,
                 )
                 await self.bot.output_router.post_log(
-                    interaction.guild_id,
                     f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                     f"| /results amend review | Refused (points out of order)\n"
                     f"  {'; '.join(exc.errors)}",
@@ -1354,7 +1329,6 @@ class ResultsCog(commands.Cog):
                     ephemeral=True,
                 )
                 await self.bot.output_router.post_log(
-                    interaction.guild_id,
                     f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                     f"| /results amend review | Refused (channels not reachable)\n"
                     f"  {'; '.join(exc.faults)}",
@@ -1364,7 +1338,6 @@ class ResultsCog(commands.Cog):
                 "\u2705 Amendment approved. All standings recomputed and reposted.", ephemeral=True
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend review | Success\n"
                 f"  standings recomputed and reposted",
             )
@@ -1428,7 +1401,6 @@ class ResultsCog(commands.Cog):
             f"\u2705 Reserve visibility for **{division}** set to **{state_str}**.", ephemeral=True
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results reserves toggle | Success\n"
             f"  division: {division}\n"
             f"  reserves_in_standings: {state_str}",
@@ -1472,7 +1444,6 @@ class ResultsCog(commands.Cog):
                 ephemeral=True,
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results standings sync | Success\n"
                 f"  division: {division}",
             )
@@ -1525,7 +1496,6 @@ class ResultsCog(commands.Cog):
                 ephemeral=True,
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results rounds sync | Success\n"
                 f"  division: {division}",
             )

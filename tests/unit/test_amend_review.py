@@ -57,6 +57,7 @@ SEASON_ID = 1
 
 def _make_cog(*, enabled: bool = True, season=SimpleNamespace(id=SEASON_ID)) -> ResultsCog:
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = "/tmp/not-read.db"
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=enabled)
@@ -156,7 +157,7 @@ async def _review(
 
 def _logged(cog) -> str:
     return "\n".join(
-        str(call.args[1]) for call in cog.bot.output_router.post_log.await_args_list
+        str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list
     )
 
 

@@ -119,6 +119,7 @@ async def _make_db(tmp_path, *, results: int = 2) -> str:
 
 def _state(db_path: str, *, staged=(), channel=None, prompt_message_id=None):
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
@@ -160,7 +161,7 @@ def _channel(*, prompt_gone: bool = False):
 
 def _logged(state) -> str:
     return "\n".join(
-        str(call.args[1]) for call in state.bot.output_router.post_log.await_args_list
+        str(call.args[0]) for call in state.bot.output_router.post_log.await_args_list
     )
 
 

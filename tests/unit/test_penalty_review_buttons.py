@@ -81,6 +81,7 @@ def _state(*, staged=()) -> PenaltyReviewState:
     """
     bot = MagicMock()
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=MagicMock())
 
     state = PenaltyReviewState(

@@ -1095,7 +1095,7 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
     with pytest.raises(RuntimeError):
         await attendance_service.recalculate_attendance_for_round(
             bot=None, guild=None, db_path=db_file,
-            round_id=round_ids[0], division_id=division_id, server_id=1, season_id=1,
+            round_id=round_ids[0], division_id=division_id, season_id=1,
         )
 
     assert len(calls) == 2, "the propagation did not reach a second round"
@@ -1118,7 +1118,7 @@ async def test_a_whole_recalculation_still_lands(tmp_path, monkeypatch):
 
     await attendance_service.recalculate_attendance_for_round(
         bot=None, guild=None, db_path=db_file,
-        round_id=round_ids[0], division_id=division_id, server_id=1, season_id=1,
+        round_id=round_ids[0], division_id=division_id, season_id=1,
     )
 
     # NO_RSVP and did not attend: no_rsvp_penalty + absent_penalty (2 + 1).

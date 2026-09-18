@@ -149,7 +149,7 @@ async def _get_announcement_context(db_path: str, round_id: int) -> dict:
     }
 
 
-def _banner_once(bot, channel, server_id: int, ctx: dict):
+def _banner_once(bot, channel, ctx: dict):
     """A callable that heads a run of verdicts with a banner, at most once.
 
     **Lazy, and that is the point.** A run can produce nothing: a record whose result
@@ -186,9 +186,9 @@ def _banner_once(bot, channel, server_id: int, ctx: dict):
                 race_name=ctx.get("race_name"),
                 country_name=ctx.get("country_name"),
             )
-            await image_verdict_banner_post.try_post(bot, channel, server_id, drawing)
+            await image_verdict_banner_post.try_post(bot, channel, drawing)
         except Exception:
-            log.exception("verdict banner: could not head the batch for server %s", server_id)
+            log.exception("verdict banner: could not head the batch")
 
     return post
 
@@ -221,8 +221,7 @@ def banner_for_round(bot, db_path: str, round_id: int):
             channel = bot.get_channel(int(channel_id_raw))
             if channel is None:
                 return
-            server_id = getattr(getattr(channel, "guild", None), "id", 0)
-            await _banner_once(bot, channel, server_id, ctx)()
+            await _banner_once(bot, channel, ctx)()
         except Exception:
             log.exception("verdict banner: could not head round %s", round_id)
 
@@ -302,7 +301,6 @@ async def _send_verdict(
     bot,
     target_channel,
     *,
-    server_id: int,
     db_path: str,
     round_id: int,
     kind,
@@ -331,7 +329,7 @@ async def _send_verdict(
     from services import image_verdict_post
 
     render = None
-    if await image_verdict_post.verdicts_enabled(bot, server_id):
+    if await image_verdict_post.verdicts_enabled(bot):
         try:
             drawing = await image_verdict_post.build_drawing(
                 bot,
@@ -339,7 +337,6 @@ async def _send_verdict(
                 db_path=db_path,
                 round_id=round_id,
                 kind=kind,
-                server_id=server_id,
                 season_number=season_number,
                 division_name=division_name,
                 round_number=round_number,
@@ -351,7 +348,7 @@ async def _send_verdict(
                 justification_text=justification_text,
                 team_name=team_name,
             )
-            render = await image_verdict_post.render_verdict(bot, server_id, drawing)
+            render = await image_verdict_post.render_verdict(bot, drawing)
         except Exception:  # noqa: BLE001 — a graphic never costs a league its announcement
             log.exception("verdict graphic failed for driver %s", driver_discord_id)
             render = None
@@ -365,10 +362,10 @@ async def _send_verdict(
         )
         if render is not None and render.notices:
             await image_verdict_post.report_notices(
-                bot, server_id, subject, render.notices
+                bot, subject, render.notices
             )
         if render is not None and render.problem:
-            await image_verdict_post.report(bot, server_id, subject, render.problem)
+            await image_verdict_post.report(bot, subject, render.problem)
 
     if render is not None and render.draws:
         import discord as _discord
@@ -439,9 +436,8 @@ async def post_penalty_announcements(
 
     season_number = ctx["season_number"]
     division_name = ctx["division_name"]
-    server_id = getattr(getattr(target_channel, "guild", None), "id", 0)
     KIND = VerdictKind.PENALTY
-    head_the_batch = head or _banner_once(bot, target_channel, server_id, ctx)
+    head_the_batch = head or _banner_once(bot, target_channel, ctx)
 
     for record in applied_penalties:
         try:
@@ -487,7 +483,6 @@ async def post_penalty_announcements(
             team_name = await image_verdict_post.team_name_for_entry(
                 bot,
                 getattr(target_channel, "guild", None),
-                server_id=server_id,
                 division_id=result_ctx["division_id"],
                 role_id=record.get("team_role_id")
                 if hasattr(record, "get")
@@ -499,7 +494,6 @@ async def post_penalty_announcements(
             await _send_verdict(
                 bot,
                 target_channel,
-                server_id=server_id,
                 db_path=db_path,
                 round_id=result_ctx["round_id"],
                 kind=KIND,
@@ -565,9 +559,8 @@ async def post_appeal_announcements(
 
     season_number = ctx["season_number"]
     division_name = ctx["division_name"]
-    server_id = getattr(getattr(target_channel, "guild", None), "id", 0)
     KIND = VerdictKind.APPEAL
-    head_the_batch = head or _banner_once(bot, target_channel, server_id, ctx)
+    head_the_batch = head or _banner_once(bot, target_channel, ctx)
 
     for record in applied_corrections:
         try:
@@ -612,7 +605,6 @@ async def post_appeal_announcements(
             team_name = await image_verdict_post.team_name_for_entry(
                 bot,
                 getattr(target_channel, "guild", None),
-                server_id=server_id,
                 division_id=result_ctx["division_id"],
                 role_id=record.get("team_role_id")
                 if hasattr(record, "get")
@@ -624,7 +616,6 @@ async def post_appeal_announcements(
             await _send_verdict(
                 bot,
                 target_channel,
-                server_id=server_id,
                 db_path=db_path,
                 round_id=result_ctx["round_id"],
                 kind=KIND,
@@ -742,7 +733,6 @@ async def post_autosanction_announcement(
         await _send_verdict(
             bot,
             target_channel,
-            server_id=getattr(getattr(target_channel, "guild", None), "id", 0),
             db_path=db_path,
             round_id=round_id,
             kind=VerdictKind.ATTENDANCE_SANCTION,

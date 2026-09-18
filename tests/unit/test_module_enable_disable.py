@@ -92,7 +92,7 @@ def _make_cog(
     bot.season_service.get_division_rounds = AsyncMock(return_value=[])
 
     bot.scheduler_service = MagicMock()
-    bot.scheduler_service.cancel_all_weather_for_server = AsyncMock(return_value=None)
+    bot.scheduler_service.cancel_all_weather = AsyncMock(return_value=None)
 
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
@@ -130,8 +130,7 @@ async def _audit(db_path: str) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, new_value, old_value FROM audit_entries "
-            "WHERE server_id = ? ORDER BY id",
-            (SERVER_ID,),
+            " ORDER BY id",
         )
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -159,7 +158,7 @@ async def test_weather_is_enabled(tmp_path):
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    await cog._enable_weather(interaction, SERVER_ID)
+    await cog._enable_weather(interaction)
 
     assert await _weather_flag(db_path) == 1
     assert "enabled" in _replied(interaction)
@@ -172,7 +171,7 @@ async def test_enabling_weather_twice_does_no_work(tmp_path):
     cog = _make_cog(db_path, weather_enabled=True)
     interaction = _interaction()
 
-    await cog._enable_weather(interaction, SERVER_ID)
+    await cog._enable_weather(interaction)
 
     assert "already enabled" in _replied(interaction)
     assert await _audit(db_path) == []
@@ -184,7 +183,7 @@ async def test_weather_may_be_enabled_between_seasons(tmp_path):
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, season=None)
 
-    await cog._enable_weather(_interaction(), SERVER_ID)
+    await cog._enable_weather(_interaction())
 
     assert await _weather_flag(db_path) == 1
 
@@ -192,7 +191,7 @@ async def test_weather_may_be_enabled_between_seasons(tmp_path):
 async def test_enabling_weather_is_audited(tmp_path):
     db_path = await _make_db(tmp_path)
 
-    await _make_cog(db_path)._enable_weather(_interaction(), SERVER_ID)
+    await _make_cog(db_path)._enable_weather(_interaction())
 
     entry = (await _audit(db_path))[0]
     assert entry["change_type"] == "MODULE_ENABLE"
@@ -205,10 +204,10 @@ async def test_disabling_weather_cancels_every_scheduled_job(tmp_path):
     cog = _make_cog(db_path, weather_enabled=True)
     interaction = _interaction()
 
-    await cog._disable_weather(interaction, SERVER_ID)
+    await cog._disable_weather(interaction)
 
-    cog.bot.scheduler_service.cancel_all_weather_for_server.assert_awaited_once()
-    cog.bot.module_service.set_weather_enabled.assert_awaited_once_with(SERVER_ID, False)
+    cog.bot.scheduler_service.cancel_all_weather.assert_awaited_once()
+    cog.bot.module_service.set_weather_enabled.assert_awaited_once_with(False)
     assert "cancelled" in _replied(interaction)
 
 
@@ -217,10 +216,10 @@ async def test_disabling_weather_twice_does_no_work(tmp_path):
     cog = _make_cog(db_path, weather_enabled=False)
     interaction = _interaction()
 
-    await cog._disable_weather(interaction, SERVER_ID)
+    await cog._disable_weather(interaction)
 
     assert "already disabled" in _replied(interaction)
-    cog.bot.scheduler_service.cancel_all_weather_for_server.assert_not_awaited()
+    cog.bot.scheduler_service.cancel_all_weather.assert_not_awaited()
     assert await _audit(db_path) == []
 
 
@@ -228,7 +227,7 @@ async def test_disabling_weather_is_audited(tmp_path):
     db_path = await _make_db(tmp_path)
 
     await _make_cog(db_path, weather_enabled=True)._disable_weather(
-        _interaction(), SERVER_ID
+        _interaction()
     )
 
     entry = (await _audit(db_path))[0]
@@ -245,7 +244,7 @@ async def test_results_is_enabled(tmp_path):
     db_path = await _make_db(tmp_path)
     interaction = _interaction()
 
-    await _make_cog(db_path)._enable_results(interaction, SERVER_ID)
+    await _make_cog(db_path)._enable_results(interaction)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -261,7 +260,7 @@ async def test_results_cannot_be_enabled_mid_season(tmp_path):
     cog = _make_cog(db_path, season=_season())
     interaction = _interaction()
 
-    await cog._enable_results(interaction, SERVER_ID)
+    await cog._enable_results(interaction)
 
     assert "once a season's placements are confirmed" in _replied(interaction)
     assert await _audit(db_path) == []
@@ -272,7 +271,7 @@ async def test_enabling_results_twice_does_no_work(tmp_path):
     cog = _make_cog(db_path, results_enabled=True)
     interaction = _interaction()
 
-    await cog._enable_results(interaction, SERVER_ID)
+    await cog._enable_results(interaction)
 
     assert "already enabled" in _replied(interaction)
     assert await _audit(db_path) == []
@@ -290,7 +289,7 @@ async def test_attendance_requires_results_first(tmp_path):
     cog = _make_cog(db_path, results_enabled=False)
     interaction = _interaction()
 
-    await cog._enable_attendance(interaction, SERVER_ID)
+    await cog._enable_attendance(interaction)
 
     assert "requires the Results & Standings module" in _replied(interaction)
     assert await _audit(db_path) == []
@@ -301,7 +300,7 @@ async def test_attendance_is_enabled_once_results_is(tmp_path):
     cog = _make_cog(db_path, results_enabled=True)
     interaction = _interaction()
 
-    await cog._enable_attendance(interaction, SERVER_ID)
+    await cog._enable_attendance(interaction)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -316,7 +315,7 @@ async def test_enabling_attendance_writes_the_packaged_defaults(tmp_path):
     db_path = await _make_db(tmp_path)
 
     await _make_cog(db_path, results_enabled=True)._enable_attendance(
-        _interaction(), SERVER_ID
+        _interaction()
     )
 
     async with get_connection(db_path) as db:
@@ -335,7 +334,7 @@ async def test_attendance_cannot_be_enabled_mid_season(tmp_path):
     cog = _make_cog(db_path, results_enabled=True, season=_season())
     interaction = _interaction()
 
-    await cog._enable_attendance(interaction, SERVER_ID)
+    await cog._enable_attendance(interaction)
 
     assert "once a season's placements are confirmed" in _replied(interaction)
 
@@ -347,7 +346,7 @@ async def test_the_results_dependency_is_checked_before_the_season(tmp_path):
     cog = _make_cog(db_path, results_enabled=False, season=_season())
     interaction = _interaction()
 
-    await cog._enable_attendance(interaction, SERVER_ID)
+    await cog._enable_attendance(interaction)
 
     assert "requires the Results & Standings module" in _replied(interaction)
 
@@ -357,7 +356,7 @@ async def test_enabling_attendance_twice_does_no_work(tmp_path):
     cog = _make_cog(db_path, results_enabled=True, attendance_enabled=True)
     interaction = _interaction()
 
-    await cog._enable_attendance(interaction, SERVER_ID)
+    await cog._enable_attendance(interaction)
 
     assert "already enabled" in _replied(interaction)
     assert await _audit(db_path) == []
@@ -367,7 +366,7 @@ async def test_enabling_attendance_is_audited(tmp_path):
     db_path = await _make_db(tmp_path)
 
     await _make_cog(db_path, results_enabled=True)._enable_attendance(
-        _interaction(), SERVER_ID
+        _interaction()
     )
 
     assert (await _audit(db_path))[0]["change_type"] == "ATTENDANCE_MODULE_ENABLED"

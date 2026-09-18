@@ -30,7 +30,7 @@ RSVP_ASPECT = "rsvp"
 RSVP_TEMPLATE_KEY = "rsvp_template"
 
 
-async def rsvp_enabled(bot, server_id: int) -> bool:
+async def rsvp_enabled(bot) -> bool:
     """True where the module is on, the ``rsvp`` aspect is on, and the template is valid."""
     try:
         if not await bot.module_service.is_images_enabled():
@@ -42,13 +42,12 @@ async def rsvp_enabled(bot, server_id: int) -> bool:
         report = reports.get(RSVP_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("rsvp: enablement check failed for server %s: %s", server_id, exc)
+        log.error("rsvp: enablement check failed: %s", exc)
         return False
 
 
 async def try_attach(
     bot,
-    server_id: int,
     *,
     division_name: str,
     round_number,
@@ -85,7 +84,7 @@ async def try_attach(
             spec_builder_with_faults,
         )
 
-        if not await rsvp_enabled(bot, server_id):
+        if not await rsvp_enabled(bot):
             return None
 
         config = await bot.image_config_service.get_config()
@@ -124,7 +123,6 @@ async def try_attach(
         from utils.image_naming import stem_for_drawing
 
         decision = await bot.image_render_service.render_for_posting(
-            server_id,
             RSVP_TEMPLATE_KEY,
             spec_builder_with_faults(
                 build_fill_spec, drawing, directories, directory_faults
@@ -137,18 +135,18 @@ async def try_attach(
 
         label = f"{division_name} — check-in for round {round_number}"
         if decision.notices:
-            await _report_notices(bot, server_id, label, decision.notices)
+            await _report_notices(bot, label, decision.notices)
         if not decision.posts_image:
             if decision.problem is not None:
-                await _report(bot, server_id, label, decision.problem.detail)
+                await _report(bot, label, decision.problem.detail)
             return None
 
         png = decision.png_paths[0]
         return discord.File(str(png), filename=Path(png).name)
     except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
         log.error(
-            "rsvp: the check-in graphic could not be drawn for server %s: %s",
-            server_id, exc,
+            "rsvp: the check-in graphic could not be drawn: %s",
+            exc,
         )
         return None
 
@@ -166,13 +164,13 @@ def discard_attachment(attachment) -> None:
     _discard(attachment)
 
 
-async def _report(bot, server_id: int, what: str, detail: str) -> None:
+async def _report(bot, what: str, detail: str) -> None:
     from services.image_results_post import report
 
-    await report(bot, server_id, what, detail)
+    await report(bot, what, detail)
 
 
-async def _report_notices(bot, server_id: int, what: str, notices) -> None:
+async def _report_notices(bot, what: str, notices) -> None:
     from services.image_results_post import report_notices
 
-    await report_notices(bot, server_id, what, notices)
+    await report_notices(bot, what, notices)

@@ -106,12 +106,12 @@ async def db_path(tmp_path):
 
 
 async def test_a_full_reset_empties_every_module_s_configuration(db_path):
-    await reset_server_data(SERVER_ID, db_path, MagicMock(), full=True)
+    await reset_server_data(db_path, MagicMock(), full=True)
 
     assert _counts(db_path) == {table: 0 for table in WIPED_BY_A_FULL_RESET}
 
 
 async def test_a_partial_reset_keeps_every_module_s_configuration(db_path):
-    await reset_server_data(SERVER_ID, db_path, MagicMock(), full=False)
+    await reset_server_data(db_path, MagicMock(), full=False)
 
     assert _counts(db_path) == {table: 1 for table in WIPED_BY_A_FULL_RESET}

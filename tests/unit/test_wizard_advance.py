@@ -303,7 +303,7 @@ async def test_the_last_step_commits_the_signup(advancer):
 
     await _advance(advancer, wizard)
 
-    advancer.svc.commit_wizard.assert_awaited_once_with(SERVER_ID, DRIVER_ID, advancer.guild)
+    advancer.svc.commit_wizard.assert_awaited_once_with(DRIVER_ID, advancer.guild)
 
 
 async def test_the_final_answers_are_saved_before_the_commit_reads_them(advancer):

@@ -38,7 +38,7 @@ async def db_path(tmp_path):
 
 async def _bootstrap(db_path: str):
     """Create server → season → division → round → points config snapshot.
-    
+
     Returns (season_id, division_id, round_id).
     """
     async with get_connection(db_path) as db:

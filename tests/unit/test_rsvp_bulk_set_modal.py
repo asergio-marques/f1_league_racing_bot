@@ -427,7 +427,7 @@ async def test_the_changes_are_logged(tmp_path):
 
     await _submit(bot, "900000001, accept")
 
-    logged = str(bot.output_router.post_log.await_args.args[1])
+    logged = str(bot.output_router.post_log.await_args.args[0])
     assert "/test-mode rsvp set-status" in logged
     assert "Pro" in logged
     assert str(ROUND_ID) in logged

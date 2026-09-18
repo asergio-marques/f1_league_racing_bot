@@ -97,7 +97,7 @@ async def find_channel_use(
     *,
     ignore: ChannelUse | None = None,
 ) -> ChannelUse | None:
-    """What *channel_id* is already used for on *server_id*, or None where it is free.
+    """What *channel_id* is already used for, or None where it is free.
 
     *ignore* names a use to disregard — the setting being written. Without it, changing a
     division's results channel to a different channel would be refused by its own current

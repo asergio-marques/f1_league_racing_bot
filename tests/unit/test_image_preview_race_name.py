@@ -52,7 +52,6 @@ def _registry(monkeypatch):
 
 def _context(round_obj):
     return PreviewContext(
-        server_id=1,
         season_number=1,
         division_id=1,
         division_name="Elite",

@@ -125,7 +125,7 @@ def _guild():
 
 async def _move(service, to_division, team, from_division=PRO):
     return await service.move_driver(
-        server_id=SERVER_ID, driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
+        driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
         from_division_id=from_division, to_division_id=to_division, team_name=team,
         acting_user_id=1, acting_user_name="Manager", guild=_guild(), discord_user_id="4242",
     )
@@ -244,7 +244,7 @@ async def test_a_move_for_a_profile_that_does_not_exist_is_refused(db_path):
 
     with pytest.raises(ValueError, match="Driver profile not found"):
         await service.move_driver(
-            server_id=SERVER_ID, driver_profile_id=999, season_id=SEASON_ID,
+            driver_profile_id=999, season_id=SEASON_ID,
             from_division_id=PRO, to_division_id=PRO, team_name="Reserve",
             acting_user_id=1, acting_user_name="Manager", guild=_guild(),
             discord_user_id="4242",
@@ -267,7 +267,7 @@ async def test_a_member_not_cached_is_fetched_to_swap_their_roles(db_path):
     guild.fetch_member = AsyncMock(return_value=member)
 
     await service.move_driver(
-        server_id=SERVER_ID, driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
+        driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
         from_division_id=PRO, to_division_id=PRO, team_name="Reserve",
         acting_user_id=1, acting_user_name="Manager", guild=guild, discord_user_id="4242",
     )
@@ -289,7 +289,7 @@ async def test_a_member_who_left_the_server_is_moved_without_roles(db_path):
     )
 
     await service.move_driver(
-        server_id=SERVER_ID, driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
+        driver_profile_id=PROFILE_ID, season_id=SEASON_ID,
         from_division_id=PRO, to_division_id=PRO, team_name="Reserve",
         acting_user_id=1, acting_user_name="Manager", guild=guild, discord_user_id="4242",
     )
@@ -317,7 +317,7 @@ async def test_every_confirmed_driver_of_the_team_has_the_old_role_swapped_for_t
     member = MagicMock()
 
     reached = await service.swap_team_role(
-        SERVER_ID, "Alpha", ROLES["Alpha"], 777, _role_guild({4242: member})
+        "Alpha", ROLES["Alpha"], 777, _role_guild({4242: member})
     )
 
     assert reached == 1
@@ -331,7 +331,7 @@ async def test_an_unconfirmed_driver_of_the_team_is_left_alone(db_path):
     service = _service(db_path)
 
     assert await service.swap_team_role(
-        SERVER_ID, "Alpha", ROLES["Alpha"], 777, _role_guild({4242: MagicMock()})
+        "Alpha", ROLES["Alpha"], 777, _role_guild({4242: MagicMock()})
     ) == 0
     service._grant_roles.assert_not_awaited()
 
@@ -346,7 +346,7 @@ async def test_a_role_another_team_still_maps_to_is_not_taken(db_path):
     service = _service(db_path)
 
     await service.swap_team_role(
-        SERVER_ID, "Alpha", ROLES["Alpha"], 777, _role_guild({4242: MagicMock()})
+        "Alpha", ROLES["Alpha"], 777, _role_guild({4242: MagicMock()})
     )
 
     service._revoke_roles.assert_not_awaited()
@@ -358,7 +358,7 @@ async def test_a_role_cleared_is_taken_and_nothing_granted(db_path):
     service = _service(db_path)
 
     await service.swap_team_role(
-        SERVER_ID, "Reserve", ROLES["Reserve"], None, _role_guild({4242: MagicMock()})
+        "Reserve", ROLES["Reserve"], None, _role_guild({4242: MagicMock()})
     )
 
     service._revoke_roles.assert_awaited_once()
@@ -369,5 +369,5 @@ async def test_the_same_role_or_no_guild_changes_nothing(db_path):
     await _seat(db_path, PRO, "Alpha")
     service = _service(db_path)
 
-    assert await service.swap_team_role(SERVER_ID, "Alpha", 5, 5, _role_guild({})) == 0
-    assert await service.swap_team_role(SERVER_ID, "Alpha", 5, 6, None) == 0
+    assert await service.swap_team_role("Alpha", 5, 5, _role_guild({})) == 0
+    assert await service.swap_team_role("Alpha", 5, 6, None) == 0

@@ -122,7 +122,7 @@ async def _revert(cog, interaction):
 
 def _logged(cog) -> str:
     return "\n".join(
-        str(call.args[1]) for call in cog.bot.output_router.post_log.await_args_list
+        str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list
     )
 
 

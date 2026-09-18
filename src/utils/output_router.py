@@ -2,7 +2,7 @@
 
 Constitution Principle VII: Two output channel categories only:
   1. Forecast channels  (per-division)
-  2. Calculation log channel  (per-server)
+  2. Calculation log channel  (the league's one)
 
 No other channel receives bot messages.
 """
@@ -36,22 +36,22 @@ class OutputRouter:
     # ------------------------------------------------------------------
 
     async def post_forecast(
-        self, division: "Division", content: str, server_id: int = 0
+        self, division: "Division", content: str, *, enqueue_on_failure: bool = False
     ) -> "Optional[discord.Message]":
         """Post *content* to the division's forecast channel.
 
         Returns the ``discord.Message`` on success, or ``None`` on failure.
-        On failure, enqueues for retry if retry_db_path is configured.
+        On failure, enqueues for retry where *enqueue_on_failure* is set and retry_db_path
+        is configured.
         """
         channel_id = division.forecast_channel_id
         return await self._send(
-            channel_id, content, server_id=server_id, fallback_label="forecast"
+            channel_id, content, enqueue_on_failure=enqueue_on_failure,
+            fallback_label="forecast",
         )
 
-    async def post_log(
-        self, server_id: int, content: str
-    ) -> "Optional[discord.Message]":
-        """Post *content* to the server's calculation log channel.
+    async def post_log(self, content: str) -> "Optional[discord.Message]":
+        """Post *content* to the league's calculation log channel.
 
         Mention syntax (<@id>, <@&id>) is wrapped in backticks so Discord
         renders them as plain text rather than interactive mentions.
@@ -71,14 +71,14 @@ class OutputRouter:
         """
         content = _MENTION_RE.sub(r"`\1`", content)
         content = content + "\n" + "\u2015" * 36
-        config = await self._bot.config_service.get_server_config(server_id)
+        config = await self._bot.config_service.get_server_config()
         if config is None:
-            log.error("post_log: no server config found for server_id=%s", server_id)
+            log.error("post_log: the bot is not set up, so there is no log channel")
             return None
 
         channel_id = config.log_channel_id
         msg = await self._send(
-            channel_id, content, server_id=server_id, fallback_label="log",
+            channel_id, content, enqueue_on_failure=True, fallback_label="log",
             return_first=True,
         )
 
@@ -88,7 +88,7 @@ class OutputRouter:
                 config.interaction_channel_id,
                 f"⚠️ Failed to write to log channel (id={channel_id}). "
                 f"Please check bot permissions.",
-                server_id=0,
+                enqueue_on_failure=False,
                 fallback_label="interaction (last resort)",
             )
 
@@ -103,7 +103,7 @@ class OutputRouter:
         channel_id: int,
         content: str,
         *,
-        server_id: int = 0,
+        enqueue_on_failure: bool = False,
         fallback_label: str = "unknown",
         return_first: bool = False,
     ) -> "Optional[discord.Message]":
@@ -111,7 +111,7 @@ class OutputRouter:
 
         Returns the last ``discord.Message`` sent on success, ``None`` on failure.
         Never raises. On HTTP/Forbidden failure, enqueues for retry when
-        retry_db_path is configured and server_id > 0.
+        retry_db_path is configured and *enqueue_on_failure* is set.
 
         *return_first* returns the **first** message instead, for a caller linking a
         reader to the start of what it wrote. It defaults to False because the forecast
@@ -150,29 +150,31 @@ class OutputRouter:
                 "_send: missing permissions for %s channel id=%s: %s",
                 fallback_label, channel_id, exc,
             )
-            await self._enqueue_if_configured(server_id, channel_id, content, str(exc))
+            await self._enqueue_if_configured(enqueue_on_failure, channel_id, content, str(exc))
         except discord.HTTPException as exc:
             log.error(
                 "_send: HTTP error posting to %s channel id=%s: %s",
                 fallback_label, channel_id, exc,
             )
-            await self._enqueue_if_configured(server_id, channel_id, content, str(exc))
+            await self._enqueue_if_configured(enqueue_on_failure, channel_id, content, str(exc))
         return None
 
     async def _enqueue_if_configured(
         self,
-        server_id: int,
+        wanted: bool,
         channel_id: int,
         content: str,
         failure_reason: str,
     ) -> None:
-        """Persist a failed message for retry, if retry_db_path is set and server_id is known."""
-        if self._retry_db_path and server_id > 0:
+        """Persist a failed message for retry, where *wanted* and retry_db_path is set.
+
+        *wanted* is False for the interaction-channel last resort, which would otherwise
+        queue a retry of the notice that its own failure had already failed to deliver.
+        """
+        if self._retry_db_path and wanted:
             try:
                 from services.retry_service import enqueue
-                await enqueue(
-                    self._retry_db_path, server_id, channel_id, content, failure_reason
-                )
+                await enqueue(self._retry_db_path, channel_id, content, failure_reason)
             except Exception as exc:
                 log.error("_enqueue_if_configured: failed to enqueue: %s", exc)
 

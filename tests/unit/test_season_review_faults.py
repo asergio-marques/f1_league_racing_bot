@@ -211,7 +211,7 @@ async def test_a_league_running_neither_module_has_no_windows():
     cog = _make_cog(attendance_enabled=False, weather_enabled=False)
 
     with _weather(cog):
-        attendance, weather = await cog._approval_windows(SERVER_ID)
+        attendance, weather = await cog._approval_windows()
 
     assert attendance is None
     assert weather is None
@@ -221,7 +221,7 @@ async def test_the_attendance_windows_are_read_when_the_module_is_on():
     cog = _make_cog(attendance_enabled=True)
 
     with _weather(cog):
-        attendance, _ = await cog._approval_windows(SERVER_ID)
+        attendance, _ = await cog._approval_windows()
 
     assert attendance is not None
     assert attendance.notice_days == 5
@@ -233,7 +233,7 @@ async def test_the_weather_windows_are_read_when_the_module_is_on():
     cog = _make_cog(weather_enabled=True)
 
     with _weather(cog):
-        _, weather = await cog._approval_windows(SERVER_ID)
+        _, weather = await cog._approval_windows()
 
     assert weather is not None
     assert weather.phase_1_days == 5
@@ -247,7 +247,7 @@ async def test_one_module_on_leaves_the_other_s_windows_absent():
     cog = _make_cog(attendance_enabled=True, weather_enabled=False)
 
     with _weather(cog):
-        attendance, weather = await cog._approval_windows(SERVER_ID)
+        attendance, weather = await cog._approval_windows()
 
     assert attendance is not None
     assert weather is None
@@ -259,7 +259,7 @@ async def test_a_disabled_module_s_configuration_is_not_even_read():
     cog = _make_cog(attendance_enabled=False, weather_enabled=False)
 
     with _weather(cog) as weather_read:
-        await cog._approval_windows(SERVER_ID)
+        await cog._approval_windows()
 
     cog.bot.attendance_service.get_or_create_config.assert_not_awaited()
     weather_read.assert_not_awaited()
@@ -276,7 +276,7 @@ async def test_the_windows_reflect_what_the_league_configured():
     )
 
     with _weather(cog):
-        attendance, _ = await cog._approval_windows(SERVER_ID)
+        attendance, _ = await cog._approval_windows()
 
     assert attendance.notice_days == 2
     assert attendance.last_notice_hours == 6

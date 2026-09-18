@@ -308,13 +308,7 @@ async def _report_call_failure(
     division cannot answer. Staff re-post it instead.
     """
     try:
-        server_id = (
-            bot.server_id_for_division(division_id)
-            if hasattr(bot, "server_id_for_division")
-            else 0
-        )
         await bot.output_router.post_log(
-            server_id,
             f"ATTENDANCE | check-in call | NOT POSTED\n"
             f"  season: {season_number}\n"
             f"  division: {division_name} (id={division_id})\n"
@@ -349,12 +343,6 @@ async def _checkin_attachment(
     """
     try:
         from services.image_rsvp_post import try_attach
-
-        server_id = (
-            bot.server_id_for_division(division_id)
-            if hasattr(bot, "server_id_for_division")
-            else 0
-        )
         deadline_hours = None
         try:
             config = await bot.attendance_service.get_config()
@@ -364,7 +352,6 @@ async def _checkin_attachment(
 
         return await try_attach(
             bot,
-            server_id,
             division_name=division_name,
             round_number=round_number,
             round_format=round_format,
@@ -460,7 +447,6 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
             division_id, division_name,
         )
         await bot.output_router.post_log(
-            bot.server_id_for_division(division_id) if hasattr(bot, "server_id_for_division") else 0,
             f"SYSTEM | run_rsvp_notice | SKIP\n"
             f"  reason: no rsvp_channel configured\n"
             f"  division: {division_name} (id={division_id})\n"

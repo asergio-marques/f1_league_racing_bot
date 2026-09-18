@@ -132,16 +132,14 @@ def _cog(db_path: str) -> SignupCog:
     bot.db_path = db_path
     bot.signup_module_service = SignupModuleService(db_path)
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.scheduler_service = MagicMock()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
-    async def _server_config(server_id):
+    async def _server_config():
         async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT test_mode_active FROM server_configs WHERE server_id = ?",
-                (server_id,),
-            )
+            cursor = await db.execute("SELECT test_mode_active FROM server_configs")
             row = await cursor.fetchone()
         return MagicMock(test_mode_active=bool(row["test_mode_active"])) if row else None
 
@@ -459,8 +457,7 @@ async def test_opening_is_audited_with_the_tracks_chosen(tmp_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type, new_value FROM audit_entries WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT change_type, new_value FROM audit_entries",
         )
         row = await cursor.fetchone()
     assert row["change_type"] == "SIGNUP_OPEN"

@@ -605,8 +605,8 @@ class SchedulerService:
             except Exception:
                 pass  # Already fired or removed concurrently
 
-    async def cancel_all_weather_for_server(self, server_id: int) -> None:
-        """Cancel the weather module's jobs for every round in active/setup seasons of *server_id*.
+    async def cancel_all_weather(self) -> None:
+        """Cancel the weather module's jobs for every round in active/setup seasons.
 
         Only the four jobs in ``_WEATHER_JOB_PREFIXES`` are taken. The other four a round
         carries belong to modules that are still switched on and must survive:
@@ -782,8 +782,8 @@ class SchedulerService:
     # Season-end scheduling
     # ------------------------------------------------------------------
 
-    def cancel_season_end(self, server_id: int) -> None:
-        """Remove the season-end job for *server_id* if it exists.
+    def cancel_season_end(self) -> None:
+        """Remove any season-end job a scheduler store still carries.
 
         Nothing schedules one any more. A season ends when a league manager runs
         `/season complete`, and `schedule_season_end` — along with the timer that armed it seven
@@ -793,12 +793,13 @@ class SchedulerService:
         callable no longer exists is dropped by APScheduler on load, with a warning, rather than
         failing start-up.
         """
-        job_id = f"season_end_{server_id}"
-        try:
-            self._scheduler.remove_job(job_id)
-            log.info("Removed season_end job for server %s", server_id)
-        except Exception:
-            pass  # Already fired or never scheduled
+        for job in list(self._scheduler.get_jobs()):
+            if job.id.startswith("season_end"):
+                try:
+                    self._scheduler.remove_job(job.id)
+                    log.info("Removed %s job", job.id)
+                except Exception:
+                    pass  # Already fired or removed
 
     # ------------------------------------------------------------------
     # Signup auto-close scheduling

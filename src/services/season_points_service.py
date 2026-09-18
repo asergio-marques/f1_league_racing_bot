@@ -32,7 +32,7 @@ async def attach_config(
     config_name: str,
     season_status: str,
 ) -> None:
-    """Attach a server-level points configuration to a season in setup.
+    """Attach one of the league's points configurations to a season in setup.
 
     Raises :class:`points_config_service.ConfigNotFoundError` for a name the server's store
     does not hold. **The check is here because nothing below it can make one** (#132):
@@ -42,9 +42,6 @@ async def attach_config(
     middle of a deferred command — and with no error handler on the tree, said nothing at
     all. Refusing at the moment the name is typed is the only place the manager still knows
     what they meant.
-
-    ``server_id`` is keyword-only and required, so that a caller written against the older
-    signature fails loudly rather than silently checking nothing.
     """
     if season_status != "SETUP":
         raise SeasonNotInSetupError(

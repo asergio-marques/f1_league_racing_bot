@@ -129,6 +129,7 @@ def _make_cog(db_path, *, league_admin_role=True):
         ]
     )
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(
             interaction_channel_id=100,
@@ -251,7 +252,7 @@ def _replied(interaction) -> str:
 
 
 def _logged(cog) -> str:
-    return "\n".join(str(c.args[1]) for c in cog.bot.output_router.post_log.await_args_list)
+    return "\n".join(str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list)
 
 
 async def _amend_rows(db_path) -> int:

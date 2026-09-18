@@ -1173,8 +1173,8 @@ async def repost_channel_faults(
     # `tests/integration/test_image_module_flow.py` holds).
     from services.image_validity_service import aspect_attaches_files
 
-    results_graphics = await aspect_attaches_files(bot, guild.id, "results")
-    standings_graphics = await aspect_attaches_files(bot, guild.id, "standings")
+    results_graphics = await aspect_attaches_files(bot, "results")
+    standings_graphics = await aspect_attaches_files(bot, "standings")
 
     faults: list[str] = []
     for row in division_rows:

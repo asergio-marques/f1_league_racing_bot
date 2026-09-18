@@ -117,8 +117,7 @@ async def _audit(db_path: str) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, old_value, new_value, actor_id FROM audit_entries "
-            "WHERE server_id = ? ORDER BY id",
-            (SERVER_ID,),
+            " ORDER BY id",
         )
         return [dict(r) for r in await cursor.fetchall()]
 

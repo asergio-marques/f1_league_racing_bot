@@ -90,7 +90,7 @@ async def _leave(cog):
 
 
 def _logged(cog) -> str:
-    return "\n".join(str(c.args[1]) for c in cog.bot.output_router.post_log.await_args_list)
+    return "\n".join(str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list)
 
 
 @pytest.mark.parametrize("state", [None, "NOT_SIGNED_UP", "PENDING_ADMIN_APPROVAL", "ASSIGNED"])
@@ -101,7 +101,7 @@ async def test_every_departure_goes_through_the_wizard_clean_up(tmp_path, state)
 
     cog.bot.wizard_service.handle_member_remove.assert_awaited_once()
     args = cog.bot.wizard_service.handle_member_remove.await_args.args
-    assert args[:2] == (SERVER_ID, str(DRIVER))
+    assert args[0] == str(DRIVER)
 
 
 @pytest.mark.parametrize("state", ["UNASSIGNED", "ASSIGNED"])

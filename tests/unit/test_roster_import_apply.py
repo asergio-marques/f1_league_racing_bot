@@ -79,7 +79,7 @@ def _row(offset, name, team="Alpine", div="Elite", nat="British"):
 async def _apply(path, text):
     drivers, errors = parse_roster_csv(text)
     assert errors == [], f"the parser refused before the apply: {errors}"
-    return await add_test_drivers_in_bulk(SERVER_ID, drivers, path)
+    return await add_test_drivers_in_bulk(drivers, path)
 
 
 async def _seated(path) -> list[tuple[str, str]]:
@@ -232,7 +232,7 @@ async def test_no_season_is_reported(tmp_path):
     await run_migrations(path)
     drivers, _ = parse_roster_csv(_csv(_row(1, "Quicksilver")))
 
-    seated, errors = await add_test_drivers_in_bulk(SERVER_ID, drivers, path)
+    seated, errors = await add_test_drivers_in_bulk(drivers, path)
 
     assert seated == 0
     assert "No active or setup season" in errors[0]
@@ -268,7 +268,7 @@ async def test_an_id_already_on_the_server_is_refused(season):
     await _apply(season, _csv(_row(1, "Quicksilver")))
     drivers, _ = parse_roster_csv(_csv(_row(1, "Quicksilver", div="Challenger")))
 
-    seated, errors = await add_test_drivers_in_bulk(SERVER_ID, drivers, season)
+    seated, errors = await add_test_drivers_in_bulk(drivers, season)
 
     assert seated == 0
     assert any("already on this server" in problem for problem in errors)

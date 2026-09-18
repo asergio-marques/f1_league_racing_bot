@@ -189,7 +189,6 @@ def _service(db_path: str) -> PlacementService:
 
 async def _sack(service, guild, *, season_id: int | None = SEASON_ID):
     await service.sack_driver(
-        SERVER_ID,
         PROFILE_ID,
         season_id,
         ACTOR_ID,
@@ -548,8 +547,7 @@ async def test_the_sack_is_audited(tmp_path):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT change_type, actor_id, old_value, new_value FROM audit_entries "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+            "",
         )
         rows = [dict(r) for r in await cursor.fetchall()]
     assert [r["change_type"] for r in rows] == ["DRIVER_SACK"]
@@ -565,8 +563,7 @@ async def test_the_audit_records_the_state_and_divisions_as_they_were(tmp_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT old_value, new_value FROM audit_entries WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT old_value, new_value FROM audit_entries",
         )
         row = await cursor.fetchone()
     old = json.loads(row["old_value"])
@@ -582,7 +579,7 @@ async def test_the_audit_records_whether_the_profile_was_kept(tmp_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT new_value FROM audit_entries WHERE server_id = ?", (SERVER_ID,)
+            "SELECT new_value FROM audit_entries"
         )
         row = await cursor.fetchone()
     assert json.loads(row["new_value"])["former_driver"] is True

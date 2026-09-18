@@ -118,6 +118,7 @@ def _make_cog(
     server_config=_UNSET,
 ) -> ModuleCog:
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.module_service = MagicMock()
     bot.module_service.is_signup_enabled = AsyncMock(return_value=enabled)
@@ -135,6 +136,7 @@ def _make_cog(
     bot.scheduler_service._scheduler = MagicMock()
     bot.scheduler_service._scheduler.remove_job = MagicMock(return_value=None)
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(interaction_role_id=INTERACTION_ROLE)
         if server_config is _UNSET
@@ -177,15 +179,14 @@ def _replied(interaction) -> str:
 
 async def _disable(cog, interaction):
     with patch("cogs.module_cog.execute_forced_close", new=AsyncMock()) as close:
-        await cog._disable_signup(interaction, SERVER_ID)
+        await cog._disable_signup(interaction)
     return close
 
 
 async def _audit(db_path) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type, old_value FROM audit_entries WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT change_type, old_value FROM audit_entries",
         )
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -211,7 +212,7 @@ async def test_the_module_is_disabled(tmp_path):
 
     await _disable(cog, interaction)
 
-    cog.bot.module_service.set_signup_enabled.assert_awaited_once_with(SERVER_ID, False)
+    cog.bot.module_service.set_signup_enabled.assert_awaited_once_with(False)
     assert "disabled" in _replied(interaction)
 
 
@@ -247,7 +248,7 @@ async def test_the_disable_is_logged(tmp_path):
 
     await _disable(cog, _interaction())
 
-    assert "/module disable signup" in str(cog.bot.output_router.post_log.await_args.args[1])
+    assert "/module disable signup" in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
 async def test_the_configuration_is_cleared(tmp_path):
@@ -322,10 +323,10 @@ async def test_every_open_wizards_jobs_are_cancelled(tmp_path):
         call.args[0] for call in cog.bot.scheduler_service._scheduler.remove_job.call_args_list
     }
     assert removed == {
-        f"wizard_inactivity_{SERVER_ID}_101",
-        f"wizard_channel_delete_{SERVER_ID}_101",
-        f"wizard_inactivity_{SERVER_ID}_102",
-        f"wizard_channel_delete_{SERVER_ID}_102",
+        f"wizard_inactivity_101",
+        f"wizard_channel_delete_101",
+        f"wizard_inactivity_102",
+        f"wizard_channel_delete_102",
     }
 
 
@@ -353,7 +354,7 @@ async def test_a_league_with_no_configuration_still_disables(tmp_path):
     close = await _disable(cog, interaction)
 
     close.assert_not_awaited()
-    cog.bot.module_service.set_signup_enabled.assert_awaited_once_with(SERVER_ID, False)
+    cog.bot.module_service.set_signup_enabled.assert_awaited_once_with(False)
     assert len(await _audit(db_path)) == 1
 
 
@@ -420,7 +421,7 @@ async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
 
     await _disable(cog, interaction)
 
-    cog.bot.module_service.set_signup_enabled.assert_awaited_once_with(SERVER_ID, False)
+    cog.bot.module_service.set_signup_enabled.assert_awaited_once_with(False)
     assert "disabled" in _replied(interaction)
 
 

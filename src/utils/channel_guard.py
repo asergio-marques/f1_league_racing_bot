@@ -166,7 +166,7 @@ def _tier_guard(tier: str) -> Callable[[Callable], Callable]:
     def decorate(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(self: Any, interaction: Interaction, *args: Any, **kwargs: Any) -> None:
-            config = await self.bot.config_service.get_server_config(interaction.guild_id)
+            config = await self.bot.config_service.get_server_config()
             if config is None:
                 await _refuse(interaction, _NOT_SET_UP)
                 return
@@ -254,7 +254,7 @@ def bot_setup_only(func: Callable) -> Callable:
         # Read before the permission check because the league admin role is one of the
         # things being repaired: a server with no configuration at all has no role for
         # anyone to hold, and the Administrator permission is the only way in.
-        config = await self.bot.config_service.get_server_config(interaction.guild_id)
+        config = await self.bot.config_service.get_server_config()
 
         if not may_set_up_bot(config, member):
             name = _role_name(

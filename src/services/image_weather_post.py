@@ -49,7 +49,7 @@ class ForecastRender:
         return self.png is not None
 
 
-async def weather_enabled(bot, server_id: int, template_key: str) -> bool:
+async def weather_enabled(bot, template_key: str) -> bool:
     """True where the module is on, the ``weather`` aspect is on, and *template_key* is valid.
 
     The template is named per call because weather is drawn from six, and one being invalid
@@ -66,7 +66,7 @@ async def weather_enabled(bot, server_id: int, template_key: str) -> bool:
         report = reports.get(template_key)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("weather: enablement check failed for server %s: %s", server_id, exc)
+        log.error("weather: enablement check failed: %s", exc)
         return False
 
 
@@ -164,7 +164,6 @@ async def build_drawing_for_round(bot, round_id: int, phase: int):
 
 async def render_forecast(
     bot,
-    server_id: int,
     drawing,
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
@@ -190,7 +189,6 @@ async def render_forecast(
         from utils.image_naming import stem_for_drawing
 
         decision = await bot.image_render_service.render_for_posting(
-            server_id,
             drawing.template_key,
             spec_builder_with_faults(
                 build_fill_spec, drawing, directories, directory_faults
@@ -201,7 +199,7 @@ async def render_forecast(
             filename_stem=stem_for_drawing(drawing),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("weather: render failed for server %s: %s", server_id, exc)
+        log.error("weather: render failed: %s", exc)
         return ForecastRender(problem=str(exc), rejects=origin is PostingOrigin.COMMANDED)
 
     if decision.rejects:
@@ -231,21 +229,21 @@ def describe(*, division_name: str, round_number, phase: int, season_number=None
     return ", ".join(parts)
 
 
-async def report(bot, server_id: int, what: str, detail: str) -> None:
+async def report(bot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a forecast channel."""
     from services.image_results_post import report as _report
 
-    await _report(bot, server_id, what, detail)
+    await _report(bot, what, detail)
 
 
-async def report_notices(bot, server_id: int, what: str, notices) -> None:
+async def report_notices(bot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4, FR-059)."""
     from services.image_results_post import report_notices as _report_notices
 
-    await _report_notices(bot, server_id, what, notices)
+    await _report_notices(bot, what, notices)
 
 
-async def attach_forecast(bot, round_id: int, phase: int, server_id: int):
+async def attach_forecast(bot, round_id: int, phase: int):
     """The ``discord.File`` a weather occasion rides on, or None to post the text.
 
     The one entry point the phase services and the mystery notice service call. Every reason a
@@ -265,10 +263,10 @@ async def attach_forecast(bot, round_id: int, phase: int, server_id: int):
         if drawing is None:
             return None
 
-        if not await weather_enabled(bot, server_id, drawing.template_key):
+        if not await weather_enabled(bot, drawing.template_key):
             return None
 
-        render = await render_forecast(bot, server_id, drawing)
+        render = await render_forecast(bot, drawing)
 
         what = describe(
             division_name=drawing.division_name,
@@ -277,9 +275,9 @@ async def attach_forecast(bot, round_id: int, phase: int, server_id: int):
             season_number=drawing.season_number,
         )
         if render.notices:
-            await report_notices(bot, server_id, what, render.notices)
+            await report_notices(bot, what, render.notices)
         if render.problem:
-            await report(bot, server_id, what, render.problem)
+            await report(bot, what, render.problem)
         if not render.draws:
             return None
 

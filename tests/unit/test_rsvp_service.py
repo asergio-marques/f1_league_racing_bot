@@ -64,7 +64,6 @@ async def _make_db(tmp_path) -> str:
 
             CREATE TABLE driver_profiles (
                 id                INTEGER PRIMARY KEY,
-                server_id         INTEGER NOT NULL DEFAULT 1,
                 discord_user_id   TEXT    NOT NULL DEFAULT '0',
                 test_display_name TEXT,
                 is_test_driver    INTEGER NOT NULL DEFAULT 0

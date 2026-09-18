@@ -120,7 +120,7 @@ async def test_a_configuration_is_detached(tmp_path):
     assert detach.await_args.args[1:4] == (SEASON_ID, "Standard", "SETUP")
     assert "detached from the current season" in _replied(interaction)
     assert "/results config detach | Success" in str(
-        cog.bot.output_router.post_log.await_args.args[1]
+        cog.bot.output_router.post_log.await_args.args[0]
     )
 
 
@@ -189,7 +189,7 @@ async def test_the_modification_store_is_written(tmp_path, command, value, phras
     assert modify.await_args.args[1:] == (SEASON_ID, "Standard", "FEATURE_RACE", value)
     assert "Updated in modification store" in _replied(interaction)
     assert phrase in _replied(interaction)
-    assert logged in str(cog.bot.output_router.post_log.await_args.args[1])
+    assert logged in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
 @pytest.mark.parametrize("command", ["amend_fl", "amend_fl_plimit"])

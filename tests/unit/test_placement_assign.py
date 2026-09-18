@@ -130,7 +130,6 @@ async def _assign(service, *, team: str = "Alpha", profile_id: int = PROFILE_ID)
         PlacementService, "_guard_test_mode", new=AsyncMock(return_value=None)
     ):
         return await service.assign_driver(
-            server_id=SERVER_ID,
             driver_profile_id=profile_id,
             division_id=DIVISION_ID,
             team_name=team,

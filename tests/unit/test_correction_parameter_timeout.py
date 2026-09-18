@@ -136,6 +136,7 @@ def _build_service(db_path: str, channel, *, signup_enabled: bool = True):
     )
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.driver_service = DriverService(db_path)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.module_service.is_signup_enabled = AsyncMock(return_value=signup_enabled)
@@ -184,7 +185,7 @@ async def test_request_changes_records_the_requesting_admin(tmp_path):
     svc, guild = _build_service(db_path, channel)
 
     await svc.request_changes(
-        SERVER_ID, DRIVER_ID, guild, _member(ADMIN_ID, "Toto"), reason="Lap time looks wrong"
+        DRIVER_ID, guild, _member(ADMIN_ID, "Toto"), reason="Lap time looks wrong"
     )
 
     assert (await _draft(db_path))["_correction_requested_by"] == str(ADMIN_ID)
@@ -293,7 +294,7 @@ async def test_the_five_minute_timeout_mentions_the_admin(tmp_path):
     channel = _channel()
     svc, _ = _build_service(db_path, channel)
 
-    await svc._correction_timeout_callback(SERVER_ID, DRIVER_ID)
+    await svc._correction_timeout_callback(DRIVER_ID)
 
     assert f"<@{ADMIN_ID}>" in _posted(channel)
     assert await _state(db_path) == "PENDING_ADMIN_APPROVAL"
@@ -313,7 +314,7 @@ async def test_a_lapsed_window_clears_the_correction_state(tmp_path):
     channel = _channel()
     svc, _ = _build_service(db_path, channel)
 
-    await svc._correction_timeout_callback(SERVER_ID, DRIVER_ID)
+    await svc._correction_timeout_callback(DRIVER_ID)
 
     draft = await _draft(db_path)
     assert "_correction_reason" not in draft
@@ -331,7 +332,7 @@ async def test_the_timeout_does_nothing_while_the_signup_module_is_disabled(tmp_
     channel = _channel()
     svc, _ = _build_service(db_path, channel, signup_enabled=False)
 
-    await svc._correction_timeout_callback(SERVER_ID, DRIVER_ID)
+    await svc._correction_timeout_callback(DRIVER_ID)
 
     assert await _state(db_path) == "AWAITING_CORRECTION_PARAMETER"
     assert channel.send.await_count == 0
@@ -356,6 +357,7 @@ def _close_cog(db_path: str):
     from services.signup_module_service import SignupModuleService
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.driver_service = DriverService(db_path)
     bot.signup_module_service = SignupModuleService(db_path)
@@ -404,6 +406,6 @@ async def test_a_close_leaves_a_driver_awaiting_a_correction_parameter_alone(tmp
     await _open_the_window(db_path)
     cog = _close_cog(db_path)
 
-    await execute_forced_close(SERVER_ID, cog.bot, audit_action="SIGNUP_CLOSE")
+    await execute_forced_close(cog.bot, audit_action="SIGNUP_CLOSE")
 
     assert await _state(db_path) == "AWAITING_CORRECTION_PARAMETER"

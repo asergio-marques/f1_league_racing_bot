@@ -104,7 +104,7 @@ async def test_partial_reset_deletes_seasons_preserves_config() -> None:
         await _seed_full(db_path, server_id=1)
 
         sched = _FakeScheduler()
-        result = await reset_server_data(1, db_path, sched, full=False)
+        result = await reset_server_data(db_path, sched, full=False)
 
         assert result["seasons_deleted"] == 1
         assert result["divisions_deleted"] == 2
@@ -130,7 +130,7 @@ async def test_full_reset_deletes_server_config() -> None:
         await _seed_full(db_path, server_id=1)
 
         sched = _FakeScheduler()
-        result = await reset_server_data(1, db_path, sched, full=True)
+        result = await reset_server_data(db_path, sched, full=True)
 
         assert result["seasons_deleted"] == 1
 
@@ -157,7 +157,7 @@ async def test_empty_server_returns_zero_counts() -> None:
             await db.commit()
 
         sched = _FakeScheduler()
-        result = await reset_server_data(1, db_path, sched, full=False)
+        result = await reset_server_data(db_path, sched, full=False)
 
         assert result == {"seasons_deleted": 0, "divisions_deleted": 0, "rounds_deleted": 0}
         assert sched.cancelled == []
@@ -174,7 +174,7 @@ async def test_cancel_round_called_once_per_round() -> None:
         _, _, expected_round_count = await _seed_full(db_path, server_id=1)
 
         sched = _FakeScheduler()
-        result = await reset_server_data(1, db_path, sched, full=False)
+        result = await reset_server_data(db_path, sched, full=False)
 
         assert result["rounds_deleted"] == expected_round_count
         assert len(sched.cancelled) == expected_round_count
@@ -210,7 +210,7 @@ async def test_transaction_rollback_on_error(monkeypatch: pytest.MonkeyPatch) ->
 
         sched = _FakeScheduler()
         with pytest.raises(RuntimeError, match="simulated DB failure"):
-            await reset_server_data(1, db_path, sched, full=False)
+            await reset_server_data(db_path, sched, full=False)
 
         # All season data must still be present (rolled back)
         assert await _row_count(db_path, "seasons", server_id=1) == 1
@@ -256,7 +256,7 @@ async def test_reset_deletes_forecast_messages() -> None:
 
         sched = _FakeScheduler()
         # Must not raise (previously raised FK constraint failed)
-        await reset_server_data(1, db_path, sched, full=False)
+        await reset_server_data(db_path, sched, full=False)
 
         # forecast_messages must now be empty
         assert await _row_count(db_path, "forecast_messages") == 0

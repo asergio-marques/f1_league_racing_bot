@@ -107,7 +107,7 @@ async def test_a_graphic_is_posted_with_no_message_text(tmp_path, monkeypatch):
     monkeypatch.setattr(cps, "replace_calendar_message", AsyncMock(return_value=555))
 
     result = await cps.post_division_calendar(
-        bot, _guild(channel), 1, _division(), _rounds(), TRACKS
+        bot, _guild(channel), _division(), _rounds(), TRACKS
     )
 
     assert result.posted_as_image is True
@@ -124,7 +124,7 @@ async def test_the_textual_calendar_keeps_its_heading(tmp_path, monkeypatch):
     monkeypatch.setattr(cps, "replace_calendar_message", AsyncMock(return_value=555))
 
     await cps.post_division_calendar(
-        bot, _guild(channel), 1, _division(), _rounds(), TRACKS
+        bot, _guild(channel), _division(), _rounds(), TRACKS
     )
 
     content = cps.replace_calendar_message.await_args.kwargs["content"]
@@ -162,12 +162,12 @@ def test_a_mystery_round_reads_as_mystery_in_the_text():
 )
 async def test_either_gate_closed_posts_the_text(tmp_path, images_on, aspect_on):
     bot = _bot(tmp_path, images_on=images_on, aspect_on=aspect_on)
-    assert await cps.image_calendar_wanted(bot, 1) is False
+    assert await cps.image_calendar_wanted(bot) is False
 
 
 @pytest.mark.asyncio
 async def test_both_gates_open_wants_the_graphic(tmp_path):
-    assert await cps.image_calendar_wanted(_bot(tmp_path), 1) is True
+    assert await cps.image_calendar_wanted(_bot(tmp_path)) is True
 
 
 @pytest.mark.asyncio
@@ -175,7 +175,7 @@ async def test_a_gate_that_raises_falls_to_the_text(tmp_path):
     """A fault in the gate must never lose a league its calendar."""
     bot = _bot(tmp_path)
     bot.module_service.is_images_enabled = AsyncMock(side_effect=RuntimeError("db down"))
-    assert await cps.image_calendar_wanted(bot, 1) is False
+    assert await cps.image_calendar_wanted(bot) is False
 
 
 # ── The two asset directories ─────────────────────────────────────────────
@@ -216,7 +216,7 @@ async def test_the_asset_directories_are_absolute(tmp_path):
 
     bot.image_render_service.render = AsyncMock(side_effect=_render)
 
-    await cps.render_calendar_image(bot, 1, _division(), _rounds(), TRACKS)
+    await cps.render_calendar_image(bot, _division(), _rounds(), TRACKS)
 
     templates = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
     spec = captured["builder"](load_svg(templates / "calendar_template.svg"))
@@ -256,7 +256,7 @@ async def test_a_rejected_directory_is_carried_through_as_a_fault(tmp_path):
 
     bot.image_render_service.render = AsyncMock(side_effect=_render)
 
-    await cps.render_calendar_image(bot, 1, _division(), _rounds(), TRACKS)
+    await cps.render_calendar_image(bot, _division(), _rounds(), TRACKS)
 
     templates = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
     spec = captured["builder"](load_svg(templates / "calendar_template.svg"))
@@ -282,7 +282,7 @@ async def test_uncommanded_posting_falls_back_to_text_on_a_fatal_render(
     monkeypatch.setattr(cps, "replace_calendar_message", AsyncMock(return_value=555))
 
     result = await cps.post_division_calendar(
-        bot, _guild(channel), 1, _division(), _rounds(), TRACKS
+        bot, _guild(channel), _division(), _rounds(), TRACKS
     )
 
     assert result.fell_back is True
@@ -305,7 +305,7 @@ async def test_commanded_posting_is_rejected_and_posts_nothing(tmp_path, monkeyp
     monkeypatch.setattr(cps, "replace_calendar_message", replace)
 
     result = await cps.post_division_calendar(
-        bot, _guild(channel), 1, _division(), _rounds(), TRACKS, commanded=True
+        bot, _guild(channel), _division(), _rounds(), TRACKS, commanded=True
     )
 
     assert result.problem == "bad template"
@@ -320,7 +320,7 @@ async def test_a_division_with_no_calendar_channel_is_rejected(tmp_path):
     guild.get_channel = MagicMock(return_value=None)
 
     result = await cps.post_division_calendar(
-        bot, guild, 1, _division(calendar_channel_id=None), _rounds(), TRACKS
+        bot, guild, _division(calendar_channel_id=None), _rounds(), TRACKS
     )
     assert "no calendar channel" in result.problem
 

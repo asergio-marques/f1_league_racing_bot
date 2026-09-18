@@ -74,7 +74,7 @@ async def _state_of_the_league(db_path: str) -> tuple:
 
 
 async def _reassign(db_path: str, old: str, new: str):
-    return await DriverService(db_path).reassign_user_id(SERVER_ID, old, new, ACTOR, "Manager")
+    return await DriverService(db_path).reassign_user_id(old, new, ACTOR, "Manager")
 
 
 async def _refused(db_path: str, old: str, new: str, match: str) -> None:
@@ -222,10 +222,10 @@ async def test_a_reassign_expires_an_open_placements_review(tmp_path):
         db_path=db_path,
         image_config_service=SimpleNamespace(get_config=AsyncMock(return_value=None)),
     )
-    before = await take_fingerprint(bot, SERVER_ID, 1)
+    before = await take_fingerprint(bot, 1)
 
     await _reassign(db_path, A, B)
 
-    assert "the unsettled signups" in (await take_fingerprint(bot, SERVER_ID, 1)).differs_from(
+    assert "the unsettled signups" in (await take_fingerprint(bot, 1)).differs_from(
         before
     )

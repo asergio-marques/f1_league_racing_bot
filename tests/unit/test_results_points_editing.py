@@ -258,7 +258,7 @@ async def test_the_edit_is_logged_with_what_changed():
     with _points_service():
         await _session(cog, _interaction(), position=3, points=15)
 
-    logged = cog.bot.output_router.post_log.await_args.args[1]
+    logged = cog.bot.output_router.post_log.await_args.args[0]
     assert "config session" in logged
     assert "position: 3" in logged
     assert "points: 15" in logged
@@ -426,7 +426,7 @@ async def test_a_successful_attachment_is_logged():
     with _season_service():
         await _append(cog, _interaction())
 
-    assert "config append" in cog.bot.output_router.post_log.await_args.args[1]
+    assert "config append" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 async def test_a_refused_attachment_is_not_logged():

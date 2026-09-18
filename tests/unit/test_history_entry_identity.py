@@ -179,7 +179,7 @@ async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path)
 
     await _seed_a_finished_season(db_path)
     await DriverService(db_path).reassign_user_id(
-        SERVER_ID, _OLD_USER, _NEW_USER, 77, "Manager"
+        _OLD_USER, _NEW_USER, 77, "Manager"
     )
 
     await _write_driver_history_entries(

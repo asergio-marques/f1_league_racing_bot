@@ -47,7 +47,7 @@ class SheetRender:
         return self.png is not None
 
 
-async def attendance_enabled(bot, server_id: int) -> bool:
+async def attendance_enabled(bot) -> bool:
     """True where the module is on, the ``attendance`` aspect is on, and the template is valid."""
     try:
         if not await bot.module_service.is_images_enabled():
@@ -59,13 +59,12 @@ async def attendance_enabled(bot, server_id: int) -> bool:
         report = reports.get(ATTENDANCE_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("attendance: enablement check failed for server %s: %s", server_id, exc)
+        log.error("attendance: enablement check failed: %s", exc)
         return False
 
 
 async def render_sheet(
     bot,
-    server_id: int,
     drawing,
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
@@ -94,7 +93,6 @@ async def render_sheet(
         from utils.image_naming import stem_for_drawing
 
         decision = await bot.image_render_service.render_for_posting(
-            server_id,
             ATTENDANCE_TEMPLATE_KEY,
             spec_builder_with_faults(
                 build_fill_spec, drawing, directories, directory_faults
@@ -105,7 +103,7 @@ async def render_sheet(
             filename_stem=stem_for_drawing(drawing, ATTENDANCE_TEMPLATE_KEY),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("attendance: render failed for server %s: %s", server_id, exc)
+        log.error("attendance: render failed: %s", exc)
         return SheetRender(problem=str(exc), rejects=origin is PostingOrigin.COMMANDED)
 
     if decision.rejects:
@@ -124,15 +122,15 @@ async def render_sheet(
     return SheetRender(png=decision.png_paths[0], notices=decision.notices)
 
 
-async def report(bot, server_id: int, what: str, detail: str) -> None:
+async def report(bot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a driver-read channel."""
     from services.image_results_post import report as _report
 
-    await _report(bot, server_id, what, detail)
+    await _report(bot, what, detail)
 
 
-async def report_notices(bot, server_id: int, what: str, notices) -> None:
+async def report_notices(bot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4, FR-056)."""
     from services.image_results_post import report_notices as _report_notices
 
-    await _report_notices(bot, server_id, what, notices)
+    await _report_notices(bot, what, notices)

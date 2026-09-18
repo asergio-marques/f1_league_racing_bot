@@ -245,6 +245,7 @@ async def test_amend_round_changes_the_field(tmp_path):
     actor.display_name = "Race Control"
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
@@ -261,7 +262,7 @@ async def test_amend_round_changes_the_field(tmp_path):
         cursor = await db.execute("SELECT track_name FROM rounds WHERE id = 1")
         row = await cursor.fetchone()
         audit = await db.execute(
-            "SELECT change_type, old_value, new_value FROM audit_entries WHERE server_id = 1"
+            "SELECT change_type, old_value, new_value FROM audit_entries"
         )
         entry = await audit.fetchone()
 
@@ -322,6 +323,7 @@ async def test_amending_two_fields_amends_once(tmp_path):
     actor.display_name = "Race Control"
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
@@ -344,7 +346,7 @@ async def test_amending_two_fields_amends_once(tmp_path):
         cursor = await db.execute("SELECT track_name, scheduled_at FROM rounds WHERE id = 1")
         rnd = await cursor.fetchone()
         cursor = await db.execute(
-            "SELECT change_type FROM audit_entries WHERE server_id = 1 ORDER BY change_type"
+            "SELECT change_type FROM audit_entries ORDER BY change_type"
         )
         audit = [r["change_type"] for r in await cursor.fetchall()]
 
@@ -425,6 +427,7 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
     actor.display_name = "Race Control"
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
@@ -516,6 +519,7 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     actor.display_name = "Race Control"
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
@@ -545,6 +549,7 @@ def _amend_bot_with_attendance(path, *, attendance: bool, weather: bool = False)
     from unittest.mock import AsyncMock, MagicMock, patch
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.db_path = path
     bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
@@ -934,6 +939,7 @@ def _bot_recording_reposts(reposted: list[tuple], *, missing: tuple[int, ...] = 
     guild.get_channel = get_channel
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.user.id = _BOT_USER_ID
     bot.get_guild.return_value = guild
     bot.output_router.post_log = AsyncMock()
@@ -1164,7 +1170,7 @@ async def test_a_refused_amendment_is_not_logged_as_a_success(db_path):
         await approve_amendment(path, season_id, 99, bot)
 
     logged = "\n".join(
-        str(call.args[1]) for call in bot.output_router.post_log.await_args_list
+        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
     )
     assert "AMENDMENT_APPROVED" not in logged, logged
 
@@ -1360,7 +1366,7 @@ async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
 
     guild.get_channel = get_channel
 
-    async def recording_log(_server_id, content):
+    async def recording_log(content):
         order.append("log" if "AMENDMENT_APPROVED" in str(content) else "other-log")
 
     bot.output_router.post_log = AsyncMock(side_effect=recording_log)

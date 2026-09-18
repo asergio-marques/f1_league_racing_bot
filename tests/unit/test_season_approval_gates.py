@@ -112,7 +112,7 @@ async def _check_weather_gate(
 ) -> list[str]:
     """Return list of division names missing forecast channel (empty = gate passes)."""
     mod_svc = ModuleService(db_path)
-    if not await mod_svc.is_weather_enabled(server_id):
+    if not await mod_svc.is_weather_enabled():
         return []
     svc = SeasonService(db_path)
     divisions = await svc.get_divisions(season_id)
@@ -175,7 +175,7 @@ class TestWeatherGate:
         await _seed_division(db_path, season_id, "Div A", forecast_channel_id=None)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_weather_enabled(1, True)
+        await mod_svc.set_weather_enabled(True)
 
         missing = await _check_weather_gate(db_path, 1, season_id)
         assert "Div A" in missing
@@ -187,7 +187,7 @@ class TestWeatherGate:
         await _seed_division(db_path, season_id, "Div A", forecast_channel_id=999)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_weather_enabled(1, True)
+        await mod_svc.set_weather_enabled(True)
 
         missing = await _check_weather_gate(db_path, 1, season_id)
         assert missing == []
@@ -200,7 +200,7 @@ class TestWeatherGate:
         await _seed_division(db_path, season_id, "Div B", forecast_channel_id=None)
 
         mod_svc = ModuleService(db_path)
-        await mod_svc.set_weather_enabled(1, True)
+        await mod_svc.set_weather_enabled(True)
 
         missing = await _check_weather_gate(db_path, 1, season_id)
         assert missing == ["Div B"]

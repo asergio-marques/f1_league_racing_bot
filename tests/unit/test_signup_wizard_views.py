@@ -109,7 +109,7 @@ async def test_each_platform_button_reports_its_own_platform(button, platform):
     on a platform they never chose."""
     from cogs.signup_cog import PlatformButtonView
 
-    view = PlatformButtonView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = PlatformButtonView(DRIVER_ID, MagicMock())
     interaction = _interaction()
 
     await getattr(type(view), button)(view, interaction, MagicMock())
@@ -125,7 +125,7 @@ async def test_another_member_cannot_answer_a_driver_s_platform_question():
     """The channel is private to its driver, but a league manager can see it."""
     from cogs.signup_cog import PlatformButtonView
 
-    view = PlatformButtonView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = PlatformButtonView(DRIVER_ID, MagicMock())
     interaction = _interaction(OTHER_USER_ID)
 
     await type(view).steam(view, interaction, MagicMock())
@@ -137,7 +137,7 @@ async def test_another_member_cannot_answer_a_driver_s_platform_question():
 async def test_cancelling_from_the_platform_step_withdraws_the_signup():
     from cogs.signup_cog import PlatformButtonView
 
-    view = PlatformButtonView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = PlatformButtonView(DRIVER_ID, MagicMock())
     interaction = _interaction()
 
     await type(view).cancel(view, interaction, MagicMock())
@@ -150,7 +150,7 @@ async def test_another_member_cannot_cancel_a_driver_s_signup():
     """The one button that destroys work."""
     from cogs.signup_cog import PlatformButtonView
 
-    view = PlatformButtonView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = PlatformButtonView(DRIVER_ID, MagicMock())
     interaction = _interaction(OTHER_USER_ID)
 
     await type(view).cancel(view, interaction, MagicMock())
@@ -217,7 +217,7 @@ async def test_each_driver_type_button_reports_its_own_type(button, driver_type)
     """The answer that decides whether the driver is asked about teams at all."""
     from cogs.signup_cog import DriverTypeButtonView
 
-    view = DriverTypeButtonView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = DriverTypeButtonView(DRIVER_ID, MagicMock())
     interaction = _interaction()
 
     await getattr(type(view), button)(view, interaction, MagicMock())
@@ -231,7 +231,7 @@ async def test_each_driver_type_button_reports_its_own_type(button, driver_type)
 async def test_another_member_cannot_choose_a_driver_s_type():
     from cogs.signup_cog import DriverTypeButtonView
 
-    view = DriverTypeButtonView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = DriverTypeButtonView(DRIVER_ID, MagicMock())
     interaction = _interaction(OTHER_USER_ID)
 
     await type(view).full_time(view, interaction, MagicMock())
@@ -243,7 +243,7 @@ async def test_another_member_cannot_choose_a_driver_s_type():
 async def test_cancelling_from_the_driver_type_step_withdraws_the_signup():
     from cogs.signup_cog import DriverTypeButtonView
 
-    view = DriverTypeButtonView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = DriverTypeButtonView(DRIVER_ID, MagicMock())
     interaction = _interaction()
 
     await type(view).cancel(view, interaction, MagicMock())
@@ -254,7 +254,7 @@ async def test_cancelling_from_the_driver_type_step_withdraws_the_signup():
 async def test_another_member_cannot_cancel_from_the_driver_type_step():
     from cogs.signup_cog import DriverTypeButtonView
 
-    view = DriverTypeButtonView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = DriverTypeButtonView(DRIVER_ID, MagicMock())
     interaction = _interaction(OTHER_USER_ID)
 
     await type(view).cancel(view, interaction, MagicMock())
@@ -274,7 +274,7 @@ async def test_a_button_is_offered_for_each_team_still_available():
     from cogs.signup_cog import PreferredTeamsButtonView
 
     view = PreferredTeamsButtonView(
-        SERVER_ID, DRIVER_ID, MagicMock(), ["Alpha", "Beta", "Gamma"]
+        DRIVER_ID, MagicMock(), ["Alpha", "Beta", "Gamma"]
     )
 
     labels = [c.label for c in view.children if getattr(c, "label", None)]
@@ -287,7 +287,7 @@ async def test_a_team_already_picked_is_excluded():
     from cogs.signup_cog import PreferredTeamsButtonView
 
     view = PreferredTeamsButtonView(
-        SERVER_ID, DRIVER_ID, MagicMock(), ["Alpha", "Beta"], excluded=["Alpha"]
+        DRIVER_ID, MagicMock(), ["Alpha", "Beta"], excluded=["Alpha"]
     )
 
     labels = [c.label for c in view.children if getattr(c, "label", None)]
@@ -299,7 +299,7 @@ async def test_no_preference_is_always_offered():
     """It is the driver's only way out of the loop before their third pick."""
     from cogs.signup_cog import PreferredTeamsButtonView
 
-    view = PreferredTeamsButtonView(SERVER_ID, DRIVER_ID, MagicMock(), ["Alpha"])
+    view = PreferredTeamsButtonView(DRIVER_ID, MagicMock(), ["Alpha"])
 
     labels = [c.label for c in view.children if getattr(c, "label", None)]
     assert any("No Preference" in label for label in labels)
@@ -308,14 +308,14 @@ async def test_no_preference_is_always_offered():
 async def test_no_preference_finishes_the_team_step():
     from cogs.signup_cog import PreferredTeamsButtonView
 
-    view = PreferredTeamsButtonView(SERVER_ID, DRIVER_ID, MagicMock(), ["Alpha"])
+    view = PreferredTeamsButtonView(DRIVER_ID, MagicMock(), ["Alpha"])
     interaction = _interaction()
 
     await view._no_preference_callback(interaction)
 
     interaction.client.wizard_service.handle_preferred_teams_button.assert_awaited_once()
     assert (
-        interaction.client.wizard_service.handle_preferred_teams_button.await_args.args[2]
+        interaction.client.wizard_service.handle_preferred_teams_button.await_args.args[1]
         is None
     )
 
@@ -323,7 +323,7 @@ async def test_no_preference_finishes_the_team_step():
 async def test_another_member_cannot_finish_a_driver_s_team_step():
     from cogs.signup_cog import PreferredTeamsButtonView
 
-    view = PreferredTeamsButtonView(SERVER_ID, DRIVER_ID, MagicMock(), ["Alpha"])
+    view = PreferredTeamsButtonView(DRIVER_ID, MagicMock(), ["Alpha"])
     interaction = _interaction(OTHER_USER_ID)
 
     await view._no_preference_callback(interaction)
@@ -335,7 +335,7 @@ async def test_another_member_cannot_finish_a_driver_s_team_step():
 async def test_cancelling_from_the_team_step_withdraws_the_signup():
     from cogs.signup_cog import PreferredTeamsButtonView
 
-    view = PreferredTeamsButtonView(SERVER_ID, DRIVER_ID, MagicMock(), ["Alpha"])
+    view = PreferredTeamsButtonView(DRIVER_ID, MagicMock(), ["Alpha"])
     interaction = _interaction()
 
     await view._cancel_callback(interaction)
@@ -346,7 +346,7 @@ async def test_cancelling_from_the_team_step_withdraws_the_signup():
 async def test_another_member_cannot_cancel_from_the_team_step():
     from cogs.signup_cog import PreferredTeamsButtonView
 
-    view = PreferredTeamsButtonView(SERVER_ID, DRIVER_ID, MagicMock(), ["Alpha"])
+    view = PreferredTeamsButtonView(DRIVER_ID, MagicMock(), ["Alpha"])
     interaction = _interaction(OTHER_USER_ID)
 
     await view._cancel_callback(interaction)
@@ -363,7 +363,7 @@ async def test_another_member_cannot_cancel_from_the_team_step():
 async def test_no_preference_answers_the_teammate_question():
     from cogs.signup_cog import NoPreferenceTeammateView
 
-    view = NoPreferenceTeammateView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = NoPreferenceTeammateView(DRIVER_ID, MagicMock())
     interaction = _interaction()
 
     await type(view).no_preference(view, interaction, MagicMock())
@@ -374,7 +374,7 @@ async def test_no_preference_answers_the_teammate_question():
 async def test_another_member_cannot_answer_the_teammate_question():
     from cogs.signup_cog import NoPreferenceTeammateView
 
-    view = NoPreferenceTeammateView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = NoPreferenceTeammateView(DRIVER_ID, MagicMock())
     interaction = _interaction(OTHER_USER_ID)
 
     await type(view).no_preference(view, interaction, MagicMock())
@@ -386,7 +386,7 @@ async def test_another_member_cannot_answer_the_teammate_question():
 async def test_cancelling_from_the_teammate_step_withdraws_the_signup():
     from cogs.signup_cog import NoPreferenceTeammateView
 
-    view = NoPreferenceTeammateView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = NoPreferenceTeammateView(DRIVER_ID, MagicMock())
     interaction = _interaction()
 
     await type(view).cancel(view, interaction, MagicMock())
@@ -397,7 +397,7 @@ async def test_cancelling_from_the_teammate_step_withdraws_the_signup():
 async def test_another_member_cannot_cancel_from_the_teammate_step():
     from cogs.signup_cog import NoPreferenceTeammateView
 
-    view = NoPreferenceTeammateView(SERVER_ID, DRIVER_ID, MagicMock())
+    view = NoPreferenceTeammateView(DRIVER_ID, MagicMock())
     interaction = _interaction(OTHER_USER_ID)
 
     await type(view).cancel(view, interaction, MagicMock())

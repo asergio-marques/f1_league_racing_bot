@@ -26,7 +26,7 @@ async def test_a_penalty_applied_under_a_past_account_names_the_current_one(tmp_
         )
         await db.commit()
 
-    text = await staged_penalties_warning(db_path, SERVER_ID, [
+    text = await staged_penalties_warning(db_path, [
         {"session_type": "FEATURE_RACE", "penalty_type": "TIME", "penalty_seconds": 5,
          "driver_user_id": 8101},
         {"session_type": "FEATURE_RACE", "penalty_type": "DSQ", "driver_user_id": 9999},

@@ -105,7 +105,7 @@ class TestCalendarPreview:
                 (3, "NORMAL", TRACK_C),
             ],
         )
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
 
         requests = await build_calendar_preview(bot, context)
 
@@ -116,7 +116,7 @@ class TestCalendarPreview:
 
     async def test_the_drawing_carries_the_divisions_identity(self, bot, db_path):
         await _seed(db_path, [(1, "NORMAL", TRACK_A)])
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
 
         assert context.division_name == "Premier"
         assert context.division_tier == 1
@@ -134,7 +134,7 @@ class TestCalendarPreview:
                 (2, "SPRINT", TRACK_B),
             ],
         )
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
 
         from services.calendar_post_service import tracks_by_name
 
@@ -156,7 +156,7 @@ class TestCalendarPreview:
         from services.image_calendar_service import resolve_drawing
 
         await _seed(db_path, [(1, "NORMAL", TRACK_A)])
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
 
         drawing = resolve_drawing(
             division_name=context.division_name,
@@ -182,7 +182,7 @@ class TestItUsesTheLeaguesOwnDirectories:
             "flag_directory", "resources/defaults/teams"
         )
 
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
 
         assert context.asset_directories["flag"].name == "teams"
         assert context.asset_directories["track"].name == "tracks"
@@ -195,7 +195,7 @@ class TestItUsesTheLeaguesOwnDirectories:
         await bot.image_config_service.set_field(
             "flag_directory", "resources/defaults/teams"
         )
-        context = await resolve_context(bot, SERVER_ID, "Premier", require_rounds=True)
+        context = await resolve_context(bot, "Premier", require_rounds=True)
         requests = await build_calendar_preview(bot, context)
 
         seen = {}

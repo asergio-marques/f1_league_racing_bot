@@ -88,7 +88,7 @@ async def season(tmp_path):
 
 
 async def _take(season) -> SeasonFingerprint:
-    return await take_fingerprint(season.bot, SERVER_ID, season.season_id)
+    return await take_fingerprint(season.bot, season.season_id)
 
 
 async def _change(season, sql: str, *params) -> None:
@@ -126,7 +126,7 @@ async def test_an_unreadable_season_yields_an_empty_fingerprint():
     """Same reasoning, reached through the real failure path."""
     bot = SimpleNamespace(db_path="/nonexistent/nowhere.db", image_config_service=None)
 
-    assert (await take_fingerprint(bot, SERVER_ID, 1)).areas == {}
+    assert (await take_fingerprint(bot, 1)).areas == {}
 
 
 # ── One case per area ─────────────────────────────────────────────────────

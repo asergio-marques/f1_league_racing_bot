@@ -71,7 +71,7 @@ def _bot(tmp_path, divisions, teams_by_division, *, blocks=4, seats=2, lineup_on
 
 
 async def _problems(bot):
-    return await SeasonCog._lineup_problems(MagicMock(bot=bot), server_id=1, season_id=1)
+    return await SeasonCog._lineup_problems(MagicMock(bot=bot), season_id=1)
 
 
 DIVISIONS = [

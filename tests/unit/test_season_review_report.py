@@ -145,7 +145,7 @@ def _cog(
 
     cfg = pending or _pending()
     cog._pending = {USER_ID: cfg}
-    cog._get_pending_for_server = MagicMock(return_value=cfg)
+    cog._get_pending = MagicMock(return_value=cfg)
 
     modules = bot.module_service
     modules.is_weather_enabled = AsyncMock(return_value=weather)
@@ -272,7 +272,7 @@ def _private(messages) -> str:
 async def test_a_server_with_no_pending_setup_is_told_to_start_one(db_path):
     cog = _cog(db_path)
     cog._pending = {}
-    cog._get_pending_for_server = MagicMock(return_value=None)
+    cog._get_pending = MagicMock(return_value=None)
     interaction = _interaction()
 
     await undecorate(SeasonCog.season_review)(cog, interaction)

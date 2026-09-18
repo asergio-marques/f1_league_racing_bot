@@ -47,29 +47,29 @@ def _bot(*, module_on=True, aspect_on=True, template_valid=True):
 
 @pytest.mark.asyncio
 async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound():
-    assert await attendance_enabled(_bot(), 1) is True
+    assert await attendance_enabled(_bot()) is True
 
 
 @pytest.mark.asyncio
 async def test_the_module_being_off_falls_back_to_text():
-    assert await attendance_enabled(_bot(module_on=False), 1) is False
+    assert await attendance_enabled(_bot(module_on=False)) is False
 
 
 @pytest.mark.asyncio
 async def test_the_aspect_being_off_falls_back_to_text():
-    assert await attendance_enabled(_bot(aspect_on=False), 1) is False
+    assert await attendance_enabled(_bot(aspect_on=False)) is False
 
 
 @pytest.mark.asyncio
 async def test_an_invalid_template_falls_back_to_text():
-    assert await attendance_enabled(_bot(template_valid=False), 1) is False
+    assert await attendance_enabled(_bot(template_valid=False)) is False
 
 
 @pytest.mark.asyncio
 async def test_a_reader_that_raises_never_breaks_the_posting():
     bot = _bot()
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await attendance_enabled(bot, 1) is False
+    assert await attendance_enabled(bot) is False
 
 
 # ── The render outcome ────────────────────────────────────────────────────

@@ -81,7 +81,7 @@ def _bot(
 def _cog(bot: MagicMock) -> SeasonCog:
     cog = SeasonCog(bot)
     cog._pending[REVIEWER] = PendingConfig(
-        server_id=SERVER_ID, season_id=SEASON_ID, season_number=4, game_edition=25
+        season_id=SEASON_ID, season_number=4, game_edition=25
     )
     # The team names are checked by a helper of their own, pinned elsewhere.
     cog._team_name_problems = AsyncMock(return_value=[])
@@ -104,14 +104,14 @@ def _interaction() -> MagicMock:
 
 async def test_a_plain_configuration_has_no_faults():
     cog = _cog(_bot())
-    assert await cog._configuration_faults(SERVER_ID, SEASON_ID) == []
+    assert await cog._configuration_faults(SEASON_ID) == []
 
 
 async def test_the_signup_module_needs_its_channel_and_both_roles():
     bot = _bot(signup=True, signup_config=_signup_config(channel=None, base=None, complete=None))
     cog = _cog(bot)
 
-    faults = await cog._configuration_faults(SERVER_ID, SEASON_ID)
+    faults = await cog._configuration_faults(SEASON_ID)
 
     assert len(faults) == 3
     assert any("signup channel" in f for f in faults)
@@ -121,16 +121,16 @@ async def test_the_signup_module_needs_its_channel_and_both_roles():
 
 async def test_a_disabled_signup_module_is_not_checked():
     bot = _bot(signup=False, signup_config=_signup_config(channel=None))
-    assert await _cog(bot)._configuration_faults(SERVER_ID, SEASON_ID) == []
+    assert await _cog(bot)._configuration_faults(SEASON_ID) == []
 
 
 async def test_team_names_of_the_server_list_are_checked():
     cog = _cog(_bot())
     cog._team_name_problems = AsyncMock(return_value=["**!!!** reduces to nothing"])
 
-    faults = await cog._configuration_faults(SERVER_ID, SEASON_ID)
+    faults = await cog._configuration_faults(SEASON_ID)
 
-    cog._team_name_problems.assert_awaited_once_with(SERVER_ID, None)
+    cog._team_name_problems.assert_awaited_once_with(None)
     assert faults == ["Team name: **!!!** reduces to nothing"]
 
 
@@ -145,7 +145,7 @@ async def test_the_results_module_needs_a_points_configuration(tmp_path):
     cog._missing_points_config_problems = AsyncMock(return_value=["Ghost"])
     cog._points_ordering_problems = AsyncMock(return_value=["Standard: 2nd above 1st"])
 
-    faults = await cog._configuration_faults(SERVER_ID, SEASON_ID)
+    faults = await cog._configuration_faults(SEASON_ID)
 
     assert any("No points configuration is attached" in f for f in faults)
     assert any("**Ghost** does not exist" in f for f in faults)
@@ -157,7 +157,7 @@ async def test_the_image_module_faults_are_included():
     cog = _cog(bot)
     cog._image_configuration_faults = AsyncMock(return_value=["Inkscape is not installed."])
 
-    assert await cog._configuration_faults(SERVER_ID, SEASON_ID) == [
+    assert await cog._configuration_faults(SEASON_ID) == [
         "Inkscape is not installed."
     ]
 
@@ -259,7 +259,6 @@ def _view():
     cog.bot.db_path = "/nonexistent/nowhere.db"
     cog.bot.config_service.get_server_config = AsyncMock(return_value=_server_config())
     view = _ConfirmConfigurationView(cog, REVIEWER)
-    view._server_id = SERVER_ID
     view._season_id = SEASON_ID
     return view, cog
 
@@ -361,7 +360,7 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert "Do you confirm this season's configuration?" in messages[-1]
 
     (view,) = _RecordedView.made
-    view.record_fingerprint.assert_awaited_once_with(SERVER_ID, SEASON_ID)
+    view.record_fingerprint.assert_awaited_once_with(SEASON_ID)
     view.bind.assert_awaited_once()
     view.carries.assert_called_once()
 
@@ -482,7 +481,7 @@ async def test_a_sound_image_configuration_has_no_faults(monkeypatch):
     cog, patches = _image_cog(reports={"lineup": SimpleNamespace(valid=True)})
     _apply(monkeypatch, patches)
 
-    assert await cog._image_configuration_faults(SERVER_ID) == []
+    assert await cog._image_configuration_faults() == []
 
 
 async def test_every_image_fault_that_needs_no_division_is_named(monkeypatch):
@@ -498,7 +497,7 @@ async def test_every_image_fault_that_needs_no_division_is_named(monkeypatch):
     )
     _apply(monkeypatch, patches)
 
-    faults = await cog._image_configuration_faults(SERVER_ID)
+    faults = await cog._image_configuration_faults()
 
     assert faults[0].endswith("is not installed on this host.")
     assert any("it has no driver name field" in f for f in faults)
@@ -511,7 +510,7 @@ async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass(monkeypatch)
     cog, patches = _image_cog(converter=False, reports_raise=True)
     _apply(monkeypatch, patches)
 
-    faults = await cog._image_configuration_faults(SERVER_ID)
+    faults = await cog._image_configuration_faults()
 
     assert faults[-1] == "The image templates could not be read."
     assert len(faults) == 2
@@ -570,6 +569,6 @@ async def test_the_confirmation_says_what_comes_next_and_is_logged(signup, expec
     await _cog(bot)._do_confirm_configuration(interaction)
 
     assert expected in interaction.followup.send.await_args.args[0]
-    log_line = bot.output_router.post_log.await_args.args[1]
+    log_line = bot.output_router.post_log.await_args.args[0]
     assert "/season config-review | Confirmed" in log_line
     assert f"stage: {'WAITING' if signup else 'PLACEMENTS'}" in log_line

@@ -77,7 +77,6 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
         if cfg is None:
             await interaction.response.send_message(
@@ -118,7 +117,6 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
         if cfg is None:
             await interaction.response.send_message(
@@ -161,7 +159,6 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
         if cfg is None:
             await interaction.response.send_message(
@@ -200,7 +197,6 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
         await self.bot.attendance_service.update_no_rsvp_penalty(points)  # type: ignore[attr-defined]
         await interaction.followup.send(
@@ -226,7 +222,6 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
         await self.bot.attendance_service.update_absent_penalty(points)  # type: ignore[attr-defined]
         await interaction.followup.send(
@@ -252,7 +247,6 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
         await self.bot.attendance_service.update_no_show_penalty(points)  # type: ignore[attr-defined]
         await interaction.followup.send(
@@ -278,7 +272,6 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         value = None if points == 0 else points
         if value is not None:
             cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
@@ -324,7 +317,6 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         value = None if points == 0 else points
         if value is not None:
             cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
@@ -354,7 +346,6 @@ class AttendanceCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
 
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
         if cfg is None:
             await interaction.response.send_message(
@@ -438,7 +429,6 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
 
     bot = interaction.client
     discord_user_id = interaction.user.id
-    guild_id: int = interaction.guild_id  # type: ignore[assignment]
 
     # The module gate — see the docstring for why it sits here and not on the cog.
     if not await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]

@@ -258,7 +258,6 @@ async def add_test_driver(
 
 
 async def add_test_drivers_in_bulk(
-    server_id: int,
     drivers: list,
     db_path: str,
 ) -> tuple[int, list[str]]:
@@ -445,7 +444,7 @@ async def add_test_drivers_in_bulk(
         await db.commit()
 
     log.info(
-        "roster import: seated %d test drivers on server %s", seated, server_id
+        "roster import: seated %d test drivers", seated
     )
     return seated, []
 

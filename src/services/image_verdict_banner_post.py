@@ -55,7 +55,7 @@ class BannerRender:
         return self.png is not None
 
 
-async def banner_enabled(bot, server_id: int) -> bool:
+async def banner_enabled(bot) -> bool:
     """True where the module is on, the aspect is on, and the template is valid.
 
     Read separately from `verdicts_enabled`: the two aspects are independent, so a league
@@ -72,7 +72,7 @@ async def banner_enabled(bot, server_id: int) -> bool:
         report = reports.get(BANNER_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("verdict banner: enablement check failed for server %s: %s", server_id, exc)
+        log.error("verdict banner: enablement check failed: %s", exc)
         return False
 
 
@@ -105,7 +105,6 @@ def build_drawing(
 
 async def render_banner(
     bot,
-    server_id: int,
     drawing: VerdictBannerDrawing,
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
@@ -128,7 +127,6 @@ async def render_banner(
         from utils.image_naming import stem_for_drawing
 
         decision = await bot.image_render_service.render_for_posting(
-            server_id,
             BANNER_TEMPLATE_KEY,
             spec_builder_with_faults(
                 build_fill_spec, drawing, directories, directory_faults
@@ -139,7 +137,7 @@ async def render_banner(
             filename_stem=stem_for_drawing(drawing, BANNER_TEMPLATE_KEY),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("verdict banner: render failed for server %s: %s", server_id, exc)
+        log.error("verdict banner: render failed: %s", exc)
         return BannerRender(problem=str(exc))
 
     if not decision.posts_image:
@@ -187,21 +185,21 @@ def describe(*, division_name: str, round_number, season_number=None) -> str:
     return " · ".join(parts)
 
 
-async def report(bot, server_id: int, what: str, detail: str) -> None:
+async def report(bot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a verdicts channel."""
     from services.image_results_post import report as _report
 
-    await _report(bot, server_id, what, detail)
+    await _report(bot, what, detail)
 
 
-async def report_notices(bot, server_id: int, what: str, notices) -> None:
+async def report_notices(bot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4)."""
     from services.image_results_post import report_notices as _report_notices
 
-    await _report_notices(bot, server_id, what, notices)
+    await _report_notices(bot, what, notices)
 
 
-async def try_post(bot, channel, server_id: int, drawing: VerdictBannerDrawing) -> bool:
+async def try_post(bot, channel, drawing: VerdictBannerDrawing) -> bool:
     """Post the banner above a batch of verdicts. Returns whether anything was posted.
 
     Never raises. A banner is a header, and a header failing must not cost a league the
@@ -209,7 +207,7 @@ async def try_post(bot, channel, server_id: int, drawing: VerdictBannerDrawing) 
     """
     import discord
 
-    if not await banner_enabled(bot, server_id):
+    if not await banner_enabled(bot):
         return False
 
     subject = describe(
@@ -221,14 +219,14 @@ async def try_post(bot, channel, server_id: int, drawing: VerdictBannerDrawing) 
     render = None
     attachment = None
     try:
-        render = await render_banner(bot, server_id, drawing)
+        render = await render_banner(bot, drawing)
 
         if render.notices:
-            await report_notices(bot, server_id, subject, render.notices)
+            await report_notices(bot, subject, render.notices)
 
         if not render.draws:
             if render.problem:
-                await report(bot, server_id, subject, render.problem)
+                await report(bot, subject, render.problem)
             #  The aspect is on and the picture could not be drawn, so the batch is headed
             #  in words rather than not at all.
             await channel.send(heading_text(drawing))
@@ -238,7 +236,7 @@ async def try_post(bot, channel, server_id: int, drawing: VerdictBannerDrawing) 
         await channel.send(file=attachment)
         return True
     except Exception:
-        log.exception("verdict banner: could not post for server %s", server_id)
+        log.exception("verdict banner: could not post")
         return False
     finally:
         if render is not None:

@@ -84,7 +84,7 @@ class InitCog(commands.Cog):
             await interaction.response.send_message(_ANOTHER_SERVER, ephemeral=True)
             return
 
-        existing = await self.bot.config_service.get_server_config(server_id)
+        existing = await self.bot.config_service.get_server_config()
         if existing:
             await interaction.response.send_message(
                 "⚠️ This server is already configured, and `/bot-init` runs once.\n"
@@ -126,13 +126,12 @@ class InitCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot-init | Success\n"
             f"  interaction_role: {interaction_role.name} (<@&{interaction_role.id}>)\n"
             f"  interaction_channel: <#{interaction_channel.id}>\n"
             f"  log_channel: <#{log_channel.id}>",
         )
-        log.info("Bot configured for server %s by %s", server_id, interaction.user)
+        log.info("Bot configured by %s", interaction.user)
 
     # ------------------------------------------------------------------
     # The three settings, each written on its own
@@ -153,7 +152,6 @@ class InitCog(commands.Cog):
         Writes a single column, so nothing else in the row — test mode, the module flags,
         the other two settings — can be carried over stale from a half-built model.
         """
-        server_id = interaction.guild_id
 
         # A channel does one job (decided 2026-09-06). Keyed on the column, because this
         # body also carries the interaction *role*, which no channel rule governs.
@@ -176,7 +174,7 @@ class InitCog(commands.Cog):
                 )
                 return
 
-        changed = await self.bot.config_service.set_core_setting(server_id, column, value)
+        changed = await self.bot.config_service.set_core_setting(column, value)
         if not changed:
             await interaction.response.send_message(
                 "⛔ This server is not configured yet — run `/bot-init` first.",
@@ -190,11 +188,10 @@ class InitCog(commands.Cog):
         # Posted after the write, so a new log channel is told about itself and an
         # administrator sees at once that the repair took.
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | {command} | Success\n"
             f"  {column}: {mention}",
         )
-        log.info("%s set %s for server %s", interaction.user, column, server_id)
+        log.info("%s set %s", interaction.user, column)
 
     @app_commands.command(
         name="bot-log-channel",

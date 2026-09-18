@@ -27,12 +27,13 @@ import logging
 import discord
 
 from db.database import get_connection
+from utils.league_server import league_guild
 
 log = logging.getLogger(__name__)
 
 
-async def purge_season_results(db_path: str, server_id: int, bot) -> dict:
-    """Delete every result of *server_id*'s active season, from Discord and from the database.
+async def purge_season_results(db_path: str, bot) -> dict:
+    """Delete every result of the active season, from Discord and from the database.
 
     Discord first, while the message ids are still stored: once the rows are gone there is
     nothing left to find the messages by.
@@ -70,13 +71,12 @@ async def purge_season_results(db_path: str, server_id: int, bot) -> dict:
         return report
 
     report["rounds"] = len(rounds)
-    guild = bot.get_guild(server_id) if bot is not None else None
+    guild = (await league_guild(bot)) if bot is not None else None
     if guild is None:
         # The rows still go. A guild out of cache is a bot that cannot reach the messages, not
         # a reason to leave the season's results half-erased in the database.
         log.warning(
-            "purge_season_results: guild %s not in cache — deleting rows but no messages",
-            server_id,
+            "purge_season_results: the league's server is not in the cache — deleting rows but no messages",
         )
 
     if guild is not None:
@@ -87,9 +87,8 @@ async def purge_season_results(db_path: str, server_id: int, bot) -> dict:
         db_path, [row["round_id"] for row in rounds]
     )
     log.info(
-        "purge_season_results: server %s — %s rounds, %s sessions, %s standings rows, "
+        "purge_season_results: %s rounds, %s sessions, %s standings rows, "
         "%s messages, %s submission channels",
-        server_id,
         report["rounds"],
         report["sessions"],
         report["standings"],

@@ -803,7 +803,7 @@ class ImageRenderService:
 
     @staticmethod
     async def report_notices(
-        bot, server_id: int, notices: list[RenderNotice], *, subject: str | None = None
+        bot, notices: list[RenderNotice], *, subject: str | None = None
     ):
         """Surface notices to the calculation log channel (Principle V, FR-031).
 
@@ -819,7 +819,7 @@ class ImageRenderService:
             return None
         try:
             return await bot.output_router.post_log(
-                server_id, ImageRenderService.format_notices(notices, subject=subject)
+                ImageRenderService.format_notices(notices, subject=subject)
             )
         except Exception as exc:  # noqa: BLE001
             log.error("report_notices: log write failed: %s", exc)
@@ -829,7 +829,6 @@ class ImageRenderService:
 
     async def render_for_posting(
         self,
-        server_id: int,
         image_type: str,
         spec_builder,
         *,
@@ -871,7 +870,7 @@ class ImageRenderService:
         )
 
         if bot is not None and outcome.notices:
-            await self.report_notices(bot, server_id, outcome.notices)
+            await self.report_notices(bot, outcome.notices)
 
         if outcome.ok:
             return PostingDecision(
@@ -883,9 +882,8 @@ class ImageRenderService:
         problem = outcome.problem
         if problem is not None and problem.is_internal:
             log.error(
-                "render_for_posting: internal problem for %s on server %s — %s",
+                "render_for_posting: internal problem for %s — %s",
                 image_type,
-                server_id,
                 problem.detail,
             )
 

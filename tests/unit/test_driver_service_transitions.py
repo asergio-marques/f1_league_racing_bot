@@ -45,7 +45,6 @@ async def db_path(tmp_path):
 
             CREATE TABLE audit_entries (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id   INTEGER NOT NULL,
                 actor_id    INTEGER NOT NULL,
                 actor_name  TEXT    NOT NULL,
                 division_id INTEGER,
@@ -288,7 +287,6 @@ async def db_with_signup(tmp_path):
 
             CREATE TABLE audit_entries (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id   INTEGER NOT NULL,
                 actor_id    INTEGER NOT NULL,
                 actor_name  TEXT    NOT NULL,
                 division_id INTEGER,

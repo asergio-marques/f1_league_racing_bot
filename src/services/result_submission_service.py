@@ -21,6 +21,7 @@ from utils.tyre_compound import (
     records_no_tyre,
     tyre_compound_list,
 )
+from utils.league_server import league_guild
 
 log = logging.getLogger(__name__)
 
@@ -582,7 +583,7 @@ async def finalize_penalty_review(
         try:
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
-                    "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                    "SELECT 1 FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
                     (division_id,),
                 )
                 srv_row = await cursor.fetchone()
@@ -595,7 +596,6 @@ async def finalize_penalty_review(
                     + f"  old={old_val}\n  new={new_val}"
                 )
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    int(srv_row["server_id"]),
                     summary,
                 )
         except Exception:
@@ -634,13 +634,12 @@ async def finalize_penalty_review(
 
         async with get_connection(db_path) as _db:
             _srv_cur = await _db.execute(
-                "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id, s.id AS season_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                "SELECT s.id AS season_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
                 (division_id,),
             )
             _srv_row = await _srv_cur.fetchone()
 
         if _srv_row and await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
-            _att_server_id = int(_srv_row["server_id"])
             _att_season_id = int(_srv_row["season_id"])
 
             # T004: Record attendance from submitted results.
@@ -683,7 +682,7 @@ async def finalize_penalty_review(
                 if guild:
                     await enforce_attendance_sanctions(
                         bot, guild, db_path, round_id, division_id,
-                        _att_server_id, _att_season_id,
+                        _att_season_id,
                         head=_verdict_banner,
                     )
             except Exception:
@@ -820,9 +819,9 @@ async def finalize_appeals_review(
         # The division finishing may have been the season's last: a season with a window open or
         # placements to confirm is wound down and moves to Pending completion at once (#220).
         try:
-            await interaction.client.season_service.wind_down_ongoing(interaction.client, interaction.guild_id)
+            await interaction.client.season_service.wind_down_ongoing(interaction.client)
         except Exception:  # noqa: BLE001 — never fail the approval on the season's next stage
-            log.exception("could not wind the season of server %s down", interaction.guild_id)
+            log.exception("could not wind the season down")
 
         # Audit log APPEALS_REVIEW_APPROVED
         old_val = _json.dumps({"status": RoundStatus.AWAITING_APPEAL_VERDICTS.value})
@@ -836,7 +835,7 @@ async def finalize_appeals_review(
         try:
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
-                    "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                    "SELECT 1 FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
                     (division_id,),
                 )
                 srv_row = await cursor.fetchone()
@@ -849,7 +848,6 @@ async def finalize_appeals_review(
                     + f"  old={old_val}\n  new={new_val}"
                 )
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    int(srv_row["server_id"]),
                     summary,
                 )
         except Exception:
@@ -1007,7 +1005,7 @@ async def _save_session_result_in_tx(
     submitted_at = datetime.now(timezone.utc).isoformat()
     cursor = await db.execute(
         """
-        SELECT s.status AS season_status, (SELECT server_id FROM server_configs LIMIT 1) AS server_id
+        SELECT s.status AS season_status
         FROM rounds r
         JOIN divisions d ON d.id = r.division_id
         JOIN seasons s ON s.id = d.season_id
@@ -1020,7 +1018,6 @@ async def _save_session_result_in_tx(
         raise SeasonImmutableError(
             f"Round {round_id} belongs to an archived season — results cannot be submitted."
         )
-    server_id_for_profile: int | None = season_row["server_id"] if season_row else None
 
     cursor = await db.execute(
         """
@@ -1044,7 +1041,7 @@ async def _save_session_result_in_tx(
     _profile_id_map: dict[int, int | None] = {}
     for row in driver_rows:
         driver_profile_id: int | None = None
-        if server_id_for_profile is not None:
+        if season_row is not None:
             driver_profile_id = await resolve_driver_profile_id(
                 row["driver_user_id"], db
             )
@@ -1091,7 +1088,7 @@ async def amend_session_result(
         # Immutability guard: reject writes to archived seasons
         cursor = await db.execute(
             """
-            SELECT s.status AS season_status, (SELECT server_id FROM server_configs LIMIT 1) AS server_id, s.id AS season_id
+            SELECT s.status AS season_status, s.id AS season_id
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
@@ -1104,7 +1101,6 @@ async def amend_session_result(
             raise SeasonImmutableError(
                 f"Round {round_id} belongs to an archived season — results cannot be amended."
             )
-        server_id_for_profile: int | None = season_row["server_id"] if season_row else None
         season_id: int | None = season_row["season_id"] if season_row else None
 
         # **Nothing is superseded here, and nothing keeps the classification being replaced.**
@@ -1154,7 +1150,7 @@ async def amend_session_result(
         for i, dr in enumerate(new_driver_rows, start=1):
             driver_user_id = _get(dr, "driver_user_id")
             drv_profile_id: int | None = None
-            if server_id_for_profile is not None and driver_user_id is not None:
+            if season_row is not None and driver_user_id is not None:
                 drv_profile_id = await resolve_driver_profile_id(
                     driver_user_id, db
                 )
@@ -1195,8 +1191,7 @@ async def amend_session_result(
     from services import standings_service, results_post_service  # lazy imports
 
     rctx = await _get_round_context(db_path, round_id)
-    server_id = rctx["server_id"]
-    guild = bot.get_guild(server_id)
+    guild = await league_guild(bot)
     if guild is not None:
         await results_post_service.delete_and_repost_final_results(
             db_path, round_id, division_id, guild,
@@ -1209,7 +1204,6 @@ async def amend_session_result(
         await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
 
     await bot.output_router.post_log(
-        server_id,
         f"<@{amended_by}> | RESULT_AMENDED | Success\n"
         f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
         f"  round: {rctx['round_number']}, session: {session_type.value}",
@@ -2027,14 +2021,8 @@ class _ConfigSelectView(discord.ui.View):
 # Private helpers
 # ---------------------------------------------------------------------------
 
-async def _get_server_id_for_round(db_path: str, round_id: int) -> int:
-    """Resolve server_id from a round_id via the division → season chain."""
-    ctx = await _get_round_context(db_path, round_id)
-    return ctx["server_id"]
-
-
 async def _get_round_context(db_path: str, round_id: int) -> dict:
-    """Return server_id, season_id, season_number, round_number, round_format and
+    """Return season_id, season_number, round_number, round_format and
     division_name for a round.
 
     `_resubmit_collection_task` reads `season_id` and `round_format`, and neither was selected
@@ -2044,7 +2032,7 @@ async def _get_round_context(db_path: str, round_id: int) -> dict:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id, s.id AS season_id, s.season_number, r.round_number,
+            SELECT s.id AS season_id, s.season_number, r.round_number,
                    r.format AS round_format, d.name AS division_name
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
@@ -2061,7 +2049,6 @@ async def _get_round_context(db_path: str, round_id: int) -> dict:
 
 async def _build_division_validation_data(
     division_id: int,
-    server_id: int,
     bot,
 ) -> tuple[set[int], set[int], int | None, dict[int, int], set[int]]:
     """Build validation structures for the given division.
@@ -2144,7 +2131,7 @@ async def other_active_team_assignments(
         from services.driver_service import current_account_map
 
         cursor = await db.execute(
-            "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "SELECT 1 FROM rounds r JOIN divisions d ON d.id = r.division_id "
             "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
             (round_id,),
         )
@@ -2499,7 +2486,6 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                    d.mention_role_id,
                    drc.results_channel_id,
                    s.id           AS season_id,
-                   (SELECT server_id FROM server_configs LIMIT 1) AS server_id,
                    s.season_number
             FROM rounds r
             JOIN divisions d   ON d.id = r.division_id
@@ -2523,7 +2509,6 @@ async def run_result_submission_job(round_id: int, bot) -> None:
         )
         return
 
-    server_id: int = ctx["server_id"]
     division_id: int = ctx["division_id"]
     division_name: str = ctx["division_name"]
     round_number: int = ctx["round_number"]
@@ -2563,13 +2548,12 @@ async def run_result_submission_job(round_id: int, bot) -> None:
         # The division finishing may have been the season's last: a season with a window open or
         # placements to confirm is wound down and moves to Pending completion at once (#220).
         try:
-            await bot.season_service.wind_down_ongoing(bot, server_id)
+            await bot.season_service.wind_down_ongoing(bot)
         except Exception:  # noqa: BLE001 — never fail the job on the season's next stage
-            log.exception("could not wind the season of server %s down", server_id)
+            log.exception("could not wind the season down")
         log.info(
-            "run_result_submission_job: results module disabled for server %s — round %s "
+            "run_result_submission_job: results module disabled — round %s "
             "closed without results",
-            server_id,
             round_id,
         )
         return
@@ -2577,11 +2561,10 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # 3. Get guild + results channel
     # ------------------------------------------------------------------
-    guild = bot.get_guild(server_id)  # type: ignore[attr-defined]
+    guild = await league_guild(bot)  # type: ignore[attr-defined]
     if guild is None:
         log.error(
-            "run_result_submission_job: guild %s not in cache for round %s",
-            server_id,
+            "run_result_submission_job: the league's server is not in the cache for round %s",
             round_id,
         )
         return
@@ -2597,9 +2580,8 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     results_channel = guild.get_channel(results_channel_id)
     if results_channel is None:
         log.error(
-            "run_result_submission_job: results channel %s not found in guild %s (round %s)",
+            "run_result_submission_job: results channel %s not found (round %s)",
             results_channel_id,
-            server_id,
             round_id,
         )
         return
@@ -2614,7 +2596,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             reserve_team_role_id,
             driver_team_map,
             reserve_driver_ids,
-        ) = await _build_division_validation_data(division_id, server_id, bot)
+        ) = await _build_division_validation_data(division_id, bot)
     except Exception:
         log.exception(
             "run_result_submission_job: failed to build validation data for round %s",
@@ -2626,7 +2608,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # 5. Create submission channel
     # ------------------------------------------------------------------
     # Look up both of the league's roles and the bot-command channel for channel setup
-    server_cfg = await bot.config_service.get_server_config(server_id)  # type: ignore[attr-defined]
+    server_cfg = await bot.config_service.get_server_config()  # type: ignore[attr-defined]
     admin_role: discord.Role | None = None
     league_admin_role: discord.Role | None = None
     bot_cmd_channel_id: int | None = None
@@ -2754,7 +2736,6 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 # Validation failed — these are error strings
                 error_list = "\n".join(f"• {e}" for e in result)
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    server_id,
                     f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_REJECTED | \n"
                     f"  season: {season_number}, division: {division_name!r}\n"
                     f"  round: {round_number}, session: {session_type.value}\n"
@@ -2780,7 +2761,6 @@ async def run_result_submission_job(round_id: int, bot) -> None:
 
             # Log accepted input (with raw content for auditability)
             await bot.output_router.post_log(  # type: ignore[attr-defined]
-                server_id,
                 f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_ACCEPTED | Success\n"
                 f"  season: {season_number}, division: {division_name!r}\n"
                 f"  round: {round_number}, session: {session_type.value}\n"
@@ -3097,13 +3077,12 @@ async def enter_resubmit_flow(
     try:
         async with get_connection(db_path) as db:
             cursor = await db.execute(
-                "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                "SELECT 1 FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
                 (division_id,),
             )
             srv_row = await cursor.fetchone()
         if srv_row:
             await bot.output_router.post_log(
-                int(srv_row["server_id"]),
                 f"<@{actor_id}> | RESULTS_RESUBMISSION_STAGED_DISCARD | Success\n"
                 f"  round_id: {round_id} ({state.division_name})\n"
                 f"  discarded_count: {discarded_count}\n"
@@ -3156,7 +3135,6 @@ async def enter_resubmit_flow(
     try:
         if srv_row:
             await bot.output_router.post_log(
-                int(srv_row["server_id"]),
                 f"<@{actor_id}> | RESULTS_RESUBMISSION | Started\n"
                 f"  round_id: {round_id} ({state.division_name})\n"
                 f"  Previous staged penalties discarded: {discarded_count}",
@@ -3223,18 +3201,17 @@ async def _resubmit_collection_task(
         await sub_channel.send("❌ Resubmission failed: this round could not be found.")
         return
 
-    server_id: int = ctx["server_id"]
     season_id: int = ctx["season_id"]
     division_name: str = ctx["division_name"]
     round_number: int = ctx["round_number"]
     round_format = RoundFormat(ctx["round_format"])
 
     # Read for `_ConfigSelectView`, which asks the league manager tier of whoever presses it.
-    server_cfg = await bot.config_service.get_server_config(server_id)
+    server_cfg = await bot.config_service.get_server_config()
 
-    guild = bot.get_guild(server_id)
+    guild = await league_guild(bot)
     if guild is None:
-        log.error("_resubmit_collection_task: guild %s not found for round %s", server_id, round_id)
+        log.error("_resubmit_collection_task: the league's server was not found for round %s", round_id)
         return
 
     async def _cancelled() -> None:
@@ -3242,7 +3219,6 @@ async def _resubmit_collection_task(
         await sub_channel.send("↩️ **Resubmission cancelled.** The earlier results stand.")
         try:
             await bot.output_router.post_log(
-                server_id,
                 f"<@{actor}> | RESULTS_RESUBMISSION | Cancelled\n"
                 f"  round_id: {round_id} ({division_name})",
             )
@@ -3259,7 +3235,7 @@ async def _resubmit_collection_task(
             reserve_team_role_id,
             driver_team_map,
             reserve_driver_ids,
-        ) = await _build_division_validation_data(division_id, server_id, bot)
+        ) = await _build_division_validation_data(division_id, bot)
     except Exception:
         log.exception("_resubmit_collection_task: failed to build validation data for round %s", round_id)
         await sub_channel.send(

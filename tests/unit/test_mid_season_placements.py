@@ -227,7 +227,7 @@ async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the
     assert "Old" not in text, "a cancelled division has no lineup to confirm"
     assert "Do you confirm these placements?" in messages[-1][0]
     (view,) = _RecordedView.made
-    view.record_fingerprint.assert_awaited_once_with(SERVER_ID, 1)
+    view.record_fingerprint.assert_awaited_once_with(1)
     view.bind.assert_awaited_once()
 
 
@@ -267,7 +267,7 @@ async def test_confirming_after_the_season_moved_on_still_reports_the_placements
 
     cog.bot.placement_service.commit_mid_season_placements.assert_awaited_once()
     assert "1 placement(s) confirmed" in interaction.followup.send.await_args.args[0]
-    assert "placements: 1" in cog.bot.output_router.post_log.await_args.args[1]
+    assert "placements: 1" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 # ── The mid-season button ──────────────────────────────────────────────────────────

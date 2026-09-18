@@ -270,7 +270,7 @@ class ImageConfigService:
             ).fetchall()
         return {row["slot"]: row["colour"] for row in rows}
 
-    async def season_division_names(self, server_id: int) -> list[str]:
+    async def season_division_names(self) -> list[str]:
         """The divisions the per-tier colour check measures against, by tier.
 
         The season a league is working on: ACTIVE if there is one, else SETUP — the same

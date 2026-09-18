@@ -105,7 +105,7 @@ def _cog(db_path, **overrides):
     # anywhere along it fail this test rather than hide behind an early return.
     cog._team_name_problems = AsyncMock(return_value=[])
     cog._lineup_problems = AsyncMock(return_value=[])
-    cog._get_pending_for_server = MagicMock(return_value=_pending())
+    cog._get_pending = MagicMock(return_value=_pending())
     # The season is in Placements with every signup settled and every channel set; the
     # gates of issue #220 have tests of their own in test_placements_confirmation.py.
     from models.season import SeasonStage
@@ -160,7 +160,7 @@ async def test_a_season_is_actually_approved(db_path):
 async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
     cog = _cog(db_path)
     cog._pending = {}
-    cog._get_pending_for_server = MagicMock(return_value=None)
+    cog._get_pending = MagicMock(return_value=None)
     interaction = _interaction()
 
     await _run(cog, interaction)

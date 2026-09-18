@@ -50,7 +50,7 @@ async def test_post_log_returns_the_posted_message():
     sent = []
     router = OutputRouter(_bot(_channel(sent)))
 
-    message = await router.post_log(1, "something happened")
+    message = await router.post_log("something happened")
 
     assert message is not None
     assert message.jump_url == "http://j/0"
@@ -62,7 +62,7 @@ async def test_a_split_block_returns_its_first_message():
     sent = []
     router = OutputRouter(_bot(_channel(sent)))
 
-    message = await router.post_log(1, "\n".join(f"line {i}" * 40 for i in range(200)))
+    message = await router.post_log("\n".join(f"line {i}" * 40 for i in range(200)))
 
     assert len(sent) > 1, "this content was meant to be split"
     assert message.jump_url == "http://j/0"
@@ -89,7 +89,7 @@ async def test_post_log_returns_none_when_the_server_has_no_config():
     bot = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=None)
 
-    assert await OutputRouter(bot).post_log(1, "anything") is None
+    assert await OutputRouter(bot).post_log("anything") is None
 
 
 @pytest.mark.asyncio
@@ -101,4 +101,4 @@ async def test_post_log_returns_none_when_the_channel_cannot_be_reached():
         return_value=MagicMock(log_channel_id=99, interaction_channel_id=98)
     )
 
-    assert await OutputRouter(bot).post_log(1, "anything") is None
+    assert await OutputRouter(bot).post_log("anything") is None

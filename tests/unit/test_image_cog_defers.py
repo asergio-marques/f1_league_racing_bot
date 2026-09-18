@@ -130,7 +130,7 @@ class _Toggled:
         self._reply = AsyncMock()
         self._log = AsyncMock()
 
-    async def _aspect_blocking_reasons_if_enabled(self, server_id, aspect):
+    async def _aspect_blocking_reasons_if_enabled(self, aspect):
         return self._blocking
 
 

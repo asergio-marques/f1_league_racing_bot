@@ -60,4 +60,4 @@ async def test_the_current_account_leaving_is_reported(tmp_path):
     cog = await _cog(tmp_path)
     await SignupCog.on_member_remove(cog, _member(CURRENT))
     cog.bot.output_router.post_log.assert_awaited_once()
-    assert "Driver left server" in cog.bot.output_router.post_log.await_args.args[1]
+    assert "Driver left server" in cog.bot.output_router.post_log.await_args.args[0]

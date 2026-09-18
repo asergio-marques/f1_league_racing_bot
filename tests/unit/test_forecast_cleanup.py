@@ -259,7 +259,7 @@ class TestFlushPendingDeletions:
             await db.commit()
 
         bot = _make_bot(db_path, test_mode_active=False)
-        await flush_pending_deletions(server_id=1, bot=bot)
+        await flush_pending_deletions(bot=bot)
 
         # All rows gone
         async with get_connection(db_path) as db:
@@ -278,7 +278,7 @@ class TestFlushPendingDeletions:
         await _seed_base(db_path)
 
         bot = _make_bot(db_path, test_mode_active=False)
-        await flush_pending_deletions(server_id=1, bot=bot)  # should not raise
+        await flush_pending_deletions(bot=bot)  # should not raise
 
         bot.get_channel.assert_not_called()
 
@@ -318,7 +318,7 @@ class TestFlushPendingDeletions:
             new_callable=AsyncMock,
             return_value=True,
         ) as mock_discord_delete:
-            await flush_pending_deletions(server_id=1, bot=bot)
+            await flush_pending_deletions(bot=bot)
 
         # _discord_delete called exactly once per accumulated row (4 total)
         assert mock_discord_delete.call_count == 4
@@ -481,7 +481,7 @@ class TestPostPhaseMessageChain:
         # Phase 1 posted as **text**.
         bot = self._bot_posting(db_path, _make_mock_message(111))
         await post_phase_message(
-            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            bot, round_id=1, division_id=1, channel_id=99,
             phase_number=1, text="phase 1 forecast",
         )
         assert (await _get_stored_row(db_path, 1, 1, 1)) is not None
@@ -489,7 +489,7 @@ class TestPostPhaseMessageChain:
         # Phase 2 posted as a **graphic**, superseding it.
         bot2 = self._bot_attaching(db_path, _make_mock_message(222))
         await post_phase_message(
-            bot2, round_id=1, division_id=1, server_id=1, channel_id=99,
+            bot2, round_id=1, division_id=1, channel_id=99,
             phase_number=2, text="phase 2 forecast",
             attachment=MagicMock(), attachment_text="<@&1>", supersedes=1,
         )
@@ -508,7 +508,7 @@ class TestPostPhaseMessageChain:
 
         bot = self._bot_attaching(db_path, _make_mock_message(333))
         await post_phase_message(
-            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            bot, round_id=1, division_id=1, channel_id=99,
             phase_number=2, text="phase 2 forecast",
             attachment=MagicMock(), attachment_text="<@&1>",
         )
@@ -517,7 +517,7 @@ class TestPostPhaseMessageChain:
         # Phase 3's render failed, so the text is posted — and still supersedes.
         bot3 = self._bot_posting(db_path, _make_mock_message(444))
         await post_phase_message(
-            bot3, round_id=1, division_id=1, server_id=1, channel_id=99,
+            bot3, round_id=1, division_id=1, channel_id=99,
             phase_number=3, text="phase 3 forecast", supersedes=2,
         )
 
@@ -534,7 +534,7 @@ class TestPostPhaseMessageChain:
 
         bot = self._bot_posting(db_path, _make_mock_message(111))
         await post_phase_message(
-            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            bot, round_id=1, division_id=1, channel_id=99,
             phase_number=2, text="phase 2 forecast",
         )
 
@@ -542,7 +542,7 @@ class TestPostPhaseMessageChain:
         failing = _make_bot(db_path)
         failing.output_router.post_forecast = AsyncMock(return_value=None)
         result = await post_phase_message(
-            failing, round_id=1, division_id=1, server_id=1, channel_id=99,
+            failing, round_id=1, division_id=1, channel_id=99,
             phase_number=3, text="phase 3 forecast", supersedes=2,
         )
 
@@ -611,7 +611,7 @@ class TestTheForecastGraphicIsDiscarded:
         bot.get_channel.return_value.send = AsyncMock(return_value=_make_mock_message(222))
 
         await post_phase_message(
-            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            bot, round_id=1, division_id=1, channel_id=99,
             phase_number=2, text="phase 2 forecast",
             attachment=self._attachment(png), attachment_text="<@&1>",
         )
@@ -635,7 +635,7 @@ class TestTheForecastGraphicIsDiscarded:
         )
 
         await post_phase_message(
-            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            bot, round_id=1, division_id=1, channel_id=99,
             phase_number=2, text="phase 2 forecast",
             attachment=self._attachment(png), attachment_text="<@&1>",
         )
@@ -660,7 +660,7 @@ class TestTheForecastGraphicIsDiscarded:
         )
 
         result = await post_phase_message(
-            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            bot, round_id=1, division_id=1, channel_id=99,
             phase_number=2, text="phase 2 forecast",
             attachment=self._attachment(png), attachment_text="<@&1>",
         )
@@ -681,7 +681,7 @@ class TestTheForecastGraphicIsDiscarded:
         bot.get_channel.return_value = MagicMock()  # not specced as a TextChannel
 
         result = await post_phase_message(
-            bot, round_id=1, division_id=1, server_id=1, channel_id=99,
+            bot, round_id=1, division_id=1, channel_id=99,
             phase_number=2, text="phase 2 forecast",
             attachment=self._attachment(png), attachment_text="<@&1>",
         )

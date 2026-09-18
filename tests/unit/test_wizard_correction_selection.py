@@ -129,7 +129,7 @@ async def _select(ctx, parameter: str, wizard=None):
     if wizard is not None:
         ctx.signup_svc.get_wizard = AsyncMock(return_value=wizard)
     await ctx.svc.select_correction_parameter(
-        SERVER_ID, DRIVER_ID, parameter, ctx.guild
+        DRIVER_ID, parameter, ctx.guild
     )
 
 
@@ -165,7 +165,7 @@ async def test_a_driver_with_no_wizard_is_left_alone(correction):
     correction.signup_svc.get_wizard = AsyncMock(return_value=None)
 
     await correction.svc.select_correction_parameter(
-        SERVER_ID, DRIVER_ID, "platform", correction.guild
+        DRIVER_ID, "platform", correction.guild
     )
 
     correction.driver_service.transition.assert_not_awaited()
@@ -200,12 +200,12 @@ async def test_the_selection_window_is_cancelled(correction):
     """The manager has chosen, so the five-minute timeout must not still fire and release
     the driver from a correction they are part-way through."""
     task = MagicMock()
-    correction.svc._correction_tasks[(SERVER_ID, DRIVER_ID)] = task
+    correction.svc._correction_tasks[DRIVER_ID] = task
 
     await _select(correction, "platform")
 
     task.cancel.assert_called_once()
-    assert (SERVER_ID, DRIVER_ID) not in correction.svc._correction_tasks
+    assert DRIVER_ID not in correction.svc._correction_tasks
 
 
 async def test_a_fresh_inactivity_deadline_is_armed(correction):

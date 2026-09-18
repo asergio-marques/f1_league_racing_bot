@@ -62,7 +62,7 @@ def _bind(interaction: MagicMock, cog: MagicMock) -> None:
 
 def _pending() -> PendingConfig:
     return PendingConfig(
-        server_id=1, divisions=[PendingDivision(name="Pro", role_id=1)]
+        divisions=[PendingDivision(name="Pro", role_id=1)]
     )
 
 
@@ -215,7 +215,7 @@ async def test_a_successful_import_reaches_the_log(monkeypatch):
     await modal.on_submit(interaction)
 
     cog.bot.output_router.post_log.assert_awaited_once()
-    assert "/round add-bulk" in cog.bot.output_router.post_log.await_args.args[1]
+    assert "/round add-bulk" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 # ── The XML modal takes the same path ─────────────────────────────────────
@@ -285,7 +285,7 @@ async def _run_round_add(interaction, cog, **kwargs):
 def _add_cog(cfg: PendingConfig) -> MagicMock:
     cog = MagicMock()
     cog._pending = {42: cfg}
-    cog._get_pending_for_server = MagicMock(return_value=cfg)
+    cog._get_pending = MagicMock(return_value=cfg)
     cog.bot.db_path = ":memory:"
     cog.bot.output_router.post_log = AsyncMock()
     cog._snapshot_pending = AsyncMock()

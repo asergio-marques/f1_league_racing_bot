@@ -114,7 +114,6 @@ class PreviewContext:
     all — flow through all twelve builders unchanged (046).
     """
 
-    server_id: int
     season_number: int
     division_id: int
     division_name: str
@@ -198,7 +197,6 @@ def _fabricated_driver(index: int, team_name: str, seat_number: int, *, collecte
 
 async def resolve_context(
     bot,
-    server_id: int,
     division_name: str | None = None,
     *,
     guild=None,
@@ -284,7 +282,6 @@ async def resolve_context(
         )
 
     context = PreviewContext(
-        server_id=server_id,
         season_number=season.season_number,
         division_id=division.id,
         division_name=division.name,
@@ -424,7 +421,7 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
             )
 
     context.teams = teams
-    context.nationality_collected = await _nationality_collected(bot, context.server_id)
+    context.nationality_collected = await _nationality_collected(bot)
 
     # The first link of the name chain is the account's display name on the server at the
     # moment of generation, which only the guild can answer. Read through the same helper the
@@ -521,7 +518,7 @@ def _drivers_from_teams(
     return fabricated, bool(fabricated)
 
 
-async def _nationality_collected(bot, server_id: int) -> bool:
+async def _nationality_collected(bot) -> bool:
     """True where the league collects a driver's nationality at all.
 
     A preview reads the switch the posting paths read, and now through the very function
@@ -532,7 +529,7 @@ async def _nationality_collected(bot, server_id: int) -> bool:
     """
     from services.image_results_post import _nationality_collected as read_switch
 
-    return await read_switch(bot.db_path, server_id)
+    return await read_switch(bot.db_path)
 
 
 # ── Asset directories ─────────────────────────────────────────────────────

@@ -129,7 +129,7 @@ def _directory_signature(directory: Path) -> list:
     return [_path_signature(p) for p in entries]
 
 
-async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerprint:
+async def take_fingerprint(bot, season_id: int) -> SeasonFingerprint:
     """Fingerprint everything `/season placements-review` reports for *season_id*.
 
     One connection for the lot. Never raises: a fingerprint that could not be taken is an
@@ -250,8 +250,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     await _rows(
                         db,
                         "SELECT weather_module_enabled, signup_module_enabled "
-                        "FROM server_configs WHERE server_id = ?",
-                        server_id,
+                        "FROM server_configs",
                     ),
                     await _rows(
                         db,
@@ -275,8 +274,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
             areas["test mode"] = _digest(
                 await _rows(
                     db,
-                    "SELECT test_mode_active FROM server_configs WHERE server_id = ?",
-                    server_id,
+                    "SELECT test_mode_active FROM server_configs",
                 )
             )
             areas["team list"] = _digest(

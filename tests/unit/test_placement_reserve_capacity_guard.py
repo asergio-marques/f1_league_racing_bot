@@ -185,7 +185,7 @@ async def test_a_placement_into_an_ordinary_team_is_not_refused_for_reserve_capa
     template = _template_file(tmp_path, reserve_slots=3)
     service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
-    await service._guard_reserve_capacity(SERVER_ID, division_id, ORDINARY)
+    await service._guard_reserve_capacity(division_id, ORDINARY)
 
 
 # ── The measurement it does exist to make ─────────────────────────────────
@@ -197,7 +197,7 @@ async def test_a_reserve_placement_past_the_slots_is_refused(tmp_path):
     service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
     with pytest.raises(ValueError) as excinfo:
-        await service._guard_reserve_capacity(SERVER_ID, division_id, RESERVE)
+        await service._guard_reserve_capacity(division_id, RESERVE)
 
     message = str(excinfo.value)
     assert "4 reserve drivers" in message
@@ -210,7 +210,7 @@ async def test_a_reserve_placement_within_the_slots_is_allowed(tmp_path):
     template = _template_file(tmp_path, reserve_slots=5)
     service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
-    await service._guard_reserve_capacity(SERVER_ID, division_id, RESERVE)
+    await service._guard_reserve_capacity(division_id, RESERVE)
 
 
 async def test_drivers_on_ordinary_teams_do_not_count_towards_the_reserve_block(tmp_path):
@@ -219,7 +219,7 @@ async def test_drivers_on_ordinary_teams_do_not_count_towards_the_reserve_block(
     template = _template_file(tmp_path, reserve_slots=2)
     service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
-    await service._guard_reserve_capacity(SERVER_ID, division_id, RESERVE)
+    await service._guard_reserve_capacity(division_id, RESERVE)
 
 
 # ── Everything it must not raise for ──────────────────────────────────────
@@ -231,7 +231,7 @@ async def test_an_unknown_team_is_left_to_the_check_that_reports_it(tmp_path):
     template = _template_file(tmp_path, reserve_slots=3)
     service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
 
-    await service._guard_reserve_capacity(SERVER_ID, division_id, "No Such Team")
+    await service._guard_reserve_capacity(division_id, "No Such Team")
 
 
 async def test_the_lineup_aspect_being_off_lets_every_placement_through(tmp_path):
@@ -240,7 +240,7 @@ async def test_the_lineup_aspect_being_off_lets_every_placement_through(tmp_path
     template = _template_file(tmp_path, reserve_slots=3)
     service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}, toggle=False))
 
-    await service._guard_reserve_capacity(SERVER_ID, division_id, RESERVE)
+    await service._guard_reserve_capacity(division_id, RESERVE)
 
 
 async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
@@ -252,7 +252,7 @@ async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
     )
     service = _service(db_path, bot)
 
-    await service._guard_reserve_capacity(SERVER_ID, division_id, RESERVE)
+    await service._guard_reserve_capacity(division_id, RESERVE)
 
 
 async def test_no_bot_means_no_guard(tmp_path):
@@ -260,7 +260,7 @@ async def test_no_bot_means_no_guard(tmp_path):
 
     db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
     await PlacementService(db_path)._guard_reserve_capacity(
-        SERVER_ID, division_id, RESERVE
+        division_id, RESERVE
     )
 
 
@@ -280,7 +280,6 @@ async def test_an_ordinary_placement_survives_a_full_reserve_block_through_assig
     guild.fetch_member = AsyncMock(return_value=None)
 
     result = await service.assign_driver(
-        server_id=SERVER_ID,
         driver_profile_id=9999,
         division_id=division_id,
         team_name=ORDINARY,
@@ -301,7 +300,6 @@ async def test_a_reserve_overflow_still_reaches_the_caller_through_assign_driver
 
     with pytest.raises(ValueError) as excinfo:
         await service.assign_driver(
-            server_id=SERVER_ID,
             driver_profile_id=9999,
             division_id=division_id,
             team_name=RESERVE,

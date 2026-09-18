@@ -54,6 +54,7 @@ def _make_cog(*, test_mode: bool = True, config_missing: bool = False) -> _Cog:
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
     bot.config_service = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(
         return_value=None if config_missing else SimpleNamespace(test_mode_active=test_mode)
     )
@@ -346,7 +347,7 @@ async def test_a_successful_removal_is_logged_with_the_id_as_well_as_the_name():
     ):
         await _remove(cog, interaction, user_id="4242")
 
-    logged = cog.bot.output_router.post_log.await_args.args[1]
+    logged = cog.bot.output_router.post_log.await_args.args[0]
     assert "roster remove" in logged
     assert "4242" in logged
     assert "Test Lewis" in logged

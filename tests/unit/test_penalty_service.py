@@ -650,6 +650,7 @@ async def test_apply_penalties_reposts_when_not_skipping(tmp_path):
     guild.get_channel = get_channel
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.get_guild.return_value = guild
     bot.output_router.post_log = AsyncMock()
 

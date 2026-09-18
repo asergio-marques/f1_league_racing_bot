@@ -247,7 +247,7 @@ async def test_the_league_is_told_the_amendment_never_finished(tmp_path):
     await _recover_orphaned_amend_channels(bot)
 
     bot.output_router.post_log.assert_awaited()
-    logged = str(bot.output_router.post_log.await_args.args[1])
+    logged = str(bot.output_router.post_log.await_args.args[0])
     assert str(ROUND_ID) in logged or "amend" in logged.lower()
 
 

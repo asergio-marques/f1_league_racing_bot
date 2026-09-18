@@ -313,7 +313,5 @@ async def test_a_placed_or_departed_driver_is_not_listed(tmp_path):
         ],
     )
 
-    assert await PlacementService(db_path, bot=MagicMock()).get_unassigned_drivers_seeded(
-        
-    ) == []
+    assert await PlacementService(db_path, bot=MagicMock()).get_unassigned_drivers_seeded() == []
 

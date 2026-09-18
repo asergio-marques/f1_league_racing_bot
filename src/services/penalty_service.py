@@ -427,8 +427,7 @@ async def apply_penalties(
     )
     async with get_connection(db_path) as db2:
         cursor2 = await db2.execute(
-            "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
-            (division_id,),
+            "SELECT 1 FROM divisions WHERE id = ?", (division_id,)
         )
         srv_row = await cursor2.fetchone()
     if srv_row:
@@ -437,7 +436,7 @@ async def apply_penalties(
             f"  round_id: {round_id}\n"
             f"  penalties: {details}"
         )
-        await bot.output_router.post_log(int(srv_row["server_id"]), details_msg)
+        await bot.output_router.post_log(details_msg)
 
     # Cascade recompute standings, then repost. The guild is resolved first so the
     # recomputation orders a full tie on the names the repost below will draw.
@@ -445,12 +444,13 @@ async def apply_penalties(
         guild = None
         async with get_connection(db_path) as db3:
             cursor3 = await db3.execute(
-                "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
-                (division_id,),
+                "SELECT 1 FROM divisions WHERE id = ?", (division_id,)
             )
             row3 = await cursor3.fetchone()
         if row3:
-            guild = bot.get_guild(int(row3["server_id"]))
+            from utils.league_server import league_guild
+
+            guild = await league_guild(bot)
 
         await results_post_service.recompute_standings_from_round(
             db_path, division_id, round_id, guild, bot

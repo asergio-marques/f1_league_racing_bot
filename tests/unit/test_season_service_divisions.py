@@ -234,7 +234,6 @@ async def test_a_setup_season_is_rebuilt_with_its_divisions_and_rounds(tmp_path)
     [season] = await service.load_all_setup_seasons()
 
     assert season["season_id"] == SEASON_ID
-    assert season["server_id"] == SERVER_ID
     assert season["season_number"] == 5
     assert season["game_edition"] == 25
     assert season["start_date"] == date(2026, 1, 1)
@@ -270,8 +269,8 @@ async def test_the_previous_season_number_is_incremented(tmp_path):
     db_path = await _make_db(tmp_path, name="increment")
     service = SeasonService(db_path)
 
-    await service.increment_previous_season_number(SERVER_ID)
-    await service.increment_previous_season_number(SERVER_ID)
+    await service.increment_previous_season_number()
+    await service.increment_previous_season_number()
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

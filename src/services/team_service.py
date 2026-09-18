@@ -139,7 +139,7 @@ class TeamService:
         )
         return True
 
-    async def get_default_teams(self, server_id: int) -> list[DefaultTeam]:
+    async def get_default_teams(self) -> list[DefaultTeam]:
         """Return all default teams for this server, the Reserve team included."""
         async with get_connection(self._db_path) as db:
             if await self._ensure_reserve(db):
@@ -152,7 +152,7 @@ class TeamService:
         return [_row_to_default_team(r) for r in rows]
 
     async def add_default_team(
-        self, server_id: int, name: str, max_seats: int = 2
+        self, name: str, max_seats: int = 2
     ) -> DefaultTeam:
         """Add a new default team.  Raises ValueError on duplicate or Reserve name."""
         if name == _RESERVE_NAME:
@@ -186,7 +186,7 @@ class TeamService:
         return DefaultTeam(id=row_id, name=name, max_seats=max_seats, is_reserve=False)
 
     async def rename_default_team(
-        self, server_id: int, current_name: str, new_name: str
+        self, current_name: str, new_name: str
     ) -> None:
         """Rename a default team.  Raises ValueError if protected or name conflict."""
         if current_name == _RESERVE_NAME:
@@ -258,9 +258,9 @@ class TeamService:
     # Division seeding (US4/US6)
     # ------------------------------------------------------------------
 
-    async def seed_division_teams(self, division_id: int, server_id: int) -> None:
+    async def seed_division_teams(self, division_id: int) -> None:
         """Copy default_teams into team_instances and pre-create seats for the division."""
-        defaults = await self.get_default_teams(server_id)
+        defaults = await self.get_default_teams()
         async with get_connection(self._db_path) as db:
             for team in defaults:
                 cursor = await db.execute(
@@ -304,7 +304,7 @@ class TeamService:
     # ------------------------------------------------------------------
 
     async def _get_setup_season_divisions(
-        self, server_id: int, season_id: int
+        self, season_id: int
     ) -> list[int]:
         """Return division IDs for a SETUP season.  Raises if not in SETUP."""
         async with get_connection(self._db_path) as db:
@@ -328,14 +328,14 @@ class TeamService:
         return [r["id"] for r in div_rows]
 
     async def season_team_add(
-        self, server_id: int, season_id: int, name: str, max_seats: int = 2
+        self, season_id: int, name: str, max_seats: int = 2
     ) -> int:
         """Add a team to all divisions of a SETUP season.  Returns division count."""
         if name == _RESERVE_NAME:
             raise ValueError(
                 f'The Reserve team is protected and cannot be modified.'
             )
-        division_ids = await self._get_setup_season_divisions(server_id, season_id)
+        division_ids = await self._get_setup_season_divisions(season_id)
         async with get_connection(self._db_path) as db:
             for div_id in division_ids:
                 conflict = await (
@@ -371,14 +371,14 @@ class TeamService:
         return len(division_ids)
 
     async def season_team_rename(
-        self, server_id: int, season_id: int, current_name: str, new_name: str
+        self, season_id: int, current_name: str, new_name: str
     ) -> int:
         """Rename a team across all divisions of a SETUP season.  Returns division count."""
         if current_name == _RESERVE_NAME:
             raise ValueError(
                 f'The Reserve team is protected and cannot be modified.'
             )
-        division_ids = await self._get_setup_season_divisions(server_id, season_id)
+        division_ids = await self._get_setup_season_divisions(season_id)
         async with get_connection(self._db_path) as db:
             # Only the new name is validated (FR-011), once per division since uniqueness
             # is division-scoped. Every division is checked before any is written, so a
@@ -399,14 +399,14 @@ class TeamService:
         return len(division_ids)
 
     async def season_team_remove(
-        self, server_id: int, season_id: int, name: str
+        self, season_id: int, name: str
     ) -> int:
         """Remove a team from all divisions of a SETUP season.  Returns division count."""
         if name == _RESERVE_NAME:
             raise ValueError(
                 f'The Reserve team is protected and cannot be modified.'
             )
-        division_ids = await self._get_setup_season_divisions(server_id, season_id)
+        division_ids = await self._get_setup_season_divisions(season_id)
         async with get_connection(self._db_path) as db:
             for div_id in division_ids:
                 instance_row = await (
@@ -459,7 +459,7 @@ class TeamService:
         ]
 
     async def get_setup_season_team_names(
-        self, server_id: int, season_id: int
+        self, season_id: int
     ) -> set[str]:
         """Return unique non-reserve team names across all divisions of a SETUP season."""
         async with get_connection(self._db_path) as db:

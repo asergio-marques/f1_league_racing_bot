@@ -81,7 +81,7 @@ async def _make_db(tmp_path, *, status: str = "SETUP", name: str = "division_add
 
 
 def _pending(*divisions: PendingDivision) -> PendingConfig:
-    return PendingConfig(server_id=SERVER_ID, divisions=list(divisions), season_id=7)
+    return PendingConfig(divisions=list(divisions), season_id=7)
 
 
 def _division(name="Pro", tier=1, *, id=11):
@@ -138,7 +138,7 @@ def _make_cog(
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
     cog._pending = {ACTOR_ID: cfg} if cfg is not None else {}
-    cog._get_pending_for_server = MagicMock(return_value=cfg)
+    cog._get_pending = MagicMock(return_value=cfg)
     cog._snapshot_pending = AsyncMock(return_value=None)
     cog._reload_pending_from_db = AsyncMock(return_value=None)
     return cog
@@ -384,7 +384,7 @@ async def test_the_addition_is_logged(tmp_path):
 
     await _add(cog, _interaction())
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "/division add" in logged
     assert "Am" in logged
 
@@ -525,7 +525,7 @@ async def test_the_new_division_is_seeded_with_teams(tmp_path):
 
     await _duplicate(cog, _interaction())
 
-    cog.bot.team_service.seed_division_teams.assert_awaited_once_with(12, SERVER_ID)
+    cog.bot.team_service.seed_division_teams.assert_awaited_once_with(12)
 
 
 async def test_the_pending_config_is_reloaded_from_what_was_written(tmp_path):
@@ -573,7 +573,7 @@ async def test_the_copy_is_logged(tmp_path):
 
     await _duplicate(cog, _interaction(), day_offset=2, hour_offset=1.0)
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[1])
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "/division duplicate" in logged
     assert "Pro" in logged and "Am" in logged
     assert "+2d" in logged

@@ -1022,7 +1022,6 @@ async def post_attendance_sheet(
 
             await retry_service.enqueue(
                 db_path,
-                server_id=guild.id,
                 channel_id=channel_id,
                 content=content,
                 failure_reason=f"attendance sheet for division {division_id}: {exc}",
@@ -1190,8 +1189,7 @@ async def _sheet_attachment(
         )
         from services.image_attendance_service import DriverRecord, resolve_drawing
 
-        server_id = guild.id
-        if not await attendance_enabled(bot, server_id):
+        if not await attendance_enabled(bot):
             return None
 
         from services.image_results_post import (
@@ -1217,7 +1215,7 @@ async def _sheet_attachment(
         # every graphic shares, called rather than restated (wip-spec § "The name of a person").
         display_names = await _driver_names(bot, guild, user_ids, division_id=division_id)
         nationalities = await _nationalities(bot, user_ids, division_id=division_id)
-        collected = await _nationality_collected(db_path, server_id)
+        collected = await _nationality_collected(db_path)
 
         # The team of a row is the team of the division seating the driver **at the moment of
         # generation** — the reserve team for a reserve — and never the team whose car they
@@ -1260,16 +1258,16 @@ async def _sheet_attachment(
             nationality_collected=collected,
         )
 
-        render = await render_sheet(bot, server_id, drawing)
+        render = await render_sheet(bot, drawing)
         label = (
             f"{division_name} — attendance after round {round_number}"
             if occasion.names_a_round
             else f"{division_name} — attendance, {occasion.label()}"
         )
         if render.notices:
-            await report_notices(bot, server_id, label, render.notices)
+            await report_notices(bot, label, render.notices)
         if render.problem:
-            await report(bot, server_id, label, render.problem)
+            await report(bot, label, render.problem)
         if not render.draws:
             return None
 
@@ -1435,7 +1433,6 @@ async def enforce_attendance_sanctions(
     db_path: str,
     round_id: int,
     division_id: int,
-    server_id: int,
     season_id: int,
     head=None,
 ) -> None:
@@ -1521,7 +1518,6 @@ async def enforce_attendance_sanctions(
                     other_divisions.setdefault(other["division_id"], set()).add(profile_id)
             try:
                 await placement.sack_driver(
-                    server_id=server_id,
                     driver_profile_id=profile_id,
                     season_id=season_id,
                     acting_user_id=acting_id,
@@ -1531,7 +1527,6 @@ async def enforce_attendance_sanctions(
                 )
                 sanctioned_profile_ids.add(profile_id)
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    server_id,
                     f"ATTENDANCE_AUTOSACK | {_driver_ref(discord_user_id_int, test_display_name)}"
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}",
                 )
@@ -1548,7 +1543,6 @@ async def enforce_attendance_sanctions(
             except ValueError:
                 # Driver already NOT_SIGNED_UP — emit no-op log and continue (I1 edge case).
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    server_id,
                     f"ATTENDANCE_AUTOSACK | No-op | driver_profile_id={profile_id} "
                     f"already NOT_SIGNED_UP (total={total})",
                 )
@@ -1593,7 +1587,6 @@ async def enforce_attendance_sanctions(
                 # keeps a seat throughout, their roles are swapped once, and the lineup is
                 # posted once rather than twice.
                 await placement.move_driver(
-                    server_id=server_id,
                     driver_profile_id=profile_id,
                     season_id=season_id,
                     from_division_id=division_id,
@@ -1606,7 +1599,6 @@ async def enforce_attendance_sanctions(
                 )
                 sanctioned_profile_ids.add(profile_id)
                 await bot.output_router.post_log(  # type: ignore[attr-defined]
-                    server_id,
                     f"ATTENDANCE_AUTORESERVE | {_driver_ref(discord_user_id_int, test_display_name)}"
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autoreserve_threshold}"
                     f" → moved to {reserve_team_name}",
@@ -1667,7 +1659,6 @@ async def recalculate_attendance_for_round(
     db_path: str,
     round_id: int,
     division_id: int,
-    server_id: int,
     season_id: int,
 ) -> None:
     """Re-run the full attendance pipeline for an amended round (FR-028–FR-031).
@@ -1719,7 +1710,7 @@ async def recalculate_attendance_for_round(
 
     # FR-031: re-post sheet and re-evaluate sanctions.
     await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
-    await enforce_attendance_sanctions(bot, guild, db_path, round_id, division_id, server_id, season_id)
+    await enforce_attendance_sanctions(bot, guild, db_path, round_id, division_id, season_id)
 
 
 
@@ -1783,7 +1774,7 @@ async def recalculation_faults(
         thresholds
         and (thresholds["autoreserve_threshold"] or thresholds["autosack_threshold"])
     )
-    attendance_graphics = await aspect_attaches_files(bot, guild.id, "attendance")
+    attendance_graphics = await aspect_attaches_files(bot, "attendance")
 
     faults: list[str] = []
     for row in division_rows:

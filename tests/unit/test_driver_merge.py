@@ -122,7 +122,7 @@ async def _snapshot(db_path: str) -> dict[str, list[tuple]]:
 
 
 async def _reassign(db_path: str, old: str, new: str):
-    return await DriverService(db_path).reassign_user_id(SERVER_ID, old, new, 77, "Manager")
+    return await DriverService(db_path).reassign_user_id(old, new, 77, "Manager")
 
 
 async def _profiles(db_path: str) -> list[tuple]:

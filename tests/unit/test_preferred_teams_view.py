@@ -79,6 +79,7 @@ def _interaction(*, user_id: str = DRIVER_ID, wizard=None):
     interaction.followup.send = AsyncMock()
 
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.wizard_service = MagicMock()
     bot.wizard_service.get_wizard_by_channel = AsyncMock(
         return_value=_wizard() if wizard is None else wizard
@@ -91,7 +92,7 @@ def _interaction(*, user_id: str = DRIVER_ID, wizard=None):
 
 def _chosen(interaction) -> list:
     return [
-        call.args[2]
+        call.args[1]
         for call in interaction.client.wizard_service.handle_preferred_teams_button.await_args_list
     ]
 
@@ -110,7 +111,6 @@ async def _view(*, registered: bool = False, team_names=None, excluded=None):
     if registered:
         return PreferredTeamsButtonView()
     return PreferredTeamsButtonView(
-        server_id=SERVER_ID,
         discord_user_id=DRIVER_ID,
         bot=MagicMock(),
         team_names=team_names if team_names is not None else TEAMS,
@@ -309,7 +309,7 @@ async def test_no_preference_advances_the_wizard_the_same_way_a_team_does():
 
     team_call = team.client.wizard_service.handle_preferred_teams_button.await_args
     none_call = none.client.wizard_service.handle_preferred_teams_button.await_args
-    assert team_call.args[:2] == none_call.args[:2]
+    assert team_call.args[0] == none_call.args[0]
 
 
 async def test_cancelling_withdraws_the_signup():

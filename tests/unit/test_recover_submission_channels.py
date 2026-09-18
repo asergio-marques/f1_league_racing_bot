@@ -158,6 +158,7 @@ def _channel(*, fetch_fails: bool = False, delete_fails: bool = False):
 
 def _bot(db_path: str, *, guild_missing: bool = False, channel=None):
     stub = MagicMock()
+    stub.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     stub.db_path = db_path
     stub.add_view = MagicMock()
     stub.output_router = MagicMock()
@@ -205,7 +206,7 @@ async def _rows(db_path, table) -> int:
 
 def _logged(stub) -> str:
     return "\n".join(
-        str(call.args[1]) for call in stub.output_router.post_log.await_args_list
+        str(call.args[0]) for call in stub.output_router.post_log.await_args_list
     )
 
 

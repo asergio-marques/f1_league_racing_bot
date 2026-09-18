@@ -142,7 +142,7 @@ async def test_twenty_notices_post_one_message_not_twenty():
         for i in range(20)
     ]
 
-    await ImageRenderService.report_notices(bot, 1, notices)
+    await ImageRenderService.report_notices(bot, notices)
 
     assert bot.output_router.post_log.await_count == 1
 
@@ -151,7 +151,7 @@ async def test_twenty_notices_post_one_message_not_twenty():
 async def test_the_posted_message_is_returned_so_a_caller_can_link_to_it():
     bot = _bot()
 
-    message = await ImageRenderService.report_notices(bot, 1, [_notice()])
+    message = await ImageRenderService.report_notices(bot, [_notice()])
 
     assert message.jump_url == "http://j/1"
 
@@ -160,7 +160,7 @@ async def test_the_posted_message_is_returned_so_a_caller_can_link_to_it():
 async def test_nothing_is_posted_and_none_returned_for_no_notices():
     bot = _bot()
 
-    assert await ImageRenderService.report_notices(bot, 1, []) is None
+    assert await ImageRenderService.report_notices(bot, []) is None
     bot.output_router.post_log.assert_not_awaited()
 
 
@@ -170,7 +170,7 @@ async def test_a_log_failure_is_swallowed_and_reported_as_none():
     bot = MagicMock()
     bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("no permission"))
 
-    assert await ImageRenderService.report_notices(bot, 1, [_notice()]) is None
+    assert await ImageRenderService.report_notices(bot, [_notice()]) is None
 
 
 # ── The standings path no longer floods the log ───────────────────────────
@@ -188,8 +188,8 @@ async def test_the_standings_path_posts_one_grouped_message():
         for i in range(20)
     ]
 
-    await report_notices(bot, 1, "drivers standings — Season 3", notices)
+    await report_notices(bot, "drivers standings — Season 3", notices)
 
     assert bot.output_router.post_log.await_count == 1
-    posted = bot.output_router.post_log.await_args.args[1]
+    posted = bot.output_router.post_log.await_args.args[0]
     assert "drivers standings — Season 3" in posted

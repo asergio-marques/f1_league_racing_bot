@@ -25,8 +25,7 @@ async def run_mystery_notice(round_id: int, bot: "Bot") -> None:
     """Post the mystery round notice for *round_id* to its forecast channel."""
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
-            "SELECT r.id, r.format, d.id AS division_id, d.forecast_channel_id, "
-            "       (SELECT server_id FROM server_configs LIMIT 1) AS server_id "
+            "SELECT r.id, r.format, d.id AS division_id, d.forecast_channel_id "
             "FROM rounds r "
             "JOIN divisions d ON d.id = r.division_id "
             "JOIN seasons s ON s.id = d.season_id "
@@ -58,13 +57,12 @@ async def run_mystery_notice(round_id: int, bot: "Bot") -> None:
     from services.forecast_cleanup_service import post_phase_message
     from services.image_weather_post import attach_forecast
 
-    attachment = await attach_forecast(bot, round_id, 1, row["server_id"])
+    attachment = await attach_forecast(bot, round_id, 1)
 
     await post_phase_message(
         bot,
         round_id=round_id,
         division_id=row["division_id"],
-        server_id=row["server_id"],
         channel_id=row["forecast_channel_id"],
         phase_number=0,
         text=mystery_notice_message(),

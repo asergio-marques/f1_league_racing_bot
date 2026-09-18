@@ -131,7 +131,6 @@ async def _unassign(service, division_id: int = DIVISION_A, *, member=None) -> d
     guild.get_member = MagicMock(return_value=member)
     guild.fetch_member = AsyncMock(return_value=member)
     return await service.unassign_driver(
-        server_id=SERVER_ID,
         driver_profile_id=PROFILE_ID,
         division_id=division_id,
         season_id=SEASON_ID,
@@ -374,8 +373,7 @@ async def test_the_unassignment_is_audited_against_its_division(tmp_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type, division_id FROM audit_entries WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT change_type, division_id FROM audit_entries",
         )
         row = await cursor.fetchone()
     assert row["change_type"] == "DRIVER_UNASSIGN"

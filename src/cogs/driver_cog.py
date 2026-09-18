@@ -105,7 +105,6 @@ class DriverCog(commands.Cog):
             )
             return
 
-        server_id = interaction.guild_id
         new_user_id = str(new_user.id)
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
@@ -114,7 +113,7 @@ class DriverCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         try:
             outcome = await self.bot.driver_service.reassign_user_id(  # type: ignore[attr-defined]
-                server_id, resolved_old_id, new_user_id, actor_id, actor_name
+                resolved_old_id, new_user_id, actor_id, actor_name
             )
         except ValueError as exc:
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
@@ -129,14 +128,14 @@ class DriverCog(commands.Cog):
         if interaction.guild is not None:
             try:
                 problems += await self.bot.placement_service.move_driver_roles(  # type: ignore[attr-defined]
-                    interaction.guild, server_id, profile.id, replaced, new_user_id
+                    interaction.guild, profile.id, replaced, new_user_id
                 )
             except Exception as exc:  # noqa: BLE001 — the reassign stands whatever Discord says
                 log.exception("reassign: could not move the roles of driver %s", profile.id)
                 problems.append(f"the roles could not be moved: {exc}")
             try:
                 problems += await self.bot.wizard_service.move_held_channel(  # type: ignore[attr-defined]
-                    server_id, replaced, new_user_id, interaction.guild
+                    replaced, new_user_id, interaction.guild
                 )
             except Exception as exc:  # noqa: BLE001 — as the roles
                 log.exception("reassign: could not move the signup channel of %s", replaced)
@@ -163,9 +162,8 @@ class DriverCog(commands.Cog):
         await interaction.followup.send(reply, ephemeral=True)
         # After the reply, so that reading the image configuration and touching the league's
         # directory can never eat into Discord's three seconds.
-        await self._remove_old_portrait(server_id, replaced)
+        await self._remove_old_portrait(replaced)
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reassign | Success\n"
             f"  replaced: <@{replaced}>\n"
             f"  current: {new_user.display_name} (<@{new_user_id}>)\n"
@@ -173,11 +171,11 @@ class DriverCog(commands.Cog):
             + "".join(f"\n  not done: {p}" for p in problems),
         )
         log.info(
-            "Driver account changed on server %s: %s → %s by %s",
-            server_id, replaced, new_user_id, actor_name,
+            "Driver account changed: %s → %s by %s",
+            replaced, new_user_id, actor_name,
         )
 
-    async def _remove_old_portrait(self, server_id: int, discord_user_id: str) -> None:
+    async def _remove_old_portrait(self, discord_user_id: str) -> None:
         """Delete the portrait the bot obtained for the account a driver has just replaced.
 
         A portrait is a cache of one Discord account's own profile picture. Everything is
@@ -212,8 +210,8 @@ class DriverCog(commands.Cog):
             )
         except Exception:  # noqa: BLE001 — a portrait never fails a command
             log.warning(
-                "/driver reassign: could not remove the portrait of %s on server %s",
-                discord_user_id, server_id, exc_info=True,
+                "/driver reassign: could not remove the portrait of %s",
+                discord_user_id, exc_info=True,
             )
 
     # ------------------------------------------------------------------
@@ -238,7 +236,6 @@ class DriverCog(commands.Cog):
         team: str,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
@@ -285,7 +282,6 @@ class DriverCog(commands.Cog):
 
         try:
             result = await self.bot.placement_service.assign_driver(  # type: ignore[attr-defined]
-                server_id=server_id,
                 driver_profile_id=profile.id,
                 division_id=division_id,
                 team_name=team,
@@ -308,15 +304,14 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver assign | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)\n"
             f"  team: {result['team_name']}\n"
             f"  division: {result['division_name']}",
         )
         log.info(
-            "assign: server=%s user=%s → team=%s division=%s by %s",
-            server_id, user.id, team, division_name, actor_name,
+            "assign: user=%s → team=%s division=%s by %s",
+            user.id, team, division_name, actor_name,
         )
 
     # ------------------------------------------------------------------
@@ -339,7 +334,6 @@ class DriverCog(commands.Cog):
         division: str,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
@@ -383,7 +377,6 @@ class DriverCog(commands.Cog):
 
         try:
             result = await self.bot.placement_service.unassign_driver(  # type: ignore[attr-defined]
-                server_id=server_id,
                 driver_profile_id=profile.id,
                 division_id=division_id,
                 season_id=season.id,
@@ -403,14 +396,13 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver unassign | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)\n"
             f"  division: {result['division_name']}",
         )
         log.info(
-            "unassign: server=%s user=%s from division=%s by %s",
-            server_id, user.id, division, actor_name,
+            "unassign: user=%s from division=%s by %s",
+            user.id, division, actor_name,
         )
 
     # ------------------------------------------------------------------
@@ -444,7 +436,6 @@ class DriverCog(commands.Cog):
         assigning again.
         """
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
@@ -486,7 +477,6 @@ class DriverCog(commands.Cog):
 
         try:
             result = await self.bot.placement_service.move_driver(  # type: ignore[attr-defined]
-                server_id=server_id,
                 driver_profile_id=profile.id,
                 season_id=season.id,
                 from_division_id=resolved_from[0],
@@ -508,7 +498,6 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver move | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)\n"
             f"  from: {result['from_team']}, {result['from_division']}\n"
@@ -536,7 +525,6 @@ class DriverCog(commands.Cog):
     ) -> None:
         """Release a committed driver from one division (issue #220), in the ongoing stages."""
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
@@ -567,7 +555,6 @@ class DriverCog(commands.Cog):
 
         try:
             result = await self.bot.placement_service.release_driver(  # type: ignore[attr-defined]
-                server_id=server_id,
                 driver_profile_id=profile.id,
                 division_id=resolved[0],
                 season_id=season.id,
@@ -585,7 +572,6 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver release | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)\n"
             f"  division: {result['division_name']}",
@@ -611,7 +597,6 @@ class DriverCog(commands.Cog):
         from models.driver_profile import DriverState
 
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
@@ -654,7 +639,6 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reject | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)",
         )
@@ -677,7 +661,6 @@ class DriverCog(commands.Cog):
         user: discord.Member,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        server_id: int = interaction.guild_id  # type: ignore[assignment]
         user = await self._current_member(interaction, user)
         if user is None:
             return
@@ -706,7 +689,6 @@ class DriverCog(commands.Cog):
 
         try:
             await self.bot.placement_service.sack_driver(  # type: ignore[attr-defined]
-                server_id=server_id,
                 driver_profile_id=profile.id,
                 season_id=season.id,
                 acting_user_id=actor_id,
@@ -723,11 +705,10 @@ class DriverCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            server_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver sack | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)",
         )
         log.info(
-            "sack: server=%s user=%s by %s",
-            server_id, user.id, actor_name,
+            "sack: user=%s by %s",
+            user.id, actor_name,
         )

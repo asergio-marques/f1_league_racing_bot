@@ -214,7 +214,6 @@ async def _run(bot, db_path: str, *, head=None) -> None:
         db_path=db_path,
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
-        server_id=SERVER_ID,
         season_id=SEASON_ID,
         head=head,
     )
@@ -222,7 +221,7 @@ async def _run(bot, db_path: str, *, head=None) -> None:
 
 def _logged(bot) -> str:
     """Every log line the run posted, joined — enough to assert a marker appears."""
-    return "\n".join(str(call.args[1]) for call in bot.output_router.post_log.await_args_list)
+    return "\n".join(str(call.args[0]) for call in bot.output_router.post_log.await_args_list)
 
 
 @pytest.fixture

@@ -80,7 +80,7 @@ def _cog(db_path, *, attendance: bool = True):
         )
     )
     # No pending setup, so the command takes its active-season path.
-    cog._get_pending_for_server = MagicMock(return_value=None)
+    cog._get_pending = MagicMock(return_value=None)
     return cog
 
 

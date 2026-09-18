@@ -384,7 +384,7 @@ async def test_a_failed_post_enqueues_the_textual_sheet_for_retry(sheet_db, monk
 
     enqueued: list[dict] = []
 
-    async def _fake_enqueue(db_path, server_id, channel_id, content, failure_reason):
+    async def _fake_enqueue(db_path, channel_id, content, failure_reason):
         enqueued.append(
             {"channel_id": channel_id, "content": content, "reason": failure_reason}
         )

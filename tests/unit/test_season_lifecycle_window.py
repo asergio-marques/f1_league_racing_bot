@@ -146,13 +146,14 @@ async def test_the_forced_close_moves_the_season_on(db_path):
 
     await _season(db_path, SeasonStage.SIGNUPS)
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     cfg = MagicMock(signup_button_message_id=None, signup_channel_id=None)
     bot.signup_module_service.get_config = AsyncMock(return_value=cfg)
     bot.signup_module_service.set_window_closed = AsyncMock()
     bot.get_guild = MagicMock(return_value=None)
 
-    await execute_forced_close(SERVER_ID, bot, audit_action="SIGNUP_CLOSE")
+    await execute_forced_close(bot, audit_action="SIGNUP_CLOSE")
 
     assert await _stage(db_path) is SeasonStage.PLACEMENTS
 
@@ -165,6 +166,7 @@ async def test_a_season_that_cannot_move_on_does_not_undo_the_close(db_path):
 
     await _season(db_path, SeasonStage.SIGNUPS)
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     cfg = MagicMock(signup_button_message_id=None, signup_channel_id=None)
     bot.signup_module_service.get_config = AsyncMock(return_value=cfg)
@@ -175,6 +177,6 @@ async def test_a_season_that_cannot_move_on_does_not_undo_the_close(db_path):
         "services.season_lifecycle_service.advance_on_window_close",
         new=AsyncMock(side_effect=RuntimeError("database is locked")),
     ):
-        await execute_forced_close(SERVER_ID, bot, audit_action="SIGNUP_CLOSE")
+        await execute_forced_close(bot, audit_action="SIGNUP_CLOSE")
 
     bot.signup_module_service.set_window_closed.assert_awaited_once()

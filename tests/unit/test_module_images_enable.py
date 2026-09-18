@@ -109,7 +109,7 @@ def _replied(interaction) -> str:
 async def _audit_types(db_path: str) -> list[str]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type FROM audit_entries WHERE server_id = ?", (SERVER_ID,)
+            "SELECT change_type FROM audit_entries"
         )
         return [r["change_type"] for r in await cursor.fetchall()]
 
@@ -129,7 +129,7 @@ def _rasteriser(present: bool):
 
 async def _enable(cog, interaction, *, rasteriser: bool = True):
     with _rasteriser(rasteriser):
-        await cog._enable_images(interaction, SERVER_ID)
+        await cog._enable_images(interaction)
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +246,7 @@ async def test_the_rasteriser_check_is_not_cached(tmp_path):
         "services.image_render_service.converter_available",
         new=MagicMock(return_value=True),
     ) as available:
-        await cog._enable_images(_interaction(), SERVER_ID)
+        await cog._enable_images(_interaction())
 
     assert available.call_args.kwargs.get("use_cache") is False
 

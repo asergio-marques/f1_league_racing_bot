@@ -5,12 +5,11 @@ files on the same disk — on the Pi, the same SD card — so they insure agains
 that went somewhere unhelpful, or a migration worth undoing, and against nothing that
 happens to the card. Say so wherever a league manager might read otherwise.
 
-**The whole file is copied, not the test data within it.** `bot.db` holds every server the
-bot serves, and `test_mode_active` is a column of one server's row, so there is no
-"test data" to separate at the file level. The guarantee that a real league is never
-touched comes from the commands instead: they run only while the calling server is in test
-mode, which itself refuses to switch on while a real driver stands in a live season
-(decided 2026-09-07, the bot serving one server in practice).
+**The whole file is copied, not the test data within it.** `bot.db` holds the whole league,
+and `test_mode_active` is a column of its one configuration row, so there is no "test data"
+to separate at the file level. The guarantee that a real league is never touched comes from
+the commands instead: they run only while the league is in test mode, which itself refuses
+to switch on while a real driver stands in a live season (decided 2026-09-07).
 
 **Why the SQLite backup API and not a file copy.** `bot.db` runs in WAL, so a committed
 transaction lives in `bot.db-wal` until a checkpoint folds it into the main file. Copying

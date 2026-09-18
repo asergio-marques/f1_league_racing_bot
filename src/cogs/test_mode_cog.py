@@ -92,7 +92,7 @@ class TestModeCog(commands.Cog):
             return
 
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is not None and not config.test_mode_active:
             real_drivers = await count_live_real_drivers(
@@ -109,7 +109,6 @@ class TestModeCog(commands.Cog):
                 return
 
         new_state = await toggle_test_mode(
-            interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
         )
         if new_state:
@@ -143,7 +142,6 @@ class TestModeCog(commands.Cog):
             )
             await interaction.followup.send(msg, ephemeral=True)
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode toggle | Success\n"
                 f"  test_mode: enabled"
                 + (f"\n  seeded_configs: {', '.join(new_configs)}" if new_configs else ""),
@@ -152,14 +150,13 @@ class TestModeCog(commands.Cog):
             # Defer so the flush (multiple Discord API calls) has time to complete
             await interaction.response.defer(ephemeral=True)
             from services.forecast_cleanup_service import flush_pending_deletions
-            await flush_pending_deletions(interaction.guild_id, self.bot)  # type: ignore[attr-defined]
+            await flush_pending_deletions(self.bot)  # type: ignore[attr-defined]
             from services.test_roster_service import clear_all_test_drivers
             removed = await clear_all_test_drivers(self.bot.db_path)  # type: ignore[attr-defined]
             if removed:
                 log.info(
-                    "Test mode disabled: cleared %d fake driver(s) for server %s",
+                    "Test mode disabled: cleared %d fake driver(s)",
                     removed,
-                    interaction.guild_id,
                 )
             # The saved state goes with test mode (decided 2026-09-17): the backup commands
             # run in test mode alone, so a state kept past it is one nothing could restore.
@@ -180,7 +177,6 @@ class TestModeCog(commands.Cog):
                 msg += "\n🗑️ Deleted the saved test-mode backup."
             await interaction.followup.send(msg, ephemeral=True)
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode toggle | Success\n"
                 f"  test_mode: disabled"
                 + (f"\n  removed_fake_drivers: {removed}" if removed else "")
@@ -205,7 +201,7 @@ class TestModeCog(commands.Cog):
         signups run on being touched.
         """
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is None or not config.test_mode_active:
             await interaction.response.send_message(
@@ -215,7 +211,6 @@ class TestModeCog(commands.Cog):
             return
 
         new_state = await toggle_test_mode_nationality(
-            interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
         )
         note = (
@@ -228,7 +223,6 @@ class TestModeCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode nationality | Success\n"
             f"  test_mode_nationality: {'enabled' if new_state else 'disabled'}",
         )
@@ -245,7 +239,7 @@ class TestModeCog(commands.Cog):
     async def advance(self, interaction: discord.Interaction) -> None:
         # Check test mode is active before doing any heavy work
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is None or not config.test_mode_active:
             await interaction.response.send_message(
@@ -258,7 +252,6 @@ class TestModeCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         entry = await get_next_pending_phase(
-            interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
             self.bot.scheduler_service,  # type: ignore[attr-defined]
         )
@@ -402,7 +395,6 @@ class TestModeCog(commands.Cog):
                 ephemeral=True,
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
                 f"  phase: rsvp_notice\n"
                 f"  division: {entry['division_name']}\n"
@@ -434,7 +426,6 @@ class TestModeCog(commands.Cog):
                 ephemeral=True,
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
                 f"  phase: rsvp_last_notice\n"
                 f"  division: {entry['division_name']}\n"
@@ -467,7 +458,6 @@ class TestModeCog(commands.Cog):
                 ephemeral=True,
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
                 f"  phase: rsvp_deadline\n"
                 f"  division: {entry['division_name']}\n"
@@ -500,7 +490,6 @@ class TestModeCog(commands.Cog):
 
         # After running this phase, check if the entire season is now complete
         next_entry = await get_next_pending_phase(
-            interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
             self.bot.scheduler_service,  # type: ignore[attr-defined]
         )
@@ -512,7 +501,6 @@ class TestModeCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
             f"  phase: {phase_number}\n"
             f"  division: {entry['division_name']}\n"
@@ -530,7 +518,7 @@ class TestModeCog(commands.Cog):
     @league_admin_only
     async def review(self, interaction: discord.Interaction) -> None:
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is None or not config.test_mode_active:
             await interaction.response.send_message(
@@ -570,7 +558,7 @@ class TestModeCog(commands.Cog):
     ) -> None:
         """Set former_driver flag — only available when test mode is active."""
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is None or not config.test_mode_active:
             await interaction.response.send_message(
@@ -581,7 +569,6 @@ class TestModeCog(commands.Cog):
 
         try:
             old_val, new_val = await self.bot.driver_service.set_former_driver(  # type: ignore[attr-defined]
-                interaction.guild_id,
                 str(user.id),
                 value,
                 interaction.user.id,
@@ -599,14 +586,13 @@ class TestModeCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode set-former-driver | Success\n"
             f"  user: {user.display_name} (<@{user.id}>)\n"
             f"  former_driver: {old_val} -> {new_val}",
         )
         log.info(
-            "set-former-driver on server %s: user=%s %s→%s by %s",
-            interaction.guild_id, user.id, old_val, new_val, interaction.user,
+            "set-former-driver: user=%s %s→%s by %s",
+            user.id, old_val, new_val, interaction.user,
         )
 
     # ------------------------------------------------------------------
@@ -654,7 +640,7 @@ class TestModeCog(commands.Cog):
         run on the strength of a stale reading.
         """
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is not None and config.test_mode_active:
             return False
@@ -695,7 +681,7 @@ class TestModeCog(commands.Cog):
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
             return
         except Exception:
-            log.exception("backup save: failed for server %s", interaction.guild_id)
+            log.exception("backup save: failed")
             await interaction.followup.send(
                 "⛔ The backup could not be taken. The log channel has the detail.",
                 ephemeral=True,
@@ -713,7 +699,7 @@ class TestModeCog(commands.Cog):
             ephemeral=True,
         )
         log.info(
-            "backup save: server=%s by %s", interaction.guild_id, interaction.user
+            "backup save: by %s", interaction.user
         )
 
     # ── lock ──────────────────────────────────────────────────────────────
@@ -850,7 +836,7 @@ class TestModeCog(commands.Cog):
         nationality: str | None = None,
     ) -> None:
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is None or not config.test_mode_active:
             await interaction.response.send_message(
@@ -900,7 +886,6 @@ class TestModeCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster add | Success\n"
             f"  driver: {result['display_name']}\n"
             f"  team: {result['team_name']}\n"
@@ -925,7 +910,7 @@ class TestModeCog(commands.Cog):
         defers as normal. Do not "correct" it.
         """
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is None or not config.test_mode_active:
             await interaction.response.send_message(
@@ -952,7 +937,7 @@ class TestModeCog(commands.Cog):
         user_id: str,
     ) -> None:
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is None or not config.test_mode_active:
             await interaction.response.send_message(
@@ -987,7 +972,6 @@ class TestModeCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            interaction.guild_id,
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster remove | Success\n"
             f"  driver: {result['display_name']}\n"
             f"  team: {result['team_name']}\n"
@@ -1013,7 +997,7 @@ class TestModeCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is None or not config.test_mode_active:
             await interaction.followup.send(
@@ -1072,7 +1056,7 @@ class TestModeCog(commands.Cog):
         division: str,
     ) -> None:
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is None or not config.test_mode_active:
             await interaction.response.send_message(
@@ -1103,7 +1087,6 @@ class TestModeCog(commands.Cog):
                 f"✅ Removed **{result}** fake driver(s) from **{division}**.", ephemeral=True
             )
             await self.bot.output_router.post_log(
-                interaction.guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster clear | Success\n"
                 f"  division: {division}\n"
                 f"  removed_drivers: {result}",
@@ -1139,7 +1122,7 @@ class TestModeCog(commands.Cog):
         division: str,
     ) -> None:
         config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
-            interaction.guild_id
+
         )
         if config is None or not config.test_mode_active:
             await interaction.response.send_message(
@@ -1147,7 +1130,6 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        guild_id: int = interaction.guild_id  # type: ignore[assignment]
 
         # The attendance module gate (issue #114). A call posted while the module was on
         # leaves its `rsvp_embed_messages` row behind, so without this the command finds that
@@ -1256,7 +1238,6 @@ class _RsvpBulkSetModal(discord.ui.Modal, title="Bulk Set RSVP Statuses"):
         from db.database import get_connection as _gc
         from services.rsvp_service import _rebuild_embed_for_round, RsvpView
 
-        guild_id: int = interaction.guild_id  # type: ignore[assignment]
         applied: list[str] = []
         errors: list[str] = []
 
@@ -1339,7 +1320,6 @@ class _RsvpBulkSetModal(discord.ui.Modal, title="Bulk Set RSVP Statuses"):
 
         if applied:
             await self._bot.output_router.post_log(  # type: ignore[attr-defined]
-                guild_id,
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /test-mode rsvp set-status | {len(applied)} update(s)\n"
                 f"  division: {self._division_name}\n"
@@ -1386,7 +1366,6 @@ class _RosterImportModal(discord.ui.Modal, title="Import a test roster"):
             return
 
         seated, errors = await add_test_drivers_in_bulk(
-            interaction.guild_id,
             drivers,
             self._cog.bot.db_path,  # type: ignore[attr-defined]
         )

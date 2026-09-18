@@ -59,7 +59,7 @@ def _bot(*, module_on=True, aspect_on=True, template_valid=True):
 
 @pytest.mark.asyncio
 async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound():
-    assert await rsvp_enabled(_bot(), 1) is True
+    assert await rsvp_enabled(_bot()) is True
 
 
 @pytest.mark.asyncio
@@ -68,14 +68,14 @@ async def test_the_graphic_draws_when_module_aspect_and_template_are_all_sound()
     [{"module_on": False}, {"aspect_on": False}, {"template_valid": False}],
 )
 async def test_the_call_posts_without_an_attachment_when_anything_is_off(kwargs):
-    assert await rsvp_enabled(_bot(**kwargs), 1) is False
+    assert await rsvp_enabled(_bot(**kwargs)) is False
 
 
 @pytest.mark.asyncio
 async def test_a_reader_that_raises_never_breaks_the_call():
     bot = _bot()
     bot.image_config_service.get_toggles = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await rsvp_enabled(bot, 1) is False
+    assert await rsvp_enabled(bot) is False
 
 
 @pytest.mark.asyncio
@@ -86,7 +86,6 @@ async def test_a_render_that_raises_yields_no_attachment_rather_than_an_error():
 
     result = await try_attach(
         bot,
-        1,
         division_name="Division 1",
         round_number=1,
         round_format="NORMAL",
@@ -100,7 +99,7 @@ async def test_a_render_that_raises_yields_no_attachment_rather_than_an_error():
 async def test_no_bot_yields_no_attachment():
     assert (
         await try_attach(
-            None, 1, division_name="D", round_number=1, round_format="NORMAL",
+            None, division_name="D", round_number=1, round_format="NORMAL",
             scheduled_at=None, track_name=None,
         )
         is None

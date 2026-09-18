@@ -226,7 +226,7 @@ async def test_a_full_reset_frees_the_server_for_another(tmp_path):
     await _seed_config(db_path)
     scheduler = MagicMock()
     scheduler.cancel_all_weather_for_rounds = MagicMock()
-    await reset_server_data(SERVER_ID, db_path, scheduler, full=True)
+    await reset_server_data(db_path, scheduler, full=True)
     bot = _bot(db_path)
     cog = InitCog(bot)
     interaction = _interaction()
@@ -449,7 +449,7 @@ async def test_set_core_setting_refuses_a_column_of_the_callers_choosing(tmp_pat
     service = ConfigService(db_path)
 
     with pytest.raises(ValueError):
-        await service.set_core_setting(SERVER_ID, "test_mode_active", 0)
+        await service.set_core_setting("test_mode_active", 0)
 
     assert (await _row(db_path))["test_mode_active"] == 1
 
@@ -513,7 +513,7 @@ async def test_save_server_config_persists_the_league_admin_role(tmp_path):
 
     assert created is True
     assert (await _row(db_path))["league_admin_role_id"] == CONFIGURED_ADMIN_ROLE
-    stored = await service.get_server_config(SERVER_ID)
+    stored = await service.get_server_config()
     assert stored is not None
     assert stored.league_admin_role_id == CONFIGURED_ADMIN_ROLE
 
@@ -534,6 +534,6 @@ async def test_a_server_configured_before_the_role_existed_reads_none(tmp_path):
         )
         await db.commit()
 
-    stored = await ConfigService(db_path).get_server_config(SERVER_ID)
+    stored = await ConfigService(db_path).get_server_config()
     assert stored is not None
     assert stored.league_admin_role_id is None

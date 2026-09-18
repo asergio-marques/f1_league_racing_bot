@@ -122,6 +122,7 @@ def _penalty(driver: int = 101) -> StagedPenalty:
 
 def _state(db_path, *, staged=(), appeals=(), pardons=(), attendance_enabled=False):
     bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.add_view = MagicMock()
     bot.output_router = MagicMock()
@@ -250,7 +251,7 @@ async def _staged_column(db_path):
 
 
 def _logged(state) -> str:
-    return "\n".join(str(c.args[1]) for c in state.bot.output_router.post_log.await_args_list)
+    return "\n".join(str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list)
 
 
 # ---------------------------------------------------------------------------

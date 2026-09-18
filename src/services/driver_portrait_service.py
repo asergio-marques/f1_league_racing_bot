@@ -257,7 +257,7 @@ async def remove_portrait(db_path: str, user_id: str, directory) -> bool:
 
 
 async def assigned_driver_ids(db_path: str) -> list[str]:
-    """The Discord user IDs assigned to a seat in *server_id*'s active season.
+    """The Discord user IDs assigned to a seat in the active season.
 
     Sorted, so the daily refresh works through a roster in a stable order rather than
     whatever order SQLite happens to return -- which matters the moment a run is cut short.
@@ -303,7 +303,6 @@ async def run_daily_refresh(bot, *, now: datetime | None = None) -> int:
         if guild is None:
             log.warning("driver portraits: the league's server is not reachable")
             return 0
-        server_id = guild.id
 
         from services.image_render_service import resolve_configured_directories
 
