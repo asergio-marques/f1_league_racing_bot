@@ -756,7 +756,7 @@ class SignupModuleService:
     async def upsert_division_config(
         self, division_id: int
     ) -> None:
-        """Ensure a signup_division_config row exists for this server+division."""
+        """Ensure a signup_division_config row exists for this division."""
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "INSERT OR IGNORE INTO signup_division_config (division_id) VALUES (?)",
