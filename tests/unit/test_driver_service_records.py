@@ -525,6 +525,18 @@ async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_pat
     assert await _profile_count(db_path) == 1
 
 
+async def test_the_flag_is_set_through_a_past_account(tmp_path):
+    """Any account names the driver (issue #243), the test-mode command included."""
+    db_path = await _make_db(tmp_path)
+    await _seed_profile(db_path)
+    service = DriverService(db_path)
+    await service.reassign_user_id(SERVER_ID, OLD_USER, NEW_USER, ACTOR_ID, "Manager")
+
+    assert await service.set_former_driver(
+        SERVER_ID, OLD_USER, True, ACTOR_ID, "Manager"
+    ) == (False, True)
+
+
 # ---------------------------------------------------------------------------
 # A re-key rewrites nothing (issue #243)
 # ---------------------------------------------------------------------------

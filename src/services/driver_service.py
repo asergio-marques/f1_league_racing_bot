@@ -649,8 +649,13 @@ class DriverService:
         actor_id: int,
         actor_name: str,
     ) -> tuple[bool, bool]:
-        """Set the former_driver flag.  Returns (old_value, new_value)."""
-        profile = await self.get_profile(server_id, discord_user_id)
+        """Set the former_driver flag.  Returns (old_value, new_value).
+
+        Any account the driver has held names them (issue #243).
+        """
+        profile = await self.get_profile(
+            server_id, await self.current_account(server_id, discord_user_id)
+        )
         if profile is None:
             raise ValueError(
                 f"No driver profile found for user {discord_user_id} on this server."
