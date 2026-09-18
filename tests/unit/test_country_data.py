@@ -12,7 +12,6 @@ two files for one country, which is the duplication the rekey exists to remove.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
@@ -24,26 +23,28 @@ from utils.nationality_data import NATIONALITY_LOOKUP
 #: Recorded for a driver who stated no nationality. Not a country.
 NATIONALITY_OTHER = "Other"
 
-MIGRATION = (
-    Path(__file__).resolve().parents[2]
-    / "src" / "db" / "migrations" / "029_track_data_expansion.sql"
-)
-
-
 def seeded_track_countries() -> set[str]:
-    """The distinct ``country`` values migration 029 seeds into ``tracks``.
+    """The distinct ``country`` values the schema seeds into ``tracks``.
 
-    Read from the migration rather than from a live database: these tests run
-    offline, and the seed is the authority for what a league can be presented with
-    out of the box.
+    Read from a freshly built database rather than parsed out of a migration file, so the
+    answer does not depend on which file carries the seed — since #254 it is the baseline.
     """
-    sql = MIGRATION.read_text(encoding="utf-8")
-    block = sql.split("INSERT OR IGNORE INTO tracks", 1)[1]
-    block = block.split(";", 1)[0]
-    # Each row ends: ..., 'Country', mu, sigma)
-    rows = re.findall(r"'([^']+)',\s*[\d.]+,\s*[\d.]+\)", block)
-    assert rows, "no seeded track rows parsed from migration 029"
-    return set(rows)
+    import asyncio
+    import sqlite3
+    import tempfile
+
+    from db.database import run_migrations
+
+    with tempfile.TemporaryDirectory() as scratch:
+        path = str(Path(scratch) / "seed.db")
+        asyncio.run(run_migrations(path))
+        db = sqlite3.connect(path)
+        try:
+            rows = {r[0] for r in db.execute("SELECT DISTINCT country FROM tracks")}
+        finally:
+            db.close()
+    assert rows, "no seeded track rows in the schema"
+    return rows
 
 
 # --------------------------------------------------------------------------

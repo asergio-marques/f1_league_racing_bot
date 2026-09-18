@@ -85,7 +85,7 @@ class TestComputeRpcBeta:
 
     def test_all_28_default_tracks_produce_valid_rpc(self) -> None:
         """Smoke test: representative track mu/sigma values all produce a valid draw."""
-        # Sampled from the 28 seed rows in migration 029_track_data_expansion.sql
+        # Sampled from the 28 tracks the schema seeds
         sample_params = [
             ("Bahrain",        0.12, 0.06),
             ("Saudi Arabia",   0.08, 0.05),

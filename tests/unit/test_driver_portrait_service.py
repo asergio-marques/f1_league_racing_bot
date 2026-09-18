@@ -32,10 +32,6 @@ SERVER_ID = 4242
 NOW = datetime(2026, 9, 1, 3, 0, tzinfo=timezone.utc)
 PNG = b"\x89PNG\r\n\x1a\nFAKEBYTES"
 
-_MIGRATION = os.path.join(
-    os.path.dirname(__file__), "..", "..", "src", "db", "migrations",
-    "047_driver_portraits.sql",
-)
 
 
 @pytest.fixture
