@@ -26,6 +26,7 @@ from models.season import (  # noqa: E402
     status_of_stage,
 )
 from services.season_service import SeasonService  # noqa: E402
+from tests.support.migration_steps import migrate_before  # noqa: E402
 
 SERVER_ID = 2200
 _MIGRATIONS = os.path.join(os.path.dirname(__file__), "..", "..", "src", "db", "migrations")
@@ -33,14 +34,12 @@ _MIGRATION_057 = os.path.join(_MIGRATIONS, "057_season_lifecycle.sql")
 
 
 async def _schema_before_057(db) -> None:
-    """Raise the schema as it stood before the lifecycle migration, applied by hand.
+    """Ready a connection opened on a schema `migrate_before(path, "057")` raised.
 
-    Deliberately not `run_migrations`: the point is to hold seasons written before 057 and
-    watch 057 alone backfill them, which the schema template cannot stop short of.
+    Deliberately not `run_migrations`: the rows have to be written before 057 runs, which the
+    full schema template cannot stop short of. The chain itself is built once per session and
+    copied (#252).
     """
-    for name in sorted(f for f in os.listdir(_MIGRATIONS) if f.endswith(".sql") and f < "057"):
-        with open(os.path.join(_MIGRATIONS, name), encoding="utf-8") as fh:
-            await db.executescript(fh.read())
     # Migration 001 turns foreign keys on; the rows seeded here stand alone.
     await db.execute("PRAGMA foreign_keys = OFF")
 
@@ -105,6 +104,7 @@ def test_every_stage_names_its_transitions():
 async def test_migration_backfills_the_stage_of_existing_seasons(tmp_path):
     """Seasons already stored take the stage their status implies."""
     path = str(tmp_path / "pre_057.db")
+    migrate_before(path, "057")
     async with aiosqlite.connect(path) as db:
         await _schema_before_057(db)
         await db.executescript(
