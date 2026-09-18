@@ -89,10 +89,7 @@ def config_missing_verdicts(tmp_path, monkeypatch):
 
     fields = {f.name for f in dataclasses.fields(ImageConfig)}
     values = {name: None for name in fields}
-    values.update(
-        server_id=1,
-        template_directory="resources/_test_templates_missing_verdicts",
-    )
+    values.update(template_directory="resources/_test_templates_missing_verdicts")
     for column, default in TEMPLATE_COLUMNS.items():
         if column in fields:
             values[column] = default

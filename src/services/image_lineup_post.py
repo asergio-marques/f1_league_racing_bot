@@ -64,12 +64,12 @@ class LineupPostOutcome:
 async def lineup_enabled(bot, server_id: int) -> bool:
     """True where the module is on, the `lineup` aspect is on, and a template is named."""
     try:
-        if not await bot.module_service.is_images_enabled(server_id):
+        if not await bot.module_service.is_images_enabled():
             return False
-        toggles = await bot.image_config_service.get_toggles(server_id)
+        toggles = await bot.image_config_service.get_toggles()
         if not toggles.get("lineup"):
             return False
-        reports = await bot.image_validity_service.template_reports(server_id)
+        reports = await bot.image_validity_service.template_reports()
         report = reports.get(LINEUP_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
@@ -211,7 +211,7 @@ async def render_png(bot, server_id: int, guild, division_id: int, origin: Posti
 
     _division, drawing, members = await build_drawing(bot, guild, division_id)
 
-    config = await bot.image_config_service.get_config(server_id)
+    config = await bot.image_config_service.get_config()
     directories, directory_faults = resolve_configured_directories(
         config,
         (
@@ -229,7 +229,7 @@ async def render_png(bot, server_id: int, guild, division_id: int, origin: Posti
     from services.driver_portrait_service import refresh_before_render
 
     await refresh_before_render(
-        bot, server_id, members, config=config, directory=directories.get("driver")
+        bot, members, config=config, directory=directories.get("driver")
     )
 
     from utils.image_naming import stem_for_drawing

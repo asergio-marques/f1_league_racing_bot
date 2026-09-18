@@ -52,3 +52,28 @@ def apply(db_path: str, version: str) -> None:
         db.commit()
     finally:
         db.close()
+
+
+async def run_migrations_through(db_path: str, migration: str) -> None:
+    """`run_migrations`, stopping after *migration* (a full file name).
+
+    For a test of one historic migration: it applies that migration and nothing after it, so
+    what it asserts about the schema is what that migration left, not what the head of the
+    chain has since made of it. The later files are moved aside for the duration, which is
+    the technique `test_migration_043` established for building the database before one.
+    """
+    import shutil
+    import tempfile
+
+    from db.database import run_migrations
+
+    later = [f for f in _files() if f > migration]
+    stash = tempfile.mkdtemp(prefix="stashed-migrations-")
+    for name in later:
+        shutil.move(os.path.join(MIGRATIONS_DIR, name), os.path.join(stash, name))
+    try:
+        await run_migrations(db_path)
+    finally:
+        for name in later:
+            shutil.move(os.path.join(stash, name), os.path.join(MIGRATIONS_DIR, name))
+        os.rmdir(stash)

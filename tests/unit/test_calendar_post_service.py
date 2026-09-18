@@ -210,7 +210,7 @@ async def test_the_asset_directories_are_absolute(tmp_path):
 
     captured = {}
 
-    async def _render(server_id, image_type, spec_builder, **kwargs):
+    async def _render(image_type, spec_builder, **kwargs):
         captured["builder"] = spec_builder
         return NS(problem=None, notices=[], png_paths=[])
 
@@ -250,7 +250,7 @@ async def test_a_rejected_directory_is_carried_through_as_a_fault(tmp_path):
 
     captured = {}
 
-    async def _render(server_id, image_type, spec_builder, **kwargs):
+    async def _render(image_type, spec_builder, **kwargs):
         captured["builder"] = spec_builder
         return NS(problem=None, notices=[], png_paths=[])
 

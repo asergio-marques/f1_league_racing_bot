@@ -55,9 +55,13 @@ ROUND_JOBS = [
 ]
 SERVER_JOBS = [
     ("_signup_close_timer_job", "_signup_close_callback"),
-    ("_portrait_refresh_job", "_portrait_refresh_callback"),
 ]
 ALL_JOBS = ROUND_JOBS + SERVER_JOBS
+
+#: Jobs of the league itself, called with nothing: one bot serves one league (issue #244).
+LEAGUE_JOBS = [
+    ("_portrait_refresh_job", "_portrait_refresh_callback"),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +168,34 @@ async def test_a_registered_callback_is_called_with_the_id(job_name, callback_at
     await _job(job_name)(4242)
 
     callback.assert_awaited_once_with(4242)
+
+
+@pytest.mark.parametrize("job_name,_cb", LEAGUE_JOBS)
+async def test_a_league_job_that_fires_before_the_service_exists_skips(job_name, _cb):
+    _install(None)
+
+    await _job(job_name)()  # must not raise
+
+
+@pytest.mark.parametrize("job_name,callback_attr", LEAGUE_JOBS)
+async def test_a_league_job_with_no_callback_registered_skips(job_name, callback_attr):
+    service = _Service()
+    setattr(service, callback_attr, None)
+    _install(service)
+
+    await _job(job_name)()  # must not raise
+
+
+@pytest.mark.parametrize("job_name,callback_attr", LEAGUE_JOBS)
+async def test_a_league_job_calls_its_callback_with_nothing(job_name, callback_attr):
+    service = _Service()
+    callback = AsyncMock()
+    setattr(service, callback_attr, callback)
+    _install(service)
+
+    await _job(job_name)()
+
+    callback.assert_awaited_once_with()
 
 
 # ---------------------------------------------------------------------------

@@ -344,7 +344,7 @@ async def resolve_context(
             )
 
     context.asset_directories, context.directory_faults = await resolve_asset_directories(
-        bot, server_id
+        bot
     )
     return context
 
@@ -441,7 +441,6 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
 
     await refresh_before_render(
         bot,
-        context.server_id,
         list(members.values()),
         directory=context.asset_directories.get("driver"),
     )
@@ -552,7 +551,7 @@ ASSET_CLASS_COLUMNS: tuple[tuple[str, str], ...] = tuple(
 
 
 async def resolve_asset_directories(
-    bot, server_id: int
+    bot
 ) -> tuple[dict[str, Path], list[DirectoryFault]]:
     """The league's own asset directories, and the ones that would not resolve.
 
@@ -565,7 +564,7 @@ async def resolve_asset_directories(
 
     faults: list[DirectoryFault] = []
 
-    config = await bot.image_config_service.get_config(server_id)
+    config = await bot.image_config_service.get_config()
     if config is None:
         return {}, faults
 
@@ -626,7 +625,7 @@ async def build_calendar_preview(bot, context: PreviewContext):
     from services.calendar_post_service import tracks_by_name
     from services.image_calendar_service import build_fill_spec, resolve_drawing
 
-    config = await bot.image_config_service.get_config(context.server_id)
+    config = await bot.image_config_service.get_config()
     rounds = context.rounds
     tracks = await tracks_by_name(bot.db_path)
 
@@ -781,7 +780,7 @@ async def build_rsvp_preview(bot, context: PreviewContext):
     from services.attendance_service import derive_checkin_deadline
     from services.image_rsvp_service import build_fill_spec, resolve_drawing
 
-    config = await bot.image_config_service.get_config(context.server_id)
+    config = await bot.image_config_service.get_config()
     round_obj = context.round
     is_mystery = _format_of(round_obj) == "MYSTERY"
 
@@ -846,7 +845,7 @@ async def build_results_preview(bot, context: PreviewContext):
     from services.image_results_service import build_fill_spec, resolve_drawing
     from services.result_submission_service import get_sessions_for_format
 
-    config = await bot.image_config_service.get_config(context.server_id)
+    config = await bot.image_config_service.get_config()
     drivers = _racing_drivers(context)
     names, teams, flags, role_of = _driver_maps(context, drivers)
     round_obj = context.round

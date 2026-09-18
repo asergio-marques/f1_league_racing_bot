@@ -977,10 +977,10 @@ class SeasonCog(commands.Cog):
         Never raises for its own reasons: a fault in this reader must not block a season.
         """
         try:
-            if not await self.bot.module_service.is_images_enabled(server_id):
+            if not await self.bot.module_service.is_images_enabled():
                 return []
 
-            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
             report = reports.get("lineup_template")
             if report is None or not report.valid:
                 # An unusable template is already reported by the review's own render,
@@ -1048,14 +1048,14 @@ class SeasonCog(commands.Cog):
         from models.image_catalogues import catalogue_for
 
         try:
-            if not await self.bot.module_service.is_images_enabled(server_id):  # type: ignore[attr-defined]
+            if not await self.bot.module_service.is_images_enabled():  # type: ignore[attr-defined]
                 return None
             if not await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
-                server_id, "calendar"
+                "calendar"
             ):
                 return None
 
-            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
             report = reports.get("calendar_template")
             if report is None or not report.valid:
                 return None
@@ -1092,13 +1092,13 @@ class SeasonCog(commands.Cog):
         from models.image_catalogues import CapacityError, catalogue_for
 
         try:
-            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
+            config = await self.bot.image_config_service.get_config()  # type: ignore[attr-defined]
             if config is None or not await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
-                server_id, "calendar"
+                "calendar"
             ):
                 return []
 
-            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
             report = reports.get("calendar_template")
             if report is None or not report.valid:
                 return []  # already named by the template problems list
@@ -1158,11 +1158,11 @@ class SeasonCog(commands.Cog):
         try:
             from utils.svg_document import load_svg
 
-            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
 
             # The sheet's round grid, against the season's longest calendar.
             if await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
-                server_id, "attendance"
+                "attendance"
             ):
                 report = reports.get("attendance_template")
                 if report is not None and report.valid and report.resolved_path:
@@ -1195,13 +1195,13 @@ class SeasonCog(commands.Cog):
             # files, and a manager told "the standings template" would not know which to
             # enlarge.
             if await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
-                server_id, "standings"
+                "standings"
             ):
                 lines += await self._standings_capacity_lines(season_id, reports)
 
             # The call's session list, against the season's largest round.
             if await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
-                server_id, "rsvp"
+                "rsvp"
             ):
                 report = reports.get("rsvp_template")
                 if report is not None and report.valid and report.resolved_path:
@@ -1348,9 +1348,9 @@ class SeasonCog(commands.Cog):
 
         try:
             statuses = await self.bot.image_validity_service.aspect_statuses(server_id)  # type: ignore[attr-defined]
-            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
-            directories = await self.bot.image_validity_service.directory_reports(server_id)  # type: ignore[attr-defined]
-            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
+            directories = await self.bot.image_validity_service.directory_reports()  # type: ignore[attr-defined]
+            config = await self.bot.image_config_service.get_config()  # type: ignore[attr-defined]
         except Exception as exc:  # a review must never fail because of this section
             log.error("season review: image section failed: %s", exc)
             return ["**Image output**", "  ⚠️ Could not be read.", ""]
@@ -1382,7 +1382,7 @@ class SeasonCog(commands.Cog):
             from services.image_validity_service import templates_of_enabled_aspects
 
             drawn = templates_of_enabled_aspects(
-                await self.bot.image_config_service.get_toggles(server_id)  # type: ignore[attr-defined]
+                await self.bot.image_config_service.get_toggles()  # type: ignore[attr-defined]
             )
 
             def _detail(report) -> str:
@@ -1447,9 +1447,9 @@ class SeasonCog(commands.Cog):
         from services.image_config_service import portrait_configuration_fault
 
         try:
-            if not await self.bot.module_service.is_images_enabled(server_id):  # type: ignore[attr-defined]
+            if not await self.bot.module_service.is_images_enabled():  # type: ignore[attr-defined]
                 return None
-            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
+            config = await self.bot.image_config_service.get_config()  # type: ignore[attr-defined]
         except Exception as exc:  # never block a season because this could not be read
             log.error("season review: portrait blocker failed: %s", exc)
             return None
@@ -1465,7 +1465,7 @@ class SeasonCog(commands.Cog):
         from services.image_config_service import portrait_configuration_fault
 
         try:
-            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
+            config = await self.bot.image_config_service.get_config()  # type: ignore[attr-defined]
         except Exception as exc:  # a review must never fail because of this section
             log.error("season review: portrait settings failed: %s", exc)
             return ["  ⚠️ Driver portraits: could not be read."]
@@ -1664,7 +1664,7 @@ class SeasonCog(commands.Cog):
                     signup_line = f"  Signup: {on}"
             else:
                 signup_line = f"  Signup: {off}"
-            images_on = await self.bot.module_service.is_images_enabled(interaction.guild_id)  # type: ignore[attr-defined]
+            images_on = await self.bot.module_service.is_images_enabled()  # type: ignore[attr-defined]
             header_lines += [
                 "**Modules**",
                 f"  Weather: {on if weather_on else off}",
@@ -2401,7 +2401,7 @@ class SeasonCog(commands.Cog):
             ]
 
         # ── Images: rasteriser, templates, colours, portraits ─────────────────
-        if await self.bot.module_service.is_images_enabled(server_id):  # type: ignore[attr-defined]
+        if await self.bot.module_service.is_images_enabled():  # type: ignore[attr-defined]
             faults += await self._image_configuration_faults(server_id)
 
         return faults
@@ -2500,9 +2500,9 @@ class SeasonCog(commands.Cog):
         if not converter_available():
             faults.append(f"{CONVERTER_NAME} is not installed on this host.")
         try:
-            reports = await self.bot.image_validity_service.template_reports(server_id)  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
             drawn = templates_of_enabled_aspects(
-                await self.bot.image_config_service.get_toggles(server_id)  # type: ignore[attr-defined]
+                await self.bot.image_config_service.get_toggles()  # type: ignore[attr-defined]
             )
         except Exception as exc:  # noqa: BLE001 — a check that never ran is not a pass
             log.error("config review: the templates could not be read: %s", exc)
@@ -2566,7 +2566,7 @@ class SeasonCog(commands.Cog):
                 f"  Results: {on if await module.is_results_enabled(server_id) else off}",
                 f"  Attendance: {on if await module.is_attendance_enabled() else off}",
                 f"  Weather: {on if await module.is_weather_enabled(server_id) else off}",
-                f"  Images: {on if await module.is_images_enabled(server_id) else off}",
+                f"  Images: {on if await module.is_images_enabled() else off}",
                 "",
             ]
             teams = await self.bot.team_service.get_teams_with_roles(server_id)  # type: ignore[attr-defined]
@@ -2596,7 +2596,7 @@ class SeasonCog(commands.Cog):
                 )
             if await module.is_weather_enabled(server_id):
                 sections.append(await self._weather_review_lines(server_id))
-            if await module.is_images_enabled(server_id):
+            if await module.is_images_enabled():
                 sections.append(await self._build_image_review_section(server_id))
             for section in sections:
                 body = "\n".join(section).strip()

@@ -53,6 +53,16 @@ async def is_foreign_guild(bot: Any, guild_id: int | None) -> bool:
     return league is not None and guild_id != league
 
 
+async def league_guild(bot: Any) -> discord.Guild | None:
+    """The league's Discord server, or None where none is set up or it is not in the cache.
+
+    The one route from a scheduled job or a restart to the guild: the id lives in
+    `server_configs` and nowhere else, so nothing reads it off a data row.
+    """
+    league = await bot.config_service.get_league_server_id()
+    return None if league is None else bot.get_guild(league)
+
+
 class LeagueCommandTree(app_commands.CommandTree):
     """The command tree, refusing every command from a server that is not the league's."""
 

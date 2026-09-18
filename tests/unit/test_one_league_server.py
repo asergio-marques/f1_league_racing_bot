@@ -23,6 +23,7 @@ from utils.league_server import (  # noqa: E402
     REFUSAL,
     LeagueCommandTree,
     is_foreign_guild,
+    league_guild,
     warn_if_serving_several,
 )
 
@@ -115,6 +116,23 @@ async def test_only_another_server_is_foreign():
     assert await is_foreign_guild(bot, LEAGUE) is False
     assert await is_foreign_guild(bot, None) is False
     assert await is_foreign_guild(_bot(None), ELSEWHERE) is False
+
+
+async def test_the_league_s_guild_is_found_through_its_configuration():
+    bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=LEAGUE)
+    bot.get_guild.return_value = "the guild"
+
+    assert await league_guild(bot) == "the guild"
+    bot.get_guild.assert_called_once_with(LEAGUE)
+
+
+async def test_no_guild_before_any_server_is_set_up():
+    bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=None)
+
+    assert await league_guild(bot) is None
+    bot.get_guild.assert_not_called()
 
 
 # ── The warning to the host ───────────────────────────────────────────────

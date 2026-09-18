@@ -254,14 +254,14 @@ def service_with(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "job", [_signup_close_timer_job, _portrait_refresh_job],
+    "job,args", [(_signup_close_timer_job, (SERVER_ID,)), (_portrait_refresh_job, ())],
     ids=["signup-close", "portrait-refresh"],
 )
-async def test_a_job_firing_before_the_service_exists_is_survived(no_global, job, caplog):
+async def test_a_job_firing_before_the_service_exists_is_survived(no_global, job, args, caplog):
     """A persisted job can fire during startup, before `start()` sets the global. Raising
     inside APScheduler's executor would surface nowhere."""
     with caplog.at_level("WARNING"):
-        await job(SERVER_ID)
+        await job(*args)
 
     assert "_GLOBAL_SERVICE is None" in caplog.text
 
@@ -279,21 +279,21 @@ async def test_the_portrait_refresh_calls_its_callback(service_with):
     callback = AsyncMock(return_value=None)
     service_with(portrait_refresh=callback)
 
-    await _portrait_refresh_job(SERVER_ID)
+    await _portrait_refresh_job()
 
-    callback.assert_awaited_once_with(SERVER_ID)
+    callback.assert_awaited_once_with()
 
 
 @pytest.mark.parametrize(
-    "job", [_signup_close_timer_job, _portrait_refresh_job],
+    "job,args", [(_signup_close_timer_job, (SERVER_ID,)), (_portrait_refresh_job, ())],
     ids=["signup-close", "portrait-refresh"],
 )
-async def test_a_job_with_no_callback_registered_is_survived(service_with, job, caplog):
+async def test_a_job_with_no_callback_registered_is_survived(service_with, job, args, caplog):
     """A job persisted for a module since switched off. It must log and return rather
     than raise — the module-output rule in the direction nobody thinks about."""
     service_with()
 
     with caplog.at_level("WARNING"):
-        await job(SERVER_ID)
+        await job(*args)
 
     assert "no callback registered" in caplog.text

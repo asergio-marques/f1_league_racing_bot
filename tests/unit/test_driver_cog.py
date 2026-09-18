@@ -284,7 +284,7 @@ async def test_reassign_removes_the_portrait_of_the_account_left_behind(
 
     await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
 
-    remover.assert_awaited_once_with("db.sqlite", SERVER_ID, "4242", directory)
+    remover.assert_awaited_once_with("db.sqlite", "4242", directory)
     assert "given a new account" in _replied(interaction)
 
 

@@ -57,12 +57,12 @@ class VerdictRender:
 async def verdicts_enabled(bot, server_id: int) -> bool:
     """True where the module is on, the ``verdicts`` aspect is on, and the template is valid."""
     try:
-        if not await bot.module_service.is_images_enabled(server_id):
+        if not await bot.module_service.is_images_enabled():
             return False
-        toggles = await bot.image_config_service.get_toggles(server_id)
+        toggles = await bot.image_config_service.get_toggles()
         if not toggles.get(VERDICTS_ASPECT):
             return False
-        reports = await bot.image_validity_service.template_reports(server_id)
+        reports = await bot.image_validity_service.template_reports()
         report = reports.get(VERDICTS_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
@@ -319,7 +319,7 @@ async def render_verdict(
     )
 
     try:
-        config = await bot.image_config_service.get_config(server_id)
+        config = await bot.image_config_service.get_config()
         directories, directory_faults = resolve_configured_directories(
             config,
             (

@@ -102,24 +102,21 @@ async def _signup_close_timer_job(server_id: int) -> None:
     await cb(server_id)
 
 
-async def _portrait_refresh_job(server_id: int) -> None:
+#: One league, so one daily refresh: the job is named by what it does, not by a server.
+PORTRAIT_REFRESH_JOB_ID = "pfp_daily"
+
+
+async def _portrait_refresh_job() -> None:
     """Module-level APScheduler callable for the daily portrait refresh — picklable for
     SQLAlchemyJobStore. Delegates to the registered portrait-refresh callback."""
     if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_portrait_refresh_job fired but _GLOBAL_SERVICE is None "
-            "(server_id=%s) — skipping",
-            server_id,
-        )
+        log.warning("_portrait_refresh_job fired but _GLOBAL_SERVICE is None — skipping")
         return
     cb = _GLOBAL_SERVICE._portrait_refresh_callback
     if cb is None:
-        log.warning(
-            "_portrait_refresh_job: no callback registered (server_id=%s) — skipping",
-            server_id,
-        )
+        log.warning("_portrait_refresh_job: no callback registered — skipping")
         return
-    await cb(server_id)
+    await cb()
 
 
 async def _weather_phase_job(phase_num: int, round_id: int) -> None:
@@ -815,8 +812,8 @@ class SchedulerService:
         """Register the coroutine the daily driver-portrait refresh delegates to."""
         self._portrait_refresh_callback = callback
 
-    def schedule_portrait_refresh(self, server_id: int, time_of_day: str) -> None:
-        """Schedule the daily driver-portrait refresh for *server_id* at *time_of_day* UTC.
+    def schedule_portrait_refresh(self, time_of_day: str) -> None:
+        """Schedule the league's daily driver-portrait refresh at *time_of_day* UTC.
 
         **The one recurring trigger in this service, and deliberately so.** Every other job
         here is a one-shot ``DateTrigger`` arming a single event of a round or a season, and
@@ -833,20 +830,19 @@ class SchedulerService:
         ``replace_existing=True`` so that naming a new time re-arms rather than duplicates.
         """
         hour, _, minute = time_of_day.partition(":")
-        job_id = f"pfp_daily_{server_id}"
+        job_id = PORTRAIT_REFRESH_JOB_ID
         self._scheduler.add_job(
             _portrait_refresh_job,
             trigger=CronTrigger(hour=int(hour), minute=int(minute), timezone="UTC"),
             id=job_id,
             replace_existing=True,
-            name=f"Daily driver portrait refresh for server {server_id}",
-            kwargs={"server_id": server_id},
+            name="Daily driver portrait refresh",
         )
         log.info("Scheduled %s at %s UTC daily", job_id, time_of_day)
 
-    def cancel_portrait_refresh(self, server_id: int) -> None:
-        """Remove the daily portrait refresh for *server_id* if it exists."""
-        job_id = f"pfp_daily_{server_id}"
+    def cancel_portrait_refresh(self) -> None:
+        """Remove the daily portrait refresh if it exists."""
+        job_id = PORTRAIT_REFRESH_JOB_ID
         try:
             self._scheduler.remove_job(job_id)
             log.info("Removed %s", job_id)

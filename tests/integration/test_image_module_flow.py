@@ -57,26 +57,26 @@ def module_service(db_path):
 
 async def _enable(module_service, config_service):
     """The service-layer half of `_enable_images`."""
-    await config_service.create_with_defaults(SERVER_ID)
-    await module_service.set_images_enabled(SERVER_ID, True)
+    await config_service.create_with_defaults()
+    await module_service.set_images_enabled(True)
 
 
 # ── T011 ──────────────────────────────────────────────────────────────────
 
 
 async def test_enable_creates_defaults(module_service, config_service):
-    assert await module_service.is_images_enabled(SERVER_ID) is False
+    assert await module_service.is_images_enabled() is False
 
     await _enable(module_service, config_service)
 
-    assert await module_service.is_images_enabled(SERVER_ID) is True
+    assert await module_service.is_images_enabled() is True
 
-    cfg = await config_service.get_config(SERVER_ID)
+    cfg = await config_service.get_config()
     assert cfg is not None
     assert cfg.template_directory == "resources/defaults/templates"
     assert cfg.fastest_lap_colour == "#A020F0"
 
-    toggles = await config_service.get_toggles(SERVER_ID)
+    toggles = await config_service.get_toggles()
     assert len(toggles) == 9
     assert set(toggles) == set(ASPECTS)
     assert not any(toggles.values())
@@ -84,10 +84,10 @@ async def test_enable_creates_defaults(module_service, config_service):
 
 async def test_enable_is_idempotent_across_repeat_calls(module_service, config_service):
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "resources/mine")
+    await config_service.set_field("template_directory", "resources/mine")
     await _enable(module_service, config_service)
 
-    cfg = await config_service.get_config(SERVER_ID)
+    cfg = await config_service.get_config()
     assert cfg.template_directory == "resources/mine"
 
 
@@ -98,29 +98,29 @@ async def test_disable_retains_configuration(module_service, config_service):
     await _enable(module_service, config_service)
 
     # Customise something from every group of settable values.
-    await config_service.set_field(SERVER_ID, "template_directory", "resources/my_templates")
-    await config_service.set_field(SERVER_ID, "calendar_template", "my_calendar.svg")
-    await config_service.set_field(SERVER_ID, "flag_directory", "resources/my_flags")
-    await config_service.set_field(SERVER_ID, "fastest_lap_colour", "#00FF88")
-    await config_service.set_field(SERVER_ID, "time_zone", "Europe/Lisbon")
-    await config_service.set_aspect(SERVER_ID, "standings", True)
+    await config_service.set_field("template_directory", "resources/my_templates")
+    await config_service.set_field("calendar_template", "my_calendar.svg")
+    await config_service.set_field("flag_directory", "resources/my_flags")
+    await config_service.set_field("fastest_lap_colour", "#00FF88")
+    await config_service.set_field("time_zone", "Europe/Lisbon")
+    await config_service.set_aspect("standings", True)
 
-    before = await config_service.get_config(SERVER_ID)
-    toggles_before = await config_service.get_toggles(SERVER_ID)
+    before = await config_service.get_config()
+    toggles_before = await config_service.get_toggles()
 
-    await module_service.set_images_enabled(SERVER_ID, False)
-    assert await module_service.is_images_enabled(SERVER_ID) is False
+    await module_service.set_images_enabled(False)
+    assert await module_service.is_images_enabled() is False
 
     # Nothing may be cleared by the disable itself.
-    during = await config_service.get_config(SERVER_ID)
+    during = await config_service.get_config()
     assert during.template_directory == "resources/my_templates"
-    assert await config_service.get_toggles(SERVER_ID) == toggles_before
+    assert await config_service.get_toggles() == toggles_before
 
     await _enable(module_service, config_service)
 
-    after = await config_service.get_config(SERVER_ID)
+    after = await config_service.get_config()
     assert after == before, "re-enabling must restore the exact prior configuration"
-    assert await config_service.get_toggles(SERVER_ID) == toggles_before
+    assert await config_service.get_toggles() == toggles_before
     assert toggles_before["standings"] is True
 
 
@@ -130,17 +130,17 @@ async def test_disable_preserves_every_settable_column(module_service, config_se
     probes = {}
     for column in ("template_directory", *TEMPLATE_COLUMNS, *ASSET_DIRECTORIES):
         probes[column] = f"custom_{column}"
-        await config_service.set_field(SERVER_ID, column, probes[column])
+        await config_service.set_field(column, probes[column])
     for aspect in ASPECTS:
-        await config_service.set_aspect(SERVER_ID, aspect, True)
+        await config_service.set_aspect(aspect, True)
 
-    await module_service.set_images_enabled(SERVER_ID, False)
+    await module_service.set_images_enabled(False)
     await _enable(module_service, config_service)
 
-    cfg = await config_service.get_config(SERVER_ID)
+    cfg = await config_service.get_config()
     for column, expected in probes.items():
         assert getattr(cfg, column) == expected
-    assert all((await config_service.get_toggles(SERVER_ID)).values())
+    assert all((await config_service.get_toggles()).values())
 
 
 # ── T013 ──────────────────────────────────────────────────────────────────
@@ -148,18 +148,18 @@ async def test_disable_preserves_every_settable_column(module_service, config_se
 
 async def test_commands_gated_when_disabled(module_service, config_service):
     """A server that never enabled the module has no configuration to read."""
-    assert await module_service.is_images_enabled(SERVER_ID) is False
-    assert await config_service.get_config(SERVER_ID) is None
-    assert not any((await config_service.get_toggles(SERVER_ID)).values())
+    assert await module_service.is_images_enabled() is False
+    assert await config_service.get_config() is None
+    assert not any((await config_service.get_toggles()).values())
 
 
 async def test_gate_reads_flag_not_row_presence(module_service, config_service):
     """After a disable the row still exists, so the gate must read the flag."""
     await _enable(module_service, config_service)
-    await module_service.set_images_enabled(SERVER_ID, False)
+    await module_service.set_images_enabled(False)
 
-    assert await config_service.get_config(SERVER_ID) is not None
-    assert await module_service.is_images_enabled(SERVER_ID) is False
+    assert await config_service.get_config() is not None
+    assert await module_service.is_images_enabled() is False
 
 
 # ── T028 — templates relocate independently (SC-002) ──────────────────────
@@ -428,15 +428,15 @@ async def test_template_relocation(module_service, config_service, template_dir)
     from services.image_validity_service import evaluate_all_templates
 
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field("template_directory", "templates")
 
-    config = await config_service.get_config(SERVER_ID)
+    config = await config_service.get_config()
     reports = evaluate_all_templates(config, root=template_dir)
     assert all(r.valid for r in reports.values()), "baseline: all sixteen resolve"
 
     # Point one template at a file that is not there.
-    await config_service.set_field(SERVER_ID, "standings_drivers_template", "gone.svg")
-    config = await config_service.get_config(SERVER_ID)
+    await config_service.set_field("standings_drivers_template", "gone.svg")
+    config = await config_service.get_config()
     reports = evaluate_all_templates(config, root=template_dir)
 
     assert not reports["standings_drivers_template"].valid
@@ -462,9 +462,9 @@ async def test_season_review_and_config_view_agree(
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
 
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
-    await config_service.set_field(SERVER_ID, "weather_p3_sprint_template", "gone.svg")
-    await config_service.set_aspect(SERVER_ID, "weather", True)
+    await config_service.set_field("template_directory", "templates")
+    await config_service.set_field("weather_p3_sprint_template", "gone.svg")
+    await config_service.set_aspect("weather", True)
 
     monkeypatch.setattr(
         "utils.paths.PROJECT_ROOT", template_dir, raising=False
@@ -711,7 +711,7 @@ async def test_render_without_season(
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field("template_directory", "templates")
 
     for key, filename in TEMPLATE_COLUMNS.items():
         # The results (039), standings (040), attendance (041) and weather (042) templates
@@ -744,7 +744,6 @@ async def test_render_without_season(
     for kind, templates in KIND_TEMPLATES.items():
         for template_key in templates:
             outcome = await service.render(
-                SERVER_ID,
                 template_key,
                 # The lineup's sample still needs the server's team configuration — a
                 # badge and a name are drawn from it — though no longer to match the
@@ -815,7 +814,7 @@ async def test_absent_converter_is_reported_and_no_render_attempted(
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field("template_directory", "templates")
 
     monkeypatch.setattr(render_module, "converter_available", lambda **_: False)
 
@@ -828,7 +827,7 @@ async def test_absent_converter_is_reported_and_no_render_attempted(
 
     service = _render_service(config_service, module_service)
     outcome = await service.render(
-        SERVER_ID, "calendar_template", lambda root: None, output_dir=tmp_path
+        "calendar_template", lambda root: None, output_dir=tmp_path
     )
 
     assert outcome.problem is not None
@@ -861,8 +860,8 @@ async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
     monkeypatch.setattr(render_module, "converter_available", lambda **_: False)
 
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
-    await config_service.set_aspect(SERVER_ID, "calendar", True)
+    await config_service.set_field("template_directory", "templates")
+    await config_service.set_aspect("calendar", True)
 
     validity = ImageValidityService(config_service, module_service)
     statuses = {s.aspect: s for s in await validity.aspect_statuses(SERVER_ID)}
@@ -889,7 +888,7 @@ async def test_render_raises_notices_without_failing(
     """A substituted font and a truncated field are notices, not problems (XIV.4)."""
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field("template_directory", "templates")
     (template_dir / "templates" / "verdicts_template.svg").write_bytes(RICH_TEMPLATE)
 
     from tests.support.image_sample_data import build_spec
@@ -899,7 +898,6 @@ async def test_render_raises_notices_without_failing(
     # any box a league would draw, so RICH_TEMPLATE's 300x80 rectangle cuts it at the floor
     # and raises its notice — which is the degradation this test is about (043 FR-018).
     outcome = await service.render(
-        SERVER_ID,
         "verdicts_template",
         lambda root: build_spec("verdicts_template", root, variant="penalty_dsq"),
         output_dir=tmp_path,
@@ -923,12 +921,12 @@ async def test_render_problem_yields_no_image(
     """png_paths is empty whenever problem is set — never a partial image."""
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
-    await config_service.set_field(SERVER_ID, "calendar_template", "absent.svg")
+    await config_service.set_field("template_directory", "templates")
+    await config_service.set_field("calendar_template", "absent.svg")
 
     service = _render_service(config_service, module_service)
     outcome = await service.render(
-        SERVER_ID, "calendar_template", lambda root: None, output_dir=tmp_path
+        "calendar_template", lambda root: None, output_dir=tmp_path
     )
 
     assert outcome.problem is not None
@@ -952,7 +950,7 @@ async def test_render_is_off_the_event_loop(
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field("template_directory", "templates")
     (template_dir / "templates" / "calendar_template.svg").write_bytes(RICH_TEMPLATE)
 
     main_thread = threading.get_ident()
@@ -970,7 +968,6 @@ async def test_render_is_off_the_event_loop(
 
     service = _render_service(config_service, module_service)
     outcome = await service.render(
-        SERVER_ID,
         "calendar_template",
         lambda root: build_spec("calendar_template", root),
         output_dir=tmp_path,
@@ -1036,7 +1033,7 @@ async def test_contrast_is_measured_against_the_declared_background(
 ):
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field("template_directory", "templates")
 
     (template_dir / "templates" / "results_race_template.svg").write_bytes(
         _race_template('<rect id="fastest_lap_background" fill="#FFFFFF"/>')
@@ -1055,7 +1052,7 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
 ):
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field("template_directory", "templates")
 
     # The stylesheet wins over the presentation attribute, so the measured background
     # must be the black the template actually paints, not the white attribute.
@@ -1079,8 +1076,8 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
 ):
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
-    await config_service.set_field(SERVER_ID, "results_race_template", "gone.svg")
+    await config_service.set_field("template_directory", "templates")
+    await config_service.set_field("results_race_template", "gone.svg")
 
     cog = _image_cog(config_service, module_service)
     ratio, background, problem = await cog._measure_fastest_lap_contrast(SERVER_ID, "#A020F0")
@@ -1094,7 +1091,7 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
 ):
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field("template_directory", "templates")
 
     (template_dir / "templates" / "results_race_template.svg").write_bytes(
         _race_template('<rect id="something_else" fill="#FFFFFF"/>')
@@ -1108,7 +1105,7 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
     # It must be reported as unmeasurable, not as a template validity failure.
     from services.image_validity_service import evaluate_all_templates
 
-    config = await config_service.get_config(SERVER_ID)
+    config = await config_service.get_config()
     reports = evaluate_all_templates(config, root=template_dir)
     assert reports["results_race_template"].valid
 
@@ -1118,7 +1115,7 @@ async def test_contrast_unmeasurable_when_fill_is_a_gradient(
 ):
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field("template_directory", "templates")
 
     (template_dir / "templates" / "results_race_template.svg").write_bytes(
         _race_template('<rect id="fastest_lap_background" fill="url(#grad)"/>')
@@ -1144,13 +1141,13 @@ async def test_asset_directory_independence(module_service, config_service, tmp_
     for column, (_cmd, default, _packaged) in ASSET_DIRECTORIES.items():
         (tmp_path / default).mkdir(parents=True, exist_ok=True)
 
-    config = await config_service.get_config(SERVER_ID)
+    config = await config_service.get_config()
     reports = evaluate_directories(config, root=tmp_path)
     assert all(r.valid for r in reports.values()), "baseline: every class resolves"
 
     for column in ASSET_DIRECTORIES:
-        await config_service.set_field(SERVER_ID, column, "resources/absent")
-        config = await config_service.get_config(SERVER_ID)
+        await config_service.set_field(column, "resources/absent")
+        config = await config_service.get_config()
         reports = evaluate_directories(config, root=tmp_path)
 
         assert not reports[column].valid
@@ -1162,7 +1159,7 @@ async def test_asset_directory_independence(module_service, config_service, tmp_
         assert "not found" in reports[column].reason.lower()
         assert str(reports[column].resolved_path).endswith("absent")
 
-        await config_service.set_field(SERVER_ID, column, ASSET_DIRECTORIES[column][1])
+        await config_service.set_field(column, ASSET_DIRECTORIES[column][1])
 
 
 async def test_asset_directory_escaping_root_is_reported(
@@ -1172,9 +1169,9 @@ async def test_asset_directory_escaping_root_is_reported(
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", tmp_path, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "flag_directory", "../../elsewhere")
+    await config_service.set_field("flag_directory", "../../elsewhere")
 
-    config = await config_service.get_config(SERVER_ID)
+    config = await config_service.get_config()
     reports = evaluate_directories(config, root=tmp_path)
 
     assert not reports["flag_directory"].valid
@@ -1201,8 +1198,8 @@ async def test_only_wired_aspects_read_their_toggle(
 
     await _enable(module_service, config_service)
     for aspect in ASPECTS:
-        await config_service.set_aspect(SERVER_ID, aspect, True)
-    assert all((await config_service.get_toggles(SERVER_ID)).values())
+        await config_service.set_aspect(aspect, True)
+    assert all((await config_service.get_toggles()).values())
 
     src = pathlib.Path(__file__).resolve().parents[2] / "src"
 
@@ -1279,8 +1276,8 @@ async def test_aspect_enabled_while_source_module_disabled(
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
 
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
-    await config_service.set_aspect(SERVER_ID, "standings", True)
+    await config_service.set_field("template_directory", "templates")
+    await config_service.set_aspect("standings", True)
 
     # The results module backs the standings aspect and is disabled on this server.
     assert await module_service.is_results_enabled(SERVER_ID) is False
@@ -1298,10 +1295,10 @@ async def test_toggle_state_survives_into_the_wiring_increment(
 ):
     """A toggle set now is still set later — the league does not re-enter it."""
     await _enable(module_service, config_service)
-    await config_service.set_aspect(SERVER_ID, "weather", True)
-    await config_service.set_aspect(SERVER_ID, "verdicts", True)
+    await config_service.set_aspect("weather", True)
+    await config_service.set_aspect("verdicts", True)
 
-    toggles = await config_service.get_toggles(SERVER_ID)
+    toggles = await config_service.get_toggles()
     assert toggles["weather"] is True
     assert toggles["verdicts"] is True
     assert toggles["calendar"] is False
@@ -1313,11 +1310,11 @@ async def test_every_template_is_independently_relocatable(
     from services.image_validity_service import evaluate_all_templates
 
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field("template_directory", "templates")
 
     for column in TEMPLATE_COLUMNS:
-        await config_service.set_field(SERVER_ID, column, "absent.svg")
-        config = await config_service.get_config(SERVER_ID)
+        await config_service.set_field(column, "absent.svg")
+        config = await config_service.get_config()
         reports = evaluate_all_templates(config, root=template_dir)
 
         assert not reports[column].valid
@@ -1325,7 +1322,7 @@ async def test_every_template_is_independently_relocatable(
             f"relocating {column} disturbed another template"
         )
 
-        await config_service.set_field(SERVER_ID, column, TEMPLATE_COLUMNS[column])
+        await config_service.set_field(column, TEMPLATE_COLUMNS[column])
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -1362,10 +1359,10 @@ async def _store_if_valid(config_service, column, filename, root):
     Driven at the service layer rather than through Discord, so the assertion is about
     what reaches the database, not about how a reply is worded.
     """
-    proposed = await config_service.candidate_config(SERVER_ID, column, filename)
+    proposed = await config_service.candidate_config(column, filename)
     problem = check_template(proposed, column, root=root)
     if problem is None:
-        await config_service.set_field(SERVER_ID, column, filename)
+        await config_service.set_field(column, filename)
     return problem
 
 
@@ -1380,8 +1377,8 @@ async def configured(module_service, config_service, tmp_path):
         (directory / filename).write_bytes(sound_bytes(key))
     (directory / "known_good.svg").write_bytes(_GOOD_SVG)
 
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
-    await config_service.set_field(SERVER_ID, "calendar_template", "known_good.svg")
+    await config_service.set_field("template_directory", "templates")
+    await config_service.set_field("calendar_template", "known_good.svg")
     return tmp_path
 
 
@@ -1392,7 +1389,7 @@ async def test_wrong_extension_is_refused_and_nothing_written(config_service, co
     )
 
     assert problem is not None and problem.kind == PROBLEM_EXTENSION
-    stored = await config_service.get_config(SERVER_ID)
+    stored = await config_service.get_config()
     assert stored.calendar_template == "known_good.svg"
 
 
@@ -1404,7 +1401,7 @@ async def test_absent_file_is_refused_and_nothing_written(config_service, config
 
     assert problem is not None and problem.kind == PROBLEM_NOT_FOUND
     assert "nope.svg" in problem.detail  # names the full path searched (FR-006)
-    stored = await config_service.get_config(SERVER_ID)
+    stored = await config_service.get_config()
     assert stored.calendar_template == "known_good.svg"
 
 
@@ -1420,7 +1417,7 @@ async def test_malformed_file_is_refused_and_nothing_written(config_service, con
     assert problem is not None and problem.kind == PROBLEM_NOT_SVG
     assert "double hyphen" in problem.detail
     assert "XMLSyntaxError" not in problem.detail
-    stored = await config_service.get_config(SERVER_ID)
+    stored = await config_service.get_config()
     assert stored.calendar_template == "known_good.svg"
 
 
@@ -1439,7 +1436,7 @@ async def test_missing_mandatory_field_is_refused_and_nothing_written(
 
     assert problem is not None and problem.kind == PROBLEM_MISSING_MANDATORY_FIELD
     assert "season_name" in problem.detail
-    stored = await config_service.get_config(SERVER_ID)
+    stored = await config_service.get_config()
     assert stored.calendar_template == "known_good.svg"
 
 
@@ -1452,7 +1449,7 @@ async def test_a_sound_template_is_accepted_and_written(config_service, configur
     )
 
     assert problem is None
-    stored = await config_service.get_config(SERVER_ID)
+    stored = await config_service.get_config()
     assert stored.calendar_template == "replacement.svg"
 
 
@@ -1464,7 +1461,7 @@ async def test_a_run_of_rejections_never_erodes_the_stored_value(
     for filename in ("x.txt", "gone.svg", "also_gone.svg", "still.png"):
         await _store_if_valid(config_service, "calendar_template", filename, configured)
 
-    stored = await config_service.get_config(SERVER_ID)
+    stored = await config_service.get_config()
     assert stored.calendar_template == "known_good.svg"
 
 
@@ -1474,7 +1471,7 @@ async def test_rejection_of_one_template_leaves_the_others_alone(
 ):
     await _store_if_valid(config_service, "lineup_template", "missing.svg", configured)
 
-    stored = await config_service.get_config(SERVER_ID)
+    stored = await config_service.get_config()
     assert stored.calendar_template == "known_good.svg"
     assert stored.lineup_template == TEMPLATE_COLUMNS["lineup_template"]
 
@@ -1495,7 +1492,7 @@ async def _problem_lines(config_service, root, *, module_enabled=True):
     """
     if not module_enabled:
         return []
-    config = await config_service.get_config(SERVER_ID)
+    config = await config_service.get_config()
     return [_describe(problem) for problem in _check_all(config, root=root)]
 
 
@@ -1566,7 +1563,7 @@ async def test_missing_template_directory_reports_once_not_sixteen_times(
     """Existing 035 behaviour, retained: one shared reason, still one report each."""
     from services.image_validity_service import PLAIN_DIRECTORY_MISSING
 
-    await config_service.set_field(SERVER_ID, "template_directory", "no_such_dir")
+    await config_service.set_field("template_directory", "no_such_dir")
 
     lines = await _problem_lines(config_service, configured)
 
@@ -1596,7 +1593,7 @@ def failing_render_service(db_path, config_service, module_service, monkeypatch)
     """A render service whose renders always meet the same fatal fault."""
     service = _render_service(config_service, module_service)
 
-    async def always_fails(server_id, image_type, spec_builder, **kwargs):
+    async def always_fails(image_type, spec_builder, **kwargs):
         from models.image_module import PROBLEM_NOT_FOUND, Problem, RenderOutcome
 
         return RenderOutcome(
@@ -1702,7 +1699,7 @@ async def test_a_clean_render_posts_the_image(
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
+    await config_service.set_field("template_directory", "templates")
 
     service = _render_service(config_service, module_service)
     # `output_dir` so the render lands under pytest's own directory. Without it this test
@@ -1872,8 +1869,8 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_field(SERVER_ID, "template_directory", "templates")
-    await config_service.set_aspect(SERVER_ID, "verdicts", True)
+    await config_service.set_field("template_directory", "templates")
+    await config_service.set_aspect("verdicts", True)
 
     # The packaged template, so the render is against the file a league actually gets.
     packaged = (
@@ -1949,7 +1946,7 @@ async def test_the_verdict_toggle_off_posts_the_textual_announcement(
 
     monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
-    await config_service.set_aspect(SERVER_ID, "verdicts", False)
+    await config_service.set_aspect("verdicts", False)
 
     bot = type(
         "_Bot",

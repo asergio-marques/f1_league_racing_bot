@@ -57,12 +57,12 @@ async def weather_enabled(bot, server_id: int, template_key: str) -> bool:
     picture for every round that is not a sprint (XIV.4, the unit of failure being one graphic).
     """
     try:
-        if not await bot.module_service.is_images_enabled(server_id):
+        if not await bot.module_service.is_images_enabled():
             return False
-        toggles = await bot.image_config_service.get_toggles(server_id)
+        toggles = await bot.image_config_service.get_toggles()
         if not toggles.get(WEATHER_ASPECT):
             return False
-        reports = await bot.image_validity_service.template_reports(server_id)
+        reports = await bot.image_validity_service.template_reports()
         report = reports.get(template_key)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
@@ -177,7 +177,7 @@ async def render_forecast(
     )
 
     try:
-        config = await bot.image_config_service.get_config(server_id)
+        config = await bot.image_config_service.get_config()
         directories, directory_faults = resolve_configured_directories(
             config,
             (

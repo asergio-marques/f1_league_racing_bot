@@ -613,7 +613,7 @@ class PlacementService:
             if not await lineup_enabled(bot, server_id):
                 return
 
-            reports = await bot.image_validity_service.template_reports(server_id)
+            reports = await bot.image_validity_service.template_reports()
             report = reports.get("lineup_template")
             if report is None or not report.valid:
                 return
@@ -674,7 +674,7 @@ class PlacementService:
             if not await attendance_enabled(bot, server_id):
                 return
 
-            reports = await bot.image_validity_service.template_reports(server_id)
+            reports = await bot.image_validity_service.template_reports()
             report = reports.get("attendance_template")
             if report is None or not report.valid or report.resolved_path is None:
                 return
@@ -743,7 +743,7 @@ class PlacementService:
             if not await standings_enabled(bot, server_id, DRIVERS_TEMPLATE_KEY):
                 return
 
-            reports = await bot.image_validity_service.template_reports(server_id)
+            reports = await bot.image_validity_service.template_reports()
             report = reports.get(DRIVERS_TEMPLATE_KEY)
             if report is None or not report.valid or report.resolved_path is None:
                 return
@@ -840,7 +840,7 @@ class PlacementService:
             return
 
         try:
-            if not await ModuleService(self._db_path).is_images_enabled(server_id):
+            if not await ModuleService(self._db_path).is_images_enabled():
                 return
 
             smallest = min(capacities.values())

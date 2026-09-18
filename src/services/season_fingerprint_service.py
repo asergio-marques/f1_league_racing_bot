@@ -266,8 +266,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     ),
                     await _rows(
                         db,
-                        "SELECT module_enabled FROM image_config WHERE server_id = ?",
-                        server_id,
+                        "SELECT module_enabled FROM image_config",
                     ),
                 ]
             )
@@ -368,7 +367,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
             )
 
             image_config = await _rows(
-                db, "SELECT * FROM image_config WHERE server_id = ?", server_id
+                db, "SELECT * FROM image_config"
             )
             areas["images"] = _digest(
                 [
@@ -376,8 +375,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     await _rows(
                         db,
                         "SELECT aspect, enabled FROM image_aspect_toggles "
-                        "WHERE server_id = ? ORDER BY aspect",
-                        server_id,
+                        " ORDER BY aspect",
                     ),
                 ]
             )
@@ -408,7 +406,7 @@ async def _artwork_signature(bot, server_id: int) -> list:
     from models.image_constants import ASSET_DIRECTORIES, TEMPLATE_COLUMNS
     from utils.paths import resolve_within_project_root
 
-    config = await bot.image_config_service.get_config(server_id)
+    config = await bot.image_config_service.get_config()
     if config is None:
         return []
 

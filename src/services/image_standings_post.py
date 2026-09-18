@@ -149,12 +149,12 @@ async def standings_enabled(bot, server_id: int, template_key: str) -> bool:
     graphic, and the two championships are two graphics).
     """
     try:
-        if not await bot.module_service.is_images_enabled(server_id):
+        if not await bot.module_service.is_images_enabled():
             return False
-        toggles = await bot.image_config_service.get_toggles(server_id)
+        toggles = await bot.image_config_service.get_toggles()
         if not toggles.get("standings"):
             return False
-        reports = await bot.image_validity_service.template_reports(server_id)
+        reports = await bot.image_validity_service.template_reports()
         report = reports.get(template_key)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
@@ -440,7 +440,7 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
     )
     from services.image_standings_service import build_fill_spec
 
-    config = await bot.image_config_service.get_config(server_id)
+    config = await bot.image_config_service.get_config()
     directories, directory_faults = resolve_configured_directories(
         config,
         (

@@ -196,7 +196,7 @@ class DriverCog(commands.Cog):
             from services.driver_portrait_service import remove_portrait
             from services.image_render_service import resolve_configured_directories
 
-            config = await self.bot.image_config_service.get_config(server_id)  # type: ignore[attr-defined]
+            config = await self.bot.image_config_service.get_config()  # type: ignore[attr-defined]
             if config is None:
                 return
             directories, _faults = resolve_configured_directories(
@@ -208,7 +208,7 @@ class DriverCog(commands.Cog):
             if directory is None:
                 return
             await remove_portrait(
-                self.bot.db_path, server_id, discord_user_id, directory  # type: ignore[attr-defined]
+                self.bot.db_path, discord_user_id, directory  # type: ignore[attr-defined]
             )
         except Exception:  # noqa: BLE001 — a portrait never fails a command
             log.warning(

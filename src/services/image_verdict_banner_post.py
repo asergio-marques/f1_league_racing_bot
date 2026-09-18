@@ -63,12 +63,12 @@ async def banner_enabled(bot, server_id: int) -> bool:
     cannot stop a verdict being posted.
     """
     try:
-        if not await bot.module_service.is_images_enabled(server_id):
+        if not await bot.module_service.is_images_enabled():
             return False
-        toggles = await bot.image_config_service.get_toggles(server_id)
+        toggles = await bot.image_config_service.get_toggles()
         if not toggles.get(BANNER_ASPECT):
             return False
-        reports = await bot.image_validity_service.template_reports(server_id)
+        reports = await bot.image_validity_service.template_reports()
         report = reports.get(BANNER_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
@@ -118,7 +118,7 @@ async def render_banner(
     )
 
     try:
-        config = await bot.image_config_service.get_config(server_id)
+        config = await bot.image_config_service.get_config()
         directories, directory_faults = resolve_configured_directories(
             config,
             (("flag", "flag_directory"),),

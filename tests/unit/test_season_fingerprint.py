@@ -80,7 +80,7 @@ async def season(tmp_path):
             "scheduled_at) VALUES (?, 1, 'NORMAL', 'Hungaroring', '2026-06-14T18:00:00')",
             (division_id,),
         )
-        await db.execute("INSERT INTO image_config (server_id) VALUES (?)", (SERVER_ID,))
+        await db.execute("INSERT INTO image_config (id) VALUES (?)", (1,))
         await db.commit()
 
     bot = SimpleNamespace(db_path=path, image_config_service=ImageConfigService(path))
@@ -295,8 +295,7 @@ async def test_the_images_area(season):
     before = await _take(season)
     await _assert_only(
         season, before, "images",
-        "UPDATE image_config SET date_format = 'YYYY_MM_DD' WHERE server_id = ?",
-        SERVER_ID,
+        "UPDATE image_config SET date_format = 'YYYY_MM_DD'",
     )
 
 
@@ -304,9 +303,7 @@ async def test_an_aspect_toggle_is_part_of_the_images_area(season):
     before = await _take(season)
     await _assert_only(
         season, before, "images",
-        "INSERT INTO image_aspect_toggles (server_id, aspect, enabled) "
-        "VALUES (?, 'calendar', 1)",
-        SERVER_ID,
+        "INSERT INTO image_aspect_toggles (aspect, enabled) VALUES ('calendar', 1)",
     )
 
 
@@ -331,9 +328,8 @@ async def with_templates(season, tmp_path):
 
     await _change(
         season,
-        "UPDATE image_config SET template_directory = ? WHERE server_id = ?",
+        "UPDATE image_config SET template_directory = ?",
         "resources/_test_fingerprint_templates",
-        SERVER_ID,
     )
     yield season, folder
     shutil.rmtree(folder, ignore_errors=True)
@@ -371,9 +367,8 @@ async def test_artwork_added_to_an_asset_folder_is_noticed(season, tmp_path):
     try:
         await _change(
             season,
-            "UPDATE image_config SET flag_directory = ? WHERE server_id = ?",
+            "UPDATE image_config SET flag_directory = ?",
             "resources/_test_fingerprint_flags",
-            SERVER_ID,
         )
         before = await _take(season)
 

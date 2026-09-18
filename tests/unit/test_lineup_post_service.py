@@ -75,13 +75,13 @@ class _Bot:
         self.image_config_service = self
         self.image_validity_service = self
 
-    async def is_images_enabled(self, server_id):
+    async def is_images_enabled(self):
         return self._module
 
-    async def get_toggles(self, server_id):
+    async def get_toggles(self):
         return {"lineup": self._toggle}
 
-    async def template_reports(self, server_id):
+    async def template_reports(self):
         return {"lineup_template": type("R", (), {"valid": self._valid})()}
 
 

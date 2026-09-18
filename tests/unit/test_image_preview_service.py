@@ -69,7 +69,7 @@ async def bot(db_path):
     and the database, which is the whole of its dependency surface.
     """
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(SERVER_ID)
+    await config_service.create_with_defaults()
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),
@@ -473,7 +473,7 @@ class TestNothingRendersBeforeARefusal:
 class TestAssetDirectories:
     async def test_the_leagues_configured_directories_are_resolved(self, bot):
         """FR-035 — never the packaged directories the withdrawn command hardcoded."""
-        directories, faults = await resolve_asset_directories(bot, SERVER_ID)
+        directories, faults = await resolve_asset_directories(bot)
 
         assert set(directories) >= {"flag", "track", "team", "weather"}
         assert faults == []
@@ -487,10 +487,10 @@ class TestAssetDirectories:
         cannot point outside it, which the containment test below covers.
         """
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "resources/defaults/teams"
+            "flag_directory", "resources/defaults/teams"
         )
 
-        directories, faults = await resolve_asset_directories(bot, SERVER_ID)
+        directories, faults = await resolve_asset_directories(bot)
 
         assert directories["flag"].name == "teams"
         assert not [f for f in faults if f.asset_class == "flag"]
@@ -498,10 +498,10 @@ class TestAssetDirectories:
     async def test_a_path_escaping_the_project_root_is_reported_with_its_reason(self, bot):
         """FR-038 — not silently omitted and then called an unconfigured class."""
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "../../elsewhere"
+            "flag_directory", "../../elsewhere"
         )
 
-        directories, faults = await resolve_asset_directories(bot, SERVER_ID)
+        directories, faults = await resolve_asset_directories(bot)
 
         assert "flag" not in directories
         fault = next(f for f in faults if f.asset_class == "flag")
@@ -512,10 +512,10 @@ class TestAssetDirectories:
         self, bot
     ):
         await bot.image_config_service.set_field(
-            SERVER_ID, "flag_directory", "resources/not_a_real_directory"
+            "flag_directory", "resources/not_a_real_directory"
         )
 
-        directories, faults = await resolve_asset_directories(bot, SERVER_ID)
+        directories, faults = await resolve_asset_directories(bot)
 
         assert "flag" in directories
         fault = next(f for f in faults if f.asset_class == "flag")

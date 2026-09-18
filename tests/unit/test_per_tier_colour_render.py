@@ -61,7 +61,7 @@ def _service(*, enabled=True, palette=None):
 async def test_the_palette_is_painted_in():
     service, _ = _service(palette={"accent": "#A78BFA"})
     root = parse_svg_bytes(TEMPLATE)
-    await service._apply_tier_palette(1, root, "Division 1")
+    await service._apply_tier_palette(root, "Division 1")
     assert b"#A78BFA" in __import__("lxml.etree", fromlist=["etree"]).tostring(root)
 
 
@@ -69,7 +69,7 @@ async def test_nothing_is_painted_while_the_feature_is_off():
     """And the palette is never even read — an inert feature costs no queries."""
     service, config_service = _service(enabled=False, palette={"accent": "#A78BFA"})
     root = parse_svg_bytes(TEMPLATE)
-    await service._apply_tier_palette(1, root, "Division 1")
+    await service._apply_tier_palette(root, "Division 1")
     from lxml import etree
 
     assert b"#A78BFA" not in etree.tostring(root)
@@ -80,14 +80,14 @@ async def test_a_tier_with_no_colours_leaves_the_template_alone():
     service, _ = _service(palette={})
     root = parse_svg_bytes(TEMPLATE)
     before = __import__("lxml.etree", fromlist=["etree"]).tostring(root)
-    await service._apply_tier_palette(1, root, "Division 1")
+    await service._apply_tier_palette(root, "Division 1")
     assert __import__("lxml.etree", fromlist=["etree"]).tostring(root) == before
 
 
 async def test_a_server_with_no_image_config_is_not_an_error():
     service, config_service = _service()
     config_service.get_config = AsyncMock(return_value=None)
-    await service._apply_tier_palette(1, parse_svg_bytes(TEMPLATE), "Division 1")
+    await service._apply_tier_palette(parse_svg_bytes(TEMPLATE), "Division 1")
 
 
 # ── Where it happens, and how it fails ────────────────────────────────────
@@ -110,7 +110,7 @@ async def test_a_broken_palette_read_is_swallowed(tmp_path, monkeypatch):
     config_service.get_config = AsyncMock(side_effect=RuntimeError("db is gone"))
     root = parse_svg_bytes(TEMPLATE)
     with pytest.raises(RuntimeError):
-        await service._apply_tier_palette(1, root, "Division 1")
+        await service._apply_tier_palette(root, "Division 1")
     # ...but `render` is what must not raise, and it wraps the call.
     assert "except Exception" in inspect.getsource(ImageRenderService.render)
 

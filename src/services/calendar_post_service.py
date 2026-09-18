@@ -99,9 +99,9 @@ async def image_calendar_wanted(bot, server_id: int) -> bool:
     Either closed means the textual calendar, unchanged, exactly as before this feature.
     """
     try:
-        if not await bot.module_service.is_images_enabled(server_id):
+        if not await bot.module_service.is_images_enabled():
             return False
-        return await bot.image_config_service.is_aspect_enabled(server_id, CALENDAR_ASPECT)
+        return await bot.image_config_service.is_aspect_enabled(CALENDAR_ASPECT)
     except Exception:  # noqa: BLE001
         # A fault in the gate must never lose a league its calendar: fall to the text.
         log.exception("calendar: could not read the image gates for server %s", server_id)
@@ -125,7 +125,7 @@ async def render_calendar_image(
         spec_builder_with_faults,
     )
 
-    config = await bot.image_config_service.get_config(server_id)
+    config = await bot.image_config_service.get_config()
 
     drawing = resolve_drawing(
         division_name=division.name,
@@ -154,7 +154,6 @@ async def render_calendar_image(
     from utils.image_naming import stem_for_drawing
 
     outcome = await bot.image_render_service.render(
-        server_id,
         TEMPLATE_KEY,
         spec_builder_with_faults(
             build_fill_spec, drawing, directories, directory_faults

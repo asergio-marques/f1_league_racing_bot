@@ -122,7 +122,7 @@ class _Toggled:
         self._config_service = MagicMock()
         self._config_service.is_aspect_enabled = AsyncMock(return_value=enabled)
 
-        async def _set(server_id, aspect, value):
+        async def _set(aspect, value):
             self.stored.append((aspect, value))
 
         self._config_service.set_aspect = AsyncMock(side_effect=_set)

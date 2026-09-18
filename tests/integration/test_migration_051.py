@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 import db.database as database  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
+from tests.support.migration_steps import run_migrations_through  # noqa: E402
 
 MIGRATION = "051_per_tier_colours.sql"
 COLUMN = "per_tier_colour_enabled"
@@ -62,7 +63,7 @@ async def pre_migration_db(tmp_path):
 
 
 async def test_a_new_server_has_the_feature_off(pre_migration_db):
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         await db.execute(_SEED_SERVER, (1,))
@@ -87,7 +88,7 @@ async def test_a_league_already_configured_keeps_what_it_configured(pre_migratio
         )
         await db.commit()
 
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         row = await (
@@ -104,7 +105,7 @@ async def test_a_league_already_configured_keeps_what_it_configured(pre_migratio
 
 async def test_one_tier_holds_one_colour_per_slot(pre_migration_db):
     """The primary key is what makes a second set replace the first rather than add to it."""
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         await db.execute(_SEED_SERVER, (1,))
@@ -125,7 +126,7 @@ async def test_one_tier_holds_one_colour_per_slot(pre_migration_db):
 
 
 async def test_two_tiers_hold_the_same_slot_independently(pre_migration_db):
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         await db.execute(_SEED_SERVER, (1,))
@@ -150,7 +151,7 @@ async def test_two_tiers_hold_the_same_slot_independently(pre_migration_db):
 
 async def test_the_rows_go_when_the_server_does(pre_migration_db):
     """A tier's colours are configuration of that server and cascade with it."""
-    await run_migrations(pre_migration_db)
+    await run_migrations_through(pre_migration_db, MIGRATION)
 
     async with get_connection(pre_migration_db) as db:
         await db.execute("PRAGMA foreign_keys = ON")

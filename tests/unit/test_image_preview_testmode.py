@@ -60,7 +60,7 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(SERVER_ID)
+    await config_service.create_with_defaults()
     return SimpleNamespace(
         db_path=db_path,
         season_service=SeasonService(db_path),

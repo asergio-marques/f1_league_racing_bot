@@ -245,7 +245,7 @@ class ImageCog(commands.Cog):
         callers differ: a command that has already deferred must answer on the followup,
         and sending a fresh response there raises ``404 Unknown interaction``.
         """
-        if not await self.bot.module_service.is_images_enabled(interaction.guild_id):  # type: ignore[attr-defined]
+        if not await self.bot.module_service.is_images_enabled():  # type: ignore[attr-defined]
             await self._reply(
                 interaction,
                 "❌ The Image module is not enabled. "
@@ -298,7 +298,7 @@ class ImageCog(commands.Cog):
             return
 
         stored = relative_to_root(resolved)
-        await self._config_service.set_field(interaction.guild_id, column, stored)
+        await self._config_service.set_field(column, stored)
 
         # Report the effect immediately, so the administrator does not need a second
         # command to learn whether the new location resolves.
@@ -352,7 +352,7 @@ class ImageCog(commands.Cog):
             return
 
         proposed = await self._config_service.candidate_config(
-            interaction.guild_id, column, candidate
+            column, candidate
         )
         if proposed is None:
             await self._reject(
@@ -372,7 +372,7 @@ class ImageCog(commands.Cog):
         # Every field of every template is now verifiable against the file alone, so
         # `check_template` above either passes or refuses and nothing is left to warn
         # about (047 FR-024).
-        await self._config_service.set_field(interaction.guild_id, column, candidate)
+        await self._config_service.set_field(column, candidate)
 
         lines = [f"✅ **{label}** template set to `{candidate}`.", "✅ Valid."]
 
@@ -405,7 +405,7 @@ class ImageCog(commands.Cog):
         """
         if not await self._guard_module_enabled(interaction):
             return None
-        config = await self._config_service.get_config(interaction.guild_id)
+        config = await self._config_service.get_config()
         if config is None or not config.use_pfp:
             await self._reply(
                 interaction,
@@ -424,7 +424,7 @@ class ImageCog(commands.Cog):
             await self._reply(interaction, f"❌ {refusal}")
             return False
 
-        await self._config_service.set_pfp_flag(interaction.guild_id, column, enabled)
+        await self._config_service.set_pfp_flag(column, enabled)
         state = "enabled" if enabled else "disabled"
         await self._reply(interaction, f"{'✅' if enabled else '❌'} **{label}** {state}.")
         await self._log(interaction, f"{label} {state}")
@@ -434,12 +434,11 @@ class ImageCog(commands.Cog):
         self, interaction: discord.Interaction, normalised: str
     ) -> None:
         """Enable the daily refresh at *normalised* UTC and arm the scheduled job."""
-        server_id = interaction.guild_id
-        await self._config_service.set_field(server_id, "pfp_daily_time", normalised)
-        await self._config_service.set_pfp_flag(server_id, "pfp_daily", True)
+        await self._config_service.set_field("pfp_daily_time", normalised)
+        await self._config_service.set_pfp_flag("pfp_daily", True)
         try:
             self.bot.scheduler_service.schedule_portrait_refresh(  # type: ignore[attr-defined]
-                server_id, normalised
+                normalised
             )
         except Exception as exc:  # the setting is stored; recovery re-arms it on restart
             log.error("could not arm the daily portrait refresh: %s", exc)
@@ -459,8 +458,7 @@ class ImageCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
 
-        server_id = interaction.guild_id
-        config = await self._config_service.get_config(server_id)
+        config = await self._config_service.get_config()
         if config is None:
             await self._reply(interaction, "❌ The image module has no configuration yet.")
             return
@@ -476,10 +474,10 @@ class ImageCog(commands.Cog):
         # setting that says no.
         if enabling and config.pfp_daily:
             self.bot.scheduler_service.schedule_portrait_refresh(  # type: ignore[attr-defined]
-                server_id, config.pfp_daily_time
+                config.pfp_daily_time
             )
         elif not enabling:
-            self.bot.scheduler_service.cancel_portrait_refresh(server_id)  # type: ignore[attr-defined]
+            self.bot.scheduler_service.cancel_portrait_refresh()  # type: ignore[attr-defined]
 
     @use_pfp.command(
         name="prerender-toggle",
@@ -514,7 +512,7 @@ class ImageCog(commands.Cog):
                 interaction, config, "pfp_daily", False, "Daily driver-portrait updates"
             ):
                 self.bot.scheduler_service.cancel_portrait_refresh(  # type: ignore[attr-defined]
-                    interaction.guild_id
+                    
                 )
             return
 
@@ -589,7 +587,7 @@ class ImageCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
 
         proposed = await self._config_service.candidate_config(
-            interaction.guild_id, "template_directory", stored
+            "template_directory", stored
         )
         if proposed is None:
             await self._reject_directory(
@@ -605,7 +603,7 @@ class ImageCog(commands.Cog):
         # as text, and refusing it would force every league to supply all sixteen before
         # it could move its artwork. Switching an aspect on checks its own drawings at
         # that moment, so nothing reaches a posting path unverified.
-        toggles = await self._config_service.get_toggles(interaction.guild_id)
+        toggles = await self._config_service.get_toggles()
         problems = blocking_template_problems(proposed, toggles)
         if problems:
             await self._reject_directory(
@@ -619,7 +617,7 @@ class ImageCog(commands.Cog):
             return
 
         await self._config_service.set_field(
-            interaction.guild_id, "template_directory", stored
+            "template_directory", stored
         )
         await self._reply(
             interaction,
@@ -922,8 +920,8 @@ class ImageCog(commands.Cog):
 
         # Switching *off* is always allowed: the output reverts to text, which needs no
         # drawing at all, so nothing about the templates can stand in the way.
-        if await self._config_service.is_aspect_enabled(server_id, aspect.value):
-            await self._config_service.set_aspect(server_id, aspect.value, False)
+        if await self._config_service.is_aspect_enabled(aspect.value):
+            await self._config_service.set_aspect(aspect.value, False)
             await self._reply(
                 interaction, f"❌ **{label}** image output **disabled**. Posting stays as text."
             )
@@ -950,7 +948,7 @@ class ImageCog(commands.Cog):
             )
             return
 
-        await self._config_service.set_aspect(server_id, aspect.value, True)
+        await self._config_service.set_aspect(aspect.value, True)
         lines = toggle_enabled_lines(aspect.value, label, [])
 
         await self._reply(interaction, "\n".join(lines))
@@ -977,10 +975,10 @@ class ImageCog(commands.Cog):
         from services.image_render_service import converter_available
         from services.image_validity_service import build_aspect_statuses
 
-        toggles = dict(await self._config_service.get_toggles(server_id))
+        toggles = dict(await self._config_service.get_toggles())
         toggles[aspect] = True
 
-        reports = await self._validity_service.template_reports(server_id)
+        reports = await self._validity_service.template_reports()
         statuses = build_aspect_statuses(
             toggles,
             reports,
@@ -1028,7 +1026,7 @@ class ImageCog(commands.Cog):
         # 2. Store it. Storing *before* measuring is deliberate: an unmeasurable
         #    contrast must never cost the manager their input (FR-026, FR-027).
         await self._config_service.set_field(
-            interaction.guild_id, "fastest_lap_colour", canonical
+            "fastest_lap_colour", canonical
         )
         lines = [f"✅ Fastest-lap colour set to `{canonical}`."]
 
@@ -1079,7 +1077,7 @@ class ImageCog(commands.Cog):
             return
 
         await self._config_service.set_flag(
-            interaction.guild_id, "per_tier_colour_enabled", enable
+            "per_tier_colour_enabled", enable
         )
         lines = [f"✅ Per-tier colours are now **{'on' if enable else 'off'}**."]
 
@@ -1150,7 +1148,7 @@ class ImageCog(commands.Cog):
             return
 
         await self._config_service.set_tier_colour(
-            interaction.guild_id, division, canonical_slot, canonical_colour
+            division, canonical_slot, canonical_colour
         )
         lines = [f"✅ **{division}** — `{canonical_slot}` set to `{canonical_colour}`."]
 
@@ -1164,7 +1162,7 @@ class ImageCog(commands.Cog):
                 f"change until one does."
             )
 
-        config = await self._config_service.get_config(interaction.guild_id)
+        config = await self._config_service.get_config()
         if config is not None and not config.per_tier_colour_enabled:
             lines.append(
                 "ℹ️ Per-tier colours are **off**, so this is stored but not drawn. "
@@ -1209,7 +1207,7 @@ class ImageCog(commands.Cog):
             return
 
         written = await self._config_service.set_tier_colours(
-            interaction.guild_id, division, colours
+            division, colours
         )
         lines = [f"✅ **{division}** — {written} colour(s) set."]
         lines += [f"  • `{slot}` = `{colour}`" for slot, colour in colours.items()]
@@ -1279,7 +1277,7 @@ class ImageCog(commands.Cog):
         written = 0
         for block in blocks:
             written += await self._config_service.set_tier_colours(
-                interaction.guild_id, block.division, block.colours
+                block.division, block.colours
             )
 
         lines = []
@@ -1307,7 +1305,7 @@ class ImageCog(commands.Cog):
         Read off the validity reports, which carry it from the parse Layer 1 already did,
         so asking costs no second read of sixteen files.
         """
-        reports = await self._validity_service.template_reports(server_id)
+        reports = await self._validity_service.template_reports()
         return {
             slot
             for report in reports.values()
@@ -1334,7 +1332,7 @@ class ImageCog(commands.Cog):
             stylesheet,
         )
 
-        reports = await self._validity_service.template_reports(server_id)
+        reports = await self._validity_service.template_reports()
         report = reports.get("results_race_template")
 
         if report is None:
@@ -1389,7 +1387,7 @@ class ImageCog(commands.Cog):
             )
             return
 
-        await self._config_service.set_field(interaction.guild_id, "time_zone", candidate)
+        await self._config_service.set_field("time_zone", candidate)
         await self._reply(
             interaction,
             f"✅ Time zone set to `{candidate}`.\n"
@@ -1434,7 +1432,7 @@ class ImageCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
         await self._config_service.set_field(
-            interaction.guild_id, "time_format", clock.value
+            "time_format", clock.value
         )
         await self._reply(interaction, f"✅ Clock format set to **{clock.name}**.")
         await self._log(interaction, f"Clock format = {clock.value}")
@@ -1478,7 +1476,7 @@ class ImageCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
         await self._config_service.set_field(
-            interaction.guild_id, "date_format", style.value
+            "date_format", style.value
         )
         await self._reply(interaction, f"✅ Date format set to **{style.name}**.")
         await self._log(interaction, f"Date format = {style.value}")
@@ -1519,12 +1517,12 @@ class ImageCog(commands.Cog):
             plain_remedy,
         )
 
-        config = await self._config_service.get_config(server_id)
+        config = await self._config_service.get_config()
         if config is None:
             return "❌ No image configuration exists for this server."
 
-        template_reports = await self._validity_service.template_reports(server_id)
-        directory_reports = await self._validity_service.directory_reports(server_id)
+        template_reports = await self._validity_service.template_reports()
+        directory_reports = await self._validity_service.directory_reports()
 
         lines: list[str] = ["**Image module configuration**", ""]
 
@@ -1587,7 +1585,7 @@ class ImageCog(commands.Cog):
         aspect it would stop, and the aspect section below prints it in the same words
         `/season placements-review` uses.
         """
-        palettes = await self._config_service.get_all_tier_colours(server_id)
+        palettes = await self._config_service.get_all_tier_colours()
         state = "on" if config.per_tier_colour_enabled else "off"
 
         lines = ["**Per-tier colours**", f"  Enabled: `{state}`"]
@@ -1754,7 +1752,6 @@ class ImageCog(commands.Cog):
         outcomes = []
         for label, template_key, spec_builder in requests:
             outcome = await self.bot.image_render_service.render(  # type: ignore[attr-defined]
-                interaction.guild_id,
                 template_key,
                 spec_builder,
                 filename_stem=image_filename_stem(

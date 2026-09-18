@@ -33,7 +33,6 @@ def _config():
     from models.image_module import ImageConfig
 
     return ImageConfig(
-        server_id=1,
         module_enabled=True,
         template_directory="templates",
         # Every asset directory, pointed at the **packaged** folder rather than the

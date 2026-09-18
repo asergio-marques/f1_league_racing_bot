@@ -93,7 +93,7 @@ def _make_cog(db_path, *, aspects=("attendance", "rsvp"), reports=None):
     bot.db_path = db_path
     bot.image_config_service = MagicMock()
     bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda _server, aspect: aspect in aspects
+        side_effect=lambda aspect: aspect in aspects
     )
     bot.image_validity_service = MagicMock()
     bot.image_validity_service.template_reports = AsyncMock(

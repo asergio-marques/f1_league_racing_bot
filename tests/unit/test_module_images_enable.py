@@ -144,7 +144,7 @@ async def test_the_module_is_enabled(tmp_path):
 
     await _enable(cog, interaction)
 
-    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(SERVER_ID, True)
+    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(True)
     assert "enabled" in _replied(interaction)
 
 
@@ -154,7 +154,7 @@ async def test_the_configuration_is_created_with_defaults(tmp_path):
 
     await _enable(cog, _interaction())
 
-    cog.bot.image_config_service.create_with_defaults.assert_awaited_once_with(SERVER_ID)
+    cog.bot.image_config_service.create_with_defaults.assert_awaited_once_with()
 
 
 async def test_every_output_aspect_starts_disabled(tmp_path):
@@ -207,7 +207,7 @@ async def test_the_module_enables_without_a_rasteriser(tmp_path):
 
     await _enable(cog, interaction, rasteriser=False)
 
-    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(SERVER_ID, True)
+    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(True)
     assert "enabled" in _replied(interaction)
 
 
@@ -265,7 +265,7 @@ async def test_a_failed_enable_leaves_the_module_off(tmp_path):
 
     await _enable(cog, interaction)
 
-    cog.bot.module_service.set_images_enabled.assert_awaited_with(SERVER_ID, False)
+    cog.bot.module_service.set_images_enabled.assert_awaited_with(False)
     assert "remains disabled" in _replied(interaction)
 
 

@@ -1140,9 +1140,9 @@ async def aspect_attaches_files(bot, server_id: int, aspect: str) -> bool:
     if bot is None:
         return False
     try:
-        if not await bot.module_service.is_images_enabled(server_id):
+        if not await bot.module_service.is_images_enabled():
             return False
-        toggles = await bot.image_config_service.get_toggles(server_id)
+        toggles = await bot.image_config_service.get_toggles()
         return bool(toggles.get(aspect))
     except Exception as exc:  # noqa: BLE001 — never refuse a posting's pre-flight on this
         log.error(
@@ -1313,14 +1313,14 @@ class ImageValidityService:
         self._config_service = config_service
         self._module_service = module_service
 
-    async def template_reports(self, server_id: int) -> dict[str, ValidityReport]:
-        config = await self._config_service.get_config(server_id)
+    async def template_reports(self) -> dict[str, ValidityReport]:
+        config = await self._config_service.get_config()
         if config is None:
             return {}
         return evaluate_all_templates(config)
 
-    async def directory_reports(self, server_id: int) -> dict[str, DirectoryReport]:
-        config = await self._config_service.get_config(server_id)
+    async def directory_reports(self) -> dict[str, DirectoryReport]:
+        config = await self._config_service.get_config()
         if config is None:
             return {}
         return evaluate_directories(config)
@@ -1338,8 +1338,8 @@ class ImageValidityService:
     async def aspect_statuses(self, server_id: int) -> list[AspectStatus]:
         from services.image_render_service import converter_available
 
-        reports = await self.template_reports(server_id)
-        toggles = await self._config_service.get_toggles(server_id)
+        reports = await self.template_reports()
+        toggles = await self._config_service.get_toggles()
         return build_aspect_statuses(
             toggles,
             reports,
@@ -1357,14 +1357,14 @@ class ImageValidityService:
         of a league that has not asked for it, and nothing is read from the database
         either.
         """
-        config = await self._config_service.get_config(server_id)
+        config = await self._config_service.get_config()
         if config is None or not getattr(config, "per_tier_colour_enabled", False):
             return {}
         if reports is None:
-            reports = await self.template_reports(server_id)
+            reports = await self.template_reports()
         return colour_shortfall(
             reports,
-            await self._config_service.get_all_tier_colours(server_id),
+            await self._config_service.get_all_tier_colours(),
             await self._config_service.season_division_names(server_id),
         )
 

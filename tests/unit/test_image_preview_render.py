@@ -90,7 +90,7 @@ async def db_path(tmp_path):
 @pytest.fixture
 async def bot(db_path):
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(SERVER_ID)
+    await config_service.create_with_defaults()
     validity_service = ImageValidityService(
         config_service, SimpleNamespace(is_images_enabled=_true)
     )
@@ -241,7 +241,7 @@ async def test_every_preview_reaches_a_png(bot, league, kind, tmp_path):
 
     for label, template_key, spec_builder in requests:
         outcome = await bot.image_render_service.render(
-            SERVER_ID, template_key, spec_builder, output_dir=tmp_path
+            template_key, spec_builder, output_dir=tmp_path
         )
         assert outcome.problem is None, f"{kind} / {label}: {outcome.problem}"
         assert outcome.png_paths, f"{kind} / {label} produced no file"
@@ -274,7 +274,7 @@ async def test_the_standings_preview_draws_the_whole_grid(bot, league, tmp_path)
 
     for label, template_key, spec_builder in requests:
         outcome = await bot.image_render_service.render(
-            SERVER_ID, template_key, spec_builder, output_dir=tmp_path
+            template_key, spec_builder, output_dir=tmp_path
         )
         assert outcome.problem is None, f"{label}: {outcome.problem}"
         assert outcome.png_paths, f"{label} produced no file"

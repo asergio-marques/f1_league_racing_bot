@@ -91,7 +91,6 @@ SOUND = {
 
 def _config(**overrides) -> ImageConfig:
     values = dict(
-        server_id=1,
         module_enabled=True,
         template_directory="templates",
         # Every asset directory, pointed at the **packaged** folder rather than the

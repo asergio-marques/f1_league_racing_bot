@@ -31,6 +31,9 @@ log = logging.getLogger(__name__)
 _FULL_RESET_TABLES: tuple[str, ...] = (
     "weather_pipeline_config",
     "attendance_config",
+    "image_aspect_toggles",
+    "image_config",
+    "image_tier_colour",
 )
 
 

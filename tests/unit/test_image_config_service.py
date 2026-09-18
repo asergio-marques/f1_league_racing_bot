@@ -41,6 +41,7 @@ _MIGRATIONS = (
     "048_division_logo_directory.sql",
     "051_per_tier_colours.sql",
     "052_verdict_banner_template.sql",
+    "063_image_tables_lose_the_server.sql",
 )
 
 
@@ -67,7 +68,7 @@ def service(db_path):
 
 
 async def test_create_with_defaults_sets_every_packaged_default(service):
-    cfg = await service.create_with_defaults(1)
+    cfg = await service.create_with_defaults()
 
     assert cfg.module_enabled is False
     assert cfg.template_directory == "resources/defaults/templates"
@@ -83,7 +84,7 @@ async def test_create_with_defaults_sets_every_packaged_default(service):
 
 async def test_create_with_defaults_leaves_portraits_opt_in(service):
     """Migration 047's defaults: off, but a working configuration the moment it is enabled."""
-    cfg = await service.create_with_defaults(1)
+    cfg = await service.create_with_defaults()
 
     assert cfg.use_pfp is False
     assert cfg.pfp_prerender is True
@@ -92,8 +93,8 @@ async def test_create_with_defaults_leaves_portraits_opt_in(service):
 
 
 async def test_create_with_defaults_inserts_exactly_nine_disabled_toggles(service):
-    await service.create_with_defaults(1)
-    toggles = await service.get_toggles(1)
+    await service.create_with_defaults()
+    toggles = await service.get_toggles()
 
     assert set(toggles) == set(ASPECTS)
     assert len(toggles) == 9
@@ -101,29 +102,29 @@ async def test_create_with_defaults_inserts_exactly_nine_disabled_toggles(servic
 
 
 async def test_create_with_defaults_is_idempotent(service):
-    await service.create_with_defaults(1)
-    await service.set_field(1, "template_directory", "resources/custom")
-    await service.set_aspect(1, "standings", True)
+    await service.create_with_defaults()
+    await service.set_field("template_directory", "resources/custom")
+    await service.set_aspect("standings", True)
 
-    await service.create_with_defaults(1)
+    await service.create_with_defaults()
 
-    cfg = await service.get_config(1)
+    cfg = await service.get_config()
     assert cfg.template_directory == "resources/custom"
-    assert (await service.get_toggles(1))["standings"] is True
+    assert (await service.get_toggles())["standings"] is True
 
 
 async def test_get_config_returns_none_before_creation(service):
-    assert await service.get_config(1) is None
+    assert await service.get_config() is None
 
 
 # ── The allow-list ────────────────────────────────────────────────────────
 
 
 async def test_set_field_rejects_column_outside_allow_list(service):
-    await service.create_with_defaults(1)
+    await service.create_with_defaults()
     for forbidden in ("module_enabled", "server_id", "nonexistent_column"):
         with pytest.raises(UnknownConfigField):
-            await service.set_field(1, forbidden, "x")
+            await service.set_field(forbidden, "x")
 
 
 async def test_allow_list_covers_all_settable_columns(service):
@@ -134,35 +135,35 @@ async def test_allow_list_covers_all_settable_columns(service):
     # The eighth asset directory is the division logo, added 2026-09-02.
     assert len(SETTABLE_COLUMNS) == 30
     assert not (SETTABLE_COLUMNS & PFP_FLAG_COLUMNS)
-    await service.create_with_defaults(1)
+    await service.create_with_defaults()
     for column in SETTABLE_COLUMNS:
-        await service.set_field(1, column, "probe")
-    cfg = await service.get_config(1)
+        await service.set_field(column, "probe")
+    cfg = await service.get_config()
     for column in SETTABLE_COLUMNS:
         assert getattr(cfg, column) == "probe"
 
 
 async def test_set_aspect_rejects_unknown_aspect(service):
-    await service.create_with_defaults(1)
+    await service.create_with_defaults()
     with pytest.raises(UnknownConfigField):
-        await service.set_aspect(1, "not_an_aspect", True)
+        await service.set_aspect("not_an_aspect", True)
 
 
 async def test_toggle_aspect_flips_and_returns_new_state(service):
-    await service.create_with_defaults(1)
+    await service.create_with_defaults()
 
-    assert await service.toggle_aspect(1, "weather") is True
-    assert (await service.get_toggles(1))["weather"] is True
+    assert await service.toggle_aspect("weather") is True
+    assert (await service.get_toggles())["weather"] is True
 
-    assert await service.toggle_aspect(1, "weather") is False
-    assert (await service.get_toggles(1))["weather"] is False
+    assert await service.toggle_aspect("weather") is False
+    assert (await service.get_toggles())["weather"] is False
 
 
 async def test_toggling_one_aspect_leaves_the_others_alone(service):
-    await service.create_with_defaults(1)
-    await service.toggle_aspect(1, "standings")
+    await service.create_with_defaults()
+    await service.toggle_aspect("standings")
 
-    toggles = await service.get_toggles(1)
+    toggles = await service.get_toggles()
     assert toggles["standings"] is True
     assert all(not v for k, v in toggles.items() if k != "standings")
 
@@ -431,7 +432,6 @@ def _sound_bytes(filename: str) -> bytes:
 
 def _make_config(template_directory="templates", **overrides) -> _ImageConfig:
     values = dict(
-        server_id=1,
         module_enabled=True,
         template_directory=template_directory,
         # Every asset directory, pointed at the **packaged** folder rather than the
@@ -586,22 +586,22 @@ def test_candidate_override_does_not_mutate_the_stored_config():
 
 
 async def test_set_pfp_flag_writes_each_toggle(service):
-    await service.create_with_defaults(1)
+    await service.create_with_defaults()
 
-    await service.set_pfp_flag(1, "use_pfp", True)
-    await service.set_pfp_flag(1, "pfp_daily", True)
-    await service.set_pfp_flag(1, "pfp_prerender", False)
+    await service.set_pfp_flag("use_pfp", True)
+    await service.set_pfp_flag("pfp_daily", True)
+    await service.set_pfp_flag("pfp_prerender", False)
 
-    cfg = await service.get_config(1)
+    cfg = await service.get_config()
     assert (cfg.use_pfp, cfg.pfp_daily, cfg.pfp_prerender) == (True, True, False)
 
 
 async def test_set_pfp_flag_refuses_a_column_outside_the_three(service):
-    await service.create_with_defaults(1)
+    await service.create_with_defaults()
     # The string-valued time is not a flag, and no other column is reachable this way.
     for forbidden in ("pfp_daily_time", "module_enabled", "server_id", "time_zone"):
         with pytest.raises(UnknownConfigField):
-            await service.set_pfp_flag(1, forbidden, True)
+            await service.set_pfp_flag(forbidden, True)
 
 
 def _pfp_config(**overrides) -> ImageConfig:

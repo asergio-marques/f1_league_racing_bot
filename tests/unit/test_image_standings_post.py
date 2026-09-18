@@ -753,7 +753,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
         return True
 
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(1)
+    await config_service.create_with_defaults()
     validity_service = ImageValidityService(
         config_service, SimpleNamespace(is_images_enabled=_true)
     )
@@ -781,7 +781,7 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
         season_number=4,
     )
 
-    config = await config_service.get_config(1)
+    config = await config_service.get_config()
     for drawing in drawings:
         directories, faults = resolve_configured_directories(
             config,
@@ -794,7 +794,6 @@ async def test_the_posting_paths_own_drawings_reach_a_png(tmp_path):
             image_type=drawing.template_key,
         )
         outcome = await bot.image_render_service.render(
-            1,
             drawing.template_key,
             spec_builder_with_faults(build_fill_spec, drawing, directories, faults),
             output_dir=tmp_path,
@@ -1254,9 +1253,9 @@ async def _highlighted_svg(tmp_path):
     driver_snaps, team_snaps = _snapshots(round_ids[0], division_id)
     bot = _bot(db_path)
     config_service = ImageConfigService(db_path)
-    await config_service.create_with_defaults(1)
+    await config_service.create_with_defaults()
     # See the docstring: the default points into the league's own gitignored folder.
-    await config_service.set_field(1, "marker_directory", packaged_directory_for("marker"))
+    await config_service.set_field("marker_directory", packaged_directory_for("marker"))
     bot.image_config_service = config_service
 
     drawings = await build_drawings(
@@ -1275,7 +1274,7 @@ async def _highlighted_svg(tmp_path):
         division_name="Alpha",
     )
 
-    config = await config_service.get_config(1)
+    config = await config_service.get_config()
     out = {}
     for drawing in drawings:
         directories, _faults = resolve_configured_directories(

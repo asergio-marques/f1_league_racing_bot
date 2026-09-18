@@ -169,7 +169,7 @@ async def test_disabling_images_clears_the_flag(tmp_path):
 
     await cog._disable_images(interaction, SERVER_ID)
 
-    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(SERVER_ID, False)
+    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(False)
 
 
 async def test_disabling_images_keeps_the_configuration(tmp_path):

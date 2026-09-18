@@ -62,12 +62,12 @@ async def results_enabled(bot, server_id: int, template_key: str) -> bool:
     to text (XIV.4 — the unit of failure is one graphic).
     """
     try:
-        if not await bot.module_service.is_images_enabled(server_id):
+        if not await bot.module_service.is_images_enabled():
             return False
-        toggles = await bot.image_config_service.get_toggles(server_id)
+        toggles = await bot.image_config_service.get_toggles()
         if not toggles.get("results"):
             return False
-        reports = await bot.image_validity_service.template_reports(server_id)
+        reports = await bot.image_validity_service.template_reports()
         report = reports.get(template_key)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
@@ -291,7 +291,7 @@ async def build_drawing(
     user_ids = [row.driver_user_id for row in driver_rows]
     role_ids = [row.team_role_id for row in driver_rows]
 
-    config = await bot.image_config_service.get_config(server_id)
+    config = await bot.image_config_service.get_config()
 
     return resolve_drawing(
         session_type=session_result.session_type,
@@ -327,7 +327,7 @@ async def render_png(bot, server_id: int, drawing, origin: PostingOrigin):
         spec_builder_with_faults,
     )
 
-    config = await bot.image_config_service.get_config(server_id)
+    config = await bot.image_config_service.get_config()
     directories, directory_faults = resolve_configured_directories(
         config,
         (

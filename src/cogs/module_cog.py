@@ -728,7 +728,7 @@ class ModuleCog(commands.Cog):
             converter_available,
         )
 
-        if await self.bot.module_service.is_images_enabled(server_id):
+        if await self.bot.module_service.is_images_enabled():
             await interaction.response.send_message(
                 "⚠️ Image module is already enabled.", ephemeral=True
             )
@@ -740,8 +740,8 @@ class ModuleCog(commands.Cog):
         try:
             # create_with_defaults is idempotent: an existing configuration is left
             # exactly as it was, which is what makes re-enabling lossless (FR-004a).
-            await self.bot.image_config_service.create_with_defaults(server_id)
-            await self.bot.module_service.set_images_enabled(server_id, True)
+            await self.bot.image_config_service.create_with_defaults()
+            await self.bot.module_service.set_images_enabled(True)
             async with get_connection(self.bot.db_path) as db:
                 await db.execute(
                     "INSERT INTO audit_entries "
@@ -751,7 +751,7 @@ class ModuleCog(commands.Cog):
                 )
                 await db.commit()
         except Exception as exc:
-            await self.bot.module_service.set_images_enabled(server_id, False)
+            await self.bot.module_service.set_images_enabled(False)
             await interaction.followup.send(
                 f"❌ Image module enable failed: {exc}. Module remains disabled.",
                 ephemeral=True,
@@ -784,7 +784,7 @@ class ModuleCog(commands.Cog):
         none can become a stale binding while the module is off (FR-004a). No
         ``--preserve-config`` flag is offered because nothing is cleared (FR-004b).
         """
-        if not await self.bot.module_service.is_images_enabled(server_id):
+        if not await self.bot.module_service.is_images_enabled():
             await interaction.response.send_message(
                 "⚠️ Image module is already disabled.", ephemeral=True
             )
@@ -793,7 +793,7 @@ class ModuleCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         now = datetime.now(timezone.utc).isoformat()
-        await self.bot.module_service.set_images_enabled(server_id, False)
+        await self.bot.module_service.set_images_enabled(False)
         async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "INSERT INTO audit_entries "
