@@ -15,6 +15,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
+from tests.support.migration_steps import migrate_before  # noqa: E402
 
 SERVER_ID = 22120
 _MIGRATIONS = os.path.join(os.path.dirname(__file__), "..", "..", "src", "db", "migrations")
@@ -22,20 +23,19 @@ _MIGRATION_057 = os.path.join(_MIGRATIONS, "057_season_lifecycle.sql")
 
 
 async def _schema_before_057(db) -> None:
-    """Raise the schema as it stood before the lifecycle migration, applied by hand.
+    """Ready a connection opened on a schema `migrate_before(path, "057")` raised.
 
-    Deliberately not `run_migrations`: the entries have to be written before 057 runs, which
-    the schema template cannot stop short of.
+    Deliberately not `run_migrations`: the rows have to be written before 057 runs, which the
+    full schema template cannot stop short of. The chain itself is built once per session and
+    copied (#252).
     """
-    for name in sorted(f for f in os.listdir(_MIGRATIONS) if f.endswith(".sql") and f < "057"):
-        with open(os.path.join(_MIGRATIONS, name), encoding="utf-8") as fh:
-            await db.executescript(fh.read())
     # Migration 001 turns foreign keys on; the rows seeded here stand alone.
     await db.execute("PRAGMA foreign_keys = OFF")
 
 
 async def test_the_migration_carries_every_entry_and_its_drivers_identity(tmp_path):
     path = str(tmp_path / "pre_057.db")
+    migrate_before(path, "057")
     async with aiosqlite.connect(path) as db:
         await _schema_before_057(db)
         await db.executescript(

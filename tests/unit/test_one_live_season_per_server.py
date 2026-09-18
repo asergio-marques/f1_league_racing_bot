@@ -28,12 +28,9 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
-from tests.support.migration_steps import run_migrations_through  # noqa: E402
+from tests.support.migration_steps import migrate_before, run_migrations_through  # noqa: E402
 
 SERVER_ID = 4242
-MIGRATIONS = os.path.join(
-    os.path.dirname(__file__), "..", "..", "src", "db", "migrations"
-)
 
 
 async def _seed_server(db_path, *server_ids):
@@ -112,28 +109,13 @@ async def test_a_league_keeps_every_season_of_its_history(db_path):
 
 
 def _schema_before_049(path):
-    """Build the schema as it stood before migration 049, and dirty it."""
-    # Every migration before 049, and none after it: a later one may have rebuilt the very
-    # table 049 indexes (068 took its server_id away), so it is not the schema 049 met.
-    files = sorted(
-        f
-        for f in os.listdir(MIGRATIONS)
-        if f.endswith(".sql") and not f.startswith("__") and f < "049"
-    )
-    con = sqlite3.connect(path)
-    con.execute(
-        "CREATE TABLE IF NOT EXISTS schema_migrations "
-        "(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
-    )
-    for name in files:
-        with open(os.path.join(MIGRATIONS, name), encoding="utf-8") as fh:
-            con.executescript(fh.read())
-        con.execute(
-            "INSERT OR IGNORE INTO schema_migrations VALUES (?, datetime('now'))",
-            (name,),
-        )
-    con.commit()
-    return con
+    """Build the schema as it stood before migration 049, and dirty it.
+
+    Every migration before 049 and none after it — a later one may have rebuilt the very table
+    049 indexes (068 took its server_id away) — built once per session and copied (#252).
+    """
+    migrate_before(path, "049")
+    return sqlite3.connect(path)
 
 
 @pytest.mark.parametrize(
