@@ -1775,6 +1775,26 @@ async def recalculate_attendance_for_round(
     holding a write transaction open across it would block every other writer for as long
     as Discord took to answer.
     """
+    await _recalculate_forward(db_path, round_id, division_id, recompute_every_round=False)
+
+    # FR-031: re-post sheet and re-evaluate sanctions.
+    await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
+    return await enforce_attendance_sanctions(
+        bot, guild, db_path, round_id, division_id, season_id
+    )
+
+
+async def _recalculate_forward(
+    db_path: str, round_id: int, division_id: int, *, recompute_every_round: bool
+) -> list[int]:
+    """Recompute *round_id* and carry the running total through every finalised round after
+    it, in **one transaction** (#187). Returns the ids of the rounds it touched, in order.
+
+    The round itself is always fully recomputed (FR-028). With *recompute_every_round* the
+    rounds after it are too, which is what `/attendance sync` asks for: it repairs a round
+    whose recording failed, not only a total carried from an amended one. Without it they are
+    only redistributed (FR-030), as an amendment needs.
+    """
     async with get_connection(db_path) as db:
         # FR-028: full recompute without upgrade-only constraint.
         await record_attendance_from_results_full_recompute(
@@ -1795,19 +1815,45 @@ async def recalculate_attendance_for_round(
             """,
             (division_id, round_id),
         )
-        subsequent_rounds = await cursor.fetchall()
+        subsequent_rounds = [row["id"] for row in await cursor.fetchall()]
 
-        for sub_row in subsequent_rounds:
-            await distribute_attendance_points(
-                db_path, sub_row["id"], division_id, db=db
-            )
+        for sub_round_id in subsequent_rounds:
+            if recompute_every_round:
+                await record_attendance_from_results_full_recompute(
+                    db_path, sub_round_id, division_id, db=db
+                )
+            await distribute_attendance_points(db_path, sub_round_id, division_id, db=db)
 
         await db.commit()
+    return [round_id, *subsequent_rounds]
 
-    # FR-031: re-post sheet and re-evaluate sanctions.
-    await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
+
+async def sync_attendance(
+    bot,
+    guild: discord.Guild,
+    db_path: str,
+    division_id: int,
+    from_round_id: int,
+    season_id: int,
+) -> SanctionOutcome:
+    """What `/attendance sync` does: recalculate from a round forward, then finish the job.
+
+    Decided 2026-09-18 (#239), as the recovery for sanctions that did not all apply. Every
+    finalised round from *from_round_id* on is recomputed from its results and its points
+    redistributed, in one transaction; the division's sheet is then posted for the latest of
+    them, the channel holding one sheet; and the sanctions are enforced against that latest
+    round, where the running totals now stand.
+
+    **Safe to run again.** A driver already sacked is no longer a candidate and one already
+    in Reserve is passed over, so a second run applies only what the first did not.
+    """
+    touched = await _recalculate_forward(
+        db_path, from_round_id, division_id, recompute_every_round=True
+    )
+    latest = touched[-1]
+    await post_attendance_sheet(bot, guild, db_path, latest, division_id)
     return await enforce_attendance_sanctions(
-        bot, guild, db_path, round_id, division_id, season_id
+        bot, guild, db_path, latest, division_id, season_id
     )
 
 
