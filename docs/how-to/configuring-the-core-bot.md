@@ -46,11 +46,13 @@ A season is **live** from `/season setup` until it is completed, cancelled or ab
 
 Three things have to be done on that computer, by hand, before any command in this guide works. They are covered in [Setup](../../README.md#setup) in the main README:
 
-1. **Install it and give it your bot token** — the token comes from Discord's developer portal and goes in a file called `.env`.
-2. **Turn on two switches in that same portal** — the *Server Members* and *Message Content* intents. Without the first the bot cannot hand out roles at all. See [Privileged Gateway Intents](../../README.md#privileged-gateway-intents).
+1. **Install it and give it your bot token** — the token comes from Discord's developer portal and goes in a file called `.env`. The bot application is your league's alone: one bot serves one league.
+2. **Set three switches in that same portal** — turn on the *Server Members* and *Message Content* intents, and turn off *Public Bot*. Without the first intent the bot cannot hand out roles at all. See [Privileged Gateway Intents](../../README.md#privileged-gateway-intents). With *Public Bot* off, nobody but the bot's owner can add it to a server.
 3. **Start it once.** It builds its own databases on first run — two of them, `bot.db` for your league's records and `scheduler.db` for work it has scheduled ahead. There is nothing to create.
 
 > **If you keep backups, keep both.** `bot.db` on its own is not a complete backup: without `scheduler.db` a restored season still knows its rounds, but every weather phase, RSVP notice and result submission it was waiting to send has gone, and only reviewing and approving the season again brings them back. Copying `bot.db` while the bot is running can also miss the most recent changes, because they may still be sitting in a `bot.db-wal` file next to it. The safe ways are in [Backing up](../../README.md#backing-up). Backups are optional and entirely your choice — but a half-backup is worse than none, because it looks complete.
+
+**Invite it to your league's server, and to no other.** The first `/bot-init` claims the server it runs in. On any other server the bot refuses every command, and the computer running it logs a warning for as long as it sits in more than one — see [One bot, one server](../../README.md#one-bot-one-server).
 
 **Invite it with the right permissions.** All of them listed under [Required Permissions](../../README.md#required-permissions) are genuinely used, and the two worth checking twice are **Manage Roles** — the bot cannot place a driver without it — and **Mention @everyone, @here, and All Roles**, which it needs to ping a division role even though it never pings everyone.
 
@@ -196,7 +198,7 @@ Every division you create later is built from this list, each team with **two se
 
 The bot carries **28 circuits**, each with an ID and a full name — `12` is Silverstone Circuit, `22` is Autódromo José Carlos Pace. You use either when adding a round, and autocomplete offers them as you type. Picking a suggestion is the easiest route, but you are not tied to it: the ID on its own, the name in any capitalisation, and the whole line as the dropdown shows it (`12 – Silverstone Circuit`) all work, so retyping or pasting an entry is safe. Where an ID and a name appear together, the ID decides.
 
-**The list is fixed.** You cannot add a circuit of your own, rename one, or change how wet the bot thinks it is. Each circuit's rainfall behaviour ships with the bot and is the same on every server.
+**The list is fixed.** You cannot add a circuit of your own, rename one, or change how wet the bot thinks it is. Each circuit's rainfall behaviour ships with the bot and is the same for every league.
 
 Worth a look now rather than mid-way through building a calendar, because the names are the official circuit names rather than country names, and they are what a round is stored under. The full list is also in the README under [Track ID Reference](../../README.md#track-id-reference).
 
@@ -560,9 +562,6 @@ Things to know before you run it:
 - **Their portrait is fetched again, not carried.** A portrait is the picture of the account
   itself, so the old one is discarded and the new account's own is taken before the next
   graphic is drawn. A portrait you put in the driver directory yourself is never touched.
-
-Where a driver races in two leagues that share this bot, only the league you run the command
-in is changed.
 
 ### Signing up drivers mid-season
 
