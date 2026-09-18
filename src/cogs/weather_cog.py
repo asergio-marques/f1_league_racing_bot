@@ -46,7 +46,7 @@ class WeatherCog(commands.Cog):
     async def _active_season_gate(self, interaction: discord.Interaction) -> bool:
         """Return True (and respond ephemerally) if a season is currently ACTIVE."""
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if season is not None:
             await interaction.response.send_message(
                 "❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.",

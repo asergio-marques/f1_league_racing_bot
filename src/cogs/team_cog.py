@@ -29,7 +29,7 @@ class TeamCog(commands.Cog):
         refused, having answered the interaction.
         """
         season = await self.bot.season_service.get_setup_or_active_season(  # type: ignore[attr-defined]
-            interaction.guild_id
+            
         )
         if season is None or season.stage is SeasonStage.CONFIGURATION:
             return False
@@ -274,7 +274,7 @@ class TeamCog(commands.Cog):
             server_lines.append(_fmt_team(reserve))
 
         setup_season = await self.bot.season_service.get_setup_season(  # type: ignore[attr-defined]
-            interaction.guild_id
+            
         )
 
         if setup_season is None:
@@ -323,7 +323,7 @@ class TeamCog(commands.Cog):
         await interaction.response.defer(ephemeral=not public)
 
         season = await self.bot.season_service.get_confirmed_season(  # type: ignore[attr-defined]
-            interaction.guild_id
+            
         )
         if season is None:
             await interaction.followup.send("⛔ No season is being raced, so no lineup is confirmed.", ephemeral=True)

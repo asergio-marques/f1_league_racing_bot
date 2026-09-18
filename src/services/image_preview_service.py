@@ -237,7 +237,7 @@ async def resolve_context(
     # (FR-001). A season pending approval holds its divisions, rounds, teams, seats and
     # driver assignments in the same tables and the same shape as an approved one, so
     # widening the lookup is the whole of what drawing it takes.
-    season = await bot.season_service.get_previewable_season(server_id)
+    season = await bot.season_service.get_previewable_season()
 
     if season is None:
         # Refused rather than invented (decided 2026-09-06). A preview used to fabricate a

@@ -28,8 +28,8 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
     """Create the minimal schema required by the attendance pipeline tests."""
     db.row_factory = aiosqlite.Row
 
-    await db.execute("CREATE TABLE seasons (id INTEGER PRIMARY KEY, server_id INTEGER NOT NULL)")
-    await db.execute("INSERT INTO seasons VALUES (1, 100)")
+    await db.execute("CREATE TABLE seasons (id INTEGER PRIMARY KEY)")
+    await db.execute("INSERT INTO seasons VALUES (1)")
 
     await db.execute(
         """
@@ -994,8 +994,8 @@ async def _make_two_round_db(tmp_path):
             "VALUES (1, 2, 1, 3)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(

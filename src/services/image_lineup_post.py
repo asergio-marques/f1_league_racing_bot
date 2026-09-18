@@ -109,7 +109,7 @@ async def build_drawing(bot, guild, division_id: int):
     async with get_connection(bot.db_path) as db:
         division = await (
             await db.execute(
-                "SELECT d.id, d.name, d.tier, s.id AS season_id, s.server_id, s.season_number "
+                "SELECT d.id, d.name, d.tier, s.id AS season_id, (SELECT server_id FROM server_configs LIMIT 1) AS server_id, s.season_number "
                 "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                 (division_id,),
             )
@@ -271,7 +271,7 @@ async def try_post(
     async with get_connection(bot.db_path) as db:
         row = await (
             await db.execute(
-                "SELECT d.name, d.lineup_channel_id, d.lineup_message_id, s.server_id "
+                "SELECT d.name, d.lineup_channel_id, d.lineup_message_id, (SELECT server_id FROM server_configs LIMIT 1) AS server_id "
                 "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                 (division_id,),
             )

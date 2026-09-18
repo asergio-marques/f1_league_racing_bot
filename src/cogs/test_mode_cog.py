@@ -81,7 +81,7 @@ class TestModeCog(commands.Cog):
         # Configuration, and no season in Configuration has raced a fake driver.
         from services.season_lifecycle_service import live_season_stage
 
-        live = await live_season_stage(self.bot.db_path, interaction.guild_id)  # type: ignore[attr-defined]
+        live = await live_season_stage(self.bot.db_path)  # type: ignore[attr-defined]
         if live is None or live[1] is not SeasonStage.CONFIGURATION:
             await interaction.response.send_message(
                 "⛔ Test mode can only be switched while a season is in configuration. "
@@ -120,8 +120,7 @@ class TestModeCog(commands.Cog):
 
             async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
                 season_cursor = await db.execute(
-                    "SELECT id FROM seasons WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE')",
-                    (interaction.guild_id,),
+                    "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE')",
                 )
                 season_row = await season_cursor.fetchone()
 
@@ -541,7 +540,6 @@ class TestModeCog(commands.Cog):
             return
 
         summary = await build_review_summary(
-            interaction.guild_id,
             self.bot.db_path,  # type: ignore[attr-defined]
             self.bot.scheduler_service,  # type: ignore[attr-defined]
         )
@@ -639,7 +637,7 @@ class TestModeCog(commands.Cog):
         """
         from services.season_lifecycle_service import live_season_stage
 
-        live = await live_season_stage(self.bot.db_path, interaction.guild_id)  # type: ignore[attr-defined]
+        live = await live_season_stage(self.bot.db_path)  # type: ignore[attr-defined]
         if live is not None and live[1] is SeasonStage.PLACEMENTS:
             return False
         await interaction.response.send_message(
@@ -876,7 +874,6 @@ class TestModeCog(commands.Cog):
         from services.test_roster_service import add_test_driver
 
         result = await add_test_driver(
-            server_id=interaction.guild_id,
             driver_name=driver_name,
             team_name=team_name,
             division_name=division,
@@ -1028,7 +1025,6 @@ class TestModeCog(commands.Cog):
         from services.test_roster_service import list_test_drivers
 
         result = await list_test_drivers(
-            server_id=interaction.guild_id,
             division_name=division,
             db_path=self.bot.db_path,  # type: ignore[attr-defined]
         )
@@ -1090,7 +1086,6 @@ class TestModeCog(commands.Cog):
         from services.test_roster_service import clear_test_drivers
 
         result = await clear_test_drivers(
-            server_id=interaction.guild_id,
             division_name=division,
             db_path=self.bot.db_path,  # type: ignore[attr-defined]
         )
@@ -1177,10 +1172,10 @@ class TestModeCog(commands.Cog):
                 SELECT d.id AS division_id
                   FROM divisions d
                   JOIN seasons s ON s.id = d.season_id
-                 WHERE s.server_id = ? AND s.stage IN ({",".join("?" for _ in ongoing)})
+                 WHERE s.stage IN ({",".join("?" for _ in ongoing)})
                    AND LOWER(d.name) = LOWER(?)
                 """,
-                (guild_id, *ongoing, division),
+                (*ongoing, division),
             )
             div_row = await cur.fetchone()
 

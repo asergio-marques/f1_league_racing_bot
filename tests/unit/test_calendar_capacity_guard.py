@@ -225,9 +225,8 @@ async def _make_season_db(tmp_path, *, rounds_per_division: dict[str, int]) -> s
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (1, ?, 1, '2026-01-01', 'SETUP')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 1, '2026-01-01', 'SETUP')"
         )
         for index, (name, count) in enumerate(rounds_per_division.items(), start=1):
             await db.execute(

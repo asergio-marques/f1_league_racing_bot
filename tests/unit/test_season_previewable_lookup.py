@@ -47,9 +47,9 @@ def service(db_path):
 async def _seed(db_path, status: str, number: int, *, server_id: int = SERVER_ID) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, ?, ?, ?)",
-            (server_id, START.isoformat(), status, number),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES (?, ?, ?)",
+            (START.isoformat(), status, number),
         )
         await db.commit()
         return cursor.lastrowid
@@ -60,12 +60,12 @@ async def _seed(db_path, status: str, number: int, *, server_id: int = SERVER_ID
 
 class TestPreviewableSeason:
     async def test_no_season_at_all_returns_none(self, service):
-        assert await service.get_previewable_season(SERVER_ID) is None
+        assert await service.get_previewable_season() is None
 
     async def test_an_active_season_is_returned(self, service, db_path):
         await _seed(db_path, "ACTIVE", 3)
 
-        season = await service.get_previewable_season(SERVER_ID)
+        season = await service.get_previewable_season()
 
         assert season is not None
         assert season.season_number == 3
@@ -76,7 +76,7 @@ class TestPreviewableSeason:
     ):
         await _seed(db_path, "SETUP", 1)
 
-        season = await service.get_previewable_season(SERVER_ID)
+        season = await service.get_previewable_season()
 
         assert season is not None
         assert season.season_number == 1
@@ -103,7 +103,7 @@ class TestPreviewableSeason:
     async def test_a_finished_season_is_never_previewable(self, service, db_path, status):
         await _seed(db_path, status, 2)
 
-        assert await service.get_previewable_season(SERVER_ID) is None
+        assert await service.get_previewable_season() is None
 
 
 # ── get_previous_season_number ────────────────────────────────────────────
@@ -111,37 +111,37 @@ class TestPreviewableSeason:
 
 class TestPreviousSeasonNumber:
     async def test_a_server_that_has_never_held_a_season_is_zero(self, service):
-        assert await service.get_previous_season_number(SERVER_ID) == 0
+        assert await service.get_previous_season_number() == 0
 
     async def test_the_highest_committed_number_is_returned(self, service, db_path):
         for number in (1, 2, 3, 4):
             await _seed(db_path, "COMPLETED", number)
 
-        assert await service.get_previous_season_number(SERVER_ID) == 4
+        assert await service.get_previous_season_number() == 4
 
     async def test_a_cancelled_season_still_counts(self, service, db_path):
         """Its number was issued and must not be handed out twice."""
         await _seed(db_path, "COMPLETED", 1)
         await _seed(db_path, "CANCELLED", 2)
 
-        assert await service.get_previous_season_number(SERVER_ID) == 2
+        assert await service.get_previous_season_number() == 2
 
     async def test_an_active_season_counts(self, service, db_path):
         await _seed(db_path, "ACTIVE", 7)
 
-        assert await service.get_previous_season_number(SERVER_ID) == 7
+        assert await service.get_previous_season_number() == 7
 
     async def test_a_season_pending_approval_does_not_count(self, service, db_path):
         """It holds a provisional number; nothing is committed until it is approved."""
         await _seed(db_path, "COMPLETED", 4)
         await _seed(db_path, "SETUP", 5)
 
-        assert await service.get_previous_season_number(SERVER_ID) == 4
+        assert await service.get_previous_season_number() == 4
 
     async def test_only_a_pending_season_still_reads_zero(self, service, db_path):
         await _seed(db_path, "SETUP", 1)
 
-        assert await service.get_previous_season_number(SERVER_ID) == 0
+        assert await service.get_previous_season_number() == 0
 
 
 # ── get_previewable_divisions ─────────────────────────────────────────────
@@ -168,14 +168,14 @@ class TestPreviewableDivisions:
 
     async def test_no_season_at_all_offers_nothing(self, service):
         """Empty rather than an error — a season-less server draws a fabricated league."""
-        assert await service.get_previewable_divisions(SERVER_ID) == []
+        assert await service.get_previewable_divisions() == []
 
     async def test_it_returns_the_active_seasons_divisions(self, service, db_path):
         season_id = await _seed(db_path, "ACTIVE", 3)
         await _seed_division(db_path, season_id, "Premier", 1)
         await _seed_division(db_path, season_id, "Academy", 2)
 
-        divisions = await service.get_previewable_divisions(SERVER_ID)
+        divisions = await service.get_previewable_divisions()
 
         assert [d.name for d in divisions] == ["Premier", "Academy"]
 
@@ -193,7 +193,7 @@ class TestPreviewableDivisions:
         await _seed_division(db_path, done, "Last Season Division", 1)
         await _seed_division(db_path, live, "This Season Division", 1)
 
-        divisions = await service.get_previewable_divisions(SERVER_ID)
+        divisions = await service.get_previewable_divisions()
 
         assert [d.name for d in divisions] == ["This Season Division"]
 
@@ -203,7 +203,7 @@ class TestPreviewableDivisions:
         pending = await _seed(db_path, "SETUP", 1)
         await _seed_division(db_path, pending, "Pending Division", 1)
 
-        divisions = await service.get_previewable_divisions(SERVER_ID)
+        divisions = await service.get_previewable_divisions()
 
         assert [d.name for d in divisions] == ["Pending Division"]
 
@@ -211,7 +211,7 @@ class TestPreviewableDivisions:
         done = await _seed(db_path, "COMPLETED", 2)
         await _seed_division(db_path, done, "Last Season", 1)
 
-        assert await service.get_previewable_divisions(SERVER_ID) == []
+        assert await service.get_previewable_divisions() == []
 
     async def test_it_matches_the_pair_it_replaced(self, service, db_path):
         """The guard against the combined query drifting from the two it stands in for."""
@@ -219,9 +219,9 @@ class TestPreviewableDivisions:
         await _seed_division(db_path, season_id, "Premier", 1)
         await _seed_division(db_path, season_id, "Academy", 2)
 
-        season = await service.get_previewable_season(SERVER_ID)
+        season = await service.get_previewable_season()
         separately = await service.get_divisions(season.id)
-        combined = await service.get_previewable_divisions(SERVER_ID)
+        combined = await service.get_previewable_divisions()
 
         assert [d.name for d in combined] == [d.name for d in separately]
         assert [d.id for d in combined] == [d.id for d in separately]
@@ -232,6 +232,6 @@ class TestPreviewableDivisions:
         season_id = await _seed(db_path, "ACTIVE", 3)
         await _seed_division(db_path, season_id, "Premier", 1)
 
-        divisions = await service.get_previewable_divisions(SERVER_ID, timeout=1.0)
+        divisions = await service.get_previewable_divisions(timeout=1.0)
 
         assert [d.name for d in divisions] == ["Premier"]

@@ -142,9 +142,9 @@ async def _seed_a_finished_season(db_path: str) -> None:
             (_PROFILE_ID, _OLD_USER),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (?, ?, '2026-09-17', 'ACTIVE', 4, 'ONGOING')",
-            (_SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (?, '2026-09-17', 'ACTIVE', 4, 'ONGOING')",
+            (_SEASON_ID,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, mention_role_id, tier, status) "

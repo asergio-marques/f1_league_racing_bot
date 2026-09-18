@@ -427,7 +427,7 @@ async def apply_penalties(
     )
     async with get_connection(db_path) as db2:
         cursor2 = await db2.execute(
-            "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+            "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
             (division_id,),
         )
         srv_row = await cursor2.fetchone()
@@ -445,7 +445,7 @@ async def apply_penalties(
         guild = None
         async with get_connection(db_path) as db3:
             cursor3 = await db3.execute(
-                "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
                 (division_id,),
             )
             row3 = await cursor3.fetchone()

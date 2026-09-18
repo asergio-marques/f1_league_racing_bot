@@ -70,9 +70,9 @@ async def league(db_path):
     """Two teams of two seated drivers, and rounds of every format."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, ?, 'ACTIVE', 3)",
-            (SERVER_ID, NOW.date().isoformat()),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES (?, 'ACTIVE', 3)",
+            (NOW.date().isoformat(),),
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(

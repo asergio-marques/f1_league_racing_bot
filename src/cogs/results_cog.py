@@ -252,7 +252,7 @@ class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points")
 
         await interaction.response.defer(ephemeral=True)
 
-        season = await interaction.client.season_service.get_season_for_server(self._guild_id)  # type: ignore[attr-defined]
+        season = await interaction.client.season_service.get_season_for_server()  # type: ignore[attr-defined]
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -558,7 +558,7 @@ class ResultsCog(commands.Cog):
             return
 
         standing = await points_config_service.setup_seasons_linking(
-            self.bot.db_path, interaction.guild_id, name
+            self.bot.db_path, name
         )
         if not standing:
             await self._apply_config_remove(interaction, name)
@@ -584,7 +584,7 @@ class ResultsCog(commands.Cog):
         differ about what removing one does or about what the log records.
         """
         try:
-            await points_config_service.remove_config(self.bot.db_path, interaction.guild_id, name)
+            await points_config_service.remove_config(self.bot.db_path, name)
         except ConfigNotFoundError:
             await interaction.followup.send(
                 f"\u274c Config **{name}** not found.", ephemeral=True
@@ -736,7 +736,7 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         await interaction.response.defer(ephemeral=True)
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No season found for this server.", ephemeral=True)
             return
@@ -772,7 +772,7 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         await interaction.response.defer(ephemeral=True)
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No season found for this server.", ephemeral=True)
             return
@@ -820,7 +820,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send(
                 "\u274c No active or setup season found.", ephemeral=True
@@ -983,7 +983,7 @@ class ResultsCog(commands.Cog):
             get_amendment_state,
         )
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1030,7 +1030,7 @@ class ResultsCog(commands.Cog):
             revert_modification_store,
         )
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1076,7 +1076,7 @@ class ResultsCog(commands.Cog):
             modify_session_points,
         )
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1129,7 +1129,7 @@ class ResultsCog(commands.Cog):
 
         from services.amendment_service import AmendmentNotActiveError, modify_fl_bonus
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1171,7 +1171,7 @@ class ResultsCog(commands.Cog):
 
         from services.amendment_service import AmendmentNotActiveError, modify_fl_position_limit
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1242,7 +1242,7 @@ class ResultsCog(commands.Cog):
             validate_modification_ordering,
         )
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1385,7 +1385,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1450,7 +1450,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -1503,7 +1503,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return

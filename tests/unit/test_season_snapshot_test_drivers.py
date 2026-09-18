@@ -64,9 +64,8 @@ async def _seed_setup_season(db_path):
     """One SETUP season with one division, a two-seat team and a reserve team."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-03-01', 'SETUP', 1)",
-            (SERVER_ID,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-03-01', 'SETUP', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -83,7 +82,6 @@ async def _snapshot(svc, db_path, season_id, divisions=None, forecast_channel_id
     """Re-snapshot the way a setup command does, re-seeding teams as the cog then does."""
     divisions = divisions or [DIVISION]
     new_season_id, _ = await svc.save_pending_snapshot(
-        SERVER_ID,
         date(2026, 3, 1),
         season_id,
         [
@@ -124,12 +122,12 @@ async def _seat_map(db_path):
 async def test_seated_mock_driver_survives_a_snapshot(db_path):
     """The bug: a setup command after seating a mock driver used to delete them."""
     season_id = await _seed_setup_season(db_path)
-    added = await add_test_driver(SERVER_ID, "Mock Alpha", "Redline", DIVISION, db_path)
+    added = await add_test_driver("Mock Alpha", "Redline", DIVISION, db_path)
     assert not isinstance(added, str), added
 
     await _snapshot(SeasonService(db_path), db_path, season_id)
 
-    survivors = await list_test_drivers(SERVER_ID, DIVISION, db_path)
+    survivors = await list_test_drivers(DIVISION, db_path)
     assert [d["display_name"] for d in survivors] == ["Mock Alpha"]
     assert survivors[0]["team_name"] == "Redline"
 
@@ -137,8 +135,8 @@ async def test_seated_mock_driver_survives_a_snapshot(db_path):
 async def test_mock_driver_keeps_its_seat_number(db_path):
     """Reseating is by seat number, not by "the next free seat"."""
     season_id = await _seed_setup_season(db_path)
-    await add_test_driver(SERVER_ID, "Mock One", "Redline", DIVISION, db_path)
-    second = await add_test_driver(SERVER_ID, "Mock Two", "Redline", DIVISION, db_path)
+    await add_test_driver("Mock One", "Redline", DIVISION, db_path)
+    second = await add_test_driver("Mock Two", "Redline", DIVISION, db_path)
     assert not isinstance(second, str), second
 
     before = await _seat_map(db_path)
@@ -150,7 +148,7 @@ async def test_mock_driver_keeps_its_seat_number(db_path):
 async def test_season_assignment_is_restored_under_the_new_season(db_path):
     """The assignment must point at the new season and division IDs, not the dead ones."""
     season_id = await _seed_setup_season(db_path)
-    added = await add_test_driver(SERVER_ID, "Mock Alpha", "Redline", DIVISION, db_path)
+    added = await add_test_driver("Mock Alpha", "Redline", DIVISION, db_path)
     profile_id = added["profile_id"]
 
     new_season_id = await _snapshot(SeasonService(db_path), db_path, season_id)
@@ -182,7 +180,7 @@ async def test_the_restored_assignment_carries_its_team_seat_id(db_path):
     empty. That is what a NULL here looks like from the outside.
     """
     season_id = await _seed_setup_season(db_path)
-    added = await add_test_driver(SERVER_ID, "Mock Alpha", "Redline", DIVISION, db_path)
+    added = await add_test_driver("Mock Alpha", "Redline", DIVISION, db_path)
     profile_id = added["profile_id"]
 
     await _snapshot(SeasonService(db_path), db_path, season_id)
@@ -212,7 +210,7 @@ async def test_the_restored_assignment_carries_its_team_seat_id(db_path):
 async def test_repeated_snapshots_do_not_accumulate_assignments(db_path):
     """Several setup commands in a row leave one assignment, not one per command."""
     season_id = await _seed_setup_season(db_path)
-    added = await add_test_driver(SERVER_ID, "Mock Alpha", "Redline", DIVISION, db_path)
+    added = await add_test_driver("Mock Alpha", "Redline", DIVISION, db_path)
     profile_id = added["profile_id"]
 
     svc = SeasonService(db_path)
@@ -232,7 +230,7 @@ async def test_repeated_snapshots_do_not_accumulate_assignments(db_path):
 
     assert assignments == 1
     assert seats == 1
-    assert len(await list_test_drivers(SERVER_ID, DIVISION, db_path)) == 1
+    assert len(await list_test_drivers(DIVISION, db_path)) == 1
 
 
 async def test_driver_in_a_removed_division_is_left_unseated_not_deleted(db_path):
@@ -242,7 +240,7 @@ async def test_driver_in_a_removed_division_is_left_unseated_not_deleted(db_path
     profile instead would be the very data loss this change exists to stop.
     """
     season_id = await _seed_setup_season(db_path)
-    added = await add_test_driver(SERVER_ID, "Mock Alpha", "Redline", DIVISION, db_path)
+    added = await add_test_driver("Mock Alpha", "Redline", DIVISION, db_path)
     profile_id = added["profile_id"]
 
     # Re-snapshot with the division renamed — the one they sat in no longer exists.
@@ -265,12 +263,12 @@ async def test_driver_in_a_removed_division_is_left_unseated_not_deleted(db_path
 async def test_reserve_driver_is_reseated(db_path):
     """The reserve team pre-creates no seats, so its occupant needs one made again."""
     season_id = await _seed_setup_season(db_path)
-    added = await add_test_driver(SERVER_ID, "Mock Sub", "Reserve", DIVISION, db_path)
+    added = await add_test_driver("Mock Sub", "Reserve", DIVISION, db_path)
     assert not isinstance(added, str), added
 
     await _snapshot(SeasonService(db_path), db_path, season_id)
 
-    survivors = await list_test_drivers(SERVER_ID, DIVISION, db_path)
+    survivors = await list_test_drivers(DIVISION, db_path)
     assert [(d["display_name"], d["team_name"]) for d in survivors] == [
         ("Mock Sub", "Reserve")
     ]
@@ -383,7 +381,7 @@ async def test_real_and_mock_drivers_survive_together(db_path):
     """A test-mode league and a real one are restored by one pass, not two."""
     season_id = await _seed_setup_season(db_path)
     real_id = await _seat_real_driver(db_path, season_id, seat_number=1)
-    mock = await add_test_driver(SERVER_ID, "Mock Alpha", "Redline", DIVISION, db_path)
+    mock = await add_test_driver("Mock Alpha", "Redline", DIVISION, db_path)
     assert not isinstance(mock, str), mock
 
     await _snapshot(SeasonService(db_path), db_path, season_id)

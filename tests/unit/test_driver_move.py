@@ -37,9 +37,9 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (?, ?, '2026-09-17', 'ACTIVE', 1, 'ONGOING')",
-            (SEASON_ID, SERVER_ID),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (?, '2026-09-17', 'ACTIVE', 1, 'ONGOING')",
+            (SEASON_ID,),
         )
         instance_id = 100
         for division_id, name, role in ((PRO, "Pro", 1001), (AM, "Am", 1002)):

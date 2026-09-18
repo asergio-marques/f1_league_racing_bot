@@ -270,7 +270,7 @@ async def test_apply_negative_penalty_reorders(tmp_path):
             "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) VALUES (1,'2026-01-01','ACTIVE',1)"
+            "INSERT INTO seasons (start_date, status, season_number) VALUES ('2026-01-01','ACTIVE',1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -344,7 +344,7 @@ async def test_apply_negative_penalty_reorders_move_up(tmp_path):
             "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) VALUES (1,'2026-01-01','ACTIVE',1)"
+            "INSERT INTO seasons (start_date, status, season_number) VALUES ('2026-01-01','ACTIVE',1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -417,7 +417,7 @@ async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
             "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) VALUES (1,'2026-01-01','ACTIVE',1)"
+            "INSERT INTO seasons (start_date, status, season_number) VALUES ('2026-01-01','ACTIVE',1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -496,7 +496,7 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
             "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) VALUES (1,'2026-01-01','ACTIVE',1)"
+            "INSERT INTO seasons (start_date, status, season_number) VALUES ('2026-01-01','ACTIVE',1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -601,8 +601,8 @@ async def test_apply_penalties_reposts_when_not_skipping(tmp_path):
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(

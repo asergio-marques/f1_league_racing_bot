@@ -59,7 +59,7 @@ async def config_exists(db_path: str, config_name: str) -> bool:
 
 
 async def setup_seasons_linking(
-    db_path: str, server_id: int, config_name: str
+    db_path: str, config_name: str
 ) -> list[tuple[int, int]]:
     """The ``(season_id, season_number)`` of every season in setup attached to this name.
 
@@ -72,15 +72,15 @@ async def setup_seasons_linking(
             SELECT s.id AS id, s.season_number AS season_number
             FROM season_points_links AS l
             JOIN seasons AS s ON s.id = l.season_id
-            WHERE l.config_name = ? AND s.server_id = ? AND s.status = 'SETUP'
+            WHERE l.config_name = ? AND s.status = 'SETUP'
             ORDER BY s.season_number, s.id
             """,
-            (config_name, server_id),
+            (config_name,),
         )
         return [(r["id"], r["season_number"]) for r in await cursor.fetchall()]
 
 
-async def remove_config(db_path: str, server_id: int, config_name: str) -> None:
+async def remove_config(db_path: str, config_name: str) -> None:
     """Delete a named points configuration, and the setup-season links that named it.
 
     **Why the links go with it, and why only those of a season in setup** (decided
@@ -123,10 +123,10 @@ async def remove_config(db_path: str, server_id: int, config_name: str) -> None:
             DELETE FROM season_points_links
             WHERE config_name = ?
               AND season_id IN (
-                  SELECT id FROM seasons WHERE server_id = ? AND status = 'SETUP'
+                  SELECT id FROM seasons WHERE status = 'SETUP'
               )
             """,
-            (config_name, server_id),
+            (config_name,),
         )
         await db.commit()
 

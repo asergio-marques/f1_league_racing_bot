@@ -876,7 +876,7 @@ class SignupCog(commands.Cog):
             refusal,
         )
 
-        use = await find_channel_use(self.bot.db_path, server_id, channel.id)
+        use = await find_channel_use(self.bot.db_path, channel.id)
         if use is not None:
             await interaction.response.send_message(
                 refusal(
@@ -1218,7 +1218,7 @@ class SignupCog(commands.Cog):
         from services.season_lifecycle_service import signup_configuration_fixed
 
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        season_number = await signup_configuration_fixed(self.bot.db_path, server_id)
+        season_number = await signup_configuration_fixed(self.bot.db_path)
         if season_number is None:
             return False
         await interaction.response.send_message(
@@ -1591,7 +1591,7 @@ class SignupCog(commands.Cog):
         # with no window already run and unplaced (issue #220).
         from services.season_lifecycle_service import WINDOW_OPENS_FROM, live_season_stage
 
-        live = await live_season_stage(self.bot.db_path, server_id)
+        live = await live_season_stage(self.bot.db_path)
         if live is None or live[1] not in WINDOW_OPENS_FROM:
             await interaction.response.send_message(
                 "❌ Signups can only be opened while the season is waiting for its signup "
@@ -1723,7 +1723,7 @@ class SignupCog(commands.Cog):
         )
         from services.season_lifecycle_service import advance_on_window_open
 
-        await advance_on_window_open(self.bot.db_path, server_id)
+        await advance_on_window_open(self.bot.db_path)
 
         if close_at_iso:
             await self.bot.signup_module_service.set_close_at(close_at_iso)

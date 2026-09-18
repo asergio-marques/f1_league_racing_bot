@@ -53,9 +53,9 @@ async def db_path(tmp_path):
 async def _season(db_path, server_id=SERVER_ID, status="SETUP"):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-03-01', ?, 1)",
-            (server_id, status),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-03-01', ?, 1)",
+            (status,),
         )
         await db.commit()
         return cursor.lastrowid
@@ -131,13 +131,13 @@ async def test_a_channel_in_use_is_found_whatever_uses_it(db_path, setting):
 
     await _set(db_path, setting, 500, division_id=division_id)
 
-    use = await find_channel_use(db_path, SERVER_ID, 500)
+    use = await find_channel_use(db_path, 500)
     assert use is not None, f"{setting} was not detected"
     assert use.setting == setting
 
 
 async def test_a_free_channel_is_free(db_path):
-    assert await find_channel_use(db_path, SERVER_ID, 999) is None
+    assert await find_channel_use(db_path, 999) is None
 
 
 async def test_the_label_names_the_division_for_a_per_division_setting(db_path):
@@ -145,7 +145,7 @@ async def test_the_label_names_the_division_for_a_per_division_setting(db_path):
     division_id = await _division(db_path, season_id, "Pro")
     await _set(db_path, "results", 500, division_id=division_id)
 
-    use = await find_channel_use(db_path, SERVER_ID, 500)
+    use = await find_channel_use(db_path, 500)
 
     assert use.division_name == "Pro"
     assert "**Pro**" in use.describe()
@@ -155,7 +155,7 @@ async def test_the_label_names_the_division_for_a_per_division_setting(db_path):
 async def test_a_server_setting_names_no_division(db_path, setting):
     await _set(db_path, setting, 500)
 
-    use = await find_channel_use(db_path, SERVER_ID, 500)
+    use = await find_channel_use(db_path, 500)
 
     assert use.division_name is None
     assert "**" not in use.describe()
@@ -171,7 +171,7 @@ async def test_two_divisions_may_not_share_a_channel(db_path):
     await _division(db_path, season_id, "Academy")
     await _set(db_path, "results", 500, division_id=pro)
 
-    use = await find_channel_use(db_path, SERVER_ID, 500)
+    use = await find_channel_use(db_path, 500)
 
     assert use == ChannelUse("results", "Pro")
 
@@ -181,7 +181,7 @@ async def test_one_division_may_not_use_a_channel_for_two_things(db_path):
     pro = await _division(db_path, season_id, "Pro")
     await _set(db_path, "calendar", 500, division_id=pro)
 
-    use = await find_channel_use(db_path, SERVER_ID, 500)
+    use = await find_channel_use(db_path, 500)
 
     assert use.setting == "calendar"
 
@@ -196,7 +196,7 @@ async def test_a_finished_seasons_channel_is_free_again(db_path, status):
     division_id = await _division(db_path, season_id, "Pro")
     await _set(db_path, "results", 500, division_id=division_id)
 
-    assert await find_channel_use(db_path, SERVER_ID, 500) is None
+    assert await find_channel_use(db_path, 500) is None
 
 
 # ── Ignoring the setting being written ────────────────────────────────────
@@ -210,7 +210,7 @@ async def test_a_setting_does_not_block_itself(db_path):
     await _set(db_path, "results", 500, division_id=division_id)
 
     ignored = await find_channel_use(
-        db_path, SERVER_ID, 500, ignore=ChannelUse("results", "Pro")
+        db_path, 500, ignore=ChannelUse("results", "Pro")
     )
 
     assert ignored is None
@@ -222,7 +222,7 @@ async def test_ignoring_one_setting_does_not_hide_another(db_path):
     await _set(db_path, "calendar", 500, division_id=pro)
 
     use = await find_channel_use(
-        db_path, SERVER_ID, 500, ignore=ChannelUse("results", "Pro")
+        db_path, 500, ignore=ChannelUse("results", "Pro")
     )
 
     assert use == ChannelUse("calendar", "Pro")

@@ -168,7 +168,7 @@ class InitCog(commands.Cog):
                 refusal,
             )
 
-            use = await find_channel_use(self.bot.db_path, server_id, value)
+            use = await find_channel_use(self.bot.db_path, value)
             if use is not None:
                 await interaction.response.send_message(
                     refusal(mention, use, same_setting=(use == ChannelUse(_setting))),

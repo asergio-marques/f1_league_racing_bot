@@ -738,7 +738,7 @@ async def test_render_without_season(
     service = _render_service(config_service, module_service)
 
     async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT COUNT(*) FROM seasons WHERE server_id = ?", (SERVER_ID,))
+        cursor = await db.execute("SELECT COUNT(*) FROM seasons")
         assert (await cursor.fetchone())[0] == 0, "precondition: no season exists"
 
     for kind, templates in KIND_TEMPLATES.items():

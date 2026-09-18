@@ -582,7 +582,7 @@ async def finalize_penalty_review(
         try:
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
-                    "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                    "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
                     (division_id,),
                 )
                 srv_row = await cursor.fetchone()
@@ -634,7 +634,7 @@ async def finalize_penalty_review(
 
         async with get_connection(db_path) as _db:
             _srv_cur = await _db.execute(
-                "SELECT s.server_id, s.id AS season_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id, s.id AS season_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
                 (division_id,),
             )
             _srv_row = await _srv_cur.fetchone()
@@ -836,7 +836,7 @@ async def finalize_appeals_review(
         try:
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
-                    "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                    "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
                     (division_id,),
                 )
                 srv_row = await cursor.fetchone()
@@ -1007,7 +1007,7 @@ async def _save_session_result_in_tx(
     submitted_at = datetime.now(timezone.utc).isoformat()
     cursor = await db.execute(
         """
-        SELECT s.status AS season_status, s.server_id
+        SELECT s.status AS season_status, (SELECT server_id FROM server_configs LIMIT 1) AS server_id
         FROM rounds r
         JOIN divisions d ON d.id = r.division_id
         JOIN seasons s ON s.id = d.season_id
@@ -1091,7 +1091,7 @@ async def amend_session_result(
         # Immutability guard: reject writes to archived seasons
         cursor = await db.execute(
             """
-            SELECT s.status AS season_status, s.server_id, s.id AS season_id
+            SELECT s.status AS season_status, (SELECT server_id FROM server_configs LIMIT 1) AS server_id, s.id AS season_id
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
@@ -2044,7 +2044,7 @@ async def _get_round_context(db_path: str, round_id: int) -> dict:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT s.server_id, s.id AS season_id, s.season_number, r.round_number,
+            SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id, s.id AS season_id, s.season_number, r.round_number,
                    r.format AS round_format, d.name AS division_name
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
@@ -2144,7 +2144,7 @@ async def other_active_team_assignments(
         from services.driver_service import current_account_map
 
         cursor = await db.execute(
-            "SELECT s.server_id FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM rounds r JOIN divisions d ON d.id = r.division_id "
             "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
             (round_id,),
         )
@@ -2499,7 +2499,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                    d.mention_role_id,
                    drc.results_channel_id,
                    s.id           AS season_id,
-                   s.server_id,
+                   (SELECT server_id FROM server_configs LIMIT 1) AS server_id,
                    s.season_number
             FROM rounds r
             JOIN divisions d   ON d.id = r.division_id
@@ -3097,7 +3097,7 @@ async def enter_resubmit_flow(
     try:
         async with get_connection(db_path) as db:
             cursor = await db.execute(
-                "SELECT s.server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
                 (division_id,),
             )
             srv_row = await cursor.fetchone()

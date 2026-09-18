@@ -66,9 +66,9 @@ async def _seed(tmp_path, *, signups_open: bool = True, close_at: str | None = N
         )
         # A season awaiting its window, so `/signup open` reaches the checks under test.
         await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
-            "VALUES (?, '2026-09-17', 'SETUP', 1, ?)",
-            (SERVER_ID, "SIGNUPS" if signups_open else "WAITING"),
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-09-17', 'SETUP', 1, ?)",
+            ("SIGNUPS" if signups_open else "WAITING",),
         )
         await db.commit()
     return path

@@ -57,7 +57,6 @@ async def db_path(tmp_path):
 
             CREATE TABLE seasons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id INTEGER NOT NULL,
                 status TEXT NOT NULL DEFAULT 'SETUP'
             );
             CREATE TABLE driver_season_assignments (
@@ -301,7 +300,6 @@ async def db_with_signup(tmp_path):
 
             CREATE TABLE seasons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id INTEGER NOT NULL,
                 status TEXT NOT NULL DEFAULT 'SETUP'
             );
             CREATE TABLE driver_season_assignments (

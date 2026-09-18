@@ -50,7 +50,6 @@ SERVER_ID = 13208
 def _season():
     return Season(
         id=1,
-        server_id=SERVER_ID,
         start_date=date(2026, 1, 1),
         status=SeasonStatus.ACTIVE,
         season_number=7,

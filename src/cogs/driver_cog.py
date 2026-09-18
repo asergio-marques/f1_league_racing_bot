@@ -246,7 +246,7 @@ class DriverCog(commands.Cog):
         actor_name = str(interaction.user)
 
         # Resolve season, and the stage placements may be made in (issue #220)
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in _PLACING_STAGES:
             await interaction.followup.send(
                 _NOT_PLACING_REFUSAL.format(command="/driver assign"), ephemeral=True
@@ -346,7 +346,7 @@ class DriverCog(commands.Cog):
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in _PLACING_STAGES:
             await interaction.followup.send(
                 _NOT_PLACING_REFUSAL.format(command="/driver unassign"), ephemeral=True
@@ -449,7 +449,7 @@ class DriverCog(commands.Cog):
         if user is None:
             return
 
-        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in ONGOING_STAGES:
             await interaction.followup.send(
                 "⛔ `/driver move` is available only while the season is ongoing.",
@@ -541,7 +541,7 @@ class DriverCog(commands.Cog):
         if user is None:
             return
 
-        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in ONGOING_STAGES:
             await interaction.followup.send(
                 "⛔ `/driver release` is available only while the season is ongoing.",
@@ -616,7 +616,7 @@ class DriverCog(commands.Cog):
         if user is None:
             return
 
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in _PLACING_STAGES:
             await interaction.followup.send(
                 _NOT_PLACING_REFUSAL.format(command="/driver reject"), ephemeral=True
@@ -687,7 +687,7 @@ class DriverCog(commands.Cog):
         # Sacking is available only while the season is ongoing (issue #220). Between seasons
         # every driver has already been returned to Not Signed Up by the season's end, and a
         # season still being built has no confirmed placement to sack anyone from.
-        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if season is None or season.stage not in ONGOING_STAGES:
             await interaction.followup.send(
                 "⛔ `/driver sack` is available only while the season is ongoing.",

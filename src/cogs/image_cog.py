@@ -1667,7 +1667,7 @@ class ImageCog(commands.Cog):
             # three-second budget. The shorter lock wait means a contended database gives up
             # in time to answer rather than answering into an expired token.
             divisions = await self.bot.season_service.get_previewable_divisions(  # type: ignore[attr-defined]
-                interaction.guild_id, timeout=AUTOCOMPLETE_TIMEOUT_SECONDS
+                timeout=AUTOCOMPLETE_TIMEOUT_SECONDS
             )
         except Exception:  # noqa: BLE001 — an autocomplete never breaks the command
             return []

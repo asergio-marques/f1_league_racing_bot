@@ -680,7 +680,7 @@ async def persist_snapshots(
         for snap in driver_snaps:
             if snap.division_id not in _server_id_cache:
                 cursor = await db.execute(
-                    "SELECT s.server_id FROM divisions d "
+                    "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM divisions d "
                     "JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                     (snap.division_id,),
                 )

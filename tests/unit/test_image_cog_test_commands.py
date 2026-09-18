@@ -197,8 +197,7 @@ class TestDivisionAutocomplete:
         """
         seen = {}
 
-        async def _capture(server_id, *, timeout=None):
-            seen["server_id"] = server_id
+        async def _capture(*, timeout=None):
             seen["timeout"] = timeout
             return []
 
@@ -208,7 +207,6 @@ class TestDivisionAutocomplete:
 
         await cog._division_autocomplete(_Interaction(guild_id=99), "")
 
-        assert seen["server_id"] == 99
         assert seen["timeout"] == AUTOCOMPLETE_TIMEOUT_SECONDS
 
     async def test_an_autocomplete_that_hangs_offers_nothing(self, cog):

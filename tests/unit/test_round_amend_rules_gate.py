@@ -38,9 +38,8 @@ async def _db(tmp_path, *, scheduled_at: datetime, phase1_done: int = 0) -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, ?, '2026-01-01', 'ACTIVE', 1)",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "

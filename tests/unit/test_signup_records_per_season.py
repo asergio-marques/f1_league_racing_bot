@@ -62,9 +62,9 @@ async def db_path(tmp_path):
 async def _season(db_path, season_id: int, status: str = "SETUP", stage: str = "SIGNUPS"):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (?, ?, '2026-09-17', ?, ?, ?)",
-            (season_id, SERVER_ID, status, season_id, stage),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (?, '2026-09-17', ?, ?, ?)",
+            (season_id, status, season_id, stage),
         )
         await db.commit()
 

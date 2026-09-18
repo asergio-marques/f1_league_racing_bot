@@ -30,8 +30,8 @@ async def _seeded(tmp_path, *, result_status="AWAITING_REPORT_VERDICTS", message
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         cur = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 3)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 3)"
         )
         season_id = cur.lastrowid
         cur = await db.execute(

@@ -109,10 +109,9 @@ async def _seed(
         # The season the window belongs to (issue #220): awaiting its window unless told
         # otherwise, or already in signups where the window stands open.
         await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
-            "VALUES (?, '2026-09-17', ?, 1, ?)",
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-09-17', ?, 1, ?)",
             (
-                SERVER_ID,
                 "ACTIVE" if stage in ("ONGOING", "ONGOING_SIGNUPS", "ONGOING_PLACEMENTS",
                                       "PENDING_COMPLETION") else "SETUP",
                 stage or ("SIGNUPS" if signups_open else "WAITING"),
@@ -346,7 +345,7 @@ async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path):
 
     await _open(_cog(db_path), _interaction())
 
-    assert (await live_season_stage(db_path, SERVER_ID))[1].value == "SIGNUPS"
+    assert (await live_season_stage(db_path))[1].value == "SIGNUPS"
 
 
 async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path):
@@ -356,7 +355,7 @@ async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path):
 
     await _open(_cog(db_path), _interaction())
 
-    assert (await live_season_stage(db_path, SERVER_ID))[1].value == "ONGOING_SIGNUPS"
+    assert (await live_season_stage(db_path))[1].value == "ONGOING_SIGNUPS"
 
 
 @pytest.mark.parametrize(

@@ -41,9 +41,8 @@ async def _seed_full(db_path: str, *, server_id: int = 1) -> tuple[int, int, int
             (server_id,),
         )
         await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status) "
-            "VALUES (?, '2026-01-01', 'ACTIVE')",
-            (server_id,),
+            "INSERT INTO seasons (start_date, status) "
+            "VALUES ('2026-01-01', 'ACTIVE')"
         )
         cur = await db.execute("SELECT last_insert_rowid()")
         (season_id,) = await cur.fetchone()
@@ -81,7 +80,7 @@ async def _seed_full(db_path: str, *, server_id: int = 1) -> tuple[int, int, int
 async def _row_count(db_path: str, table: str, server_id: int | None = None) -> int:
     """Return the number of rows in *table*, optionally filtered by server_id."""
     async with get_connection(db_path) as db:
-        if server_id is not None and table in ("server_configs", "seasons", "audit_entries"):
+        if server_id is not None and table in ("server_configs", "audit_entries"):
             cur = await db.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE server_id = ?",
                 (server_id,),
@@ -239,7 +238,7 @@ async def test_reset_deletes_forecast_messages() -> None:
                 "SELECT r.id, r.division_id FROM rounds r "
                 "JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id "
-                "WHERE s.server_id = 1 LIMIT 1"
+                " LIMIT 1"
             )
             round_id, division_id = await cur.fetchone()
 

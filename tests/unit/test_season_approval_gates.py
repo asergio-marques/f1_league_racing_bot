@@ -49,9 +49,8 @@ async def _seed_setup_season(db_path: str, server_id: int = 1) -> int:
     """Insert a SETUP season and return its id."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', 'SETUP', 1)",
-            (server_id,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'SETUP', 1)"
         )
         await db.commit()
         return cursor.lastrowid  # type: ignore[return-value]
@@ -297,14 +296,14 @@ class TestWeatherEnableGuardActiveSeason:
         mod_svc = ModuleService(db_path)
 
         # No active season — weather can be enabled (no gate triggered)
-        active = await svc.get_confirmed_season(1)
+        active = await svc.get_confirmed_season()
         assert active is None  # no season, gate won't fire
 
         # Seed an active season with a division missing a forecast channel
         async with get_connection(db_path) as db:
             cursor = await db.execute(
-                "INSERT INTO seasons (server_id, start_date, status, season_number) "
-                "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+                "INSERT INTO seasons (start_date, status, season_number) "
+                "VALUES ('2026-01-01', 'ACTIVE', 1)"
             )
             season_id = cursor.lastrowid
             await db.execute(
@@ -314,7 +313,7 @@ class TestWeatherEnableGuardActiveSeason:
             )
             await db.commit()
 
-        active = await svc.get_confirmed_season(1)
+        active = await svc.get_confirmed_season()
         assert active is not None
 
         divisions = await svc.get_divisions(active.id)

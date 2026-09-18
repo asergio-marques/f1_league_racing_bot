@@ -65,16 +65,16 @@ async def test_create_config_duplicate_raises(db_path):
 @pytest.mark.asyncio
 async def test_remove_config_not_found_raises(db_path):
     with pytest.raises(ConfigNotFoundError):
-        await remove_config(db_path, server_id=1, config_name="Ghost")
+        await remove_config(db_path, config_name="Ghost")
 
 
 @pytest.mark.asyncio
 async def test_remove_config_success(db_path):
     await create_config(db_path, config_name="Temp")
-    await remove_config(db_path, server_id=1, config_name="Temp")
+    await remove_config(db_path, config_name="Temp")
     # second removal should raise
     with pytest.raises(ConfigNotFoundError):
-        await remove_config(db_path, server_id=1, config_name="Temp")
+        await remove_config(db_path, config_name="Temp")
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +138,8 @@ async def test_get_config_entries_round_trip(db_path):
 async def _make_season(db_path: str, season_id: int, status: str, number: int = 1) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (?, 1, '2026-01-01', ?, ?)",
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (?, '2026-01-01', ?, ?)",
             (season_id, status, number),
         )
         await db.commit()
@@ -171,7 +171,7 @@ async def test_remove_config_clears_links_from_setup_seasons(db_path):
     await _make_season(db_path, season_id=1, status="SETUP")
     await _link(db_path, 1, "Standard")
 
-    await remove_config(db_path, server_id=1, config_name="Standard")
+    await remove_config(db_path, config_name="Standard")
 
     assert await _links_of(db_path, 1) == []
 
@@ -188,7 +188,7 @@ async def test_remove_config_leaves_an_approved_seasons_link_alone(db_path):
     await _make_season(db_path, season_id=2, status="ACTIVE", number=2)
     await _link(db_path, 2, "Standard")
 
-    await remove_config(db_path, server_id=1, config_name="Standard")
+    await remove_config(db_path, config_name="Standard")
 
     assert await _links_of(db_path, 2) == ["Standard"]
 
@@ -207,7 +207,7 @@ async def test_remove_config_clears_the_setup_link_and_keeps_the_finished_one(db
     await _link(db_path, 1, "Standard")
     await _link(db_path, 2, "Standard")
 
-    await remove_config(db_path, server_id=1, config_name="Standard")
+    await remove_config(db_path, config_name="Standard")
 
     assert await _links_of(db_path, 2) == [], "the season being built loses the name"
     assert await _links_of(db_path, 1) == ["Standard"], "last season keeps its record"
@@ -222,7 +222,7 @@ async def test_remove_config_leaves_other_configs_attached(db_path):
     await _link(db_path, 1, "Standard")
     await _link(db_path, 1, "Half Points")
 
-    await remove_config(db_path, server_id=1, config_name="Standard")
+    await remove_config(db_path, config_name="Standard")
 
     assert await _links_of(db_path, 1) == ["Half Points"]
 
@@ -234,7 +234,7 @@ async def test_setup_seasons_linking_names_the_season(db_path):
     await _make_season(db_path, season_id=1, status="SETUP", number=4)
     await _link(db_path, 1, "Standard")
 
-    assert await setup_seasons_linking(db_path, 1, "Standard") == [(1, 4)]
+    assert await setup_seasons_linking(db_path, "Standard") == [(1, 4)]
 
 
 @pytest.mark.asyncio
@@ -244,14 +244,14 @@ async def test_setup_seasons_linking_ignores_an_approved_season(db_path):
     await _make_season(db_path, season_id=2, status="ACTIVE", number=2)
     await _link(db_path, 2, "Standard")
 
-    assert await setup_seasons_linking(db_path, 1, "Standard") == []
+    assert await setup_seasons_linking(db_path, "Standard") == []
 
 
 @pytest.mark.asyncio
 async def test_setup_seasons_linking_is_empty_when_nothing_stands_on_it(db_path):
     await create_config(db_path, config_name="Standard")
 
-    assert await setup_seasons_linking(db_path, 1, "Standard") == []
+    assert await setup_seasons_linking(db_path, "Standard") == []
 
 
 @pytest.mark.asyncio

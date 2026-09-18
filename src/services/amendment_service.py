@@ -93,7 +93,7 @@ class AmendmentService:
                 # ``r.*`` already carries rounds.division_id, which is the one every reader
                 # below wants. Asking ``divisions`` for a division_id of its own — that table
                 # has only ``id`` — made this statement raise on every amendment.
-                "SELECT r.*, s.server_id, "
+                "SELECT r.*, (SELECT server_id FROM server_configs LIMIT 1) AS server_id, "
                 "       d.forecast_channel_id, d.mention_role_id, d.tier AS division_tier, "
                 "       s.status AS season_status, s.season_number "
                 "FROM rounds r "
@@ -768,7 +768,9 @@ async def _server_id_of_season(db_path: str, season_id: int) -> int | None:
     """The server a season belongs to, read before the approval writes anything."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT server_id FROM seasons WHERE id = ?", (season_id,)
+            "SELECT server_id FROM server_configs WHERE EXISTS "
+            "(SELECT 1 FROM seasons WHERE id = ?) LIMIT 1",
+            (season_id,),
         )
         row = await cursor.fetchone()
     return int(row["server_id"]) if row else None
@@ -902,9 +904,7 @@ async def approve_amendment(
             (season_id,),
         )
         # Fetch server_id for audit log
-        cursor = await db.execute(
-            "SELECT server_id FROM seasons WHERE id = ?", (season_id,)
-        )
+        cursor = await db.execute("SELECT server_id FROM server_configs LIMIT 1")
         srv_row = await cursor.fetchone()
         await db.commit()
 

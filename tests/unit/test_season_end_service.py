@@ -66,9 +66,8 @@ async def _seed_server(db_path: str, server_id: int = 1) -> tuple[int, list[int]
             (server_id,),
         )
         await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status) "
-            "VALUES (?, '2026-01-01', 'ACTIVE')",
-            (server_id,),
+            "INSERT INTO seasons (start_date, status) "
+            "VALUES ('2026-01-01', 'ACTIVE')"
         )
         cur = await db.execute("SELECT last_insert_rowid()")
         (season_id,) = await cur.fetchone()
@@ -122,7 +121,7 @@ async def test_has_existing_season_true() -> None:
         await run_migrations(db_path)
         await _seed_server(db_path, server_id=1)
         svc = SeasonService(db_path)
-        assert await svc.has_existing_season(1) is True
+        assert await svc.has_existing_season() is True
     finally:
         os.unlink(db_path)
 
@@ -133,7 +132,7 @@ async def test_has_existing_season_false() -> None:
     try:
         await run_migrations(db_path)
         svc = SeasonService(db_path)
-        assert await svc.has_existing_season(999) is False
+        assert await svc.has_existing_season() is False
     finally:
         os.unlink(db_path)
 
@@ -145,7 +144,7 @@ async def test_all_phases_complete_false_when_pending() -> None:
         await run_migrations(db_path)
         await _seed_server(db_path, server_id=1)
         svc = SeasonService(db_path)
-        assert await svc.all_phases_complete(1) is False
+        assert await svc.all_phases_complete() is False
     finally:
         os.unlink(db_path)
 
@@ -158,7 +157,7 @@ async def test_all_phases_complete_true_when_done() -> None:
         _, round_ids = await _seed_server(db_path, server_id=1)
         await _mark_all_phases_done(db_path, round_ids)
         svc = SeasonService(db_path)
-        assert await svc.all_phases_complete(1) is True
+        assert await svc.all_phases_complete() is True
     finally:
         os.unlink(db_path)
 
@@ -170,7 +169,7 @@ async def test_get_last_scheduled_at_returns_latest() -> None:
         await run_migrations(db_path)
         await _seed_server(db_path, server_id=1)
         svc = SeasonService(db_path)
-        last_at = await svc.get_last_scheduled_at(1)
+        last_at = await svc.get_last_scheduled_at()
         assert last_at is not None
         # The seeded rounds have scheduled_at '2026-04-01' and '2026-05-01'
         assert last_at.year == 2026
@@ -185,7 +184,7 @@ async def test_get_last_scheduled_at_returns_none_for_unknown_server() -> None:
     try:
         await run_migrations(db_path)
         svc = SeasonService(db_path)
-        assert await svc.get_last_scheduled_at(999) is None
+        assert await svc.get_last_scheduled_at() is None
     finally:
         os.unlink(db_path)
 
@@ -206,7 +205,7 @@ async def test_execute_season_end_archives_season() -> None:
         # Season row must still exist with status COMPLETED
         async with get_connection(db_path) as db:
             cur = await db.execute(
-                "SELECT status FROM seasons WHERE server_id = 1"
+                "SELECT status FROM seasons"
             )
             row = await cur.fetchone()
         assert row is not None, "Season row must be retained after completion"
@@ -227,13 +226,13 @@ async def test_execute_season_end_retains_divisions_and_rounds() -> None:
         async with get_connection(db_path) as db:
             cur = await db.execute(
                 "SELECT COUNT(*) FROM divisions d "
-                "JOIN seasons s ON s.id = d.season_id WHERE s.server_id = 1"
+                "JOIN seasons s ON s.id = d.season_id"
             )
             (div_count,) = await cur.fetchone()
             cur = await db.execute(
                 "SELECT COUNT(*) FROM rounds r "
                 "JOIN divisions d ON d.id = r.division_id "
-                "JOIN seasons s ON s.id = d.season_id WHERE s.server_id = 1"
+                "JOIN seasons s ON s.id = d.season_id"
             )
             (round_count,) = await cur.fetchone()
         assert div_count == 1
@@ -304,25 +303,6 @@ async def test_execute_season_end_cancels_season_end_job() -> None:
         os.unlink(db_path)
 
 
-async def test_get_all_server_ids_with_active_season() -> None:
-    """Returns only server_ids with ACTIVE seasons; excludes servers with none."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-    try:
-        await run_migrations(db_path)
-        # Seed two servers
-        await _seed_server(db_path, server_id=1)
-        await _seed_server(db_path, server_id=2)
-        svc = SeasonService(db_path)
-        ids = await svc.get_all_server_ids_with_active_season()
-        assert set(ids) == {1, 2}
-        # A server with no season row is not included
-        ids_no_99 = [i for i in ids if i != 99]
-        assert 99 not in ids_no_99
-    finally:
-        os.unlink(db_path)
-
-
 # ---------------------------------------------------------------------------
 # The final classification (2026-09-08)
 # ---------------------------------------------------------------------------
@@ -353,7 +333,7 @@ class _FakeGuildBot(_FakeBot):
 
 async def _status(db_path: str) -> str:
     async with get_connection(db_path) as db:
-        cur = await db.execute("SELECT status FROM seasons WHERE server_id = 1")
+        cur = await db.execute("SELECT status FROM seasons")
         row = await cur.fetchone()
     return row[0]
 

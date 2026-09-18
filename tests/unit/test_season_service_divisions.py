@@ -53,9 +53,9 @@ async def _make_db(tmp_path, *, name="season_divisions", status="SETUP") -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, game_edition, start_date, "
-            "status) VALUES (?, ?, 5, 25, '2026-01-01', ?)",
-            (SEASON_ID, SERVER_ID, status),
+            "INSERT INTO seasons (id, season_number, game_edition, start_date, "
+            "status) VALUES (?, 5, 25, '2026-01-01', ?)",
+            (SEASON_ID, status),
         )
         await db.commit()
     return db_path

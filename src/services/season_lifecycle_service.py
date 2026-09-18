@@ -57,14 +57,13 @@ def uncommitted_seat_excluded(seat_alias: str = "ts") -> str:
     )
 
 
-async def live_season_stage(db_path: str, server_id: int) -> tuple[int, SeasonStage] | None:
+async def live_season_stage(db_path: str) -> tuple[int, SeasonStage] | None:
     """The server's active season and its stage, or None where it holds none."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT id, stage FROM seasons "
-            "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
+            "WHERE status IN ('SETUP', 'ACTIVE') "
             "ORDER BY id DESC LIMIT 1",
-            (server_id,),
         )
         row = await cursor.fetchone()
     if row is None or row["stage"] is None:
@@ -99,13 +98,13 @@ async def _move(db_path: str, season_id: int, current: SeasonStage, target: Seas
         )
 
 
-async def advance_on_window_open(db_path: str, server_id: int) -> SeasonStage | None:
+async def advance_on_window_open(db_path: str) -> SeasonStage | None:
     """Move the active season on for a signup window just opened.
 
     Waiting becomes Signups; Ongoing becomes Ongoing, signups open. Returns the new stage,
     or None where the season stood in neither and nothing was moved.
     """
-    found = await live_season_stage(db_path, server_id)
+    found = await live_season_stage(db_path)
     if found is None:
         return None
     season_id, stage = found
@@ -116,7 +115,7 @@ async def advance_on_window_open(db_path: str, server_id: int) -> SeasonStage | 
     return target
 
 
-async def advance_on_window_close(db_path: str, server_id: int) -> SeasonStage | None:
+async def advance_on_window_close(db_path: str) -> SeasonStage | None:
     """Move the active season on for a signup window just closed.
 
     Signups becomes Placements. Ongoing, signups open becomes Ongoing, placements where any
@@ -124,7 +123,7 @@ async def advance_on_window_close(db_path: str, server_id: int) -> SeasonStage |
     where the season stood in neither and nothing was moved — a window force-closed by
     disabling the module, for one, belongs to no stage.
     """
-    found = await live_season_stage(db_path, server_id)
+    found = await live_season_stage(db_path)
     if found is None:
         return None
     season_id, stage = found
@@ -223,7 +222,7 @@ async def wind_down_ongoing(bot, server_id: int) -> bool:
     for any other season. Returns True where the season was moved.
     """
     db_path = bot.db_path
-    found = await live_season_stage(db_path, server_id)
+    found = await live_season_stage(db_path)
     if found is None:
         return False
     season_id, stage = found
@@ -267,7 +266,7 @@ async def wind_down_ongoing(bot, server_id: int) -> bool:
     return final_stage == SeasonStage.PENDING_COMPLETION.value
 
 
-async def signup_configuration_fixed(db_path: str, server_id: int) -> int | None:
+async def signup_configuration_fixed(db_path: str) -> int | None:
     """The number of the season holding the signup module fixed, or None where it is free.
 
     The signup module is enabled, disabled and configured only while the server holds no
@@ -278,9 +277,8 @@ async def signup_configuration_fixed(db_path: str, server_id: int) -> int | None
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT season_number, stage FROM seasons "
-            "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
+            "WHERE status IN ('SETUP', 'ACTIVE') "
             "ORDER BY id DESC LIMIT 1",
-            (server_id,),
         )
         row = await cursor.fetchone()
     if row is None or row["stage"] == SeasonStage.CONFIGURATION.value:
@@ -288,13 +286,13 @@ async def signup_configuration_fixed(db_path: str, server_id: int) -> int | None
     return int(row["season_number"])
 
 
-async def modules_frozen_for_completion(db_path: str, server_id: int) -> bool:
+async def modules_frozen_for_completion(db_path: str) -> bool:
     """True while the server's season stands in Pending completion.
 
     Nothing but amending a final round's results, approving an amendment of the season's
     points and completing the season may be done then, so no module may be disabled.
     """
-    found = await live_season_stage(db_path, server_id)
+    found = await live_season_stage(db_path)
     return found is not None and found[1] is SeasonStage.PENDING_COMPLETION
 
 

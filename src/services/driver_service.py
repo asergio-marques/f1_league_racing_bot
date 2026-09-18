@@ -214,7 +214,7 @@ async def current_account_map(db) -> dict[int, int]:
 
 async def _server_of_division(db, division_id: int) -> int | None:
     cursor = await db.execute(
-        "SELECT s.server_id FROM divisions d JOIN seasons s ON s.id = d.season_id "
+        "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id FROM divisions d JOIN seasons s ON s.id = d.season_id "
         "WHERE d.id = ?",
         (division_id,),
     )
@@ -242,25 +242,10 @@ async def current_account_map_for_division(db, division_id: int) -> dict[int, in
     return await current_account_map(db)
 
 
-#: The divisions of one server, for reading rows that carry no server of their own.
-#:
-#: `driver_standings_snapshots` and the two session-result tables name their driver by Discord
-#: account but hold no `server_id`, so an unscoped read would find the same person's results
-#: in every other league this bot serves. They reach their server through their division.
-_DIVISIONS_OF_SERVER_SQL = (
-    "SELECT d.id FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE s.server_id = ?"
-)
-
-#: The sessions of one server, scoped exactly as `_DIVISIONS_OF_SERVER_SQL` is.
-_SESSIONS_OF_SERVER_SQL = (
-    f"SELECT sr.id FROM session_results sr WHERE sr.division_id IN ({_DIVISIONS_OF_SERVER_SQL})"
-)
-
-
 async def divisions_taken_part_in(
-    db, server_id: int, profile_id: int | None, accounts: list[str]
+    db, profile_id: int | None, accounts: list[str]
 ) -> set[int]:
-    """Every division on *server_id* the identity took part in: by a confirmed seat, or by a
+    """Every division the identity took part in: by a confirmed seat, or by a
     result or a standing under any of *accounts*.
 
     A division belongs to one season, so two identities sharing one is one person in one
@@ -281,16 +266,16 @@ async def divisions_taken_part_in(
             f"""
             SELECT sr.division_id FROM race_session_results x
             JOIN session_results sr ON sr.id = x.session_result_id
-            WHERE x.driver_user_id IN ({marks}) AND sr.division_id IN ({_DIVISIONS_OF_SERVER_SQL})
+            WHERE x.driver_user_id IN ({marks})
             UNION
             SELECT sr.division_id FROM qualifying_session_results x
             JOIN session_results sr ON sr.id = x.session_result_id
-            WHERE x.driver_user_id IN ({marks}) AND sr.division_id IN ({_DIVISIONS_OF_SERVER_SQL})
+            WHERE x.driver_user_id IN ({marks})
             UNION
             SELECT division_id FROM driver_standings_snapshots
-            WHERE driver_user_id IN ({marks}) AND division_id IN ({_DIVISIONS_OF_SERVER_SQL})
+            WHERE driver_user_id IN ({marks})
             """,
-            (*accounts, server_id, *accounts, server_id, *accounts, server_id),
+            (*accounts, *accounts, *accounts),
         )
         divisions |= {r[0] for r in await cursor.fetchall()}
     return divisions
@@ -597,8 +582,8 @@ class DriverService:
                         )
                     owner_accounts = await accounts_of_profile(db, owner["id"])
                     await _refuse_a_shared_division(
-                        db, await divisions_taken_part_in(db, server_id, driver["id"], driver_accounts),
-                        await divisions_taken_part_in(db, server_id, owner["id"], owner_accounts),
+                        db, await divisions_taken_part_in(db, driver["id"], driver_accounts),
+                        await divisions_taken_part_in(db, owner["id"], owner_accounts),
                         f"<@{new_user_id}>",
                     )
                     kept, absorbed = (
@@ -610,8 +595,8 @@ class DriverService:
                     merged_accounts = owner_accounts
                 elif owner is None:
                     await _refuse_a_shared_division(
-                        db, await divisions_taken_part_in(db, server_id, driver["id"], driver_accounts),
-                        await divisions_taken_part_in(db, server_id, None, [str(new_user_id)]),
+                        db, await divisions_taken_part_in(db, driver["id"], driver_accounts),
+                        await divisions_taken_part_in(db, None, [str(new_user_id)]),
                         f"<@{new_user_id}>",
                     )
 

@@ -74,9 +74,8 @@ async def _seed(path, *, server_id=1, divisions=("Div A",)):
             (server_id,),
         )
         cur = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
-            (server_id,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cur.lastrowid
         for index, name in enumerate(divisions):

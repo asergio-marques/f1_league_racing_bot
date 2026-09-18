@@ -33,9 +33,9 @@ async def _db(tmp_path, stage=SeasonStage.ONGOING, divisions=(("ACTIVE", "FINAL"
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (?, ?, '2026-09-17', ?, 1, ?)",
-            (SEASON_ID, SERVER_ID, status_of_stage(stage).value, stage.value),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (?, '2026-09-17', ?, 1, ?)",
+            (SEASON_ID, status_of_stage(stage).value, stage.value),
         )
         for index, (division_status, round_status) in enumerate(divisions, start=1):
             await db.execute(
@@ -98,7 +98,7 @@ async def test_a_season_returning_to_ongoing_moves_on_at_once(tmp_path):
         tmp_path, stage=SeasonStage.ONGOING_SIGNUPS, divisions=(("FINISHED", None),)
     )
 
-    assert await lifecycle.advance_on_window_close(path, SERVER_ID) is SeasonStage.ONGOING
+    assert await lifecycle.advance_on_window_close(path) is SeasonStage.ONGOING
 
     assert await _stage(path) is SeasonStage.PENDING_COMPLETION
 

@@ -92,9 +92,9 @@ async def _seed(db_path: str, *, live_status: str = "ACTIVE") -> dict[str, int]:
             (3, 3, "COMPLETED"),
         ):
             await db.execute(
-                "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-                "VALUES (?, ?, ?, '2026-01-01', ?)",
-                (season_id, SERVER_ID, season_number, status),
+                "INSERT INTO seasons (id, season_number, start_date, status) "
+                "VALUES (?, ?, '2026-01-01', ?)",
+                (season_id, season_number, status),
             )
             await db.execute(
                 "INSERT INTO divisions "

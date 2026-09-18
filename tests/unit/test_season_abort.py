@@ -95,9 +95,8 @@ async def test_deleting_the_season_takes_its_signups_windows_and_configuration(t
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (7, ?, '2026-09-17', 'SETUP', 1, 'PLACEMENTS')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (7, '2026-09-17', 'SETUP', 1, 'PLACEMENTS')"
         )
         await db.execute(
             "INSERT INTO signup_windows (season_id) VALUES (7)")

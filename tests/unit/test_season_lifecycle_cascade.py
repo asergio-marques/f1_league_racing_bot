@@ -53,9 +53,9 @@ async def _seed(db_path, *, divisions=("Div A",), rounds_per_division=2, season_
             (SERVER_ID,),
         )
         cur = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', ?, 1)",
-            (SERVER_ID, season_status),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', ?, 1)",
+            (season_status,),
         )
         season_id = cur.lastrowid
 
@@ -119,8 +119,8 @@ async def test_a_fully_raced_season_can_be_completed(tmp_path) -> None:
         await _set_round_status(db_path, rid, "FINAL")
     await svc.refresh_division_status(div_id)
 
-    assert await svc.all_divisions_finished(SERVER_ID) is True
-    assert await svc.get_outstanding_rounds(SERVER_ID) == []
+    assert await svc.all_divisions_finished() is True
+    assert await svc.get_outstanding_rounds() == []
 
 
 async def test_one_unfinalised_round_holds_the_season_open_and_is_named(tmp_path) -> None:
@@ -132,8 +132,8 @@ async def test_one_unfinalised_round_holds_the_season_open_and_is_named(tmp_path
     await _set_round_status(db_path, round_ids[0], "FINAL")
     await svc.refresh_division_status(div_id)
 
-    assert await svc.all_divisions_finished(SERVER_ID) is False
-    outstanding = await svc.get_outstanding_rounds(SERVER_ID)
+    assert await svc.all_divisions_finished() is False
+    outstanding = await svc.get_outstanding_rounds()
     assert [r["round_number"] for r in outstanding] == [2]
     assert outstanding[0]["division"] == "Div A"
 
@@ -149,8 +149,8 @@ async def test_post_race_penalty_does_not_count_as_finished(tmp_path) -> None:
     await svc.refresh_division_status(div_id)
 
     assert await _division_status(db_path, div_id) == "ACTIVE"
-    assert await svc.all_divisions_finished(SERVER_ID) is False
-    assert [r["round_number"] for r in await svc.get_outstanding_rounds(SERVER_ID)] == [1]
+    assert await svc.all_divisions_finished() is False
+    assert [r["round_number"] for r in await svc.get_outstanding_rounds()] == [1]
 
 
 async def test_a_cancelled_round_does_not_hold_the_season_open(tmp_path) -> None:
@@ -163,8 +163,8 @@ async def test_a_cancelled_round_does_not_hold_the_season_open(tmp_path) -> None
     await svc.cancel_round(round_ids[1], SERVER_ID, ACTOR_ID, ACTOR_NAME)
 
     assert await _division_status(db_path, div_id) == "FINISHED"
-    assert await svc.all_divisions_finished(SERVER_ID) is True
-    assert await svc.get_outstanding_rounds(SERVER_ID) == []
+    assert await svc.all_divisions_finished() is True
+    assert await svc.get_outstanding_rounds() == []
 
 
 async def test_a_cancelled_division_does_not_hold_the_season_open(tmp_path) -> None:
@@ -179,8 +179,8 @@ async def test_a_cancelled_division_does_not_hold_the_season_open(tmp_path) -> N
     await svc.refresh_division_status(div_a)
     await svc.cancel_division(div_b, SERVER_ID, ACTOR_ID, ACTOR_NAME)
 
-    assert await svc.all_divisions_finished(SERVER_ID) is True
-    assert await svc.get_outstanding_rounds(SERVER_ID) == []
+    assert await svc.all_divisions_finished() is True
+    assert await svc.get_outstanding_rounds() == []
 
 
 # ---------------------------------------------------------------------------
@@ -444,7 +444,11 @@ async def test_the_backfill_reads_each_division_from_its_season(
         division_id = cur.lastrowid
         await db.commit()
 
-    await run_migrations(db_path)
+    # 053 and nothing after it: a later migration rebuilt seasons (068), and it is 053's
+    # backfill that is under test.
+    from tests.support.migration_steps import run_migrations_through
+
+    await run_migrations_through(db_path, "053_lifecycle_states.sql")
 
     assert await _division_status(db_path, division_id) == expected
 
@@ -765,7 +769,7 @@ async def test_without_the_results_module_the_round_ends_when_its_moment_arrives
     assert await _round_status(db_path, round_id) == "FINAL"
     # and the division finishes with it, so the season can be completed
     assert await _division_status(db_path, div_id) == "FINISHED"
-    assert await SeasonService(db_path).all_divisions_finished(SERVER_ID) is True
+    assert await SeasonService(db_path).all_divisions_finished() is True
 
 
 async def test_the_moment_arriving_does_not_disturb_a_round_already_under_way(tmp_path) -> None:

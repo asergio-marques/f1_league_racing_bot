@@ -66,9 +66,8 @@ async def _seed(tmp_path, *, drivers: int, reserves: int = 0):
             (SERVER_ID,),
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', 'ACTIVE', 5)",
-            (SERVER_ID,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 5)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(

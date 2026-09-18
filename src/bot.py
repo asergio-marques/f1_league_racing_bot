@@ -427,7 +427,7 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
             """
             SELECT r.id, r.scheduled_at,
                    r.phase1_done, r.phase2_done, r.phase3_done,
-                   r.format, s.server_id
+                   r.format, (SELECT server_id FROM server_configs LIMIT 1) AS server_id
             FROM rounds r
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
@@ -703,7 +703,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
                    rsc.results_posted, rsc.staged_penalties, rsc.prompt_message_id,
                    rsc.resubmitting, rsc.resubmit_prompt_message_id,
-                   r.division_id, r.status, s.server_id
+                   r.division_id, r.status, (SELECT server_id FROM server_configs LIMIT 1) AS server_id
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
             JOIN divisions d ON d.id  = r.division_id

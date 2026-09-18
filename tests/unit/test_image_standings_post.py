@@ -515,8 +515,8 @@ async def _seed_league(tmp_path):
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 4)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 4)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -860,8 +860,8 @@ async def _seed(tmp_path, *, cancelled=False):
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 2)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 2)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(

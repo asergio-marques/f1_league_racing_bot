@@ -36,7 +36,7 @@ async def run_phase2(round_id: int, bot: "Bot") -> None:
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
             "SELECT r.id, r.track_name, r.phase1_done, r.phase2_done, r.division_id, "
-            "       d.forecast_channel_id, d.mention_role_id, s.server_id "
+            "       d.forecast_channel_id, d.mention_role_id, (SELECT server_id FROM server_configs LIMIT 1) AS server_id "
             "FROM rounds r "
             "JOIN divisions d ON d.id = r.division_id "
             "JOIN seasons s ON s.id = d.season_id "

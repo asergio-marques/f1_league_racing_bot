@@ -41,8 +41,8 @@ async def db_path(tmp_path):
 async def _make_season(db_path: str, status: str = "SETUP") -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', ?, 1)",
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', ?, 1)",
             (status,),
         )
         await db.commit()

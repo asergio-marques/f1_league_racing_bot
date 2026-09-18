@@ -62,9 +62,9 @@ async def _seed(
 
             status = status_of_stage(SeasonStage(stage)).value
             await db.execute(
-                "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
-                "VALUES (?, '2026-09-17', ?, 3, ?)",
-                (SERVER_ID, status, stage),
+                "INSERT INTO seasons (start_date, status, season_number, stage) "
+                "VALUES ('2026-09-17', ?, 3, ?)",
+                (status, stage),
             )
         for i in range(1, unassigned + 1):
             await db.execute(

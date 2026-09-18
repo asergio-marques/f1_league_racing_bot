@@ -34,9 +34,9 @@ async def _cog(tmp_path, stage: SeasonStage | None) -> _Cog:
         )
         if stage is not None:
             await db.execute(
-                "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
-                "VALUES (?, '2026-09-17', ?, 1, ?)",
-                (SERVER_ID, status_of_stage(stage).value, stage.value),
+                "INSERT INTO seasons (start_date, status, season_number, stage) "
+                "VALUES ('2026-09-17', ?, 1, ?)",
+                (status_of_stage(stage).value, stage.value),
             )
         await db.commit()
     cog = _Cog.__new__(_Cog)

@@ -80,9 +80,9 @@ async def _seed_league(db_path: str, server_id: int, league: int) -> None:
             (server_id,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (?, ?, '2026-09-17', 'ACTIVE', 1, 'ONGOING')",
-            (league, server_id),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (?, '2026-09-17', 'ACTIVE', 1, 'ONGOING')",
+            (league,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, mention_role_id, tier, status) "

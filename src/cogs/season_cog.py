@@ -94,8 +94,7 @@ async def _get_setup_season_id(bot, guild_id: int) -> int | None:
     """Return the season_id for a SETUP-status season for the guild, or None."""
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM seasons WHERE server_id = ? AND status = 'SETUP' LIMIT 1",
-            (guild_id,),
+            "SELECT id FROM seasons WHERE status = 'SETUP' LIMIT 1",
         )
         row = await cursor.fetchone()
     return row[0] if row else None
@@ -486,7 +485,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if await self.bot.season_service.get_confirmed_season(server_id) is not None:
+        if await self.bot.season_service.get_confirmed_season() is not None:
             await interaction.followup.send(
                 "\u274c A season is currently active for this server. "
                 "Complete it before starting a new one.",
@@ -494,7 +493,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if await self.bot.season_service.get_setup_season(server_id) is not None:
+        if await self.bot.season_service.get_setup_season() is not None:
             await interaction.followup.send(
                 "\u274c A season setup is already in progress for this server. "
                 "Use `/season placements-review` to continue, or cancel it first.",
@@ -1562,7 +1561,7 @@ class SeasonCog(commands.Cog):
     # the narrower right, and `_ApproveView` is where that is enforced.
     @league_manager_only
     async def season_review(self, interaction: discord.Interaction) -> None:
-        confirmed = await self.bot.season_service.get_confirmed_season(interaction.guild_id)  # type: ignore[attr-defined]
+        confirmed = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if confirmed is not None:
             # Mid-season, the review covers the drivers of the window just closed (#220).
             if confirmed.stage is SeasonStage.ONGOING_PLACEMENTS:
@@ -2296,7 +2295,7 @@ class SeasonCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         server_id = interaction.guild_id
-        season = await self.bot.season_service.get_confirmed_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if season is None or season.stage is not SeasonStage.ONGOING_PLACEMENTS:
             await interaction.followup.send(
                 "\u26d4 The season is no longer placing drivers. **Nothing has been confirmed.**",
@@ -2710,7 +2709,7 @@ class SeasonCog(commands.Cog):
     )
     @league_manager_only
     async def season_status(self, interaction: discord.Interaction) -> None:
-        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season()
         if season is None:
             await interaction.response.send_message(
                 "\u2139\ufe0f No season is being raced on this server.",
@@ -2768,7 +2767,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season()
         if season is None:
             await interaction.response.send_message(
                 "\u274c No season is being raced, so there is none to cancel. A season whose placements are yet to be "
@@ -2877,7 +2876,7 @@ class SeasonCog(commands.Cog):
             return
 
         server_id = interaction.guild_id
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)
+        season = await self.bot.season_service.get_setup_or_active_season()
         pre_confirmation = {
             SeasonStage.CONFIGURATION,
             SeasonStage.WAITING,
@@ -2928,7 +2927,7 @@ class SeasonCog(commands.Cog):
         self,
         interaction: discord.Interaction,
     ) -> None:
-        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season()
         if season is None:
             await interaction.response.send_message(
                 "\u274c No season is being raced, so there is none to complete.", ephemeral=True
@@ -2956,9 +2955,9 @@ class SeasonCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
         await self.bot.season_service.wind_down_ongoing(self.bot, interaction.guild_id)  # type: ignore[attr-defined]
 
-        all_done = await self.bot.season_service.all_divisions_finished(interaction.guild_id)
+        all_done = await self.bot.season_service.all_divisions_finished()
         if not all_done:
-            pending = await self.bot.season_service.get_outstanding_rounds(interaction.guild_id)
+            pending = await self.bot.season_service.get_outstanding_rounds()
             if pending:
                 lines = "\n".join(
                     f"• {r['division']} — Round {r['round_number']}"
@@ -3475,7 +3474,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season()
         from models.season import ONGOING_STAGES
 
         # Available only while the season is ongoing (issue #220).
@@ -3583,7 +3582,7 @@ class SeasonCog(commands.Cog):
 
         mine = ChannelUse(setting, division_name)
         use = await find_channel_use(
-            self.bot.db_path, interaction.guild_id, channel.id  # type: ignore[attr-defined]
+            self.bot.db_path, channel.id  # type: ignore[attr-defined]
         )
         if use is None:
             return False
@@ -3608,7 +3607,7 @@ class SeasonCog(commands.Cog):
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         # 1. The live season: a division's channels belong to it, and an archived one's no longer matter (#220)
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)
+        season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
             await interaction.response.send_message(
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
@@ -3765,7 +3764,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)
+        season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
             await interaction.followup.send(
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
@@ -3850,7 +3849,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)
+        season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
             await interaction.followup.send(
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
@@ -3937,7 +3936,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)
+        season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
             await interaction.followup.send(
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
@@ -4008,7 +4007,7 @@ class SeasonCog(commands.Cog):
     ) -> None:
         import json as _json
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
         if season is None:
             await interaction.response.send_message(
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
@@ -4073,7 +4072,7 @@ class SeasonCog(commands.Cog):
     ) -> None:
         import json as _json
         server_id: int = interaction.guild_id  # type: ignore[assignment]
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
         if season is None:
             await interaction.response.send_message(
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
@@ -4148,7 +4147,7 @@ class SeasonCog(commands.Cog):
         server_id: int = interaction.guild_id  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_setup_or_active_season(server_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
         if season is None:
             await interaction.followup.send("❌ No season is live, so there is no calendar to sync.", ephemeral=True)
             return
@@ -4576,7 +4575,7 @@ class SeasonCog(commands.Cog):
             return
 
         # Active-season DB path
-        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season()
         if season is None:
             await interaction.followup.send("\u274c No season is being raced.", ephemeral=True)
             return
@@ -4700,7 +4699,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        setup_season = await self.bot.season_service.get_setup_season(interaction.guild_id)
+        setup_season = await self.bot.season_service.get_setup_season()
         if setup_season is not None:
             try:
                 await self.bot.season_service.assert_season_mutable(setup_season)
@@ -4772,7 +4771,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)
+        season = await self.bot.season_service.get_confirmed_season()
         from models.season import ONGOING_STAGES
 
         # Available only while the season is ongoing (issue #220).
@@ -4939,7 +4938,7 @@ class SeasonCog(commands.Cog):
         from db.database import get_connection
 
         # --- Resolve division and round ---
-        season = await self.bot.season_service.get_season_for_server(interaction.guild_id)
+        season = await self.bot.season_service.get_season_for_server()
         if season is None:
             await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
@@ -5393,7 +5392,6 @@ class SeasonCog(commands.Cog):
             if d.name
         ]
         new_season_id, season_number = await self.bot.season_service.save_pending_snapshot(
-            cfg.server_id,
             cfg.start_date,
             cfg.season_id,
             divisions_data,

@@ -634,8 +634,7 @@ class SchedulerService:
                 "SELECT r.id FROM rounds r "
                 "JOIN divisions d ON d.id = r.division_id "
                 "JOIN seasons s ON s.id = d.season_id "
-                "WHERE s.server_id = ? AND s.status IN ('ACTIVE', 'SETUP')",
-                (server_id,),
+                "WHERE s.status IN ('ACTIVE', 'SETUP')",
             )
             rows = await cursor.fetchall()
         for row in rows:

@@ -64,8 +64,8 @@ async def test_forecast_channel_id_is_nullable() -> None:
                 "interaction_channel_id, log_channel_id) VALUES (1, 0, 0, 0)"
             )
             await db.execute(
-                "INSERT INTO seasons (server_id, season_number, status, start_date) "
-                "VALUES (1, 1, 'SETUP', '2025-01-01T00:00:00')"
+                "INSERT INTO seasons (season_number, status, start_date) "
+                "VALUES (1, 'SETUP', '2025-01-01T00:00:00')"
             )
             cursor = await db.execute("SELECT last_insert_rowid()")
             (season_id,) = await cursor.fetchone()

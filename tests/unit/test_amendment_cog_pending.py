@@ -270,4 +270,4 @@ async def test_no_pending_cfg_falls_through_to_db_path() -> None:
     )
 
     # get_confirmed_season is what the DB path calls first
-    bot.season_service.get_confirmed_season.assert_called_once_with(interaction.guild_id)
+    bot.season_service.get_confirmed_season.assert_called_once_with()

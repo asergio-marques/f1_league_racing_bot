@@ -89,7 +89,7 @@ async def delete_forecast_message(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT fm.message_id, d.forecast_channel_id, s.server_id
+            SELECT fm.message_id, d.forecast_channel_id, (SELECT server_id FROM server_configs LIMIT 1) AS server_id
             FROM forecast_messages fm
             JOIN divisions d ON d.id = fm.division_id
             JOIN seasons s ON s.id = d.season_id
@@ -184,10 +184,8 @@ async def flush_pending_deletions(server_id: int, bot: "Bot") -> None:
             FROM forecast_messages fm
             JOIN divisions d ON d.id = fm.division_id
             JOIN seasons s ON s.id = d.season_id
-            WHERE s.server_id = ?
             ORDER BY fm.round_id, fm.division_id, fm.phase_number
             """,
-            (server_id,),
         )
         rows = await cursor.fetchall()
 

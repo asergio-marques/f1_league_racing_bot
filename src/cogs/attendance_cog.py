@@ -47,7 +47,7 @@ class AttendanceCog(commands.Cog):
 
     async def _guard_no_active_season(self, interaction: discord.Interaction) -> bool:
         """Return True (and send error) if there IS an active season."""
-        season = await self.bot.season_service.get_confirmed_season(interaction.guild_id)  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
         if season is not None:
             await interaction.response.send_message(
                 "\u274c Attendance configuration cannot be changed once a season's placements are confirmed.",

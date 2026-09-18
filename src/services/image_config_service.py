@@ -290,9 +290,8 @@ class ImageConfigService:
             season = await (
                 await db.execute(
                     "SELECT id FROM seasons "
-                    "WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+                    "WHERE status IN ('ACTIVE', 'SETUP') "
                     "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-                    (server_id,),
                 )
             ).fetchone()
             if season is None:

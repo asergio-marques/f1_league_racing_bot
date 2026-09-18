@@ -63,9 +63,9 @@ async def _make_db(
         # puts its own — far larger — warning in front of the disable, and that is tested in
         # `test_results_disable_purges_the_season.py`.
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (1, ?, 1, '2026-01-01', ?)",
-            (SERVER_ID, season_status),
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 1, '2026-01-01', ?)",
+            (season_status,),
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "

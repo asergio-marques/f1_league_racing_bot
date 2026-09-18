@@ -64,9 +64,8 @@ async def _make_db(tmp_path, *, attendance_divisions: int = 0) -> str:
         )
         if attendance_divisions:
             await db.execute(
-                "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-                "VALUES (1, ?, 1, '2026-01-01', 'ACTIVE')",
-                (SERVER_ID,),
+                "INSERT INTO seasons (id, season_number, start_date, status) "
+                "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
             )
             for index in range(1, attendance_divisions + 1):
                 await db.execute(

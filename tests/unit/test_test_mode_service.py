@@ -46,8 +46,8 @@ async def _seed(db_path: str, rounds: list[dict]) -> None:
         )
         # Season
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
+            "INSERT INTO seasons (id, start_date, status) "
+            "VALUES (1, '2026-01-01', 'ACTIVE')"
         )
         # Two divisions with deterministic ids
         await db.execute(
@@ -403,8 +403,8 @@ async def test_no_active_season_returns_none() -> None:
                 "VALUES (1, 100, 200, 300)"
             )
             await db.execute(
-                "INSERT INTO seasons (id, server_id, start_date, status) "
-                "VALUES (1, 1, '2026-01-01', 'SETUP')"  # SETUP, not ACTIVE
+                "INSERT INTO seasons (id, start_date, status) "
+                "VALUES (1, '2026-01-01', 'SETUP')"  # SETUP, not ACTIVE
             )
             await db.commit()
 
@@ -442,7 +442,7 @@ async def test_review_no_active_season() -> None:
     try:
         await run_migrations(db_path)
         # No server_config or season seeded
-        summary = await build_review_summary(1, db_path)
+        summary = await build_review_summary(db_path)
         assert "No active season" in summary
     finally:
         os.unlink(db_path)
@@ -457,7 +457,7 @@ async def test_review_shows_phase_status() -> None:
         await _seed(db_path, [
             {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0, "track_name": "Monaco"},
         ])
-        summary = await build_review_summary(1, db_path)
+        summary = await build_review_summary(db_path)
         assert "Monaco" in summary
         assert "P1: ✅" in summary
         assert "P2: ⏳" in summary
@@ -481,7 +481,7 @@ async def test_review_mystery_round_shows_notice_not_phases() -> None:
                 "phase3_done": 0,
             },
         ])
-        summary = await build_review_summary(1, db_path)
+        summary = await build_review_summary(db_path)
         assert "Silverstone" in summary
         assert "Notice: ⏳" in summary
         assert "P1:" not in summary

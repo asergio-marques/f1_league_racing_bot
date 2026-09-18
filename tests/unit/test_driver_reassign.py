@@ -213,9 +213,8 @@ async def test_a_reassign_expires_an_open_placements_review(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, ?, '2026-09-17', 'SETUP', 1)",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-09-17', 'SETUP', 1)"
         )
         await db.commit()
     await _profile(db_path, A)

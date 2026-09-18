@@ -60,11 +60,9 @@ async def purge_season_results(db_path: str, server_id: int, bot) -> dict:
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons   s ON s.id = d.season_id
             LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            WHERE s.server_id = ?
-              AND s.status    = 'ACTIVE'
+            WHERE s.status    = 'ACTIVE'
             ORDER BY r.id
             """,
-            (server_id,),
         )
         rounds = [dict(row) for row in await cursor.fetchall()]
 

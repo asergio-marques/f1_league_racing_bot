@@ -92,9 +92,9 @@ async def _season(db_path: str, status: str) -> int:
     """A season of *status* with one division, one team and two seats. Returns the team id."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-03-01', ?, 1)",
-            (SERVER_ID, status),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-03-01', ?, 1)",
+            (status,),
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -206,9 +206,8 @@ async def db_path(tmp_path):
             (1,),
         )
         await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
-            "VALUES (?, '2026-09-17', 'SETUP', 1, 'CONFIGURATION')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-09-17', 'SETUP', 1, 'CONFIGURATION')"
         )
         await db.commit()
     return path

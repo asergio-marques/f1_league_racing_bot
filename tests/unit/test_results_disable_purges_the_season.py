@@ -156,9 +156,9 @@ async def _seed(
             (1,),
         )
         cur = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', ?, 1)",
-            (server_id, season_status),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', ?, 1)",
+            (season_status,),
         )
         season_id = cur.lastrowid
         cur = await db.execute(
@@ -174,8 +174,7 @@ async def _seed(
         )
         # Configuration that must survive the purge.
         await db.execute(
-            "INSERT INTO points_config_store (config_name) VALUES ('100%')",
-            (),
+            "INSERT INTO points_config_store (config_name) VALUES ('100%')"
         )
         await db.execute(
             "INSERT INTO season_points_entries "
@@ -309,7 +308,7 @@ async def test_each_state_only_results_could_move_is_closed(tmp_path) -> None:
 
         assert await _round_status(db_path, round_id) == "FINAL", status
         assert await _division_status(db_path, division_id) == "FINISHED", status
-        assert await SeasonService(db_path).all_divisions_finished(SERVER_ID) is True, status
+        assert await SeasonService(db_path).all_divisions_finished() is True, status
 
 
 async def test_a_round_still_waiting_on_the_clock_is_left_alone(tmp_path) -> None:

@@ -79,8 +79,7 @@ async def reset_server_data(
         # ── 1.  Collect IDs up-front (read-only; outside the write transaction) ──
 
         cursor = await db.execute(
-            "SELECT id FROM seasons WHERE server_id = ?",
-            (server_id,),
+            "SELECT id FROM seasons",
         )
         season_ids: list[int] = [row[0] for row in await cursor.fetchall()]
 
@@ -187,8 +186,7 @@ async def reset_server_data(
             )
 
         seasons_cur = await db.execute(
-            "DELETE FROM seasons WHERE server_id = ?",
-            (server_id,),
+            "DELETE FROM seasons",
         )
         seasons_deleted: int = seasons_cur.rowcount  # type: ignore[assignment]
 

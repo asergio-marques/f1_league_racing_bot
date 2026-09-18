@@ -217,8 +217,8 @@ async def test_compute_driver_standings_countback(db_path):
             "VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -300,9 +300,8 @@ async def _bootstrap(db, server_id: int = 1) -> tuple[int, int]:
         (server_id,),
     )
     cur = await db.execute(
-        "INSERT INTO seasons (server_id, start_date, status, season_number) "
-        "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
-        (server_id,),
+        "INSERT INTO seasons (start_date, status, season_number) "
+        "VALUES ('2026-01-01', 'ACTIVE', 1)"
     )
     season_id = cur.lastrowid
     cur = await db.execute(
@@ -698,8 +697,8 @@ async def _division_with_rounds(db, count: int, *, cancelled: tuple[int, ...] = 
         "VALUES (1, 10, 20, 30)"
     )
     cursor = await db.execute(
-        "INSERT INTO seasons (server_id, start_date, status, season_number) "
-        "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+        "INSERT INTO seasons (start_date, status, season_number) "
+        "VALUES ('2026-01-01', 'ACTIVE', 1)"
     )
     season_id = cursor.lastrowid
     cursor = await db.execute(
@@ -1058,14 +1057,20 @@ async def test_an_unrelated_driver_does_not_reorder_two_tied_drivers(db_path):
     ]
 
     async with get_connection(db_path) as db:
-        small_id, _ = await _bootstrap(db, server_id=81)
+        small_id, season_id = await _bootstrap(db, server_id=81)
         await _seat(db, small_id, 81, "Alpha", pair)
         small_round = await _round(db, small_id, 1)
         await db.commit()
 
+    # A second division of the same season: one league holds one live season.
     async with get_connection(db_path) as db:
-        big_id, _ = await _bootstrap(db, server_id=82)
-        await _seat(db, big_id, 82, "Alpha", pair + others)
+        cur = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id) "
+            "VALUES (?, 'Bravo', 778, 889)",
+            (season_id,),
+        )
+        big_id = cur.lastrowid
+        await _seat(db, big_id, 81, "Alpha", pair + others)
         big_round = await _round(db, big_id, 1)
         await db.commit()
 

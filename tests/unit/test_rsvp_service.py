@@ -43,7 +43,6 @@ async def _make_db(tmp_path) -> str:
             """
             CREATE TABLE seasons (
                 id            INTEGER PRIMARY KEY,
-                server_id     INTEGER NOT NULL DEFAULT 1,
                 season_number INTEGER NOT NULL DEFAULT 1,
                 status        TEXT    NOT NULL DEFAULT 'ACTIVE'
             );

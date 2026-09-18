@@ -49,9 +49,8 @@ async def db_path(tmp_path):
 async def season_id(db_path):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-03-01', 'SETUP', 1)",
-            (SERVER_ID,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-03-01', 'SETUP', 1)"
         )
         await db.commit()
         return cursor.lastrowid

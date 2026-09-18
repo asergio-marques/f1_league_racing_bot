@@ -61,9 +61,8 @@ async def _seed_base(db_path: str, server_id: int = 1, test_mode: int = 0) -> tu
             (server_id, test_mode),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status) "
-            "VALUES (1, ?, '2026-01-01', 'ACTIVE')",
-            (server_id,),
+            "INSERT INTO seasons (id, start_date, status) "
+            "VALUES (1, '2026-01-01', 'ACTIVE')"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, forecast_channel_id, mention_role_id) "

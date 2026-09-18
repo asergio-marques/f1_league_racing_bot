@@ -373,7 +373,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                 ]
             )
 
-        areas["artwork"] = _digest(await _artwork_signature(bot, server_id))
+        areas["artwork"] = _digest(await _artwork_signature(bot))
     except Exception as exc:  # noqa: BLE001 — an unreadable season is a changed one
         log.error("season fingerprint: could not be taken: %s", exc)
         return SeasonFingerprint({})
@@ -389,7 +389,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
     return SeasonFingerprint(areas)
 
 
-async def _artwork_signature(bot, server_id: int) -> list:
+async def _artwork_signature(bot) -> list:
     """The template files and asset folders, by size and modification time.
 
     The one thing a database read cannot see. A template edited or deleted between the

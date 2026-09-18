@@ -52,7 +52,7 @@ class SeasonService:
     # Season
     # ------------------------------------------------------------------
 
-    async def create_season(self, server_id: int, start_date: date | None = None) -> Season:
+    async def create_season(self, start_date: date | None = None) -> Season:
         """Insert a new SETUP season and return it.
 
         Raises ``sqlite3.IntegrityError`` where the server already holds a live season:
@@ -65,20 +65,19 @@ class SeasonService:
             start_date = date.today()
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "INSERT INTO seasons (server_id, start_date, status) VALUES (?, ?, ?)",
-                (server_id, start_date.isoformat(), SeasonStatus.SETUP.value),
+                "INSERT INTO seasons (start_date, status) VALUES (?, ?)",
+                (start_date.isoformat(), SeasonStatus.SETUP.value),
             )
             await db.commit()
             season_id = cursor.lastrowid
 
         return Season(
             id=season_id,
-            server_id=server_id,
             start_date=start_date,
             status=SeasonStatus.SETUP,
         )
 
-    async def get_confirmed_season(self, server_id: int) -> Season | None:
+    async def get_confirmed_season(self) -> Season | None:
         """Return the ACTIVE season for *server_id*, or None.
 
         ACTIVE is every stage from the first confirmation of placements to the season's
@@ -89,9 +88,9 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
-                "WHERE server_id = ? AND status = ?",
-                (server_id, SeasonStatus.ACTIVE.value),
+                "SELECT id, start_date, status, season_number, stage FROM seasons "
+                "WHERE status = ?",
+                (SeasonStatus.ACTIVE.value,),
             )
             row = await cursor.fetchone()
 
@@ -99,7 +98,7 @@ class SeasonService:
             return None
         return _row_to_season(row)
 
-    async def get_season_for_server(self, server_id: int) -> Season | None:
+    async def get_season_for_server(self) -> Season | None:
         """Return the most recent season for *server_id* regardless of status.
 
         Used by channel assignment commands that should work in any season state.
@@ -107,16 +106,15 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
-                "WHERE server_id = ? ORDER BY id DESC LIMIT 1",
-                (server_id,),
+                "SELECT id, start_date, status, season_number, stage FROM seasons "
+                " ORDER BY id DESC LIMIT 1",
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return _row_to_season(row)
 
-    async def get_setup_or_active_season(self, server_id: int) -> Season | None:
+    async def get_setup_or_active_season(self) -> Season | None:
         """Return the live (SETUP or ACTIVE) season for *server_id*, or None.
 
         A server holds at most one, enforced by the partial unique index migration 049
@@ -128,17 +126,16 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
-                "WHERE server_id = ? AND status IN ('SETUP', 'ACTIVE') "
+                "SELECT id, start_date, status, season_number, stage FROM seasons "
+                "WHERE status IN ('SETUP', 'ACTIVE') "
                 "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-                (server_id,),
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return _row_to_season(row)
 
-    async def get_previewable_season(self, server_id: int) -> Season | None:
+    async def get_previewable_season(self) -> Season | None:
         """Return the season an `/images test` preview draws, or None.
 
         The server's one live season — SETUP or ACTIVE. A COMPLETED or CANCELLED season is
@@ -152,17 +149,16 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
-                "WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+                "SELECT id, start_date, status, season_number, stage FROM seasons "
+                "WHERE status IN ('ACTIVE', 'SETUP') "
                 "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-                (server_id,),
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return _row_to_season(row)
 
-    async def get_previous_season_number(self, server_id: int) -> int:
+    async def get_previous_season_number(self) -> int:
         """The highest season number *server_id* has already committed, or 0.
 
         "Committed" means the number has been issued and cannot be re-used — every status
@@ -175,68 +171,62 @@ class SeasonService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT MAX(season_number) AS highest FROM seasons "
-                "WHERE server_id = ? AND status != 'SETUP'",
-                (server_id,),
+                "WHERE status != 'SETUP'",
             )
             row = await cursor.fetchone()
         if row is None or row["highest"] is None:
             return 0
         return int(row["highest"])
 
-    async def get_setup_season(self, server_id: int) -> Season | None:
+    async def get_setup_season(self) -> Season | None:
         """Return the SETUP season for *server_id*, or None."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, status, season_number, stage FROM seasons "
-                "WHERE server_id = ? AND status = 'SETUP' LIMIT 1",
-                (server_id,),
+                "SELECT id, start_date, status, season_number, stage FROM seasons "
+                "WHERE status = 'SETUP' LIMIT 1",
             )
             row = await cursor.fetchone()
         if row is None:
             return None
         return _row_to_season(row)
 
-    async def has_existing_season(self, server_id: int) -> bool:
+    async def has_existing_season(self) -> bool:
         """Return True if any season row exists for *server_id* (any status)."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT 1 FROM seasons WHERE server_id = ? LIMIT 1",
-                (server_id,),
+                "SELECT 1 FROM seasons LIMIT 1",
             )
             row = await cursor.fetchone()
         return row is not None
 
-    async def has_active_or_completed_season(self, server_id: int) -> bool:
+    async def has_active_or_completed_season(self) -> bool:
         """Return True if an ACTIVE or COMPLETED season exists for *server_id*."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT 1 FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'COMPLETED') LIMIT 1",
-                (server_id,),
+                "SELECT 1 FROM seasons WHERE status IN ('ACTIVE', 'COMPLETED') LIMIT 1",
             )
             row = await cursor.fetchone()
         return row is not None
 
-    async def has_active_or_setup_season(self, server_id: int) -> bool:
+    async def has_active_or_setup_season(self) -> bool:
         """Return True if an ACTIVE or SETUP season exists for *server_id*."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT 1 FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') LIMIT 1",
-                (server_id,),
+                "SELECT 1 FROM seasons WHERE status IN ('ACTIVE', 'SETUP') LIMIT 1",
             )
             row = await cursor.fetchone()
         return row is not None
 
-    async def count_completed_seasons(self, server_id: int) -> int:
+    async def count_completed_seasons(self) -> int:
         """Return the count of COMPLETED seasons for *server_id*."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT COUNT(id) FROM seasons WHERE server_id = ? AND status = 'COMPLETED'",
-                (server_id,),
+                "SELECT COUNT(id) FROM seasons WHERE status = 'COMPLETED'",
             )
             row = await cursor.fetchone()
         return row[0] if row else 0
 
-    async def count_persisted_seasons(self, server_id: int) -> int:
+    async def count_persisted_seasons(self) -> int:
         """Return the count of all persisted (non-SETUP) seasons for *server_id*.
 
         Includes ACTIVE, COMPLETED, and CANCELLED seasons — every season whose
@@ -244,8 +234,7 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT COUNT(id) FROM seasons WHERE server_id = ? AND status != 'SETUP'",
-                (server_id,),
+                "SELECT COUNT(id) FROM seasons WHERE status != 'SETUP'",
             )
             row = await cursor.fetchone()
         return row[0] if row else 0
@@ -315,7 +304,6 @@ class SeasonService:
 
     async def save_pending_snapshot(
         self,
-        server_id: int,
         start_date: date,
         existing_season_id: int,
         divisions: list[dict],
@@ -371,7 +359,7 @@ class SeasonService:
                 # First snapshot: season_number = count of all persisted seasons + 1.
                 # Persisted seasons (ACTIVE, COMPLETED, CANCELLED) have already used their
                 # number, so the next season is simply one higher than that tally.
-                season_number = await self.count_persisted_seasons(server_id) + 1
+                season_number = await self.count_persisted_seasons() + 1
 
             if existing_season_id != 0:
                 # Save division_results_config keyed by division name so we can
@@ -543,10 +531,9 @@ class SeasonService:
             else:
                 cursor = await db.execute(
                     "INSERT INTO seasons "
-                    "(server_id, start_date, status, season_number, game_edition, stage) "
-                    "VALUES (?, ?, 'SETUP', ?, ?, ?)",
+                    "(start_date, status, season_number, game_edition, stage) "
+                    "VALUES (?, 'SETUP', ?, ?, ?)",
                     (
-                        server_id,
                         start_date.isoformat(),
                         season_number,
                         game_edition,
@@ -730,7 +717,9 @@ class SeasonService:
         """Return raw data for every SETUP-status season to rebuild PendingConfig on startup."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, server_id, start_date, season_number, game_edition FROM seasons WHERE status = 'SETUP'"
+                "SELECT id, start_date, season_number, game_edition, "
+                "(SELECT server_id FROM server_configs LIMIT 1) AS server_id "
+                "FROM seasons WHERE status = 'SETUP'"
             )
             season_rows = await cursor.fetchall()
 
@@ -813,7 +802,7 @@ class SeasonService:
                 f"Missing tier(s): {missing}."
             )
 
-    async def get_last_scheduled_at(self, server_id: int) -> datetime | None:
+    async def get_last_scheduled_at(self) -> datetime | None:
         """Return the latest scheduled_at across all ACTIVE rounds for the active season."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -822,18 +811,17 @@ class SeasonService:
                 FROM rounds r
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons   s ON s.id = d.season_id
-                WHERE s.server_id = ? AND s.status = 'ACTIVE'
+                WHERE s.status = 'ACTIVE'
                   AND r.status   != 'CANCELLED'
                   AND d.status   != 'CANCELLED'
                 """,
-                (server_id,),
             )
             row = await cursor.fetchone()
         if row is None or row[0] is None:
             return None
         return datetime.fromisoformat(row[0])
 
-    async def all_phases_complete(self, server_id: int) -> bool:
+    async def all_phases_complete(self) -> bool:
         """True if every non-MYSTERY, non-CANCELLED round in the active season has all 3 phases done."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -841,14 +829,12 @@ class SeasonService:
                 SELECT COUNT(*) FROM rounds r
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons   s ON s.id = d.season_id
-                WHERE s.server_id = ?
-                  AND s.status    = 'ACTIVE'
+                WHERE s.status    = 'ACTIVE'
                   AND r.format   != 'MYSTERY'
                   AND r.status   != 'CANCELLED'
                   AND d.status   != 'CANCELLED'
                   AND (r.phase1_done = 0 OR r.phase2_done = 0 OR r.phase3_done = 0)
                 """,
-                (server_id,),
             )
             row = await cursor.fetchone()
         return row is not None and row[0] == 0
@@ -958,13 +944,11 @@ class SeasonService:
                 FROM rounds r
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons   s ON s.id = d.season_id
-                WHERE s.server_id = ?
-                  AND s.status    = 'ACTIVE'
+                WHERE s.status    = 'ACTIVE'
                   AND d.status   != 'CANCELLED'
                   AND r.status IN ({_AWAITING_RESULTS_MODULE_SQL})
                 ORDER BY d.name, r.round_number
                 """,
-                (server_id,),
             )
             rows = [dict(r) for r in await cursor.fetchall()]
 
@@ -1008,7 +992,7 @@ class SeasonService:
             for row in rows
         ]
 
-    async def all_divisions_finished(self, server_id: int) -> bool:
+    async def all_divisions_finished(self) -> bool:
         """True if every division of the active season is FINISHED or CANCELLED.
 
         This is the gate on completing a season. It asks about divisions, not rounds: a division
@@ -1020,16 +1004,14 @@ class SeasonService:
                 """
                 SELECT COUNT(*) FROM divisions d
                 JOIN seasons s ON s.id = d.season_id
-                WHERE s.server_id = ?
-                  AND s.status    = 'ACTIVE'
+                WHERE s.status    = 'ACTIVE'
                   AND d.status NOT IN ('FINISHED', 'CANCELLED')
                 """,
-                (server_id,),
             )
             row = await cursor.fetchone()
         return row is not None and row[0] == 0
 
-    async def get_outstanding_rounds(self, server_id: int) -> list[dict]:
+    async def get_outstanding_rounds(self) -> list[dict]:
         """Return division, round_number and track_name for every round still to be finalised.
 
         Cancelled rounds and cancelled divisions are excluded — neither is waiting on anybody.
@@ -1041,25 +1023,14 @@ class SeasonService:
                 FROM rounds r
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons   s ON s.id = d.season_id
-                WHERE s.server_id = ?
-                  AND s.status    = 'ACTIVE'
+                WHERE s.status    = 'ACTIVE'
                   AND r.status NOT IN ({_TERMINAL_SQL})
                   AND d.status   != 'CANCELLED'
                 ORDER BY d.name, r.round_number
                 """,
-                (server_id,),
             )
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
-
-    async def get_all_server_ids_with_active_season(self) -> list[int]:
-        """Return all server_ids that currently have an ACTIVE season row."""
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT DISTINCT server_id FROM seasons WHERE status = 'ACTIVE'"
-            )
-            rows = await cursor.fetchall()
-        return [row[0] for row in rows]
 
     async def discard_uncommitted_placements(self, season_id: int) -> int:
         """Delete every placement of *season_id* not yet committed, freeing its seat.
@@ -1258,7 +1229,7 @@ class SeasonService:
         )
 
     async def get_previewable_divisions(
-        self, server_id: int, *, timeout: float | None = None
+        self, *, timeout: float | None = None
     ) -> list[Division]:
         """The divisions of the season an `/images test` preview draws, in one connection.
 
@@ -1281,9 +1252,8 @@ class SeasonService:
         async with get_connection(self._db_path, timeout=timeout) as db:
             cursor = await db.execute(
                 "SELECT id FROM seasons "
-                "WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+                "WHERE status IN ('ACTIVE', 'SETUP') "
                 "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-                (server_id,),
             )
             season_row = await cursor.fetchone()
             if season_row is None:
@@ -1905,7 +1875,6 @@ class SeasonService:
 def _row_to_season(row: object) -> Season:
     return Season(
         id=row["id"],
-        server_id=row["server_id"],
         start_date=date.fromisoformat(row["start_date"]),
         status=SeasonStatus(row["status"]),
         season_number=row["season_number"] if "season_number" in row.keys() else 0,

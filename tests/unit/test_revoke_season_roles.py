@@ -54,9 +54,9 @@ async def _make_db(tmp_path, *, name="revoke_roles", signed_up_role=SIGNED_UP_RO
         )
         for season_id, status in ((SEASON_ID, "ACTIVE"), (OTHER_SEASON_ID, "COMPLETED")):
             await db.execute(
-                "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-                "VALUES (?, ?, ?, '2026-01-01', ?)",
-                (season_id, SERVER_ID, season_id, status),
+                "INSERT INTO seasons (id, season_number, start_date, status) "
+                "VALUES (?, ?, '2026-01-01', ?)",
+                (season_id, season_id, status),
             )
             await db.execute(
                 "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "

@@ -93,7 +93,6 @@ _SERVER_SOURCES: tuple[tuple[str, str, str], ...] = (
 
 async def find_channel_use(
     db_path: str,
-    server_id: int,
     channel_id: int,
     *,
     ignore: ChannelUse | None = None,
@@ -123,7 +122,7 @@ async def find_channel_use(
                 sql = (
                     f"SELECT d.name FROM divisions d "
                     f"JOIN seasons s ON s.id = d.season_id "
-                    f"WHERE s.server_id = ? AND s.status IN ('SETUP', 'ACTIVE') "
+                    f"WHERE s.status IN ('SETUP', 'ACTIVE') "
                     f"  AND d.{column} = ? LIMIT 1"
                 )
             else:
@@ -131,10 +130,10 @@ async def find_channel_use(
                     f"SELECT d.name FROM {table} c "
                     f"JOIN divisions d ON d.id = c.division_id "
                     f"JOIN seasons s ON s.id = d.season_id "
-                    f"WHERE s.server_id = ? AND s.status IN ('SETUP', 'ACTIVE') "
+                    f"WHERE s.status IN ('SETUP', 'ACTIVE') "
                     f"  AND c.{column} = ? LIMIT 1"
                 )
-            cursor = await db.execute(sql, (server_id, channel_id))
+            cursor = await db.execute(sql, (channel_id,))
             row = await cursor.fetchone()
             if row is None:
                 continue

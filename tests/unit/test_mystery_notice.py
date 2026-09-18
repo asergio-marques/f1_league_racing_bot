@@ -300,8 +300,8 @@ async def _seed_mystery_round(db_path: str, round_id: int = 1) -> None:
             "VALUES (1, 100, 200, 300)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
+            "INSERT INTO seasons (id, start_date, status) "
+            "VALUES (1, '2026-01-01', 'ACTIVE')"
         )
         await db.execute(
             "INSERT INTO divisions "

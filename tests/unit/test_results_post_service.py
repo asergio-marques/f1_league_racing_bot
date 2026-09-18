@@ -67,8 +67,8 @@ async def test_post_session_results_includes_heading_and_label(tmp_path):
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 3)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 3)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -158,8 +158,8 @@ async def test_post_session_results_label_appears_for_all_status_values(tmp_path
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -242,8 +242,8 @@ async def test_post_standings_includes_heading_and_label(tmp_path):
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 2)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 2)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -424,8 +424,8 @@ async def _seed_division_for_repost(
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 2)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 2)"
         )
         season_id = cursor.lastrowid
         cursor = await db.execute(
@@ -744,8 +744,8 @@ async def _seed_season_for_faults(tmp_path, divisions):
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 2)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 2)"
         )
         season_id = cursor.lastrowid
         for tier, (name, results_id, standings_id) in enumerate(divisions):
@@ -1070,9 +1070,8 @@ async def _seed_two_tied_drivers(tmp_path, server_id: int = 300):
             (server_id,),
         )
         cur = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
-            (server_id,),
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cur.lastrowid
         cur = await db.execute(

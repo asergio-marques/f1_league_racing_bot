@@ -34,9 +34,8 @@ async def db_path(tmp_path):
             (1,),
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (5, ?, '2026-09-17', 'SETUP', 1, 'WAITING')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (5, '2026-09-17', 'SETUP', 1, 'WAITING')"
         )
         await db.commit()
     return path

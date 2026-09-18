@@ -256,7 +256,7 @@ async def remove_portrait(db_path: str, user_id: str, directory) -> bool:
     return True
 
 
-async def assigned_driver_ids(db_path: str, server_id: int) -> list[str]:
+async def assigned_driver_ids(db_path: str) -> list[str]:
     """The Discord user IDs assigned to a seat in *server_id*'s active season.
 
     Sorted, so the daily refresh works through a roster in a stable order rather than
@@ -317,7 +317,7 @@ async def run_daily_refresh(bot, *, now: datetime | None = None) -> int:
             return 0
 
         members = []
-        for user_id in await assigned_driver_ids(bot.db_path, server_id):
+        for user_id in await assigned_driver_ids(bot.db_path):
             member = guild.get_member(int(user_id))
             if member is not None:
                 members.append(member)

@@ -211,13 +211,11 @@ async def get_next_pending_phase(
             FROM rounds r
             JOIN divisions d ON d.id  = r.division_id
             JOIN seasons   s ON s.id  = d.season_id
-            WHERE s.server_id = ?
-              AND s.status    = 'ACTIVE'
+            WHERE s.status    = 'ACTIVE'
               AND d.status   != 'CANCELLED'
               AND r.status   != 'CANCELLED'
             ORDER BY r.scheduled_at ASC, d.id ASC
             """,
-            (server_id,),
         )
         rows = await cursor.fetchall()
         if not rows:
@@ -234,9 +232,8 @@ async def get_next_pending_phase(
             JOIN rounds r ON r.id = sr.round_id
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
-            WHERE s.server_id = ? AND sr.status = 'ACTIVE'
+            WHERE sr.status = 'ACTIVE'
             """,
-            (server_id,),
         )
         rounds_with_results: set[int] = {r["round_id"] for r in await results_cursor.fetchall()}
 
@@ -315,9 +312,7 @@ async def get_next_pending_phase(
                 JOIN rounds r ON r.id = rem.round_id
                 JOIN divisions d ON d.id = r.division_id
                 JOIN seasons s ON s.id = d.season_id
-                WHERE s.server_id = ?
                 """,
-                (server_id,),
             )
             rsvp_state: dict[int, Any] = {
                 r["round_id"]: r for r in await rsvp_cursor.fetchall()
@@ -488,7 +483,6 @@ def _phase_status(done: bool, job_id: str, live_ids: set[str] | None) -> str:
 
 
 async def build_review_summary(
-    server_id: int,
     db_path: str,
     scheduler_service: Any = None,
 ) -> str:
@@ -508,8 +502,7 @@ async def build_review_summary(
     async with get_connection(db_path) as db:
         # Season header
         season_cursor = await db.execute(
-            "SELECT start_date FROM seasons WHERE server_id = ? AND status = 'ACTIVE'",
-            (server_id,),
+            "SELECT start_date FROM seasons WHERE status = 'ACTIVE'",
         )
         season_row = await season_cursor.fetchone()
 
@@ -547,13 +540,11 @@ async def build_review_summary(
             FROM rounds r
             JOIN divisions d ON d.id  = r.division_id
             JOIN seasons   s ON s.id  = d.season_id
-            WHERE s.server_id = ?
-              AND s.status    = 'ACTIVE'
+            WHERE s.status    = 'ACTIVE'
               AND d.status   != 'CANCELLED'
               AND r.status   != 'CANCELLED'
             ORDER BY d.id ASC, r.scheduled_at ASC
             """,
-            (server_id,),
         )
         rows = await cursor.fetchall()
 
@@ -565,9 +556,8 @@ async def build_review_summary(
             JOIN rounds r ON r.id = sr.round_id
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
-            WHERE s.server_id = ? AND sr.status = 'ACTIVE'
+            WHERE sr.status = 'ACTIVE'
             """,
-            (server_id,),
         )
         rounds_with_results: set[int] = {r["round_id"] for r in await sr_cursor.fetchall()}
 
@@ -580,9 +570,7 @@ async def build_review_summary(
             JOIN rounds r ON r.id = rem.round_id
             JOIN divisions d ON d.id = r.division_id
             JOIN seasons s ON s.id = d.season_id
-            WHERE s.server_id = ?
             """,
-            (server_id,),
         )
         rsvp_rows = {
             (r["round_id"], r["division_id"]): r

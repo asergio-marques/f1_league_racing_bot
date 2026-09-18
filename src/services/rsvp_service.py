@@ -176,11 +176,11 @@ class _RsvpButton(discord.ui.Button):
 
 
 async def _attendance_enabled_for_round(round_id: int, bot) -> bool:  # type: ignore[type-arg]
-    """Return True when *round_id*'s server has the attendance module enabled."""
+    """Return True when *round_id* exists and the league has the attendance module enabled."""
     async with get_connection(bot.db_path) as db:
         cur = await db.execute(
             """
-            SELECT s.server_id
+            SELECT 1
               FROM rounds r
               JOIN divisions d ON d.id = r.division_id
               JOIN seasons s ON s.id = d.season_id
@@ -195,11 +195,11 @@ async def _attendance_enabled_for_round(round_id: int, bot) -> bool:  # type: ig
 
 
 async def _attendance_enabled_for_division(division_id: int, bot) -> bool:  # type: ignore[type-arg]
-    """Return True when *division_id*'s server has the attendance module enabled."""
+    """Return True when *division_id* exists and the league has the attendance module enabled."""
     async with get_connection(bot.db_path) as db:
         cur = await db.execute(
             """
-            SELECT s.server_id
+            SELECT 1
               FROM divisions d
               JOIN seasons s ON s.id = d.season_id
              WHERE d.id = ?

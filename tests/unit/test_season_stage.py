@@ -62,9 +62,9 @@ async def db_path(tmp_path):
 async def _insert(db_path, status, stage=None):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number, stage) "
-            "VALUES (?, '2026-09-17', ?, 1, ?)",
-            (SERVER_ID, status, stage),
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-09-17', ?, 1, ?)",
+            (status, stage),
         )
         await db.commit()
         return cursor.lastrowid
@@ -243,7 +243,7 @@ async def test_set_stage_refuses_a_season_that_does_not_exist(db_path):
 async def test_a_season_read_carries_its_stage(db_path):
     svc = SeasonService(db_path)
     await _insert(db_path, "ACTIVE", "ONGOING_PLACEMENTS")
-    season = await svc.get_confirmed_season(SERVER_ID)
+    season = await svc.get_confirmed_season()
     assert season is not None
     assert season.stage is SeasonStage.ONGOING_PLACEMENTS
 

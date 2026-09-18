@@ -310,8 +310,8 @@ class TeamService:
         async with get_connection(self._db_path) as db:
             season_row = await (
                 await db.execute(
-                    "SELECT status FROM seasons WHERE id = ? AND server_id = ?",
-                    (season_id, server_id),
+                    "SELECT status FROM seasons WHERE id = ?",
+                    (season_id,),
                 )
             ).fetchone()
             if season_row is None or season_row["status"] != "SETUP":
@@ -469,9 +469,9 @@ class TeamService:
                 FROM team_instances ti
                 JOIN divisions d ON d.id = ti.division_id
                 JOIN seasons s   ON s.id = d.season_id
-                WHERE s.server_id = ? AND s.id = ? AND ti.is_reserve = 0
+                WHERE s.id = ? AND ti.is_reserve = 0
                 """,
-                (server_id, season_id),
+                (season_id,),
             )
             rows = await cursor.fetchall()
         return {r["name"] for r in rows}

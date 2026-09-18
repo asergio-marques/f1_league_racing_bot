@@ -95,7 +95,7 @@ async def _reattach_history(db, discord_user_id: str, profile_id: int) -> None:
     )
 
 
-async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
+async def _get_active_season_id(db_path: str) -> int | None:
     """Return the live season ID for a server, or None if it has none.
 
     A server holds at most one live (SETUP or ACTIVE) season — migration 049 enforces it
@@ -110,16 +110,15 @@ async def _get_active_season_id(server_id: int, db_path: str) -> int | None:
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id FROM seasons WHERE server_id = ? AND status IN ('ACTIVE', 'SETUP') "
+            "SELECT id FROM seasons WHERE status IN ('ACTIVE', 'SETUP') "
             "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-            (server_id,),
         )
         row = await cursor.fetchone()
     return row["id"] if row else None
 
 
 async def _get_division_id(
-    server_id: int, season_id: int, division_name: str, db_path: str
+    season_id: int, division_name: str, db_path: str
 ) -> int | None:
     """Return the division ID for a named division in the active season, or None."""
     async with get_connection(db_path) as db:
@@ -128,12 +127,11 @@ async def _get_division_id(
             SELECT d.id
             FROM divisions d
             JOIN seasons s ON s.id = d.season_id
-            WHERE s.server_id = ?
-              AND s.id = ?
+            WHERE s.id = ?
               AND LOWER(d.name) = LOWER(?)
               AND d.status != 'CANCELLED'
             """,
-            (server_id, season_id, division_name),
+            (season_id, division_name),
         )
         row = await cursor.fetchone()
     return row["id"] if row else None
@@ -142,7 +140,6 @@ async def _get_division_id(
 # ─── Public API ──────────────────────────────────────────────────────────────
 
 async def add_test_driver(
-    server_id: int,
     driver_name: str,
     team_name: str,
     division_name: str,
@@ -166,11 +163,11 @@ async def add_test_driver(
                 "(e.g. 'British') or country name (e.g. 'United Kingdom'), or 'other'."
             )
 
-    season_id = await _get_active_season_id(server_id, db_path)
+    season_id = await _get_active_season_id(db_path)
     if season_id is None:
         return "No active or setup season found."
 
-    division_id = await _get_division_id(server_id, season_id, division_name, db_path)
+    division_id = await _get_division_id(season_id, division_name, db_path)
     if division_id is None:
         return f"Division '{division_name}' not found in the active season."
 
@@ -293,7 +290,7 @@ async def add_test_drivers_in_bulk(
     if not drivers:
         return 0, ["There were no drivers to add."]
 
-    season_id = await _get_active_season_id(server_id, db_path)
+    season_id = await _get_active_season_id(db_path)
     if season_id is None:
         return 0, ["No active or setup season found."]
 
@@ -319,7 +316,7 @@ async def add_test_drivers_in_bulk(
         # Every division named must exist, and must be empty.
         division_ids: dict[str, int] = {}
         for name in divisions_named(drivers):
-            division_id = await _get_division_id(server_id, season_id, name, db_path)
+            division_id = await _get_division_id(season_id, name, db_path)
             if division_id is None:
                 errors.append(f"Division '{name}' is not in the current season.")
                 continue
@@ -454,7 +451,6 @@ async def add_test_drivers_in_bulk(
 
 
 async def list_test_drivers(
-    server_id: int,
     division_name: str,
     db_path: str,
 ) -> list[TestDriverInfo] | str:
@@ -462,11 +458,11 @@ async def list_test_drivers(
 
     Returns an error string if the division does not exist.
     """
-    season_id = await _get_active_season_id(server_id, db_path)
+    season_id = await _get_active_season_id(db_path)
     if season_id is None:
         return "No active or setup season found."
 
-    division_id = await _get_division_id(server_id, season_id, division_name, db_path)
+    division_id = await _get_division_id(season_id, division_name, db_path)
     if division_id is None:
         return f"Division '{division_name}' not found in the active season."
 
@@ -502,7 +498,6 @@ async def list_test_drivers(
 
 
 async def clear_test_drivers(
-    server_id: int,
     division_name: str,
     db_path: str,
 ) -> int | str:
@@ -510,11 +505,11 @@ async def clear_test_drivers(
 
     Returns an error string if the division does not exist.
     """
-    season_id = await _get_active_season_id(server_id, db_path)
+    season_id = await _get_active_season_id(db_path)
     if season_id is None:
         return "No active or setup season found."
 
-    division_id = await _get_division_id(server_id, season_id, division_name, db_path)
+    division_id = await _get_division_id(season_id, division_name, db_path)
     if division_id is None:
         return f"Division '{division_name}' not found in the active season."
 

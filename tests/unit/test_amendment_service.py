@@ -36,8 +36,8 @@ async def db_path(tmp_path):
             "VALUES (1, 10, 20, 30)"
         )
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, start_date, status, season_number) "
-            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
         )
         season_id = cursor.lastrowid
         await db.commit()
@@ -226,8 +226,8 @@ async def test_amend_round_changes_the_field(tmp_path):
             "VALUES (1, 10, 20, 30)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
@@ -301,8 +301,8 @@ async def test_amending_two_fields_amends_once(tmp_path):
             "VALUES (1, 10, 20, 30)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
@@ -397,8 +397,8 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
             "VALUES (1, 10, 20, 30)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
@@ -491,8 +491,8 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
             "VALUES (1, 10, 20, 30)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 1)"
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "
@@ -571,8 +571,8 @@ async def _seed_one_round(path, scheduled_at):
             "VALUES (1, 10, 20, 30)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (1, 1, '2026-01-01', 'ACTIVE', 3)"
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 3)"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, mention_role_id) "

@@ -214,12 +214,12 @@ class PlacementService:
                 JOIN divisions d ON d.id = ti.division_id
                 JOIN seasons s ON s.id = d.season_id
                 JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
-                WHERE s.server_id = ? AND s.status = 'ACTIVE' AND ti.name = ?
+                WHERE s.status = 'ACTIVE' AND ti.name = ?
                   AND dp.is_test_driver = 0
                   AND {uncommitted_seat_excluded("ts")}
                 ORDER BY dp.discord_user_id
                 """,
-                (server_id, team_name),
+                (team_name,),
             )
             user_ids = [row["discord_user_id"] for row in await cursor.fetchall()]
             still_mapped = False
@@ -1594,10 +1594,9 @@ class PlacementService:
                 LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
                 LEFT JOIN team_role_configs trc
                     ON trc.team_name = ti.name
-                WHERE dsa.driver_profile_id = ? AND dsa.committed = 1
-                  AND s.server_id = ? AND s.status IN ('SETUP', 'ACTIVE')
+                WHERE dsa.driver_profile_id = ? AND dsa.committed = 1 AND s.status IN ('SETUP', 'ACTIVE')
                 """,
-                (driver_profile_id, server_id),
+                (driver_profile_id,),
             )
             for row in await cursor.fetchall():
                 for role_id in (row["division_role"], row["team_role"]):
@@ -1813,7 +1812,7 @@ class PlacementService:
 
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
-                "SELECT s.server_id, d.name AS div_name, d.lineup_channel_id, d.lineup_message_id "
+                "SELECT (SELECT server_id FROM server_configs LIMIT 1) AS server_id, d.name AS div_name, d.lineup_channel_id, d.lineup_message_id "
                 "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                 (division_id,),
             )

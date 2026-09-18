@@ -41,8 +41,8 @@ async def test_a_channel_is_not_resubmitting_unless_told_so(tmp_path):
             "interaction_channel_id, log_channel_id) VALUES (1, 900, 100, 101)"
         )
         await db.execute(
-            "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
-            "VALUES (1, 1, 1, '2026-01-01', 'ACTIVE')"
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "

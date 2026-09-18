@@ -193,9 +193,8 @@ async def test_current_account_map_for_division_reaches_its_server(tmp_path):
     await _make_current(db_path, pid, B)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "
-            "VALUES (1, ?, '2026-09-17', 'ACTIVE', 1, 'ONGOING')",
-            (SERVER_ID,),
+            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
+            "VALUES (1, '2026-09-17', 'ACTIVE', 1, 'ONGOING')"
         )
         await db.execute(
             "INSERT INTO divisions (id, season_id, name, mention_role_id, tier, status) "

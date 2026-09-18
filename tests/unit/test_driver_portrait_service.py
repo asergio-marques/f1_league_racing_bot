@@ -481,7 +481,7 @@ async def _season_db(tmp_path, *, uids=("11", "22"), test_uid="99", status="ACTI
     """A database carrying just the four tables `assigned_driver_ids` joins."""
     path = str(tmp_path / "season.db")
     async with aiosqlite.connect(path) as db:
-        await db.execute("CREATE TABLE seasons (id INTEGER PRIMARY KEY, server_id INTEGER, status TEXT)")
+        await db.execute("CREATE TABLE seasons (id INTEGER PRIMARY KEY, status TEXT)")
         await db.execute(
             "CREATE TABLE driver_profiles (id INTEGER PRIMARY KEY, discord_user_id TEXT,"
             " is_test_driver INTEGER DEFAULT 0)"
@@ -493,7 +493,7 @@ async def _season_db(tmp_path, *, uids=("11", "22"), test_uid="99", status="ACTI
             "CREATE TABLE driver_portraits (discord_user_id TEXT PRIMARY KEY,"
             " avatar_key TEXT NOT NULL, fetched_at TEXT NOT NULL)"
         )
-        await db.execute("INSERT INTO seasons VALUES (1, ?, ?)", (SERVER_ID, status))
+        await db.execute("INSERT INTO seasons VALUES (1, ?)", (status,))
         pid = 0
         for uid in uids:
             pid += 1
@@ -513,7 +513,7 @@ async def test_assigned_driver_ids_skips_test_drivers_and_sorts(tmp_path):
     path = await _season_db(tmp_path, uids=("22", "11"))
 
     # Sorted rather than in insertion order: a run cut short must resume predictably.
-    assert await assigned_driver_ids(path, SERVER_ID) == ["11", "22"]
+    assert await assigned_driver_ids(path) == ["11", "22"]
 
 
 async def test_assigned_driver_ids_ignores_a_season_that_is_not_active(tmp_path):
@@ -521,7 +521,7 @@ async def test_assigned_driver_ids_ignores_a_season_that_is_not_active(tmp_path)
 
     path = await _season_db(tmp_path, status="COMPLETED")
 
-    assert await assigned_driver_ids(path, SERVER_ID) == []
+    assert await assigned_driver_ids(path) == []
 
 
 def _daily_bot(db_path, directory, **config_overrides):

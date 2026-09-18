@@ -126,7 +126,7 @@ async def execute_forced_close(server_id: int, bot: commands.Bot, *, audit_actio
     from services.season_lifecycle_service import advance_on_window_close
 
     try:
-        await advance_on_window_close(bot.db_path, server_id)
+        await advance_on_window_close(bot.db_path)
     except Exception:  # noqa: BLE001
         log.exception("forced_close: could not move the season on for server %s", server_id)
 
@@ -346,7 +346,7 @@ class ModuleCog(commands.Cog):
         )
 
         if module == "signup":
-            season_number = await signup_configuration_fixed(self.bot.db_path, server_id)
+            season_number = await signup_configuration_fixed(self.bot.db_path)
             if season_number is not None:
                 await interaction.response.send_message(
                     f"❌ The signup module is fixed for Season {season_number} now that its "
@@ -356,7 +356,7 @@ class ModuleCog(commands.Cog):
                 )
                 return True
         elif action == "enable":
-            if await self.bot.season_service.get_confirmed_season(server_id) is not None:
+            if await self.bot.season_service.get_confirmed_season() is not None:
                 await interaction.response.send_message(
                     "❌ A module cannot be enabled once the season's placements have been "
                     "confirmed. Enable it before then, or once the season has ended.",
@@ -365,7 +365,7 @@ class ModuleCog(commands.Cog):
                 return True
 
         if action == "disable" and await modules_frozen_for_completion(
-            self.bot.db_path, server_id
+            self.bot.db_path
         ):
             await interaction.response.send_message(
                 "❌ No module can be disabled while the season is pending completion. "
@@ -472,7 +472,7 @@ class ModuleCog(commands.Cog):
             return
 
         # 2. Block if ACTIVE season exists (FR-003)
-        active_season = await self.bot.season_service.get_confirmed_season(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season()
         if active_season is not None:
             await interaction.response.send_message(
                 "❌ Results & Standings module cannot be enabled once a season's placements are confirmed.",
@@ -528,7 +528,7 @@ class ModuleCog(commands.Cog):
             return
 
         # Warn before anything irreversible, and write nothing until the league confirms it.
-        active_season = await self.bot.season_service.get_confirmed_season(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season()
         attendance_on = await self.bot.module_service.is_attendance_enabled()
 
         if active_season is not None or attendance_on:
@@ -668,7 +668,7 @@ class ModuleCog(commands.Cog):
             return
 
         # 2. Guard: no ACTIVE season
-        active_season = await self.bot.season_service.get_confirmed_season(server_id)
+        active_season = await self.bot.season_service.get_confirmed_season()
         if active_season is not None:
             await interaction.response.send_message(
                 "❌ Attendance module cannot be enabled once a season's placements are confirmed.",

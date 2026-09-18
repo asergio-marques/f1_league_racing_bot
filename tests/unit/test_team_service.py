@@ -52,7 +52,6 @@ async def db_path(tmp_path):
 
             CREATE TABLE seasons (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id     INTEGER NOT NULL,
                 season_number INTEGER NOT NULL DEFAULT 1,
                 status        TEXT    NOT NULL DEFAULT 'SETUP'
             );
@@ -96,8 +95,7 @@ async def _add_role_config(db_path: str, server_id: int, team_name: str, role_id
 async def _add_season_with_divisions(db_path: str, server_id: int, div_count: int = 1) -> int:
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO seasons (server_id, season_number, status) VALUES (?, 1, 'SETUP')",
-            (server_id,),
+            "INSERT INTO seasons (season_number, status) VALUES (1, 'SETUP')"
         )
         season_id = cursor.lastrowid
         for _ in range(div_count):
