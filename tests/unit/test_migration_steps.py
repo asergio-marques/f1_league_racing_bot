@@ -11,14 +11,19 @@ from pathlib import Path
 
 
 def test_no_test_builds_the_schema_from_the_migration_files():
-    """A file that lists the migrations directory and runs `executescript` is building the
-    schema by hand; `run_migrations` is the one way to raise it."""
+    """A file that lists the migrations directory and runs `executescript` on what it reads
+    from a file is building the schema by hand; `run_migrations` is the one way to raise it.
+    An `executescript` of SQL written in the test itself — seeding rows, standing up an old
+    database to be refused — is not."""
+    import re
+
+    reads_a_file = re.compile(r"executescript\(\s*\w+\.read(?:_text)?\(")
     tests_root = Path(__file__).resolve().parents[1]
     offenders = sorted(
         str(path.relative_to(tests_root))
         for path in tests_root.rglob("*.py")
         if path != Path(__file__).resolve()
-        and "executescript" in (text := path.read_text(encoding="utf-8"))
+        and reads_a_file.search(text := path.read_text(encoding="utf-8"))
         and "listdir(" in text
         and "migrations" in text.lower()
     )
