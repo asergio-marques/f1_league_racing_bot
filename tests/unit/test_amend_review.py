@@ -112,6 +112,7 @@ async def _review(
     panel_errors=None,
     approve_error=None,
     panel_faults=None,
+    approve_result=None,
 ):
     """Run the command, answering the panel with *press* ("approve", "reject" or None).
 
@@ -147,7 +148,7 @@ async def _review(
             new=AsyncMock(return_value=panel_faults or []),
         ) as faults, patch(
             "services.amendment_service.approve_amendment",
-            new=AsyncMock(side_effect=approve_error),
+            new=AsyncMock(side_effect=approve_error, return_value=approve_result or []),
         ) as approve:
             await undecorate(ResultsCog.amend_review)(cog, interaction)
     finally:
@@ -338,6 +339,35 @@ async def test_an_approved_amendment_says_the_standings_were_reposted():
     replied = _replied(interaction)
     assert "Amendment approved" in replied
     assert "recomputed and reposted" in replied
+
+
+async def test_an_approval_with_clean_sanctions_says_nothing_of_them():
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _review(cog, interaction, press="approve")
+
+    assert "attendance sanctions" not in _replied(interaction)
+
+
+async def test_an_approval_lists_the_sanctions_that_did_not_apply():
+    """#239. It used to answer a bare success whatever became of the sanctions."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _review(
+        cog, interaction, press="approve",
+        approve_result=[
+            "<@5> (Five) — autosack: discord down",
+            "Repair the cause, then run `/attendance sync division:Pro round:2`.",
+        ],
+    )
+
+    replied = _replied(interaction)
+    assert "Amendment approved" in replied
+    assert "some attendance sanctions did not apply" in replied
+    assert "• <@5> (Five) — autosack: discord down" in replied
+    assert "/attendance sync division:Pro round:2" in replied
 
 
 async def test_an_approval_is_logged():

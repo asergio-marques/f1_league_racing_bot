@@ -1756,7 +1756,7 @@ async def recalculate_attendance_for_round(
     round_id: int,
     division_id: int,
     season_id: int,
-) -> None:
+) -> SanctionOutcome:
     """Re-run the full attendance pipeline for an amended round (FR-028–FR-031).
 
     Upgrade-only rule does NOT apply here — this is a deliberate correction and may
@@ -1806,7 +1806,9 @@ async def recalculate_attendance_for_round(
 
     # FR-031: re-post sheet and re-evaluate sanctions.
     await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
-    await enforce_attendance_sanctions(bot, guild, db_path, round_id, division_id, season_id)
+    return await enforce_attendance_sanctions(
+        bot, guild, db_path, round_id, division_id, season_id
+    )
 
 
 
