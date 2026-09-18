@@ -1693,6 +1693,8 @@ No parameters. Displays a diff of the staged changes against the current season 
 
 > **An amendment it could not publish is refused, not half-made.** Before overwriting a single value the bot checks that every division's results and standings channels are still there and that it can post to them — and, with the attendance module on, its attendance channel too. If any of them has been deleted or the bot's permission has been taken away, the panel names the division and the channel, pressing Approve refuses, and **nothing is changed**: the season keeps its points, the staged changes stay staged, and amendment mode stays on. Repair the channel and review again. Either the whole approval happens or none of it does.
 
+> **The attendance sanctions are the one exception.** With the attendance module on, approving re-checks the sanction thresholds. A sanction that then fails to apply does not undo the approval; the reply lists it, with the `/attendance sync` command that finishes it. See [When a sanction does not apply](#when-a-sanction-does-not-apply).
+
 ---
 
 #### Reserve Driver Visibility
@@ -1818,6 +1820,28 @@ No parameters. Displays the full attendance configuration for this server as an 
 - **Timing** — RSVP notice days, last-reminder hours, and RSVP deadline hours
 - **Penalties** — No-RSVP penalty, absent penalty (NO_RSVP/TENTATIVE/DECLINED + absent), and no-show penalty (ACCEPTED + absent)
 - **Auto-actions** — Auto-reserve threshold and auto-sack threshold (both shown as `disabled` when set to `0`)
+
+---
+
+#### When a sanction does not apply
+
+Every driver over a threshold is attempted, and one driver's sanction failing never stops the next. Nothing already applied is undone. Where any sanction did not apply — the division has no Reserve team, the bot could not change a driver's roles, or the sanction took effect but its announcement could not be posted — the log channel gets one `ATTENDANCE_SANCTIONS | Incomplete` entry naming each driver and the reason. The manager who approved the penalty review or the amendment is told the same in their reply, instead of a plain success. Both end with the `/attendance sync` command to run once the cause is repaired.
+
+---
+
+#### `/attendance sync` — Recalculate a division's attendance and apply any sanction still owed
+*Access: League manager*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division` | String | ✅ | Division name |
+| `round` | Integer | ✅ | Round number to recalculate from. Every round after it whose penalties are approved follows. |
+
+Recalculates the attendance of the round you name and of every later round whose penalties have been approved, from their results, all at once or not at all. Earlier rounds are left alone. It then posts the attendance sheet of the latest of those rounds and applies any auto-reserve or auto-sack still owed at that round, with its announcement in the verdicts channel as usual. The reply lists what was applied and anything still not applied, and the run is written to the log channel.
+
+It is safe to run more than once: a driver already sacked or already in the Reserve team is not sanctioned again, so a second run applies only what the first did not.
+
+> **Limitation:** Available only while the season is ongoing, and only for a round whose penalties have been approved. It is refused, with nothing changed, if a channel it would post to cannot be reached.
 
 ---
 
