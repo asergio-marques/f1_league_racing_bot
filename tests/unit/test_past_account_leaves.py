@@ -38,6 +38,7 @@ async def _cog(tmp_path) -> SignupCog:
     cog.bot.db_path = db_path
     cog.bot.wizard_service.handle_member_remove = AsyncMock()
     cog.bot.output_router.post_log = AsyncMock()
+    cog.bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     return cog
 
 

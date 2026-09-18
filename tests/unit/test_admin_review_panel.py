@@ -78,6 +78,7 @@ def _bot(*, state=DriverState.PENDING_ADMIN_APPROVAL, wizard_user: str | None = 
     bot.wizard_service.get_wizard_by_channel = AsyncMock(
         return_value=SimpleNamespace(discord_user_id=wizard_user) if wizard_user else None
     )
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     return bot
 
 
@@ -274,6 +275,7 @@ def _message(content: str, *, author_id: int = MANAGER_ID, is_bot: bool = False)
     message.author.id = author_id
     message.author.bot = is_bot
     message.guild = MagicMock()
+    message.guild.id = SERVER_ID
     message.channel = MagicMock()
     message.channel.id = CHANNEL_ID
     message.delete = AsyncMock(return_value=None)

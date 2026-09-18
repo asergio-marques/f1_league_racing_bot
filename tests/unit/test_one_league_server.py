@@ -143,3 +143,79 @@ def test_one_server_raises_no_warning(caplog):
         warn_if_serving_several(bot)
 
     assert caplog.records == []
+
+
+# ── The event listeners, which the tree does not see ──────────────────────
+
+
+def _listener_bot():
+    bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=LEAGUE)
+    bot.wizard_service.get_wizard_by_channel = AsyncMock(return_value=None)
+    bot.wizard_service.handle_member_remove = AsyncMock()
+    bot.output_router.post_log = AsyncMock()
+    return bot
+
+
+def _message_elsewhere():
+    message = MagicMock()
+    message.author.bot = False
+    message.author.id = 7
+    message.guild.id = ELSEWHERE
+    message.channel.id = 70
+    message.delete = AsyncMock()
+    return message
+
+
+async def test_the_reason_listener_ignores_another_server():
+    from cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+
+    bot = _listener_bot()
+    _PENDING_REASONS[(70, 7)] = {"action": "reject"}
+    try:
+        await AdminReviewCog(bot).on_message(_message_elsewhere())
+        assert (70, 7) in _PENDING_REASONS
+    finally:
+        _PENDING_REASONS.pop((70, 7), None)
+
+
+async def test_the_wizard_listener_ignores_another_server():
+    from cogs.signup_cog import SignupCog
+
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = _listener_bot()
+
+    await cog.on_message(_message_elsewhere())
+
+    cog.bot.wizard_service.get_wizard_by_channel.assert_not_awaited()
+
+
+async def test_a_member_leaving_another_server_is_nothing_to_the_league():
+    from cogs.signup_cog import SignupCog
+
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = _listener_bot()
+    member = MagicMock()
+    member.id = 7
+    member.guild.id = ELSEWHERE
+
+    await cog.on_member_remove(member)
+
+    cog.bot.wizard_service.handle_member_remove.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_not_awaited()
+
+
+async def test_the_penalty_review_lock_ignores_another_server(monkeypatch):
+    from cogs.season_cog import SeasonCog
+    from services import result_submission_service
+
+    asked = AsyncMock(return_value=True)
+    monkeypatch.setattr(result_submission_service, "is_channel_in_penalty_review", asked)
+    cog = SeasonCog.__new__(SeasonCog)
+    cog.bot = _listener_bot()
+    message = _message_elsewhere()
+
+    await cog.on_message(message)
+
+    asked.assert_not_awaited()
+    message.delete.assert_not_awaited()

@@ -50,6 +50,7 @@ from utils.channel_guard import (
     league_manager_only,
 )
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
+from utils.league_server import is_foreign_guild
 from utils.output_router import _chunk_message
 from utils.round_import import (
     ParsedDivisionRounds,
@@ -6171,6 +6172,8 @@ class SeasonCog(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         if message.author.bot or not message.guild:
+            return
+        if await is_foreign_guild(self.bot, message.guild.id):
             return
         from services.result_submission_service import is_channel_in_penalty_review
 

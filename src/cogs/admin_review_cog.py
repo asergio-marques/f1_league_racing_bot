@@ -16,6 +16,7 @@ from discord.ext import commands
 
 from models.driver_profile import DriverState
 from utils.channel_guard import is_league_manager
+from utils.league_server import is_foreign_guild
 
 log = logging.getLogger(__name__)
 
@@ -235,6 +236,8 @@ class AdminReviewCog(commands.Cog):
     async def on_message(self, message: discord.Message) -> None:
         """Capture the admin's reason message for Request Changes / Reject."""
         if message.author.bot or not message.guild:
+            return
+        if await is_foreign_guild(self.bot, message.guild.id):
             return
         key = (message.channel.id, message.author.id)
         pending = _PENDING_REASONS.pop(key, None)

@@ -70,6 +70,7 @@ def _cog(db_path):
     bot.wizard_service.handle_member_remove = AsyncMock()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     cog = SignupCog.__new__(SignupCog)
     cog.bot = bot
     return cog

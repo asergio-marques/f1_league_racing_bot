@@ -37,6 +37,7 @@ from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from services import track_service
 from utils.time_parsing import parse_time_of_day
 from utils.channel_guard import league_manager_only
+from utils.league_server import is_foreign_guild
 from utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -673,6 +674,8 @@ class SignupCog(commands.Cog):
         """T029: Route messages in wizard channels to the wizard state machine."""
         if message.author.bot or not message.guild:
             return
+        if await is_foreign_guild(self.bot, message.guild.id):
+            return
         wizard = await self.bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
             message.guild.id, message.channel.id
         )
@@ -686,7 +689,12 @@ class SignupCog(commands.Cog):
 
         Also posts a log notification for UNASSIGNED and ASSIGNED drivers who
         leave without going through the wizard path.
+
+        Only a member leaving the league's own server counts: the same person leaving another
+        server the bot sits in is nothing to the league.
         """
+        if await is_foreign_guild(self.bot, member.guild.id):
+            return
         await self.bot.wizard_service.handle_member_remove(  # type: ignore[attr-defined]
             member.guild.id, str(member.id), member.guild
         )
