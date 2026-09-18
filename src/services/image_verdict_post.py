@@ -115,6 +115,9 @@ async def _driver_nationality(
     A mock driver has no signup record to hold a nationality and carries its own, read by
     the same branch on is_test_driver the name is. A real driver's is read from their signup
     to the season of *round_id*, where one is named (issue #220).
+
+    The driver is found by any account they have held, as a verdict names the account the
+    result was recorded under, which may be one they have since left (issue #243).
     """
     from services.image_results_post import SIGNUP_FOR_SEASON_SQL
 
@@ -136,11 +139,12 @@ async def _driver_nationality(
                             ELSE sr.nationality END AS nationality
                 FROM driver_profiles dp
                 LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL}
-                WHERE dp.server_id = ?
-                  AND CAST(dp.discord_user_id AS INTEGER) = ?
-                ORDER BY dp.id DESC LIMIT 1
+                WHERE dp.id = (
+                    SELECT driver_profile_id FROM driver_accounts
+                    WHERE server_id = ? AND discord_user_id = ?
+                )
                 """.format(SIGNUP_FOR_SEASON_SQL=SIGNUP_FOR_SEASON_SQL),
-                (season_id, server_id, discord_user_id),
+                (season_id, server_id, str(discord_user_id)),
             )
             row = await cursor.fetchone()
     except Exception:  # noqa: BLE001

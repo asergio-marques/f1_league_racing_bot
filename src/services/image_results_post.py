@@ -121,12 +121,16 @@ async def _nationality_collected(db_path: str, server_id: int) -> bool:
 #: season holds none. A signup is kept, never overwritten, so a driver who has signed up in
 #: several seasons is drawn under what they gave for the season on the graphic.
 #:
+#: A signup made from any of the driver's accounts is theirs (issue #243): one made before
+#: they changed account is still what they gave for that season.
+#:
 #: Takes two parameters, in order: the season's id (None to read the latest of all) and the
 #: server comes from the driver row it is joined to.
 SIGNUP_FOR_SEASON_SQL = (
     "(SELECT id FROM signup_records "
     " WHERE server_id = dp.server_id "
-    "   AND discord_user_id = CAST(dp.discord_user_id AS TEXT) "
+    "   AND discord_user_id IN "
+    "       (SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = dp.id) "
     " ORDER BY COALESCE(season_id = ?, 0) DESC, id DESC LIMIT 1)"
 )
 

@@ -9,7 +9,7 @@ import discord
 
 from db.database import get_connection
 from models.driver_profile import DriverProfile, DriverState
-from services.driver_service import write_transition
+from services.driver_service import ACCOUNTS_OF_DP_SQL, write_transition
 from models.signup_module import AvailabilitySlot
 from models.team import TeamRoleConfig
 
@@ -441,7 +441,7 @@ class PlacementService:
                     ON sr.id = (
                         SELECT MAX(id) FROM signup_records
                         WHERE server_id = dp.server_id
-                          AND discord_user_id = dp.discord_user_id
+                          AND discord_user_id IN {accounts}
                     )
                 WHERE dp.server_id = ?
                   AND dp.current_state IN ({unsettled})
@@ -452,7 +452,7 @@ class PlacementService:
                     -- was made, which a correction never moves.
                     sr.created_at ASC,
                     sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL),
+                """.format(unsettled=_UNSETTLED_SQL, accounts=ACCOUNTS_OF_DP_SQL),
                 (server_id,),
             )
             rows = await cursor.fetchall()
@@ -518,7 +518,7 @@ class PlacementService:
                     ON sr.id = (
                         SELECT MAX(id) FROM signup_records
                         WHERE server_id = dp.server_id
-                          AND discord_user_id = dp.discord_user_id
+                          AND discord_user_id IN {accounts}
                     )
                 WHERE dp.server_id = ?
                   AND dp.current_state IN ({unsettled})
@@ -529,7 +529,7 @@ class PlacementService:
                     -- was made, which a correction never moves.
                     sr.created_at ASC,
                     sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL),
+                """.format(unsettled=_UNSETTLED_SQL, accounts=ACCOUNTS_OF_DP_SQL),
                 (server_id,),
             )
             rows = await cursor.fetchall()
