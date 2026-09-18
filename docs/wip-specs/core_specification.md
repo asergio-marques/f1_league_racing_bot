@@ -8,7 +8,7 @@ Each module's own document specifies that module. Where this document names a mo
 it only to place it; the rules governing it belong to its own specification.
 
 ## Concepts
-- League: one Discord server. Every record the bot keeps belongs to one server and is shared with no other.
+- League: one Discord server. One bot serves one league, and every record it keeps is that league's.
 - Season: one championship a league runs, numbered, raced on a stated edition of the game.
 - Division: one championship within a season, holding its own drivers, its own calendar, its own role and its own channels.
 - Tier: the standing of a division within its season. Tier 1 is the highest.
@@ -32,6 +32,8 @@ it only to place it; the rules governing it belong to its own specification.
     - The interaction channel is the only channel in which the bot accepts commands.
     - The log channel is where the bot records what it did, what it could not find, and why something fell back.
 - The initialisation command shall run once. A second run shall be refused rather than overwrite what stands, and shall name the commands that change a single setting.
+- One bot shall serve one league. The first initialisation claims its server, and initialisation upon any other server shall be refused, saying that the bot already serves a league elsewhere.
+- Upon any server but its league's, the bot shall refuse every command and act on nothing that happens there. It shall stay in that server rather than leave it.
 - Each of the four settings shall have a command changing that setting alone.
 - The initialisation command and the four single-setting commands are a league admin's, and shall run from any channel, holding either role being no part of it. They are what repairs the four settings, and a deleted channel or a withdrawn role would otherwise be unrepairable.
     - These five commands alone shall additionally accept the server's administrator permission in place of the league admin role. They are the only way back for a server that has no league admin role — one that was configured before the role existed, or one whose role has been deleted — and without them such a server could never gain one.
@@ -84,7 +86,7 @@ it only to place it; the rules governing it belong to its own specification.
 ### Starting over
 - A reset command shall delete a server's league data entire — its seasons, divisions, rounds, sessions, weather results, teams of a season, seats, driver placements and the record of changes — and shall cancel every piece of scheduled work.
     - It shall require the word `CONFIRM` to be typed exactly.
-    - A fuller form shall additionally clear the server's four settings, so that the bot may be initialised again.
+    - A fuller form shall additionally clear the server's four settings, so that the bot may be initialised again, upon this server or another. It is the only thing that frees the bot's claim on its server.
     - The server's team list shall survive either form.
     - It shall report what was deleted and shall be written to the log channel.
     - It shall be given in the interaction channel. It is a league admin's command and not a repair of the settings, the initialisation command being the footing it does not share.
@@ -472,7 +474,6 @@ it only to place it; the rules governing it belong to its own specification.
 - An account holding no driver profile but results or standings of its own in the league shall be refused on the same rule; otherwise its records become the driver's. Every refusal shall change nothing.
 - A past account of a driver shall not sign up; the signup button names the driver's current account instead.
 - Only a driver's current account leaving the server is the driver leaving it; a past account leaving changes nothing.
-- A change of account shall touch nothing of any other league upon the bot. A person who holds a profile in two leagues keeps the other league's untouched.
 - A driver's portrait shall not be carried, a portrait being the picture of the account itself. The one obtained for the account replaced shall be discarded, and the new account's own shall be obtained as any driver's is.
 
 ## When the bot stops
