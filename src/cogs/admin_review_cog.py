@@ -16,7 +16,7 @@ from discord.ext import commands
 
 from models.driver_profile import DriverState
 from utils.channel_guard import is_league_manager
-from utils.league_server import is_foreign_guild
+from utils.league_server import LeagueView, is_foreign_guild
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ async def _may_review_signup(interaction: discord.Interaction) -> bool:
     return is_league_manager(server_cfg, interaction.user)
 
 
-class AdminReviewView(discord.ui.View):
+class AdminReviewView(LeagueView):
     """Approve / Request Changes / Reject buttons for admin signup review (T031).
 
     Restricted to the league manager tier — the interaction role, or the league admin role.
@@ -156,7 +156,7 @@ class AdminReviewView(discord.ui.View):
         )
 
 
-class CorrectionParameterView(discord.ui.View):
+class CorrectionParameterView(LeagueView):
     """One button per collectable wizard parameter; admin selects which to re-collect (T035).
 
     Restricted to tier-2 role or Manage Guild permission.

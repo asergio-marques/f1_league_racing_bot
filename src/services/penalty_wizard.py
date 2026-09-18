@@ -20,6 +20,7 @@ from models.points_config import SessionType
 from services.driver_service import accounts_of_in_division, current_account_map_for_division
 from services.penalty_service import StagedPenalty, validate_penalty_input, _time_to_ms
 from utils.channel_guard import is_league_manager
+from utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -349,7 +350,7 @@ async def _refresh_appeals_prompt(state: PenaltyReviewState) -> None:
 # Session selector (ephemeral, non-persistent)
 # ---------------------------------------------------------------------------
 
-class _SessionSelectView(discord.ui.View):
+class _SessionSelectView(LeagueView):
     """One button per non-cancelled session type in the round."""
 
     def __init__(
@@ -397,7 +398,7 @@ class _SessionSelectView(discord.ui.View):
 # Add Penalty modal (T015, T017)
 # ---------------------------------------------------------------------------
 
-class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
+class AddPenaltyModal(LeagueModal, title="Add Penalty"):
     """Four-field modal: driver, penalty value, description, and justification."""
 
     driver_input: discord.ui.TextInput = discord.ui.TextInput(
@@ -587,7 +588,7 @@ class AddPenaltyModal(discord.ui.Modal, title="Add Penalty"):
 _VALID_PARDON_TYPES = {"NO_RSVP", "ABSENT", "NO_SHOW"}
 
 
-class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
+class AddPardonModal(LeagueModal, title="Attendance Pardon"):
     """Three-field modal for staging an attendance pardon during penalty review."""
 
     driver_id_input: discord.ui.TextInput = discord.ui.TextInput(
@@ -797,7 +798,7 @@ class AddPardonModal(discord.ui.Modal, title="Attendance Pardon"):
 # Confirm-clear view (used by No Penalties / Confirm when list is non-empty)
 # ---------------------------------------------------------------------------
 
-class _ConfirmClearView(discord.ui.View):
+class _ConfirmClearView(LeagueView):
     """Two-button confirmation for clearing the staged penalty list."""
 
     def __init__(self, state: PenaltyReviewState) -> None:
@@ -860,7 +861,7 @@ async def _show_approval_step(
 # Main persistent view (T010, T011, T018)
 # ---------------------------------------------------------------------------
 
-class PenaltyReviewView(discord.ui.View):
+class PenaltyReviewView(LeagueView):
     """Persistent penalty review prompt view.
 
     The three static buttons (Add Penalty, No Penalties / Confirm, Approve)
@@ -1056,7 +1057,7 @@ class PenaltyReviewView(discord.ui.View):
 # Approval view (T020, T025)
 # ---------------------------------------------------------------------------
 
-class ApprovalView(discord.ui.View):
+class ApprovalView(LeagueView):
     """Two-button approval step: Make Changes or final Approve."""
 
     def __init__(self, state: PenaltyReviewState | None = None) -> None:
@@ -1136,7 +1137,7 @@ class ApprovalView(discord.ui.View):
 # Appeals review view (T008 — minimal stub; expanded in T018)
 # ---------------------------------------------------------------------------
 
-class AppealsReviewView(discord.ui.View):
+class AppealsReviewView(LeagueView):
     """Persistent appeals review prompt view.
 
     Mirrors the :class:`PenaltyReviewView` structure:
@@ -1285,7 +1286,7 @@ class AppealsReviewView(discord.ui.View):
         await finalize_appeals_review(interaction, self.state)
 
 
-class _AppealsConfirmClearView(discord.ui.View):
+class _AppealsConfirmClearView(LeagueView):
     """Two-button confirmation for clearing the staged appeals corrections list."""
 
     def __init__(self, state: PenaltyReviewState) -> None:

@@ -50,7 +50,7 @@ from utils.channel_guard import (
     league_manager_only,
 )
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
-from utils.league_server import is_foreign_guild
+from utils.league_server import LeagueModal, LeagueView, is_foreign_guild
 from utils.output_router import _chunk_message
 from utils.round_import import (
     ParsedDivisionRounds,
@@ -264,7 +264,7 @@ async def apply_round_import(
     return staged, []
 
 
-class BulkRoundModal(discord.ui.Modal, title="Add rounds in bulk"):
+class BulkRoundModal(LeagueModal, title="Add rounds in bulk"):
     """The pasted calendar of one division, a round per line.
 
     Times are stated in UTC, which is what a round is stored in — so unlike the XML
@@ -308,7 +308,7 @@ class BulkRoundModal(discord.ui.Modal, title="Add rounds in bulk"):
         )
 
 
-class XmlRoundModal(discord.ui.Modal, title="Add rounds from XML"):
+class XmlRoundModal(LeagueModal, title="Add rounds from XML"):
     """A calendar of one or more divisions, each round stated in its local time."""
 
     payload: discord.ui.TextInput = discord.ui.TextInput(
@@ -4953,7 +4953,7 @@ class SeasonCog(commands.Cog):
                 SessionType.FEATURE_RACE: "Feature Race",
             }
 
-            class _SessionView(discord.ui.View):
+            class _SessionView(LeagueView):
                 def __init__(self_v) -> None:
                     super().__init__(timeout=None)
                     self_v.selected: SessionType | None = None
@@ -5063,7 +5063,7 @@ class SeasonCog(commands.Cog):
         # Cancel button posted in the amend channel
         cancelled_flag: list[bool] = [False]
 
-        class _CancelView(discord.ui.View):
+        class _CancelView(LeagueView):
             def __init__(self_v) -> None:
                 super().__init__(timeout=None)
 
@@ -6140,7 +6140,7 @@ NO_DIVISIONS_REFUSAL = (
 )
 
 
-class _BackupBeforeApprovalView(discord.ui.View):
+class _BackupBeforeApprovalView(LeagueView):
     """Save the databases, or don't, or stop — asked between the last gate and the commit.
 
     Its timeout is what remains of the approval window rather than a span of its own, so a
@@ -6223,7 +6223,7 @@ class _BackupBeforeApprovalView(discord.ui.View):
         self.stop()
 
 
-class _ApproveView(discord.ui.View):
+class _ApproveView(LeagueView):
     """The standing question at the end of a review, and the button that answers it.
 
     **Who may press.** The member who ran the review, or a server administrator. A league
@@ -6587,7 +6587,7 @@ class _ConfirmConfigurationView(_ApproveView):
         self.stop()
 
 
-class _ConfirmView(discord.ui.View):
+class _ConfirmView(LeagueView):
     def __init__(
         self,
         cog: SeasonCog,

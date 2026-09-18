@@ -39,6 +39,7 @@ from models.season import SeasonStage
 from services import backup_service
 from utils.channel_guard import league_admin_only
 from utils.message_builder import paginate_fenced
+from utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -1203,7 +1204,7 @@ _STATUS_MAP = {
 }
 
 
-class _RsvpBulkSetModal(discord.ui.Modal, title="Bulk Set RSVP Statuses"):
+class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
     """Modal for bulk-setting test-driver RSVP statuses in a single division."""
 
     entries: discord.ui.TextInput = discord.ui.TextInput(
@@ -1328,7 +1329,7 @@ class _RsvpBulkSetModal(discord.ui.Modal, title="Bulk Set RSVP Statuses"):
             )
 
 
-class _RosterImportModal(discord.ui.Modal, title="Import a test roster"):
+class _RosterImportModal(LeagueModal, title="Import a test roster"):
     """The box a `roster.csv` is pasted into.
 
     **4000 characters is the whole of what Discord allows a text input**, which is roughly
@@ -1408,7 +1409,7 @@ def _format_roster_errors(errors: list[str]) -> str:
 _jobstore_path = backup_service.jobstore_path_of
 
 
-class _ConfirmRestoreView(discord.ui.View):
+class _ConfirmRestoreView(LeagueView):
     """The confirmation on a restore, and the staging behind it."""
 
     def __init__(self, cog: "TestModeCog", requester_id: int) -> None:

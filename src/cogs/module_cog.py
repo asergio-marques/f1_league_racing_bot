@@ -15,7 +15,7 @@ from discord.ext import commands
 from db.database import get_connection
 from models.driver_profile import DriverState
 from utils.channel_guard import league_admin_only
-from utils.league_server import league_guild
+from utils.league_server import LeagueView, league_guild
 
 log = logging.getLogger(__name__)
 
@@ -192,7 +192,7 @@ def _results_disable_warning(*, season_active: bool, attendance: bool) -> str:
     return "\n\n".join(lines)
 
 
-class _ConfirmDisableResultsView(discord.ui.View):
+class _ConfirmDisableResultsView(LeagueView):
     """Confirm disabling results & standings before anything is written.
 
     Shown wherever the command costs the league something it cannot get back: a running

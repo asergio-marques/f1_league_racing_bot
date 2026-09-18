@@ -37,7 +37,7 @@ from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from services import track_service
 from utils.time_parsing import parse_time_of_day
 from utils.channel_guard import league_manager_only
-from utils.league_server import is_foreign_guild
+from utils.league_server import LeagueView, is_foreign_guild
 from utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -162,7 +162,7 @@ APPROVED_STATES = {
 }
 
 
-class SignupButtonView(discord.ui.View):
+class SignupButtonView(LeagueView):
     """Persistent signup button view (T016).
 
     Posted in the signup channel when signups are opened.  The button
@@ -243,7 +243,7 @@ class SignupButtonView(discord.ui.View):
         )
 
 
-class ConfirmCloseView(discord.ui.View):
+class ConfirmCloseView(LeagueView):
     """Confirmation dialog for closing signups with in-progress drivers (T018)."""
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -280,7 +280,7 @@ class ConfirmCloseView(discord.ui.View):
         pass
 
 
-class WithdrawButtonView(discord.ui.View):
+class WithdrawButtonView(LeagueView):
     """Withdrawal button view — visible throughout all in-wizard driver states (T027).
 
     Posted in the private wizard channel immediately after the channel is
@@ -323,7 +323,7 @@ class WithdrawButtonView(discord.ui.View):
         )
 
 
-class NoNotesButtonView(discord.ui.View):
+class NoNotesButtonView(LeagueView):
     """Step 9 view — 'No Notes' shortcut alongside Cancel Signup."""
 
     def __init__(
@@ -381,7 +381,7 @@ class NoNotesButtonView(discord.ui.View):
         )
 
 
-class PlatformButtonView(discord.ui.View):
+class PlatformButtonView(LeagueView):
     """Step 2 — one button per platform, plus Cancel Signup."""
 
     def __init__(
@@ -436,7 +436,7 @@ class PlatformButtonView(discord.ui.View):
         await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
 
 
-class DriverTypeButtonView(discord.ui.View):
+class DriverTypeButtonView(LeagueView):
     """Step 5 — Full-Time / Reserve buttons, plus Cancel Signup."""
 
     def __init__(
@@ -483,7 +483,7 @@ class DriverTypeButtonView(discord.ui.View):
         await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
 
 
-class PreferredTeamsButtonView(discord.ui.View):
+class PreferredTeamsButtonView(LeagueView):
     """Step 6 — one button per available team, No Preference, and Cancel Signup."""
 
     def __init__(
@@ -591,7 +591,7 @@ class PreferredTeamsButtonView(discord.ui.View):
         await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
 
 
-class NoPreferenceTeammateView(discord.ui.View):
+class NoPreferenceTeammateView(LeagueView):
     """Step 7 — No Preference shortcut plus Cancel Signup."""
 
     def __init__(

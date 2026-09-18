@@ -21,7 +21,7 @@ from utils.tyre_compound import (
     records_no_tyre,
     tyre_compound_list,
 )
-from utils.league_server import league_guild
+from utils.league_server import LeagueView, league_guild
 
 log = logging.getLogger(__name__)
 
@@ -1965,7 +1965,7 @@ def _format_time_ms(total_ms: int) -> str:
 # Config selection view
 # ---------------------------------------------------------------------------
 
-class _ConfigSelectView(discord.ui.View):
+class _ConfigSelectView(LeagueView):
     """Button view for selecting an attached points config.
 
     **A league manager's, and it asked nothing at all until 2026-09-10.** This view is
@@ -2916,7 +2916,7 @@ async def replace_round_results(
             raise
 
 
-class ResubmissionCancelView(discord.ui.View):
+class ResubmissionCancelView(LeagueView):
     """The **Cancel** button on a resubmission's announcement.
 
     Pressing it ends the resubmission and keeps the round's earlier results, which were never

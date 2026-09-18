@@ -1,12 +1,14 @@
 """One bot serves one league: the entry-point check, and the warning to the host.
 
 Issue #244. The league's server is the one `server_configs` row; every command from any other
-server is refused before its body runs, and the host is warned when the bot sits in more than
-one. The claim itself — that a second server cannot be set up — is pinned in
+server is refused before its body runs, every button, menu and modal from one is refused
+before its callback runs, and the host is warned when the bot sits in more than one. The claim itself — that a second server cannot be set up — is pinned in
 `test_init_cog.py`, where `/bot-init` and `save_server_config` are.
 """
 from __future__ import annotations
 
+import ast
+import glob
 import logging
 import os
 import sys
@@ -22,6 +24,8 @@ from bot import create_bot  # noqa: E402
 from utils.league_server import (  # noqa: E402
     REFUSAL,
     LeagueCommandTree,
+    LeagueModal,
+    LeagueView,
     is_foreign_guild,
     league_guild,
     warn_if_serving_several,
@@ -133,6 +137,76 @@ async def test_no_guild_before_any_server_is_set_up():
 
     assert await league_guild(bot) is None
     bot.get_guild.assert_not_called()
+
+
+# ── Buttons, menus and modals ─────────────────────────────────────────────
+#
+# The tree never sees a component. The persistent views answer their custom ids on any
+# message, so a button left on a server the league has moved away from would still act on the
+# league's data were the view not to check.
+
+
+def _pressed_on(guild_id: int | None, league: int | None):
+    interaction = _interaction(guild_id, kind=discord.InteractionType.component)
+    interaction.client = _bot(league)
+    return interaction
+
+
+async def test_a_press_in_the_league_s_server_proceeds():
+    interaction = _pressed_on(LEAGUE, LEAGUE)
+
+    assert await LeagueView().interaction_check(interaction) is True
+    interaction.response.send_message.assert_not_awaited()
+
+
+async def test_a_press_in_another_server_is_refused():
+    interaction = _pressed_on(ELSEWHERE, LEAGUE)
+
+    assert await LeagueView().interaction_check(interaction) is False
+    interaction.response.send_message.assert_awaited_once_with(REFUSAL, ephemeral=True)
+
+
+async def test_a_modal_submitted_in_another_server_is_refused():
+    interaction = _pressed_on(ELSEWHERE, LEAGUE)
+
+    class _Modal(LeagueModal, title="t"):
+        pass
+
+    assert await _Modal().interaction_check(interaction) is False
+    interaction.response.send_message.assert_awaited_once_with(REFUSAL, ephemeral=True)
+
+
+async def test_the_sign_up_button_left_on_an_old_server_is_refused():
+    """The case that matters: a persistent view registered once at start-up, pressed on a
+    server the league has left."""
+    from cogs.signup_cog import SignupButtonView
+
+    interaction = _pressed_on(ELSEWHERE, LEAGUE)
+
+    assert await SignupButtonView().interaction_check(interaction) is False
+
+
+def test_every_view_and_modal_derives_from_the_league_s_own():
+    """A view derived from discord.py's own class directly would skip the check, silently.
+
+    Read from the source rather than from the live classes, because several views are
+    defined inside the function that posts them and exist only once it runs.
+    """
+    src = os.path.join(os.path.dirname(__file__), "..", "..", "src")
+    direct = []
+    for path in sorted(glob.glob(os.path.join(src, "**", "*.py"), recursive=True)):
+        if path.endswith(os.path.join("utils", "league_server.py")):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for base in node.bases:
+                name = ast.unparse(base)
+                if name.split(".")[-1] in ("View", "Modal"):
+                    direct.append(f"{os.path.relpath(path, src)}: {node.name}({name})")
+    assert direct == []
 
 
 # ── The warning to the host ───────────────────────────────────────────────

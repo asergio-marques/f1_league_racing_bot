@@ -14,9 +14,12 @@ server: the tables carry no `server_id`, the services take none, and a query rea
 league's data because the database holds no other. A per-query scope that could never fail
 would only suggest to a reader that it might (decided 2026-09-18, issue #244).
 
-Buttons and modals are not checked. A component exists only on a message the bot posted, and
-the bot posts only into the league's configured channels, so no component can reach it from
-another server.
+**Buttons, menus and modals are checked too**, by `LeagueView` and `LeagueModal`, which every
+view and modal in the bot derives from. The tree does not see them, and "the bot only posts in
+the league's channels" is not enough: the persistent views answer their custom ids on any
+message, so once a league has moved to another server, every button left on the old one would
+otherwise still act on the league's data. `tests/unit/test_one_league_server.py` holds that no
+view or modal derives from discord.py's own classes directly.
 
 **Upon another server the bot stays, and refuses.** It does not leave: leaving would make an
 owner's mistake silent, where a refusal and the start-up warning below make it visible.
@@ -63,20 +66,48 @@ async def league_guild(bot: Any) -> discord.Guild | None:
     return None if league is None else bot.get_guild(league)
 
 
+async def admits(client: Any, interaction: discord.Interaction) -> bool:
+    """Whether *interaction* may proceed: True unless it comes from a server not the league's.
+
+    A refused interaction is answered with `REFUSAL`, seen by its member alone — save an
+    autocomplete, to which Discord accepts no message.
+    """
+    if not await is_foreign_guild(client, interaction.guild_id):
+        return True
+    log.info(
+        "refused an interaction from server %s, which is not the league's (user %s)",
+        interaction.guild_id,
+        getattr(interaction.user, "id", None),
+    )
+    if interaction.type is not discord.InteractionType.autocomplete:
+        await interaction.response.send_message(REFUSAL, ephemeral=True)
+    return False
+
+
 class LeagueCommandTree(app_commands.CommandTree):
     """The command tree, refusing every command from a server that is not the league's."""
 
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
-        if not await is_foreign_guild(self.client, interaction.guild_id):
-            return True
-        log.info(
-            "refused an interaction from server %s, which is not the league's (user %s)",
-            interaction.guild_id,
-            getattr(interaction.user, "id", None),
-        )
-        if interaction.type is not discord.InteractionType.autocomplete:
-            await interaction.response.send_message(REFUSAL, ephemeral=True)
-        return False
+        return await admits(self.client, interaction)
+
+
+class LeagueView(discord.ui.View):
+    """The base of every view the bot posts, refusing a press from a server not the league's.
+
+    Discord asks a view's `interaction_check` before any of its buttons or menus runs. A view
+    that overrides it must call this one first.
+    """
+
+    async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
+        return await admits(interaction.client, interaction)
+
+
+class LeagueModal(discord.ui.Modal):
+    """The base of every modal the bot shows, refusing a submission from a server not the
+    league's, as `LeagueView` refuses a press."""
+
+    async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
+        return await admits(interaction.client, interaction)
 
 
 def warn_if_serving_several(bot: Any) -> None:

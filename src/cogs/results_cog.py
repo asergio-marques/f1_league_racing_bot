@@ -19,6 +19,7 @@ from services.season_points_service import (
     SeasonNotInSetupError,
 )
 from utils.channel_guard import league_admin_only, league_manager_only
+from utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ def _parse_bulk_lines(text: str) -> tuple[list[tuple[int, int]], list[str]]:
 # Bulk modal classes (T013 / T014)
 # ---------------------------------------------------------------------------
 
-class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
+class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
     """Modal for bulk-setting session points in a named config."""
 
     entries: discord.ui.TextInput = discord.ui.TextInput(
@@ -216,7 +217,7 @@ class BulkConfigSessionModal(discord.ui.Modal, title="Bulk Set Session Points"):
             )
 
 
-class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points"):
+class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
     """Modal for bulk-amending session points in the modification store."""
 
     entries: discord.ui.TextInput = discord.ui.TextInput(
@@ -309,7 +310,7 @@ class BulkAmendSessionModal(discord.ui.Modal, title="Bulk Amend Session Points")
             )
 
 
-class XmlImportModal(discord.ui.Modal, title="XML Points Config Import"):
+class XmlImportModal(LeagueModal, title="XML Points Config Import"):
     """Modal for importing a full XML points configuration payload."""
 
     xml_payload: discord.ui.TextInput = discord.ui.TextInput(
@@ -419,7 +420,7 @@ async def _run_xml_import(
 # ---------------------------------------------------------------------------
 
 
-class _ConfirmRemoveConfigView(discord.ui.View):
+class _ConfirmRemoveConfigView(LeagueView):
     """Confirm removing a points configuration before anything is deleted.
 
     Shown only where the removal costs the league something beyond the configuration
@@ -1260,7 +1261,7 @@ class ResultsCog(commands.Cog):
                 f"`/division standings-channel`, then run `/results amend review` again."
             )
 
-        class _ReviewView(discord.ui.View):
+        class _ReviewView(LeagueView):
             def __init__(self_v) -> None:
                 super().__init__(timeout=None)
                 self_v.approved = False

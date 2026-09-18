@@ -35,6 +35,7 @@ from utils.channel_guard import league_manager_only
 from utils.paths import PathContainmentError, relative_to_root
 from utils.time_parsing import parse_time_of_day
 from utils.timezones import clear_zone_cache, is_known_zone, zone_names
+from utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ def toggle_enabled_lines(aspect: str, label: str, blocking: list[str]) -> list[s
     return lines
 
 
-class PortraitTimeModal(discord.ui.Modal, title="Daily portrait updates"):
+class PortraitTimeModal(LeagueModal, title="Daily portrait updates"):
     """Names the time of day the daily driver-portrait refresh runs.
 
     A modal must be the *initial* response to an interaction, so the command that opens this
@@ -119,7 +120,7 @@ class PortraitTimeModal(discord.ui.Modal, title="Daily portrait updates"):
         )
 
 
-class PortraitTimeConfirm(discord.ui.View):
+class PortraitTimeConfirm(LeagueView):
     """The confirmation the specification requires after the time-of-day modal.
 
     Not persistent, and deliberately: it is a step within one command rather than a control
@@ -154,7 +155,7 @@ class PortraitTimeConfirm(discord.ui.View):
 MAX_PALETTE_IMPORT_BYTES = 100_000
 
 
-class TierPaletteModal(discord.ui.Modal, title="Set one tier's colours"):
+class TierPaletteModal(LeagueModal, title="Set one tier's colours"):
     """Paste a whole palette for one division rather than running ten commands.
 
     The tool's annotated output pastes in whole — its commentary lines start with `#`,
@@ -179,7 +180,7 @@ class TierPaletteModal(discord.ui.Modal, title="Set one tier's colours"):
         await self._cog.apply_tier_block(interaction, self._division, self.block.value)
 
 
-class TierPaletteXmlModal(discord.ui.Modal, title="Import tier colours"):
+class TierPaletteXmlModal(LeagueModal, title="Import tier colours"):
     """The same, for several divisions at once, where no file was attached."""
 
     payload: discord.ui.TextInput = discord.ui.TextInput(

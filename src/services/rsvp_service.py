@@ -8,6 +8,7 @@ import discord
 
 from db.database import get_connection
 from models.round import RoundFormat
+from utils.league_server import LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ def build_rsvp_embed(
     return embed
 
 
-class RsvpView(discord.ui.View):
+class RsvpView(LeagueView):
     """Persistent RSVP view — three action buttons (Accept / Tentative / Decline).
 
     custom_id values embed the round_id so handlers can identify the target round
