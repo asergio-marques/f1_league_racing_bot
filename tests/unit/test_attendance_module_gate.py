@@ -70,8 +70,8 @@ async def _make_db(tmp_path, *, attendance_enabled: bool, scheduled_at: datetime
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, module_enabled) VALUES (?, ?)",
-            (SERVER_ID, int(attendance_enabled)),
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (?, ?)",
+            (1, int(attendance_enabled)),
         )
         await db.execute(
             "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
@@ -85,8 +85,8 @@ async def _make_db(tmp_path, *, attendance_enabled: bool, scheduled_at: datetime
         )
         await db.execute(
             "INSERT INTO attendance_division_config "
-            "(division_id, server_id, rsvp_channel_id) VALUES (?, ?, ?)",
-            (DIVISION_ID, SERVER_ID, str(RSVP_CHANNEL_ID)),
+            "(division_id, rsvp_channel_id) VALUES (?, ?)",
+            (DIVISION_ID, str(RSVP_CHANNEL_ID)),
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at) "

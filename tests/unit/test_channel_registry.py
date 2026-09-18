@@ -99,9 +99,9 @@ async def _set(db_path, setting, channel_id, *, division_id=None, server_id=SERV
         elif setting in ("rsvp", "attendance"):
             column = f"{setting}_channel_id"
             await db.execute(
-                f"INSERT INTO attendance_division_config (division_id, server_id, {column}) "
-                f"VALUES (?, ?, ?) ON CONFLICT(division_id) DO UPDATE SET {column} = ?",
-                (division_id, server_id, channel_id, channel_id),
+                f"INSERT INTO attendance_division_config (division_id, {column}) "
+                f"VALUES (?, ?) ON CONFLICT(division_id) DO UPDATE SET {column} = ?",
+                (division_id, channel_id, channel_id),
             )
         elif setting == "signup":
             await db.execute(

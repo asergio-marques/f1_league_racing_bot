@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 @dataclass
 class AttendanceConfig:
-    server_id: int
     module_enabled: bool
     rsvp_notice_days: int
     rsvp_last_notice_hours: int
@@ -21,7 +20,6 @@ class AttendanceConfig:
 @dataclass
 class AttendanceDivisionConfig:
     division_id: int
-    server_id: int
     rsvp_channel_id: str | None
     attendance_channel_id: str | None
     attendance_message_id: str | None

@@ -70,22 +70,18 @@ class ModuleService:
             )
             await db.commit()
 
-    async def is_attendance_enabled(self, server_id: int) -> bool:
+    async def is_attendance_enabled(self) -> bool:
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT module_enabled FROM attendance_config WHERE server_id = ?",
-                (server_id,),
-            )
+            cursor = await db.execute("SELECT module_enabled FROM attendance_config")
             row = await cursor.fetchone()
         if row is None:
             return False
         return bool(row[0])
 
-    async def set_attendance_enabled(self, server_id: int, value: bool) -> None:
+    async def set_attendance_enabled(self, value: bool) -> None:
         async with get_connection(self._db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET module_enabled = ? WHERE server_id = ?",
-                (int(value), server_id),
+                "UPDATE attendance_config SET module_enabled = ?", (int(value),)
             )
             await db.commit()
 

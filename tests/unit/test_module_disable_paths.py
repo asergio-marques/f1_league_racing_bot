@@ -59,8 +59,8 @@ async def _make_db(tmp_path, *, attendance_divisions: int = 0) -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, module_enabled) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (?, 1)",
+            (1,),
         )
         if attendance_divisions:
             await db.execute(
@@ -76,8 +76,8 @@ async def _make_db(tmp_path, *, attendance_divisions: int = 0) -> str:
                 )
                 await db.execute(
                     "INSERT INTO attendance_division_config "
-                    "(division_id, server_id, rsvp_channel_id) VALUES (?, ?, ?)",
-                    (index, SERVER_ID, str(700000 + index)),
+                    "(division_id, rsvp_channel_id) VALUES (?, ?)",
+                    (index, str(700000 + index)),
                 )
         await db.commit()
     return db_path
@@ -144,8 +144,7 @@ async def _audit_types(db_path: str) -> list[str]:
 async def _division_configs(db_path: str) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT COUNT(*) AS n FROM attendance_division_config WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT COUNT(*) AS n FROM attendance_division_config",
         )
         return (await cursor.fetchone())["n"]
 
@@ -153,7 +152,7 @@ async def _division_configs(db_path: str) -> int:
 async def _attendance_flag(db_path: str) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT module_enabled FROM attendance_config WHERE server_id = ?", (SERVER_ID,)
+            "SELECT module_enabled FROM attendance_config"
         )
         return (await cursor.fetchone())["module_enabled"]
 

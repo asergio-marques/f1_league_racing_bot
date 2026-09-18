@@ -44,9 +44,7 @@ async def db_path(tmp_path):
         await db.execute(
             """
             CREATE TABLE attendance_config (
-                server_id                INTEGER PRIMARY KEY
-                                             REFERENCES server_configs(server_id)
-                                             ON DELETE CASCADE,
+                id                       INTEGER PRIMARY KEY CHECK (id = 1),
                 module_enabled           INTEGER NOT NULL DEFAULT 0,
                 rsvp_notice_days         INTEGER NOT NULL DEFAULT 5,
                 rsvp_last_notice_hours   INTEGER NOT NULL DEFAULT 24,
@@ -65,7 +63,6 @@ async def db_path(tmp_path):
                 division_id               INTEGER PRIMARY KEY
                                               REFERENCES divisions(id)
                                               ON DELETE CASCADE,
-                server_id                 INTEGER NOT NULL,
                 rsvp_channel_id           TEXT,
                 attendance_channel_id     TEXT,
                 attendance_message_id     TEXT
@@ -85,13 +82,13 @@ class TestIsAttendanceEnabledFalseByDefault:
     async def test_returns_false_when_no_row(self, db_path):
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        result = await svc.get_config(1)
+        result = await svc.get_config()
         assert result is None
 
     async def test_module_enabled_false_after_get_or_create(self, db_path):
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        cfg = await svc.get_or_create_config(1)
+        cfg = await svc.get_or_create_config()
         assert cfg.module_enabled is False
 
 
@@ -103,7 +100,7 @@ class TestEnableCreatesConfigWithDefaults:
             db.row_factory = _aio.Row
             await db.execute(
                 "INSERT OR REPLACE INTO attendance_config "
-                "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
+                "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
                 "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
                 "autoreserve_threshold, autosack_threshold) "
                 "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
@@ -113,7 +110,7 @@ class TestEnableCreatesConfigWithDefaults:
 
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        cfg = await svc.get_config(1)
+        cfg = await svc.get_config()
         assert cfg is not None
         assert cfg.module_enabled is True
         assert cfg.rsvp_notice_days == 5
@@ -132,14 +129,14 @@ class TestEnableSetsFlag:
         async with _aio.connect(db_path) as db:
             db.row_factory = _aio.Row
             await db.execute(
-                "INSERT OR REPLACE INTO attendance_config (server_id, module_enabled) VALUES (?, 1)",
+                "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (?, 1)",
                 (1,),
             )
             await db.commit()
 
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        cfg = await svc.get_config(1)
+        cfg = await svc.get_config()
         assert cfg is not None
         assert cfg.module_enabled is True
 
@@ -150,7 +147,7 @@ class TestDisableSetsFlag:
         async with _aio.connect(db_path) as db:
             db.row_factory = _aio.Row
             await db.execute(
-                "INSERT OR REPLACE INTO attendance_config (server_id, module_enabled) VALUES (?, 1)",
+                "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (?, 1)",
                 (1,),
             )
             await db.commit()
@@ -160,11 +157,11 @@ class TestDisableSetsFlag:
         # Simulate disable: UPDATE module_enabled = 0
         async with _aio.connect(db_path) as db:
             await db.execute(
-                "UPDATE attendance_config SET module_enabled = 0 WHERE server_id = ?", (1,)
+                "UPDATE attendance_config SET module_enabled = 0"
             )
             await db.commit()
 
-        cfg = await svc.get_config(1)
+        cfg = await svc.get_config()
         assert cfg is not None
         assert cfg.module_enabled is False
 
@@ -175,17 +172,17 @@ class TestDisableDeletesDivisionConfigs:
         async with _aio.connect(db_path) as db:
             db.row_factory = _aio.Row
             await db.execute(
-                "INSERT OR REPLACE INTO attendance_config (server_id, module_enabled) VALUES (?, 1)",
+                "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (?, 1)",
                 (1,),
             )
             await db.execute(
-                "INSERT INTO attendance_division_config (division_id, server_id) VALUES (10, 1)"
+                "INSERT INTO attendance_division_config (division_id) VALUES (10)"
             )
             await db.commit()
 
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        await svc.delete_division_configs(1)
+        await svc.delete_division_configs()
 
         div_cfg = await svc.get_division_config(10)
         assert div_cfg is None
@@ -200,7 +197,7 @@ class TestReenableResetsToDefaults:
             # First enable with custom values
             await db.execute(
                 "INSERT OR REPLACE INTO attendance_config "
-                "(server_id, module_enabled, rsvp_notice_days) VALUES (?, 1, 10)",
+                "(id, module_enabled, rsvp_notice_days) VALUES (?, 1, 10)",
                 (1,),
             )
             await db.commit()
@@ -210,7 +207,7 @@ class TestReenableResetsToDefaults:
             db.row_factory = _aio.Row
             await db.execute(
                 "INSERT OR REPLACE INTO attendance_config "
-                "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
+                "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
                 "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
                 "autoreserve_threshold, autosack_threshold) "
                 "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
@@ -220,7 +217,7 @@ class TestReenableResetsToDefaults:
 
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        cfg = await svc.get_config(1)
+        cfg = await svc.get_config()
         assert cfg is not None
         assert cfg.rsvp_notice_days == 5
 
@@ -235,7 +232,7 @@ class TestEnableRollbackOnDbFailure:
             db.row_factory = _aio.Row
             await db.execute(
                 "INSERT OR REPLACE INTO attendance_config "
-                "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
+                "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
                 "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
                 "autoreserve_threshold, autosack_threshold) "
                 "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
@@ -246,7 +243,7 @@ class TestEnableRollbackOnDbFailure:
 
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        cfg = await svc.get_config(1)
+        cfg = await svc.get_config()
         # No partial row should remain
         assert cfg is None
 
@@ -268,7 +265,7 @@ class TestSetRsvpChannel:
     async def test_set_rsvp_channel(self, db_path):
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        await svc.set_rsvp_channel(10, 1, 999)
+        await svc.set_rsvp_channel(10, 999)
         cfg = await svc.get_division_config(10)
         assert cfg is not None
         assert cfg.rsvp_channel_id == "999"
@@ -279,7 +276,7 @@ class TestSetAttendanceChannel:
     async def test_set_attendance_channel(self, db_path):
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        await svc.set_attendance_channel(10, 1, 888)
+        await svc.set_attendance_channel(10, 888)
         cfg = await svc.get_division_config(10)
         assert cfg is not None
         assert cfg.attendance_channel_id == "888"
@@ -290,8 +287,8 @@ class TestSetChannelPreservesOtherChannel:
     async def test_set_channel_preserves_other_channel(self, db_path):
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        await svc.set_rsvp_channel(10, 1, 111)
-        await svc.set_attendance_channel(10, 1, 222)
+        await svc.set_rsvp_channel(10, 111)
+        await svc.set_attendance_channel(10, 222)
         cfg = await svc.get_division_config(10)
         assert cfg is not None
         assert cfg.rsvp_channel_id == "111"
@@ -358,7 +355,7 @@ class TestConfigPenaltyFieldsUpdate:
             db.row_factory = _aio.Row
             await db.execute(
                 "INSERT OR REPLACE INTO attendance_config "
-                "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
+                "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
                 "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
                 "autoreserve_threshold, autosack_threshold) "
                 "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
@@ -368,10 +365,10 @@ class TestConfigPenaltyFieldsUpdate:
 
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        await svc.update_no_rsvp_penalty(1, 3)
-        await svc.update_absent_penalty(1, 2)
-        await svc.update_no_show_penalty(1, 4)
-        cfg = await svc.get_config(1)
+        await svc.update_no_rsvp_penalty(3)
+        await svc.update_absent_penalty(2)
+        await svc.update_no_show_penalty(4)
+        cfg = await svc.get_config()
         assert cfg is not None
         assert cfg.no_rsvp_penalty == 3
         assert cfg.absent_penalty == 2
@@ -384,15 +381,15 @@ class TestAutosackZeroStoresNull:
         async with _aio.connect(db_path) as db:
             db.row_factory = _aio.Row
             await db.execute(
-                "INSERT OR REPLACE INTO attendance_config (server_id, module_enabled) VALUES (?, 1)",
+                "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (?, 1)",
                 (1,),
             )
             await db.commit()
 
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        await svc.update_autosack_threshold(1, None)
-        cfg = await svc.get_config(1)
+        await svc.update_autosack_threshold(None)
+        cfg = await svc.get_config()
         assert cfg is not None
         assert cfg.autosack_threshold is None
 
@@ -403,15 +400,15 @@ class TestAutoreserveZeroStoresNull:
         async with _aio.connect(db_path) as db:
             db.row_factory = _aio.Row
             await db.execute(
-                "INSERT OR REPLACE INTO attendance_config (server_id, module_enabled) VALUES (?, 1)",
+                "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (?, 1)",
                 (1,),
             )
             await db.commit()
 
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
-        await svc.update_autoreserve_threshold(1, None)
-        cfg = await svc.get_config(1)
+        await svc.update_autoreserve_threshold(None)
+        cfg = await svc.get_config()
         assert cfg is not None
         assert cfg.autoreserve_threshold is None
 
@@ -451,7 +448,7 @@ async def _seed_attendance_season(
             "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, autoreserve_threshold, "
+            "INSERT INTO attendance_config (id, autoreserve_threshold, "
             "autosack_threshold) VALUES (1, ?, ?)",
             (autoreserve, autosack),
         )
@@ -467,8 +464,8 @@ async def _seed_attendance_season(
         )
         division_id = cursor.lastrowid
         await db.execute(
-            "INSERT INTO attendance_division_config (division_id, server_id, "
-            "attendance_channel_id) VALUES (?, 1, ?)",
+            "INSERT INTO attendance_division_config (division_id, "
+            "attendance_channel_id) VALUES (?, ?)",
             (division_id, attendance_channel_id),
         )
         await db.execute(

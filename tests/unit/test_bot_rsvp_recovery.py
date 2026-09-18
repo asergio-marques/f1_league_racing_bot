@@ -79,8 +79,8 @@ async def _make_db(
         )
         await db.execute(
             "INSERT INTO attendance_config "
-            "(server_id, module_enabled, rsvp_deadline_hours) VALUES (?, ?, ?)",
-            (SERVER_ID, int(attendance_enabled), deadline_hours),
+            "(id, module_enabled, rsvp_deadline_hours) VALUES (?, ?, ?)",
+            (1, int(attendance_enabled), deadline_hours),
         )
         await db.execute(
             "INSERT INTO seasons (id, server_id, season_number, start_date, status) "

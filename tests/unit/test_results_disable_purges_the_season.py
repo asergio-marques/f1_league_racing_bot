@@ -152,8 +152,8 @@ async def _seed(
             (server_id,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, module_enabled) VALUES (?, 0)",
-            (server_id,),
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (?, 0)",
+            (1,),
         )
         cur = await db.execute(
             "INSERT INTO seasons (server_id, start_date, status, season_number) "

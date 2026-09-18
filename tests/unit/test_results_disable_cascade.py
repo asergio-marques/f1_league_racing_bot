@@ -56,8 +56,8 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, module_enabled) VALUES (?, ?)",
-            (SERVER_ID, int(attendance_enabled)),
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (?, ?)",
+            (1, int(attendance_enabled)),
         )
         # SETUP by default, so the cascade is the only thing at stake here. A running season
         # puts its own — far larger — warning in front of the disable, and that is tested in
@@ -73,8 +73,7 @@ async def _make_db(
         )
         await db.execute(
             "INSERT INTO attendance_division_config "
-            "(division_id, server_id, rsvp_channel_id) VALUES (1, ?, '880011')",
-            (SERVER_ID,),
+            "(division_id, rsvp_channel_id) VALUES (1, '880011')"
         )
         await db.commit()
     return db_path
@@ -115,11 +114,11 @@ async def _module_flags(db_path: str) -> tuple[int, int, int]:
         )
         results = (await cur.fetchone())[0]
         cur = await db.execute(
-            "SELECT module_enabled FROM attendance_config WHERE server_id = ?", (SERVER_ID,)
+            "SELECT module_enabled FROM attendance_config"
         )
         attendance = (await cur.fetchone())[0]
         cur = await db.execute(
-            "SELECT COUNT(*) FROM attendance_division_config WHERE server_id = ?", (SERVER_ID,)
+            "SELECT COUNT(*) FROM attendance_division_config"
         )
         div_rows = (await cur.fetchone())[0]
     return results, attendance, div_rows

@@ -639,7 +639,7 @@ async def finalize_penalty_review(
             )
             _srv_row = await _srv_cur.fetchone()
 
-        if _srv_row and await bot.module_service.is_attendance_enabled(int(_srv_row["server_id"])):  # type: ignore[attr-defined]
+        if _srv_row and await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
             _att_server_id = int(_srv_row["server_id"])
             _att_season_id = int(_srv_row["season_id"])
 

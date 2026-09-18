@@ -158,7 +158,7 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
     await db.execute(
         """
         CREATE TABLE attendance_config (
-            server_id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY CHECK (id = 1),
             module_enabled INTEGER NOT NULL DEFAULT 1,
             rsvp_notice_days INTEGER NOT NULL DEFAULT 5,
             rsvp_last_notice_hours INTEGER NOT NULL DEFAULT 24,
@@ -171,13 +171,12 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
         )
         """
     )
-    await db.execute("INSERT INTO attendance_config (server_id) VALUES (100)")
+    await db.execute("INSERT INTO attendance_config (id) VALUES (1)")
 
     await db.execute(
         """
         CREATE TABLE attendance_division_config (
             division_id INTEGER PRIMARY KEY,
-            server_id INTEGER NOT NULL,
             rsvp_channel_id TEXT,
             attendance_channel_id TEXT,
             attendance_message_id TEXT
@@ -991,7 +990,7 @@ async def _make_two_round_db(tmp_path):
         )
         await db.execute(
             "INSERT INTO attendance_config "
-            "(server_id, no_rsvp_penalty, absent_penalty, no_show_penalty) "
+            "(id, no_rsvp_penalty, absent_penalty, no_show_penalty) "
             "VALUES (1, 2, 1, 3)"
         )
         cursor = await db.execute(

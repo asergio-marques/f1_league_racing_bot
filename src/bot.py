@@ -507,7 +507,7 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
                   JOIN rounds r ON r.id = rem.round_id
                   JOIN divisions d ON d.id = r.division_id
                   JOIN seasons s ON s.id = d.season_id
-                  JOIN attendance_config ac ON ac.server_id = s.server_id
+                  CROSS JOIN attendance_config ac
                  WHERE ac.module_enabled = 1
                 """
             )
@@ -545,7 +545,7 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
                   JOIN rounds r ON r.id = rem.round_id
                   JOIN divisions d ON d.id = r.division_id
                   JOIN seasons s ON s.id = d.season_id
-                  JOIN attendance_config ac ON ac.server_id = s.server_id
+                  CROSS JOIN attendance_config ac
                  WHERE r.status != 'CANCELLED'
                    AND s.status = 'ACTIVE'
                    AND ac.module_enabled = 1

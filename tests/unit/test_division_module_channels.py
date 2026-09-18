@@ -436,7 +436,7 @@ async def test_the_rsvp_channel_reaches_the_attendance_service(tmp_path):
     await _run(cog, "rsvp", _interaction())
 
     cog.bot.attendance_service.set_rsvp_channel.assert_awaited_once_with(
-        DIVISION_ID, SERVER_ID, CHANNEL_ID
+        DIVISION_ID, CHANNEL_ID
     )
     cog.bot.attendance_service.set_attendance_channel.assert_not_awaited()
 
@@ -450,7 +450,7 @@ async def test_the_attendance_channel_reaches_the_attendance_service(tmp_path):
     await _run(cog, "attendance", _interaction())
 
     cog.bot.attendance_service.set_attendance_channel.assert_awaited_once_with(
-        DIVISION_ID, SERVER_ID, CHANNEL_ID
+        DIVISION_ID, CHANNEL_ID
     )
     cog.bot.attendance_service.set_rsvp_channel.assert_not_awaited()
 

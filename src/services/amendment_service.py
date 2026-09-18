@@ -153,9 +153,9 @@ class AmendmentService:
         # Read before the verdict, because the verdict is what decides the fate of the round's
         # check-in as well as its forecasts. The config is only fetched where the module is on:
         # ``get_or_create_config`` writes a row, and a disabled module should leave no trace.
-        _attendance_on = await bot.module_service.is_attendance_enabled(server_id)
+        _attendance_on = await bot.module_service.is_attendance_enabled()
         _acfg = (
-            await bot.attendance_service.get_or_create_config(server_id)
+            await bot.attendance_service.get_or_create_config()
             if _attendance_on
             else None
         )
@@ -808,7 +808,7 @@ async def approval_faults(db_path: str, season_id: int, bot) -> list[str]:
     # must not be refused for an attendance channel it has never configured (#187).
     attendance_on = False
     try:
-        attendance_on = await bot.module_service.is_attendance_enabled(server_id)
+        attendance_on = await bot.module_service.is_attendance_enabled()
     except Exception:  # noqa: BLE001 — never refuse an amendment on this reader
         log.exception("approval_faults: could not read the attendance module's state")
     if attendance_on:
@@ -960,7 +960,7 @@ async def approve_amendment(
                     )
 
         # T018: Attendance recalculation (033-attendance-tracking).
-        if guild and server_id and await bot.module_service.is_attendance_enabled(server_id):  # type: ignore[attr-defined]
+        if guild and server_id and await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
             from services.attendance_service import recalculate_attendance_for_round
 
             # Find the most recently finalized round per division to recalculate.

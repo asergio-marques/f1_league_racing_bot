@@ -306,8 +306,7 @@ async def test_attendance_is_enabled_once_results_is(tmp_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT module_enabled FROM attendance_config WHERE server_id = ?",
-            (SERVER_ID,),
+            "SELECT module_enabled FROM attendance_config",
         )
         assert (await cursor.fetchone())["module_enabled"] == 1
 
@@ -324,9 +323,7 @@ async def test_enabling_attendance_writes_the_packaged_defaults(tmp_path):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT rsvp_notice_days, rsvp_last_notice_hours, rsvp_deadline_hours, "
-            "autoreserve_threshold, autosack_threshold FROM attendance_config "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+            "autoreserve_threshold, autosack_threshold FROM attendance_config",
         )
         row = await cursor.fetchone()
     assert (row["rsvp_notice_days"], row["rsvp_last_notice_hours"], row["rsvp_deadline_hours"]) == (5, 24, 2)

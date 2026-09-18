@@ -613,11 +613,10 @@ class SeasonService:
                     if saved.get("rsvp_channel_id") or saved.get("attendance_channel_id"):
                         await db.execute(
                             "INSERT INTO attendance_division_config "
-                            "(division_id, server_id, rsvp_channel_id, attendance_channel_id) "
-                            "VALUES (?, ?, ?, ?)",
+                            "(division_id, rsvp_channel_id, attendance_channel_id) "
+                            "VALUES (?, ?, ?)",
                             (
                                 div_db_id,
-                                server_id,
                                 saved.get("rsvp_channel_id"),
                                 saved.get("attendance_channel_id"),
                             ),

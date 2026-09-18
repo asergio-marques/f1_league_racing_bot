@@ -526,7 +526,7 @@ async def _seed_with_attendance(db_path: str, rounds: list[dict]) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO attendance_config "
-            "(server_id, module_enabled) VALUES (1, 1)"
+            "(id, module_enabled) VALUES (1, 1)"
         )
         await db.commit()
 

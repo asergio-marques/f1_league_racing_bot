@@ -30,6 +30,7 @@ log = logging.getLogger(__name__)
 #: `tests/unit/test_full_reset_scope.py`.
 _FULL_RESET_TABLES: tuple[str, ...] = (
     "weather_pipeline_config",
+    "attendance_config",
 )
 
 

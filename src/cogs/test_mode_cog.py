@@ -1160,7 +1160,7 @@ class TestModeCog(commands.Cog):
         # The attendance module gate (issue #114). A call posted while the module was on
         # leaves its `rsvp_embed_messages` row behind, so without this the command finds that
         # embed and writes check-in answers for a module the league has switched off.
-        if not await self.bot.module_service.is_attendance_enabled(guild_id):  # type: ignore[attr-defined]
+        if not await self.bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
             await interaction.response.send_message(
                 "❌ The Attendance module is not enabled, so there is no check-in to set.",
                 ephemeral=True,

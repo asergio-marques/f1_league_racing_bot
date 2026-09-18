@@ -530,7 +530,7 @@ class ModuleCog(commands.Cog):
 
         # Warn before anything irreversible, and write nothing until the league confirms it.
         active_season = await self.bot.season_service.get_confirmed_season(server_id)
-        attendance_on = await self.bot.module_service.is_attendance_enabled(server_id)
+        attendance_on = await self.bot.module_service.is_attendance_enabled()
 
         if active_season is not None or attendance_on:
             await interaction.response.send_message(
@@ -640,7 +640,7 @@ class ModuleCog(commands.Cog):
         # Cascade: disable attendance if it is currently enabled
         cascaded = (
             cascade_attendance
-            and await self.bot.module_service.is_attendance_enabled(server_id)
+            and await self.bot.module_service.is_attendance_enabled()
         )
         if cascaded:
             await self._disable_attendance(interaction, cascade=True)
@@ -679,7 +679,7 @@ class ModuleCog(commands.Cog):
             return
 
         # 3. Guard: already enabled
-        if await self.bot.module_service.is_attendance_enabled(server_id):
+        if await self.bot.module_service.is_attendance_enabled():
             await interaction.response.send_message(
                 "⚠️ Attendance module is already enabled.", ephemeral=True
             )
@@ -693,11 +693,10 @@ class ModuleCog(commands.Cog):
             async with get_connection(self.bot.db_path) as db:
                 await db.execute(
                     "INSERT OR REPLACE INTO attendance_config "
-                    "(server_id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
+                    "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
                     "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
                     "autoreserve_threshold, autosack_threshold) "
-                    "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
-                    (server_id,),
+                    "VALUES (1, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)"
                 )
                 await db.execute(
                     "INSERT INTO audit_entries "
@@ -822,7 +821,7 @@ class ModuleCog(commands.Cog):
         server_id: int = interaction.guild_id  # type: ignore[assignment]
 
         if not cascade:
-            if not await self.bot.module_service.is_attendance_enabled(server_id):
+            if not await self.bot.module_service.is_attendance_enabled():
                 await interaction.response.send_message(
                     "⚠️ Attendance module is already disabled.", ephemeral=True
                 )
@@ -834,14 +833,8 @@ class ModuleCog(commands.Cog):
         )
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET module_enabled = 0 WHERE server_id = ?",
-                (server_id,),
-            )
-            await db.execute(
-                "DELETE FROM attendance_division_config WHERE server_id = ?",
-                (server_id,),
-            )
+            await db.execute("UPDATE attendance_config SET module_enabled = 0")
+            await db.execute("DELETE FROM attendance_division_config")
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(server_id, actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "

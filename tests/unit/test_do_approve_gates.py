@@ -245,7 +245,6 @@ def _attendance_config():
     from models.attendance import AttendanceConfig
 
     return AttendanceConfig(
-        server_id=SERVER_ID,
         module_enabled=True,
         rsvp_notice_days=5,
         rsvp_last_notice_hours=24,

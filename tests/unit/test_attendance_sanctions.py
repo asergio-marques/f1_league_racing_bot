@@ -92,8 +92,8 @@ async def _make_db(
         if with_config:
             await db.execute(
                 "INSERT INTO attendance_config "
-                "(server_id, autoreserve_threshold, autosack_threshold) VALUES (?, ?, ?)",
-                (SERVER_ID, autoreserve, autosack),
+                "(id, autoreserve_threshold, autosack_threshold) VALUES (?, ?, ?)",
+                (1, autoreserve, autosack),
             )
         await db.execute(
             "INSERT INTO seasons (id, server_id, season_number, start_date, status) "

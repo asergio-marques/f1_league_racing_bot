@@ -1329,7 +1329,7 @@ class ImageValidityService:
         disabled: set[str] = set()
         if not await self._module_service.is_results_enabled(server_id):
             disabled.add("results")
-        if not await self._module_service.is_attendance_enabled(server_id):
+        if not await self._module_service.is_attendance_enabled():
             disabled.add("attendance")
         if not await self._module_service.is_weather_enabled(server_id):
             disabled.add("weather")

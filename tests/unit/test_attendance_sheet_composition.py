@@ -38,8 +38,8 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, autosack_threshold) VALUES (?, 10)",
-            (SERVER_ID,),
+            "INSERT INTO attendance_config (id, autosack_threshold) VALUES (?, 10)",
+            (1,),
         )
         await db.execute(
             "INSERT INTO seasons (id, server_id, start_date, status, season_number, stage) "

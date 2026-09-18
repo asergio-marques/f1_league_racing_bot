@@ -83,8 +83,8 @@ async def _make_db(
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, module_enabled) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (?, 1)",
+            (1,),
         )
         await db.execute(
             "INSERT INTO seasons (id, server_id, season_number, start_date, status) "
@@ -99,8 +99,8 @@ async def _make_db(
         if with_division_config:
             await db.execute(
                 "INSERT INTO attendance_division_config "
-                "(division_id, server_id, rsvp_channel_id) VALUES (?, ?, ?)",
-                (DIVISION_ID, SERVER_ID, str(RSVP_CHANNEL_ID)),
+                "(division_id, rsvp_channel_id) VALUES (?, ?)",
+                (DIVISION_ID, str(RSVP_CHANNEL_ID)),
             )
         await db.execute(
             "INSERT INTO rounds "

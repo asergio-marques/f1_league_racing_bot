@@ -274,14 +274,12 @@ async def test_the_attendance_area(season):
     also disturbed — inserting the row would move both, correctly but less precisely."""
     await _change(
         season,
-        "INSERT INTO attendance_config (server_id, rsvp_notice_days) VALUES (?, 5)",
-        SERVER_ID,
+        "INSERT INTO attendance_config (id, rsvp_notice_days) VALUES (1, 5)",
     )
     before = await _take(season)
     await _assert_only(
         season, before, "attendance",
-        "UPDATE attendance_config SET rsvp_notice_days = 9 WHERE server_id = ?",
-        SERVER_ID,
+        "UPDATE attendance_config SET rsvp_notice_days = 9",
     )
 
 

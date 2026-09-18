@@ -262,8 +262,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     ),
                     await _rows(
                         db,
-                        "SELECT module_enabled FROM attendance_config WHERE server_id = ?",
-                        server_id,
+                        "SELECT module_enabled FROM attendance_config",
                     ),
                     await _rows(
                         db,
@@ -356,8 +355,7 @@ async def take_fingerprint(bot, server_id: int, season_id: int) -> SeasonFingerp
                     "SELECT module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
                     "       rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, "
                     "       no_show_penalty, autoreserve_threshold, autosack_threshold "
-                    "FROM attendance_config WHERE server_id = ?",
-                    server_id,
+                    "FROM attendance_config",
                 )
             )
 

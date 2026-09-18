@@ -1500,8 +1500,8 @@ class SeasonCog(commands.Cog):
         from services.approval_window_service import AttendanceWindows, WeatherWindows
 
         attendance = None
-        if await self.bot.module_service.is_attendance_enabled(server_id):  # type: ignore[attr-defined]
-            _att = await self.bot.attendance_service.get_or_create_config(server_id)  # type: ignore[attr-defined]
+        if await self.bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+            _att = await self.bot.attendance_service.get_or_create_config()  # type: ignore[attr-defined]
             attendance = AttendanceWindows(
                 notice_days=_att.rsvp_notice_days,
                 last_notice_hours=_att.rsvp_last_notice_hours,
@@ -1647,7 +1647,7 @@ class SeasonCog(commands.Cog):
             weather_on = await self.bot.module_service.is_weather_enabled(interaction.guild_id)  # type: ignore[attr-defined]
             signup_on = await self.bot.module_service.is_signup_enabled(interaction.guild_id)  # type: ignore[attr-defined]
             results_on = await self.bot.module_service.is_results_enabled(interaction.guild_id)  # type: ignore[attr-defined]
-            attendance_on = await self.bot.module_service.is_attendance_enabled(interaction.guild_id)  # type: ignore[attr-defined]
+            attendance_on = await self.bot.module_service.is_attendance_enabled()  # type: ignore[attr-defined]
             on = "✅ Enabled"
             off = "❌ Disabled"
             if signup_on:
@@ -2445,7 +2445,7 @@ class SeasonCog(commands.Cog):
 
     async def _attendance_review_lines(self, server_id: int) -> list[str]:
         """The attendance module's configuration, as both reviews report it."""
-        att_cfg = await self.bot.attendance_service.get_config(server_id)  # type: ignore[attr-defined]
+        att_cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
         if not att_cfg:
             return []
         ar = att_cfg.autoreserve_threshold
@@ -2564,7 +2564,7 @@ class SeasonCog(commands.Cog):
                 "**Modules**",
                 f"  Signup: {on if await module.is_signup_enabled(server_id) else off}",
                 f"  Results: {on if await module.is_results_enabled(server_id) else off}",
-                f"  Attendance: {on if await module.is_attendance_enabled(server_id) else off}",
+                f"  Attendance: {on if await module.is_attendance_enabled() else off}",
                 f"  Weather: {on if await module.is_weather_enabled(server_id) else off}",
                 f"  Images: {on if await module.is_images_enabled(server_id) else off}",
                 "",
@@ -2588,7 +2588,7 @@ class SeasonCog(commands.Cog):
             sections: list[list[str]] = [lines]
             if await module.is_signup_enabled(server_id):
                 sections.append(await self._signup_review_lines(server_id))
-            if await module.is_attendance_enabled(server_id):
+            if await module.is_attendance_enabled():
                 sections.append(await self._attendance_review_lines(server_id))
             if results_on:
                 sections.append(
@@ -3834,7 +3834,7 @@ class SeasonCog(commands.Cog):
         channel: discord.TextChannel,
     ) -> None:
         import json as _json
-        if not await self.bot.module_service.is_attendance_enabled(interaction.guild_id):
+        if not await self.bot.module_service.is_attendance_enabled():
             await interaction.response.send_message(
                 "\u274c The Attendance module is not enabled.", ephemeral=True
             )
@@ -3876,7 +3876,7 @@ class SeasonCog(commands.Cog):
         old_cfg = await self.bot.attendance_service.get_division_config(div.id)
         old_id = old_cfg.rsvp_channel_id if old_cfg else None
 
-        await self.bot.attendance_service.set_rsvp_channel(div.id, server_id, channel.id)
+        await self.bot.attendance_service.set_rsvp_channel(div.id, channel.id)
 
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
@@ -3921,7 +3921,7 @@ class SeasonCog(commands.Cog):
         channel: discord.TextChannel,
     ) -> None:
         import json as _json
-        if not await self.bot.module_service.is_attendance_enabled(interaction.guild_id):
+        if not await self.bot.module_service.is_attendance_enabled():
             await interaction.response.send_message(
                 "\u274c The Attendance module is not enabled.", ephemeral=True
             )
@@ -3963,7 +3963,7 @@ class SeasonCog(commands.Cog):
         old_cfg = await self.bot.attendance_service.get_division_config(div.id)
         old_id = old_cfg.attendance_channel_id if old_cfg else None
 
-        await self.bot.attendance_service.set_attendance_channel(div.id, server_id, channel.id)
+        await self.bot.attendance_service.set_attendance_channel(div.id, channel.id)
 
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
@@ -5740,7 +5740,7 @@ class SeasonCog(commands.Cog):
                     return
 
         # ── Gate 2c: attendance module channel prerequisites ──────────────────
-        if await self.bot.module_service.is_attendance_enabled(cfg.server_id):
+        if await self.bot.module_service.is_attendance_enabled():
             att_errors: list[str] = []
             for _div in divisions:
                 att_div_cfg = await self.bot.attendance_service.get_division_config(_div.id)  # type: ignore[attr-defined]
@@ -5970,8 +5970,8 @@ class SeasonCog(commands.Cog):
             if server_config is None or not server_config.test_mode_active:
                 self.bot.scheduler_service.schedule_result_submission_jobs(all_rounds, division_meta=_div_meta)
 
-        if await self.bot.module_service.is_attendance_enabled(cfg.server_id):
-            _att_cfg = await self.bot.attendance_service.get_or_create_config(cfg.server_id)
+        if await self.bot.module_service.is_attendance_enabled():
+            _att_cfg = await self.bot.attendance_service.get_or_create_config()
             for _rnd in all_rounds:
                 _s_num, _d_tier = _div_meta[_rnd.division_id]
                 self.bot.scheduler_service.schedule_attendance_round(
@@ -6547,8 +6547,8 @@ async def _judge_round_amendment(
     from services.weather_config_service import get_weather_pipeline_config
 
     attendance = None
-    if await bot.module_service.is_attendance_enabled(server_id):
-        _acfg = await bot.attendance_service.get_or_create_config(server_id)
+    if await bot.module_service.is_attendance_enabled():
+        _acfg = await bot.attendance_service.get_or_create_config()
         attendance = AttendanceWindows(
             notice_days=_acfg.rsvp_notice_days,
             last_notice_hours=_acfg.rsvp_last_notice_hours,

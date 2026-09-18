@@ -303,10 +303,7 @@ async def get_next_pending_phase(
         wm_row = await wm_cursor.fetchone()
         weather_module_enabled = bool(wm_row[0]) if wm_row else False
 
-        att_cursor = await db.execute(
-            "SELECT module_enabled FROM attendance_config WHERE server_id = ?",
-            (server_id,),
-        )
+        att_cursor = await db.execute("SELECT module_enabled FROM attendance_config")
         att_row = await att_cursor.fetchone()
         attendance_module_enabled = bool(att_row[0]) if att_row else False
 
@@ -531,10 +528,7 @@ async def build_review_summary(
         rmc_row = await rmc_cursor.fetchone()
         results_module_enabled = bool(rmc_row[0]) if rmc_row else False
 
-        att_cursor = await db.execute(
-            "SELECT module_enabled FROM attendance_config WHERE server_id = ?",
-            (server_id,),
-        )
+        att_cursor = await db.execute("SELECT module_enabled FROM attendance_config")
         att_row = await att_cursor.fetchone()
         attendance_module_enabled = bool(att_row[0]) if att_row else False
 

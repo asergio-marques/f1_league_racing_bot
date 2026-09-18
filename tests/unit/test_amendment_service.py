@@ -1271,11 +1271,11 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
     division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
     async with get_connection(path) as db:
         await db.execute(
-            "INSERT INTO attendance_config (server_id, autosack_threshold) VALUES (1, 3)"
+            "INSERT INTO attendance_config (id, autosack_threshold) VALUES (1, 3)"
         )
         await db.execute(
-            "INSERT INTO attendance_division_config (division_id, server_id, "
-            "attendance_channel_id) VALUES (?, 1, 601)",
+            "INSERT INTO attendance_division_config (division_id, "
+            "attendance_channel_id) VALUES (?, 601)",
             (division_id,),
         )
         await db.commit()
@@ -1301,11 +1301,11 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
     division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
     async with get_connection(path) as db:
         await db.execute(
-            "INSERT INTO attendance_config (server_id, autosack_threshold) VALUES (1, 3)"
+            "INSERT INTO attendance_config (id, autosack_threshold) VALUES (1, 3)"
         )
         await db.execute(
-            "INSERT INTO attendance_division_config (division_id, server_id, "
-            "attendance_channel_id) VALUES (?, 1, 601)",
+            "INSERT INTO attendance_division_config (division_id, "
+            "attendance_channel_id) VALUES (?, 601)",
             (division_id,),
         )
         await db.commit()

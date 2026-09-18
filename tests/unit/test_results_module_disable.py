@@ -130,8 +130,8 @@ async def _make_db(tmp_path) -> str:
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO attendance_config (server_id, module_enabled) VALUES (?, 1)",
-            (SERVER_ID,),
+            "INSERT INTO attendance_config (id, module_enabled) VALUES (?, 1)",
+            (1,),
         )
         await db.commit()
     return db_path

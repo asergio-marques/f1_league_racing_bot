@@ -46,7 +46,6 @@ SERVER_ID = 9119
 def _config(**overrides) -> AttendanceConfig:
     """A default attendance configuration, with the timing invariant satisfied."""
     values = dict(
-        server_id=SERVER_ID,
         module_enabled=True,
         rsvp_notice_days=5,
         rsvp_last_notice_hours=24,
@@ -141,7 +140,7 @@ async def test_the_no_show_penalty_command_writes_the_penalty():
 
     await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 4)
 
-    cog.bot.attendance_service.update_no_show_penalty.assert_awaited_once_with(SERVER_ID, 4)
+    cog.bot.attendance_service.update_no_show_penalty.assert_awaited_once_with(4)
     interaction.followup.send.assert_awaited_once()
     assert "4" in interaction.followup.send.await_args.args[0]
 
@@ -176,7 +175,7 @@ async def test_every_config_command_calls_a_method_the_service_defines(
 
     await _invoke(command, cog, interaction, value)
 
-    getattr(cog.bot.attendance_service, method).assert_awaited_once_with(SERVER_ID, expected)
+    getattr(cog.bot.attendance_service, method).assert_awaited_once_with(expected)
 
 
 @pytest.mark.parametrize(
@@ -229,7 +228,7 @@ async def test_a_penalty_of_zero_is_written():
 
     await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 0)
 
-    cog.bot.attendance_service.update_no_show_penalty.assert_awaited_once_with(SERVER_ID, 0)
+    cog.bot.attendance_service.update_no_show_penalty.assert_awaited_once_with(0)
 
 
 async def test_the_timing_commands_are_refused_while_a_season_is_active():
@@ -281,7 +280,7 @@ async def test_a_threshold_of_zero_disables_it(command, method):
 
     await _invoke(command, cog, interaction, 0)
 
-    getattr(cog.bot.attendance_service, method).assert_awaited_once_with(SERVER_ID, None)
+    getattr(cog.bot.attendance_service, method).assert_awaited_once_with(None)
 
 
 # ---------------------------------------------------------------------------

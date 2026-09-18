@@ -191,7 +191,7 @@ async def _attendance_enabled_for_round(round_id: int, bot) -> bool:  # type: ig
         row = await cur.fetchone()
     if row is None:
         return False
-    return await bot.module_service.is_attendance_enabled(int(row["server_id"]))
+    return await bot.module_service.is_attendance_enabled()
 
 
 async def _attendance_enabled_for_division(division_id: int, bot) -> bool:  # type: ignore[type-arg]
@@ -209,7 +209,7 @@ async def _attendance_enabled_for_division(division_id: int, bot) -> bool:  # ty
         row = await cur.fetchone()
     if row is None:
         return False
-    return await bot.module_service.is_attendance_enabled(int(row["server_id"]))
+    return await bot.module_service.is_attendance_enabled()
 
 
 # ── Roster query helper ───────────────────────────────────────────────────────
@@ -357,7 +357,7 @@ async def _checkin_attachment(
         )
         deadline_hours = None
         try:
-            config = await bot.attendance_service.get_config(server_id)
+            config = await bot.attendance_service.get_config()
             deadline_hours = getattr(config, "rsvp_deadline_hours", None)
         except Exception:  # noqa: BLE001 — the deadline is optional on the graphic
             pass

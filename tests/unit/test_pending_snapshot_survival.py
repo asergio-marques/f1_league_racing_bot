@@ -299,9 +299,9 @@ async def test_the_attendance_channels_survive(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO attendance_division_config "
-            "(division_id, server_id, rsvp_channel_id, attendance_channel_id) "
-            "VALUES (?, ?, '7201', '7202')",
-            (await _division_id(db_path, first), SERVER_ID),
+            "(division_id, rsvp_channel_id, attendance_channel_id) "
+            "VALUES (?, '7201', '7202')",
+            (await _division_id(db_path, first),),
         )
         await db.commit()
 

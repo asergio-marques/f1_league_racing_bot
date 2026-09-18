@@ -461,9 +461,9 @@ async def _configure_everything(db_path, season_id):
             (division_id,),
         )
         await db.execute(
-            "INSERT INTO attendance_division_config (division_id, server_id, "
-            "rsvp_channel_id, attendance_channel_id) VALUES (?, ?, 999, 1010)",
-            (division_id, SERVER_ID),
+            "INSERT INTO attendance_division_config (division_id, "
+            "rsvp_channel_id, attendance_channel_id) VALUES (?, 999, 1010)",
+            (division_id,),
         )
         await db.execute(
             "INSERT INTO season_points_links (season_id, config_name) VALUES (?, 'Standard')",
