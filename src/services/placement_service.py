@@ -9,7 +9,7 @@ import discord
 
 from db.database import get_connection
 from models.driver_profile import DriverProfile, DriverState
-from services.driver_service import ACCOUNTS_OF_DP_SQL, write_transition
+from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
 from models.signup_module import AvailabilitySlot
 from models.team import TeamRoleConfig
 
@@ -436,13 +436,9 @@ class PlacementService:
                     sr.total_lap_ms,
                     sr.created_at           AS submitted_at
                 FROM driver_profiles dp
-                -- The driver's latest signup: records are kept, never overwritten (#220).
-                LEFT JOIN signup_records sr
-                    ON sr.id = (
-                        SELECT MAX(id) FROM signup_records
-                        WHERE server_id = dp.server_id
-                          AND discord_user_id IN {accounts}
-                    )
+                -- The driver's signup: records are kept, never overwritten (#220), and an
+                -- approved one outranks a later one that was not (#243).
+                LEFT JOIN signup_records sr ON sr.id = {drivers_signup}
                 WHERE dp.server_id = ?
                   AND dp.current_state IN ({unsettled})
                 ORDER BY
@@ -452,7 +448,7 @@ class PlacementService:
                     -- was made, which a correction never moves.
                     sr.created_at ASC,
                     sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL, accounts=ACCOUNTS_OF_DP_SQL),
+                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL),
                 (server_id,),
             )
             rows = await cursor.fetchall()
@@ -513,13 +509,9 @@ class PlacementService:
                     sr.total_lap_ms,
                     sr.created_at           AS submitted_at
                 FROM driver_profiles dp
-                -- The driver's latest signup: records are kept, never overwritten (#220).
-                LEFT JOIN signup_records sr
-                    ON sr.id = (
-                        SELECT MAX(id) FROM signup_records
-                        WHERE server_id = dp.server_id
-                          AND discord_user_id IN {accounts}
-                    )
+                -- The driver's signup: records are kept, never overwritten (#220), and an
+                -- approved one outranks a later one that was not (#243).
+                LEFT JOIN signup_records sr ON sr.id = {drivers_signup}
                 WHERE dp.server_id = ?
                   AND dp.current_state IN ({unsettled})
                 ORDER BY
@@ -529,7 +521,7 @@ class PlacementService:
                     -- was made, which a correction never moves.
                     sr.created_at ASC,
                     sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL, accounts=ACCOUNTS_OF_DP_SQL),
+                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL),
                 (server_id,),
             )
             rows = await cursor.fetchall()

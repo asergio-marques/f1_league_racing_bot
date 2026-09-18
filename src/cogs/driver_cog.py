@@ -635,6 +635,9 @@ class DriverCog(commands.Cog):
         await self.bot.driver_service.transition(  # type: ignore[attr-defined]
             server_id, str(user.id), DriverState.NOT_SIGNED_UP
         )
+        await self.bot.signup_module_service.withdraw_approval(  # type: ignore[attr-defined]
+            server_id, profile.id
+        )
 
         signup_cfg = await self.bot.signup_module_service.get_config(server_id)  # type: ignore[attr-defined]
         role_id = getattr(signup_cfg, "signed_up_role_id", None)

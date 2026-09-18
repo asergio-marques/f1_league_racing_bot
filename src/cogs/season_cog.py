@@ -2165,7 +2165,7 @@ class SeasonCog(commands.Cog):
         missing its lineup or calendar channel. The review withholds its button on either,
         and the confirmation refuses on either, from this one reading.
         """
-        from services.driver_service import ACCOUNTS_OF_DP_SQL
+        from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL
         from services.season_lifecycle_service import UNSETTLED_STATES
 
         placeholders = ",".join("?" for _ in UNSETTLED_STATES)
@@ -2173,9 +2173,7 @@ class SeasonCog(commands.Cog):
             cursor = await db.execute(
                 f"SELECT dp.discord_user_id, dp.current_state, sr.server_display_name "
                 f"FROM driver_profiles dp "
-                f"LEFT JOIN signup_records sr ON sr.id = ("
-                f"    SELECT MAX(id) FROM signup_records "
-                f"    WHERE server_id = dp.server_id AND discord_user_id IN {ACCOUNTS_OF_DP_SQL}) "
+                f"LEFT JOIN signup_records sr ON sr.id = {DRIVERS_SIGNUP_OF_DP_SQL} "
                 f"WHERE dp.server_id = ? AND dp.current_state IN ({placeholders}) "
                 f"ORDER BY dp.current_state, dp.discord_user_id",
                 (server_id, *UNSETTLED_STATES),

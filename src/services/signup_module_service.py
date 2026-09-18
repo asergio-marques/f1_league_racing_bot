@@ -621,6 +621,38 @@ class SignupModuleService:
             )
             await db.commit()
 
+    async def mark_approved(self, server_id: int, discord_user_id: str) -> None:
+        """Mark the latest signup of *discord_user_id* as approved — the one just reviewed.
+
+        Read wherever "the driver's signup" is chosen: an approved signup outranks a later one
+        that was not (issue #243, `driver_service.SIGNUP_PRECEDENCE_SQL`).
+        """
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE signup_records SET approved = 1 WHERE id = ("
+                "  SELECT id FROM signup_records WHERE server_id = ? AND discord_user_id = ?"
+                "  ORDER BY id DESC LIMIT 1)",
+                (server_id, discord_user_id),
+            )
+            await db.commit()
+
+    async def withdraw_approval(self, server_id: int, driver_profile_id: int) -> None:
+        """Clear the approval of the driver's latest approved signup, under any of their accounts.
+
+        For an approved driver the league turns down afterwards: the signup was rejected in
+        the end, and no longer outranks the driver's others.
+        """
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE signup_records SET approved = 0 WHERE id = ("
+                "  SELECT id FROM signup_records WHERE server_id = ? AND approved = 1"
+                "  AND discord_user_id IN ("
+                "    SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = ?)"
+                "  ORDER BY id DESC LIMIT 1)",
+                (server_id, driver_profile_id),
+            )
+            await db.commit()
+
     async def rekey_wizard(self, server_id: int, from_account: str, to_account: str) -> None:
         """Move a wizard record to another account of the same driver (issue #243).
 

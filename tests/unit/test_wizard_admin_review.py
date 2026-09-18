@@ -106,6 +106,7 @@ def review():
         return_value=SimpleNamespace(signed_up_role_id=SIGNED_UP_ROLE_ID)
     )
     signup_svc.get_record = AsyncMock(return_value=_record())
+    signup_svc.mark_approved = AsyncMock()
     signup_svc.get_wizard = AsyncMock(return_value=_wizard())
     signup_svc.save_wizard = AsyncMock(return_value=None)
 
@@ -450,3 +451,10 @@ async def test_a_missing_channel_still_transitions_and_arms_the_window(review):
     assert (SERVER_ID, DRIVER_ID) in review.svc._correction_tasks
     for task in review.svc._correction_tasks.values():
         task.cancel()
+
+
+async def test_an_approved_signup_is_marked_as_such(review):
+    """Issue #243: an approved signup outranks a later one of the driver's that was not."""
+    await review.svc.approve_signup(SERVER_ID, DRIVER_ID, review.guild, review.actor)
+
+    review.signup_svc.mark_approved.assert_awaited_once_with(SERVER_ID, DRIVER_ID)

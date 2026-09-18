@@ -269,6 +269,7 @@ async def test_a_rejection_stands_when_the_signed_up_role_cannot_be_removed():
         return_value=SimpleNamespace(id=PROFILE_ID, current_state=DriverState.UNASSIGNED)
     )
     cog.bot.driver_service.transition = AsyncMock()
+    cog.bot.signup_module_service.withdraw_approval = AsyncMock()
     cog.bot.signup_module_service.get_config = AsyncMock(
         return_value=SimpleNamespace(signed_up_role_id=902)
     )

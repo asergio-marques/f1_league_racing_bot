@@ -139,6 +139,20 @@ ACCOUNTS_OF_DP_SQL = (
     "(SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = dp.id)"
 )
 
+#: The order "the driver's signup" is chosen in: the latest season first, and within a season
+#: an approved signup before any other, then the latest. A seated driver's approved signup
+#: therefore outranks a later one the league rejected on another of their accounts (decided
+#: 2026-09-18). A driver cannot sign up again while approved, so within one account the rule
+#: changes nothing.
+SIGNUP_PRECEDENCE_SQL = "season_id DESC, approved DESC, id DESC"
+
+#: The id of the signup record that is the driver's — the driver row aliased ``dp``.
+DRIVERS_SIGNUP_OF_DP_SQL = (
+    "(SELECT id FROM signup_records WHERE server_id = dp.server_id "
+    f"AND discord_user_id IN {ACCOUNTS_OF_DP_SQL} "
+    f"ORDER BY {SIGNUP_PRECEDENCE_SQL} LIMIT 1)"
+)
+
 
 async def accounts_of(db, server_id: int, discord_user_id) -> list[str]:
     """Every account of the driver holding *discord_user_id*, or just that account.

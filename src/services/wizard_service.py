@@ -672,6 +672,7 @@ class WizardService:
         await self._driver_service.transition(
             server_id, discord_user_id, DriverState.UNASSIGNED
         )
+        await self._signup_svc.mark_approved(server_id, discord_user_id)
 
         await self._cancel_inactivity_job(server_id, discord_user_id)
 
