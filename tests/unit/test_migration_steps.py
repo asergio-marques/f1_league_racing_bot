@@ -86,3 +86,28 @@ def test_a_target_holding_data_is_refused(tmp_path):
 
     with pytest.raises(ValueError):
         migrate_before(str(target), "049")
+
+
+def test_no_test_builds_the_migration_chain_by_hand():
+    """#252. Four files had each written their own loop over the migrations directory,
+    raising the chain afresh in every test and skipping every template — which is how the
+    Windows job came to time out. A schema before a migration comes from `migrate_before`;
+    the full schema from `run_migrations`. A file that lists the migrations directory and
+    runs `executescript` is doing neither."""
+    from pathlib import Path
+
+    tests_root = Path(__file__).resolve().parents[1]
+    allowed = {tests_root / "support" / "migration_steps.py"}
+    offenders = sorted(
+        str(path.relative_to(tests_root))
+        for path in tests_root.rglob("*.py")
+        if path not in allowed
+        and path != Path(__file__).resolve()
+        and "executescript" in (text := path.read_text(encoding="utf-8"))
+        and "listdir(" in text
+        and "migrations" in text.lower()
+    )
+
+    assert offenders == [], (
+        "these build the migration chain by hand; use migrate_before: " + ", ".join(offenders)
+    )
