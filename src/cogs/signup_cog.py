@@ -199,6 +199,18 @@ class SignupButtonView(discord.ui.View):
             )
             return
 
+        # A past account of a driver signs nobody up (issue #243). The signup would be kept
+        # under an account the driver no longer uses, and the account belongs to that driver
+        # already, so it may not start a profile of its own either.
+        current = await bot.driver_service.current_account(server_id, discord_user_id)  # type: ignore[attr-defined]
+        if current != discord_user_id:
+            await interaction.response.send_message(
+                f"⛔ This account is a past account of a driver in this league. Sign up from "
+                f"<@{current}>, or ask a league manager to make this account the current one.",
+                ephemeral=True,
+            )
+            return
+
         profile = await bot.driver_service.get_profile(server_id, discord_user_id)  # type: ignore[attr-defined]
         if profile is not None and profile.current_state != DriverState.NOT_SIGNED_UP:
             if profile.current_state in IN_PROGRESS_STATES:

@@ -91,7 +91,10 @@ def _bot(profile: DriverProfile | None):
                 )
             )
         ),
-        driver_service=SimpleNamespace(get_profile=AsyncMock(return_value=profile)),
+        driver_service=SimpleNamespace(
+            get_profile=AsyncMock(return_value=profile),
+            current_account=AsyncMock(side_effect=lambda _s, a: str(a)),
+        ),
         wizard_service=SimpleNamespace(start_wizard=AsyncMock(return_value=None)),
     )
 
@@ -198,3 +201,29 @@ class TestEveryState:
 
         assert covered == set(DriverState) - {DriverState.NOT_SIGNED_UP}
         assert not (signup_cog.IN_PROGRESS_STATES & signup_cog.APPROVED_STATES)
+
+
+# ── A past account of a driver (issue #243) ───────────────────────────────
+
+
+class TestAPastAccount:
+    """An account a driver has since moved on from signs nobody up."""
+
+    async def test_a_past_account_is_refused_and_pointed_at_the_current_one(self):
+        bot = _bot(None)
+        bot.driver_service.current_account = AsyncMock(return_value="777")
+
+        interaction = await _press_the_button(bot)
+
+        assert "past account of a driver" in interaction.reply
+        assert "<@777>" in interaction.reply
+        bot.wizard_service.start_wizard.assert_not_awaited()
+        bot.driver_service.get_profile.assert_not_awaited()
+
+    async def test_the_current_account_is_not_mistaken_for_a_past_one(self):
+        bot = _bot(None)
+
+        await _press_the_button(bot)
+
+        bot.driver_service.current_account.assert_awaited_once_with(SERVER_ID, USER_ID)
+        bot.wizard_service.start_wizard.assert_awaited()

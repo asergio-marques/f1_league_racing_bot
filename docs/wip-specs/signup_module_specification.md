@@ -59,6 +59,7 @@ existing whether or not this module is enabled.
 
 ## Signup wizard
 ### Wizard flow
+    - The signup button shall refuse an account that is a past account of a driver of the league, and name the driver's current account: a signup is made from the account the driver uses now, and a league manager may make a past account current again with the "driver reassign" command.
     - Once the signup button is pressed by someone in the "not signed up" state, the bot will create a new channel titled "username-signup", in which the signup wizard shall be engaged. This channel shall be visible only to the user who engaged the signup wizard, the holders of the interaction role and the holders of the league admin role.
     - A league manager and a league admin alike shall be able to type at will in the signup channels of all drivers.
     - The start of the signup wizard shall change the state of the driver from "not signed up" to "pending signup completion".
