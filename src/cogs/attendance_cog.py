@@ -449,20 +449,19 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         )
         return
 
-    # Look up driver profile by Discord user ID (FR-011)
-    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
-        cur = await db.execute(
-            "SELECT id FROM driver_profiles WHERE server_id = ? AND CAST(discord_user_id AS INTEGER) = ?",
-            (guild_id, discord_user_id),
-        )
-        profile_row = await cur.fetchone()
+    # Look up driver profile by Discord user ID (FR-011). Any account the driver has held
+    # answers for them, a past one as well as the current (issue #243).
+    from services.driver_service import resolve_driver_profile_id
 
-        if profile_row is None:
+    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        resolved_profile_id = await resolve_driver_profile_id(guild_id, discord_user_id, db)
+
+        if resolved_profile_id is None:
             await interaction.response.send_message(
                 "❌ You are not registered as a driver in this server.", ephemeral=True
             )
             return
-        driver_profile_id: int = profile_row["id"]
+        driver_profile_id: int = resolved_profile_id
 
         # Get round info
         cur = await db.execute(
