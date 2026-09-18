@@ -240,3 +240,60 @@ async def test_the_league_holds_one_live_season(db_path):
     db.execute("INSERT INTO seasons (start_date, status) VALUES ('2024-01-01', 'CANCELLED')")
     db.close()
 
+
+# ── Image module defaults ─────────────────────────────────────────────────────
+
+
+async def test_the_image_directory_defaults_match_the_constants(db_path):
+    """Written twice — as column defaults in SQL and in `ASSET_DIRECTORIES` — and must not drift:
+    a row created by `create_with_defaults` carries the SQL defaults, and the rest of the module
+    reads the constants."""
+    from models.image_constants import ASSET_DIRECTORIES
+
+    db = _connect(db_path)
+    db.execute("INSERT INTO image_config (id) VALUES (1)")
+    db.row_factory = sqlite3.Row
+    row = db.execute("SELECT * FROM image_config").fetchone()
+    db.close()
+
+    for column, (_command, default, _packaged) in ASSET_DIRECTORIES.items():
+        assert row[column] == default, column
+        assert default.startswith("resources/league/"), column
+
+
+async def test_the_template_directory_stays_with_the_packaged_templates(db_path):
+    """Templates have no packaged second tier, so a fresh install that pointed it at the
+    league's empty folder could render nothing at all."""
+    db = _connect(db_path)
+    db.execute("INSERT INTO image_config (id) VALUES (1)")
+    assert db.execute("SELECT template_directory FROM image_config").fetchone() == (
+        "resources/defaults/templates",
+    )
+    db.close()
+
+
+async def test_per_tier_colours_start_switched_off(db_path):
+    db = _connect(db_path)
+    db.execute("INSERT INTO image_config (id) VALUES (1)")
+    assert db.execute("SELECT per_tier_colour_enabled FROM image_config").fetchone() == (0,)
+    db.close()
+
+
+async def test_a_tier_holds_one_colour_per_slot(db_path):
+    """The primary key is what makes a second colour replace the first rather than add to it."""
+    db = _connect(db_path)
+    for colour in ("#111111", "#222222"):
+        db.execute(
+            "INSERT INTO image_tier_colour (division_slug, slot, colour) "
+            "VALUES ('division_1', 'accent', ?) "
+            "ON CONFLICT(division_slug, slot) DO UPDATE SET colour = excluded.colour",
+            (colour,),
+        )
+    db.execute("INSERT INTO image_tier_colour VALUES ('division_2', 'accent', '#A78BFA')")
+    db.commit()
+    rows = db.execute(
+        "SELECT division_slug, slot, colour FROM image_tier_colour ORDER BY division_slug"
+    ).fetchall()
+    db.close()
+
+    assert rows == [("division_1", "accent", "#222222"), ("division_2", "accent", "#A78BFA")]
