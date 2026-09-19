@@ -45,6 +45,11 @@ SERVER_ID = 12008
 SEASON_ID = 1
 DIVISION_ID = 11
 
+#: Half an hour before the race: past every horizon of the packaged 5 / 2 / 2, and still a round
+#: to be run. A test that means "every phase is overdue" seeds this rather than a past date,
+#: which a restart passes over altogether.
+RACE_SOON = 1 / 48
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -56,12 +61,15 @@ async def _make_db(
     *,
     rounds=((1, 3, False, False, False, "NORMAL"),),
     season_status: str = "ACTIVE",
+    division_status: str = "ACTIVE",
+    round_status: str = "NOT_RUN",
     servers=(SERVER_ID,),
 ) -> str:
     """Rounds as ``(id, days_until, p1_done, p2_done, p3_done, format)``.
 
-    *days_until* is relative to now, so a negative value puts the round in the past and
-    every horizon behind it — the test cannot rot into passing.
+    *days_until* is relative to now, so the test cannot rot into passing. A negative value
+    puts the race itself in the past; ``RACE_SOON`` puts every horizon behind the round and
+    the race still ahead of it.
     """
     db_path = os.path.join(str(tmp_path), "phase_recovery.db")
     await run_migrations(db_path)
@@ -78,16 +86,21 @@ async def _make_db(
                 (SEASON_ID + index, season_status),
             )
             await db.execute(
-                "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
-                "VALUES (?, ?, ?, 1, 555)",
-                (DIVISION_ID + index, SEASON_ID + index, f"Division {index + 1}"),
+                "INSERT INTO divisions (id, season_id, name, tier, mention_role_id, status) "
+                "VALUES (?, ?, ?, 1, 555, ?)",
+                (
+                    DIVISION_ID + index,
+                    SEASON_ID + index,
+                    f"Division {index + 1}",
+                    division_status,
+                ),
             )
         for round_id, days_until, p1, p2, p3, fmt in rounds:
             division = DIVISION_ID + (0 if round_id < 100 else 1)
             await db.execute(
                 "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
-                "scheduled_at, phase1_done, phase2_done, phase3_done) "
-                "VALUES (?, ?, ?, ?, 'Silverstone Circuit', ?, ?, ?, ?)",
+                "scheduled_at, phase1_done, phase2_done, phase3_done, status) "
+                "VALUES (?, ?, ?, ?, 'Silverstone Circuit', ?, ?, ?, ?, ?)",
                 (
                     round_id,
                     division,
@@ -97,6 +110,7 @@ async def _make_db(
                     int(p1),
                     int(p2),
                     int(p3),
+                    round_status,
                 ),
             )
         await db.commit()
@@ -150,8 +164,9 @@ async def _recover(bot, *, config=None, reads: list | None = None):
 
 
 async def test_a_round_past_every_horizon_fires_all_three(tmp_path):
-    """A restart after a round's phase 3 horizon has to catch up on everything."""
-    db_path = await _make_db(tmp_path, rounds=((1, -1, False, False, False, "NORMAL"),))
+    """A restart after a round's phase 3 horizon, and before its race, has to catch up on
+    everything."""
+    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, False, False, "NORMAL"),))
 
     fired = await _recover(_bot(db_path))
 
@@ -178,7 +193,7 @@ async def test_only_the_horizons_that_have_passed_fire(tmp_path):
 
 async def test_a_phase_already_done_is_not_fired_again(tmp_path):
     """Otherwise every restart would republish the whole season's forecasts."""
-    db_path = await _make_db(tmp_path, rounds=((1, -1, True, True, False, "NORMAL"),))
+    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, True, True, False, "NORMAL"),))
 
     fired = await _recover(_bot(db_path))
 
@@ -190,8 +205,8 @@ async def test_every_overdue_round_is_recovered(tmp_path):
     db_path = await _make_db(
         tmp_path,
         rounds=(
-            (1, -2, False, True, True, "NORMAL"),
-            (2, -1, False, True, True, "NORMAL"),
+            (1, RACE_SOON, False, True, True, "NORMAL"),
+            (2, RACE_SOON / 2, False, True, True, "NORMAL"),
         ),
     )
 
@@ -233,9 +248,9 @@ async def test_the_configuration_is_read_once(tmp_path):
     db_path = await _make_db(
         tmp_path,
         rounds=(
-            (1, -1, False, True, True, "NORMAL"),
-            (2, -1, False, True, True, "NORMAL"),
-            (3, -1, False, True, True, "NORMAL"),
+            (1, RACE_SOON, False, True, True, "NORMAL"),
+            (2, RACE_SOON, False, True, True, "NORMAL"),
+            (3, RACE_SOON, False, True, True, "NORMAL"),
         ),
     )
     reads: list[str] = []
@@ -251,7 +266,7 @@ async def test_the_configuration_is_read_once(tmp_path):
 
 
 async def test_a_server_with_weather_off_recovers_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, rounds=((1, -1, False, False, False, "NORMAL"),))
+    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, False, False, "NORMAL"),))
 
     assert await _recover(_bot(db_path, weather_enabled=False)) == []
 
@@ -259,7 +274,7 @@ async def test_a_server_with_weather_off_recovers_nothing(tmp_path):
 async def test_a_server_with_weather_off_is_never_asked_for_its_configuration(tmp_path):
     """The module gate runs first, so a server that does not use the config is not queried
     for it — the module-output rule applied to reads."""
-    db_path = await _make_db(tmp_path, rounds=((1, -1, False, False, False, "NORMAL"),))
+    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, False, False, "NORMAL"),))
     reads: list[str] = []
 
     await _recover(_bot(db_path, weather_enabled=False), reads=reads)
@@ -271,7 +286,7 @@ async def test_a_mystery_round_is_excluded_at_the_query(tmp_path):
     """It has no phases to recover — its one notice is posted by a different path — so
     firing one would publish a forecast for a round whose whole point is that there is
     not one."""
-    db_path = await _make_db(tmp_path, rounds=((1, -1, False, False, False, "MYSTERY"),))
+    db_path = await _make_db(tmp_path, rounds=((1, RACE_SOON, False, False, False, "MYSTERY"),))
 
     assert await _recover(_bot(db_path)) == []
 
@@ -281,7 +296,7 @@ async def test_a_season_not_running_recovers_nothing(tmp_path):
     forecast owing."""
     db_path = await _make_db(
         tmp_path,
-        rounds=((1, -1, False, False, False, "NORMAL"),),
+        rounds=((1, RACE_SOON, False, False, False, "NORMAL"),),
         season_status="SETUP",
     )
 
@@ -293,7 +308,7 @@ async def test_a_naive_timestamp_is_read_as_utc(tmp_path):
     the horizon would move by the host's offset, so the same database would recover
     differently on the Pi than on a developer's machine."""
     db_path = await _make_db(tmp_path)
-    naive = (datetime.now(timezone.utc) - timedelta(days=1)).replace(tzinfo=None)
+    naive = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None)
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE rounds SET scheduled_at = ? WHERE id = 1", (naive.isoformat(),)
