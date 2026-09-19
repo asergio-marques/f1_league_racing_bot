@@ -42,9 +42,8 @@ Three of these exist; two would need filing before the issues that depend on the
 |---|---|
 | "Principal division" defined in core | filed, #278 |
 | The base role and signed-up role moved to core | filed, #276 |
-| A hub channel in core, with a panel each module adds to | **to file** — blocks S23 |
-| Constitution: the licence is the ban state (Principle VIII) | **to file**, or done under S01 via `/speckit-constitution` |
-| Constitution: "Upheld" means the initial verdict stands | **to file**, or done under S15 |
+| A hub channel in core, with a panel each module adds to | filed, #279 — blocks S23 |
+| Constitution: the licence is the ban state, and "Upheld" means the initial verdict stands | filed, #280 — blocks S01 and S15 |
 
 The 21 cross-document edits the review file records are attached below to the issue that makes
 each true, rather than left as a list.
@@ -56,7 +55,7 @@ each true, rather than left as a list.
 **Labels:** `module-steward`, `feature-request`, `Critical`
 **Rules:** STW-CON-001..020, 040..041, 055..067, 073..074
 **Depends on:** —
-**Blocked by:** #278 (principal division)
+**Blocked by:** #278 (principal division), #280 (the constitution's ban state)
 
 The licence is what every other issue writes to, so it comes first. This issue brings the record
 itself and the concepts that describe what may sit upon it.
@@ -301,6 +300,7 @@ charges, and gets it back if the stewards change the verdict.
 **Labels:** `module-steward`, `feature-request`, `High`
 **Rules:** STW-CYC-092..107; STW-CON-035
 **Depends on:** S14, S11, S30
+**Blocked by:** #280 (the constitution's appeals lifecycle)
 
 The appeal ballot with its Uphold or Change decision, lines prefilled from the initial verdict and
 greyed out until the decision changes, the grounds of appeal as settled, the appeal verdicts
@@ -425,7 +425,7 @@ count resuming where it stood when the module is enabled again.
 **Labels:** `module-steward`, `feature-request`, `Medium`
 **Rules:** STW-LIC-001..011
 **Depends on:** S01
-**Blocked by:** the hub channel, which core does not have and which is **still to file**
+**Blocked by:** #279 (the hub channel)
 
 "View licence" on the hub panel: any member names a driver and reads their licence, seen by them
 alone — active points with their expiries, active bans with where each is served, the ban history,
@@ -756,13 +756,12 @@ rules — four near-identical auto-rule forms), S26 (63 — the whole conduct ou
 toggles), S06 (55 — the outcome table and its five commands). Each is internally repetitive, which
 is why I left them whole.
 
-**5. Two prerequisites still need issues of their own:**
+**5. The two prerequisites that needed issues now have them.**
 
-- **A hub channel in core**, with a panel each enabled module adds an option to. S23 cannot be
-  built without it, and #258 and #260 are both waiting on the same surface.
-- **The constitution amendments**, unless they are folded into S01 and S15 as those are built. The
-  licence as the ban state (Principle VIII) and the appeals lifecycle wording both go through
-  `/speckit-constitution`.
+Both are now filed, on the same milestone: **#279** for the hub channel, which S23 cannot be built
+without and which #258 and #260 are also waiting on, and **#280** for the constitution, carrying
+the licence as the ban state and the appeals lifecycle wording as one amendment — one
+`/speckit-constitution` run, one version bump, one sync impact report.
 
 ## Housekeeping when these are filed
 
