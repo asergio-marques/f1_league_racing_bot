@@ -223,19 +223,6 @@ class SeasonService:
             row = await cursor.fetchone()
         return row[0] if row else 0
 
-    async def count_persisted_seasons(self) -> int:
-        """Return the count of all persisted (non-SETUP) seasons.
-
-        Includes ACTIVE, COMPLETED, and CANCELLED seasons — every season whose
-        number has already been committed.
-        """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT COUNT(id) FROM seasons WHERE status != 'SETUP'",
-            )
-            row = await cursor.fetchone()
-        return row[0] if row else 0
-
     async def complete_season(self, season_id: int) -> None:
         """Transition a season to COMPLETED (archive it in-place)."""
         async with get_connection(self._db_path) as db:
