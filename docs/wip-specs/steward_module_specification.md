@@ -409,8 +409,9 @@
   - When saving, a directory shall be created with the unique ID of the investigation, and the channel content shall be saved to that directory as "channel.json".
   - Any attached videos and images will be downloaded and saved, with their original filenames, to the same directory. This includes the content from the original message.
 
-## Stewarding cycle
-- All inputs of the stewarding cycle must be auditable via the steward log channel. Attempts to file a report (and its data), driver addition/removal to tickets, etc etc etc. All logs must include the display name (and user ID) of the input.
+## Tickets
+- What this section sets out holds for every ticket, a report, an appeal and a CoC investigation alike, save where a cycle sets out otherwise. For a CoC investigation, its involved users stand where this section names involved drivers. An investigation has no initiator among its parties: the steward who opened it holds only a steward's place in it, and where this section names the one who initiated the ticket, it names no one in an investigation.
+- All inputs of the stewarding cycle and of the conduct cycle must be auditable via the steward log channel. Attempts to file a report or an investigation (and its data), driver or user addition/removal to tickets, etc etc etc. All logs must include the display name (and user ID) of the input.
 - It is imperative that the stewarding team is seen as a unified front.
   - The effective head steward of a ticket is the face of the stewarding team to the users of that ticket, and may speak to them under their own name. They are its mouthpiece only.
   - No message a driver or other user can see shall attribute a decision, a vote, a request or a justification to any single steward, the effective head steward included. The decisions of the stewarding team are the team's as a whole.
@@ -419,6 +420,86 @@
     - A request made by a driver is no exchange between stewards, and shall be answered in the ticket's channel.
     - Deliberation, from which the users of the ticket are shut out, takes place in the ticket's channel.
   - However, as stated above, steward logs shall identify them when needed.
+
+### The effective head steward of a ticket
+- If the effective head steward is one of the involved drivers, or has a conflict of interest as defined by "steward team conflict-toggle", the bot will post in the steward command channel a message with a button to assign effective head steward for the ticket to someone else of the stewarding team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective stewarding team for the ticket.
+  - If the effective head steward does not assign anyone else by the time the ticket's deliberation phase is reached, the bot shall choose one for this position: the temporary head steward, where one is in post and is neither an involved party nor holds a conflict of interest upon the ticket; otherwise, of the members of the effective stewarding team who are neither, the one who joined the stewarding team earliest.
+
+### While a ticket is open to its parties
+- A ticket is open to its parties during the defence submission of a report or a CoC investigation, and during the appeal submission of an appeal.
+- Once this phase is entered, the following buttons will be posted on the channel after the header message is posted:
+  - Add driver - Can be used by members of the effective stewarding team for this ticket, by the one who initiated the ticket, and by its involved drivers. Brings a driver into the ticket, most often one believed to hold footage or evidence of use in assessing the incident. When pressed, a form is opened so that one driver is named (mandatory) and a justification is given. The exact behaviour depends on who pressed it:
+    - If pressed by the effective head steward, the justification is optional. When confirmed, the driver will be added to the ticket.
+    - If pressed by a regular member of the effective stewarding team, the justification is mandatory. When confirmed, the bot will post in the steward command channel a message tagging the effective head steward for the ticket, stating that a steward has asked for that driver to be added, and printing the justification. If approved, then the driver will be added to the ticket, and the request process message will be deleted. If rejected, the bot will post a message to note that the request was rejected, and the request process message will be deleted.
+    - If pressed by the one who initiated the ticket or an involved driver, the justification is mandatory. When confirmed, the bot will post the request in the ticket's channel, for the effective head steward to approve or reject there. If approved, then the driver will be added to the ticket; if rejected, the bot will note so. The request message will be deleted either way.
+    - When added, the driver will be given the same permissions as other involved drivers.
+    - The command is rejected if the ticket already holds 25 involved drivers, if the driver named holds no seat in the division, full-time or reserve, if they are the one who initiated the ticket, if they are in the involved drivers list already, or if the ticket is already in report deliberation or appeal deliberation.
+  - Remove driver - Can be used by members of the effective stewarding team for this ticket, by the one who initiated the ticket, and by its involved drivers. Takes a driver out of the list of involved drivers, and removes their permissions as an involved driver. When pressed, a form is opened so that one involved driver is named (mandatory) and a justification is given. The exact behaviour depends on who pressed it:
+    - If pressed by the effective head steward, the justification is optional. When confirmed, the driver will be removed from the ticket.
+    - If pressed by a regular member of the effective stewarding team, the justification is mandatory. When confirmed, the bot will post in the steward command channel a message tagging the effective head steward for the ticket, identifying the driver to be removed and printing the justification. If approved, then the driver will be removed from the ticket, and the request process message will be deleted. If rejected, the bot will post a message to note that the request was rejected, and the request process message will be deleted.
+    - If pressed by the one who initiated the ticket or an involved driver, the justification is mandatory. When confirmed, the bot will post the request in the ticket's channel, for the effective head steward to approve or reject there. If approved, then the driver will be removed from the ticket; if rejected, the bot will note so. The request message will be deleted either way.
+    - The command is rejected if the targeted user is the one who initiated the ticket, or if they are not in the involved drivers list, or if the ticket is already in report deliberation or appeal deliberation.
+  - Request exclusion - Can be used by any member of the effective stewarding team for this ticket. The exact behavior depends on who triggered the exclusion:
+    - If the one requesting this exclusion is a regular member of the effective stewarding team, a modal is opened so that a justification is input (mandatory). When confirmed, the bot will post in the steward command channel a message tagging the effective head steward for the ticket and identifying the steward that requested the exclusion, plus the justification. If approved, then the steward will be removed from the effective stewarding team for this ticket, and mentioned in a message in the steward command channel informing them of it. If rejected, then a modal will be opened to assign a justification (optional), and after confirmation, the steward who requested the exclusion will be mentioned in a message in the steward command channel informing them of the decision and the justification given.
+    - If the one requesting this exclusion is the effective head steward, a modal is opened so that a justification is input and another member of the effective stewarding team is mentioned, so that they will be assigned effective head steward privileges for this ticket. Once confirmed, the member will be requested to accept or reject. If accepted, they are made the effective head steward for the ticket's effective stewarding team. If rejected, then a modal will be opened to assign a justification (optional), and after confirmation, the steward will be mentioned in a message in the steward command channel informing of the decision.
+      - The effective head steward remains so until a member accepts. After a rejection, they may name another member of the effective stewarding team, as many times as they wish.
+      - Where no member has accepted by the time the deliberation phase is reached, the bot shall choose one as it chooses a replacement for an effective head steward who has not assigned one, the effective head steward who asked to be excluded being passed over.
+      - Once a member accepts, the former effective head steward is excluded from the ticket and leaves its effective stewarding team.
+    - A member of the effective stewarding team who has cast a ballot shall be refused an exclusion. They shall remove their ballot first, and may then request it.
+  - Mute - Can be used by any member of the effective stewarding team for this ticket. When pressed, a modal is opened so that the user inputs 1..n mentions of users from whom to remove write message/attach file permissions.
+    - Until the deliberation phase, the command is rejected for any user who is neither the one who initiated the ticket nor in the involved drivers list.
+    - During the deliberation phase, it applies to members of the effective stewarding team instead, and only the effective head steward may use it upon them; the effective head steward cannot be its target. A steward so muted loses only the writing of messages and the attaching of media in the channel: they may still read it, cast and change their ballot, and request exclusion.
+  - Unmute - Can be used by any member of the effective stewarding team for this ticket. When pressed, a modal is opened so that the user inputs 1..n mentions of users to whom to get write message/attach file permissions.
+    - Until the deliberation phase, the command is rejected for any user who is neither the one who initiated the ticket nor in the involved drivers list.
+    - During the deliberation phase, it applies to members of the effective stewarding team instead, and only the effective head steward may use it upon them; the effective head steward cannot be its target. A steward so muted loses only the writing of messages and the attaching of media in the channel: they may still read it, cast and change their ballot, and request exclusion.
+- The buttons above remain in the channel through the deliberation phase, save "Add driver" and "Remove driver", which shall be withdrawn once it begins: the involved drivers are fixed once voting opens, so that every ballot covers the same drivers. "Request exclusion", the effective head steward's handover among it, "Mute" and "Unmute" remain available.
+- When a driver is added to a ticket, they will be considered an involved driver, and given the same permissions as other involved drivers.
+- When a driver is removed from a ticket, they will no longer be considered an involved driver, and the permissions of an involved driver will be removed from him.
+- When a driver is added to or removed from a ticket, the bot will edit the "header message" (containing the post information) to account for the addition/removal, and post a new message informing of this change, mentioning the driver and a justification if given.
+- If a driver was added to or removed from a ticket as a result of a request, then the message with the request will be deleted after confirmation/rejection.
+- During this phase, regular members of the effective stewarding team only have read permission for the channel. They shall be able to utilize the aforementioned buttons (as per their own specification).
+- During this phase, the effective head steward shall have read/write and attach media permission for the channel.
+- During this phase, the user who initiated the ticket and all users marked as involved drivers shall have read/write and attach media permission for the channel.
+- This phase cannot be terminated early.
+
+### Deliberation
+- Once this phase is entered, the involved drivers lose all permission to read, write or attach media to the channel.
+- Once this phase is entered, the members of the effective stewarding team will gain the permission to write or attach media to the channel.
+- Once this phase is entered, a single button titled "Vote" is posted by the bot. This button will serve for members of the effective stewarding team to cast, modify, or remove their ballot on the outcome of the ticket. A ballot is one steward's whole view of the incident, or of the case. The button opens the steward's ballot, seen by them alone, which is as follows, save where a cycle sets out otherwise:
+  - Steward's display name - Shown, and not to be changed. Display name of the steward whose ballot it is.
+  - Ticket ID - Shown, and not to be changed. Unique ID of the report, appeal or investigation which is being voted on.
+  - For each involved driver:
+    - Outcome - Dropdown - Mandatory - Dropdown containing the outcomes the cycle offers, and NFA, displaying their IDs, allowing the steward to select 1 of them. NFA by default.
+    - Infringement - String - Optional - String standing for the ID/number which was allegedly violated by that driver. Useful for final verdict write-up.
+  - Justification - String - Mandatory - A free form text with a 1000 character limit for the steward to give their reasonings for the whole ballot.
+  - The ballot as it stands - every involved party's outcome, kept in view in whole while any one of them is being changed, so that the steward confirms their whole view and not a single choice.
+  - "Cancel", "Remove vote" where the steward has already voted, and "Confirm".
+- A steward's ballot is only valid via "Confirm" if all mandatory fields are filled.
+- Once a steward's ballot is deemed valid, all data for the ballot will be recorded and persisted.
+- If a steward reopens their ballot after having voted, it will show their ballot as it was cast.
+- A ballot shall be counted whole. Two ballots are the same option only where they give every involved driver the same outcome, and no ballot shall be divided by driver for counting.
+- The bot shall show no steward the ballots of others, nor any count of them, before the deliberation closes. Stewards may discuss in the channel and change their ballots until it closes.
+- If the steward has chosen "Confirm" upon reopening their ballot, the previously persisted ballot will be modified to align with the current information in the modal.
+- If the steward has chosen "Cancel" upon reopening their ballot, no change is to occur to their current ballot.
+- If the steward has chosen "Remove vote" upon reopening their ballot, the previously persisted ballot will be deleted, and it will be as if the steward had never voted.
+- At the end of the countdown period for this phase, all stewarding team members except for the effective head steward lose message write permission for the ticket's channel.
+- At the end of the countdown period for this phase, the ballots will be counted. For the purpose of counting, only cast ballots will be taken into consideration for the determination of plurality. This means that in a situation where the effective stewarding team for a ticket consists of 9 people, and only 5 of those people have voted, only those 5 ballots will be used for assessing the ultimate verdict.
+- If any one option reaches plurality without a tie, the ultimate result of the ticket will be that option: the outcome it gives each involved driver.
+- If two or more options are tied, and the effective head steward's ballot is one of them, the ultimate result of the ticket will be the option of the effective head steward.
+- If two or more options are tied, and the effective head steward's ballot is none of them (also covers the possibility of the effective head steward not voting at all), the bot will trigger a cascade of events:
+  - For a report or an appeal, the bot shall post a message on the verdicts channel saying that the round's verdicts are slightly delayed, in the words each cycle gives. For a CoC investigation, no such message is posted.
+  - In the ticket's channel, the bot shall post a button per option tied as the most voted, each showing the outcome it gives each involved driver. The one assigned as effective head steward will be the only one able to use these buttons. The option chosen dictates the ultimate verdict.
+  - A timer counts down 1 hour from the moment the buttons are posted; if the effective head steward has not picked an option once this timer runs out, then the option that reached its final count the earliest will be the final verdict.
+    - A ballot's time is the moment it was last confirmed. An option reaches its final count at the latest time among its ballots, and of the tied options, the one whose moment came first shall be the final verdict.
+- Once the ultimate result of a ticket is reached through any of the mediums above, the bot will:
+  - Post a message informing the effective head steward of the decision reached (the outcome given each involved driver, and for each the infringement most often given them among the ballots of the winning option), providing a default justification text determined via the method configured by "steward justification final-mode" (or "steward justification final-mode", if the primary method is not feasible).
+  - Buttons usable only by the effective head steward of the ticket, one for accepting the default justification text as provided by the bot as-is, another to modify the default justification via a modal (text is already autoloaded into modal prompt).
+  - In a message different from the one above, the justifications of all ballots of the winning option will be presented as a reference.
+  - Start a timer counting down 1 hour from the moment the buttons are posted; if the effective head steward has not confirmed the justification text once this timer runs out, then the one provided by the bot will be utilized for the verdict post.
+- Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
+  - The format of the final output is set out under Verdict output.
+
+## Stewarding cycle
 - By default, the bot shall post a "Ticket submission is currently closed for <X> division" in a division's ticket channel.
 - If appeals are not enabled, once a report's verdict is posted in the appropriate channel by the end of the report deliberation phase, the incident (report) is deemed closed and final.
 - If appeals are enabled, if a report is not appealed by the time the appeal submission phase ends, the incident (report) is deemed closed and final.
@@ -467,8 +548,6 @@
   - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
 - After valid submission, the report will be henceforth identified with a unique ID following the format "S<x>_D<y>_R<z>_<w>", where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round, always written in three digits (001, 002 … 999), so that the IDs of a round sort in the order the reports were lodged.
 - After valid submission, a channel bearing the report's unique ID as the title will be created, with the information from the modal dialog input by the complainant summarized and posted as the header message in the channel. All involved drivers shall be mentioned properly in this message.
-- If the effective head steward is one of the involved drivers, or has a conflict of interest as defined by "steward team conflict-toggle", the bot will post in the steward command channel a message with a button to assign effective head steward for the ticket to someone else of the stewarding team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective stewarding team for the ticket.
-  - If the effective head steward does not assign anyone else by the time the report deliberation phase is reached, the bot shall choose one for this position: the temporary head steward, where one is in post and is neither an involved party nor holds a conflict of interest upon the ticket; otherwise, of the members of the effective stewarding team who are neither, the one who joined the stewarding team earliest.
 - After valid submission, the ticket's state changes immediately to the defence submission stage, and a report data object is recorded in the database associated to this season, division and round.
   - Defence submission for the ticket stays open until the period configured by "steward report defence-period" has run from the end of report submission. Every ticket of the round thus leaves defence submission at the same moment, and a ticket lodged in the last minute of report submission still has the whole of that period for its defence.
 - There is no limit upon the number of reports a driver may lodge in a round.
@@ -482,79 +561,13 @@
 
 ### Defence submission
 - A ticket enters this phase the moment it is lodged. Once the period of time configured for the duration of the report submission stage elapses, a countdown with the period of time configured by "steward report defence-period" will start, and once it elapses, every ticket of the round will enter the report deliberation phase together.
-- Once this phase is entered, the following buttons will be posted on the channel after the header message is posted:
-  - Add driver - Can be used by members of the effective stewarding team for this ticket, by the one who initiated the ticket, and by its involved drivers. Brings a driver into the ticket, most often one believed to hold footage or evidence of use in assessing the incident. When pressed, a form is opened so that one driver is named (mandatory) and a justification is given. The exact behaviour depends on who pressed it:
-    - If pressed by the effective head steward, the justification is optional. When confirmed, the driver will be added to the ticket.
-    - If pressed by a regular member of the effective stewarding team, the justification is mandatory. When confirmed, the bot will post in the steward command channel a message tagging the effective head steward for the ticket, stating that a steward has asked for that driver to be added, and printing the justification. If approved, then the driver will be added to the ticket, and the request process message will be deleted. If rejected, the bot will post a message to note that the request was rejected, and the request process message will be deleted.
-    - If pressed by the one who initiated the ticket or an involved driver, the justification is mandatory. When confirmed, the bot will post the request in the ticket's channel, for the effective head steward to approve or reject there. If approved, then the driver will be added to the ticket; if rejected, the bot will note so. The request message will be deleted either way.
-    - When added, the driver will be given the same permissions as other involved drivers.
-    - The command is rejected if the ticket already holds 25 involved drivers, if the driver named holds no seat in the division, full-time or reserve, if they are the one who initiated the ticket, if they are in the involved drivers list already, or if the ticket is already in report deliberation or appeal deliberation.
-  - Remove driver - Can be used by members of the effective stewarding team for this ticket, by the one who initiated the ticket, and by its involved drivers. Takes a driver out of the list of involved drivers, and removes their permissions as an involved driver. When pressed, a form is opened so that one involved driver is named (mandatory) and a justification is given. The exact behaviour depends on who pressed it:
-    - If pressed by the effective head steward, the justification is optional. When confirmed, the driver will be removed from the ticket.
-    - If pressed by a regular member of the effective stewarding team, the justification is mandatory. When confirmed, the bot will post in the steward command channel a message tagging the effective head steward for the ticket, identifying the driver to be removed and printing the justification. If approved, then the driver will be removed from the ticket, and the request process message will be deleted. If rejected, the bot will post a message to note that the request was rejected, and the request process message will be deleted.
-    - If pressed by the one who initiated the ticket or an involved driver, the justification is mandatory. When confirmed, the bot will post the request in the ticket's channel, for the effective head steward to approve or reject there. If approved, then the driver will be removed from the ticket; if rejected, the bot will note so. The request message will be deleted either way.
-    - The command is rejected if the targeted user is the one who initiated the ticket, or if they are not in the involved drivers list, or if the ticket is already in report deliberation or appeal deliberation.
-  - Request exclusion - Can be used by any member of the effective stewarding team for this ticket. The exact behavior depends on who triggered the exclusion:
-    - If the one requesting this exclusion is a regular member of the effective stewarding team, a modal is opened so that a justification is input (mandatory). When confirmed, the bot will post in the steward command channel a message tagging the effective head steward for the ticket and identifying the steward that requested the exclusion, plus the justification. If approved, then the steward will be removed from the effective stewarding team for this ticket, and mentioned in a message in the steward command channel informing them of it. If rejected, then a modal will be opened to assign a justification (optional), and after confirmation, the steward who requested the exclusion will be mentioned in a message in the steward command channel informing them of the decision and the justification given.
-    - If the one requesting this exclusion is the effective head steward, a modal is opened so that a justification is input and another member of the effective stewarding team is mentioned, so that they will be assigned effective head steward privileges for this ticket. Once confirmed, the member will be requested to accept or reject. If accepted, they are made the effective head steward for the ticket's effective stewarding team. If rejected, then a modal will be opened to assign a justification (optional), and after confirmation, the steward will be mentioned in a message in the steward command channel informing of the decision.
-      - The effective head steward remains so until a member accepts. After a rejection, they may name another member of the effective stewarding team, as many times as they wish.
-      - Where no member has accepted by the time the deliberation phase is reached, the bot shall choose one as it chooses a replacement for an effective head steward who has not assigned one, the effective head steward who asked to be excluded being passed over.
-      - Once a member accepts, the former effective head steward is excluded from the ticket and leaves its effective stewarding team.
-    - A member of the effective stewarding team who has cast a ballot shall be refused an exclusion. They shall remove their ballot first, and may then request it.
-  - Mute - Can be used by any member of the effective stewarding team for this ticket. When pressed, a modal is opened so that the user inputs 1..n mentions of users from whom to remove write message/attach file permissions.
-    - Until the deliberation phase, the command is rejected for any user who is neither the one who initiated the ticket nor in the involved drivers list.
-    - During the deliberation phase, it applies to members of the effective stewarding team instead, and only the effective head steward may use it upon them; the effective head steward cannot be its target. A steward so muted loses only the writing of messages and the attaching of media in the channel: they may still read it, cast and change their ballot, and request exclusion.
-  - Unmute - Can be used by any member of the effective stewarding team for this ticket. When pressed, a modal is opened so that the user inputs 1..n mentions of users to whom to get write message/attach file permissions.
-    - Until the deliberation phase, the command is rejected for any user who is neither the one who initiated the ticket nor in the involved drivers list.
-    - During the deliberation phase, it applies to members of the effective stewarding team instead, and only the effective head steward may use it upon them; the effective head steward cannot be its target. A steward so muted loses only the writing of messages and the attaching of media in the channel: they may still read it, cast and change their ballot, and request exclusion.
-- The buttons above remain in the channel through the deliberation phase, save "Add driver" and "Remove driver", which shall be withdrawn once it begins: the involved drivers are fixed once voting opens, so that every ballot covers the same drivers. "Request exclusion", the effective head steward's handover among it, "Mute" and "Unmute" remain available.
-- When a driver is added to a ticket, they will be considered an involved driver, and given the same permissions as other involved drivers.
-- When a driver is removed from a ticket, they will no longer be considered an involved driver, and the permissions of an involved driver will be removed from him.
-- When a driver is added to or removed from a ticket, the bot will edit the "header message" (containing the post information) to account for the addition/removal, and post a new message informing of this change, mentioning the driver and a justification if given.
-- If a driver was added to or removed from a ticket as a result of a request, then the message with the request will be deleted after confirmation/rejection.
-- During this phase, regular members of the effective stewarding team only have read permission for the channel. They shall be able to utilize the aforementioned buttons (as per their own specification).
-- During this phase, the effective head steward shall have read/write and attach media permission for the channel.
-- During this phase, the user who initiated the report and all users marked as involved drivers shall have read/write and attach media permission for the channel.
-- This phase cannot be terminated early.
+- The rules for a ticket open to its parties, set out under Tickets, hold throughout this phase.
 
 ### Report deliberation
-- Once this phase is entered, the involved drivers lose all permission to read, write or attach media to the channel.
-- Once this phase is entered, the members of the effective stewarding team will gain the permission to write or attach media to the channel.
 - Once this phase is entered, a countdown with the period of time configured by "steward report deliberation-period" will start.
 - Once this phase is entered, the bot shall post in the ticket's channel, for the effective head steward, the incident as the verdict is to describe it: proposed as the complaint, word for word. Buttons usable only by the effective head steward shall accept it as it stands, or open it for editing, prefilled. It may be settled at any time until the ultimate result is reached; where it has not been, it joins the justification in the hour that follows, and is published as proposed should that hour run out.
-- Once this phase is entered, a single button titled "Vote" is posted by the bot. This button will serve for members of the effective stewarding team to cast, modify, or remove their ballot on the outcome of the report. A ballot is one steward's whole view of the incident. The button opens the steward's ballot, seen by them alone, which is as follows:
-  - Steward's display name - Shown, and not to be changed. Display name of the steward whose ballot it is.
-  - Report ID - Shown, and not to be changed. Unique ID of the report which is being voted on.
-  - For each involved driver:
-    - Outcome - Dropdown - Mandatory - Dropdown containing the outcomes currently configured that are applicable to the session of the incident, and NFA, displaying their IDs, allowing the steward to select 1 of them. NFA by default.
-    - Infringement - String - Optional - String standing for the ID/number which was allegedly violated by that driver. Useful for final verdict write-up.
-  - Justification - String - Mandatory - A free form text with a 1000 character limit for the steward to give their reasonings for the whole ballot.
-  - The ballot as it stands - every involved party's outcome, kept in view in whole while any one of them is being changed, so that the steward confirms their whole view and not a single choice.
-  - "Cancel", "Remove vote" where the steward has already voted, and "Confirm".
-- A steward's ballot is only valid via "Confirm" if all mandatory fields are filled.
-- Once a steward's ballot is deemed valid, all data for the ballot will be recorded and persisted.
-- If a steward reopens their ballot after having voted, it will show their ballot as it was cast.
-- A ballot shall be counted whole. Two ballots are the same option only where they give every involved driver the same outcome, and no ballot shall be divided by driver for counting.
-- The bot shall show no steward the ballots of others, nor any count of them, before the deliberation closes. Stewards may discuss in the channel and change their ballots until it closes.
-- If the steward has chosen "Confirm" upon reopening their ballot, the previously persisted ballot will be modified to align with the current information in the modal.
-- If the steward has chosen "Cancel" upon reopening their ballot, no change is to occur to their current ballot.
-- If the steward has chosen "Remove vote" upon reopening their ballot, the previously persisted ballot will be deleted, and it will be as if the steward had never voted.
-- At the end of the countdown period for this phase, all stewarding team members except for the effective head steward lose message write permission for the report's channel.
-- At the end of the countdown period for this phase, the ballots will be counted. For the purpose of counting, only cast ballots will be taken into consideration for the determination of plurality. This means that in a situation where the effective stewarding team for a ticket consists of 9 people, and only 5 of those people have voted, only those 5 ballots will be used for assessing the ultimate verdict.
-- If any one option reaches plurality without a tie, the ultimate result of the report will be that option: the outcome it gives each involved driver.
-- If two or more options are tied, and the effective head steward's ballot is one of them, the ultimate result of the report will be the option of the effective head steward.
-- If two or more options are tied, and the effective head steward's ballot is none of them (also covers the possibility of the effective head steward not voting at all), the bot will trigger a cascade of events:
-  - The bot shall post a message on the verdicts channel saying "Report verdicts for round <x> are slightly delayed, please stand by."
-  - In the ticket's channel, the bot shall post a button per option tied as the most voted, each showing the outcome it gives each involved driver. The one assigned as effective head steward will be the only one able to use these buttons. The option chosen dictates the ultimate verdict.
-  - A timer counts down 1 hour from the moment the buttons are posted; if the effective head steward has not picked an option once this timer runs out, then the option that reached its final count the earliest will be the final verdict.
-    - A ballot's time is the moment it was last confirmed. An option reaches its final count at the latest time among its ballots, and of the tied options, the one whose moment came first shall be the final verdict.
-- Once the ultimate result of a report is reached through any of the mediums above, the bot will:
-  - Post a message informing the effective head steward of the decision reached (the outcome given each involved driver, and for each the infringement most often given them among the ballots of the winning option), providing a default justification text determined via the method configured by "steward justification final-mode" (or "steward justification final-mode", if the primary method is not feasible).
-  - Buttons usable only by the effective head steward of the ticket, one for accepting the default justification text as provided by the bot as-is, another to modify the default justification via a modal (text is already autoloaded into modal prompt).
-  - In a message different from the one above, the justifications of all ballots of the winning option will be presented as a reference.
-  - Start a timer counting down 1 hour from the moment the buttons are posted; if the effective head steward has not confirmed the justification text once this timer runs out, then the one provided by the bot will be utilized for the verdict post.
-- Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
-  - The format of the final output is set out under Verdict output.
+- The ballot of a report is as set out under Tickets. Its outcomes are those currently configured that are applicable to the session of the incident.
+- Where a tie is left unbroken, the message on the verdicts channel reads "Report verdicts for round <x> are slightly delayed, please stand by."
 - Only after the final output is determined for all reports pertaining to a given round of a given division, will they be posted, in the order the reports were lodged, which their IDs follow, in the verdicts channel.
 - The channel will not be deleted upon the publishing of the report verdicts. A ticket's channel is kept until its round's stewarding cycle closes, the appeal submission and appeal deliberation stages having need of it.
 - The report deliberation phase is only considered over once all reports pertaining to a given round of a given division are posted to the appropriate channel.
@@ -588,60 +601,20 @@
 - After valid submission, the appeal will be henceforth identified with a unique ID following the format "<Report ID>_APPEAL", where <Report ID> is the full ID of the original report.
 - After valid submission, a channel bearing the appeal's unique ID as the title will be created, with the information from the modal dialog input by the appellant summarized and posted as the header message in the channel, and with an additional link to the channel that pertains to the original report, for the stewarding team's reference.
 - As this is considered a different ticket, the effective stewarding team for this ticket may not necessarily be the same one as the original report's by default.
-- If the effective head steward is one of the involved drivers, or has a conflict of interest as defined by "steward team conflict-toggle", the bot will post in the steward command channel a message with a button to assign effective head steward for the ticket to someone else of the stewarding team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective stewarding team for the ticket.
-  - If the effective head steward does not assign anyone else by the time the appeal deliberation phase is reached, the bot shall choose one for this position: the temporary head steward, where one is in post and is neither an involved party nor holds a conflict of interest upon the ticket; otherwise, of the members of the effective stewarding team who are neither, the one who joined the stewarding team earliest.
-- Once the channel is created, the same buttons as those created for the defence submission phase shall be made available in the header, with the same permissions and logic.
-- During this phase, regular members of the effective stewarding team only have read permission for the channel. They shall be able to utilize the aforementioned buttons (as per their own specification).
-- During this phase, the effective head steward shall have read/write and attach media permission for the channel.
-- During this phase, the user who initiated the report and all users marked as involved drivers shall have read/write and attach media permission for the channel.
-- When a driver is added to a ticket, they will be considered an involved driver, and given the same permissions as other involved drivers.
-- When a driver is removed from a ticket, they will no longer be considered an involved driver, and the permissions of an involved driver will be removed from him.
-- When a driver is added to or removed from a ticket, the bot will edit the "header message" (containing the post information) to account for the addition/removal, and post a new message informing of this change, mentioning the driver and a justification if given.
-- If a driver was added to or removed from a ticket as a result of a request, then the message with the request will be deleted after confirmation/rejection.
+- The rules for a ticket open to its parties, set out under Tickets, hold throughout this phase.
 - If a report is not appealed by the end of the appeal submission phase, the stewarding cycle for that ticket will be deemed closed.
 - If there are no appeals submitted until this phase ends, then the stewarding cycle is considered closed.
 
 ### Appeal deliberation
-- Once this phase is entered, the involved drivers lose all permission to read, write or attach media to the channel.
-- Once this phase is entered, the members of the effective stewarding team will gain the permission to write or attach media to the channel.
 - Once this phase is entered, a countdown with the period of time configured by "steward appeal deliberation-period" will start.
 - Once this phase is entered, the bot shall post in the ticket's channel, for the effective head steward, the grounds of appeal as the verdict is to describe them: proposed as the appellant's justification, word for word. They are settled as the incident of a report is, and until the same moment. The incident itself is taken unchanged from the report's verdict.
-- Once this phase is entered, a single button titled "Vote" is posted by the bot. This button will serve for members of the effective stewarding team to cast, modify, or remove their ballot on the outcome of the appeal. A ballot is one steward's whole view of the incident. The button opens the steward's ballot, seen by them alone, which is as follows:
-  - Steward's display name - Shown, and not to be changed. Display name of the steward whose ballot it is.
-  - Appeal ID - Shown, and not to be changed. Unique ID of the appeal which is being voted on.
-  - Decision - Dropdown - Mandatory - A dropdown consisting of two options, "Uphold initial verdict" and "Change initial verdict".
-  - For each involved driver, greyed out unless the decision is "Change initial verdict":
-    - Outcome - Dropdown - Dropdown containing the outcomes currently configured that are applicable to the session of the original report's incident, and NFA, displaying their IDs, allowing the steward to select 1 of them. Prefilled with the outcome the initial verdict gave that driver.
-    - Infringement - String - Optional - String standing for the ID/number which was allegedly violated by that driver. Useful for final verdict write-up.
-  - Justification - String - Mandatory - A free form text with a 1000 character limit for the steward to give their reasonings for the whole ballot.
-  - The ballot as it stands - every involved party's outcome, kept in view in whole while any one of them is being changed, so that the steward confirms their whole view and not a single choice.
-  - "Cancel", "Remove vote" where the steward has already voted, and "Confirm".
-- A steward's ballot is only valid via "Confirm" if all mandatory fields are filled.
+- The ballot of an appeal is as set out under Tickets, save that:
+  - It shows the Appeal ID.
+  - It carries first a Decision - Dropdown - Mandatory - A dropdown consisting of two options, "Uphold initial verdict" and "Change initial verdict".
+  - Its line for each involved driver is greyed out unless the decision is "Change initial verdict". Its outcomes are those currently configured that are applicable to the session of the original report's incident, and NFA, and each line is prefilled with the outcome the initial verdict gave that driver.
+  - Where a tie is left unbroken, the message on the verdicts channel reads "Appeal verdicts for round <x> are slightly delayed, please stand by."
 - A ballot with the decision "Change initial verdict" is only valid where it gives at least one involved driver an outcome other than the initial verdict gave them.
 - A ballot with the decision "Uphold initial verdict" is the option of the initial verdict, and is counted as such.
-- Once a steward's ballot is deemed valid, all data for the ballot will be recorded and persisted.
-- If a steward reopens their ballot after having voted, it will show their ballot as it was cast.
-- A ballot shall be counted whole. Two ballots are the same option only where they give every involved driver the same outcome, and no ballot shall be divided by driver for counting.
-- The bot shall show no steward the ballots of others, nor any count of them, before the deliberation closes. Stewards may discuss in the channel and change their ballots until it closes.
-- If the steward has chosen "Confirm" upon reopening their ballot, the previously persisted ballot will be modified to align with the current information in the modal.
-- If the steward has chosen "Cancel" upon reopening their ballot, no change is to occur to their current ballot.
-- If the steward has chosen "Remove vote" upon reopening their ballot, the previously persisted ballot will be deleted, and it will be as if the steward had never voted.
-- At the end of the countdown period for this phase, all stewarding team members except for the effective head steward lose message write permission for the appeal's channel.
-- At the end of the countdown period for this phase, the ballots will be counted. For the purpose of counting, only cast ballots will be taken into consideration for the determination of plurality. This means that in a situation where the effective stewarding team for a ticket consists of 9 people, and only 5 of those people have voted, only those 5 ballots will be used for assessing the ultimate verdict.
-- If any one option reaches plurality without a tie, the ultimate result of the appeal will be that option: the outcome it gives each involved driver.
-- If two or more options are tied, and the effective head steward's ballot is one of them, the ultimate result of the appeal will be the option of the effective head steward.
-- If two or more options are tied, and the effective head steward's ballot is none of them (also covers the possibility of the effective head steward not voting at all), the bot will trigger a cascade of events:
-  - The bot shall post a message on the verdicts channel saying "Appeal verdicts for round <x> are slightly delayed, please stand by."
-  - In the ticket's channel, the bot shall post a button per option tied as the most voted, each showing the outcome it gives each involved driver. The one assigned as effective head steward will be the only one able to use these buttons. The option chosen dictates the ultimate verdict.
-  - A timer counts down 1 hour from the moment the buttons are posted; if the effective head steward has not picked an option once this timer runs out, then the option that reached its final count the earliest will be the final verdict.
-    - A ballot's time is the moment it was last confirmed. An option reaches its final count at the latest time among its ballots, and of the tied options, the one whose moment came first shall be the final verdict.
-- Once the ultimate result of a appeal is reached through any of the mediums above, the bot will:
-  - Post a message informing the effective head steward of the decision reached (the outcome given each involved driver, and for each the infringement most often given them among the ballots of the winning option), providing a default justification text determined via the method configured by "steward justification final-mode" (or "steward justification final-mode", if the primary method is not feasible).
-  - Buttons usable only by the effective head steward of the ticket, one for accepting the default justification text as provided by the bot as-is, another to modify the default justification via a modal (text is already autoloaded into modal prompt).
-  - In a message different from the one above, the justifications of all ballots of the winning option will be presented as a reference.
-  - Start a timer counting down 1 hour from the moment the buttons are posted; if the effective head steward has not confirmed the justification text once this timer runs out, then the one provided by the bot will be utilized for the verdict post.
-- Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
-  - The format of the final output is set out under Verdict output.
 - Only after the final output is determined for all appeals pertaining to a given round of a given division, will they be posted, in the order of the reports they appeal, which their IDs follow, and not in the order the appeals were lodged, in the verdicts channel.
 - Once the stewarding cycle of a round closes, the channels of all its tickets, reports and appeals alike, shall be removed. Where "steward backup report-toggle" is toggled on, the content of every one of them shall be persisted to disk immediately, and once that has succeeded the channels shall be deleted. Where it is toggled off, a 7 day countdown shall be initiated, at the end of which the channels shall be deleted.
   - Where appeals are disabled, or no appeal is lodged, the cycle closes earlier, and its channels are removed from then.
@@ -670,15 +643,6 @@
   - There is no command to correct the outcome of a verdict. Drivers are judged by a collective of their peers, guarded against bias by the conflict of interest rules and against error by appeals. What remains is corrected by the revoke commands, for points and bans, and by the results & standings module's amendment of a round's results, for a time penalty or a disqualification.
 
 ## Conduct cycle
-- All inputs of the conduct cycle must be auditable via the steward log channel. Attempts to file an investigation (and its data), user addition/removal to tickets, etc etc etc. All logs must include the display name (and user ID) of the input.
-- It is imperative that the stewarding team is seen as a unified front.
-  - The effective head steward of a ticket is the face of the stewarding team to the users of that ticket, and may speak to them under their own name. They are its mouthpiece only.
-  - No message a driver or other user can see shall attribute a decision, a vote, a request or a justification to any single steward, the effective head steward included. The decisions of the stewarding team are the team's as a whole.
-  - No steward other than the effective head steward shall be identified or mentioned in any message a driver or other user can see.
-  - Every exchange between stewards alone while the users of a ticket can see its channel shall take place in the channel configured by "steward channel command", and never in the ticket's channel: a steward's request awaiting the effective head steward's approval, and its answer; a request for exclusion, and its answer; the handing of a ticket to another effective head steward, and its acceptance or refusal. Each shall identify the ticket it concerns by its unique ID and link to its channel. The users of the ticket shall see only the outcome, from the effective head steward or the bot.
-    - A request made by a driver is no exchange between stewards, and shall be answered in the ticket's channel.
-    - Deliberation, from which the users of the ticket are shut out, takes place in the ticket's channel.
-  - However, as stated above, steward logs shall identify them when needed.
 - Once an investigation's verdict is posted in the appropriate channel by the end of the investigation deliberation phase, the incident (investigation) is deemed closed and final.
 
 ### Trigger
@@ -694,54 +658,15 @@
   - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
 - After valid submission, the investigation will be henceforth identified with a unique ID following the format "COC_INV<x>", where <x> is the number of the previous CoC investigation of this league plus 1, written in at least three digits: COC_INV001 … COC_INV999, then COC_INV1000, and so on, their order being that of their numbers
 - After valid submission, a channel bearing the investigation's unique ID as the title will be created, with the information from the modal dialog input by the steward who opened it summarized and posted as the header message in the channel. All involved users shall be mentioned properly in this message.
-- If the effective head steward is one of the involved users, or has a conflict of interest as defined by "steward team conflict-toggle", the bot will post in the steward command channel a message with a button to assign effective head steward for the ticket to someone else of the stewarding team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective stewarding team for the investigation.
-  - If the effective head steward does not assign anyone else by the time the investigation deliberation phase is reached, the bot shall choose one for this position: the temporary head steward, where one is in post and is neither an involved party nor holds a conflict of interest upon the ticket; otherwise, of the members of the effective stewarding team who are neither, the one who joined the stewarding team earliest.
 - Upon valid submission, a CoC investigation ticket will move immediately onto the defence submission stage.
 
 ### Defence submission
 - Once the investigation information is validated and the channel opened with the relevant information, a countdown with the period of time configured by "steward conduct defence-period" will start. Once this time elapses, the ticket will enter the investigation deliberation phase.
-- Once the channel is created, the same buttons as those created for the defence submission phase shall be made available in the header, with the same permissions and logic.
-- During this phase, regular members of the effective stewarding team only have read permission for the channel, and the effective head steward shall have read/write and attach media permission, as in the defence submission of a report.
-- During this phase, members of the effective stewarding team (regular members and the effective head) shall be able to utilize the aforementioned buttons (as per their own specification).
-- During this phase, all users marked as involved users shall have read/write and attach media permission for the channel.
-- This phase cannot be terminated early.
+- The rules for a ticket open to its parties, set out under Tickets, hold throughout this phase, the involved users standing as its involved drivers.
 
 ### Investigation deliberation
-- Once this phase is entered, the involved users lose all permission to read, write or attach media to the channel.
-- Once this phase is entered, the members of the effective stewarding team will gain the permission to write or attach media to the channel.
 - Once this phase is entered, a countdown with the period of time configured by "steward conduct deliberation-period" will start.
-- Once this phase is entered, a single button titled "Vote" is posted by the bot. This button will serve for members of the effective stewarding team to cast, modify, or remove their ballot on the outcome of the investigation. A ballot is one steward's whole view of the case. The button opens the steward's ballot, seen by them alone, which is as follows:
-  - Steward's display name - Shown, and not to be changed. Display name of the steward whose ballot it is.
-  - Investigation ID - Shown, and not to be changed. Unique ID of the investigation which is being voted on.
-  - For each involved user:
-    - Outcome - Dropdown - Mandatory - Dropdown containing all conduct outcomes currently configured that are not paused, and NFA, displaying their IDs, allowing the steward to select 1 of them. NFA by default.
-    - Infringement - String - Optional - String standing for the ID/number which was allegedly violated by that user. Useful for final verdict write-up.
-  - Justification - String - Mandatory - A free form text with a 1000 character limit for the steward to give their reasonings for the whole ballot.
-  - The ballot as it stands - every involved party's outcome, kept in view in whole while any one of them is being changed, so that the steward confirms their whole view and not a single choice.
-  - "Cancel", "Remove vote" where the steward has already voted, and "Confirm".
-- A steward's ballot is only valid via "Confirm" if all mandatory fields are filled.
-- Once a steward's ballot is deemed valid, all data for the ballot will be recorded and persisted.
-- If a steward reopens their ballot after having voted, it will show their ballot as it was cast.
-- A ballot shall be counted whole. Two ballots are the same option only where they give every involved user the same outcome, and no ballot shall be divided by user for counting.
-- The bot shall show no steward the ballots of others, nor any count of them, before the deliberation closes. Stewards may discuss in the channel and change their ballots until it closes.
-- If the steward has chosen "Confirm" upon reopening their ballot, the previously persisted ballot will be modified to align with the current information in the modal.
-- If the steward has chosen "Cancel" upon reopening their ballot, no change is to occur to their current ballot.
-- If the steward has chosen "Remove vote" upon reopening their ballot, the previously persisted ballot will be deleted, and it will be as if the steward had never voted.
-- At the end of the countdown period for this phase, all stewarding team members except for the effective head steward lose message write permission for the investigation's channel.
-- At the end of the countdown period for this phase, the ballots will be counted. For the purpose of counting, only cast ballots will be taken into consideration for the determination of plurality. This means that in a situation where the effective stewarding team for a ticket consists of 9 people, and only 5 of those people have voted, only those 5 ballots will be used for assessing the ultimate verdict.
-- If any one option reaches plurality without a tie, the ultimate result of the investigation will be that option: the outcome it gives each involved user.
-- If two or more options are tied, and the effective head steward's ballot is one of them, the ultimate result of the investigation will be the option of the effective head steward.
-- If two or more options are tied, and the effective head steward's ballot is none of them (also covers the possibility of the effective head steward not voting at all), the bot will trigger a cascade of events:
-  - In the ticket's channel, the bot shall post a button per option tied as the most voted, each showing the outcome it gives each involved user. The one assigned as effective head steward will be the only one able to use these buttons. The option chosen dictates the ultimate verdict.
-  - A timer counts down 1 hour from the moment the buttons are posted; if the effective head steward has not picked an option once this timer runs out, then the option that reached its final count the earliest will be the final verdict.
-    - A ballot's time is the moment it was last confirmed. An option reaches its final count at the latest time among its ballots, and of the tied options, the one whose moment came first shall be the final verdict.
-- Once the ultimate result of a investigation is reached through any of the mediums above, the bot will:
-  - Post a message informing the effective head steward of the decision reached (the outcome given each involved user, and for each the infringement most often given them among the ballots of the winning option), providing a default justification text determined via the method configured by "steward justification final-mode" (or "steward justification final-mode", if the primary method is not feasible).
-  - Buttons usable only by the effective head steward of the ticket, one for accepting the default justification text as provided by the bot as-is, another to modify the default justification via a modal (text is already autoloaded into modal prompt).
-  - In a message different from the one above, the justifications of all ballots of the winning option will be presented as a reference.
-  - Start a timer counting down 1 hour from the moment the buttons are posted; if the effective head steward has not confirmed the justification text once this timer runs out, then the one provided by the bot will be utilized for the verdict post.
-- Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
-  - The format of the final output is set out under Verdict output.
+- The ballot of an investigation is as set out under Tickets, save that it shows the Investigation ID, and gives a line to each involved user. Its outcomes are all conduct outcomes currently configured that are not paused.
 - Only after the final output is determined for the investigation, it will be posted immediately in the channel configured by "steward channel conduct-verdicts", whether or not the user holds a seat and whether or not a season is live.
   - Where a season is live and the user holds a seat in any of its divisions, full-time or reserve, the verdict shall also be posted in the verdicts channel of each of those divisions, each such post carrying the indication "(repost)".
 - After the verdict is posted successfully, the conduct cycle will be considered closed.
