@@ -536,7 +536,7 @@
   - Season - Mandatory - Integer - Automatically generated, cannot be changed by anyone. Derived from the current season's number.
   - Division - Mandatory - String - Automatically generated, cannot be changed by anyone. Derived from the division to which the ticket channel is associated.
   - Round - Mandatory -  Integer - Automatically generated, cannot be changed by anyone. Derived from the round whose report submission is open, as named by the button pressed.
-  - Involved drivers - Optional - 0..n mentions - Other drivers directly or indirectly involved in the incident, whose footage or evidence may be of use to the stewarding team's deliberations. <CHECK FEASIBILITY OF USING A CHECKLIST WITH ALL DIVISION DRIVERS>
+  - Involved drivers - Optional - 0..n members - Other drivers directly or indirectly involved in the incident, whose footage or evidence may be of use to the stewarding team's deliberations. They are chosen from the server's members by searching for them by name, several at once, and not from a list of every member; any who holds no seat in the division, full-time or reserve, is refused and named, and the form is shown again with the rest kept.
     - These drivers must be assigned to the division this report pertains to.
     - The report will not be valid if there is any entry here that is not an involved driver.
     - The driver who triggered the report is considered an involved driver, and is not distinct from the other drivers for the purpose of this ticket.
