@@ -38,7 +38,7 @@ from models.division import Division
 from models.round import Round as RoundModel
 from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from models.season import SeasonStage
-from services import season_points_service
+from services import cancellation_notice_service, season_points_service
 import services.track_service as track_service
 from services.season_service import SeasonImmutableError
 from utils.autocomplete import bounded_autocomplete
@@ -4812,19 +4812,22 @@ class SeasonCog(commands.Cog):
         except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
             log.exception("could not wind the season down")
 
-        try:
-            channel = interaction.guild.get_channel(div.forecast_channel_id)
-            if channel is not None:
-                await channel.send(
-                    f"\U0001f4e2 **Round {round_number} Cancelled: {div.name}**\n"
-                    f"Round {round_number} ({rnd.track_name or 'Mystery'}) has been cancelled by "
-                    "an administrator. No weather forecast will be posted for this round."
-                )
-        except Exception:
-            log.exception("Failed to post round cancel notice for round %s in %s", round_number, div.name)
+        # Each enabled module says what the cancellation means for it, in its own channel, and
+        # the calendar is posted again with the round struck through (#175). Core posts
+        # nothing of its own; what could not be reached is named to the admin below.
+        failures = await cancellation_notice_service.announce_cancellation(
+            self.bot,
+            interaction.guild,
+            [div],
+            scope=cancellation_notice_service.SCOPE_ROUND,
+            round_number=round_number,
+            track_name=rnd.track_name,
+            season_number=getattr(season, "number", None),
+        )
 
         await interaction.followup.send(
-            f"\u2705 Round **{round_number}** in **{division_name}** cancelled.",
+            f"\u2705 Round **{round_number}** in **{division_name}** cancelled."
+            + cancellation_notice_service.failure_lines(failures),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(

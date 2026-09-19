@@ -176,12 +176,21 @@ async def _delete(cog, interaction, division: str = "Division 1", number: int = 
 
 async def _cancel(
     cog, interaction, division: str = "Division 1", number: int = 5,
-    confirm: str = "CONFIRM", submission_open: bool = False,
+    confirm: str = "CONFIRM", submission_open: bool = False, failures=(),
 ):
-    with _submission(submission_open):
+    """Run the command with the modules' announcements stubbed, returning the stub.
+
+    What each module says is `cancellation_notice_service`'s and is tested there; here the
+    command is held only to calling it, once, for the right round (#175).
+    """
+    announce = AsyncMock(return_value=list(failures))
+    with _submission(submission_open), patch(
+        "services.cancellation_notice_service.announce_cancellation", new=announce
+    ):
         await undecorate(SeasonCog.round_cancel)(
             cog, interaction, division, number, confirm
         )
+    return announce
 
 
 # ---------------------------------------------------------------------------
@@ -412,27 +421,57 @@ async def test_the_jobs_go_before_the_round_is_recorded_cancelled():
     assert order == ["jobs", "record"]
 
 
-async def test_the_division_is_told_its_round_is_off():
-    """Drivers have arranged their week around it, and the forecast channel is where they
-    would otherwise be waiting for a forecast that will never come."""
+async def test_the_modules_are_told_the_round_is_off():
+    """Each enabled module says what the cancellation means for it — never core, and never
+    the forecast channel regardless of the weather module (#175)."""
+    from services import cancellation_notice_service as cns
+
     cog = _make_cog()
     interaction = _interaction()
 
-    await _cancel(cog, interaction)
+    announce = await _cancel(cog, interaction)
 
-    interaction._channel.send.assert_awaited_once()
-    announced = interaction._channel.send.await_args.args[0]
-    assert "Cancelled" in announced
-    assert "Monza" in announced
+    announce.assert_awaited_once()
+    assert announce.await_args.kwargs["scope"] == cns.SCOPE_ROUND
+    assert announce.await_args.kwargs["round_number"] == 5
+    assert announce.await_args.kwargs["track_name"] == "Monza"
+    assert [d.id for d in announce.await_args.args[2]] == [DIVISION_ID]
+    interaction._channel.send.assert_not_awaited()
 
 
-async def test_a_missing_forecast_channel_does_not_stop_the_cancellation():
+async def test_the_announcement_follows_the_round_being_recorded_cancelled():
+    """The calendar is posted again as it now stands, so the round must already be
+    recorded cancelled when it is read."""
     cog = _make_cog()
-    interaction = _interaction(channel=None)
+    order: list[str] = []
+    cog.bot.season_service.cancel_round = AsyncMock(
+        side_effect=lambda **kw: order.append("record")
+    )
+    announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or [])
+    with _submission(False), patch(
+        "services.cancellation_notice_service.announce_cancellation", new=announce
+    ):
+        await undecorate(SeasonCog.round_cancel)(
+            cog, _interaction(), "Division 1", 5, "CONFIRM"
+        )
+    assert order == ["record", "announce"]
 
-    await _cancel(cog, interaction)
 
-    cog.bot.season_service.cancel_round.assert_awaited_once()
+async def test_what_could_not_be_told_is_named_to_the_admin():
+    from services.cancellation_notice_service import NoticeFailure
+
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _cancel(
+        cog, interaction,
+        failures=[NoticeFailure("Division 1", "check-in channel", "no channel is set")],
+    )
+
+    replied = _replied(interaction)
+    assert "cancelled" in replied
+    assert "Not notified" in replied
+    assert "check-in channel: no channel is set" in replied
 
 
 async def test_a_cancelled_round_keeps_its_number():
