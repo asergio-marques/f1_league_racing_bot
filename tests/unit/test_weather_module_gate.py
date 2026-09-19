@@ -211,7 +211,7 @@ async def test_amend_round_leaves_the_phases_for_a_later_enable(tmp_path):
     """The knock-on: a phase marked done while the module was off could never be redone.
 
     Run for real rather than with the runners patched out, so the whole path is exercised —
-    the flags must be left at 0 for the enable catch-up to pick up.
+    the flags must be left at 0, so that a later enable does not find the phase already performed.
     """
     db_path = await _make_db(str(tmp_path))
     await _seed(db_path)
