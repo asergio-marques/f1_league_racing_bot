@@ -28,6 +28,7 @@
   - Active bans - the number of qualifying bans and the number of race bans the driver has yet to serve, whether the driver is season banned, and how many further season bans are stacked behind the active one, and whether they are league banned. A driver holding one or more qualifying bans is qualifying banned, and one holding one or more race bans is race banned.
   - Ban history - the number of qualifying bans, race bans, season bans and league bans the driver has received throughout their time upon the server. A ban is added to the history the moment it is received.
   - Appeal tokens - the number of appeal tokens the driver holds, while appeals cost tokens.
+  - Championship record - every championship penalty the driver has received, and every team penalty given to a team through them, each with its season and division: points deducted and disqualifications, from the drivers' and the constructors' championships alike. A team is its drivers, and a team penalty is recorded upon the licence of each of its full-time drivers upon the ticket, as the team's. These are a record, and never active penalties.
   - Likewise, a tally of the total of each penalty type is kept.
   - The driver licence is the state of a driver's bans. A driver is banned while their licence holds an active ban, and no driver state bars them otherwise.
   - A driver licence belongs to the driver profile, not to a Discord account. Any of a driver's accounts shall name them wherever this module names a driver — a report, an appeal, a CoC investigation, a vote, a revoke command. A ticket keeps the account it was lodged under, as the core specification requires of every record, and is read as the driver's.
@@ -761,7 +762,7 @@
     - Historical accumulation - The lifetime tally only rises, so it is triggered each time the tally crosses a further multiple of the threshold: for a threshold of 10, at 10, at 20, at 30, and so on.
 
 ## Bans
-- A driver whose licence records any sanction, active or not, shall never be deleted. Returning to Not Signed Up, they shall be retained as a former driver is, their licence with them, a league having most cause to keep the record of a driver it has sanctioned.
+- A driver whose licence records any sanction, active or not, a team penalty recorded through them among them, shall never be deleted. Returning to Not Signed Up, they shall be retained as a former driver is, their licence with them, a league having most cause to keep the record of a driver it has sanctioned.
 
 - Whether a qualifying ban or a race ban was served in a round shall be judged from the round's results, once its initial results are posted, and posted then as an Automated Ruling to the verdicts channel of the division, in a batch of its own. The driver licence shall be updated at once, so that a ban served no longer stands against the driver's next round, whenever that falls.
   - A race ban is judged in every round in which it is to be served, and a ruling posted whether it was served or not.
@@ -853,7 +854,7 @@
   - Current - every division the driver currently races in, each with their team and whether they are a full-time or reserve driver there.
   - Points - for each of warning points, penalty points and discipline points, the number active, and when they expire, soonest first: how many expire at each round or date, and the division of each round named.
   - Bans - for each of qualifying bans, race bans, season bans and league bans, the number active, and where each is to be served, or when it ends.
-  - Record - the number of bans of each kind received across the driver's time in the league, and the appeal tokens held, while appeals cost tokens.
+  - Record - the number of bans of each kind received across the driver's time in the league, the championship record, and the appeal tokens held, while appeals cost tokens.
   - The ID of the ticket or ruling each active point or ban came from.
 
 ### Image
@@ -865,7 +866,7 @@
   - Current - Mandatory - a row per division the driver currently races in: the division's name, in the ordinary ink, and its logo; the team, with its logo; and whether full-time or reserve. Each row may carry an accent in its division's colour.
   - Points - Mandatory - a row per type of point: the number active, and the expiries, soonest first
   - Bans - Mandatory - a row per type of ban: the number active, and where each is to be served, or when it ends
-  - Record - Mandatory - the bans received across the driver's time in the league, and the appeal tokens held, while appeals cost tokens
+  - Record - Mandatory - the bans received across the driver's time in the league, the championship record, and the appeal tokens held, while appeals cost tokens
 
 ## Verdict output
 - While the stewarding module is enabled, the results & standings module's penalty and appeal reviews are not used, and every verdict of a round is this module's, shaped as this section specifies, and drawing on the results & standings module's rendering, templates included, as far as it can.
