@@ -768,4 +768,21 @@ is why I left them whole.
 
 - Create the `module-steward` label.
 - Add it to `CONTRIBUTING.md`'s list of module labels, which names five today.
-- A milestone is optional: it adds a progress count over the set, and can be applied in bulk later.
+- Put every issue on the **Stewarding module** milestone, created 2026-09-20
+  (`milestone/1`), which counts what is left of the set.
+
+## Keeping this current as the module is built
+
+Building will turn up rules that are wrong, rules that are missing, and work that wants an issue of
+its own. Nothing here forbids that, and the scheme is built for it:
+
+- **A new rule takes the next free number in its section**, and a rule that goes takes its ID with
+  it — retired, never reused. So an ID in a closed issue still names what that issue built.
+- **A new issue is added to this document** with the rules it owns, and put on the milestone. Where
+  it takes rules from an issue not yet filed, move them; where it takes them from one already
+  closed, the new issue says so rather than the old one being rewritten.
+- **The coverage table is generated, not maintained.** Regenerate it after any change and it will
+  name any rule owned twice or by nobody, which is the check that this document still matches the
+  spec.
+- **A rule that changes after its issue is closed needs an issue of its own** — the spec is the
+  source, and a closed issue is a record of what was built, not of what is true.
