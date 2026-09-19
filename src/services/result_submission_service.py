@@ -1309,22 +1309,40 @@ async def amend_session_result(
 
     rctx = await _get_round_context(db_path, round_id)
     guild = await league_guild(bot)
+    repost_faults: list[str] = []
     if guild is not None:
-        await results_post_service.delete_and_repost_final_results(
+        repost_faults += await results_post_service.delete_and_repost_final_results(
             db_path, round_id, division_id, guild,
             label="Final Results", bot=bot,
         )
-        await results_post_service.repost_subsequent_standings(
+        repost_faults += await results_post_service.repost_subsequent_standings(
             db_path, division_id, round_id, guild, bot=bot,
         )
     else:
+        # The recomputation still runs, so the championship is right in the database; what
+        # a league can see of it is not, and saying so is the whole of #237. This branch is
+        # not the silent one the issue describes — it is a deliberate fallback — but its
+        # outcome was reported as an unqualified success all the same.
         await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
+        repost_faults.append(
+            "The league's server could not be reached, so the amended results and "
+            "standings were recalculated but not reposted."
+        )
 
-    await bot.output_router.post_log(
-        f"<@{amended_by}> | RESULT_AMENDED | Success\n"
+    # The third caller of the cascade, and the third to discard what it could not post
+    # (#237). It has no interaction to answer — the amendment is applied by a wizard that
+    # has moved on — so the log channel is the only route, as in ``apply_penalties``.
+    outcome = "Incomplete" if repost_faults else "Success"
+    summary = (
+        f"<@{amended_by}> | RESULT_AMENDED | {outcome}\n"
         f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
-        f"  round: {rctx['round_number']}, session: {session_type.value}",
+        f"  round: {rctx['round_number']}, session: {session_type.value}"
     )
+    if repost_faults:
+        hint = await results_post_service.results_sync_hint(db_path, division_id)
+        summary += "\n" + "\n".join(f"  {line}" for line in repost_faults)
+        summary += f"\n  {hint}"
+    await bot.output_router.post_log(summary)
 
 
 # ---------------------------------------------------------------------------
