@@ -1183,3 +1183,16 @@ Recorded as the walk-through decides them. None is to be made until stewarding i
 - **Core, "When the bot stops"** — add the stewarding module's work to what is recovered; downtime extends the windows in which users act (C41).
 - **Core, a hub channel** — a server-wide channel set by its own command (e.g. `bot-hub-channel`), open to holders of the base role, or to every member where no base role is configured, holding one panel whose options each enabled module adds; stewarding adds "View license" (any driver's licence, a public record), stats will add its own (D1).
 - **Output of "View license"** — needs its own textual and image output, fields and formats to be specified in detail later (D1). Marked `<TBD>` in the spec.
+
+## Notes for implementation — engineering, not specification (G1–G5, 2026-09-19)
+
+The spec no longer lists the persisted ticket record field by field; that is for the code and its docstrings. When it is built, the record must at least hold, so that nothing the stages rely on is lost:
+- the unique ID, and the season, division tier (frozen when minted), round, session and lap;
+- the complainant (or the stewarding team, for a steward's report), the involved drivers by driver profile and the account each was named under, and for an appeal, the appellant;
+- the complaint and every evidence file and link, the incident text as settled, and for an appeal the grounds as settled;
+- the ticket's channel, and the messages it posted there (buttons, requests, the decision message);
+- the effective stewarding team with the effective head steward, every change to it, and every exclusion;
+- every ballot, whole: the steward, an outcome and infringement per involved driver, the justification, and the time it was last confirmed (C10);
+- the stage it stands in, with the moment each stage began and is due to end, and every downtime extension applied (C41);
+- the settled verdict, the justification as settled, whether it was withdrawn or rejected as a duplicate (C35), and the IDs of the verdict messages posted;
+- tokens spent and refunded, for an appeal.
