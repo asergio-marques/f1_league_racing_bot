@@ -902,7 +902,10 @@ async def approve_amendment(
             (season_id,),
         )
         # Whether the bot is set up at all: there is no log channel to report to otherwise.
-        cursor = await db.execute("SELECT 1 FROM server_configs LIMIT 1")
+        # A packed bot keeps its row with the claim cleared (#247), so a row is not enough.
+        cursor = await db.execute(
+            "SELECT 1 FROM server_configs WHERE server_id IS NOT NULL LIMIT 1"
+        )
         set_up = await cursor.fetchone() is not None
         await db.commit()
 

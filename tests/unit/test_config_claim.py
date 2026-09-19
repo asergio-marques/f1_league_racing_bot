@@ -135,3 +135,26 @@ async def test_the_table_holds_one_row_at_most(service):
             await db.execute(
                 "INSERT INTO server_configs (id, server_id) VALUES (2, ?)", (NEW_SERVER,)
             )
+
+
+def test_no_read_takes_a_row_for_a_configured_server():
+    """"Is the bot set up?" asks whether the row holds a server, never whether a row exists.
+
+    A packed bot keeps its row with the claim cleared, so `SELECT 1 FROM server_configs`
+    answers yes for a bot that serves nobody. Reads of the league's own columns — test mode,
+    the module flags — are rightly unconditional and are not what this looks for, nor is
+    the claim's own `NOT EXISTS`, which must refuse while any row exists.
+    """
+    import pathlib
+    import re
+
+    src = pathlib.Path(__file__).resolve().parents[2] / "src"
+    existence = re.compile(
+        r"(?<!EXISTS \()SELECT\s+1\s+FROM\s+server_configs(?!\s+WHERE\s+server_id)"
+    )
+    offenders = sorted(
+        str(path.relative_to(src))
+        for path in src.rglob("*.py")
+        if existence.search(path.read_text(encoding="utf-8"))
+    )
+    assert offenders == []
