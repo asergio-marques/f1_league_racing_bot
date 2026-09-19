@@ -302,6 +302,122 @@ class SeasonService:
                 f"Season {season.season_number} is archived and cannot be modified."
             )
 
+    async def sync_pending_config(
+        self,
+        start_date: date,
+        season_id: int,
+        divisions: list[dict],
+        game_edition: int = 0,
+        initial_stage: SeasonStage | None = None,
+    ) -> tuple[int, int, list[int]]:
+        """Bring the SETUP season in the DB into line with the PendingConfig, in place.
+
+        Returns ``(season_id, season_number, new_division_ids)``. The caller seeds teams for
+        the new divisions, and for no others.
+
+        **Nothing is torn down** (issue #147). This replaced a snapshot that deleted every
+        division, team, seat, round and driver assignment beneath the season and re-inserted
+        them with new ids, carrying across by hand whatever it knew to save. Since issue #220
+        divisions exist only in Placements, so that rebuild ran while the league was seating
+        its grid: every `/round add` unseated every driver and seated them again from memory
+        in a separate commit, and anything it did not know to save — a new setting, or a
+        weather channel set straight to the DB after the PendingConfig was loaded — was
+        silently destroyed. What this writes instead is only what the config holds and the DB
+        does not:
+
+        - **the season row**, when *season_id* is 0 and there is none yet. *initial_stage* is
+          the stage it begins in; left unset it takes the default migration 057 gives a SETUP
+          row. An existing season row is not written — no setup command changes its start
+          date or game edition once it exists;
+        - **a division named in the config and absent from the DB**, inserted. A division
+          already in the DB is **never written**: its name, role, tier and channels are each
+          owned by a command that writes them directly and reloads the PendingConfig, which is
+          therefore never newer than the DB for them. One in the DB and missing from the
+          config is left alone and logged, not deleted — removal has its own command;
+        - **rounds**, per division, matched on (format, track, scheduled time). A round the DB
+          holds and the config does not is deleted, one the config holds and the DB does not
+          is inserted, and a round number is updated only where it moved. A division whose
+          rounds already match is not written to. A round of a season in setup has nothing
+          hanging off it — sessions, forecasts and results begin at approval — so deleting and
+          inserting one to amend it loses nothing.
+
+        Everything lands in one transaction and one commit. A setting added to a division
+        or a season anywhere in the bot needs nothing here to survive a setup command.
+
+        The alternative the issue first proposed — a registry of what to carry across, and a
+        rebuild of only the division that changed — was set aside because the rebuild still
+        passed every driver of that division through memory on every command.
+
+        Raises ``ValueError`` where *season_id* names no season, or one no longer in SETUP.
+        Sessions are not created here; approval creates them.
+        """
+        new_division_ids: list[int] = []
+        async with get_connection(self._db_path) as db:
+            if season_id == 0:
+                season_number = await self.count_persisted_seasons() + 1
+                cursor = await db.execute(
+                    "INSERT INTO seasons "
+                    "(start_date, status, season_number, game_edition, stage) "
+                    "VALUES (?, 'SETUP', ?, ?, ?)",
+                    (
+                        start_date.isoformat(),
+                        season_number,
+                        game_edition,
+                        initial_stage.value if initial_stage is not None else None,
+                    ),
+                )
+                season_id = cursor.lastrowid  # type: ignore[assignment]
+            else:
+                cursor = await db.execute(
+                    "SELECT status, season_number FROM seasons WHERE id = ?", (season_id,)
+                )
+                row = await cursor.fetchone()
+                if row is None:
+                    raise ValueError(f"season {season_id} does not exist")
+                if row["status"] != SeasonStatus.SETUP.value:
+                    raise ValueError(
+                        f"season {season_id} is {row['status']}, not in setup; "
+                        "its configuration can no longer be synced"
+                    )
+                season_number = row["season_number"]
+
+            cursor = await db.execute(
+                "SELECT id, name FROM divisions WHERE season_id = ?", (season_id,)
+            )
+            division_ids = {r["name"]: r["id"] for r in await cursor.fetchall()}
+
+            wanted = {d["name"] for d in divisions}
+            for name in sorted(set(division_ids) - wanted):
+                log.warning(
+                    "season %s: division %r is in the DB but not the pending config; "
+                    "left as it stands",
+                    season_id, name,
+                )
+
+            for div_data in divisions:
+                div_id = division_ids.get(div_data["name"])
+                if div_id is None:
+                    cursor = await db.execute(
+                        "INSERT INTO divisions "
+                        "(season_id, name, mention_role_id, forecast_channel_id, tier) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (
+                            season_id,
+                            div_data["name"],
+                            div_data["role_id"],
+                            div_data["channel_id"],
+                            div_data.get("tier", 0),
+                        ),
+                    )
+                    div_id = cursor.lastrowid
+                    division_ids[div_data["name"]] = div_id  # type: ignore[assignment]
+                    new_division_ids.append(div_id)  # type: ignore[arg-type]
+                await _sync_division_rounds(db, div_id, div_data["rounds"])  # type: ignore[arg-type]
+
+            await db.commit()
+
+        return season_id, season_number, new_division_ids
+
     async def save_pending_snapshot(
         self,
         start_date: date,
@@ -1855,6 +1971,49 @@ class SeasonService:
                 (round_id,),
             )
             await db.commit()
+
+
+async def _sync_division_rounds(db, division_id: int, rounds: list[dict]) -> None:
+    """Make the rounds of *division_id* match *rounds*, writing only the difference.
+
+    Part of :meth:`SeasonService.sync_pending_config`, on its connection and inside its
+    transaction. A round is matched on its format, track and scheduled time, the scheduled
+    time compared as the ISO string both sides store. Duplicates are matched one for one, so
+    two identical rounds in the config need two in the DB.
+    """
+    cursor = await db.execute(
+        "SELECT id, round_number, format, track_name, scheduled_at FROM rounds "
+        "WHERE division_id = ? ORDER BY round_number, id",
+        (division_id,),
+    )
+    held: dict[tuple, list[tuple[int, int]]] = {}
+    for r in await cursor.fetchall():
+        key = (r["format"], r["track_name"], r["scheduled_at"])
+        held.setdefault(key, []).append((r["id"], r["round_number"]))
+
+    for r in rounds:
+        key = (r["format"].value, r["track_name"], r["scheduled_at"].isoformat())
+        matches = held.get(key)
+        if matches:
+            round_id, round_number = matches.pop(0)
+            if round_number != r["round_number"]:
+                await db.execute(
+                    "UPDATE rounds SET round_number = ? WHERE id = ?",
+                    (r["round_number"], round_id),
+                )
+            continue
+        await db.execute(
+            "INSERT INTO rounds "
+            "(division_id, round_number, format, track_name, "
+            " scheduled_at, phase1_done, phase2_done, phase3_done) "
+            "VALUES (?, ?, ?, ?, ?, 0, 0, 0)",
+            (division_id, r["round_number"], *key),
+        )
+
+    surplus = [round_id for matches in held.values() for round_id, _ in matches]
+    if surplus:
+        ph = ",".join("?" * len(surplus))
+        await db.execute(f"DELETE FROM rounds WHERE id IN ({ph})", surplus)  # noqa: S608
 
 
 # ------------------------------------------------------------------
