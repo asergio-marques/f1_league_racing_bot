@@ -1279,3 +1279,7 @@ Decisions:
 ## Open-issue sweep (2026-09-19)
 
 - R56 #175 / PR 277 — each enabled module announces a cancellation in its own channel. Stewarding said nothing; it now posts silently in the division's ticket channel and in each open ticket's channel.
+- #189 verdict message ids — no change owed: the spec already requires a republished verdict to be edited in the message it was posted in. Subsumed by building the module.
+- #246 verdict batch heading — no change owed: the spec already posts the header as text where the banner is off. The image spec edit is on the owed list.
+- #152 bannable states — overtaken by #221 and by this spec: a CoC verdict creates a driver profile at Not Signed Up with a licence, so a member who never signed up can be sanctioned.
+- R57 #204 — free text reaching a public channel may carry a role, @everyone or @here ping. Refused at entry; a verdict notifies only the drivers it names.
