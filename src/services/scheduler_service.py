@@ -708,6 +708,27 @@ class SchedulerService:
         except Exception:
             pass  # Already fired or never scheduled
 
+    def cancel_all(self, *, keep: frozenset[str] = frozenset()) -> int:
+        """Remove every job but those whose ids are in *keep*, and return how many went.
+
+        For `/bot pack` and `/bot factory-reset` (issue #247), which clear all of the
+        league's scheduled work at once rather than round by round, and so reach the jobs no
+        round owns — the signup close timer, a wizard's inactivity and channel-delete jobs, a
+        stale season-end job. Pack keeps the daily portrait refresh: it is a standing
+        instruction from a setting pack keeps, and does nothing while no server is claimed.
+        """
+        removed = 0
+        for job in list(self._scheduler.get_jobs()):
+            if job.id in keep:
+                continue
+            try:
+                self._scheduler.remove_job(job.id)
+            except Exception:  # noqa: BLE001 — fired or removed in the meantime
+                continue
+            removed += 1
+        log.info("Removed %d scheduled job(s), keeping %s", removed, sorted(keep) or "none")
+        return removed
+
     def get_pending_advance_jobs(self, round_ids: set[int]) -> list[dict]:
         """Return un-fired phase/results/mystery jobs for the given round IDs.
 
