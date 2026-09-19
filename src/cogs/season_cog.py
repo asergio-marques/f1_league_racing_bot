@@ -183,9 +183,8 @@ async def apply_round_import(
     them: these are add commands, and a calendar too long for one modal is imported in
     two passes.
 
-    Does not snapshot. The caller does that once, after every division has been applied —
-    `_snapshot_pending` rebuilds the entire season, so once per import rather than once
-    per round is the difference between one teardown and twenty.
+    Does not snapshot. The caller does that once, after every division has been applied,
+    so the whole import lands in one transaction.
     """
     errors: list[str] = []
     staged: dict[str, list[dict[str, Any]]] = {}
@@ -377,7 +376,7 @@ async def _run_round_import(
         await interaction.followup.send(_format_import_errors(errors), ephemeral=True)
         return
 
-    # Once, after every division. The snapshot rebuilds the whole season.
+    # Once, after every division: the import lands in one transaction.
     await cog._snapshot_pending(cfg)
 
     total = sum(len(rounds) for rounds in applied.values())
@@ -475,9 +474,8 @@ class SeasonCog(commands.Cog):
         game_edition: app_commands.Range[int, 1, 9999],
     ) -> None:
         """Begin season setup."""
-        # Deferred before any work: the snapshot rebuild below rewrites the whole
-        # SETUP season, which outlasts Discord's three-second window on a season of
-        # any size, and the reply then lands on an expired token.
+        # Deferred before any work, as every season-setup command is: a reply after
+        # Discord's three-second window lands on an expired token.
         await interaction.response.defer(ephemeral=True)
 
         if self._get_pending() is not None:
@@ -3011,9 +3009,8 @@ class SeasonCog(commands.Cog):
         role: discord.Role,
         tier: int,
     ) -> None:
-        # Deferred before any work: the snapshot rebuild below rewrites the whole
-        # SETUP season, which outlasts Discord's three-second window once the season
-        # holds a division or two, and the reply then lands on an expired token.
+        # Deferred before any work, as every season-setup command is: a reply after
+        # Discord's three-second window lands on an expired token.
         await interaction.response.defer(ephemeral=True)
 
         cfg = self._pending.get(interaction.user.id) or self._get_pending()
@@ -4194,10 +4191,10 @@ class SeasonCog(commands.Cog):
         scheduled_at: str,
         track: str = "",
     ) -> None:
-        # Deferred before any work: the snapshot rebuild and the calendar capacity
-        # guard below both outlast Discord's three-second window on a season of any
-        # size, and the reply then lands on an expired token (404 Unknown interaction)
-        # while the round itself has already been written.
+        # Deferred before any work: the calendar capacity guard below loads and parses
+        # the calendar template, which can outlast Discord's three-second window, and the
+        # reply then lands on an expired token (404 Unknown interaction) while the round
+        # itself has already been written.
         await interaction.response.defer(ephemeral=True)
 
         cfg = self._pending.get(interaction.user.id) or self._get_pending()
@@ -4406,10 +4403,10 @@ class SeasonCog(commands.Cog):
         scheduled_at: str = "",
         format: str = "",
     ) -> None:
-        # Deferred before any work: the snapshot rebuild and the calendar capacity
-        # guard below both outlast Discord's three-second window on a season of any
-        # size, and the reply then lands on an expired token (404 Unknown interaction)
-        # while the round itself has already been written.
+        # Deferred before any work: the calendar capacity guard below loads and parses
+        # the calendar template, which can outlast Discord's three-second window, and the
+        # reply then lands on an expired token (404 Unknown interaction) while the round
+        # itself has already been written.
         await interaction.response.defer(ephemeral=True)
 
         if not any([track, scheduled_at, format]):

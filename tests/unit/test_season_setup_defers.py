@@ -1,12 +1,13 @@
 """The season-setup commands defer before they do their work.
 
-Each of `/season setup`, `/division add`, `/round add` and `/round amend` rewrites the
-whole SETUP season through `_snapshot_pending` — every division, team, seat and round
-deleted and re-inserted — and `/round add` additionally loads and parses the calendar
-template to check its capacity. On a season holding more than one division that work
-outlasts Discord's three-second window, the interaction token expires, and the reply
-raises `404 Unknown interaction` *after* the round has already been written. What a
-league manager sees is a command that appears to fail while having silently succeeded.
+Each of `/season setup`, `/division add`, `/round add` and `/round amend` writes the SETUP
+season through `_snapshot_pending`, and `/round add` and `/round amend` also load and parse
+the calendar template to check its capacity. Until issue #147 the write rebuilt the whole
+season, and on a season holding more than one division that work outlasted Discord's
+three-second window: the interaction token expired, and the reply raised `404 Unknown
+interaction` *after* the round had already been written. What a league manager saw was a
+command that appeared to fail while having silently succeeded. The write is small now, but
+the template parse is not, and a deferral costs nothing.
 
 Deferring first buys fifteen minutes, so these pin two things: that the deferral happens
 before any of that work, and that every reply thereafter goes to `followup` — a
