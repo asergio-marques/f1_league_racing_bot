@@ -1182,7 +1182,7 @@ Recorded as the walk-through decides them. None is to be made until stewarding i
 - **Results spec, disabling** — refused while a stewarding cycle is open; otherwise cascades to stewarding (C40).
 - **Core, "When the bot stops"** — add the stewarding module's work to what is recovered; downtime extends the windows in which users act (C41).
 - **Core, a hub channel** — a server-wide channel set by its own command (e.g. `bot-hub-channel`), open to holders of the base role, or to every member where no base role is configured, holding one panel whose options each enabled module adds; stewarding adds "View license" (any driver's licence, a public record), stats will add its own (D1).
-- **Output of "View license"** — needs its own textual and image output, fields and formats to be specified in detail later (D1). Marked `<TBD>` in the spec.
+- ~~Output of "View licence"~~ — specified 2026-09-19 from the licence card mock-up; the league will adjust the arrangement.
 
 ## Notes for implementation — engineering, not specification (G1–G5, 2026-09-19)
 
@@ -1203,3 +1203,4 @@ The spec no longer lists the persisted ticket record field by field; that is for
 - **Forms (K1)** — the spec describes each form by what it collects. A Discord modal holds at most five inputs; the larger forms (outcome add/modify, the report and appeal forms, the four auto-rule adds) must be split into steps, as the results module's penalty wizard is, or presented as a private card, as the ballot is. Fixed values (season, division, round, IDs) are shown, not asked for. Deletions confirm with Confirm/Cancel buttons.
 - **Evidence files (K2)** — where a form cannot take file uploads, a private step before the ticket is filed asks the complainant, appellant or steward to attach their files; the ticket is filed only once the evidence rule is met.
 - **Long lists (K4)** — list replies split across messages under Discord's 2,000-character limit.
+- **Licence view image (owed to the image spec)** — a "licence" view graphic distinct from the licence sheet, with a principal-division logo and colours (the league logo coloured by them), and division fields addressed by row (a logo and optional colour accent per Current row), which no graphic declares today.

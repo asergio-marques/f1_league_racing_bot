@@ -814,7 +814,28 @@
 ## Viewing a licence
 - A driver licence is a public record of the league.
 - While the stewarding module is enabled, the panel of the hub channel the core specification sets out shall offer "View licence". The presser names a driver, themselves or any other, and the bot shows that driver licence in full, seen by the presser alone: their active points with the date and expiry of each, their active bans with their expiries and any season bans stacked, their ban history, their discipline points, their appeal tokens, and the ID of the ticket or ruling each entry came from. A member holding no driver licence is told so.
-- A licence so shown shall have a textual output and an image output of its own, as the licence sheet does. <TBD> Their fields and formats are yet to be specified.
+- A licence so shown shall have a textual output and an image output of its own, as the licence sheet does. The image output may carry detail its textual output does not, but shall omit nothing its textual output carries.
+- A licence belongs to no single division. Where the driver holds a seat, the division that dresses the licence as a whole is their principal division: the highest tier division in which they are a full-time driver, or else the highest tier division in which they are a reserve driver. A driver holding no seat has none, and their licence is drawn in the template's own colours.
+
+### Textual
+- The textual output of a licence shall have the following data, in this order:
+  - The driver's name and nationality.
+  - Current - every division the driver currently races in, each with their team and whether they are a full-time or reserve driver there.
+  - Points - for each of warning points, penalty points and discipline points, the number active, and when they expire, soonest first: how many expire at each round or date, and the division of each round named.
+  - Bans - for each of qualifying bans, race bans, season bans and league bans, the number active, and where each is to be served, or when it ends.
+  - Record - the number of bans of each kind received across the driver's time in the league, and the appeal tokens held, while appeals cost tokens.
+  - The ID of the ticket or ruling each active point or ban came from.
+
+### Image
+- The image output of a licence shall be consistent with the visual outputs the image module already draws. It shall support the following data fields for the bot to insert information:
+  - Driver name - Mandatory
+  - Driver nationality flag - Optional
+  - Driver portrait - Optional - drawn where the league's portrait settings provide one
+  - Principal division logo and colours - Optional - the logo of the principal division, and its per-tier colours applied to the licence as a whole, the league's own logo among what they colour
+  - Current - Mandatory - a row per division the driver currently races in: the division's name, in the ordinary ink, and its logo; the team, with its logo; and whether full-time or reserve. Each row may carry an accent in its division's colour.
+  - Points - Mandatory - a row per type of point: the number active, and the expiries, soonest first
+  - Bans - Mandatory - a row per type of ban: the number active, and where each is to be served, or when it ends
+  - Record - Mandatory - the bans received across the driver's time in the league, and the appeal tokens held, while appeals cost tokens
 
 ## Verdict output
 - While the stewarding module is enabled, the results & standings module's penalty and appeal reviews are not used, and every verdict of a round is this module's, shaped as this section specifies, and drawing on the results & standings module's rendering, templates included, as far as it can.
