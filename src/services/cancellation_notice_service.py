@@ -6,7 +6,8 @@ and that the calendar stops showing it as though it would be. So a cancellation:
 
 - **attendance** — posts the one real notification, to the division's check-in channel,
   mentioning the division role as the check-in call does. The check-in channel is where
-  drivers answer whether they are racing, so it is where they learn they need not;
+  drivers answer whether they are racing, so it is where they learn they need not. The call
+  standing for a round called off is then taken down, its answers kept;
 - **weather** — posts a note to the forecast channel that no forecast is coming;
 - **results** — posts a note to the results channel that no results are coming;
 - **the calendar** — is posted again with the round struck through, or veiled in the
@@ -217,6 +218,26 @@ async def _send(guild, channel_id, content: str, **kwargs) -> str | None:
     return None
 
 
+async def _withdraw_call(bot, round_id: int, division_id: int) -> str | None:
+    """Take down *round_id*'s check-in call in *division_id*, if one stands. Returns what went
+    wrong, or None.
+
+    `withdraw_rsvp_call` is what an amendment uses to take a call down. It deletes the call,
+    its last notice and its distribution announcement, and the row recording which messages
+    those were — the row being read elsewhere as "the call now standing", by the restart that
+    re-arms its buttons among others, so it must not outlive the call. The answers in
+    `driver_round_attendance` are not touched.
+    """
+    from services.rsvp_service import withdraw_rsvp_call
+
+    try:
+        await withdraw_rsvp_call(round_id, division_id, bot)
+    except Exception as exc:  # noqa: BLE001 — one call never stops the rest
+        log.exception("cancellation notice: could not take down the call of round %s", round_id)
+        return f"could not be taken down ({exc})"
+    return None
+
+
 async def announce_cancellation(
     bot,
     guild,
@@ -288,6 +309,12 @@ async def _announce(
                 ping + attendance_notice(scope, division.name, **words),
                 allowed_mentions=discord.AllowedMentions(roles=bool(role_id)),
             ))
+            # The check-in call of a round called off has nothing left to ask, and its buttons
+            # would go on recording answers to it; it comes down with its last notice and its
+            # distribution announcement, whether or not the notice above could be posted. The
+            # answers already recorded are kept (decided 2026-09-19).
+            for round_id in sorted(round_ids):
+                _fail(division, "check-in call", await _withdraw_call(bot, round_id, division.id))
         if channels is not None and enabled["weather"]:
             _fail(division, "forecast channel", await _send(
                 guild,

@@ -343,3 +343,173 @@ def test_the_log_names_every_failure_in_full():
     logged = cns.failure_log_lines(failures)
     assert logged.count("not notified: ") == 30
     assert cns.failure_log_lines([]) == ""
+
+
+# ── The check-in call of a round called off comes down; its answers stay ───
+
+ROUND_ID = 31
+CALL_MSG, LAST_MSG, DIST_MSG = 9001, 9002, 9003
+
+
+async def _with_call(db_path, *, round_id=ROUND_ID) -> None:
+    """A round of the division whose check-in call is posted, with two answers recorded."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at)"
+            " VALUES (?, ?, 3, 'NORMAL', 'Monza', '2026-10-01T18:00:00')",
+            (round_id, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id,"
+            " posted_at, last_notice_msg_id, distribution_msg_id)"
+            " VALUES (?, ?, ?, ?, '2026-09-26T18:00:00', ?, ?)",
+            (round_id, DIVISION_ID, str(CALL_MSG), str(RSVP), str(LAST_MSG), str(DIST_MSG)),
+        )
+        for profile_id, user_id, status in ((1, "101", "ACCEPTED"), (2, "102", "DECLINED")):
+            await db.execute(
+                "INSERT OR IGNORE INTO driver_profiles (id, discord_user_id, current_state)"
+                " VALUES (?, ?, 'ASSIGNED')",
+                (profile_id, user_id),
+            )
+            await db.execute(
+                "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id,"
+                " rsvp_status) VALUES (?, ?, ?, ?)",
+                (round_id, DIVISION_ID, profile_id, status),
+            )
+        await db.commit()
+
+
+def _call_channel(bot, *, refuse=False):
+    """The check-in channel as `withdraw_rsvp_call` reaches it, recording what it deletes."""
+    import discord
+
+    deleted: list[int] = []
+
+    async def _fetch(message_id):
+        message = MagicMock()
+
+        async def _delete():
+            if refuse:
+                raise discord.Forbidden(MagicMock(status=403), "nope")
+            deleted.append(message_id)
+
+        message.delete = _delete
+        return message
+
+    channel = MagicMock()
+    channel.fetch_message = _fetch
+    bot.get_channel = MagicMock(return_value=channel)
+    return deleted
+
+
+def _with_attendance(bot):
+    from services.attendance_service import AttendanceService
+
+    bot.attendance_service = AttendanceService(bot.db_path)
+    return bot
+
+
+async def _rows(db_path, table):
+    async with get_connection(db_path) as db:
+        return await (await db.execute(f"SELECT * FROM {table}")).fetchall()  # noqa: S608
+
+
+async def test_the_call_its_notice_and_its_distribution_come_down(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
+    bot = _with_attendance(_bot(db_path))
+    deleted = _call_channel(bot)
+    guild, _ = _guild()
+
+    report = await cns.announce_cancellation(
+        bot, guild, [_division()], scope=cns.SCOPE_ROUND, round_number=3,
+        round_ids=frozenset({ROUND_ID}),
+    )
+
+    assert report.failures == []
+    assert sorted(deleted) == [CALL_MSG, LAST_MSG, DIST_MSG]
+    assert await _rows(db_path, "rsvp_embed_messages") == []
+
+
+async def test_the_answers_are_kept(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
+    bot = _with_attendance(_bot(db_path))
+    _call_channel(bot)
+    guild, _ = _guild()
+
+    await cns.announce_cancellation(
+        bot, guild, [_division()], scope=cns.SCOPE_ROUND, round_ids=frozenset({ROUND_ID})
+    )
+
+    rows = await _rows(db_path, "driver_round_attendance")
+    assert sorted((r["driver_profile_id"], r["rsvp_status"]) for r in rows) == [
+        (1, "ACCEPTED"), (2, "DECLINED"),
+    ]
+
+
+async def test_the_call_comes_down_even_where_the_notice_could_not_be_posted(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
+    bot = _with_attendance(_bot(db_path))
+    deleted = _call_channel(bot)
+    guild, _ = _guild(missing=(RSVP,))
+
+    report = await cns.announce_cancellation(
+        bot, guild, [_division()], scope=cns.SCOPE_ROUND, round_ids=frozenset({ROUND_ID})
+    )
+
+    assert [f.target for f in report.failures] == ["check-in channel"]
+    assert CALL_MSG in deleted
+
+
+async def test_with_attendance_off_the_call_is_left_alone(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
+    bot = _with_attendance(_bot(db_path, attendance=False))
+    deleted = _call_channel(bot)
+    guild, _ = _guild()
+
+    await cns.announce_cancellation(
+        bot, guild, [_division()], scope=cns.SCOPE_ROUND, round_ids=frozenset({ROUND_ID})
+    )
+
+    assert deleted == []
+    assert len(await _rows(db_path, "rsvp_embed_messages")) == 1
+
+
+async def test_a_round_this_cancellation_does_not_call_off_keeps_its_call(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
+    bot = _with_attendance(_bot(db_path))
+    deleted = _call_channel(bot)
+    guild, _ = _guild()
+
+    await cns.announce_cancellation(
+        bot, guild, [_division()], scope=cns.SCOPE_DIVISION, round_ids=frozenset({999})
+    )
+
+    assert deleted == []
+    assert len(await _rows(db_path, "rsvp_embed_messages")) == 1
+
+
+async def test_a_call_that_cannot_be_taken_down_is_a_failure_not_an_error(
+    tmp_path, monkeypatch
+):
+    from services import rsvp_service
+
+    db_path = await _make_db(tmp_path)
+    bot = _with_attendance(_bot(db_path))
+    monkeypatch.setattr(
+        rsvp_service, "withdraw_rsvp_call", AsyncMock(side_effect=RuntimeError("db locked"))
+    )
+    guild, channels = _guild()
+
+    report = await cns.announce_cancellation(
+        bot, guild, [_division()], scope=cns.SCOPE_ROUND, round_ids=frozenset({ROUND_ID})
+    )
+
+    assert [(f.target, f.reason) for f in report.failures] == [
+        ("check-in call", "could not be taken down (db locked)")
+    ]
+    channels[FORECAST].send.assert_awaited_once()
