@@ -4514,8 +4514,9 @@ class SeasonCog(commands.Cog):
                 for r in pend_div.rounds
             ]
             await interaction.followup.send(
-                f"\u2705 Round {round_number} in **{pend_div.name}** updated in pending setup "
-                f"(no DB write \u2014 it is committed when placements are confirmed from `/season placements-review`).\n\n"
+                f"\u2705 Round {round_number} in **{pend_div.name}** updated and saved to the "
+                f"season being set up. Its sessions are created when placements are confirmed "
+                f"from `/season placements-review`.\n\n"
                 + format_round_list(round_models),
                 ephemeral=True,
             )

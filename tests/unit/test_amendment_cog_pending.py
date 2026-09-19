@@ -109,6 +109,29 @@ async def test_pending_amend_track_change() -> None:
     assert kwargs.get("ephemeral") is True
 
 
+async def test_pending_amend_reply_says_the_round_is_saved() -> None:
+    """The amend is written to the season at once, through `_snapshot_pending`.
+
+    The reply used to say "no DB write — it is committed when placements are confirmed",
+    which was never true: every setup command persists what it changes.
+    """
+    pending = _make_pending()
+    cog, bot = _make_cog(pending)
+    interaction = _make_interaction()
+
+    await undecorate(cog.round_amend)(cog, interaction,
+        division_name="Pro",
+        round_number=1,
+        scheduled_at="2026-05-02T14:00:00",
+    )
+
+    bot.season_service.sync_pending_config.assert_awaited_once()
+    args, kwargs = interaction.followup.send.call_args
+    reply = args[0] if args else kwargs.get("content", "")
+    assert "saved to the season" in reply
+    assert "no DB write" not in reply
+
+
 async def test_pending_amend_scheduled_at_change() -> None:
     """T006-2: scheduled_at amendment updates the datetime in-memory and renumbers by date."""
     pending = _make_pending()
