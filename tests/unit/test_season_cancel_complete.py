@@ -341,19 +341,40 @@ async def test_the_rounds_about_to_be_cancelled_are_drawn_cancelled():
     assert announce.await_args.kwargs["also_cancelled"] == frozenset({2, 3})
 
 
-async def test_the_modules_are_told_before_the_cascade():
-    """Once the season is recorded cancelled its channels are no longer read."""
+async def test_the_modules_are_told_after_the_history_and_before_the_roles_go():
+    """After the history, so a run repeated after that step fails tells nobody twice. Before
+    the roles are revoked, since the check-in notice mentions the division role and a role
+    nobody holds reaches nobody. Before the cascade, which stops the channels being read."""
     order: list[str] = []
     cog = _make_cog(order=order)
     announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or [])
-    history, roles = _season_end()
+    history, _ = _season_end(order=order)
+    roles = patch(
+        "services.season_end_service._revoke_season_roles",
+        new=AsyncMock(side_effect=lambda *a, **kw: order.append("roles")),
+    )
 
     with history, roles, patch(
         "services.cancellation_notice_service.announce_cancellation", new=announce
     ):
         await undecorate(SeasonCog.season_cancel)(cog, _interaction(), "CONFIRM")
 
-    assert order.index("announce") < order.index("cascade")
+    assert order == ["history", "announce", "roles", "cascade"]
+
+
+async def test_a_failed_history_write_tells_nobody():
+    """The admin runs the command again once it is fixed; nothing is announced twice."""
+    cog = _make_cog()
+    history, roles = _season_end(history_error=RuntimeError("disk full"))
+    announce = AsyncMock(return_value=[])
+
+    with history, roles, pytest.raises(RuntimeError), patch(
+        "services.cancellation_notice_service.announce_cancellation", new=announce
+    ):
+        await undecorate(SeasonCog.season_cancel)(cog, _interaction(), "CONFIRM")
+
+    announce.assert_not_awaited()
+    cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
 
 
 async def test_what_could_not_be_told_is_named_to_the_admin():
@@ -373,6 +394,8 @@ async def test_what_could_not_be_told_is_named_to_the_admin():
     replied = _replied(interaction)
     assert "Season cancelled" in replied
     assert "**Division 1** — calendar: forbidden" in replied
+    logged = cog.bot.output_router.post_log.await_args.args[0]
+    assert "not notified: **Division 1** — calendar: forbidden" in logged
 
 
 async def test_every_scheduled_job_is_cancelled():

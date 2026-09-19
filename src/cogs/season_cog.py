@@ -2793,19 +2793,6 @@ class SeasonCog(commands.Cog):
                     to_cancel.add(rnd.id)
         self.bot.scheduler_service.cancel_season_end()
 
-        # Each division still running is told by each enabled module, in its own channel, and
-        # its calendar posted again with the called-off rounds struck through (#175). Done
-        # before the cascade, since a season recorded cancelled no longer has its channels
-        # read — so the rounds about to be cancelled are named rather than read back.
-        failures = await cancellation_notice_service.announce_cancellation(
-            self.bot,
-            interaction.guild,
-            active_divs,
-            scope=cancellation_notice_service.SCOPE_SEASON,
-            season_number=season.season_number,
-            also_cancelled=frozenset(to_cancel),
-        )
-
         # A cancelled season is still league history: it happened, and the drivers raced in it.
         #
         # Written *before* the cascade, and marked cancelled explicitly rather than by reading
@@ -2827,6 +2814,25 @@ class SeasonCog(commands.Cog):
 
         await _write_driver_history_entries(season, self.bot, force_cancelled=True)
 
+        # Each division still running is told by each enabled module, in its own channel, and
+        # its calendar posted again with the called-off rounds struck through (#175).
+        #
+        # The placing is deliberate on both sides. **After** the history, which is the step a
+        # failure is most likely to stop and the admin to run again, so that running it again
+        # does not tell every division twice. **Before** the roles are revoked, since the
+        # check-in notice mentions the division role and a role nobody holds any more reaches
+        # nobody; and before the cascade, since a season recorded cancelled no longer has its
+        # channels read — which is also why the rounds about to be cancelled are named here
+        # rather than read back.
+        failures = await cancellation_notice_service.announce_cancellation(
+            self.bot,
+            interaction.guild,
+            active_divs,
+            scope=cancellation_notice_service.SCOPE_SEASON,
+            season_number=season.season_number,
+            also_cancelled=frozenset(to_cancel),
+        )
+
         # The roles, the driver pass, the window and test mode — as completing a season does.
         if interaction.guild is not None:
             await _revoke_season_roles(
@@ -2845,7 +2851,8 @@ class SeasonCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season cancel | Success",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season cancel | Success"
+            + cancellation_notice_service.failure_log_lines(failures),
         )
 
     @season.command(
@@ -3531,7 +3538,8 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division cancel | Success\n"
-            f"  division: {name}",
+            f"  division: {name}"
+            + cancellation_notice_service.failure_log_lines(failures),
         )
 
     # ------------------------------------------------------------------
@@ -4841,7 +4849,8 @@ class SeasonCog(commands.Cog):
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round cancel | Success\n"
             f"  division: {division_name}\n"
-            f"  round: {round_number}",
+            f"  round: {round_number}"
+            + cancellation_notice_service.failure_log_lines(failures),
         )
 
     # ------------------------------------------------------------------

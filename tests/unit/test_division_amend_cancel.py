@@ -737,6 +737,8 @@ async def test_what_could_not_be_told_is_named_to_the_admin(tmp_path):
     replied = _replied(interaction)
     assert "cancelled" in replied
     assert "forecast channel: the channel could not be found" in replied
+    logged = cog.bot.output_router.post_log.await_args.args[0]
+    assert "not notified: **Pro** — forecast channel" in logged
 
 
 async def test_the_cancellation_is_deferred_only_once_the_gates_are_past(tmp_path):

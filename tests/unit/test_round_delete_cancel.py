@@ -473,6 +473,8 @@ async def test_what_could_not_be_told_is_named_to_the_admin():
     assert "cancelled" in replied
     assert "Not notified" in replied
     assert "check-in channel: no channel is set" in replied
+    logged = cog.bot.output_router.post_log.await_args.args[0]
+    assert "not notified: **Division 1** — check-in channel: no channel is set" in logged
 
 
 async def test_a_cancelled_round_keeps_its_number():
