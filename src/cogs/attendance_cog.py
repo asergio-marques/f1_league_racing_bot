@@ -499,6 +499,21 @@ _STATUS_LABELS = {
 }
 
 
+async def _call_stands(bot, round_id: int, division_id: int) -> bool:
+    """Whether a check-in call for *round_id* is still recorded as standing.
+
+    The row goes when the call is taken down — by a cancellation, or by an amendment that
+    withdraws it — and it is written when one is posted, so its absence means there is no call
+    to answer even where the message itself could not be deleted.
+    """
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT 1 FROM rsvp_embed_messages WHERE round_id = ? AND division_id = ?",
+            (round_id, division_id),
+        )
+        return await cursor.fetchone() is not None
+
+
 async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -> None:
     """Handle an RSVP button press.
 
@@ -582,10 +597,17 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     # here is one that raced it, or one on a call the bot was not allowed to delete. Either way
     # there is nothing left to answer, and an answer recorded now would stand beside a round
     # that is off.
-    if round_row["status"] == RoundStatus.CANCELLED.value:
+    #
+    # The withdrawal is read as well as the round's status, because the two are written apart:
+    # cancelling a season takes its calls down several steps before the cascade records its
+    # rounds cancelled, and a failure in between would leave a round still `NOT_RUN` whose call
+    # is gone. A call that no longer stands answers nobody, whatever the round says.
+    if round_row["status"] == RoundStatus.CANCELLED.value or not await _call_stands(
+        bot, round_id, round_row["division_id"]
+    ):
         await interaction.response.send_message(
-            "❌ This round has been cancelled, so there is no check-in to answer. "
-            "Your answer has not been recorded.",
+            "❌ This check-in is no longer open — the round has been cancelled, or its call "
+            "has been taken down. Your answer has not been recorded.",
             ephemeral=True,
         )
         return
