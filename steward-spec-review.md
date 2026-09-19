@@ -1288,3 +1288,15 @@ Decisions:
 - #212 channel audit gaps — will apply to "division ticket-channel" and "division licence-channel" when built.
 - #138 no-further-action verdict — subsumed while stewarding is enabled: NFA is permanent and an all-zero outcome is refused.
 - R58 #146 — the Reserve team always exists and has no full-time drivers, so "every full-time driver is involved" was vacuously true of it. A team now needs at least one full-time driver in the division, and the Reserve team is never sanctioned.
+
+## Requirement IDs (2026-09-20)
+
+Every bullet of the spec carries an ID of the form `STW-<SECTION>-<NNN>`, allocated in document
+order at the first pass and **never renumbered**: a rule added later takes the next free number in
+its section, and a deleted rule's ID is retired rather than reused. Four pure lead-ins carry none,
+holding no rule of their own ("All stewarding team members EXCEPT:", "For each involved driver:",
+"For each team that may be sanctioned upon the ticket:", "How a threshold re-arms depends upon the
+type of the auto-rule:").
+
+Sections: MOD (the module itself), CON (concepts), CFG, CHN, TEM, TIM, APL, JUS, OUT, PEN, ARL,
+BKP, COC, SET, TKT, DEL, CYC, CCY, REV, ART, BAN, LIC, VER, STD, SHT, PCK, RST, TST.
