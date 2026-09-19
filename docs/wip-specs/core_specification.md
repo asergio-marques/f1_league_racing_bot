@@ -537,6 +537,7 @@ section states the rules it holds to.
 
 ### Fake drivers and rosters
 - A driver created by test mode shall be seated directly into a team of a division, bypassing the signup entirely, while the season is in Placements, and shall be indistinguishable thereafter from one added any other way.
+- A driver created by test mode shall be refused wherever a real driver placed in the same team would be refused for carrying the division past the capacity of a configured template, and nothing shall be written. A roster seated at once shall be measured over every driver it gives each division, and a division it would carry past such a capacity shall refuse the whole import.
 - The identifiers of such drivers shall be drawn from a range above any identifier a real Discord account can hold.
 - A driver created by test mode shall never be granted or revoked a Discord role.
 - The commands adding, removing and clearing drivers created by test mode shall be refused in any state but Placements.

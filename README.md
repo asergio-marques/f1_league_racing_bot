@@ -786,6 +786,8 @@ Creates a synthetic driver profile occupying a real seat, so a division can be f
 
 A fake driver has no signup record behind it, so the nationality is recorded on the driver itself. Give one and the driver draws a flag like anybody else; leave it out and the driver is drawn without one. The value is refused if it is not a nationality the bot knows, and refused outright while `/test-mode nationality` is off.
 
+**Held to your templates.** A fake driver is refused wherever a real driver placed in the same team would be: past the reserve slots your lineup template draws, the rows of your attendance sheet, or the rows of your driver standings — each only while that image output is on. A test roster that seats cleanly tells you the templates hold that grid.
+
 #### `/test-mode roster add-bulk` — Seat a whole roster at once
 *Access: League admin · Requires test mode active*
 
@@ -795,7 +797,7 @@ No parameters. Opens a box; paste the `roster.csv` the roster generator writes, 
 
 > **A division that already holds drivers is refused.** The file describes a whole grid, so importing over a seated division would leave drivers somewhere the file does not describe. Clear it with `/test-mode roster clear` first. Only the division named is refused, so the rest of a split roster still lands.
 
-> **Nothing is seated unless everything can be.** A misspelt team, an unknown nationality, a division not in the season, or a team given more drivers than it has seats refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time.
+> **Nothing is seated unless everything can be.** A misspelt team, an unknown nationality, a division not in the season, a team given more drivers than it has seats, or a division given more drivers than a configured image template draws — counted over every driver the file gives it, as `roster add` counts one — refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time.
 
 > Discord caps the box at 4000 characters, which is roughly seventy drivers. A larger grid goes in two passes, a division at a time.
 
