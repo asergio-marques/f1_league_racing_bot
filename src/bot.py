@@ -412,6 +412,8 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
             JOIN seasons s ON s.id = d.season_id
             WHERE s.status = 'ACTIVE'
               AND r.format != 'MYSTERY'
+              AND r.status != 'CANCELLED'
+              AND d.status != 'CANCELLED'
             """
         )
         rows = await cursor.fetchall()

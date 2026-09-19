@@ -303,6 +303,29 @@ async def test_a_season_not_running_recovers_nothing(tmp_path):
     assert await _recover(_bot(db_path)) == []
 
 
+async def test_a_cancelled_round_recovers_nothing(tmp_path):
+    """The division was told no forecast would follow, and its phase jobs were cancelled
+    without being marked done — so the flags alone would have a restart post them anyway."""
+    db_path = await _make_db(
+        tmp_path,
+        rounds=((1, RACE_SOON, False, False, False, "NORMAL"),),
+        round_status="CANCELLED",
+    )
+
+    assert await _recover(_bot(db_path)) == []
+
+
+async def test_a_round_of_a_cancelled_division_recovers_nothing(tmp_path):
+    """A cancelled division has no round left to forecast, whatever each round records."""
+    db_path = await _make_db(
+        tmp_path,
+        rounds=((1, RACE_SOON, False, False, False, "NORMAL"),),
+        division_status="CANCELLED",
+    )
+
+    assert await _recover(_bot(db_path)) == []
+
+
 async def test_a_naive_timestamp_is_read_as_utc(tmp_path):
     """Rows written before the timestamps carried a zone still exist. Read as local time
     the horizon would move by the host's offset, so the same database would recover
