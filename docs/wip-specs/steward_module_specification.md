@@ -98,7 +98,7 @@
   - Active accumulation - Rules that verify only the accumulation of a specific active penalty on a driver licence.
   - Historical accumulation - Rules that verify the total accumulation of a specific penalty across a driver licence history, active, expired or served.
 - Active penalty - A penalty instance that is still active, and is yet to be served, yet to expire, or yet to be revoked. Applies to warning points, penalty points, discipline points, qualifying bans, race bans, season bans and league bans.
-  - A championship points deduction, a championship disqualification, a constructors' points deduction and a constructors' championship disqualification are active while the season they were given in is being raced. Once it is pending completion, they stand as given.
+  - A championship points deduction, a championship disqualification, a constructors' points deduction and a constructors' championship disqualification are active while the season they were given in is ongoing, as the core specification's season states define it. Once it is pending completion, they stand as given.
 
 ## Configuring the stewarding module
 - All configuration changes must be logged to the standard log channel.
@@ -281,7 +281,7 @@
   - By default, this will be set to "number of rounds".
 - <NEW COMMAND> A "steward penalty warning-point-expiry" command will be made available to league managers, which shall have as single input one of the following behaviours, determining when warning points expire:
   - Number of rounds - Warning points expire once a number of rounds has taken place, counted as the rounds of a season ban are: those of the division in which they were received, carrying into the division of the same tier in a later season. The number is either one the league sets, or the length of the season, being the number of rounds of that division in the season in which the points were received.
-  - Season end - Warning points expire when the season is completed. Warning points received while no season is being raced expire instead at the completion of the next season.
+  - Season end - Warning points expire when the season is completed. Warning points received while no season is ongoing expire instead at the completion of the next season.
   - Timed - Warning points expire after a set number of days.
   - By default, this will be set to "number of rounds", the number being the length of the season.
 - <NEW COMMAND> A "steward penalty penalty-point-expiry" command will be made available to league managers, which shall have as single input one of the behaviours of "steward penalty warning-point-expiry", determining alike when penalty points expire.
@@ -341,7 +341,7 @@
 - A time penalty or disqualification an auto-rule hands out shall change the result of a race session:
   - Where the auto-rule was triggered at the close of a round's cycle, that round's feature race. It is applied as part of the close, and the round's results and standings reposted once, under the Final Results label.
   - Where it was triggered by a CoC investigation, the feature race of the next round the driver takes part in, applied at the close of that round's cycle and shown upon its results. A driver who takes part in no further round never has it applied.
-- A championship points deduction or a championship disqualification an auto-rule hands out shall be given in the drivers' championship of a season being raced:
+- A championship points deduction or a championship disqualification an auto-rule hands out shall be given in the drivers' championship of an ongoing season:
   - Where the auto-rule was triggered at the close of a round's cycle, in that round's division, applied as part of the close and the division's standings reposted with it.
   - Where it was triggered by a CoC investigation, in each division the driver races in, as the verdict's own championship penalties are, and held upon their licence where they race in none.
 - The type counted and the type handed out may be the same, each auto-rule being triggered at most once for a driver in one cycle close, and re-arming as its type does.
@@ -449,6 +449,7 @@
 ## Tickets
 - What this section sets out holds for every ticket, a report, an appeal and a CoC investigation alike, save where a cycle sets out otherwise. For a CoC investigation, its involved users stand where this section names involved drivers. An investigation has no initiator among its parties: the steward who opened it holds only a steward's place in it, and where this section names the one who initiated the ticket, it names no one in an investigation.
 - Every act in a ticket, and every use of a command of this module, shall be written to the steward log channel: what was done, upon which ticket where there is one, when, and by whom, by their display name and user ID. That includes the filing of a ticket and its contents, the adding or removing of a driver, requests and their answers, exclusions and handovers, mutes, the settling of an incident, grounds or justification, merges and withdrawals, and every refusal.
+  - A command, button or form of this module that fails, as the core specification's rule upon a failed command sets out, shall be written to the steward log channel as well as to the log channel, naming the ticket where there was one. The member is answered as core requires.
   - Ballots are the exception while a deliberation is open: the log records only that a steward cast, changed or removed a ballot, and not its content. Every ballot is written to the log in full once the deliberation closes.
 - It is imperative that the stewarding team is seen as a unified front.
   - The effective head steward of a ticket is the face of the stewarding team to the users of that ticket, and may speak to them under their own name. They are its mouthpiece only.
@@ -504,7 +505,7 @@
 - This phase cannot be terminated early.
 
 ### Deliberation
-- A team may be sanctioned upon a ticket only where every full-time driver of that team in the division is an involved driver of it, so that it is represented, and defended, by all of them. Reserve drivers are not counted. The stewards may bring a missing team-mate into the ticket with "Add driver" before deliberation begins. In a CoC investigation, which pertains to no division, a team of any division of a season being raced may be sanctioned where every full-time driver of it in its division is among the involved users.
+- A team may be sanctioned upon a ticket only where every full-time driver of that team in the division is an involved driver of it, so that it is represented, and defended, by all of them. Reserve drivers are not counted. The stewards may bring a missing team-mate into the ticket with "Add driver" before deliberation begins. In a CoC investigation, which pertains to no division, a team of any division of an ongoing season may be sanctioned where every full-time driver of it in its division is among the involved users.
 - Each line of a ballot applies only its own part of an outcome. A driver's line offers the outcomes carrying a penalty given to a driver, and gives the driver those penalties alone; a team's line offers the outcomes carrying a penalty given to a team, and gives the team those alone. An outcome carrying both is offered upon both kinds of line.
 - Once this phase is entered, the involved drivers lose all permission to read, write or attach media to the channel.
 - Once this phase is entered, the members of the effective stewarding team will gain the permission to write or attach media to the channel.
@@ -707,15 +708,15 @@
 ### Investigation deliberation
 - Once this phase is entered, a countdown with the period of time configured by "steward conduct deliberation-period" will start.
 - The ballot of an investigation is as set out under Tickets, save that it shows the Investigation ID, and gives a line to each involved user. Its outcomes are all conduct outcomes currently configured that are not paused.
-- Only after the final output is determined for the investigation, it will be posted immediately in the channel configured by "steward channel conduct-verdicts", whether or not the user holds a seat and whether or not a season is live.
-  - Where a season is live and the user holds a seat in any of its divisions, full-time or reserve, the verdict shall also be posted in the verdicts channel of each of those divisions, each such post carrying the indication "(repost)".
+- Only after the final output is determined for the investigation, it will be posted immediately in the channel configured by "steward channel conduct-verdicts", whether or not the user holds a seat and whether or not a season is ongoing.
+  - Where a season is ongoing and the user holds a seat in any of its divisions, full-time or reserve, the verdict shall also be posted in the verdicts channel of each of those divisions, each such post carrying the indication "(repost)".
 - After the verdict is posted successfully, the conduct cycle will be considered closed.
 - Once its verdict is posted, the investigation's channel shall be removed. Where "steward backup conduct-toggle" is toggled on, its content shall be persisted to disk immediately, and once that has succeeded the channel shall be deleted. Where it is toggled off, a 7 day countdown shall be initiated, at the end of which the channel shall be deleted.
 
 ### Cycle close
 - Once the investigation's verdict is posted, the outcomes it gives are made effective: each involved user's upon their driver licence, a driver profile being created for them at Not Signed Up, licence included, where they hold none, and each team penalty upon the licences of the team's drivers, as set out under Concepts. The licences so changed are then checked against the auto-rules, as set out under Auto-rule triggering.
-  - A championship points deduction or championship disqualification given to a user who races in no division of a season being raced shall be held upon their licence, and applied once placements seating them in a season being raced are confirmed, in each division they then race in. Until then it is active, and appears upon their licence as held.
-  - A team penalty given once its season is no longer being raced shall have no effect, and the verdict shall say so.
+  - A championship points deduction or championship disqualification given to a user who races in no division of an ongoing season shall be held upon their licence, and applied once placements seating them in an ongoing season are confirmed, in each division they then race in. Until then it is active, and appears upon their licence as held.
+  - A team penalty given once its season is no longer ongoing shall have no effect, and the verdict shall say so.
 - The licence sheets touched are posted anew as set out under Licence sheet output, and the standings as set out under Standings output.
 
 ## Revoking penalties
@@ -747,10 +748,11 @@
   - This command fails if league bans are disabled, or if the user holds no active league ban.
   - Upon removal of the league ban, the league ban role will be removed from their current account where it is in the server, and otherwise shall not be given to it when it returns.
   - A season ban the league ban replaced shall not be restored.
-- <NEW COMMAND> A "steward revoke championship-penalty" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, the penalty to be revoked — a championship points deduction, or a championship disqualification — the division and season in which it was given, and a justification to be available in the steward log.
+- <NEW COMMAND> A "steward revoke championship-penalty" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, the penalty to be revoked — a championship points deduction, or a championship disqualification — the division in which it was given, and a justification to be available in the steward log. The penalty is one of the ongoing season, a completed season being immutable.
   - This command fails if the driver holds no such penalty, or if that penalty type is disabled.
+  - A penalty held upon the licence, not yet applied to any championship, shall be named by the ticket that gave it, no division being asked for. Revoking it takes it off the licence, and no standings are posted anew.
   - Upon revocation, the division's drivers' standings shall be calculated and posted anew, whether the penalty is annulled or lifted.
-- <NEW COMMAND> A "steward revoke team-penalty" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a team and its division, the penalty to be revoked — a constructors' points deduction, or a constructors' championship disqualification — the season in which it was given, and a justification to be available in the steward log.
+- <NEW COMMAND> A "steward revoke team-penalty" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a team and its division, the penalty to be revoked — a constructors' points deduction, or a constructors' championship disqualification — and a justification to be available in the steward log. The penalty is one of the ongoing season, a completed season being immutable.
   - This command fails if the team holds no such penalty, or if that penalty type is disabled.
   - Upon revocation, the division's constructors' standings shall be calculated and posted anew, whether the penalty is annulled or lifted, and the championship record of each driver through whom it was given changed alike.
 - While the stewarding module is disabled, "steward revoke season-ban" and "steward revoke league-ban" shall be available to league admins, and shall be the only commands of this module available. The justification shall be written to the log channel.
@@ -889,7 +891,7 @@
 - Every verdict shall show the round it pertains to, or the round that gave rise to it, by its season, division, round number and grand prix name, in its textual and its image output alike.
   - A Report Verdict and an Appeal Verdict shall show as well the session and lap of the incident.
   - An Automated Ruling shall show the round whose results or whose cycle close gave rise to it.
-- A Code of Conduct Verdict pertains to no division and to no round, and shall show the season alone: the season live when it is posted, or none between seasons. So shall an Automated Ruling given rise to by a CoC investigation.
+- A Code of Conduct Verdict pertains to no division and to no round, and shall show the season alone: the season ongoing when it is posted, or none where none is. So shall an Automated Ruling given rise to by a CoC investigation.
   - In the textual output the lines it has no value for shall be left out. In the image output the fields it has no value for shall be emptied, and removed where the template declares them removable, without any error being reported.
 - A verdict posted again as a repost shall be identical to the original, save the indication "(repost)".
 - The image output of a verdict may carry detail its textual output does not, but shall omit nothing its textual output carries.
@@ -903,7 +905,7 @@
   - Every batch of verdicts posted together for a round shall be headed by a header naming the round, by its season, division, round number and grand prix name. The report verdicts of a round, its appeal verdicts, and the automated rulings of its cycle close are each a batch of their own, and each shall be headed.
     - Where the verdict banner aspect of the image module is on, the header is the verdict banner. Where it is off, or the banner cannot be drawn, the header shall be posted as text.
     - A Code of Conduct Verdict pertains to no round and is headed by none.
-- If they pertain to a Code of Conduct investigation, or auto-rule triggered by a CoC investigation's own verdict (or an auto-rule triggered by auto-rule triggered by CoC inv), verdicts shall be posted as a CoC investigation's verdict is: in the channel configured by "steward channel conduct-verdicts", and also in the verdicts channel of each division of the live season in which the user holds a seat, marked "(repost)".
+- If they pertain to a Code of Conduct investigation, or auto-rule triggered by a CoC investigation's own verdict (or an auto-rule triggered by auto-rule triggered by CoC inv), verdicts shall be posted as a CoC investigation's verdict is: in the channel configured by "steward channel conduct-verdicts", and also in the verdicts channel of each division of the ongoing season in which the user holds a seat, marked "(repost)".
 
 ### Automated Rulings
 - An Automated Ruling is issued by the bot, with no complaint and no stewards' justification. It fills the fields of a verdict as follows, in its textual and its image output alike:
@@ -941,7 +943,7 @@
 - A points deduction lowers the total of the driver or team it is given to, and shall be marked: in the textual output by a footnote to the total, stating the points deducted; in the image output by an optional column holding the points deducted.
 - A driver or team disqualified from the championship shall be shown in the standings with "DSQ" in place of their points total, the exact tally of their points not displayed, and ranked beneath every driver or team classified.
 - A championship penalty takes effect with the verdict that gives it, as time penalties and disqualifications do upon the results: the standings reposted once a round's report verdicts are posted already show those the reports gave, and those reposted once its appeal verdicts are posted show them as the appeals left them. It is written to the driver licence at the cycle close, with every other change to a licence.
-- Where a Code of Conduct Verdict gives a championship penalty or a team penalty, the standings it touches shall be calculated and posted anew as soon as the verdict is posted, under the label the latest round of each division already carries: the drivers' standings of each division the user races in, and the constructors' standings of the division of the team sanctioned.
+- Where a Code of Conduct Verdict gives a championship penalty or a team penalty, the standings it touches shall be calculated and posted anew as soon as the verdict is posted, under the label the latest round of each division already carries, or, where the division has raced no round, the label of its opening classification: the drivers' standings of each division the user races in, and the constructors' standings of the division of the team sanctioned.
 
 ## Licence sheet output
 - The licence sheet for a given division shall be posted in the channel configured by "division licence-channel".
