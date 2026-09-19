@@ -214,7 +214,9 @@ async def test_a_calendar_never_posted_is_left_alone(tmp_path, monkeypatch):
 async def test_the_calendar_is_posted_again_with_the_round_cancelled(tmp_path, monkeypatch):
     from services import calendar_post_service
 
-    post = AsyncMock(return_value=NS(message_id=42, problem=None))
+    post = AsyncMock(
+        return_value=calendar_post_service.CalendarPosting(division_id=DIVISION_ID, message_id=42)
+    )
     monkeypatch.setattr(calendar_post_service, "post_division_calendar", post)
     monkeypatch.setattr(calendar_post_service, "tracks_by_name", AsyncMock(return_value={}))
     bot = _bot(await _make_db(tmp_path))
@@ -245,7 +247,9 @@ async def test_a_calendar_that_could_not_be_posted_is_a_failure(tmp_path, monkey
     monkeypatch.setattr(
         calendar_post_service,
         "post_division_calendar",
-        AsyncMock(return_value=NS(message_id=None, problem="forbidden")),
+        AsyncMock(return_value=calendar_post_service.CalendarPosting(
+            division_id=DIVISION_ID, problem="forbidden"
+        )),
     )
     monkeypatch.setattr(calendar_post_service, "tracks_by_name", AsyncMock(return_value={}))
     bot = _bot(await _make_db(tmp_path), weather=False, results=False, attendance=False)
@@ -270,3 +274,72 @@ async def test_a_calendar_that_raises_is_a_failure_not_an_error(tmp_path, monkey
         bot, MagicMock(), [_division(message_id=9)], scope=cns.SCOPE_SEASON
     )
     assert [(f.target, f.reason) for f in failures] == [("calendar", "boom")]
+
+
+# ── Nothing escapes: the cancellation is part-done when this runs ──────────
+
+
+async def test_a_module_state_that_cannot_be_read_is_a_failure_not_an_error(tmp_path):
+    """Before the cascade of a season an exception here would leave it half-cancelled."""
+    bot = _bot(await _make_db(tmp_path))
+    bot.module_service.is_weather_enabled = AsyncMock(side_effect=RuntimeError("db locked"))
+    guild, _ = _guild()
+    failures = await _announce(bot, guild, cns.SCOPE_SEASON)
+    assert [(f.target, f.reason) for f in failures] == [("the announcement", "db locked")]
+
+
+async def test_channels_that_cannot_be_read_still_leave_the_calendar_refreshed(
+    tmp_path, monkeypatch
+):
+    bot = _bot(await _make_db(tmp_path))
+    guild, channels = _guild()
+    monkeypatch.setattr(cns, "_module_channels", AsyncMock(side_effect=RuntimeError("gone")))
+    refresh = AsyncMock(return_value=None)
+    monkeypatch.setattr(cns, "refresh_division_calendar", refresh)
+    failures = await _announce(bot, guild)
+    assert [f.target for f in failures] == ["its module channels"]
+    refresh.assert_awaited_once()
+    for channel in channels.values():
+        channel.send.assert_not_awaited()
+
+
+async def test_a_calendar_that_fell_back_to_text_is_named(tmp_path, monkeypatch):
+    """Posted, but not as the league asked: the admin should know the picture failed."""
+    from services import calendar_post_service
+
+    monkeypatch.setattr(
+        calendar_post_service,
+        "post_division_calendar",
+        AsyncMock(return_value=calendar_post_service.CalendarPosting(
+            division_id=DIVISION_ID, message_id=42, problem="template invalid"
+        )),
+    )
+    monkeypatch.setattr(calendar_post_service, "tracks_by_name", AsyncMock(return_value={}))
+    bot = _bot(await _make_db(tmp_path), weather=False, results=False, attendance=False)
+    bot.season_service.get_division_rounds = AsyncMock(return_value=[])
+    failures = await cns.announce_cancellation(
+        bot, MagicMock(), [_division(message_id=9)], scope=cns.SCOPE_ROUND, round_number=1
+    )
+    assert [f.target for f in failures] == ["calendar"]
+    assert "posted as text" in failures[0].reason
+    assert "template invalid" in failures[0].reason
+
+
+# ── The reply fits one message; the log carries everything ─────────────────
+
+
+def test_a_long_list_of_failures_is_summed_up_in_the_reply():
+    failures = [
+        cns.NoticeFailure(f"Division {n}", "results channel", "x" * 500) for n in range(30)
+    ]
+    lines = cns.failure_lines(failures)
+    assert len(lines) < 2000
+    assert "and 22 more" in lines
+    assert lines.count("  • ") == cns.MAX_LINES + 1
+
+
+def test_the_log_names_every_failure_in_full():
+    failures = [cns.NoticeFailure(f"Division {n}", "results channel", "gone") for n in range(30)]
+    logged = cns.failure_log_lines(failures)
+    assert logged.count("not notified: ") == 30
+    assert cns.failure_log_lines([]) == ""

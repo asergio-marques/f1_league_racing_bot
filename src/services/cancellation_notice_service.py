@@ -157,6 +157,10 @@ async def refresh_division_calendar(
     )
     if posting.message_id is None:
         return posting.problem or "the calendar could not be posted"
+    if posting.fell_back:
+        # Posted, but not as the league asked: the picture could not be drawn and the text
+        # stands in. Worth the admin's knowing, since the calendar now looks different.
+        return f"posted as text, as the picture could not be drawn ({posting.problem})"
     return None
 
 
@@ -217,14 +221,35 @@ async def announce_cancellation(
 
     *divisions* are those told: the one a round or division belongs to, or every division of
     a season still running. Returns every place that could not be reached.
+
+    **Never raises.** It is called in the middle of a cancellation — before the cascade, for a
+    season — and an exception escaping it would stop the cancellation part-done, its jobs gone
+    and its records untouched. Whatever goes wrong is returned as a failure instead.
     """
+    failures: list[NoticeFailure] = []
+    try:
+        await _announce(
+            bot, guild, divisions, failures,
+            scope=scope, round_number=round_number, track_name=track_name,
+            season_number=season_number, also_cancelled=also_cancelled,
+        )
+    except Exception as exc:  # noqa: BLE001 — see the docstring
+        log.exception("cancellation notice: the announcement raised")
+        failures.append(NoticeFailure("Every division", "the announcement", str(exc)))
+    return failures
+
+
+async def _announce(
+    bot, guild, divisions, failures: list[NoticeFailure], *,
+    scope, round_number, track_name, season_number, also_cancelled,
+) -> None:
     import discord
 
-    weather_on = await bot.module_service.is_weather_enabled()
-    results_on = await bot.module_service.is_results_enabled()
-    attendance_on = await bot.module_service.is_attendance_enabled()
-
-    failures: list[NoticeFailure] = []
+    enabled = {
+        "weather": await bot.module_service.is_weather_enabled(),
+        "results": await bot.module_service.is_results_enabled(),
+        "attendance": await bot.module_service.is_attendance_enabled(),
+    }
 
     def _fail(division, target: str, reason: str | None) -> None:
         if reason is None:
@@ -234,9 +259,14 @@ async def announce_cancellation(
 
     words = dict(round_number=round_number, track_name=track_name)
     for division in divisions:
-        channels = await _module_channels(bot, division.id)
+        try:
+            channels = await _module_channels(bot, division.id)
+        except Exception as exc:  # noqa: BLE001 — one division never stops the next
+            log.exception("cancellation notice: could not read %s's channels", division.name)
+            _fail(division, "its module channels", f"could not be read ({exc})")
+            channels = None
 
-        if attendance_on:
+        if channels is not None and enabled["attendance"]:
             role_id = getattr(division, "mention_role_id", None)
             ping = f"<@&{role_id}>\n" if role_id else ""
             _fail(division, "check-in channel", await _send(
@@ -245,14 +275,14 @@ async def announce_cancellation(
                 ping + attendance_notice(scope, division.name, **words),
                 allowed_mentions=discord.AllowedMentions(roles=bool(role_id)),
             ))
-        if weather_on:
+        if channels is not None and enabled["weather"]:
             _fail(division, "forecast channel", await _send(
                 guild,
                 channels["weather"],
                 weather_note(scope, division.name, **words),
                 silent=True,
             ))
-        if results_on:
+        if channels is not None and enabled["results"]:
             _fail(division, "results channel", await _send(
                 guild,
                 channels["results"],
@@ -260,6 +290,7 @@ async def announce_cancellation(
                 silent=True,
             ))
 
+        # The calendar is core's and needs none of the module channels above.
         try:
             reason = await refresh_division_calendar(
                 bot, guild, division,
@@ -271,13 +302,30 @@ async def announce_cancellation(
             reason = str(exc)
         _fail(division, "calendar", reason)
 
-    return failures
+
+#: How many failures a reply names before summing up the rest, and how long one line may run.
+#: A reply is one Discord message, capped at 2,000 characters; a season of many divisions whose
+#: every channel is gone, or one long error from Discord, would otherwise lose the whole reply.
+#: The log channel carries every failure in full.
+MAX_LINES = 8
+MAX_LINE = 180
 
 
 def failure_lines(failures: list[NoticeFailure]) -> str:
     """The part of a command's reply naming what could not be reached, or an empty string."""
     if not failures:
         return ""
-    return "\n⚠️ **Not notified**\n" + "\n".join(
-        f"  • {failure.describe()}" for failure in failures
-    )
+    lines = []
+    for failure in failures[:MAX_LINES]:
+        text = failure.describe()
+        if len(text) > MAX_LINE:
+            text = text[: MAX_LINE - 1] + "…"
+        lines.append(f"  • {text}")
+    if len(failures) > MAX_LINES:
+        lines.append(f"  • and {len(failures) - MAX_LINES} more; the log channel names them all")
+    return "\n⚠️ **Not notified**\n" + "\n".join(lines)
+
+
+def failure_log_lines(failures: list[NoticeFailure]) -> str:
+    """Every failure, one line each, for the command's entry in the log channel."""
+    return "".join(f"\n  not notified: {failure.describe()}" for failure in failures)
