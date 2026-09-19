@@ -367,7 +367,7 @@ The other six belong to modules. Set the ones whose module you turned on in step
 
 | Command | Needs this module | Carries |
 |---|---|---|
-| `/division weather-channel` | `weather` | Forecasts, and notices about cancelled rounds |
+| `/division weather-channel` | `weather` | Forecasts, and a silent note when a round is cancelled |
 | `/division results-channel` | `results` | Session results |
 | `/division standings-channel` | `results` | The championship tables |
 | `/division verdicts-channel` | `results` | Penalty and appeal verdicts |
@@ -502,12 +502,12 @@ Things change. While the season is ongoing:
 | Command | What it does |
 |---|---|
 | `/round amend` | Change a round's track, time or format — any combination of them, judged and applied as one change. Changing the time renumbers the division's rounds, and the new time must still be ahead — a round is never moved into the past. Forecasts are thrown away only where the round has moved far enough that they would not have been drawn yet; the confirmation tells you which before you commit |
-| `/round cancel` | Call off one round. Needs `CONFIRM`, and posts a notice to the division. Refused once the round's results have been entered — the drivers' reports and appeals depend on them |
-| `/division cancel` | Call off a whole division. Needs `CONFIRM`. Every round of it you have not yet raced is cancelled with it; rounds you have raced keep their results |
+| `/round cancel` | Call off one round. Needs `CONFIRM`. The bot announces nothing itself — tell your drivers — but the check-in channel carries a notice where attendance is on, and the calendar is reposted with the round struck through. Refused once the round's results have been entered — the drivers' reports and appeals depend on them |
+| `/division cancel` | Call off a whole division. Needs `CONFIRM`. Every round of it you have not yet raced is cancelled with it; rounds you have raced keep their results. Told as `/round cancel` tells it |
 | `/division calendar-sync` | Repost a division's calendar with your changes on it |
 | `/clean-bot` | Delete the bot's own most recent messages in the command channel. You say how many, up to ten, and nobody else's messages are touched. An approved or expired review clears itself, so this is for whatever else the bot has left behind |
 
-> **The posted calendar does not update itself.** It is the calendar the season was approved with, and it stays that way. `/round amend` changes what the bot *does*, but the picture or the message your drivers scroll back to is untouched until you run `/division calendar-sync`. This trips up nearly everyone once.
+> **The posted calendar does not update itself — except for a cancellation.** It is the calendar the season was approved with, and it stays that way until you cancel a round, a division or the season, which reposts it with the cancelled rounds marked. `/round amend` changes what the bot *does*, but the picture or the message your drivers scroll back to is untouched until you run `/division calendar-sync`. This trips up nearly everyone once.
 
 ### Changing the lineup
 
@@ -718,7 +718,7 @@ command.
 | A `/division …-channel` command says no season is live | A division's channels belong to the season being built or raced. Once a season ends they no longer count; set the next season's up once its divisions exist |
 | "Unknown track" | The circuit name has to match exactly. Use the ID instead, or `/track list` to see the spellings |
 | A round appears at the wrong time to your drivers | You entered local time, not UTC. `/round amend` it |
-| The calendar in the channel is out of date | It only changes when you run `/division calendar-sync` |
+| The calendar in the channel is out of date | It changes by itself only on a cancellation; an amended round needs `/division calendar-sync` |
 | A division posts nothing where the others post fine | That division is missing the channel for it. Check step 9 |
 | The season will not complete | Some round has not had its appeals review approved. The refusal names them — approve the appeals in each round's submission channel, or cancel a round that will never be raced |
 | Drivers placed mid-season were turned down on their own | Every division finished while their placements were still unconfirmed. There was no round left for them, so their placements were discarded and they returned to Not Signed Up |

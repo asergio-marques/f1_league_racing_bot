@@ -219,6 +219,8 @@ See [Test mode](test-mode.md) for the whole picture.
 
 **A rejected block is explained line by line and asked for again.** Nothing is lost, you correct the message and paste it again, and the raw text of both the rejection and the acceptance goes to the log channel with the season, division, round and session named — which is what you go back to when somebody disputes what was submitted.
 
+**Cancelling a whole round is a different thing, done with `/round cancel`.** The results channel then gets a silent note that no results are coming for it — it sits in the channel and pings nobody — and no submission channel opens. `/division cancel` and `/season cancel` post the same note for everything still to come. The note is posted only while this module is on.
+
 **A session that was never run is typed as `CANCELLED`.** That records the session as cancelled, posts a note to the results channel saying so, and moves on. A round where you cancel every session finishes there and then: the channel closes, and no results, standings or review follow.
 
 **Then you choose the points configuration for that session**, from a button for each one attached to the season — or, when only one is attached, the bot picks it for you and says which it chose.

@@ -255,6 +255,8 @@ The ordinary locks still decide whether they are in time. Move a full-time drive
 
 **Reserves are scored separately.** A reserve the bot seated for the round is charged only if they accepted and then did not appear. A reserve who was never seated is charged nothing, whatever they clicked.
 
+**Cancelling a round tells the division here.** When you cancel a round, a division or the season, the check-in channel gets a notice saying so, mentioning the division role as the check-in call does — it is the one notification the bot sends about a cancellation, the forecast and results channels getting only silent notes. The bot announces nothing beyond that, so the rest of telling your drivers is yours to do. A check-in call already posted for the round stays up.
+
 **A cancelled round charges nobody**, and neither does a round whose check-in call never got posted — no call means no records were ever opened, and the round quietly counts as perfect attendance for everyone. The log channel reports the failure loudly when it happens, and it is worth acting on.
 
 **The sheet is also posted at each end of the season.** Approving the season posts an **opening sheet** — every seated driver on zero, read from the seats rather than from an attendance record that does not exist yet, ordered alphabetically by team and then by driver. `/season complete` posts a **final sheet**, holding the record at that division's last round with results. Both go to the same attendance channel, as drawings where you turned pictures on and as the ordinary list where you did not. Neither is about a round, so a cancelled round does not stop either.
