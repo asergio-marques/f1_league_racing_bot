@@ -499,6 +499,7 @@ async def test_a_call_that_cannot_be_taken_down_is_a_failure_not_an_error(
     from services import rsvp_service
 
     db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
     bot = _with_attendance(_bot(db_path))
     monkeypatch.setattr(
         rsvp_service, "withdraw_rsvp_call", AsyncMock(side_effect=RuntimeError("db locked"))
@@ -640,3 +641,41 @@ async def test_a_call_discord_would_not_delete_is_named_for_removal_by_hand(tmp_
     reason = report.failures[0].reason
     assert "3 message(s) could not be deleted" in reason
     assert str(CALL_MSG) in reason
+
+
+async def test_only_the_division_s_own_rounds_are_withdrawn_and_audited(tmp_path):
+    """A season names every round it calls off, across every division; each division is told
+    of its own alone."""
+    db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (77, ?, 'Am', 2, 556)",
+            (SEASON_ID,),
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at)"
+            " VALUES (78, 77, 3, 'NORMAL', '2026-10-01T18:00:00')",
+        )
+        await db.commit()
+    bot = _with_attendance(_bot(db_path))
+    withdrawn: list[tuple[int, int]] = []
+
+    async def _record(round_id, division_id, bot_, **kwargs):
+        withdrawn.append((round_id, division_id))
+
+    from services import rsvp_service
+
+    bot.get_channel = MagicMock(return_value=None)
+    guild, _ = _guild()
+    import unittest.mock as _mock
+
+    with _mock.patch.object(rsvp_service, "withdraw_rsvp_call", _record):
+        report = await cns.announce_cancellation(
+            bot, guild, [_division()], scope=cns.SCOPE_SEASON,
+            round_ids=frozenset({ROUND_ID, 78}),
+        )
+
+    assert withdrawn == [(ROUND_ID, DIVISION_ID)]
+    assert "Round 3 (Monza)" in report.audit

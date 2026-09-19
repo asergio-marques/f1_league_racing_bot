@@ -204,6 +204,25 @@ async def _module_channels(bot, division_id: int) -> dict[str, int | None]:
     }
 
 
+async def _rounds_of(bot, division_id: int, round_ids: frozenset[int]) -> list[int]:
+    """Those of *round_ids* that belong to *division_id*, in order.
+
+    A season's cancellation names every round it calls off, across every division; each
+    division is told only of its own. Read in one query rather than by asking each round's
+    check-in in turn, which is a connection per round per division.
+    """
+    if not round_ids:
+        return []
+    placeholders = ",".join("?" * len(round_ids))
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            f"SELECT id FROM rounds WHERE division_id = ? AND id IN ({placeholders})"  # noqa: S608
+            " ORDER BY round_number",
+            (division_id, *sorted(round_ids)),
+        )
+        return [row["id"] for row in await cursor.fetchall()]
+
+
 async def _send(guild, channel_id, content: str, **kwargs) -> str | None:
     """Send *content* to *channel_id*. Returns what went wrong, or None."""
     if not channel_id:
@@ -378,12 +397,18 @@ async def _announce(
                 allowed_mentions=discord.AllowedMentions(roles=bool(role_id)),
             ))
         if enabled["attendance"]:
+            try:
+                own_rounds = await _rounds_of(bot, division.id, round_ids)
+            except Exception as exc:  # noqa: BLE001 — one division never stops the next
+                log.exception("cancellation notice: could not read %s's rounds", division.name)
+                _fail(division, "its cancelled rounds", f"could not be read ({exc})")
+                own_rounds = []
             # Each round called off has its check-in written into the log first, so the answers
             # its call gathered stand on record beside the cancellation (decided 2026-09-19).
             # Then the call comes down with its last notice and its distribution announcement,
             # whether or not the notice above could be posted: it has nothing left to ask, and
             # its buttons would go on recording answers to it. The answers are kept.
-            for round_id in sorted(round_ids):
+            for round_id in own_rounds:
                 try:
                     block = await _checkin_audit(bot, division, round_id)
                 except Exception as exc:  # noqa: BLE001 — the audit never stops the rest
