@@ -186,6 +186,21 @@ async def test_an_assignment_within_the_rows_is_allowed(tmp_path):
     await service._guard_standings_capacity(division_id, ORDINARY)
 
 
+async def test_a_change_seating_several_drivers_is_measured_whole(tmp_path):
+    """#150: a test roster seats a division in one change, so its drivers are counted together."""
+    from services.placement_service import PlacementService
+
+    db_path, _season_id, division_id = await _seed(tmp_path, drivers=1)
+    template = _template_file(tmp_path, DRIVERS, rows=3)
+    service = PlacementService(db_path, bot=_bot(db_path, {DRIVERS: _report(template)}))
+
+    await service._guard_standings_capacity(division_id, ORDINARY, adding=2)
+    with pytest.raises(ValueError) as excinfo:
+        await service._guard_standings_capacity(division_id, ORDINARY, adding=3)
+
+    assert "4 drivers" in str(excinfo.value)
+
+
 async def test_the_toggle_being_off_lets_every_assignment_through(tmp_path):
     """The ceiling exists because a graphic would drop a driver. No graphic, no ceiling."""
     from services.placement_service import PlacementService

@@ -569,7 +569,7 @@ class PlacementService:
         return None if row is None else bool(row["is_reserve"])
 
     async def _guard_reserve_capacity(
-        self, division_id: int, team_name: str
+        self, division_id: int, team_name: str, *, adding: int = 1
     ) -> None:
         """Refuse a reserve placement that would outgrow the lineup template (FR/R8).
 
@@ -584,6 +584,9 @@ class PlacementService:
         division's reserves on every assignment, which left a division carrying as many
         reserves as its template drew slots for unable to seat anybody at all — the refusal
         blaming the reserve block for a placement that was never part of it.
+
+        *adding* is how many reserves the change seats — one for a placement, more for a test
+        roster seated whole (``guard_roster_capacity``).
 
         Never raises for its own reasons: a fault in this check must not block a
         placement, only a genuine over-capacity may.
@@ -620,7 +623,7 @@ class PlacementService:
                     )
                 ).fetchone()
             seated = (row["seated"] if row else 0) or 0
-            problem = reserve_capacity_problem(load_svg(report.resolved_path), seated + 1)
+            problem = reserve_capacity_problem(load_svg(report.resolved_path), seated + adding)
         except Exception as exc:  # noqa: BLE001
             log.error("reserve capacity guard could not run: %s", exc)
             return
@@ -631,7 +634,7 @@ class PlacementService:
                 f"turn the `lineup` image aspect off with `/images config toggle`."
             )
 
-    async def _guard_sheet_capacity(self, division_id: int) -> None:
+    async def _guard_sheet_capacity(self, division_id: int, *, adding: int = 1) -> None:
         """Refuse a placement that would outgrow the attendance sheet template (FR-042).
 
         The sheet draws every driver of the division, and its rows are counted from the file
@@ -650,6 +653,9 @@ class PlacementService:
         team being filled is likewise immaterial here, a reserve placement being exactly the
         one that might later want a row. Pinned by
         ``test_placement_sheet_capacity_guard.py``.
+
+        *adding* is how many drivers the change seats, of either kind — one for a placement,
+        more for a test roster seated whole (``guard_roster_capacity``).
 
         Never raises for its own reasons: a fault in this check must not block a placement,
         only a genuine over-capacity may.
@@ -680,7 +686,7 @@ class PlacementService:
                 ).fetchone()
             seated = (row["seated"] if row else 0) or 0
             problem = row_capacity_problem(
-                "attendance_template", load_svg(report.resolved_path), seated + 1
+                "attendance_template", load_svg(report.resolved_path), seated + adding
             )
         except Exception as exc:  # noqa: BLE001
             log.error("attendance sheet capacity guard could not run: %s", exc)
@@ -693,7 +699,7 @@ class PlacementService:
             )
 
     async def _guard_standings_capacity(
-        self, division_id: int, team_name: str
+        self, division_id: int, team_name: str, *, adding: int = 1
     ) -> None:
         """Refuse a placement that would outgrow the driver standings template (FR-044).
 
@@ -713,6 +719,9 @@ class PlacementService:
         The **constructors** ceiling is not checked here. Seating a driver adds no team, so no
         driver assignment can breach it; it is checked at ``/season placements-review``, which is where a
         division's team count is settled.
+
+        *adding* is how many classified drivers the change seats — one for a placement, more
+        for a test roster seated whole (``guard_roster_capacity``).
 
         Never raises for its own reasons: a fault in this check must not block a placement,
         only a genuine over-capacity may.
@@ -751,7 +760,7 @@ class PlacementService:
                 ).fetchone()
             seated = (row["seated"] if row else 0) or 0
             problem = row_capacity_problem(
-                DRIVERS_TEMPLATE_KEY, load_svg(report.resolved_path), seated + 1
+                DRIVERS_TEMPLATE_KEY, load_svg(report.resolved_path), seated + adding
             )
         except Exception as exc:  # noqa: BLE001
             log.error("standings capacity guard could not run: %s", exc)

@@ -165,6 +165,19 @@ async def test_a_reserve_placement_is_measured_against_the_sheet_rows(tmp_path):
     assert "**not** assigned" in str(excinfo.value)
 
 
+async def test_a_change_seating_several_drivers_is_measured_whole(tmp_path):
+    """#150: a test roster seats a division in one change, so its drivers are counted together."""
+    db_path, _season_id, division_id = await _seed(tmp_path, drivers=1)
+    template = _template_file(tmp_path, rows=3)
+    service = _service(db_path, template)
+
+    await service._guard_sheet_capacity(division_id, adding=2)
+    with pytest.raises(ValueError) as excinfo:
+        await service._guard_sheet_capacity(division_id, adding=3)
+
+    assert "4" in str(excinfo.value)
+
+
 async def test_the_guard_takes_no_team_and_is_not_to_be_given_one(tmp_path):
     """Its signature is the decision: #140 gave the other two a team and left this one."""
     import inspect
