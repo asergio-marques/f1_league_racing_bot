@@ -483,7 +483,7 @@ class SeasonCog(commands.Cog):
         if self._get_pending() is not None:
             await interaction.followup.send(
                 "\u274c A season setup is already in progress for this server. "
-                "Use `/season placements-review` to approve, or `/bot-reset` to cancel it first.",
+                "Use `/season placements-review` to approve, or `/season abort` to cancel it first.",
                 ephemeral=True,
             )
             return
@@ -5485,7 +5485,7 @@ class SeasonCog(commands.Cog):
 
         if cfg.season_id == 0:
             await interaction.followup.send(
-                "\u274c Season setup state is incomplete. Use `/bot-reset` and start again.",
+                "\u274c Season setup state is incomplete. Use `/season abort` and start again.",
                 ephemeral=True,
             )
             return

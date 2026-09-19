@@ -810,7 +810,7 @@ class SchedulerService:
         `/season complete`, and `schedule_season_end` — along with the timer that armed it seven
         days after the last round — was deleted with issue #154. This is kept because a
         `scheduler.db` written by an older version may still carry a `season_end_*` job, and
-        because `/season cancel` and `reset` should go on saying so plainly. A stale job whose
+        because `/season cancel` should go on saying so plainly. A stale job whose
         callable no longer exists is dropped by APScheduler on load, with a warning, rather than
         failing start-up.
         """

@@ -56,9 +56,8 @@ LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
     "bot interaction-role": SETUP,
     "bot interaction-channel": SETUP,
     "bot log-channel": SETUP,
-    # Starting over, and deleting the bot's own messages.
-    "bot-reset": ADMIN,
-    # Frees the server, clearing everything of the league's that is tied to it (#247).
+    # Freeing the server, clearing everything of the league's tied to it (#247), and deleting
+    # the bot's own messages.
     "bot pack": ADMIN,
     "clean-bot": ADMIN,
     # Arming and disarming a module server-wide.
