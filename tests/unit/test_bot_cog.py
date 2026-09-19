@@ -218,17 +218,15 @@ async def test_bot_init_on_a_second_server_is_refused_and_writes_nothing(tmp_pat
     bot.team_service.seed_default_teams_if_empty.assert_not_awaited()
 
 
-async def test_a_full_reset_frees_the_server_for_another(tmp_path):
-    """The claim is the configuration row, and `/bot-reset full:True` deletes it."""
-    from services.reset_service import reset_server_data
-
+async def test_a_pack_frees_the_server_for_another(tmp_path):
+    """The claim is the configuration row's `server_id`, and `/bot pack` clears it (#247)."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    scheduler = MagicMock()
-    scheduler.cancel_all_weather_for_rounds = MagicMock()
-    await reset_server_data(db_path, scheduler, full=True)
-    bot = _bot(db_path)
+    bot = _packing_bot(db_path)
     cog = BotCog(bot)
+    await _unwrap(cog.handle_pack)(
+        cog, _deferred(_interaction(channel_id=CONFIGURED_CHANNEL)), "CONFIRM"
+    )
     interaction = _interaction()
     interaction.guild_id = SERVER_ID + 1
 
@@ -537,3 +535,107 @@ async def test_a_server_configured_before_the_role_existed_reads_none(tmp_path):
     stored = await ConfigService(db_path).get_server_config()
     assert stored is not None
     assert stored.league_admin_role_id is None
+
+
+# ── /bot pack ─────────────────────────────────────────────────────────────
+
+
+def _packing_bot(db_path: str) -> MagicMock:
+    bot = _bot(db_path)
+    bot.scheduler_service.cancel_all = MagicMock(return_value=0)
+    bot.get_cog = MagicMock(return_value=None)
+    return bot
+
+
+def _deferred(interaction: MagicMock) -> MagicMock:
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+def test_bot_pack_is_a_league_admin_s_command_in_the_interaction_channel():
+    """It releases the settings rather than repairing them, so it takes no setup exemption."""
+    from cogs.bot_cog import BotCog as Cog
+    from utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_ADMIN, TIER_ATTRIBUTE
+
+    callback = Cog.handle_pack.callback
+    assert getattr(callback, TIER_ATTRIBUTE) == LEAGUE_ADMIN
+    assert getattr(callback, CHANNEL_EXEMPT_ATTRIBUTE) is False
+
+
+async def test_bot_pack_without_the_word_changes_nothing(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = _packing_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _interaction(channel_id=CONFIGURED_CHANNEL)
+
+    await _unwrap(cog.handle_pack)(cog, interaction, "confirm")
+
+    assert "CONFIRM" in interaction.response.send_message.call_args.args[0]
+    assert await bot.config_service.get_league_server_id() == SERVER_ID
+    bot.output_router.post_log.assert_not_awaited()
+
+
+async def test_bot_pack_is_refused_while_a_season_is_current_and_logs_nothing(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-01-01', 'SETUP', 3, 'WAITING')"
+        )
+        await db.commit()
+    bot = _packing_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _interaction(channel_id=CONFIGURED_CHANNEL)
+
+    await _unwrap(cog.handle_pack)(cog, interaction, "CONFIRM")
+
+    reply = interaction.response.send_message.call_args.args[0]
+    assert "Season 3 is current" in reply
+    assert "waiting" in reply
+    assert await bot.config_service.get_league_server_id() == SERVER_ID
+    bot.output_router.post_log.assert_not_awaited()
+
+
+async def test_bot_pack_logs_while_the_log_channel_still_exists(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = _packing_bot(db_path)
+    claimed_when_logged = []
+
+    async def post_log(content):
+        claimed_when_logged.append(await bot.config_service.get_league_server_id())
+
+    bot.output_router.post_log = AsyncMock(side_effect=post_log)
+    cog = BotCog(bot)
+    interaction = _deferred(_interaction(channel_id=CONFIGURED_CHANNEL))
+
+    await _unwrap(cog.handle_pack)(cog, interaction, "CONFIRM")
+
+    assert claimed_when_logged == [SERVER_ID]
+    assert await bot.config_service.get_league_server_id() is None
+    reply = interaction.followup.send.call_args.args[0]
+    assert "/bot init" in reply
+    assert "buttons now refuse" in reply
+
+
+async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypatch):
+    from services import pack_service
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+
+    async def refuse(*_args, **_kwargs):
+        raise pack_service.PackRefused(4, "CONFIGURATION")
+
+    monkeypatch.setattr(pack_service, "pack", refuse)
+    bot = _packing_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _deferred(_interaction(channel_id=CONFIGURED_CHANNEL))
+
+    await _unwrap(cog.handle_pack)(cog, interaction, "CONFIRM")
+
+    assert "Season 4 is current" in interaction.followup.send.call_args.args[0]
+    assert "Refused" in bot.output_router.post_log.call_args_list[-1].args[0]

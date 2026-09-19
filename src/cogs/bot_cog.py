@@ -12,6 +12,9 @@ interaction channel and only to holders of a configured role, so gating these on
 settings they exist to repair would lock a league out of the exact failure they are for. A
 deleted interaction channel, or a league admin role removed from the server, would otherwise
 be unrecoverable short of wiping the configuration.
+
+`/bot pack` is a league admin's command and is given in the interaction channel like any
+other: it releases the settings rather than repairing them.
 """
 
 from __future__ import annotations
@@ -22,8 +25,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from db.database import get_connection
 from models.server_config import ServerConfig
-from utils.channel_guard import bot_setup_only
+from services import pack_service
+from utils.channel_guard import bot_setup_only, league_admin_only
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +37,9 @@ _SETTINGS_COMMANDS = (
     "`/bot log-channel`, `/bot interaction-channel`, `/bot interaction-role` "
     "and `/bot admin-role`"
 )
+
+#: The word `/bot pack` asks to be typed, as the reset it replaced did.
+_CONFIRM_WORD = "CONFIRM"
 
 #: One bot serves one league (issue #244). The tree refuses a command from another server
 #: before it gets here; this is the clearer message for the one command a second server is
@@ -283,3 +291,85 @@ class BotCog(commands.Cog):
             label="League admin role",
             mention=f"<@&{role.id}>",
         )
+
+    # ------------------------------------------------------------------
+    # /bot pack — ready the bot for another server
+    # ------------------------------------------------------------------
+
+    @group.command(
+        name="pack",
+        description="Free the bot from this server so the league can move to another.",
+    )
+    @app_commands.describe(
+        confirm=f'Type "{_CONFIRM_WORD}" (case-sensitive) to free this server.'
+    )
+    @league_admin_only
+    async def handle_pack(self, interaction: discord.Interaction, confirm: str) -> None:
+        """Clear everything tied to this server, keep the league, and free the claim.
+
+        The log is written *before* the pack, because the pack clears the log channel. The
+        refusal for a current season is therefore asked first, read-only, so that the log
+        does not announce a pack that will not happen; the service asks again inside its own
+        transaction, and the rare season set up between the two is logged as a refusal.
+        """
+        if confirm != _CONFIRM_WORD:
+            await interaction.response.send_message(
+                f"❌ Nothing was changed. Pass `confirm:{_CONFIRM_WORD}` (case-sensitive) "
+                f"to free this server.",
+                ephemeral=True,
+            )
+            return
+
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            season = await pack_service.current_season(db)
+        if season is not None:
+            await interaction.response.send_message(
+                _current_season_refusal(*season), ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | Success\n"
+            f"  The bot no longer serves this server. `/bot init` on another claims it."
+        )
+        try:
+            result = await pack_service.pack(
+                self.bot.db_path,  # type: ignore[attr-defined]
+                self.bot.scheduler_service,  # type: ignore[attr-defined]
+                self.bot,
+            )
+        except pack_service.PackRefused as refused:
+            await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | "
+                f"Refused — season {refused.season_number} was set up meanwhile. "
+                f"Nothing was changed."
+            )
+            await interaction.followup.send(
+                _current_season_refusal(refused.season_number, refused.stage),
+                ephemeral=True,
+            )
+            return
+
+        await interaction.followup.send(
+            "✅ The bot no longer serves this server.\n"
+            f"Cleared: the four bot settings, **{result.team_roles}** team role(s), the "
+            f"signup channel and roles, **{result.wizards}** signup wizard(s), "
+            f"**{result.queued_messages}** undelivered message(s) and "
+            f"**{result.scheduled_jobs}** scheduled job(s).\n"
+            "Kept: every driver, past seasons, the team list, points configurations and "
+            "module settings.\n"
+            "Run `/bot init` on the league's new server to claim it. The bot's messages "
+            "stay on this server, and their buttons now refuse.",
+            ephemeral=True,
+        )
+        log.info("/bot pack by %s: %s", interaction.user, result)
+
+
+def _current_season_refusal(season_number: int, stage: str | None) -> str:
+    """Why pack will not run while the league has a current season."""
+    shown = (stage or "setup").replace("_", " ").lower()
+    return (
+        f"⛔ Season {season_number} is current (stage: {shown}). The bot does not leave a "
+        f"server while a season is under way — complete it, or cancel or abort it, first."
+    )
