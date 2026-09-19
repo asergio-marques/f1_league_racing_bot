@@ -1,6 +1,46 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-19 — v13.1.1 → v13.2.0: MINOR — each module announces a cancellation (issue #175)]
+  Version change    : 13.1.1 → 13.2.0
+  Bump rationale    : MINOR. Principle VII admits a posting to the forecast channel it did not
+                      admit before, the cancellation note, which is materially expanded
+                      guidance. The two corrections to Principles III and XII alone would be
+                      PATCH: each brings a stale sentence into line with the rule the bot has
+                      held since #220. MAJOR was weighed and rejected: nothing the old text
+                      required becomes forbidden.
+
+  Modified sections :
+    - Principle III, Resilient Schedule Management — "Cancellations: remove a round and
+      resequence the calendar cleanly" becomes a round called off keeping its place and its
+      number, recorded as cancelled.
+    - Principle VII, Output Channel Discipline, item 1 — the forecast channel's list gains the
+      mystery-round notice, which the bot already posted there, and the silent note that no
+      forecast is coming for a cancelled round, division or season, posted only while the
+      weather module is enabled.
+    - Principle XII, Amendment & Penalty — the rule that a round may be cancelled only once
+      every pending session is submitted or marked CANCELLED becomes a refusal while the
+      submission channel stands open and once any results are entered.
+
+  Why the constitution is the document that moved:
+    - Decided with the user on 2026-09-19 for issue #175: core posts no cancellation notice of
+      its own. Weather and results each post a silent note in their own channel, attendance
+      posts the one notification in the check-in channel, each only while enabled, and the
+      calendar is posted again with the round struck through or veiled. The results and
+      check-in channels are module-introduced and the module specifications document the new
+      postings, which Principle VII already provides for; the forecast channel's list is
+      enumerated here, so it had to move.
+    - The Principle III and XII sentences were found stale while checking the plan for #175
+      against this document. The core specification has held both rules since #220.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred items    : none.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-19 — v13.1.0 → v13.1.1: PATCH — the enable catch-up is no longer a path (issue #174)]
   Version change    : 13.1.0 → 13.1.1
   Bump rationale    : PATCH. A path that no longer exists is removed from a list. The rule it
@@ -4627,7 +4667,9 @@ The bot MUST accommodate mid-season plan changes in an active season:
 
 - **Track substitutions**: replace a scheduled circuit with another.
 - **Postponements**: shift a race date and/or time forward without losing round identity.
-- **Cancellations**: remove a round and resequence the calendar cleanly.
+- **Cancellations**: call a round off while keeping its place and its number on the calendar,
+  recorded as cancelled. A cancelled round happened on the calendar the drivers planned around,
+  so the rounds after it are never renumbered to close the gap.
 
 A postponement MUST remain available for as long as the round's results have not been entered;
 it is the change a league cannot be denied, and it is the remedy for every gate below. A track
@@ -4807,8 +4849,11 @@ The bot MUST post messages to exactly the following categories of channel, and n
 unless explicitly permitted by an active module (see below):
 
 1. **Per-division weather forecast channel** (one per division, configured at season setup):
-   receives only Phase 1, Phase 2, Phase 3 public weather messages, and amendment
-   invalidation notices for that division.
+   receives only Phase 1, Phase 2, Phase 3 public weather messages, the mystery-round notice
+   standing in place of Phase 1, amendment invalidation notices, and a note that no forecast
+   is coming for a round, a division or a season that was cancelled, for that division. The
+   cancellation note is posted silently, pinging nobody, and only while the weather module is
+   enabled.
 2. **Calculation log channel** (one for the league, configured at bot setup): receives all phase
    computation logs, configuration mutation confirmations, and audit trail entries.
 
@@ -5240,10 +5285,10 @@ governs the **Results & Standings optional module** (Principle X).
   amendment or penalty MUST produce an audit log entry per Principle V.
 - On amendment or penalty application, standings for the affected round and all subsequent
   rounds in that division MUST be recomputed and reposted atomically.
-- If the transient round results submission channel has already been opened for a round,
-  any request to cancel that round MUST be rejected with a clear error. The round MAY
-  only be cancelled once all pending result sessions have been submitted or explicitly
-  marked CANCELLED.
+- A request to cancel a round MUST be rejected with a clear error while the transient round
+  results submission channel stands open for it, and once any of its results have been
+  entered. From the moment results are entered the drivers have reports and appeals to lodge
+  against them, and calling the round off would take that from them.
 - The amendment-mode toggle MUST reject a request to disable (toggle off) while
   `modified_flag` is `true`. League managers MUST first either approve (overwriting the
   season points store) or revert (discarding the modification store) before amendment
@@ -7929,4 +7974,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 13.1.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-19
+**Version**: 13.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-19
