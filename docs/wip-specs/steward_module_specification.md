@@ -746,6 +746,12 @@
   - This command fails if there is no such driver with that ID, if league bans are disabled, or if the driver found does not possess a currently active league ban.
   - Upon removal of the league ban, the league ban role will be removed from their current account where it is in the server, and otherwise shall not be given to it when it returns.
   - A season ban the league ban replaced shall not be restored.
+- <NEW COMMAND> A "steward revoke championship-penalty" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, the penalty to be revoked — a championship points deduction, or a championship disqualification — the division and season in which it was given, and a justification to be available in the steward log.
+  - This command fails if the driver holds no such penalty, or if that penalty type is disabled.
+  - Upon revocation, the division's drivers' standings shall be calculated and posted anew, and the driver's championship record shall note the revocation.
+- <NEW COMMAND> A "steward revoke team-penalty" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a team and its division, the penalty to be revoked — a constructors' points deduction, or a constructors' championship disqualification — the season in which it was given, and a justification to be available in the steward log.
+  - This command fails if the team holds no such penalty, or if that penalty type is disabled.
+  - Upon revocation, the division's constructors' standings shall be calculated and posted anew, and the championship record of each driver through whom it was given shall note the revocation.
 - While the stewarding module is disabled, "steward revoke season-ban" and "steward revoke league-ban" shall be available to league admins, and shall be the only commands of this module available. The justification shall be written to the log channel.
   - Lifting a season or league ban while the module is disabled is left entirely to the league: no ban expires while the module is disabled.
 
