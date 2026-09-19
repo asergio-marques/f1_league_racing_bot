@@ -1181,3 +1181,5 @@ Recorded as the walk-through decides them. None is to be made until stewarding i
 - **Core, cancelling a division or season** — while a stewarding cycle of one of its rounds stands open, it is marked cancelled only once that cycle closes (C40).
 - **Results spec, disabling** — refused while a stewarding cycle is open; otherwise cascades to stewarding (C40).
 - **Core, "When the bot stops"** — add the stewarding module's work to what is recovered; downtime extends the windows in which users act (C41).
+- **Core, a hub channel** — a server-wide channel set by its own command (e.g. `bot-hub-channel`), open to holders of the base role, or to every member where no base role is configured, holding one panel whose options each enabled module adds; stewarding adds "View license" (any driver's licence, a public record), stats will add its own (D1).
+- **Output of "View license"** — needs its own textual and image output, fields and formats to be specified in detail later (D1). Marked `<TBD>` in the spec.
