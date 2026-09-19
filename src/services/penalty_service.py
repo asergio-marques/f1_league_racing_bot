@@ -430,6 +430,7 @@ async def apply_penalties(
             "SELECT 1 FROM divisions WHERE id = ?", (division_id,)
         )
         srv_row = await cursor2.fetchone()
+
     # Cascade recompute standings, then repost. The guild is resolved first so the
     # recomputation orders a full tie on the names the repost below will draw.
     repost_faults: list[str] = []

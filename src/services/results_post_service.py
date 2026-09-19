@@ -1161,44 +1161,6 @@ async def repost_channel_faults(
     return await _channel_faults_for_rows(division_rows, guild, bot_member, bot)
 
 
-async def division_channel_faults(
-    db_path: str,
-    division_id: int,
-    guild: "discord.Guild | None",
-    bot=None,
-) -> list[str]:
-    """What stands between this division and reposting its results (#237).
-
-    The reading :func:`repost_channel_faults` takes of a whole season, asked of one division.
-    The penalty and appeal approvals rescore a single division and repost only its rounds, so
-    gating them on every division of the season would refuse an approval over a fault in a
-    division it never touches.
-
-    **Read before anything is deleted, not merely before it is posted.** The cascade that
-    follows replaces each message by deleting the old one first, so a channel found
-    unpostable afterwards has already cost the league the posting it had. See
-    :func:`delete_and_repost_final_results`.
-    """
-    bot_member, faults = _repost_gate(guild, bot)
-    if faults:
-        return faults
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT d.id, d.name,
-                   drc.results_channel_id, drc.standings_channel_id
-            FROM divisions d
-            LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            WHERE d.id = ?
-            """,
-            (division_id,),
-        )
-        division_rows = await cursor.fetchall()
-
-    return await _channel_faults_for_rows(division_rows, guild, bot_member, bot)
-
-
 def _repost_gate(guild: "discord.Guild | None", bot):
     """The bot member the permission arithmetic needs, or the fault standing in its way.
 
@@ -1220,6 +1182,46 @@ def _repost_gate(guild: "discord.Guild | None", bot):
         ]
 
     return bot_member, []
+
+
+def _cascade_channel_fault(
+    guild, bot_member, division_name: str, setting: str, channel_id: int,
+    *, needs_attachment: bool,
+) -> str | None:
+    """The fault standing between the cascade and *channel_id*, or None (#237).
+
+    **Deliberately more permissive than the pre-flight**, because it runs where the posting
+    cannot be refused. ``repost_channel_faults`` gates an amendment *before* a row is
+    overwritten, so it is right to refuse whenever it cannot satisfy itself — an
+    unresolvable bot member, a channel that is not a ``TextChannel``. Here the penalty is
+    already applied and the round has already moved on, so every such refusal would itself
+    become "the results were not reposted", which is the outcome this issue exists to
+    prevent. It reports only what is *positively* wrong.
+
+    Two differences follow. Without a bot member there is no permission arithmetic to do,
+    and its absence is not itself a fault. And the pre-flight's ``isinstance`` check is
+    dropped: a channel of an unexpected type is left to the posting to reject, where the
+    failure surfaces as an answered command (#156) rather than as a repost refused on
+    suspicion.
+
+    What is checked in every case is that the channel still *exists* — the silent case this
+    issue is about, and the one that cost a league its posted results.
+    """
+    if guild.get_channel(channel_id) is None:
+        return missing_channel_fault(division_name, setting, channel_id)
+
+    if bot_member is None:
+        return None
+
+    channel = guild.get_channel(channel_id)
+    permissions = channel.permissions_for(bot_member)
+    wanted = list(_REPOST_PERMISSIONS)
+    if needs_attachment:
+        wanted.append(_ATTACHMENT_PERMISSION)
+    missing = [name for attr, name in wanted if not getattr(permissions, attr, False)]
+    if missing:
+        return unpostable_channel_fault(division_name, setting, channel_id, missing)
+    return None
 
 
 async def _channel_faults_for_rows(division_rows, guild, bot_member, bot) -> list[str]:
@@ -1678,18 +1680,17 @@ async def delete_and_repost_final_results(
     standings_ch_id: int | None = ctx["standings_channel_id"]
     show_reserves: bool = bool(ctx["reserves_in_standings"]) if ctx["reserves_in_standings"] is not None else True
 
-    bot_member, gate_faults = _repost_gate(guild, bot)
-    if gate_faults:
-        return gate_faults
+    bot_member = _bot_member(guild, bot) if guild is not None else None
+    results_graphics = standings_graphics = False
+    if bot_member is not None:
+        from services.image_validity_service import aspect_attaches_files
 
-    from services.image_validity_service import aspect_attaches_files
-
-    results_graphics = await aspect_attaches_files(bot, "results")
-    standings_graphics = await aspect_attaches_files(bot, "standings")
+        results_graphics = await aspect_attaches_files(bot, "results")
+        standings_graphics = await aspect_attaches_files(bot, "standings")
 
     # ── Delete interim results messages and re-post final ──────────────────
     if results_ch_id:
-        results_fault = _channel_fault(
+        results_fault = _cascade_channel_fault(
             guild, bot_member, division_name, "results", int(results_ch_id),
             needs_attachment=results_graphics,
         )
@@ -1745,7 +1746,7 @@ async def delete_and_repost_final_results(
 
     # ── Delete interim standings message and re-post final ─────────────────
     if standings_ch_id:
-        standings_fault = _channel_fault(
+        standings_fault = _cascade_channel_fault(
             guild, bot_member, division_name, "standings", int(standings_ch_id),
             needs_attachment=standings_graphics,
         )
@@ -1823,13 +1824,12 @@ async def repost_subsequent_standings(
         )
         rounds = await cursor.fetchall()
 
-    bot_member, gate_faults = _repost_gate(guild, bot)
-    if gate_faults:
-        return gate_faults
+    bot_member = _bot_member(guild, bot) if guild is not None else None
+    standings_graphics = False
+    if bot_member is not None:
+        from services.image_validity_service import aspect_attaches_files
 
-    from services.image_validity_service import aspect_attaches_files
-
-    standings_graphics = await aspect_attaches_files(bot, "standings")
+        standings_graphics = await aspect_attaches_files(bot, "standings")
 
     gated: dict[int, str | None] = {}
     skipped_rounds: list[int] = []
@@ -1857,7 +1857,7 @@ async def repost_subsequent_standings(
             continue  # No standings message posted for this round — skip
 
         if standings_ch_id not in gated:
-            gated[standings_ch_id] = _channel_fault(
+            gated[standings_ch_id] = _cascade_channel_fault(
                 guild, bot_member, rnd["division_name"] or f"division {division_id}",
                 "standings", int(standings_ch_id),
                 needs_attachment=standings_graphics,

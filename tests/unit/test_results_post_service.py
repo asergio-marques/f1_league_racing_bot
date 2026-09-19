@@ -1284,63 +1284,26 @@ async def _results_message_id(db_path, session_result_id):
 
 
 @pytest.mark.asyncio
-async def test_division_channel_faults_passes_a_healthy_division(tmp_path):
-    """The season-wide gate's reading, asked of one division (#237)."""
-    from services.results_post_service import division_channel_faults
-
-    db_path, division_id, _round_id, _sr = await _seed_round_for_cascade(tmp_path)
-
-    faults = await division_channel_faults(
-        db_path, division_id, _guild_for_faults(), _bot_with_images()
-    )
-
-    assert faults == []
-
-
-@pytest.mark.asyncio
-async def test_division_channel_faults_names_a_deleted_channel(tmp_path):
-    from services.results_post_service import division_channel_faults
-
-    db_path, division_id, _round_id, _sr = await _seed_round_for_cascade(tmp_path)
-
-    faults = await division_channel_faults(
-        db_path, division_id, _guild_for_faults(present=(502,)), _bot_with_images()
-    )
-
-    assert len(faults) == 1
-    assert "501" in faults[0]
-
-
-@pytest.mark.asyncio
-async def test_division_channel_faults_ignores_an_unconfigured_channel(tmp_path):
-    """#187's rule against over-reporting, kept at the division grain.
+async def test_the_cascade_does_not_report_an_unconfigured_channel(tmp_path):
+    """#187's rule against over-reporting, kept where the cascade now gates.
 
     A channel the league never set has nothing posted for it and is rightly skipped in
-    silence. Reporting it would refuse correctly configured leagues.
+    silence; reporting it would hand a correctly configured league a fault to chase. Only
+    the standings channel is configured here and missing, so exactly one fault is owed.
     """
-    from services.results_post_service import division_channel_faults
+    from services.results_post_service import delete_and_repost_final_results
 
-    db_path, division_id, _round_id, _sr = await _seed_round_for_cascade(
+    db_path, division_id, round_id, _sr = await _seed_round_for_cascade(
         tmp_path, results_id=None
     )
 
-    faults = await division_channel_faults(
-        db_path, division_id, _guild_for_faults(present=(502,)), _bot_with_images()
+    faults = await delete_and_repost_final_results(
+        db_path, round_id, division_id,
+        _guild_for_faults(present=()), "Final Results", bot=_bot_with_images(),
     )
 
-    assert faults == []
-
-
-@pytest.mark.asyncio
-async def test_division_channel_faults_reports_an_unreachable_guild(tmp_path):
-    from services.results_post_service import division_channel_faults
-
-    db_path, division_id, _round_id, _sr = await _seed_round_for_cascade(tmp_path)
-
-    faults = await division_channel_faults(db_path, division_id, None, _bot_with_images())
-
     assert len(faults) == 1
-    assert "not in this server" in faults[0]
+    assert "502" in faults[0]
 
 
 @pytest.mark.asyncio
