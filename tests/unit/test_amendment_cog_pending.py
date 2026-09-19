@@ -47,8 +47,8 @@ def _make_interaction(guild_id: int = 1) -> MagicMock:
     interaction = MagicMock()
     interaction.guild_id = guild_id
     interaction.user.id = 42
-    # These commands defer before doing any work — the snapshot rebuild outlasts
-    # Discord's three-second window — so every reply arrives as a followup.
+    # These commands defer before doing any work, as every season-setup command does,
+    # so every reply arrives as a followup.
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
     return interaction

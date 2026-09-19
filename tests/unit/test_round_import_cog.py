@@ -6,8 +6,8 @@ open a modal — so the deferral moves into the modal's `on_submit`, where the w
 inversion is the thing most likely to be "corrected" by someone reading
 `test_season_setup_defers.py`, so it is pinned here from both sides.
 
-The other rule pinned here is the expensive one: `_snapshot_pending` rebuilds the entire
-SETUP season, so an import of twenty rounds must call it **once**, not twenty times.
+The other rule pinned here: an import of twenty rounds calls `_snapshot_pending` **once**,
+not twenty times, so the whole import lands in one transaction or not at all.
 """
 from __future__ import annotations
 
@@ -164,12 +164,12 @@ async def test_no_pending_setup_refuses_without_writing():
     cog._snapshot_pending.assert_not_awaited()
 
 
-# ── The season is rebuilt once, not once per round ────────────────────────
+# ── The season is written once, not once per round ────────────────────────
 
 
 async def test_a_twenty_round_import_snapshots_exactly_once(monkeypatch):
-    """`_snapshot_pending` tears down and rebuilds the whole season. Once per round
-    would be twenty teardowns for one paste."""
+    """One write for the whole paste. Once per round would be twenty transactions, and
+    a failure part-way would leave half a calendar written."""
     interaction = _interaction()
     cfg = _pending()
     cog = _cog_with(cfg)
