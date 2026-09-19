@@ -1283,3 +1283,8 @@ Decisions:
 - #246 verdict batch heading — no change owed: the spec already posts the header as text where the banner is off. The image spec edit is on the owed list.
 - #152 bannable states — overtaken by #221 and by this spec: a CoC verdict creates a driver profile at Not Signed Up with a licence, so a member who never signed up can be sanctioned.
 - R57 #204 — free text reaching a public channel may carry a role, @everyone or @here ping. Refused at entry; a verdict notifies only the drivers it names.
+- #224 pending completion, #237 swallowed postings, #238 stale attendance totals, #216 former-driver flag — no change owed; the spec already answers its own share of each.
+- #258 about command, #260 guides in the bot — both blocked on a command surface open to everyone; the hub channel owed to core (D1) is that surface.
+- #212 channel audit gaps — will apply to "division ticket-channel" and "division licence-channel" when built.
+- #138 no-further-action verdict — subsumed while stewarding is enabled: NFA is permanent and an all-zero outcome is refused.
+- R58 #146 — the Reserve team always exists and has no full-time drivers, so "every full-time driver is involved" was vacuously true of it. A team now needs at least one full-time driver in the division, and the Reserve team is never sanctioned.
