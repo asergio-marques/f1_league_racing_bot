@@ -35,6 +35,7 @@ from utils.channel_guard import (  # noqa: E402
     CHANNEL_EXEMPT_ATTRIBUTE,
     LEAGUE_ADMIN,
     LEAGUE_MANAGER,
+    SERVER_OWNER,
     TIER_ATTRIBUTE,
 )
 
@@ -102,6 +103,11 @@ LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
 }
 
 
+#: The commands only the Discord server's owner may run, from any channel. The one exception to
+#: every tier being a role the league configures (issue #247).
+SERVER_OWNER_COMMANDS: frozenset[str] = frozenset({"bot factory-reset"})
+
+
 def _walk(objects):
     for obj in objects:
         if isinstance(obj, app_commands.Group):
@@ -141,7 +147,7 @@ def test_the_cogs_declare_commands_at_all():
 def test_every_command_declares_a_tier(name):
     """No command ships unguarded, whatever else is true of it."""
     tier = getattr(COMMANDS[name].callback, TIER_ATTRIBUTE, None)
-    assert tier in (LEAGUE_ADMIN, LEAGUE_MANAGER), (
+    assert tier in (LEAGUE_ADMIN, LEAGUE_MANAGER, SERVER_OWNER), (
         f"/{name} carries no tier guard — it is reachable by anybody, in any channel"
     )
 
@@ -153,7 +159,10 @@ def test_every_command_sits_at_the_tier_the_register_gives_it(name):
     tier = getattr(callback, TIER_ATTRIBUTE, None)
     exempt = getattr(callback, CHANNEL_EXEMPT_ATTRIBUTE, None)
 
-    if expected is None:
+    if name in SERVER_OWNER_COMMANDS:
+        assert tier == SERVER_OWNER, f"/{name} should be the server owner's alone"
+        assert exempt is True, f"/{name} should run from any channel"
+    elif expected is None:
         assert tier == LEAGUE_MANAGER, (
             f"/{name} is a league admin's in the code and a league manager's here. Either "
             f"the guard is wrong, or the register needs the command adding to it — the "
@@ -170,11 +179,11 @@ def test_every_command_sits_at_the_tier_the_register_gives_it(name):
 
 def test_the_register_names_no_command_that_does_not_exist():
     """A renamed or withdrawn command leaves its entry behind, and the entry says nothing."""
-    missing = sorted(set(LEAGUE_ADMIN_COMMANDS) - set(COMMANDS))
+    missing = sorted((set(LEAGUE_ADMIN_COMMANDS) | SERVER_OWNER_COMMANDS) - set(COMMANDS))
     assert missing == [], f"the register names commands the bot does not have: {missing}"
 
 
-def test_only_the_five_setup_commands_run_outside_the_interaction_channel():
+def test_only_the_setup_commands_and_the_factory_reset_run_outside_the_interaction_channel():
     """Every other command of either tier is given in the interaction channel."""
     exempt = sorted(
         name
@@ -183,6 +192,7 @@ def test_only_the_five_setup_commands_run_outside_the_interaction_channel():
     )
     assert exempt == [
         "bot admin-role",
+        "bot factory-reset",
         "bot init",
         "bot interaction-channel",
         "bot interaction-role",
@@ -209,6 +219,13 @@ def test_the_tiers_divide_as_the_register_says():
         if getattr(command.callback, TIER_ATTRIBUTE, None) == LEAGUE_MANAGER
     }
 
+    owner = {
+        name
+        for name, command in COMMANDS.items()
+        if getattr(command.callback, TIER_ATTRIBUTE, None) == SERVER_OWNER
+    }
+
     assert admin == set(LEAGUE_ADMIN_COMMANDS)
-    assert admin | manager == set(COMMANDS)
+    assert owner == SERVER_OWNER_COMMANDS
+    assert admin | manager | owner == set(COMMANDS)
     assert admin & manager == set()

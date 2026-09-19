@@ -78,6 +78,16 @@ async def test_the_backup_neither_overwrites_nor_heeds_the_test_mode_backup(db_p
     assert backup_service.backup_path(db_path).read_bytes() == kept
 
 
+async def test_the_backup_is_one_file_with_nothing_beside_it(db_path, tmp_path):
+    """A host restores it by hand; `-wal` and `-shm` beside it would be a trap."""
+    take_backup(db_path, _jobstore(tmp_path), now=NOW)
+
+    assert sorted(p.name for p in tmp_path.iterdir() if ".factory-" in p.name) == [
+        "bot.factory-20260919T101500Z.db",
+        "scheduler.factory-20260919T101500Z.db",
+    ]
+
+
 async def test_a_second_backup_keeps_the_first(db_path, tmp_path):
     jobstore = _jobstore(tmp_path)
     first = take_backup(db_path, jobstore, now=NOW)

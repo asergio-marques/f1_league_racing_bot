@@ -63,6 +63,7 @@ def take_backup(
     stamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
     database = backup_path(db_path, stamp)
     backup_service.snapshot_database(db_path, database)
+    _self_contained(database)
     if not backup_service.is_readable_database(database):
         database.unlink(missing_ok=True)
         raise backup_service.BackupError(
@@ -73,9 +74,28 @@ def take_backup(
     if Path(jobstore_path).is_file():
         jobstore = backup_path(jobstore_path, stamp)
         backup_service.copy_jobstore(jobstore_path, jobstore)
+        _self_contained(jobstore)
 
     log.info("factory reset: backed up to %s and %s", database, jobstore)
     return FactoryBackup(database=database, jobstore=jobstore)
+
+
+def _self_contained(path: Path) -> None:
+    """Take a copy out of WAL, so that it is one file with nothing beside it.
+
+    The copy inherits the live database's WAL mode, and a WAL database opened later — by the
+    integrity check here, or by a host inspecting it — leaves `-wal` and `-shm` files beside
+    it. This backup is restored by hand, and a single file is the thing to hand a host.
+    """
+    connection = None
+    try:
+        connection = sqlite3.connect(str(path))
+        connection.execute("PRAGMA journal_mode=DELETE")
+    except sqlite3.Error as exc:
+        raise backup_service.BackupError(f"{path.name} could not be finished: {exc}") from exc
+    finally:
+        if connection is not None:
+            connection.close()
 
 
 # ── What to clean in Discord, gathered before the wipe ────────────────────

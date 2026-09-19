@@ -639,3 +639,155 @@ async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypa
 
     assert "Season 4 is current" in interaction.followup.send.call_args.args[0]
     assert "Refused" in bot.output_router.post_log.call_args_list[-1].args[0]
+
+
+# ── /bot factory-reset ─────────────────────────────────────────────────────
+
+OWNER_ID = 77
+
+
+def _owner_interaction(user_id: int = OWNER_ID) -> MagicMock:
+    interaction = _deferred(_interaction())
+    interaction.user.id = user_id
+    interaction.user.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
+    interaction.guild = MagicMock()
+    interaction.guild.owner_id = OWNER_ID
+    interaction.guild.get_channel = MagicMock(return_value=None)
+    return interaction
+
+
+def _resetting_bot(db_path: str, tmp_path) -> MagicMock:
+    bot = _packing_bot(db_path)
+    bot.scheduler_service._scheduler.running = False
+    bot.scheduler_service._jobstore_path = str(tmp_path / "scheduler.db")
+    bot.user.id = 1000
+    return bot
+
+
+async def _run(cog, interaction, confirm="CONFIRM"):
+    """The guard is kept: who may run this is the point of half these tests."""
+    await BotCog.handle_factory_reset.callback(cog, interaction, confirm)
+    if cog._clean_up is not None:
+        await cog._clean_up
+
+
+def test_bot_factory_reset_is_the_server_owner_s_from_any_channel():
+    from utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, SERVER_OWNER, TIER_ATTRIBUTE
+
+    callback = BotCog.handle_factory_reset.callback
+    assert getattr(callback, TIER_ATTRIBUTE) == SERVER_OWNER
+    assert getattr(callback, CHANNEL_EXEMPT_ATTRIBUTE) is True
+
+
+async def test_bot_factory_reset_refuses_an_administrator_who_is_not_the_owner(tmp_path):
+    """Whatever roles or permissions they hold: the owner is the only way in."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    cog = BotCog(_resetting_bot(db_path, tmp_path))
+    interaction = _owner_interaction(user_id=OWNER_ID + 1)
+    interaction.user.guild_permissions = discord.Permissions(administrator=True)
+    interaction.user.roles = [_role(CONFIGURED_ADMIN_ROLE)]
+
+    await _run(cog, interaction)
+
+    assert "owner" in interaction.response.send_message.call_args.args[0]
+    assert await ConfigService(db_path).get_league_server_id() == SERVER_ID
+
+
+async def test_bot_factory_reset_without_the_word_changes_nothing(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    cog = BotCog(_resetting_bot(db_path, tmp_path))
+    interaction = _owner_interaction()
+
+    await _run(cog, interaction, confirm="yes")
+
+    assert "CONFIRM" in interaction.response.send_message.call_args.args[0]
+    assert await ConfigService(db_path).get_league_server_id() == SERVER_ID
+
+
+async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monkeypatch):
+    from services import backup_service, factory_reset_service
+
+    def fail(*_args, **_kwargs):
+        raise backup_service.BackupError("the disk is full")
+
+    monkeypatch.setattr(factory_reset_service, "take_backup", fail)
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    cog = BotCog(_resetting_bot(db_path, tmp_path))
+    interaction = _owner_interaction()
+
+    await _run(cog, interaction)
+
+    reply = interaction.followup.send.call_args.args[0]
+    assert "Nothing was erased" in reply and "the disk is full" in reply
+    assert await ConfigService(db_path).get_league_server_id() == SERVER_ID
+    interaction.user.send.assert_not_awaited()
+
+
+async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = _resetting_bot(db_path, tmp_path)
+    cog = BotCog(bot)
+    interaction = _owner_interaction()
+
+    await _run(cog, interaction)
+
+    backups = sorted(p.name for p in tmp_path.iterdir() if ".factory-" in p.name)
+    assert len(backups) == 1 and backups[0].startswith("test.factory-")
+    assert await ConfigService(db_path).get_league_server_id() is None
+    bot.scheduler_service.cancel_all.assert_called_once_with()
+    reply = interaction.followup.send.call_args.args[0]
+    assert backups[0] in reply
+    assert "direct message" in reply
+    progress = interaction.user.send.return_value
+    assert progress.edit.await_args_list[-1].kwargs["content"].startswith("✅")
+
+
+async def test_bot_factory_reset_reports_to_the_log_where_dms_are_closed(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    cog = BotCog(_resetting_bot(db_path, tmp_path))
+    interaction = _owner_interaction()
+    interaction.user.send = AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "closed")
+    )
+
+    await _run(cog, interaction)
+
+    assert "host's log" in interaction.followup.send.call_args.args[0]
+    assert await ConfigService(db_path).get_league_server_id() is None
+
+
+async def test_a_clean_up_that_breaks_says_where_it_stopped(tmp_path, monkeypatch):
+    from services import factory_reset_service
+
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("gateway lost")
+
+    monkeypatch.setattr(factory_reset_service, "clean_discord", broken)
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    cog = BotCog(_resetting_bot(db_path, tmp_path))
+    interaction = _owner_interaction()
+
+    await _run(cog, interaction)
+
+    last = interaction.user.send.return_value.edit.await_args_list[-1].kwargs["content"]
+    assert "stopped" in last and "gateway lost" in last
+
+
+async def test_a_second_factory_reset_waits_for_the_first_clean_up(tmp_path):
+    import asyncio
+
+    db_path = await _make_db(tmp_path)
+    cog = BotCog(_resetting_bot(db_path, tmp_path))
+    cog._clean_up = asyncio.get_running_loop().create_future()
+    interaction = _owner_interaction()
+
+    await BotCog.handle_factory_reset.callback(cog, interaction, "CONFIRM")
+
+    assert "still cleaning" in interaction.response.send_message.call_args.args[0]
+    cog._clean_up.cancel()

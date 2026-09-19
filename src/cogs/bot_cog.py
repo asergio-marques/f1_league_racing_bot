@@ -14,11 +14,13 @@ deleted interaction channel, or a league admin role removed from the server, wou
 be unrecoverable short of wiping the configuration.
 
 `/bot pack` is a league admin's command and is given in the interaction channel like any
-other: it releases the settings rather than repairing them.
+other: it releases the settings rather than repairing them. `/bot factory-reset` is the server
+owner's alone, from any channel; see `utils.channel_guard.server_owner_only`.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import discord
@@ -27,8 +29,8 @@ from discord.ext import commands
 
 from db.database import get_connection
 from models.server_config import ServerConfig
-from services import pack_service
-from utils.channel_guard import bot_setup_only, league_admin_only
+from services import backup_service, factory_reset_service, pack_service
+from utils.channel_guard import bot_setup_only, league_admin_only, server_owner_only
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +54,9 @@ _ANOTHER_SERVER = (
 class BotCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+        # The factory reset's Discord clean-up, which outlives the command. Held so that it
+        # is not collected mid-run, asyncio keeping only a weak reference to a task.
+        self._clean_up: asyncio.Task | None = None
 
     # Not named `bot`, which is the cog's handle on the bot itself, nor `bot_…`, which
     # discord.py reserves.
@@ -364,6 +369,116 @@ class BotCog(commands.Cog):
             ephemeral=True,
         )
         log.info("/bot pack by %s: %s", interaction.user, result)
+
+    # ------------------------------------------------------------------
+    # /bot factory-reset — return the bot to a fresh install
+    # ------------------------------------------------------------------
+
+    @group.command(
+        name="factory-reset",
+        description="Server owner only: back up, then erase the league and the bot's posts.",
+    )
+    @app_commands.describe(
+        confirm=f'Type "{_CONFIRM_WORD}" (case-sensitive) to erase the league entire.'
+    )
+    @server_owner_only
+    async def handle_factory_reset(
+        self, interaction: discord.Interaction, confirm: str
+    ) -> None:
+        """Back up, wipe, and clean Discord — in that order, and never the second without the
+        first. See `services.factory_reset_service`.
+
+        Only the server the command is given in is cleaned. A bot that was packed and not
+        yet claimed may still hold the ids of another server's channels, and the owner of
+        this one has no say over that one.
+        """
+        if confirm != _CONFIRM_WORD:
+            await interaction.response.send_message(
+                f"❌ Nothing was changed. Pass `confirm:{_CONFIRM_WORD}` (case-sensitive) "
+                f"to erase the league.",
+                ephemeral=True,
+            )
+            return
+        if self._clean_up is not None and not self._clean_up.done():
+            await interaction.response.send_message(
+                "⛔ A factory reset is still cleaning up Discord. Wait for it to finish.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        db_path = self.bot.db_path  # type: ignore[attr-defined]
+        scheduler = self.bot.scheduler_service  # type: ignore[attr-defined]
+
+        paused = False
+        try:
+            inner = getattr(scheduler, "_scheduler", None)
+            if inner is not None and inner.running:
+                inner.pause()
+                paused = True
+            backup = factory_reset_service.take_backup(
+                db_path, backup_service.jobstore_path_of(self.bot)
+            )
+        except backup_service.BackupError as exc:
+            await interaction.followup.send(
+                f"⛔ Nothing was erased: the backup could not be taken, and a factory reset "
+                f"never runs without one. {exc}",
+                ephemeral=True,
+            )
+            return
+        finally:
+            if paused:
+                scheduler._scheduler.resume()
+
+        targets = await factory_reset_service.gather_targets(db_path)
+        await factory_reset_service.wipe(db_path, scheduler, self.bot)
+        log.warning(
+            "/bot factory-reset by %s (id=%s): the league was erased; backup at %s",
+            interaction.user, interaction.user.id, backup.database,
+        )
+
+        progress = await _open_progress(interaction.user)
+        where = "in a direct message to you" if progress is not None else "in the host's log"
+        await interaction.followup.send(
+            "✅ The bot is back to a fresh install, and serves no server.\n"
+            f"A backup was taken first, as `{backup.database.name}`"
+            + (f" and `{backup.jobstore.name}`" if backup.jobstore is not None else "")
+            + ", beside the live database on the host; restoring it is the host's job.\n"
+            f"The bot's channels and messages on this server are being deleted now. That "
+            f"can take a long while, and progress is reported {where}.",
+            ephemeral=True,
+        )
+
+        async def report(text: str) -> None:
+            log.info("factory reset: %s", text.splitlines()[0])
+            if progress is not None:
+                try:
+                    await progress.edit(content=text)
+                except discord.HTTPException:
+                    log.warning("factory reset: the progress message could not be edited")
+
+        bot_user_id = self.bot.user.id  # type: ignore[union-attr]
+        self._clean_up = asyncio.create_task(
+            _clean_up(interaction.guild, bot_user_id, targets, report)
+        )
+
+
+async def _clean_up(guild, bot_user_id: int, targets, report) -> None:
+    """Run the clean-up, and say so where something it did not expect stops it."""
+    try:
+        await factory_reset_service.clean_discord(guild, bot_user_id, targets, report)
+    except Exception as exc:  # noqa: BLE001 — the last report must say it stopped
+        log.exception("factory reset: the Discord clean-up stopped")
+        await report(f"⛔ Factory reset: the Discord clean-up stopped: {exc}")
+
+
+async def _open_progress(user: discord.abc.User) -> discord.Message | None:
+    """The direct message the clean-up edits as it goes, or None where DMs are closed."""
+    try:
+        return await user.send("🧹 Factory reset: starting the Discord clean-up.")
+    except discord.HTTPException:
+        log.warning("factory reset: could not message %s; progress goes to the log only", user)
+        return None
 
 
 def _current_season_refusal(season_number: int, stage: str | None) -> str:

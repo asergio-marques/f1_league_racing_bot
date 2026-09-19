@@ -17,7 +17,14 @@ property of the server — it carries the power to delete channels and ban membe
 given for reasons that have nothing to do with a racing league. A tier is a property of the
 league.
 
-The single exception is `bot_setup_only`, worn by `/bot init` and the four single-setting
+**The server owner** stands outside both, for one command alone: `/bot factory-reset`, which
+returns the bot to a fresh install and leaves nothing of the league behind. No role the league
+configures can reach it, because a role is itself something the league configures and a
+factory reset destroys; only the Discord server's owner may run it, whatever roles anyone
+else holds (decided 2026-09-19, issue #247 — the one exception to "a tier is a role the
+league configures"). `server_owner_only` asks for it.
+
+Within the two tiers the single exception is `bot_setup_only`, worn by `/bot init` and the four single-setting
 commands. Those accept the Administrator permission as well as the role, and run from any
 channel, because they are what repairs the settings every other guard reads: a deleted
 interaction channel, or a league admin role removed from the server, would otherwise be
@@ -69,11 +76,13 @@ log = logging.getLogger(__name__)
 #: what stops a new command shipping without a tier or drifting into the wrong one.
 TIER_ATTRIBUTE = "__league_tier__"
 
-#: Marks a command exempt from the interaction-channel rule. Only `bot_setup_only` sets it.
+#: Marks a command exempt from the interaction-channel rule. Only `bot_setup_only` and
+#: `server_owner_only` set it.
 CHANNEL_EXEMPT_ATTRIBUTE = "__league_channel_exempt__"
 
 LEAGUE_ADMIN = "league admin"
 LEAGUE_MANAGER = "league manager"
+SERVER_OWNER = "server owner"
 
 _NOT_SET_UP = (
     "⛔ This server has not been set up yet. A server administrator must run `/bot init`."
@@ -272,5 +281,41 @@ def bot_setup_only(func: Callable) -> Callable:
         await func(self, interaction, *args, **kwargs)
 
     setattr(wrapper, TIER_ATTRIBUTE, LEAGUE_ADMIN)
+    setattr(wrapper, CHANNEL_EXEMPT_ATTRIBUTE, True)
+    return wrapper
+
+
+def server_owner_only(func: Callable) -> Callable:
+    """`/bot factory-reset`: the Discord server's owner, and nobody else.
+
+    Not a tier the league configures — see the module docstring. From any channel, and
+    whether or not the bot is set up, since a factory reset reads none of the settings the
+    other guards rest on and may be the way out of a configuration past repair.
+    """
+
+    @functools.wraps(func)
+    async def wrapper(self: Any, interaction: Interaction, *args: Any, **kwargs: Any) -> None:
+        guild = getattr(interaction, "guild", None)
+        if guild is None or _member_of(interaction) is None:
+            await _refuse(interaction, _NOT_IN_A_SERVER)
+            return
+        if interaction.user.id != guild.owner_id:
+            log.warning(
+                "server owner: /%s refused to user %s (id=%s), who does not own guild %s",
+                func.__name__,
+                interaction.user,
+                interaction.user.id,
+                interaction.guild_id,
+            )
+            await _refuse(
+                interaction,
+                "⛔ Only this server's owner may factory-reset the bot, whatever roles or "
+                "permissions anyone else holds.",
+            )
+            return
+
+        await func(self, interaction, *args, **kwargs)
+
+    setattr(wrapper, TIER_ATTRIBUTE, SERVER_OWNER)
     setattr(wrapper, CHANNEL_EXEMPT_ATTRIBUTE, True)
     return wrapper
