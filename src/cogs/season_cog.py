@@ -2824,13 +2824,13 @@ class SeasonCog(commands.Cog):
         # nobody; and before the cascade, since a season recorded cancelled no longer has its
         # channels read — which is also why the rounds about to be cancelled are named here
         # rather than read back.
-        failures = await cancellation_notice_service.announce_cancellation(
+        report = await cancellation_notice_service.announce_cancellation(
             self.bot,
             interaction.guild,
             active_divs,
             scope=cancellation_notice_service.SCOPE_SEASON,
             season_number=season.season_number,
-            also_cancelled=frozenset(to_cancel),
+            round_ids=frozenset(to_cancel),
         )
 
         # The roles, the driver pass, the window and test mode — as completing a season does.
@@ -2847,12 +2847,12 @@ class SeasonCog(commands.Cog):
         )
 
         await interaction.followup.send(
-            "\u2705 Season cancelled." + cancellation_notice_service.failure_lines(failures),
+            "\u2705 Season cancelled." + cancellation_notice_service.failure_lines(report.failures),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season cancel | Success"
-            + cancellation_notice_service.failure_log_lines(failures),
+            + cancellation_notice_service.failure_log_lines(report.failures),
         )
 
     @season.command(
@@ -3523,7 +3523,7 @@ class SeasonCog(commands.Cog):
 
         # Each enabled module says what the cancellation means for it, in its own channel, and
         # the calendar is posted again with the division's rounds struck through (#175).
-        failures = await cancellation_notice_service.announce_cancellation(
+        report = await cancellation_notice_service.announce_cancellation(
             self.bot,
             interaction.guild,
             [div],
@@ -3533,13 +3533,13 @@ class SeasonCog(commands.Cog):
 
         await interaction.followup.send(
             f"\u2705 Division **{name}** cancelled."
-            + cancellation_notice_service.failure_lines(failures),
+            + cancellation_notice_service.failure_lines(report.failures),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division cancel | Success\n"
             f"  division: {name}"
-            + cancellation_notice_service.failure_log_lines(failures),
+            + cancellation_notice_service.failure_log_lines(report.failures),
         )
 
     # ------------------------------------------------------------------
@@ -4831,7 +4831,7 @@ class SeasonCog(commands.Cog):
         # Each enabled module says what the cancellation means for it, in its own channel, and
         # the calendar is posted again with the round struck through (#175). Core posts
         # nothing of its own; what could not be reached is named to the admin below.
-        failures = await cancellation_notice_service.announce_cancellation(
+        report = await cancellation_notice_service.announce_cancellation(
             self.bot,
             interaction.guild,
             [div],
@@ -4843,14 +4843,14 @@ class SeasonCog(commands.Cog):
 
         await interaction.followup.send(
             f"\u2705 Round **{round_number}** in **{division_name}** cancelled."
-            + cancellation_notice_service.failure_lines(failures),
+            + cancellation_notice_service.failure_lines(report.failures),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round cancel | Success\n"
             f"  division: {division_name}\n"
             f"  round: {round_number}"
-            + cancellation_notice_service.failure_log_lines(failures),
+            + cancellation_notice_service.failure_log_lines(report.failures),
         )
 
     # ------------------------------------------------------------------

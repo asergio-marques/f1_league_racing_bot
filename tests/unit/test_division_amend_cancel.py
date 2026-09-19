@@ -49,6 +49,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.season_cog import PendingConfig, PendingDivision, SeasonCog  # noqa: E402
+from services.cancellation_notice_service import CancellationReport  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
@@ -196,7 +197,7 @@ async def _amend(cog, interaction, *, name="Pro", new_name=None, tier=None, role
 
 async def _cancel(cog, interaction, *, name="Pro", confirm="CONFIRM", failures=()):
     """Run the command with the modules' announcements stubbed, returning the stub."""
-    announce = AsyncMock(return_value=list(failures))
+    announce = AsyncMock(return_value=CancellationReport(failures=list(failures)))
     with patch("services.cancellation_notice_service.announce_cancellation", new=announce):
         await undecorate(SeasonCog.division_cancel)(cog, interaction, name, confirm)
     return announce
@@ -715,7 +716,7 @@ async def test_the_modules_are_told_after_the_division_is_recorded_cancelled(tmp
     cog.bot.season_service.cancel_division.side_effect = (
         lambda **_: order.append("division")
     )
-    announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or [])
+    announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or CancellationReport())
     with patch("services.cancellation_notice_service.announce_cancellation", new=announce):
         await undecorate(SeasonCog.division_cancel)(cog, _interaction(), "Pro", "CONFIRM")
     assert order == ["division", "announce"]

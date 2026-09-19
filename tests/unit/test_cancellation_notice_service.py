@@ -99,7 +99,7 @@ async def test_nothing_is_posted_to_the_forecast_channel_with_weather_off(tmp_pa
 async def test_a_league_with_every_module_off_is_posted_nothing(tmp_path):
     bot = _bot(await _make_db(tmp_path), weather=False, results=False, attendance=False)
     guild, channels = _guild()
-    failures = await _announce(bot, guild)
+    failures = (await _announce(bot, guild)).failures
     for channel in channels.values():
         channel.send.assert_not_awaited()
     assert failures == []
@@ -146,7 +146,7 @@ async def test_the_check_in_channel_carries_the_notification(tmp_path):
 async def test_every_scope_says_something_in_every_enabled_module(tmp_path, scope):
     bot = _bot(await _make_db(tmp_path))
     guild, channels = _guild()
-    assert await _announce(bot, guild, scope) == []
+    assert (await _announce(bot, guild, scope)).failures == []
     for channel in channels.values():
         channel.send.assert_awaited_once()
 
@@ -164,7 +164,7 @@ def test_a_round_note_names_the_round_and_its_track():
 async def test_a_missing_channel_is_reported_and_the_rest_still_sent(tmp_path):
     bot = _bot(await _make_db(tmp_path, results=False))
     guild, channels = _guild()
-    failures = await _announce(bot, guild)
+    failures = (await _announce(bot, guild)).failures
     assert [(f.division_name, f.target) for f in failures] == [("Pro", "results channel")]
     assert failures[0].reason == "no channel is set"
     channels[FORECAST].send.assert_awaited_once()
@@ -174,7 +174,7 @@ async def test_a_missing_channel_is_reported_and_the_rest_still_sent(tmp_path):
 async def test_a_channel_that_cannot_be_found_is_reported(tmp_path):
     bot = _bot(await _make_db(tmp_path))
     guild, _ = _guild(missing=(FORECAST,))
-    failures = await _announce(bot, guild)
+    failures = (await _announce(bot, guild)).failures
     assert [(f.target, f.reason) for f in failures] == [
         ("forecast channel", "the channel could not be found")
     ]
@@ -184,7 +184,7 @@ async def test_a_failed_send_does_not_stop_the_others(tmp_path):
     bot = _bot(await _make_db(tmp_path))
     guild, channels = _guild()
     channels[RSVP].send = AsyncMock(side_effect=RuntimeError("forbidden"))
-    failures = await _announce(bot, guild)
+    failures = (await _announce(bot, guild)).failures
     assert [f.target for f in failures] == ["check-in channel"]
     assert "forbidden" in failures[0].reason
     channels[FORECAST].send.assert_awaited_once()
@@ -232,7 +232,7 @@ async def test_the_calendar_is_posted_again_with_the_round_cancelled(tmp_path, m
         return_value=[_Round(1, "NOT_RUN"), _Round(2, "NOT_RUN"), _Round(3, "FINAL")]
     )
     reason = await cns.refresh_division_calendar(
-        bot, MagicMock(), _division(message_id=9), also_cancelled=frozenset({2})
+        bot, MagicMock(), _division(message_id=9), round_ids=frozenset({2})
     )
     assert reason is None
     rounds = post.await_args.args[3]
@@ -255,9 +255,9 @@ async def test_a_calendar_that_could_not_be_posted_is_a_failure(tmp_path, monkey
     bot = _bot(await _make_db(tmp_path), weather=False, results=False, attendance=False)
     bot.season_service.get_division_rounds = AsyncMock(return_value=[])
     division = _division(message_id=9)
-    failures = await cns.announce_cancellation(
+    failures = (await cns.announce_cancellation(
         bot, MagicMock(), [division], scope=cns.SCOPE_DIVISION
-    )
+    )).failures
     assert [(f.target, f.reason) for f in failures] == [("calendar", "forbidden")]
 
 
@@ -270,9 +270,9 @@ async def test_a_calendar_that_raises_is_a_failure_not_an_error(tmp_path, monkey
     monkeypatch.setattr(calendar_post_service, "tracks_by_name", AsyncMock(return_value={}))
     bot = _bot(await _make_db(tmp_path), weather=False, results=False, attendance=False)
     bot.season_service.get_division_rounds = AsyncMock(return_value=[])
-    failures = await cns.announce_cancellation(
+    failures = (await cns.announce_cancellation(
         bot, MagicMock(), [_division(message_id=9)], scope=cns.SCOPE_SEASON
-    )
+    )).failures
     assert [(f.target, f.reason) for f in failures] == [("calendar", "boom")]
 
 
@@ -284,7 +284,7 @@ async def test_a_module_state_that_cannot_be_read_is_a_failure_not_an_error(tmp_
     bot = _bot(await _make_db(tmp_path))
     bot.module_service.is_weather_enabled = AsyncMock(side_effect=RuntimeError("db locked"))
     guild, _ = _guild()
-    failures = await _announce(bot, guild, cns.SCOPE_SEASON)
+    failures = (await _announce(bot, guild, cns.SCOPE_SEASON)).failures
     assert [(f.target, f.reason) for f in failures] == [("the announcement", "db locked")]
 
 
@@ -296,7 +296,7 @@ async def test_channels_that_cannot_be_read_still_leave_the_calendar_refreshed(
     monkeypatch.setattr(cns, "_module_channels", AsyncMock(side_effect=RuntimeError("gone")))
     refresh = AsyncMock(return_value=None)
     monkeypatch.setattr(cns, "refresh_division_calendar", refresh)
-    failures = await _announce(bot, guild)
+    failures = (await _announce(bot, guild)).failures
     assert [f.target for f in failures] == ["its module channels"]
     refresh.assert_awaited_once()
     for channel in channels.values():
@@ -317,9 +317,9 @@ async def test_a_calendar_that_fell_back_to_text_is_named(tmp_path, monkeypatch)
     monkeypatch.setattr(calendar_post_service, "tracks_by_name", AsyncMock(return_value={}))
     bot = _bot(await _make_db(tmp_path), weather=False, results=False, attendance=False)
     bot.season_service.get_division_rounds = AsyncMock(return_value=[])
-    failures = await cns.announce_cancellation(
+    failures = (await cns.announce_cancellation(
         bot, MagicMock(), [_division(message_id=9)], scope=cns.SCOPE_ROUND, round_number=1
-    )
+    )).failures
     assert [f.target for f in failures] == ["calendar"]
     assert "posted as text" in failures[0].reason
     assert "template invalid" in failures[0].reason

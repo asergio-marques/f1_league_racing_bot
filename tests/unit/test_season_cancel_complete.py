@@ -35,6 +35,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.season_cog import SeasonCog  # noqa: E402
+from services.cancellation_notice_service import CancellationReport  # noqa: E402
 from services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
@@ -178,7 +179,7 @@ async def _cancel(cog, interaction, confirm: str = "CONFIRM", failures=()):
 
     What each module says is `cancellation_notice_service`'s and is tested there (#175).
     """
-    announce = AsyncMock(return_value=list(failures))
+    announce = AsyncMock(return_value=CancellationReport(failures=list(failures)))
     with patch("services.cancellation_notice_service.announce_cancellation", new=announce):
         await undecorate(SeasonCog.season_cancel)(cog, interaction, confirm)
     return announce
@@ -338,7 +339,7 @@ async def test_the_rounds_about_to_be_cancelled_are_drawn_cancelled():
     with history, roles:
         announce = await _cancel(cog, _interaction())
 
-    assert announce.await_args.kwargs["also_cancelled"] == frozenset({2, 3})
+    assert announce.await_args.kwargs["round_ids"] == frozenset({2, 3})
 
 
 async def test_the_modules_are_told_after_the_history_and_before_the_roles_go():
@@ -347,7 +348,7 @@ async def test_the_modules_are_told_after_the_history_and_before_the_roles_go():
     nobody holds reaches nobody. Before the cascade, which stops the channels being read."""
     order: list[str] = []
     cog = _make_cog(order=order)
-    announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or [])
+    announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or CancellationReport())
     history, _ = _season_end(order=order)
     roles = patch(
         "services.season_end_service._revoke_season_roles",
@@ -366,7 +367,7 @@ async def test_a_failed_history_write_tells_nobody():
     """The admin runs the command again once it is fixed; nothing is announced twice."""
     cog = _make_cog()
     history, roles = _season_end(history_error=RuntimeError("disk full"))
-    announce = AsyncMock(return_value=[])
+    announce = AsyncMock(return_value=CancellationReport())
 
     with history, roles, pytest.raises(RuntimeError), patch(
         "services.cancellation_notice_service.announce_cancellation", new=announce

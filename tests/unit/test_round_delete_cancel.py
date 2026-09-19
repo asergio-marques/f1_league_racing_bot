@@ -39,6 +39,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.season_cog import SeasonCog  # noqa: E402
+from services.cancellation_notice_service import CancellationReport  # noqa: E402
 from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus  # noqa: E402
 from services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
@@ -183,7 +184,7 @@ async def _cancel(
     What each module says is `cancellation_notice_service`'s and is tested there; here the
     command is held only to calling it, once, for the right round (#175).
     """
-    announce = AsyncMock(return_value=list(failures))
+    announce = AsyncMock(return_value=CancellationReport(failures=list(failures)))
     with _submission(submission_open), patch(
         "services.cancellation_notice_service.announce_cancellation", new=announce
     ):
@@ -448,7 +449,7 @@ async def test_the_announcement_follows_the_round_being_recorded_cancelled():
     cog.bot.season_service.cancel_round = AsyncMock(
         side_effect=lambda **kw: order.append("record")
     )
-    announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or [])
+    announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or CancellationReport())
     with _submission(False), patch(
         "services.cancellation_notice_service.announce_cancellation", new=announce
     ):

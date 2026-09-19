@@ -40,6 +40,16 @@ SCOPE_DIVISION = "division"
 SCOPE_SEASON = "season"
 
 
+@dataclass
+class CancellationReport:
+    """What announcing a cancellation left for the command to report."""
+
+    #: Every place the cancellation could not reach, for the admin's reply and the log.
+    failures: list["NoticeFailure"] = dataclasses.field(default_factory=list)
+    #: The log-channel audit of each cancelled round's check-in; empty where there is none.
+    audit: str = ""
+
+
 @dataclass(frozen=True)
 class NoticeFailure:
     """One place a cancellation could not reach."""
@@ -123,11 +133,12 @@ async def refresh_division_calendar(
     division,
     *,
     season_number=None,
-    also_cancelled: frozenset[int] = frozenset(),
+    round_ids: frozenset[int] = frozenset(),
 ) -> str | None:
     """Post *division*'s calendar again, as it now stands. Returns what went wrong, or None.
 
-    *also_cancelled* names rounds to draw as cancelled though not yet recorded so. A season
+    *round_ids* names the rounds the cancellation calls off, drawn as cancelled whether or not
+    they are recorded so yet. A season
     is cancelled by a cascade, and its calendars must be refreshed **before** it — once the
     season is recorded cancelled its channels are no longer read — so the rounds the cascade
     is about to call off are named here instead.
@@ -144,10 +155,10 @@ async def refresh_division_calendar(
     from services import calendar_post_service as calendar
 
     rounds = await bot.season_service.get_division_rounds(division.id)
-    if also_cancelled:
+    if round_ids:
         rounds = [
             dataclasses.replace(r, status=RoundStatus.CANCELLED.value)
-            if r.id in also_cancelled
+            if r.id in round_ids
             else r
             for r in rounds
         ]
@@ -215,33 +226,35 @@ async def announce_cancellation(
     round_number: int | None = None,
     track_name: str | None = None,
     season_number=None,
-    also_cancelled: frozenset[int] = frozenset(),
-) -> list[NoticeFailure]:
+    round_ids: frozenset[int] = frozenset(),
+) -> CancellationReport:
     """Have each enabled module say what the cancellation means for it, in each division.
 
     *divisions* are those told: the one a round or division belongs to, or every division of
-    a season still running. Returns every place that could not be reached.
+    a season still running. *round_ids* are the rounds this cancellation calls off — the one
+    round, or every round of the division or season whose results are not yet in. Returns
+    every place that could not be reached, and the audit of those rounds' check-ins.
 
     **Never raises.** It is called in the middle of a cancellation — before the cascade, for a
     season — and an exception escaping it would stop the cancellation part-done, its jobs gone
     and its records untouched. Whatever goes wrong is returned as a failure instead.
     """
-    failures: list[NoticeFailure] = []
+    report = CancellationReport()
     try:
         await _announce(
-            bot, guild, divisions, failures,
+            bot, guild, divisions, report,
             scope=scope, round_number=round_number, track_name=track_name,
-            season_number=season_number, also_cancelled=also_cancelled,
+            season_number=season_number, round_ids=frozenset(round_ids),
         )
     except Exception as exc:  # noqa: BLE001 — see the docstring
         log.exception("cancellation notice: the announcement raised")
-        failures.append(NoticeFailure("Every division", "the announcement", str(exc)))
-    return failures
+        report.failures.append(NoticeFailure("Every division", "the announcement", str(exc)))
+    return report
 
 
 async def _announce(
-    bot, guild, divisions, failures: list[NoticeFailure], *,
-    scope, round_number, track_name, season_number, also_cancelled,
+    bot, guild, divisions, report: CancellationReport, *,
+    scope, round_number, track_name, season_number, round_ids,
 ) -> None:
     import discord
 
@@ -255,7 +268,7 @@ async def _announce(
         if reason is None:
             return
         log.warning("cancellation notice: %s — %s: %s", division.name, target, reason)
-        failures.append(NoticeFailure(division.name, target, reason))
+        report.failures.append(NoticeFailure(division.name, target, reason))
 
     words = dict(round_number=round_number, track_name=track_name)
     for division in divisions:
@@ -295,7 +308,7 @@ async def _announce(
             reason = await refresh_division_calendar(
                 bot, guild, division,
                 season_number=season_number,
-                also_cancelled=also_cancelled,
+                round_ids=round_ids,
             )
         except Exception as exc:  # noqa: BLE001 — the calendar never stops the cancellation
             log.exception("cancellation notice: calendar refresh raised for %s", division.name)
