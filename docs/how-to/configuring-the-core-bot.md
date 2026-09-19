@@ -722,6 +722,7 @@ command.
 | A division posts nothing where the others post fine | That division is missing the channel for it. Check step 9 |
 | The season will not complete | Some round has not had its appeals review approved. The refusal names them — approve the appeals in each round's submission channel, or cancel a round that will never be raced |
 | Drivers placed mid-season were turned down on their own | Every division finished while their placements were still unconfirmed. There was no round left for them, so their placements were discarded and they returned to Not Signed Up |
+| "❌ … stopped on a fault in the bot, not on anything you entered" | The bot ran into a fault of its own, not a mistake in what you typed. It may have done part of the job, so check what the command was meant to change before you run it again. The log channel has a line naming the command and the kind of fault: if it happens again, give that line to whoever hosts the bot |
 | Nothing at all is happening on schedule | The bot is not running. Starting it again picks up missed weather phases, missed check-in deadlines and a signup auto-close timer; anything else that came due while it was down is missed |
 
-Anything the bot works out, fails to find, or falls back on is written to the log channel. When something is behaving oddly and this table has not explained it, read that channel — the answer is nearly always sitting in it.
+Anything the bot works out, fails to find, falls back on or fails at is written to the log channel. When something is behaving oddly and this table has not explained it, read that channel — the answer is nearly always sitting in it.

@@ -80,6 +80,7 @@ RULES: list[tuple[str, tuple[str, ...]]] = [
         "in_memory_state", "pack_service", "factory_reset_service",
         "approval_window", "clean_cog", "module_cog", "retry_cog",
         "season_cog", "test_mode", "track_cog", "calendar_post", "channel_guard", "league_server",
+        "interaction_errors",
         "season_classification", "season_end", "season_fingerprint", "season_points",
         "test_roster_service", "track_service",
         "autocomplete", "date_formatting", "time_parsing", "timezones", "log_filters",

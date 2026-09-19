@@ -209,6 +209,14 @@ or permissions anybody else holds.
 Every command is given in the interaction channel, except those same five and
 `/bot factory-reset`.
 
+**When a command fails.** If a command, button or form runs into a fault in the bot, it tells
+you so, and nobody else sees the reply: *"❌ `/season approve` stopped on a fault in the bot,
+not on anything you entered, and did not finish. It may have been partly done — check before
+running it again."* It also writes a line to the log channel naming who ran what and the kind
+of fault. Nothing is undone, so check what the command was meant to change before you run it
+again. If it keeps happening, give that log-channel line to whoever hosts the bot. The full
+detail is in the host's log.
+
 ### `/bot init` — One-time server setup
 *Access: League admin · Can be run from any channel, or by a server administrator*
 
