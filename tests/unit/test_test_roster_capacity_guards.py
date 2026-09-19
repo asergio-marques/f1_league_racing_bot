@@ -318,3 +318,85 @@ async def test_the_command_refuses_it_in_placements(tmp_path):
     assert "**not** assigned" in reply
     assert await _seated(path) == 1
     bot.output_router.post_log.assert_not_awaited()
+
+
+# ── /test-mode roster add-bulk ────────────────────────────────────────────
+
+
+def _roster(*rows: tuple[str, str], nationality: str | None = "British"):
+    """ParsedDriver rows of (team, division), given IDs in the synthetic range."""
+    from utils.roster_import import SYNTHETIC_ID_BASE, ParsedDriver
+
+    return [
+        ParsedDriver(
+            line=index + 2,
+            discord_user_id=SYNTHETIC_ID_BASE + index + 1,
+            driver_name=f"Mock {index + 1}",
+            team_name=team,
+            division_name=division,
+            nationality=nationality,
+        )
+        for index, (team, division) in enumerate(rows)
+    ]
+
+
+async def _bulk(path, service, drivers):
+    from services.test_roster_service import add_test_drivers_in_bulk
+
+    return await add_test_drivers_in_bulk(drivers, path, placement_service=service)
+
+
+async def test_a_roster_outgrowing_the_standings_across_its_teams_seats_nobody(tmp_path):
+    """No team overflows on its own. The division does, and the import is refused whole."""
+    path, _divisions = await _seed(tmp_path)
+    service = _service(path, {DRIVERS: _standings(tmp_path, rows=3)})
+    drivers = _roster(
+        (TEAMS[0], "Alpha"), (TEAMS[0], "Alpha"), (TEAMS[1], "Alpha"), (TEAMS[1], "Alpha")
+    )
+
+    seated, errors = await _bulk(path, service, drivers)
+
+    assert seated == 0
+    assert len(errors) == 1
+    assert errors[0].startswith("Division 'Alpha':")
+    assert "4 drivers" in errors[0]
+    assert await _seated(path) == 0
+
+
+async def test_each_division_is_measured_on_its_own(tmp_path):
+    """Three rows each: two divisions of three drivers fit, though six drivers would not."""
+    path, _divisions = await _seed(tmp_path)
+    service = _service(path, {DRIVERS: _standings(tmp_path, rows=3)})
+    drivers = _roster(
+        (TEAMS[0], "Alpha"), (TEAMS[0], "Alpha"), (TEAMS[1], "Alpha"),
+        (TEAMS[0], "Beta"), (TEAMS[1], "Beta"), (TEAMS[1], "Beta"),
+    )
+
+    seated, errors = await _bulk(path, service, drivers)
+
+    assert errors == []
+    assert seated == 6
+
+
+async def test_the_reserves_of_a_roster_are_measured_against_the_reserve_block(tmp_path):
+    path, _divisions = await _seed(tmp_path)
+    service = _service(path, {LINEUP: _lineup(tmp_path, reserve_slots=1)})
+    drivers = _roster((RESERVE, "Alpha"), (RESERVE, "Alpha"), (TEAMS[0], "Alpha"))
+
+    seated, errors = await _bulk(path, service, drivers)
+
+    assert seated == 0
+    assert any("2 reserve drivers" in error for error in errors)
+
+
+async def test_a_capacity_fault_is_named_beside_every_other(tmp_path):
+    """Every fault is named at once, so a manager fixes the file in one pass."""
+    path, _divisions = await _seed(tmp_path)
+    service = _service(path, {SHEET: _sheet(tmp_path, rows=1)})
+    drivers = _roster((TEAMS[0], "Alpha"), (TEAMS[1], "Alpha"), nationality="Martian")
+
+    seated, errors = await _bulk(path, service, drivers)
+
+    assert seated == 0
+    assert any("Martian" in error for error in errors)
+    assert any(error.startswith("Division 'Alpha':") for error in errors)

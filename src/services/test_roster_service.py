@@ -274,6 +274,7 @@ async def add_test_driver(
 async def add_test_drivers_in_bulk(
     drivers: list,
     db_path: str,
+    placement_service=None,
 ) -> tuple[int, list[str]]:
     """Seat a whole roster at once, or seat none of it.
 
@@ -297,6 +298,11 @@ async def add_test_drivers_in_bulk(
     describes a whole grid, and importing it twice — or over a roster seated by hand —
     would put a division's seats somewhere the file does not describe, with the file still
     looking like the record of what happened.
+
+    *placement_service* holds each division the roster seats to the template capacities a
+    real placement is held to, counting every driver the roster gives the division at once
+    (#150). The cog always passes it; left None, as tests of the seating alone do, the check
+    is skipped.
     """
     from utils.roster_import import divisions_named
 
@@ -372,6 +378,8 @@ async def add_test_drivers_in_bulk(
             )
 
         seats: dict[tuple[int, str], list[int]] = {}
+        # Per division, the drivers each of its teams is given, under the team's own name.
+        added: dict[int, dict[str, int]] = {}
         for (division_id, team_key), needed in wanted.items():
             cursor = await db.execute(
                 "SELECT id, max_seats, is_reserve, name FROM team_instances "
@@ -395,6 +403,21 @@ async def add_test_drivers_in_bulk(
                     f"roster gives it {needed} driver(s)."
                 )
             seats[(division_id, team_key)] = free
+            added.setdefault(division_id, {})[team_row["name"]] = needed
+
+        # The template capacities are measured over the whole of a division's roster, since
+        # it is seated at once. They run even where something else failed, so every fault is
+        # named together.
+        if placement_service is not None:
+            for name, division_id in division_ids.items():
+                if division_id not in added:
+                    continue
+                try:
+                    await placement_service.guard_roster_capacity(
+                        division_id, added[division_id]
+                    )
+                except ValueError as exc:
+                    errors.append(f"Division '{name}': {exc}")
 
         if errors:
             return 0, errors

@@ -110,6 +110,24 @@ async def test_a_parse_fault_is_reported_and_nothing_is_added(monkeypatch):
     seated.assert_not_awaited(), "the database was reached despite a parse fault"
 
 
+async def test_the_roster_is_held_to_the_template_capacities(monkeypatch):
+    """#150: the bot's placement service goes with the roster, so a real season's
+    template capacities bound it."""
+    import services.test_roster_service as trs
+
+    seated = AsyncMock(return_value=(1, []))
+    monkeypatch.setattr(trs, "add_test_drivers_in_bulk", seated)
+    cog = _cog()
+    modal = _RosterImportModal(cog)
+    modal.csv_text._value = "9000000000000000001,Quicksilver,Alpine,Elite,British"
+    interaction = _interaction()
+
+    await modal.on_submit(interaction)
+
+    seated.assert_awaited_once()
+    assert seated.await_args.kwargs["placement_service"] is cog.bot.placement_service
+
+
 async def test_the_submission_defers_before_it_replies():
     """The import queries and writes; a modal that does not defer runs out of Discord's
     three seconds on a fifty-one row roster."""
