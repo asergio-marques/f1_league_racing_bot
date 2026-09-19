@@ -32,8 +32,10 @@ it only to place it; the rules governing it belong to its own specification.
     - The interaction channel is the only channel in which the bot accepts commands.
     - The log channel is where the bot records what it did, what it could not find, and why something fell back.
 - The initialisation command shall run once. A second run shall be refused rather than overwrite what stands, and shall name the commands that change a single setting.
-- One bot shall serve one league. The first initialisation claims its server, and initialisation upon any other server shall be refused, saying that the bot already serves a league elsewhere.
+- One bot shall serve one league. Initialisation claims its server while the bot serves none, and initialisation upon any other server shall be refused, saying that the bot already serves a league elsewhere.
+    - Initialisation upon a server after a pack shall claim that server and set the four settings afresh. It shall keep what the pack kept, test mode and the modules' settings among it.
 - Upon any server but its league's, the bot shall refuse every command and act on nothing that happens there. It shall stay in that server rather than leave it.
+- While the bot serves no server, after a pack or before its first initialisation, it shall refuse every button and form it has posted, wherever it is pressed, and shall take no command but initialisation and the four single-setting commands.
 - Each of the four settings shall have a command changing that setting alone.
 - The initialisation command and the four single-setting commands are a league admin's, and shall run from any channel, holding either role being no part of it. They are what repairs the four settings, and a deleted channel or a withdrawn role would otherwise be unrepairable.
     - These five commands alone shall additionally accept the server's administrator permission in place of the league admin role. They are the only way back for a server that has no league admin role — one that was configured before the role existed, or one whose role has been deleted — and without them such a server could never gain one.
@@ -43,11 +45,12 @@ it only to place it; the rules governing it belong to its own specification.
 ### Who may do what
 - A driver shall need no role and no channel. A driver reaches the bot through the buttons it posts and through their own channels.
 - Two tiers of authority shall govern every command, and every command shall sit in one of them and no other.
-    - **A league admin** shall hold the league admin role. A league admin governs what the bot is upon the server, and everything that may undo a league entire: initialising the bot and repairing its four settings, enabling and disabling a module, starting over, and every command of test mode.
+    - **A league admin** shall hold the league admin role. A league admin governs what the bot is upon the server, and everything that may undo a league entire: initialising the bot and repairing its four settings, packing the bot for another server, enabling and disabling a module, and every command of test mode.
         - A command destroying what a league is built from shall be a league admin's, where nothing puts it back: deleting or cancelling a division, a round or a season, completing or aborting a season, removing a team, sacking a driver, deleting the bot's own messages, amending the results of a round already final, approving an amendment of a season's points, and deleting a points configuration. A command whose undoing is another command — closing a signup window that may be opened again, unassigning a driver who may be assigned again, rejecting a driver who may sign up again, discarding an amendment not yet approved — is a league manager's.
         - Moving a driver and releasing a driver from a division shall be a league manager's, though a release is not put back by any command. Both are the running of a championship already under way.
     - **A league manager** shall hold the interaction role and shall command the bot in the interaction channel. A league manager runs the league: its seasons, divisions, rounds, tracks, teams, drivers and seats; the configuration of every module and the templates and artwork it draws from; the channels each division posts to; and the results, standings, verdicts, check-ins and signups that follow.
 - Where this specification does not state a tier, the command is a league manager's.
+- The factory reset alone shall stand outside both tiers. It shall be the Discord server owner's, and nobody else's, whatever roles or permissions they hold, and shall run from any channel. It is the one exception to every tier being a role the league configures.
 - **Both tiers shall be roles the league configures, and a permission of the server shall be a route to neither.** A permission is a property of the Discord server and is given for reasons that have nothing to do with a league; a tier is a property of the league. A member may run a championship without being trusted to restructure the server, and may administer the server without being anywhere near the championship.
     - The sole exception is the initialisation command and the four single-setting commands, which the section above sets out.
 - The league admin role shall carry the league manager's tier within it. A member holding it shall command the bot without also holding the interaction role, a league admin being able to do everything a league manager may.
@@ -78,18 +81,40 @@ it only to place it; the rules governing it belong to its own specification.
 - The rules governing a module — what enabling it requires, what disabling it clears, and what it depends upon — belong to that module's specification.
 - A disabled module shall produce nothing. While a module is disabled the bot shall neither compute, record nor post any of that module's output, whatever the path arrives at it — a scheduled job, a restart, or a command that amends work arranged while the module was still enabled.
     - Nothing done while a module was disabled shall be recorded as that module's work, so that enabling the module later does not find its work already done.
-- Disabling a module shall stop that module's work and no other's. Scheduled work belonging to a module that remains enabled shall continue for every round still to come, and shall be cancelled only by its own module being disabled, by the round or season it belongs to ending, or by a reset. Where a module's specification states that another module depends upon it, disabling it shall disable the dependent module too, and that cascade shall be reported.
+- Disabling a module shall stop that module's work and no other's. Scheduled work belonging to a module that remains enabled shall continue for every round still to come, and shall be cancelled only by its own module being disabled, by the round or season it belongs to ending, or by a pack or a factory reset. Where a module's specification states that another module depends upon it, disabling it shall disable the dependent module too, and that cascade shall be reported.
 - Which modules are enabled shall be displayed in the configuration review and the placements review.
 - Seasons, divisions, rounds, tracks, teams and drivers are foundational and shall not be disabled.
 - Stewarding, statistics and help are recorded as intended modules and are not built.
 
 ### Starting over
-- A reset command shall delete a server's league data entire — its seasons, divisions, rounds, sessions, weather results, teams of a season, seats, driver placements and the record of changes — and shall cancel every piece of scheduled work.
-    - It shall require the word `CONFIRM` to be typed exactly.
-    - A fuller form shall additionally clear the server's four settings, so that the bot may be initialised again, upon this server or another. It is the only thing that frees the bot's claim on its server.
-    - The server's team list shall survive either form.
-    - It shall report what was deleted and shall be written to the log channel.
-    - It shall be given in the interaction channel. It is a league admin's command and not a repair of the settings, the initialisation command being the footing it does not share.
+- The bot shall offer two ways to start over: a pack, which readies it to serve the same league from another server, and a factory reset, which returns it to a fresh install. Each shall require the word `CONFIRM` to be typed exactly.
+
+#### Packing the bot for another server
+- A pack shall be a league admin's command, given in the interaction channel.
+- A pack shall be refused while the league has a current season: one in any stage but completed or cancelled. The refusal shall name the season and its stage.
+- A pack shall be allowed while test mode is on.
+- A pack shall keep what belongs to the league rather than the server: every driver profile with its accounts, history and portrait, test drivers among them; every completed and cancelled season; the team list; the points configurations; test mode; and every module setting that is not a channel or a role.
+- A pack shall clear everything tied to the server:
+    - the four settings, which frees the bot's claim on the server;
+    - the role of every team, and the signup channel and signup roles;
+    - every signup wizard, every undelivered message awaiting a retry, and the season review prompt;
+    - the record of which messages the bot posted, by which it edits them;
+    - every piece of scheduled work, but the daily refresh of driver portraits.
+- A pack shall change nothing in Discord. The bot's messages shall stay on the server it leaves, and their buttons shall be refused from then on; the pack's reply shall say so.
+- A pack shall be written to the log channel before the settings are cleared.
+
+#### Factory reset
+- A factory reset shall be the server owner's command alone. It shall be given from any channel of a server the bot is not refusing.
+- A factory reset shall first take a backup of both the bot's databases on the host, and shall be refused, erasing nothing, if the backup cannot be taken. The backup shall not replace an earlier one. Restoring a backup shall be the host's task and not a command's.
+- A factory reset shall then erase the league: the bot shall hold only the packaged circuit list, no scheduled work, nothing in memory, and no claim upon any server.
+- A factory reset shall then clean the server it was given upon:
+    - it shall delete the channels the bot created — signup wizard channels, results submission channels and results amendment channels;
+    - it shall delete the bot's own messages in every channel it posts to or reads from, in any season. A message of anybody else shall never be deleted.
+- The clean-up shall report its progress to the server owner in one direct message, edited as it goes, and naming the channel being worked before it is worked, so that a clean-up interrupted part-way says where it stopped. Where the owner cannot be sent a message, the progress shall go to the host's log alone.
+- A channel that cannot be cleaned shall be reported and passed over, and the clean-up shall carry on.
+- A second factory reset shall be refused while a clean-up is still under way.
+
+### Deleting the bot's own messages
 - A command deleting the bot's own messages in a channel shall require the number to be deleted, and shall accept no fewer than one and no more than ten.
     - The number shall count the messages actually deleted. A message written by anybody other than the bot shall never be deleted and shall never be counted towards it.
     - The messages deleted shall be the most recent, the newest first.
