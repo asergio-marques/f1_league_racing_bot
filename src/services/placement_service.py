@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from datetime import datetime, timezone
 
 import discord
@@ -870,6 +871,48 @@ class PlacementService:
             f"Enlarge that template, or disable the images module, before adding "
             f"another driver."
         )
+
+    async def guard_roster_capacity(
+        self, division_id: int, added: Mapping[str, int]
+    ) -> None:
+        """Refuse a test roster that a real placement into the same teams would be refused for.
+
+        *added* maps each team of *division_id* to the number of drivers the change seats in
+        it. Test mode seats its fake drivers without passing through ``assign_driver``, so
+        without this a roster larger than the league's templates could hold was accepted, and
+        the rehearsal passed a configuration a real season would refuse (#150).
+
+        **The count is per division, summed across its teams.** A bulk roster seats a whole
+        division at once, and two teams that each fit on their own can together outgrow the
+        standings. The three template guards run once each, measuring the reserves, every
+        driver, and the classified drivers respectively. A team the division does not hold is
+        skipped: the roster service refuses it in its own words.
+
+        The declared-capacity branch of ``_guard_image_capacity`` is not run: every catalogue
+        declares ``capacity=None`` today, so it bounds no placement, real or test.
+
+        Raises ValueError naming the template, as a real placement's refusal does.
+        """
+        reserve_team: str | None = None
+        classified_team: str | None = None
+        reserves = classified = 0
+        for team_name, count in added.items():
+            is_reserve = await self._is_reserve_team(division_id, team_name)
+            if is_reserve is None or count <= 0:
+                continue
+            if is_reserve:
+                reserve_team, reserves = team_name, reserves + count
+            else:
+                classified_team, classified = team_name, classified + count
+
+        if reserve_team is not None:
+            await self._guard_reserve_capacity(division_id, reserve_team, adding=reserves)
+        if reserves + classified:
+            await self._guard_sheet_capacity(division_id, adding=reserves + classified)
+        if classified_team is not None:
+            await self._guard_standings_capacity(
+                division_id, classified_team, adding=classified
+            )
 
     # ------------------------------------------------------------------
     # Assign driver (T010)
