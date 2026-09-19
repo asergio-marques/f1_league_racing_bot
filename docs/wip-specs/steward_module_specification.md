@@ -941,6 +941,7 @@
 - The standings of the results & standings module shall show the championship penalties this module gives, in the drivers' and the constructors' standings alike.
 - A points deduction lowers the total of the driver or team it is given to, and shall be marked: in the textual output by a footnote to the total, stating the points deducted; in the image output by an optional column holding the points deducted.
 - A driver or team disqualified from the championship shall be shown in the standings with "DSQ" in place of their points total, the exact tally of their points not displayed, and ranked beneath every driver or team classified.
+- A championship penalty takes effect with the verdict that gives it, as time penalties and disqualifications do upon the results: the standings reposted once a round's report verdicts are posted already show those the reports gave, and those reposted once its appeal verdicts are posted show them as the appeals left them. It is written to the driver licence at the cycle close, with every other change to a licence.
 
 ## Licence sheet output
 - The licence sheet for a given division shall be posted in the channel configured by "division licence-channel".
