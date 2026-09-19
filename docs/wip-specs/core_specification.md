@@ -30,7 +30,7 @@ it only to place it; the rules governing it belong to its own specification.
     - The interaction role is the role a member shall hold to command the bot at all.
     - The league admin role is the role a member shall hold to govern the bot and to do what may undo a league entire.
     - The interaction channel is the only channel in which the bot accepts commands.
-    - The log channel is where the bot records what it did, what it could not find, and why something fell back.
+    - The log channel is where the bot records what it did, what it could not find, why something fell back, and what failed.
 - The initialisation command shall run once. A second run shall be refused rather than overwrite what stands, and shall name the commands that change a single setting.
 - One bot shall serve one league. Initialisation claims its server while the bot serves none, and initialisation upon any other server shall be refused, saying that the bot already serves a league elsewhere.
     - Initialisation upon a server after a pack shall claim that server and set the four settings afresh. It shall keep what the pack kept, test mode and the modules' settings among it.
@@ -74,6 +74,11 @@ it only to place it; the rules governing it belong to its own specification.
 - A mention written into the log channel shall not notify anybody.
 - A record too long for one message shall be divided across as many as it requires.
 - A message the bot fails to post shall be kept and delivered later.
+
+### When a command fails
+- A command, button or form that fails before it finishes shall tell the member who used it, seen by them alone, naming what failed, that the fault lies in the bot and not in anything the member entered, that it did not finish, and that it may have been partly done. The reply shall not name the exception.
+- The failure shall be recorded in the log channel, naming the member, the command, button or form, and the kind of fault. The full detail shall go to the host's log alone.
+- Either shall be made though the other cannot be.
 
 ### Modules
 - Five modules shall be available, each specified in its own document: signup, results and standings, attendance, weather, and image generation.
