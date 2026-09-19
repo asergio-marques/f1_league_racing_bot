@@ -30,13 +30,18 @@ ordering the comment in the source is about.
 results.** Migration 036 dropped `driver_session_results`; the cascade still deletes from it,
 inside the branch that only runs when the season has `session_results` rows — which is every
 season a league has actually raced. The whole delete raises `no such table` and rolls back, so
-the method cannot remove a used season at all. No league command reaches it: there is no
-`/season delete`, its only caller is the obsolete `tools/gen_season_cog.py`, and a season that
-has been raced must never be deleted anyway. Issue #214 records both. That is pinned by
+the method cannot remove a used season at all. No league command reaches it: its only
+caller, `/season abort`, deletes a season still in setup, which has no results, and the method
+refuses any other season (issue #153). Issue #214 records both. That is pinned by
 `test_deleting_a_season_with_results_fails_today`, which asserts the failure rather than the
 cascade, and is written to fail loudly the day it is fixed so whoever fixes it replaces it with
 the assertion beneath. Everything else here therefore seeds a season *without* results, which is
 the only shape the function currently handles.
+
+**Only a season in setup can be deleted.** A season's number is committed once it leaves SETUP,
+and removing it would leave a gap in the league's history (issue #153). So the season deleted
+here is seeded in SETUP, whatever it carries beneath it, and
+`test_a_season_whose_number_is_committed_is_refused` pins the refusal.
 
 **An empty season deletes cleanly.** Every `IN (...)` clause is built from a list that may be
 empty, and an unguarded `IN ()` is a syntax error — so a season with no divisions is the case
@@ -89,7 +94,7 @@ async def _seed_season(db, season_id, division_id, round_id, *, number: int):
     await db.execute(
         "INSERT INTO seasons (id, season_number, start_date, status) "
         "VALUES (?, ?, '2026-01-01', ?)",
-        (season_id, number, "COMPLETED" if number == 6 else "ACTIVE"),
+        (season_id, number, "COMPLETED" if number == 6 else "SETUP"),
     )
     await db.execute(
         "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
@@ -430,6 +435,22 @@ async def test_a_division_with_no_rounds_deletes_cleanly(tmp_path):
     await SeasonService(db_path).delete_season(SEASON_ID)
 
     assert await _count(db_path, "divisions") == 0
+
+
+@pytest.mark.parametrize("status", ["ACTIVE", "COMPLETED", "CANCELLED"])
+async def test_a_season_whose_number_is_committed_is_refused(tmp_path, status):
+    """Its number is how the league names that season, and nothing is removed."""
+    db_path, _ = await _make_db(tmp_path, name=f"refuse_{status}")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE seasons SET status = ? WHERE id = ?", (status, SEASON_ID))
+        await db.commit()
+
+    with pytest.raises(ValueError, match="committed"):
+        await SeasonService(db_path).delete_season(SEASON_ID)
+
+    assert await _count(db_path, "seasons", "id", SEASON_ID) == 1
+    assert await _count(db_path, "divisions", "season_id", SEASON_ID) == 1
+    assert await _count(db_path, "rounds", "division_id", DIVISION_ID) == 1
 
 
 async def test_deleting_a_season_that_is_not_there_is_not_an_error(tmp_path):

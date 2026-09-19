@@ -151,7 +151,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Ongoing, Ongoing, signups open and Ongoing, placements are **the three ongoing states**.
 - A season is **active** from the moment it is set up until its completion or cancellation has finished, or until it is aborted. A server shall hold at most one active season. A new season cannot be set up until the standing one is completed, cancelled or aborted; completed and cancelled seasons never stand in the way.
 - A season configured in test mode shall never enter Ongoing, signups open.
-- A season shall carry a number, assigned by the bot as one higher than the count of seasons whose placements have been confirmed. The number is provisional until the season's placements are first confirmed, and an aborted season takes none. That number shall be the one displayed in all bot output.
+- A season shall carry a number, assigned by the bot as one higher than the highest number held by any season whose placements have been confirmed. The number is provisional until the season's placements are first confirmed, and an aborted season takes none. That number shall be the one displayed in all bot output.
 - A season shall carry the edition of the game it is raced on, named when the season is set up.
 - A completed or cancelled season shall be immutable. Every command that would change one shall be refused.
 - No season shall be completed of its own accord. A league admin shall complete it, completing a season being among the acts nothing puts back.

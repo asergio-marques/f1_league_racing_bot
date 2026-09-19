@@ -2,7 +2,8 @@
 
 `get_previewable_season` decides which season a preview draws, and its precedence is the
 whole point of it — the deliberately unordered `get_setup_or_active_season` cannot be used.
-`get_previous_season_number` gives a fabricated league its season number.
+`get_previous_season_number` gives a fabricated league its season number, and a new season
+its own, one above it.
 """
 from __future__ import annotations
 

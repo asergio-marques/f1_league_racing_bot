@@ -266,26 +266,6 @@ async def test_completed_seasons_are_counted(tmp_path):
     assert await SeasonService(db_path).count_completed_seasons() == 2
 
 
-async def test_a_setup_season_has_not_committed_its_number(tmp_path):
-    """`count_persisted_seasons` is every season whose number is already spoken for.
-    A SETUP season's number can still change, so counting it would skip a number."""
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "COMPLETED", number=1)
-    await _seed_season(db_path, 2, "CANCELLED", number=2)
-    await _seed_season(db_path, 3, "SETUP", number=3)
-
-    assert await SeasonService(db_path).count_persisted_seasons() == 2
-
-
-async def test_a_cancelled_season_still_counts_as_persisted(tmp_path):
-    """CANCELLED is not "deleted" — it is "this happened and was abandoned", and its
-    number stays spoken for."""
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "CANCELLED", number=1)
-
-    assert await SeasonService(db_path).count_persisted_seasons() == 1
-
-
 # ---------------------------------------------------------------------------
 # The lifecycle transitions
 # ---------------------------------------------------------------------------

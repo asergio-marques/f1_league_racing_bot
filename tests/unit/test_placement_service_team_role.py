@@ -29,7 +29,6 @@ async def db_path(tmp_path):
                 interaction_channel_id INTEGER NOT NULL DEFAULT 0,
                 log_channel_id         INTEGER NOT NULL DEFAULT 0,
                 test_mode_active       INTEGER NOT NULL DEFAULT 0,
-                previous_season_number INTEGER NOT NULL DEFAULT 0,
                 weather_module_enabled INTEGER NOT NULL DEFAULT 0,
                 signup_module_enabled  INTEGER NOT NULL DEFAULT 0
             );

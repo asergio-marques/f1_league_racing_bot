@@ -162,8 +162,10 @@ class SeasonService:
         but SETUP. A season still in setup holds a provisional number and is excluded, so
         that a league drafting its next season does not push the count forward twice.
 
-        Not `server_configs.previous_season_number`, which is written by nothing and reads
-        0 whatever the league's history.
+        A new season is numbered one above it. The highest number, not a count of seasons:
+        a count agrees only while the numbers run from 1 without a gap, and falls behind
+        the highest number the moment one goes missing, handing out a number already in
+        use (issue #153).
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -219,19 +221,6 @@ class SeasonService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT COUNT(id) FROM seasons WHERE status = 'COMPLETED'",
-            )
-            row = await cursor.fetchone()
-        return row[0] if row else 0
-
-    async def count_persisted_seasons(self) -> int:
-        """Return the count of all persisted (non-SETUP) seasons.
-
-        Includes ACTIVE, COMPLETED, and CANCELLED seasons — every season whose
-        number has already been committed.
-        """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT COUNT(id) FROM seasons WHERE status != 'SETUP'",
             )
             row = await cursor.fetchone()
         return row[0] if row else 0
@@ -354,7 +343,7 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             if season_id == 0:
-                season_number = await self.count_persisted_seasons() + 1
+                season_number = await self.get_previous_season_number() + 1
                 cursor = await db.execute(
                     "INSERT INTO seasons "
                     "(start_date, status, season_number, game_edition, stage) "
@@ -479,16 +468,6 @@ class SeasonService:
                 })
 
         return result
-
-    async def increment_previous_season_number(self) -> None:
-        """Increment server_configs.previous_season_number by 1."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE server_configs "
-                "SET previous_season_number = previous_season_number + 1 "
-                "",
-            )
-            await db.commit()
 
     async def validate_division_tiers(self, season_id: int) -> None:
         """Validate division tiers form a gapless sequence 1..N.
@@ -800,8 +779,23 @@ class SeasonService:
 
         What `/season abort` leaves of a season whose placements were never confirmed: nothing
         at all, its signups included (issue #220).
+
+        Raises ``ValueError`` for a season not in SETUP, before anything is deleted. Its number
+        is committed from the moment it leaves SETUP, and that number is how a league names
+        its own history: removing one would leave a gap nothing explains (issue #153). A season
+        id that names no season is not an error.
         """
         async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT status FROM seasons WHERE id = ?", (season_id,)
+            )
+            row = await cursor.fetchone()
+            if row is not None and row["status"] != SeasonStatus.SETUP.value:
+                raise ValueError(
+                    f"season {season_id} is {row['status']}; a season whose number is "
+                    "committed cannot be deleted"
+                )
+
             cursor = await db.execute(
                 "SELECT id FROM divisions WHERE season_id = ?", (season_id,)
             )
