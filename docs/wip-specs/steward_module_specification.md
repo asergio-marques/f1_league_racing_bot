@@ -98,6 +98,7 @@
   - Active accumulation - Rules that verify only the accumulation of a specific active penalty on a driver licence.
   - Historical accumulation - Rules that verify the total accumulation of a specific penalty across a driver licence history, active, expired or served.
 - Active penalty - A penalty instance that is still active, and is yet to be served, yet to expire, or yet to be revoked. Applies to warning points, penalty points, discipline points, qualifying bans, race bans, season bans and league bans.
+  - A championship points deduction, a championship disqualification, a constructors' points deduction and a constructors' championship disqualification are active while the season they were given in is being raced. Once it is pending completion, they stand as given.
 
 ## Configuring the stewarding module
 - All configuration changes must be logged to the standard log channel.
@@ -114,7 +115,8 @@
   - Each division's licence channel will be displayed in the placements review much alike other division channels.
 - <NEW COMMAND> A "steward channel conduct-verdicts" command will be made available to league managers, which shall have as input a channel in which the verdicts for CoC investigations will be posted. It is a single channel for the server, and not one per division.
   - If the CoC investigations feature is enabled, confirming a season's configuration shall fail while this channel is not set.
-- <NEW COMMAND> A "steward channel command" command will be made available to league managers, which shall have as input a channel in which stewards will be able to input certain special bot commands. These commands must be explicitly marked as stewarding team actionable in these specifications, otherwise their use will be rejected, and no other commands but those will be accepted in this channel.
+- <NEW COMMAND> A "steward channel command" command will be made available to league managers, which shall have as input a channel in which the stewarding team gives its commands.
+  - A command shall be given in the channel of the level it is given under: by a head steward, temporary head steward or steward in the channel configured by "steward channel command"; by a league admin or league manager in the interaction channel, as the core specification sets out. The steward command channel shall accept no command but those this specification makes available to the stewarding team.
   - If the stewarding module is enabled, confirming a season's configuration shall fail while this channel is not set, naming it.
 - <NEW COMMAND> A "steward channel log" command will be made available to league managers, which shall have as input a channel in which ALL commands utilised in the channel configured by "steward channel command" will be logged for audit purposes, much in the same way they are already done by the log channel input in "bot init".
   - If the stewarding module is enabled, confirming a season's configuration shall fail while this channel is not set, naming it.
@@ -138,15 +140,16 @@
   - Upon a replacement, on every open ticket on which the former head steward was the effective head steward by default, the new head steward shall become so. A ticket whose effective head steward had been reassigned shall keep them. Where the new head steward is an involved driver on an open ticket, or has a conflict of interest upon it, that ticket shall be reassigned as when any effective head steward is so placed.
   - Upon a replacement, a temporary head steward in post shall remain so, and the new head steward may remove them as any head steward may. Where the temporary head steward is the member made head steward, their temporary appointment shall end.
 - If the stewarding module is enabled, confirming the season's placements shall fail while no head steward is appointed.
-- <NEW COMMAND> A "steward role temp-head" command will be made available to the head steward to be utilised in the channel configured by "steward channel command", which shall have as optional input a user role that will be bestowed to the user designated as head steward.
+- <NEW COMMAND> A "steward role temp-head" command will be made available to league managers, which shall have as optional input a user role that will be bestowed to the user appointed temporary head steward.
   - This command is only valid if no user has temporary head steward status.
   - If the input role parameter is empty, then temporary head steward functionality is deactivated.
-- <NEW COMMAND> A "steward team temp-head-assign" command will be made available to the head steward to be utilised in the channel configured by "steward channel command" exclusively, which will have as input the user ID of a member belonging to the stewarding team. This command will confer the user with temporary head steward status.
+- <NEW COMMAND> A "steward team temp-head-assign" command will be made available to the head steward, which will have as input a member of the server. This command will confer the member with temporary head steward status, and give them the role configured by "steward role temp-head".
   - This command is only valid if the temporary head steward role configured by "steward role temp-head" is not empty.
   - This command is only valid if the target user is part of the stewarding team and is not the head steward.
+  - Where a temporary head steward is already appointed, they shall be replaced: their appointment shall end, and the role be taken from them. On every open ticket on which they were the effective head steward by default, the new temporary head steward shall become so.
   - While the appointment lasts, the temporary head steward is the effective head steward by default on every ticket: the tie-break, the approval of drivers added, drivers removed and exclusions, and the confirmation of justifications are theirs. On every open ticket on which the head steward was the effective head steward by default, the temporary head steward shall become so; a ticket whose effective head steward had been reassigned shall keep them. When the appointment ends, those tickets shall return to the head steward.
   - While the appointment lasts, the temporary head steward may use the commands of the head steward, and the head steward keeps every one of them, "steward team temp-head-remove" among them.
-- <NEW COMMAND> A "steward team temp-head-remove" command will be made available to the head steward to be utilised in the channel configured by "steward channel command" exclusively, which will have no input. This command will remove the temporary head steward status from the user currently possessing it.
+- <NEW COMMAND> A "steward team temp-head-remove" command will be made available to the head steward, which will have no input. This command will remove the temporary head steward status from the user currently possessing it, and take from them the role configured by "steward role temp-head".
   - This command is only valid if the temporary head steward role configured by "steward role temp-head" is not empty.
 - <NEW COMMAND> A "steward team conflict-toggle" command will be made available to league managers, which shall determine whether stewards who are also drivers are able to participate in the stewarding cycle of tickets that pertain to divisions they are driving in, accepting a possible conflict of interest.
   - By default this setting is on, meaning stewards can review reports/appeals pertaining to the division they are driving for, and that leagues implicitly accept a possible conflict of interest.
@@ -164,16 +167,18 @@
   - Input value must be equal or greater than 1.
 - <NEW COMMAND> A "steward appeal submission-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the number of hours appeal submission stays open, counted from the end of report deliberation. Once they elapse, appeal submission is over.
   - By default, this value will be set to 24.
-  - Input value must be equal or greater than 0. If the value is 0, then appeals are disabled, and both the appeal submission and the appeal deliberation stages will not be scheduled.
+  - Input value must be equal or greater than 1.
 - <NEW COMMAND> A "steward appeal deliberation-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the number of hours during which members of the stewarding team can discuss and vote on the verdict pertaining to a given appeal. After this time elapses, the appeal deliberation phase is over.
   - By default, this value will be set to 24.
   - Input value must be equal or greater than 1.
 - The sum of the values of the configurations above may not exceed 168 (7 times 24 hours). This validation must be done everytime one of the commands above is run; if failed, then the new value is not accepted.
+  - While appeals are disabled, the appeal submission and appeal deliberation periods are not counted in the sum.
   - This bounds the configured periods alone, and not how long a cycle may run: the waits set out under each stage come on top of it.
 
 ### Appeals
 - <NEW COMMAND> A "steward appeal toggle" command will be made available to league managers, which shall have no inputs. This command shall activate and deactivate the appeal system.
   - By default, the appeal functionality is enabled.
+  - Enabling appeals shall be refused where the sum of the periods set under Timings, the appeal submission and appeal deliberation periods counted in, would exceed 168 hours, naming the sum. The league shall shorten the periods first.
 - <NEW COMMAND> A "steward appeal tokens" command will be made available to league managers, which shall have as inputs two integers: the number of appeal tokens each driver starts a season with, and the number an appeal costs. The two shall be validated together, and a pair failing validation shall be refused, the configuration being left as it stood.
   - The valid pairs are 0 and 0, meaning appeals cost nothing, or a starting number of 1 or more with a cost from 1 up to that starting number.
   - By default, both are 0. While the cost is 0, an appeal costs nothing, and no driver's tokens are counted.
@@ -496,7 +501,7 @@
 - This phase cannot be terminated early.
 
 ### Deliberation
-- A team may be sanctioned upon a ticket only where every full-time driver of that team in the division is an involved driver of it, so that it is represented, and defended, by all of them. Reserve drivers are not counted. The stewards may bring a missing team-mate into the ticket with "Add driver" before deliberation begins. In a CoC investigation, which pertains to no division, a team of any division of the live season may be sanctioned where every full-time driver of it in its division is among the involved users.
+- A team may be sanctioned upon a ticket only where every full-time driver of that team in the division is an involved driver of it, so that it is represented, and defended, by all of them. Reserve drivers are not counted. The stewards may bring a missing team-mate into the ticket with "Add driver" before deliberation begins. In a CoC investigation, which pertains to no division, a team of any division of a season being raced may be sanctioned where every full-time driver of it in its division is among the involved users.
 - Each line of a ballot applies only its own part of an outcome. A driver's line offers the outcomes carrying a penalty given to a driver, and gives the driver those penalties alone; a team's line offers the outcomes carrying a penalty given to a team, and gives the team those alone. An outcome carrying both is offered upon both kinds of line.
 - Once this phase is entered, the involved drivers lose all permission to read, write or attach media to the channel.
 - Once this phase is entered, the members of the effective stewarding team will gain the permission to write or attach media to the channel.
@@ -678,7 +683,7 @@
 - Once an investigation's verdict is posted in the appropriate channel by the end of the investigation deliberation phase, the incident (investigation) is deemed closed and final.
 
 ### Trigger
-- <NEW COMMAND> A "steward conduct start" command will be made available to the head steward and the temporary head steward, and to every steward where "steward conduct steward-start-toggle" allows it, to be utilised in the channel configured by "steward channel command" exclusively, which will have as input 1 or more user IDs of a server member (not necessarily a driver, only requires the "base_role" as configured by "module enable signup"), so that a CoC investigation is opened against said user.
+- <NEW COMMAND> A "steward conduct start" command will be made available to the head steward and the temporary head steward, and to every steward where "steward conduct steward-start-toggle" allows it, which will have as input one or more members of the server holding the base role, whether or not they are drivers, so that a CoC investigation is opened against them.
 - When valid usage, a form shall be shown, collecting the following:
   - Involved users - Mandatory - 0..n mentions - Other users directly or indirectly involved in the event being investigated, whose footage or evidence may be of use to the stewarding team's deliberations.
   - Complaint - Mandatory - String - Full description of the event being investigated by the stewarding team.
@@ -705,46 +710,46 @@
 - Once its verdict is posted, the investigation's channel shall be removed. Where "steward backup conduct-toggle" is toggled on, its content shall be persisted to disk immediately, and once that has succeeded the channel shall be deleted. Where it is toggled off, a 7 day countdown shall be initiated, at the end of which the channel shall be deleted.
 
 ### Cycle close
-- Once the investigation's verdict is posted, the outcomes it gives are made effective: each involved user's upon their driver licence, created for them where they hold none, and each team penalty upon the licences of the team's drivers, as set out under Concepts. The licences so changed are then checked against the auto-rules, as set out under Auto-rule triggering.
+- Once the investigation's verdict is posted, the outcomes it gives are made effective: each involved user's upon their driver licence, a driver profile being created for them at Not Signed Up, licence included, where they hold none, and each team penalty upon the licences of the team's drivers, as set out under Concepts. The licences so changed are then checked against the auto-rules, as set out under Auto-rule triggering.
+  - A championship points deduction or championship disqualification given to a user who races in no division of a season being raced shall be held upon their licence, and applied once placements seating them in a season being raced are confirmed, in each division they then race in. Until then it is active, and appears upon their licence as held.
+  - A team penalty given once its season is no longer being raced shall have no effect, and the verdict shall say so.
 - The licence sheets touched are posted anew as set out under Licence sheet output, and the standings as set out under Standings output.
 
 ## Revoking penalties
-- Revoke commands are a last-ditch measure against honest mistakes, and should not be used unless in a pinch.
-- <NEW COMMAND> A "steward revoke warning-point" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, the number of active and total warning points to be revoked from their driver licence, and a justification to be available in the steward log.
-  - This command fails if there is no such driver with that ID, if warning points are disabled, or if the driver found does not possess the input number of warning points in their history as per their driver licence.
-  - The removal of points will be guarded against underflow, meaning that active and total warning points have a minimum limit of 0.
-  - The warning points to be removed from the record will be those acquired most recently.
-- <NEW COMMAND> A "steward revoke penalty-point" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, the number of active and total penalty points to be revoked from their driver licence, and a justification to be available in the steward log.
-  - This command fails if there is no such driver with that ID, if penalty points are disabled, or if the driver found does not possess the input number of penalty points in their history as per their driver licence.
-  - The removal of points will be guarded against underflow, meaning that active and total penalty points have a minimum limit of 0.
-  - The penalty points to be removed from the record will be those acquired most recently.
-- <NEW COMMAND> A "steward revoke discipline-point" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, the number of active and total discipline points to be revoked from their driver licence, and a justification to be available in the steward log.
-  - This command fails if there is no such driver with that ID, if the conduct cycle is disabled, or if the driver found does not possess the input number of discipline points in their history as per their driver licence.
-  - The removal of points will be guarded against underflow, meaning that active and total discipline points have a minimum limit of 0.
-  - The discipline points to be removed from the record will be those acquired most recently.
+- Revoke commands are a last-ditch measure, and should not be used unless in a pinch.
+- Every revoke command shall take, as a mandatory input, whether the sanction is annulled or lifted:
+  - Annulled - the sanction should never have been given. It shall leave the licence entirely, its history included, and count towards no tally and no auto-rule, as though never given. The steward log alone keeps the record of it and of its annulment.
+  - Lifted - the sanction was rightly given, and is ended early. It shall stay upon the licence and in its history, marked lifted with its date, and keep counting towards the lifetime tallies, but no longer towards the active ones.
+  - Only an active sanction may be annulled or lifted.
+- <NEW COMMAND> A "steward revoke warning-point" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, a number of warning points to be revoked from their driver licence, and a justification to be available in the steward log.
+  - This command fails if warning points are disabled, or if the user holds fewer active warning points than the number input.
+  - The warning points revoked will be the active ones received most recently.
+- <NEW COMMAND> A "steward revoke penalty-point" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, a number of penalty points to be revoked from their driver licence, and a justification to be available in the steward log.
+  - This command fails if penalty points are disabled, or if the user holds fewer active penalty points than the number input.
+  - The penalty points revoked will be the active ones received most recently.
+- <NEW COMMAND> A "steward revoke discipline-point" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, a number of discipline points to be revoked from their driver licence, and a justification to be available in the steward log.
+  - This command fails if the conduct cycle is disabled, or if the user holds fewer active discipline points than the number input.
+  - The discipline points revoked will be the active ones received most recently.
 - <NEW COMMAND> A "steward revoke quali-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
-  - This command fails if there is no such driver with that ID, if qualifying bans are disabled, or if the driver found does not possess a currently active qualifying ban.
-  - This command can only remove one qualifying ban that is yet to be served. A qualifying ban that has already been served cannot be removed from the record.
-  - If the user has multiple qualifying bans, one is removed from their driver licence.
+  - This command fails if qualifying bans are disabled, or if the user holds no active qualifying ban.
+  - It revokes one active qualifying ban, the one received most recently.
 - <NEW COMMAND> A "steward revoke race-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
-  - This command fails if there is no such driver with that ID, if race bans are disabled, or if the driver found does not possess a currently active race ban.
-  - This command can only remove one race ban that is yet to be served. A race ban that has already been served cannot be removed from the record.
-  - If the user has multiple race bans, one is removed from their driver licence.
+  - This command fails if race bans are disabled, or if the user holds no active race ban.
+  - It revokes one active race ban, the one received most recently.
 - <NEW COMMAND> A "steward revoke season-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
-  - This command fails if there is no such driver with that ID, if season bans are disabled, or if the driver found does not possess a currently active season ban.
-  - This command can only remove a season ban that is still active. A season ban that has already been served cannot be removed from the record.
+  - This command fails if season bans are disabled, or if the user holds no active season ban.
   - Where season bans are stacked, only the active one is removed, and the one stacked behind it begins at once.
   - Upon removal of the season ban, the season ban role will be removed from them, unless a stacked season ban begins in its place.
 - <NEW COMMAND> A "steward revoke league-ban" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, and a justification to be available in the steward log.
-  - This command fails if there is no such driver with that ID, if league bans are disabled, or if the driver found does not possess a currently active league ban.
+  - This command fails if league bans are disabled, or if the user holds no active league ban.
   - Upon removal of the league ban, the league ban role will be removed from their current account where it is in the server, and otherwise shall not be given to it when it returns.
   - A season ban the league ban replaced shall not be restored.
 - <NEW COMMAND> A "steward revoke championship-penalty" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, the penalty to be revoked — a championship points deduction, or a championship disqualification — the division and season in which it was given, and a justification to be available in the steward log.
   - This command fails if the driver holds no such penalty, or if that penalty type is disabled.
-  - Upon revocation, the division's drivers' standings shall be calculated and posted anew, and the driver's championship record shall note the revocation.
+  - Upon revocation, the division's drivers' standings shall be calculated and posted anew, whether the penalty is annulled or lifted.
 - <NEW COMMAND> A "steward revoke team-penalty" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a team and its division, the penalty to be revoked — a constructors' points deduction, or a constructors' championship disqualification — the season in which it was given, and a justification to be available in the steward log.
   - This command fails if the team holds no such penalty, or if that penalty type is disabled.
-  - Upon revocation, the division's constructors' standings shall be calculated and posted anew, and the championship record of each driver through whom it was given shall note the revocation.
+  - Upon revocation, the division's constructors' standings shall be calculated and posted anew, whether the penalty is annulled or lifted, and the championship record of each driver through whom it was given changed alike.
 - While the stewarding module is disabled, "steward revoke season-ban" and "steward revoke league-ban" shall be available to league admins, and shall be the only commands of this module available. The justification shall be written to the log channel.
   - Lifting a season or league ban while the module is disabled is left entirely to the league: no ban expires while the module is disabled.
 
@@ -980,6 +985,11 @@
   - Drivers suspended from racing - Optional - the list the textual output ends with. A template not declaring it leaves it out; the textual output always carries it.
 
 
+## When the bot is packed
+- A pack clears the stewarding team and its head steward, along with this module's channels and roles, all of them being of the server the bot leaves. The league builds its panel afresh upon the new server, as it sets its channels and roles afresh.
+- A pack keeps every driver licence with the sanctions upon it, these belonging to the driver and not to the server. The season ban and league ban roles shall be granted again, to the drivers whose licences hold such a ban, once those roles are set upon the new server.
+- A pack shall be refused while any ticket is open, naming them, a ticket's channel being of the server it stands upon. A CoC investigation may be open while no season is, which is the case a current season does not already bar.
+
 ## When the bot restarts
 - All of this module's scheduled work shall survive the bot stopping and starting again. What came due while the bot was stopped shall be carried out when it starts, in the order it would have happened. A ticket's buttons, ballots and pending requests shall keep working.
 - The time the bot was stopped, or cut off from Discord, shall not count against any window in which a user or a steward acts: report submission, defence submission, the deliberations, appeal submission, the conduct cycle's stages, and the hour given the effective head steward to break a tie or to confirm a justification. Each such window open during the gap shall be lengthened by the gap, and every later stage of the same cycle moved on by it alike. A gap of no more than a few minutes may be disregarded.
@@ -988,8 +998,8 @@
 
 ## Test mode
 - The stages of a stewarding cycle are stepped through with the core specification's test mode commands, firing the next scheduled event at once and reporting what has run and what remains.
-- <NEW COMMAND> A "test-mode report lodge" command shall be available to league managers, lodging a report as a fake driver, with the inputs the report form takes: the division, the round, the involved drivers, the session, the lap and the complaint. The need for evidence shall be waived.
-- <NEW COMMAND> A "test-mode appeal lodge" command shall be available to league managers, lodging an appeal as a fake driver, taking the ID of the report appealed and a justification.
+- <NEW COMMAND> A "test-mode report lodge" command shall be available to league admins, lodging a report as a fake driver, with the inputs the report form takes: the division, the round, the involved drivers, the session, the lap and the complaint. The need for evidence shall be waived.
+- <NEW COMMAND> A "test-mode appeal lodge" command shall be available to league admins, lodging an appeal as a fake driver, taking the ID of the report appealed and a justification.
 - While test mode is enabled, fake drivers may be added to the stewarding team with "steward team add", so that a panel may be built without as many accounts.
-- <NEW COMMAND> A "test-mode ballot cast" command shall be available to league managers, casting a ballot as a fake steward upon a ticket in deliberation, taking an outcome for each involved driver and a justification.
+- <NEW COMMAND> A "test-mode ballot cast" command shall be available to league admins, casting a ballot as a fake steward upon a ticket in deliberation, taking what a ballot takes: an outcome for each involved driver, a team outcome for each team line, the decision where the ticket is an appeal, and a justification.
 - Every one of these shall be refused while test mode is off, and written to the log channel.

@@ -1177,6 +1177,7 @@ Recorded as the walk-through decides them. None is to be made until stewarding i
 - **Licence view image (owed to the image spec)** — a "licence" view graphic distinct from the licence sheet, with a principal-division logo and colours (the league logo coloured by them), and division fields addressed by row (a logo and optional colour accent per Current row), which no graphic declares today.
 - **Core, "Principal division"** — the highest tier division (lowest tier number) in which a driver holds a full-time seat; a reserve-only or unseated driver has none. A core concept by the user's judgement (2026-09-19); defined in the steward spec's Concepts until core carries it, then referenced from there.
 - **Results spec and image spec, standings (T1)** — the drivers' and constructors' standings mark points deductions (text footnote; optional image column) and show a championship disqualification as "DSQ" in place of the points, ranked beneath the classified.
+- **Core — the pack (R42).** Core's pack section names the signup module's channel and roles among what a pack clears. It should name this module's alike: the stewarding team and its head steward, its five roles and its channels, and the refusal while any ticket is open.
 
 ## Parked during the walk-through
 
@@ -1256,4 +1257,5 @@ Decisions:
 - R41 Test-mode commands: core makes every test-mode command a league admin's.
 - R42 /bot pack (#257): stewarding team, its roles and channels on the new server.
 - R44 Licence sheet image: "After Round X" is mandatory, but the opening sheet (R27) and a sheet reposted on a CoC verdict or revocation stand after no round.
+- R45 CoC form: its "Involved users" field asks for witnesses, while the ballot gives every involved user a line; "Mandatory" with 0..n.
 - R43 (after R42) A further read-through of the whole spec, the championship and team penalties (T1–T8) being a large addition made during this one.
