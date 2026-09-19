@@ -426,6 +426,8 @@
     - Deliberation, from which the users of the ticket are shut out, takes place in the ticket's channel.
   - However, as stated above, steward logs shall identify them when needed.
 
+- A ticket the stewarding team declines to judge, on procedural grounds or any other, is rejected through its ordinary decision, the justification stating why: No Further Action for every involved driver, for a report or a CoC investigation; "Uphold initial verdict", for an appeal.
+
 ### The effective head steward of a ticket
 - If the effective head steward is one of the involved drivers, or has a conflict of interest as defined by "steward team conflict-toggle", the bot will post in the steward command channel a message with a button to assign effective head steward for the ticket to someone else of the stewarding team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective stewarding team for the ticket.
   - If the effective head steward does not assign anyone else by the time the ticket's deliberation phase is reached, the bot shall choose one for this position: the temporary head steward, where one is in post and is neither an involved party nor holds a conflict of interest upon the ticket; otherwise, of the members of the effective stewarding team who are neither, the one who joined the stewarding team earliest.
