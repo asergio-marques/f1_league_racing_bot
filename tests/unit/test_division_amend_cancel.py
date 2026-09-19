@@ -109,7 +109,9 @@ def _make_cog(
     cfg: PendingConfig | None = None,
     divisions=None,
     remaining=None,
-    season=SimpleNamespace(id=SEASON_ID, status="ACTIVE", stage=SeasonStage.ONGOING),
+    season=SimpleNamespace(
+        id=SEASON_ID, status="ACTIVE", stage=SeasonStage.ONGOING, season_number=4
+    ),
     immutable: bool = False,
     rounds=None,
 ) -> SeasonCog:
@@ -699,6 +701,7 @@ async def test_the_modules_are_told_the_division_is_off(tmp_path):
 
     announce.assert_awaited_once()
     assert announce.await_args.kwargs["scope"] == cns.SCOPE_DIVISION
+    assert announce.await_args.kwargs["season_number"] == 4
     assert [d.id for d in announce.await_args.args[2]] == [DIVISION_ID]
     channel.send.assert_not_awaited()
 

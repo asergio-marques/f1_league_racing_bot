@@ -435,6 +435,7 @@ async def test_the_modules_are_told_the_round_is_off():
     assert announce.await_args.kwargs["scope"] == cns.SCOPE_ROUND
     assert announce.await_args.kwargs["round_number"] == 5
     assert announce.await_args.kwargs["track_name"] == "Monza"
+    assert announce.await_args.kwargs["season_number"] == 3
     assert [d.id for d in announce.await_args.args[2]] == [DIVISION_ID]
     interaction._channel.send.assert_not_awaited()
 

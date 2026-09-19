@@ -3513,7 +3513,7 @@ class SeasonCog(commands.Cog):
             interaction.guild,
             [div],
             scope=cancellation_notice_service.SCOPE_DIVISION,
-            season_number=getattr(season, "number", None),
+            season_number=season.season_number,
         )
 
         await interaction.followup.send(
@@ -4822,7 +4822,7 @@ class SeasonCog(commands.Cog):
             scope=cancellation_notice_service.SCOPE_ROUND,
             round_number=round_number,
             track_name=rnd.track_name,
-            season_number=getattr(season, "number", None),
+            season_number=season.season_number,
         )
 
         await interaction.followup.send(
