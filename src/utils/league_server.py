@@ -1,9 +1,9 @@
 """One bot serves one league, on one Discord server — and this is where that is enforced.
 
-**The league's server is the one `server_configs` row.** The first `/bot-init` writes it, and
-`ConfigService.save_server_config` refuses to write a second, so whichever server was set up
-first is the league's until `/bot-reset full:True` deletes the row again. No setting names the
-server in advance: a bot that is invited only where its host puts it — Discord's *Public Bot*
+**The league's server is the one `server_configs` row.** The first `/bot init` claims it, and
+`ConfigService.save_server_config` refuses to claim a second, so whichever server was set up
+first is the league's until `/bot pack` clears the claim again (issue #247). No setting names
+the server in advance: a bot that is invited only where its host puts it — Discord's *Public Bot*
 switch off, as the README requires — never meets a second server anyway, and this is the
 safeguard for the mistake, not the mechanism a league relies on.
 
@@ -25,9 +25,10 @@ view or modal derives from discord.py's own classes directly.
 owner's mistake silent, where a refusal and the start-up warning below make it visible.
 Autocomplete is refused by offering nothing, Discord accepting no message in reply to one.
 
-**Before any server is set up**, no server is foreign, and every command falls through to the
-tier guards — which refuse all but `/bot-init` and its four setting commands, as they always
-have.
+**Before any server is set up**, or after `/bot pack` has freed the claim, no server is
+foreign, and every command falls through to the tier guards — which refuse all but `/bot init`
+and its four setting commands, as they always have. Buttons and forms are refused outright
+while no server is claimed; see `LeagueView`.
 """
 
 from __future__ import annotations
@@ -41,6 +42,11 @@ from discord import app_commands
 log = logging.getLogger(__name__)
 
 REFUSAL = "⛔ This bot serves another server's league and takes no commands here."
+
+#: What a button or form is told while the bot serves no server at all (issue #247).
+UNCLAIMED_REFUSAL = (
+    "⛔ This bot is between servers and acts on nothing until `/bot init` claims one."
+)
 
 
 async def is_foreign_guild(bot: Any, guild_id: int | None) -> bool:
@@ -66,21 +72,42 @@ async def league_guild(bot: Any) -> discord.Guild | None:
     return None if league is None else bot.get_guild(league)
 
 
-async def admits(client: Any, interaction: discord.Interaction) -> bool:
+async def admits(
+    client: Any, interaction: discord.Interaction, *, while_unclaimed: bool = True
+) -> bool:
     """Whether *interaction* may proceed: True unless it comes from a server not the league's.
 
-    A refused interaction is answered with `REFUSAL`, seen by its member alone — save an
-    autocomplete, to which Discord accepts no message.
+    *while_unclaimed* is whether it may proceed while no server is claimed. The command tree
+    passes True, so that `/bot init` can reach the server that will become the league's;
+    the views and modals pass False — see `LeagueView`.
+
+    A refused interaction is answered with `REFUSAL` or `UNCLAIMED_REFUSAL`, seen by its
+    member alone — save an autocomplete, to which Discord accepts no message.
     """
-    if not await is_foreign_guild(client, interaction.guild_id):
+    league = await client.config_service.get_league_server_id()
+    if league is None:
+        # A direct message is refused too, where a view asks: a press in one acts on the
+        # league's data as surely as a press in a server does.
+        if while_unclaimed:
+            return True
+        message = UNCLAIMED_REFUSAL
+        log.info(
+            "refused an interaction from server %s while no server is claimed (user %s)",
+            interaction.guild_id,
+            getattr(interaction.user, "id", None),
+        )
+    elif interaction.guild_id is None or interaction.guild_id == league:
+        # Outside a server the tier guards, or the view's own checks, decide.
         return True
-    log.info(
-        "refused an interaction from server %s, which is not the league's (user %s)",
-        interaction.guild_id,
-        getattr(interaction.user, "id", None),
-    )
+    else:
+        message = REFUSAL
+        log.info(
+            "refused an interaction from server %s, which is not the league's (user %s)",
+            interaction.guild_id,
+            getattr(interaction.user, "id", None),
+        )
     if interaction.type is not discord.InteractionType.autocomplete:
-        await interaction.response.send_message(REFUSAL, ephemeral=True)
+        await interaction.response.send_message(message, ephemeral=True)
     return False
 
 
@@ -96,10 +123,15 @@ class LeagueView(discord.ui.View):
 
     Discord asks a view's `interaction_check` before any of its buttons or menus runs. A view
     that overrides it must call this one first.
+
+    **While no server is claimed, every press is refused** (decided 2026-09-19, issue #247).
+    Between `/bot pack` and the next `/bot init` no server is foreign, and the buttons the
+    bot left on the server it moved from would otherwise act on the league's data from
+    there. Before the first `/bot init` the bot has posted nothing, so nothing is lost.
     """
 
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
-        return await admits(interaction.client, interaction)
+        return await admits(interaction.client, interaction, while_unclaimed=False)
 
 
 class LeagueModal(discord.ui.Modal):
@@ -107,7 +139,7 @@ class LeagueModal(discord.ui.Modal):
     league's, as `LeagueView` refuses a press."""
 
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
-        return await admits(interaction.client, interaction)
+        return await admits(interaction.client, interaction, while_unclaimed=False)
 
 
 def warn_if_serving_several(bot: Any) -> None:
