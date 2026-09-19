@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from db.database import get_connection
+from models.round import RoundStatus
 from models.season import ONGOING_STAGES
 from services.attendance_service import (
     recalculation_faults,
@@ -559,7 +560,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         # Get round info
         cur = await db.execute(
             """
-            SELECT r.division_id, r.scheduled_at, r.format,
+            SELECT r.division_id, r.scheduled_at, r.format, r.status,
                    ac.rsvp_deadline_hours
               FROM rounds r
               JOIN divisions d ON d.id = r.division_id
@@ -574,6 +575,18 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     if round_row is None:
         await interaction.response.send_message(
             "❌ This round no longer exists.", ephemeral=True
+        )
+        return
+
+    # A cancelled round's call is taken down with the cancellation (#175), so a press arriving
+    # here is one that raced it, or one on a call the bot was not allowed to delete. Either way
+    # there is nothing left to answer, and an answer recorded now would stand beside a round
+    # that is off.
+    if round_row["status"] == RoundStatus.CANCELLED.value:
+        await interaction.response.send_message(
+            "❌ This round has been cancelled, so there is no check-in to answer. "
+            "Your answer has not been recorded.",
+            ephemeral=True,
         )
         return
 

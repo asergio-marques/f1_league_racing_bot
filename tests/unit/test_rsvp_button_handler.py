@@ -293,6 +293,22 @@ async def test_someone_with_no_driver_profile_is_turned_away(tmp_path):
     assert "not registered as a driver" in _reply(interaction)
 
 
+async def test_a_cancelled_round_records_no_answer(tmp_path):
+    """Its call is taken down with the cancellation (#175); a press that raced it, or lands
+    on a call the bot could not delete, must not record an answer to a round that is off."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
+    before = await _status(db_path, FULL_TIME_PROFILE)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (ROUND_ID,))
+        await db.commit()
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+
+    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert "has been cancelled" in _reply(interaction)
+    assert await _status(db_path, FULL_TIME_PROFILE) == before
+
+
 async def test_a_driver_of_another_division_is_turned_away(tmp_path):
     """A driver of the server, but with no seat in this division — the call is posted in a
     channel they may well be able to see."""
