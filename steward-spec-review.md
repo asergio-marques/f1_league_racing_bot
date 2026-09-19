@@ -1176,6 +1176,7 @@ Recorded as the walk-through decides them. None is to be made until stewarding i
 - **Core, a hub channel** — a server-wide channel set by its own command (e.g. `bot-hub-channel`), open to holders of the base role, or to every member where no base role is configured, holding one panel whose options each enabled module adds; stewarding adds "View licence" (any driver's licence, a public record), stats will add its own (D1).
 - **Licence view image (owed to the image spec)** — a "licence" view graphic distinct from the licence sheet, with a principal-division logo and colours (the league logo coloured by them), and division fields addressed by row (a logo and optional colour accent per Current row), which no graphic declares today.
 - **Core, "Principal division"** — the highest tier division (lowest tier number) in which a driver holds a full-time seat; a reserve-only or unseated driver has none. A core concept by the user's judgement (2026-09-19); defined in the steward spec's Concepts until core carries it, then referenced from there.
+- **Results spec and image spec, standings (T1)** — the drivers' and constructors' standings mark points deductions (text footnote; optional image column) and show a championship disqualification as "DSQ" in place of the points, ranked beneath the classified.
 
 ## Parked during the walk-through
 
