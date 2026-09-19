@@ -410,3 +410,37 @@ async def test_sync_refuses_a_season_that_does_not_exist(db_path):
     with pytest.raises(ValueError, match="does not exist"):
         await _sync(SeasonService(db_path), 999, [_division("Pro", 1)])
 
+
+# ---------------------------------------------------------------------------
+# The cog seeds teams for new divisions only
+# ---------------------------------------------------------------------------
+
+
+async def test_a_setup_command_seeds_teams_only_for_a_new_division(db_path):
+    """Re-seeding every division on every command re-created teams that already existed."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
+
+    bot = MagicMock()
+    bot.season_service = SeasonService(db_path)
+    bot.team_service.seed_division_teams = AsyncMock()
+    cog = SeasonCog(bot)
+
+    pro = PendingDivision(name="Pro", role_id=1, channel_id=None, tier=1, rounds=[_round(1)])
+    cfg = PendingConfig(start_date=START, divisions=[pro])
+    await cog._snapshot_pending(cfg)
+    assert bot.team_service.seed_division_teams.await_count == 1
+
+    bot.team_service.seed_division_teams.reset_mock()
+    pro.rounds.append(_round(2))
+    await cog._snapshot_pending(cfg)
+    bot.team_service.seed_division_teams.assert_not_awaited()
+
+    cfg.divisions.append(
+        PendingDivision(name="Am", role_id=2, channel_id=None, tier=2, rounds=[])
+    )
+    await cog._snapshot_pending(cfg)
+    (call,) = bot.team_service.seed_division_teams.await_args_list
+    rows = {d["name"]: d["id"] for d in await _dump(db_path, "divisions")}
+    assert call.args == (rows["Am"],)

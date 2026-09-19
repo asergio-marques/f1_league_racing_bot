@@ -88,9 +88,8 @@ def _bot() -> MagicMock:
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     bot.season_service.get_setup_season = AsyncMock(return_value=None)
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
-    bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))
+    bot.season_service.sync_pending_config = AsyncMock(return_value=(42, 1, []))
     bot.season_service.get_divisions = AsyncMock(return_value=[])
-    bot.season_service.restore_driver_seats = AsyncMock()
     bot.team_service.seed_division_teams = AsyncMock()
     bot.output_router.post_log = AsyncMock()
     return bot
@@ -215,5 +214,5 @@ async def test_season_setup_begins_the_season_in_configuration():
 
     await undecorate(SeasonCog.season_setup)(cog, interaction, game_edition=2026)
 
-    kwargs = cog.bot.season_service.save_pending_snapshot.await_args.kwargs
+    kwargs = cog.bot.season_service.sync_pending_config.await_args.kwargs
     assert kwargs["initial_stage"] is SeasonStage.CONFIGURATION

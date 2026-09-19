@@ -59,9 +59,8 @@ def _make_cog(pending_cfg: PendingConfig | None) -> tuple[SeasonCog, MagicMock]:
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
-    bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))
+    bot.season_service.sync_pending_config = AsyncMock(return_value=(42, 1, []))
     bot.season_service.get_divisions = AsyncMock(return_value=[])
-    bot.season_service.restore_driver_seats = AsyncMock()
     bot.team_service.seed_division_teams = AsyncMock()
     bot.output_router.post_log = AsyncMock()
 

@@ -5315,8 +5315,9 @@ class SeasonCog(commands.Cog):
     ) -> None:
         """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id.
 
-        *initial_stage* is the stage a season created by this snapshot begins in, and is
-        passed only by `/season setup`; see ``SeasonService.save_pending_snapshot``.
+        Only what changed is written, in place; see ``SeasonService.sync_pending_config``.
+        *initial_stage* is the stage a season created by this call begins in, and is passed
+        only by `/season setup`.
         """
         divisions_data = [
             {
@@ -5329,24 +5330,21 @@ class SeasonCog(commands.Cog):
             for d in cfg.divisions
             if d.name
         ]
-        new_season_id, season_number = await self.bot.season_service.save_pending_snapshot(
-            cfg.start_date,
-            cfg.season_id,
-            divisions_data,
-            cfg.game_edition,
-            initial_stage=initial_stage,
+        season_id, season_number, new_division_ids = (
+            await self.bot.season_service.sync_pending_config(
+                cfg.start_date,
+                cfg.season_id,
+                divisions_data,
+                cfg.game_edition,
+                initial_stage=initial_stage,
+            )
         )
-        cfg.season_id = new_season_id
+        cfg.season_id = season_id
         cfg.season_number = season_number
 
-        # Re-seed teams for all new divisions (old team_instances were cleaned up by snapshot)
-        new_divisions = await self.bot.season_service.get_divisions(cfg.season_id)
-        for div in new_divisions:
-            await self.bot.team_service.seed_division_teams(div.id)
-
-        # Only now do the teams exist to seat them in: put back the mock drivers the
-        # snapshot displaced, so a test-mode roster survives every season-setup command.
-        await self.bot.season_service.restore_driver_seats(cfg.season_id)
+        # A division the sync created has no teams yet; every other keeps the ones it has.
+        for division_id in new_division_ids:
+            await self.bot.team_service.seed_division_teams(division_id)
 
     async def _reload_pending_from_db(self, cfg: PendingConfig) -> None:
         """Resync the in-memory PendingConfig.divisions from DB (after direct DB operations)."""
