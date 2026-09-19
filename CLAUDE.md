@@ -155,6 +155,13 @@ erroring. A skip is
 not itself a build failure, but it is a gap in what "the suite passes" actually verified — treat
 a new one as something to justify, not a convenient way to silence a broken test.
 
+**Where the Windows job spends its time is measured, not guessed** (decided 2026-09-19). The
+Windows job runs some four times as long as the Linux one, spread thinly over thousands of
+tests rather than in any slow one. Both jobs keep their JUnit report as an artifact for 30
+days, and `python3 tools/compare_test_timings.py --run <run id>` pairs every test across the
+two and groups the extra Windows time by file and by whether the file raises a database or is
+async. Read that before trying to make the Windows job faster.
+
 **The floor applies to each module as well as to `src/` as a whole** (decided 2026-09-16,
 issue #208 — it reverses the earlier "reported, never gated"). One number for the whole
 repository is something a module with no tests at all can sit inside unnoticed, which issue
