@@ -430,16 +430,9 @@ async def apply_penalties(
             "SELECT 1 FROM divisions WHERE id = ?", (division_id,)
         )
         srv_row = await cursor2.fetchone()
-    if srv_row:
-        details_msg = (
-            f"<@{applied_by}> | PENALTIES_APPLIED | Success\n"
-            f"  round_id: {round_id}\n"
-            f"  penalties: {details}"
-        )
-        await bot.output_router.post_log(details_msg)
-
     # Cascade recompute standings, then repost. The guild is resolved first so the
     # recomputation orders a full tie on the names the repost below will draw.
+    repost_faults: list[str] = []
     if not _skip_post:
         guild = None
         async with get_connection(db_path) as db3:
@@ -456,10 +449,35 @@ async def apply_penalties(
             db_path, division_id, round_id, guild, bot
         )
 
-        if guild:
-            await results_post_service.repost_round_results(
+        # An unreachable guild is a fault, not a reason to skip in silence (#237, #244).
+        # ``league_guild`` returns None both where the guild is out of the gateway cache
+        # and where no league is set up, and neither raises — so a penalty could rescore
+        # the championship and leave every posted standing stale with nobody told.
+        if guild is None:
+            repost_faults.append(
+                "The league's server could not be reached, so the round's results and "
+                "standings were not reposted."
+            )
+        else:
+            repost_faults += await results_post_service.repost_round_results(
                 db_path, round_id, division_id, guild, bot=bot
             )
+
+    # The audit line is written *after* the posting, and says what the posting achieved
+    # (#237). Posting it first reported a success the cascade below had not yet earned and
+    # might never earn — the ordering ``season_end_service`` already keeps.
+    if srv_row:
+        outcome = "Incomplete" if repost_faults else "Success"
+        details_msg = (
+            f"<@{applied_by}> | PENALTIES_APPLIED | {outcome}\n"
+            f"  round_id: {round_id}\n"
+            f"  penalties: {details}"
+        )
+        if repost_faults:
+            hint = await results_post_service.results_sync_hint(db_path, division_id)
+            details_msg += "\n" + "\n".join(f"  {line}" for line in repost_faults)
+            details_msg += f"\n  {hint}"
+        await bot.output_router.post_log(details_msg)
 
     return inserted_records
 
