@@ -550,8 +550,8 @@ Abandons a season in configuration, waiting for its signup window, in signups, o
 |-----------|------|----------|-------------|
 | `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
 
-Posts a cancellation notice to each division that is not already cancelled, then cascades: every
-division of the season is cancelled, and with each one every round of it **not yet raced**. A round
+Tells each division that is not already cancelled — see **Who is told about a cancellation** below —
+then cascades: every division of the season is cancelled, and with each one every round of it **not yet raced**. A round
 that has been raced and scored keeps its results and its status — cancelling a season never
 discards a result. The season row is marked `CANCELLED` last.
 
@@ -628,7 +628,17 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `round_number` | Integer | ✅ | The round number to cancel |
 | `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
 
-Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and posts a notice to the division's forecast channel.
+Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and tells the division — see **Who is told about a cancellation** below.
+
+> **Who is told about a cancellation.** The bot posts no announcement of its own: telling your drivers a race is off is yours to do. What it does is stop each module carrying on as though the race were still on, each in its own channel and only where that module is turned on:
+>
+> - **Attendance** posts the one real notification, in the division's check-in channel, mentioning the division role as the check-in call does: the round is off and there is nothing to answer.
+> - **Weather** posts a silent note in the forecast channel that no forecast is coming.
+> - **Results** posts a silent note in the results channel that no results are coming.
+>
+> A silent note sits in the channel for anyone reading it but pings and pushes nobody. A league with none of the three turned on is sent nothing.
+>
+> **The calendar is reposted either way**, with the cancelled round struck through in the text calendar, or covered by its cancellation overlay in the picture. The same applies to `/division cancel` and `/season cancel`, and a division already cancelled is not told twice. If anything could not be posted — a channel not set or not found, a message the bot was not allowed to send, a calendar that failed — your reply to the command lists it, and so does the log channel. The cancellation itself goes through regardless.
 
 #### `/division cancel` — Cancel a division in the active season
 *Access: League admin · Ongoing only*
@@ -641,7 +651,7 @@ Available only while the season is ongoing. Cancelling the last division still r
 | `confirm` | String | ✅ | Type exactly `CONFIRM` to proceed |
 
 Unschedules every round of the division, cancels each one **not yet raced**, marks the division
-`CANCELLED`, and posts a notice to its forecast channel. A round already raced and scored keeps its
+`CANCELLED`, and tells the division as `/round cancel` does. A round already raced and scored keeps its
 results and its status. A cancelled division is excluded from tier validation, from the standings,
 and from the gate on completing the season.
 
@@ -724,7 +734,7 @@ Required for every division while the results & standings module is enabled, alo
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
 
-The calendar is posted once, when the season is approved, and stands as the calendar the season was approved with. A round added, amended or cancelled afterwards does **not** change it — this command is what carries those changes onto it.
+The calendar is posted when the season is approved, and reposted by itself only when a round is cancelled. A round amended afterwards does **not** change it — this command is what carries those changes onto it.
 
 It reposts in whichever form your configuration calls for: the image where the images module and the `calendar` aspect are both on, the traditional text otherwise. It works either way, and is not gated on the images module.
 
@@ -2136,6 +2146,8 @@ These sit under `/images template` rather than `/images config` because Discord 
 > **A line ruled down the rows is shortened with the picture.** The separators between the round columns of a standings grid or an attendance sheet run past every crop point by design. Draw one to stop where you want it on a full-size picture — just above the caption band, say — and the bot brings its lower end up by exactly what the cut removed, so it stops in the same place on a short one. It works on a line, a rectangle, or a path drawing one straight vertical rule, wherever your editor put it — inside a positioned group is fine. What is left alone: anything inside `footer_group`, which moves as a whole; a shape you have scaled or rotated; and a path drawing more than that one rule, which the bot will not guess at.
 >
 > Both are entirely optional and go together: declare neither and your file is drawn at its full height exactly as it always was. The five shipped templates declare both. The calendar is the exception — it has always required a crop point per round.
+
+> **The calendar needs a cancellation overlay on every round.** Give each round a `round_<x>_cancelled` element — a group or a shape drawn over that round, last in its group so it lies on top, and inside the round's own space, above its crop point. The bot leaves it on a cancelled round and removes it from every other, so draw it as you want a called-off round to look: the shipped calendar lays an almost opaque panel over the card with **CANCELLED** across it. It is **required**: a calendar drawing missing it for any round is refused, so a drawing of your own from before this change needs one added before the bot will accept it again.
 
 > **Optional: highlight the podiums, points finishes and fastest laps on a standings grid.** Both standings templates mark out the race cells of their season grid, so a league reading the picture sees where the season's results actually fell instead of a wall of identical numbers. The shipped files do this already.
 >
