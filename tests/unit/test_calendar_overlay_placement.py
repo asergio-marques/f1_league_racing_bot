@@ -189,3 +189,50 @@ def test_a_round_whose_overlay_is_missing_is_left_to_the_catalogue():
     overlay.getparent().remove(overlay)
 
     assert _faults(root) == []
+
+
+# ── Drawn the ways a graphical editor draws things ────────────────────────
+
+
+INKSCAPE_NS = "http://www.inkscape.org/namespaces/inkscape"
+
+
+def test_an_overlay_declared_as_an_inkscape_layer_is_read(tmp_path):
+    """Inkscape names a layer by `inkscape:label`, which is how the bot addresses one. An
+    overlay drawn that way must be judged, not passed over for carrying no id."""
+    root = _template(1)
+    overlay = root.find(".//*[@id='round_1_cancelled']")
+    del overlay.attrib["id"]
+    overlay.set(f"{{{INKSCAPE_NS}}}label", "round_1_cancelled")
+    overlay.set(f"{{{INKSCAPE_NS}}}groupmode", "layer")
+    # Move it to the head of its group: the fault the first rule exists to catch.
+    group = overlay.getparent()
+    group.remove(overlay)
+    group.insert(0, overlay)
+
+    faults = _faults(root)
+
+    assert len(faults) == 1
+    assert "drawn before" in faults[0]
+
+
+def test_a_round_group_carrying_a_transform_is_not_refused_for_it():
+    """An editor commonly wraps a round in a transformed group. The overlay and the fields
+    share that transform, so the comparison holds and nothing here resolves it."""
+    root = _template(2)
+    for ordinal in (1, 2):
+        root.find(f".//*[@id='round_{ordinal}_group']").set("transform", "translate(120,64)")
+
+    assert _faults(root) == []
+
+
+def test_an_overlay_nested_deeper_in_its_round_group_is_inside_it():
+    """A veil drawn as a panel and a word inside a group of its own is still in the round."""
+    root = _template(1)
+    group = root.find(".//*[@id='round_1_group']")
+    overlay = root.find(".//*[@id='round_1_cancelled']")
+    group.remove(overlay)
+    wrapper = etree.SubElement(group, f"{{{SVG_NS}}}g")
+    wrapper.append(overlay)
+
+    assert _faults(root) == []

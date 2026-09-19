@@ -201,6 +201,22 @@ def test_an_overlay_drawn_under_its_round_is_refused(named):
     assert "drawn before" in report.reason
 
 
+def test_a_calendar_drawn_wrong_throughout_is_refused_briefly(named):
+    """One fault a round, and a template is usually drawn wrong throughout — the refusal is
+    read in Discord, so it names a few and counts the rest."""
+    body = '<text id="division_name">d</text>'
+    for ordinal in range(1, 9):
+        body += f'<g id="round_{ordinal}_cancelled"/>'
+        body += "".join(
+            f'<text id="round_{ordinal}_{suffix}">x</text>' for suffix in SUFFIXES[:-1]
+        )
+    report = named((HEADER + body + "</svg>").encode())
+
+    assert not report.valid
+    assert report.reason.count("drawn before") == 3
+    assert "and 5 more rounds the same" in report.reason
+
+
 def test_a_template_declaring_no_round_is_rejected(named):
     report = named((HEADER + '<text id="division_name">d</text></svg>').encode())
     assert not report.valid

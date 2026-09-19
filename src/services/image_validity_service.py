@@ -408,6 +408,50 @@ def _box_of(element) -> tuple[float, float, float, float] | None:
     return best
 
 
+def _document_positions(root) -> dict[str, int]:
+    """Each declared name to its place in document order.
+
+    Keyed by **name** rather than by element, because the two would otherwise have to be the
+    same Python object: `lxml` hands out a proxy per node, and comparing a proxy from one walk
+    against one held by a `FieldIndex` relies on a guarantee about proxy lifetime that is not
+    this module's to depend on. A name is what both sides address a node by anyway.
+
+    A **layer** is addressed by its ``inkscape:label`` exactly as `FieldIndex` addresses one,
+    so a template drawn in Inkscape with its overlay as a layer is read here too.
+    """
+    from utils.svg_document import INKSCAPE_NS
+
+    label_attr = f"{{{INKSCAPE_NS}}}label"
+    groupmode_attr = f"{{{INKSCAPE_NS}}}groupmode"
+    positions: dict[str, int] = {}
+    for position, node in enumerate(root.iter()):
+        names = [node.get("id")]
+        if node.get(groupmode_attr) == "layer":
+            names.append(node.get(label_attr))
+        for name in names:
+            if name and name not in positions:
+                positions[name] = position
+    return positions
+
+
+def _within(node, name: str) -> bool:
+    """Whether *node* is drawn inside the element addressed by *name*.
+
+    Walks the ancestors and compares the name each is addressed by, for the reason
+    `_document_positions` keys by name: identity between two proxies of one node is not
+    something to lean on.
+    """
+    from utils.svg_document import INKSCAPE_NS
+
+    label_attr = f"{{{INKSCAPE_NS}}}label"
+    parent = node.getparent()
+    while parent is not None:
+        if parent.get("id") == name or parent.get(label_attr) == name:
+            return True
+        parent = parent.getparent()
+    return False
+
+
 def calendar_overlay_faults_of(root, template_key: str) -> list[str]:
     """Every cancellation overlay of a calendar drawn where it cannot do its work (#175).
 
@@ -433,7 +477,7 @@ def calendar_overlay_faults_of(root, template_key: str) -> list[str]:
         return []  # Layer 2 reports an uncountable collection in its own terms.
 
     index = FieldIndex(root)
-    order = {node: position for position, node in enumerate(root.iter())}
+    order = _document_positions(root)
     faults: list[str] = []
 
     for ordinal in range(1, capacity + 1):
@@ -458,9 +502,10 @@ def calendar_overlay_faults_of(root, template_key: str) -> list[str]:
         siblings = {name: node for name, node in siblings.items() if node is not None}
 
         # 1. Drawn last, which is what puts it over the round rather than under it.
+        overlay_at = order.get(f"round_{ordinal}_cancelled")
         later = sorted(
-            name for name, node in siblings.items()
-            if order.get(node, -1) > order.get(overlay, -1)
+            name for name in siblings
+            if overlay_at is not None and order.get(name, -1) > overlay_at
         )
         if later:
             faults.append(
@@ -472,8 +517,8 @@ def calendar_overlay_faults_of(root, template_key: str) -> list[str]:
 
         # 2. Inside its round's group, where the template declares one, so that it leaves
         #    with the round it belongs to.
-        group = index.resolve(f"round_{ordinal}_group")
-        if group is not None and overlay not in set(group.iter()):
+        group_name = f"round_{ordinal}_group"
+        if index.resolve(group_name) is not None and not _within(overlay, group_name):
             faults.append(
                 f"`round_{ordinal}_cancelled` is drawn outside `round_{ordinal}_group`, so a "
                 f"round the division does not hold would keep its veil. Draw it inside the "
@@ -628,7 +673,13 @@ class CatalogueLayer:
             # one it does not have is not drawn.
             placement = calendar_overlay_faults_of(root, ctx.template_key)
             if placement:
-                return LayerResult(False, "; ".join(placement))
+                # One fault a round, and a template drawn wrong is usually drawn wrong
+                # throughout, so the reason is capped as the missing-field report is: a
+                # refusal is read in Discord, and twelve of these would fill it.
+                shown = "; ".join(placement[:3])
+                if len(placement) > 3:
+                    shown += f"; and {len(placement) - 3} more rounds the same"
+                return LayerResult(False, shown)
             return LayerResult(True)
 
         # Name every one. A count tells a manager nothing about what to draw.
