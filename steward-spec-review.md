@@ -1172,7 +1172,7 @@ Recorded as the walk-through decides them. None is to be made until stewarding i
 
 - ~~Self-correction of an outcome~~ — decided at C37: no command. Peers judge, conflict rules guard bias, appeals guard error; revoke and results amendment remain.
 - ~~Several outcomes per report~~ — modelled at C2: a ballot is a steward's whole view, counted whole; one verdict per report listing each involved driver's outcome.
-- **Bans for drivers in several divisions** — a qualifying or race ban is always served in the driver's highest tier full-time division, even where it was received in another (B12). Accepted by the user as likely unfair to such drivers, for now.
+- ~~Bans for drivers in several divisions~~ — settled 2026-09-19: served in the principal division (highest tier full-time seat), deliberately, the licence pooling points across divisions; a reserve-only driver serves at the next upcoming round of all their divisions.
 - **Configurable decision window** — the one-hour tie-break and justification timers stay fixed (C8). A setting only if a league asks for it.
 - **Witnesses as a separate kind of party** — a driver brought in for footage is an involved driver, with an NFA ballot line and listed among the involved drivers (C12). A witness/party split only if leagues ask for it.
 - **Attendance spec** — state that a round's check-in call, its last notice and its reserve-distribution message are deleted when the next round's check-in call is posted (the code does this; the spec is silent). The qualifying-ban notices ride along with them (C21).
@@ -1204,3 +1204,4 @@ The spec no longer lists the persisted ticket record field by field; that is for
 - **Evidence files (K2)** — where a form cannot take file uploads, a private step before the ticket is filed asks the complainant, appellant or steward to attach their files; the ticket is filed only once the evidence rule is met.
 - **Long lists (K4)** — list replies split across messages under Discord's 2,000-character limit.
 - **Licence view image (owed to the image spec)** — a "licence" view graphic distinct from the licence sheet, with a principal-division logo and colours (the league logo coloured by them), and division fields addressed by row (a logo and optional colour accent per Current row), which no graphic declares today.
+- **Core, "Principal division"** — the highest tier division (lowest tier number) in which a driver holds a full-time seat; a reserve-only or unseated driver has none. A core concept by the user's judgement (2026-09-19); defined in the steward spec's Concepts until core carries it, then referenced from there.

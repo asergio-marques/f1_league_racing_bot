@@ -63,6 +63,7 @@
   - Defence submission - Active from the moment the investigation is triggered, and automatically disabled once a configured period of time elapses. In this stage, the mentioned drivers are allowed to submit defences and additional evidence relevant to the case opened.
   - Investigation deliberation - Active once the defence submission ends, and automatically disabled once a configured period of time. Aims to allow stewards to vote on the final verdict, providing justification. After this period is over, the verdict is posted as set out under Conduct cycle: the investigation is private, and its verdict public.
 - Complainant - The driver who lodged a report, or the stewarding team as a whole for a steward's report. A driver who is complainant is an involved driver of their report; the stewarding team, as complainant, is not.
+- Principal division - The highest tier division (the lowest tier number) in which a driver holds a full-time seat. A full-time driver of a tier 2 division who is a reserve driver in tier 1 has tier 2 as their principal division. A driver who is a reserve driver alone, or who holds no seat, has no principal division.
 - Feature race and feature qualifying - The Feature Race and Feature Qualifying of a sprint round, or the Race and Qualifying of a round of any other format, where they are the only ones. The league sees each session named as the round's results name it.
 - Involved driver - A group of drivers consisting of all drivers formally added to a report and the driver who triggered the report.
   - A ticket shall hold at most 25 involved drivers, or 25 involved users for a CoC investigation, the complainant among them. A report naming more shall not be valid, and adding a driver or user to a ticket already holding 25 shall be refused.
@@ -754,8 +755,8 @@
 
 ### Qualifying bans
 - Whether a driver has a qualifying ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
-- If a driver who is participating in multiple divisions has a qualifying ban, they must serve it in the highest tier division for which they are a full-time driver (assigned to a team that is not the reserve team).
-  - If the driver is not a full-time driver for any division, then they must serve the qualifying ban in the highest tier division for which they are a reserve driver.
+- A qualifying ban shall be served in the driver's principal division, whatever division the offences behind it were committed in, the licence being the driver's and its points being held across divisions.
+  - A driver with no principal division, being a reserve driver alone, shall serve it at the next upcoming round of all the divisions in which they are a reserve driver.
 - If the attendance module is enabled, a driver with a qualifying ban to be served in a given division as per the requirement above shall be told so by the bot in that division's check-in channel, and reminded of it closer to the round:
   - A full-time driver shall be told when the check-in call for the round is posted. A reserve driver shall be told when they are given a seat for the round at the distribution of reserves, in the message that tells them the team they are racing for.
   - Every such driver shall be reminded at the check-in deadline, alongside the message distributing the reserves. A reserve given their seat then is told and reminded in the one message.
@@ -767,13 +768,14 @@
 - If a driver who has a qualifying ban fails to serve it properly by setting a lap time in any qualifying session of the round, then their qualifying ban will be considered unserved, and will carry on to their next round.
   - Additionally, the failure to serve a qualifying ban properly will trigger the immediate posting of a verdict to the verdicts channel of the division informing of this. Its format is set out under Verdict output.
 - As qualifying bans are assigned to a driver licence, they do not expire upon a season's end. A qualifying ban not served in the season in which it was received shall be served in whichever later season the driver next takes part in, whether that is the following season or any after it.
-  - In that later season, it shall be served in the highest tier division for which the driver is a full-time driver. If the driver does not have a full-time seat in that season, it shall be served in the highest tier division for which they are a reserve driver.
+  - In that later season, it shall be served as any ban is: in the driver's principal division in that season, or, where they are a reserve driver alone, at the next upcoming round of all the divisions in which they are a reserve driver.
   - A driver who takes part in no later season shall keep the qualifying ban pending on their licence.
 
 ### Race bans
 - Whether a driver has a race ban is only determined after the closing of a stewarding cycle, and after factoring in the auto-rules.
-- If a driver who is participating in multiple divisions has a race ban, they must serve it in the highest tier division for which they are a full-time driver (assigned to a team that is not the reserve team).
-  - If the driver is not a full-time driver for any division, then they must serve the race ban in the highest tier division for which they are a reserve driver.
+- A race ban shall be served in the driver's principal division, whatever division the offences behind it were committed in, the licence being the driver's and its points being held across divisions.
+  - A driver with no principal division, being a reserve driver alone, shall serve it at the next upcoming round of all the divisions in which they are a reserve driver.
+  - A race ban bars the driver from that one round of that one division. They may race in another division's round meanwhile, as a reserve driver or otherwise, so that no single ban makes them sit out a round in two divisions.
 - If the attendance module is enabled and any driver has a race ban to be served in a given division as per the requirement above, their vote in the check-in will be immediately discarded/deleted by the bot if present, and a message shall be posted to the check-in channel informing that they cannot check-in due to a race ban.
   - This driver will not be allowed to vote in the check-in for this round again.
   - This driver will not be punished with attendance points for failing to RSVP for the round: the bot shall give them an automatic attendance pardon, written to the log channel as any pardon is.
@@ -783,7 +785,7 @@
 - If a driver who has a race ban fails to serve it properly by being listed in the results of any session pertaining to the round in which they must serve the ban, then their race ban will be considered unserved, and will carry on to the next round of that division.
   - Additionally, the failure to serve a race ban properly will trigger the immediate posting of a verdict to the verdicts channel of the division informing of this. Its format is set out under Verdict output.
 - As race bans are assigned to a driver licence, they do not expire upon a season's end. A race ban not served in the season in which it was received shall be served in whichever later season the driver next takes part in, whether that is the following season or any after it.
-  - In that later season, it shall be served in the highest tier division for which the driver is a full-time driver. If the driver does not have a full-time seat in that season, it shall be served in the highest tier division for which they are a reserve driver.
+  - In that later season, it shall be served as any ban is: in the driver's principal division in that season, or, where they are a reserve driver alone, at the next upcoming round of all the divisions in which they are a reserve driver.
   - A driver who takes part in no later season shall keep the race ban pending on their licence.
 
 ### Season bans
@@ -815,7 +817,7 @@
 - A driver licence is a public record of the league.
 - While the stewarding module is enabled, the panel of the hub channel the core specification sets out shall offer "View licence". The presser names a driver, themselves or any other, and the bot shows that driver licence in full, seen by the presser alone: their active points with the date and expiry of each, their active bans with their expiries and any season bans stacked, their ban history, their discipline points, their appeal tokens, and the ID of the ticket or ruling each entry came from. A member holding no driver licence is told so.
 - A licence so shown shall have a textual output and an image output of its own, as the licence sheet does. The image output may carry detail its textual output does not, but shall omit nothing its textual output carries.
-- A licence belongs to no single division. Where the driver holds a seat, the division that dresses the licence as a whole is their principal division: the highest tier division in which they are a full-time driver, or else the highest tier division in which they are a reserve driver. A driver holding no seat has none, and their licence is drawn in the template's own colours.
+- A licence belongs to no single division. Where the driver has a principal division, it dresses the licence as a whole. A driver with no principal division, being a reserve driver alone or holding no seat at all, has their licence drawn in the template's own colours.
 
 ### Textual
 - The textual output of a licence shall have the following data, in this order:
