@@ -866,6 +866,7 @@ class TestModeCog(commands.Cog):
             division_name=division,
             db_path=self.bot.db_path,  # type: ignore[attr-defined]
             nationality=nationality,
+            placement_service=self.bot.placement_service,  # type: ignore[attr-defined]
         )
 
         if isinstance(result, str):

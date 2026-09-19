@@ -228,3 +228,93 @@ async def test_no_bot_means_no_guard(tmp_path):
     path, divisions = await _seed(tmp_path)
 
     await PlacementService(path).guard_roster_capacity(divisions["Alpha"], {TEAMS[0]: 99})
+
+
+# ── /test-mode roster add ─────────────────────────────────────────────────
+
+
+async def _add(path, service, team, division="Alpha", name="Mock"):
+    from services.test_roster_service import add_test_driver
+
+    return await add_test_driver(
+        driver_name=name,
+        team_name=team,
+        division_name=division,
+        db_path=path,
+        placement_service=service,
+    )
+
+
+async def test_a_reserve_past_the_lineup_s_reserve_slots_is_refused(tmp_path):
+    path, _divisions = await _seed(tmp_path)
+    service = _service(path, {LINEUP: _lineup(tmp_path, reserve_slots=1)})
+
+    assert isinstance(await _add(path, service, RESERVE, name="First"), dict)
+    result = await _add(path, service, RESERVE, name="Second")
+
+    assert isinstance(result, str)
+    assert "2 reserve drivers" in result
+    assert "**not** assigned" in result
+    assert await _seated(path) == 1, "the refused driver was written anyway"
+
+
+async def test_a_driver_past_the_sheet_rows_is_refused(tmp_path):
+    path, _divisions = await _seed(tmp_path)
+    service = _service(path, {SHEET: _sheet(tmp_path, rows=2)})
+
+    assert isinstance(await _add(path, service, TEAMS[0], name="First"), dict)
+    assert isinstance(await _add(path, service, RESERVE, name="Second"), dict)
+    result = await _add(path, service, TEAMS[1], name="Third")
+
+    assert isinstance(result, str) and "**not** assigned" in result
+    assert await _seated(path) == 2
+
+
+async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(tmp_path):
+    path, _divisions = await _seed(tmp_path)
+    service = _service(path, {DRIVERS: _standings(tmp_path, rows=2)})
+
+    assert isinstance(await _add(path, service, TEAMS[0], name="First"), dict)
+    assert isinstance(await _add(path, service, TEAMS[1], name="Second"), dict)
+    refused = await _add(path, service, TEAMS[1], name="Third")
+    reserve = await _add(path, service, RESERVE, name="Fourth")
+
+    assert isinstance(refused, str) and "3 drivers" in refused
+    assert isinstance(reserve, dict), "a reserve adds no entry to the classification"
+
+
+async def test_the_command_refuses_it_in_placements(tmp_path):
+    """Through the cog, in the one stage the roster may change in (issue #220).
+
+    Nothing about the stage is stubbed: the season is in Placements, the roster change is
+    allowed there, and it is the template that refuses it — with the bot's own placement
+    service, as the cog is wired in production.
+    """
+    from types import SimpleNamespace
+
+    from cogs.test_mode_cog import TestModeCog
+    from services.placement_service import PlacementService
+    from tests.support.undecorate import undecorate
+
+    path, _divisions = await _seed(tmp_path)
+    assert isinstance(await _add(path, None, TEAMS[0], name="First"), dict)
+    bot = _bot(path, {DRIVERS: _standings(tmp_path, rows=1)})
+    bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(
+            test_mode_active=True, test_mode_nationality_required=True
+        )
+    )
+    bot.output_router.post_log = AsyncMock()
+    bot.placement_service = PlacementService(path, bot=bot)
+    cog = TestModeCog.__new__(TestModeCog)
+    cog.bot = bot
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await undecorate(TestModeCog.roster_add)(cog, interaction, "Mock", TEAMS[0], "Alpha")
+
+    reply = interaction.response.send_message.await_args.args[0]
+    assert reply.startswith("⛔")
+    assert "**not** assigned" in reply
+    assert await _seated(path) == 1
+    bot.output_router.post_log.assert_not_awaited()

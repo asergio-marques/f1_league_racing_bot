@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from cogs import test_mode_cog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.config_service import ConfigService  # noqa: E402
+from services.placement_service import PlacementService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 6161
@@ -128,6 +129,9 @@ def cog(db_path):
             db_path=db_path,
             config_service=ConfigService(db_path),
             output_router=SimpleNamespace(post_log=AsyncMock()),
+            # No bot behind it, so the template capacity guards (#150) stand aside here;
+            # they have tests of their own in test_test_roster_capacity_guards.
+            placement_service=PlacementService(db_path),
         )
     )
 

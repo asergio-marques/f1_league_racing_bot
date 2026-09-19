@@ -145,12 +145,17 @@ async def add_test_driver(
     division_name: str,
     db_path: str,
     nationality: str | None = None,
+    placement_service=None,
 ) -> TestDriverInfo | str:
     """Create a fake driver profile and seat them in *team_name* in *division_name*.
 
     *nationality* is optional and accepted in the form the signup wizard accepts it — a
     nationality adjective, a country name, or "other" — and stored canonically. A mock
     driver created without one records none, and is drawn without a flag.
+
+    *placement_service* holds the driver to the template capacities a real placement into
+    the same team is held to, and the driver is refused where one would be (#150). The cog
+    always passes it; left None, as tests of the seating alone do, the check is skipped.
 
     Returns a TestDriverInfo dict on success, or an error string on failure.
     """
@@ -174,7 +179,7 @@ async def add_test_driver(
     async with get_connection(db_path) as db:
         # Find the team instance in this division (case-insensitive name match)
         cursor = await db.execute(
-            "SELECT id, max_seats, is_reserve FROM team_instances "
+            "SELECT id, name, max_seats, is_reserve FROM team_instances "
             "WHERE division_id = ? AND LOWER(name) = LOWER(?)",
             (division_id, team_name),
         )
@@ -184,6 +189,15 @@ async def add_test_driver(
 
         team_instance_id: int = team_row["id"]
         is_reserve: bool = bool(team_row["is_reserve"])
+
+        # Nothing has been written yet, so a refusal here leaves the roster as it was.
+        if placement_service is not None:
+            try:
+                await placement_service.guard_roster_capacity(
+                    division_id, {team_row["name"]: 1}
+                )
+            except ValueError as exc:
+                return str(exc)
 
         # Find a free seat (driver_profile_id IS NULL)
         seat_cursor = await db.execute(
