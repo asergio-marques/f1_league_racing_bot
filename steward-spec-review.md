@@ -1255,4 +1255,5 @@ Decisions:
 - R40 Conduct evidence "private to the stewarding team or shared" — never settable.
 - R41 Test-mode commands: core makes every test-mode command a league admin's.
 - R42 /bot pack (#257): stewarding team, its roles and channels on the new server.
+- R44 Licence sheet image: "After Round X" is mandatory, but the opening sheet (R27) and a sheet reposted on a CoC verdict or revocation stand after no round.
 - R43 (after R42) A further read-through of the whole spec, the championship and team penalties (T1–T8) being a large addition made during this one.
