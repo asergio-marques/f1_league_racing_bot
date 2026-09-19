@@ -23,6 +23,5 @@ class ServerConfig:
     #: nationality without disturbing the setting real signups run on. On by default, as
     #: the setting it parallels is.
     test_mode_nationality_required: bool = field(default=True)
-    previous_season_number: int = 0
     weather_module_enabled: bool = False
     signup_module_enabled: bool = False

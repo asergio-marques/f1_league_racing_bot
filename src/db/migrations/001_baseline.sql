@@ -17,7 +17,7 @@ CREATE TABLE server_configs (
     interaction_role_id    INTEGER,
     interaction_channel_id INTEGER,
     log_channel_id         INTEGER
-, test_mode_active INTEGER NOT NULL DEFAULT 0, previous_season_number INTEGER NOT NULL DEFAULT 0, weather_module_enabled INTEGER NOT NULL DEFAULT 0, signup_module_enabled INTEGER NOT NULL DEFAULT 0, test_mode_nationality_required INTEGER NOT NULL DEFAULT 1, league_admin_role_id INTEGER);
+, test_mode_active INTEGER NOT NULL DEFAULT 0, weather_module_enabled INTEGER NOT NULL DEFAULT 0, signup_module_enabled INTEGER NOT NULL DEFAULT 0, test_mode_nationality_required INTEGER NOT NULL DEFAULT 1, league_admin_role_id INTEGER);
 
 -- sessions
 CREATE TABLE sessions (

@@ -162,8 +162,10 @@ class SeasonService:
         but SETUP. A season still in setup holds a provisional number and is excluded, so
         that a league drafting its next season does not push the count forward twice.
 
-        Not `server_configs.previous_season_number`, which is written by nothing and reads
-        0 whatever the league's history.
+        A new season is numbered one above it. The highest number, not a count of seasons:
+        a count agrees only while the numbers run from 1 without a gap, and falls behind
+        the highest number the moment one goes missing, handing out a number already in
+        use (issue #153).
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
