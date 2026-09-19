@@ -1,4 +1,12 @@
-"""ConfigService — the league's bot configuration, and the claim on its server."""
+"""ConfigService — the league's bot configuration, and the claim on its server.
+
+**The table holds one row, and the claim is a column of it** (issue #247). `server_id` is the
+league's server, and NULL while the bot serves none. `/bot pack` clears it with the four
+settings and leaves the row, because the row also carries what belongs to the league rather
+than the server — test mode and two module flags — and those travel with it. Deleting the
+row, as the withdrawn full reset did, would have lost them. So "configured" means "the row
+holds a server", never "a row exists", and every read here says so.
+"""
 
 from __future__ import annotations
 
@@ -17,14 +25,14 @@ class ConfigService:
         self._db_path = db_path
 
     async def get_server_config(self) -> ServerConfig | None:
-        """Return the ServerConfig for *server_id*, or None if not configured."""
+        """Return the league's ServerConfig, or None while no server is claimed."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT server_id, interaction_role_id, interaction_channel_id, "
                 "       log_channel_id, league_admin_role_id, test_mode_active, "
                 "       test_mode_nationality_required, "
                 "       weather_module_enabled, signup_module_enabled "
-                "FROM server_configs",
+                "FROM server_configs WHERE server_id IS NOT NULL",
             )
             row = await cursor.fetchone()
 
@@ -45,18 +53,20 @@ class ConfigService:
     async def get_league_server_id(self) -> int | None:
         """The league's server: the one that holds the configuration row, or None.
 
-        The first `/bot-init` claims it and `/bot-reset full:True` frees it; see
-        `utils.league_server`, which asks this before every command.
+        `/bot init` claims it and `/bot pack` frees it; see `utils.league_server`, which asks
+        this before every command.
         """
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute("SELECT server_id FROM server_configs LIMIT 1")
+            cursor = await db.execute(
+                "SELECT server_id FROM server_configs WHERE server_id IS NOT NULL LIMIT 1"
+            )
             row = await cursor.fetchone()
         return None if row is None else int(row["server_id"])
 
     async def save_server_config(self, cfg: ServerConfig) -> bool:
-        """Create the ServerConfig row while no server has one. Returns whether it did.
+        """Claim the league's server while no server holds the claim. Returns whether it did.
 
-        Insert-only, and deliberately so. `/bot-init` is the sole caller and runs once; every
+        Claim-only, and deliberately so. `/bot init` is the sole caller and runs once; every
         later change to one of the three settings goes through the setters
         below, which write a single column each.
 
@@ -67,11 +77,32 @@ class ConfigService:
         merely corrected.
 
         **It is also the claim** (issue #244). One bot serves one league, and the league's
-        server is the one row this table holds, so the insert writes nothing while *any* row
-        exists — this server's or another's. The condition is part of the statement, not a
-        read before it, so two servers racing to `/bot-init` cannot both win.
+        server is the `server_id` of the one row this table holds. A fresh bot has no row,
+        and the insert writes one only while none exists; a packed bot has a row whose
+        `server_id` is NULL (issue #247), and the update writes only while it still is. Only
+        the four settings are written there — test mode and the module flags are the
+        league's and came with it. Either way the condition is part of the statement, not a
+        read before it, so two servers racing to `/bot init` cannot both win.
         """
         async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                UPDATE server_configs
+                SET server_id = ?, interaction_role_id = ?, interaction_channel_id = ?,
+                    log_channel_id = ?, league_admin_role_id = ?
+                WHERE server_id IS NULL
+                """,
+                (
+                    cfg.server_id,
+                    cfg.interaction_role_id,
+                    cfg.interaction_channel_id,
+                    cfg.log_channel_id,
+                    cfg.league_admin_role_id,
+                ),
+            )
+            if cursor.rowcount > 0:
+                await db.commit()
+                return True
             cursor = await db.execute(
                 """
                 INSERT INTO server_configs
@@ -114,15 +145,33 @@ class ConfigService:
         settings are each written by their own command, and a whole-row save from any of
         them would carry stale values over the others.
 
-        Returns False where the server has no configuration row to amend.
+        Returns False where no server is claimed, a packed row included: its settings
+        belong to the next server's `/bot init`.
         """
         if column not in self._SETTABLE_COLUMNS:
             raise ValueError(f"{column!r} is not a core setting")
 
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(f"UPDATE server_configs SET {column} = ?", (value,))
+            cursor = await db.execute(
+                f"UPDATE server_configs SET {column} = ? WHERE server_id IS NOT NULL",
+                (value,),
+            )
             await db.commit()
             return cursor.rowcount > 0
+
+    async def release_claim(self) -> None:
+        """Free the claim on the league's server: clear it and the four settings.
+
+        The row stays, and with it test mode and the module flags; see the module docstring.
+        `/bot pack` is the only caller.
+        """
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE server_configs SET server_id = NULL, interaction_role_id = NULL, "
+                "interaction_channel_id = NULL, log_channel_id = NULL, "
+                "league_admin_role_id = NULL"
+            )
+            await db.commit()
 
     # ------------------------------------------------------------------
     # Validation helpers (require a live guild object)
