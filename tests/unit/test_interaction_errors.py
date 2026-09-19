@@ -17,11 +17,13 @@ from discord import app_commands
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from utils.interaction_errors import (  # noqa: E402
-    FAILURE_REPLY,
     describe,
     describe_form,
+    failure_reply,
     report_failure,
 )
+
+COMMAND_REPLY = failure_reply("`/season approve`")
 
 USER = 4242
 
@@ -54,7 +56,7 @@ async def test_a_failure_tells_the_member_alone():
 
     await report_failure(interaction, KeyError("x"), what="`/season approve`")
 
-    interaction.response.send_message.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+    interaction.response.send_message.assert_awaited_once_with(COMMAND_REPLY, ephemeral=True)
     interaction.followup.send.assert_not_awaited()
 
 
@@ -64,14 +66,24 @@ async def test_a_failure_after_the_reply_began_follows_up():
 
     await report_failure(interaction, KeyError("x"), what="`/season approve`")
 
-    interaction.followup.send.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+    interaction.followup.send.assert_awaited_once_with(COMMAND_REPLY, ephemeral=True)
     interaction.response.send_message.assert_not_awaited()
 
 
-def test_the_reply_names_no_exception_and_promises_nothing_unchanged():
-    assert "Error" not in FAILURE_REPLY
-    assert "partly done" in FAILURE_REPLY
-    assert "nothing was changed" not in FAILURE_REPLY.lower()
+def test_the_reply_names_what_failed_and_no_exception():
+    """The constitution bars a generic "something went wrong": the reply names the command
+    and the kind of fault, and promises nothing it cannot keep."""
+    reply = failure_reply("`/season approve`")
+    assert reply.startswith("❌ `/season approve` stopped on a fault in the bot")
+    assert "not on anything you entered" in reply
+    assert "partly done" in reply
+    assert "Error" not in reply
+    assert "something went wrong" not in reply.lower()
+    assert "nothing was changed" not in reply.lower()
+
+
+def test_the_reply_opens_its_sentence_with_a_capital():
+    assert failure_reply("the “Approve” button").startswith("❌ The “Approve” button stopped")
 
 
 # ── The log channel and the host's log ────────────────────────────────────
@@ -122,7 +134,7 @@ async def test_a_log_channel_that_cannot_be_written_still_replies():
 
     await report_failure(interaction, KeyError("x"), what="`/season approve`")
 
-    interaction.response.send_message.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+    interaction.response.send_message.assert_awaited_once_with(COMMAND_REPLY, ephemeral=True)
 
 
 async def test_a_client_without_a_router_is_only_replied_to():
@@ -131,7 +143,7 @@ async def test_a_client_without_a_router_is_only_replied_to():
 
     await report_failure(interaction, KeyError("x"), what="`/season approve`")
 
-    interaction.response.send_message.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+    interaction.response.send_message.assert_awaited_once_with(COMMAND_REPLY, ephemeral=True)
 
 
 # ── Naming what failed ────────────────────────────────────────────────────
@@ -182,7 +194,7 @@ async def test_a_failed_command_tells_the_member_and_the_log_channel():
 
     await _tree().on_error(interaction, _invoke_error(KeyError("x")))
 
-    interaction.response.send_message.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+    interaction.response.send_message.assert_awaited_once_with(COMMAND_REPLY, ephemeral=True)
     line = interaction.client.output_router.post_log.await_args.args[0]
     assert line.startswith("❌ `/season approve` failed")
 
@@ -202,7 +214,11 @@ async def test_a_failure_before_any_command_was_found_is_still_answered():
 
     await _tree().on_error(interaction, app_commands.AppCommandError("tree"))
 
-    interaction.response.send_message.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+    interaction.response.send_message.assert_awaited_once_with(
+
+        failure_reply("an interaction"), ephemeral=True
+
+    )
 
 
 # ── Buttons, menus and forms ──────────────────────────────────────────────
@@ -217,7 +233,11 @@ async def test_a_failed_button_tells_the_member_and_the_log_channel():
 
     await view.on_error(interaction, KeyError("x"), button)
 
-    interaction.response.send_message.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+    interaction.response.send_message.assert_awaited_once_with(
+
+        failure_reply("the “Approve” button"), ephemeral=True
+
+    )
     line = interaction.client.output_router.post_log.await_args.args[0]
     assert line.startswith("❌ the “Approve” button failed")
     assert "KeyError" in line
@@ -233,7 +253,11 @@ async def test_a_failed_form_tells_the_member_and_the_log_channel():
 
     await _Form().on_error(interaction, ValueError("x"))
 
-    interaction.followup.send.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+    interaction.followup.send.assert_awaited_once_with(
+
+        failure_reply("the “Edit round” form"), ephemeral=True
+
+    )
     line = interaction.client.output_router.post_log.await_args.args[0]
     assert line.startswith("❌ the “Edit round” form failed")
     assert "ValueError" in line
