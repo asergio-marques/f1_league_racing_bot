@@ -255,7 +255,9 @@ The ordinary locks still decide whether they are in time. Move a full-time drive
 
 **Reserves are scored separately.** A reserve the bot seated for the round is charged only if they accepted and then did not appear. A reserve who was never seated is charged nothing, whatever they clicked.
 
-**Cancelling a round tells the division here.** When you cancel a round, a division or the season, the check-in channel gets a notice saying so, mentioning the division role as the check-in call does — it is the one notification the bot sends about a cancellation, the forecast and results channels getting only silent notes. The bot announces nothing beyond that, so the rest of telling your drivers is yours to do. A check-in call already posted for the round stays up.
+**Cancelling a round tells the division here.** When you cancel a round, a division or the season, the check-in channel gets a notice saying so, mentioning the division role as the check-in call does — it is the one notification the bot sends about a cancellation, the forecast and results channels getting only silent notes. The bot announces nothing beyond that, so the rest of telling your drivers is yours to do.
+
+**The check-in call for a cancelled round comes down.** Once the notice is up, the round's check-in call is deleted, along with its reminder and its reserve-distribution message, so nobody goes on answering a round that is off. The answers already given are not thrown away: they stay in the bot's records, and the log channel entry for the cancellation lists them — who accepted, was unsure, declined or never answered, and, if the reserves had already been placed, who was sent to which team and who was on standby.
 
 **A cancelled round charges nobody**, and neither does a round whose check-in call never got posted — no call means no records were ever opened, and the round quietly counts as perfect attendance for everyone. The log channel reports the failure loudly when it happens, and it is worth acting on.
 

@@ -632,7 +632,7 @@ Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and tells 
 
 > **Who is told about a cancellation.** The bot posts no announcement of its own: telling your drivers a race is off is yours to do. What it does is stop each module carrying on as though the race were still on, each in its own channel and only where that module is turned on:
 >
-> - **Attendance** posts the one real notification, in the division's check-in channel, mentioning the division role as the check-in call does: the round is off and there is nothing to answer.
+> - **Attendance** posts the one real notification, in the division's check-in channel, mentioning the division role as the check-in call does: the round is off and there is nothing to answer. The round's check-in call is then taken down, with its reminder and its reserve-distribution message. The answers drivers gave are kept, and the log channel lists them — who accepted, was unsure, declined or never answered, and, if the reserves had been placed already, who went to which team and who was on standby.
 > - **Weather** posts a silent note in the forecast channel that no forecast is coming.
 > - **Results** posts a silent note in the results channel that no results are coming.
 >
