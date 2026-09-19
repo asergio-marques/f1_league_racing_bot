@@ -382,6 +382,140 @@ def map_bearing_faults_of(root, template_key: str) -> list[str]:
     return faults
 
 
+#: The calendar's cancellation overlay, and the fields it is judged against (#175).
+_CALENDAR_KEY = "calendar_template"
+
+
+def _box_of(element) -> tuple[float, float, float, float] | None:
+    """The declared box of *element* or of a descendant, as (x, y, width, height).
+
+    The element's own box where it declares one — a `rect` veil — and otherwise the widest
+    box any descendant declares, which is what a veil drawn as a group of a panel and a word
+    offers. None where nothing under it declares a box at all, a veil drawn as paths among
+    them: it is then not measured rather than refused.
+    """
+    from utils.svg_document import length
+
+    best: tuple[float, float, float, float] | None = None
+    for node in element.iter():
+        x, y = length(node.get("x")), length(node.get("y"))
+        width, height = length(node.get("width")), length(node.get("height"))
+        if None in (x, y, width, height) or width <= 0 or height <= 0:
+            continue
+        box = (x, y, width, height)
+        if best is None or width * height > best[2] * best[3]:
+            best = box
+    return best
+
+
+def calendar_overlay_faults_of(root, template_key: str) -> list[str]:
+    """Every cancellation overlay of a calendar drawn where it cannot do its work (#175).
+
+    The overlay veils a round called off, and the render only keeps it or removes it — it
+    never moves it, resizes it or restacks it. So where it is drawn is the whole of whether
+    it works, and a fault shows itself for the first time in a league's channel the day a
+    round is cancelled, which is exactly the moment not to discover it.
+
+    Four rules, none of which depends on a transform being resolved. The first two are read
+    off the tree itself; the last two compare the overlay against the fields of **its own
+    round**, which share whatever transform their group carries, so a template authored in a
+    graphical editor is judged on the same terms as one written by hand.
+    """
+    if template_key != _CALENDAR_KEY:
+        return []
+
+    from utils.svg_fill import _element_x, _element_y
+
+    catalogue = catalogue_for(template_key)
+    try:
+        capacity = catalogue.capacity(root) or 0
+    except CapacityError:
+        return []  # Layer 2 reports an uncountable collection in its own terms.
+
+    index = FieldIndex(root)
+    order = {node: position for position, node in enumerate(root.iter())}
+    faults: list[str] = []
+
+    for ordinal in range(1, capacity + 1):
+        overlay = index.resolve(f"round_{ordinal}_cancelled")
+        if overlay is None:
+            continue  # Missing is the catalogue's report to make, not this one's.
+
+        # What the overlay is judged against: the round's own drawn fields. Its group is a
+        # container and its crop point is geometry the render reads rather than ink it draws
+        # — the crop point sits below the card by design, so a veil covering it would have to
+        # spill into the round below.
+        excluded = (
+            f"round_{ordinal}_cancelled",
+            f"round_{ordinal}_group",
+            f"round_{ordinal}_vertical_crop_point",
+        )
+        siblings = {
+            name: index.resolve(name)
+            for name in index.declared()
+            if name.startswith(f"round_{ordinal}_") and name not in excluded
+        }
+        siblings = {name: node for name, node in siblings.items() if node is not None}
+
+        # 1. Drawn last, which is what puts it over the round rather than under it.
+        later = sorted(
+            name for name, node in siblings.items()
+            if order.get(node, -1) > order.get(overlay, -1)
+        )
+        if later:
+            faults.append(
+                f"`round_{ordinal}_cancelled` is drawn before "
+                f"`{later[0]}`{' and others of its round' if len(later) > 1 else ''}, so the "
+                f"round would be drawn over its own veil. Draw it last of its round."
+            )
+            continue
+
+        # 2. Inside its round's group, where the template declares one, so that it leaves
+        #    with the round it belongs to.
+        group = index.resolve(f"round_{ordinal}_group")
+        if group is not None and overlay not in set(group.iter()):
+            faults.append(
+                f"`round_{ordinal}_cancelled` is drawn outside `round_{ordinal}_group`, so a "
+                f"round the division does not hold would keep its veil. Draw it inside the "
+                f"group."
+            )
+            continue
+
+        # 3. Above its own crop point, read as the crop itself reads it.
+        crop = index.resolve(f"round_{ordinal}_vertical_crop_point")
+        crop_y = None if crop is None else _element_y(crop)
+        overlay_y = _element_y(overlay)
+        if crop_y is not None and overlay_y is not None and overlay_y >= crop_y:
+            faults.append(
+                f"`round_{ordinal}_cancelled` is drawn at or below "
+                f"`round_{ordinal}_vertical_crop_point`, where the cut removes it. Draw it "
+                f"above that point."
+            )
+            continue
+
+        # 4. Covering its round, where a box can be measured at all.
+        box = _box_of(overlay)
+        if box is None:
+            continue
+        x, y, width, height = box
+        outside = sorted(
+            name for name, node in siblings.items()
+            if (_element_x(node) is not None and _element_y(node) is not None)
+            and not (
+                x <= _element_x(node) <= x + width and y <= _element_y(node) <= y + height
+            )
+        )
+        if outside:
+            faults.append(
+                f"`round_{ordinal}_cancelled` does not cover "
+                f"`{outside[0]}`{' and others of its round' if len(outside) > 1 else ''}, so "
+                f"a cancelled round would be read through its veil. This is what a veil "
+                f"copied from another round and left at that round's position looks like."
+            )
+
+    return faults
+
+
 def _ratio_text(value: float) -> str:
     """A ratio a template author can act on: ``3:2`` rather than ``1.5``."""
     for width, height in ((1, 1), (3, 2), (4, 3), (16, 9), (2, 1)):
@@ -489,6 +623,12 @@ class CatalogueLayer:
 
         missing = sorted(name for name in mandatory if index.resolve(name) is None)
         if not missing:
+            # Where the calendar's cancellation overlays are drawn (#175). After the missing
+            # report, since a template lacking one wants telling that rather than where the
+            # one it does not have is not drawn.
+            placement = calendar_overlay_faults_of(root, ctx.template_key)
+            if placement:
+                return LayerResult(False, "; ".join(placement))
             return LayerResult(True)
 
         # Name every one. A count tells a manager nothing about what to draw.

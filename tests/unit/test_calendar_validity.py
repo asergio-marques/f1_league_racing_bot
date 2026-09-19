@@ -187,6 +187,20 @@ def test_the_packaged_calendar_veils_every_round_it_declares():
     assert all(f"round_{n}_cancelled" in declared for n in range(1, capacity + 1))
 
 
+def test_an_overlay_drawn_under_its_round_is_refused(named):
+    """The placement rules apply through the layers, so they hold at all three moments a
+    template is judged, not only in the function that states them (#175)."""
+    body = '<text id="division_name">d</text>'
+    body += '<g id="round_1_cancelled"/>'
+    body += "".join(f'<text id="round_1_{suffix}">x</text>' for suffix in SUFFIXES[:-1])
+    report = named((HEADER + body + "</svg>").encode())
+
+    assert not report.valid
+    assert report.failed_layer == LAYER_CATALOGUE
+    assert "round_1_cancelled" in report.reason
+    assert "drawn before" in report.reason
+
+
 def test_a_template_declaring_no_round_is_rejected(named):
     report = named((HEADER + '<text id="division_name">d</text></svg>').encode())
     assert not report.valid
