@@ -1156,18 +1156,16 @@ Recorded as the walk-through decides them. None is to be made until stewarding i
 
 - **Constitution, Principle VIII** — the driver licence is the "state" the module brings (A3/A25). Via `/speckit-constitution` only.
 - **Constitution, appeals lifecycle** — the constitution is the one that is off: "Upheld" must mean the initial verdict is kept, "Overturned" that it is changed (A26). The steward spec now says "Uphold initial verdict" / "Change initial verdict".
-- **Core, line 59** — ten channels per division and six for the server (A6).
-- **Core, "two tiers … and no other"** — four levels of authority (A9).
-- **Core, line 141 / results line 17** — while stewarding is enabled, its cycle moves a round through awaiting report/appeal verdicts (A4).
+- **Core, "Three channels shall be configured for the server … and eight for each division"** — ten per division and six for the server (A6).
+- **Core, "Two tiers of authority shall govern every command"** — four levels of authority (A9).
+- **Core, the round states "awaiting report verdicts" and "awaiting appeal verdicts", and the results spec's disabling rule** — while stewarding is enabled, its cycle moves a round through them (A4).
 - **Core, deletion on return to Not Signed Up** — a driver whose licence records any sanction is kept (A3).
-- **Core, line 406** — the bar is the licence's active bans (A3).
-- **README lines 269 and 663** — "eight" channel commands and channels (A6).
+- **Core, "A driver shall not be banned: sanctions belong to the stewarding module, which shall bring the bar"** — the bar is the licence's active bans (A3).
+- **README, "the eight `/division …-channel` commands" and "These eight channels are one per kind of image output"** — both counts rise with the ticket and licence channels (A6).
 - **Image spec, verdict graphic and banner** — amended to carry the steward spec's verdict output (A10).
-- **Results how-to, line 80** — says results, standings and verdicts "can be the same channel"; contradicts core line 60. A defect in the guide regardless of stewarding; candidate issue, not yet drafted.
 - **Image spec, aspects list and "images config toggle"** — the licence sheet aspect, its toggle value and "images template licence" (A16).
 - **Core, "A driver's accounts"** — the season ban and league ban roles move with the current account, as signed-up, division and team roles do (A20).
 - **Results spec, amendment approval (#242)** — the verdicts channel is checked where any auto-rule is configured, as it is where autosack/autoreserve is set (A27).
-- **Attendance spec** — state that a round's check-in call, its last notice and its reserve-distribution message are deleted when the next round's check-in call is posted (the code does this; the spec is silent). The qualifying-ban notices ride along with them (C21).
 - **Attendance spec, pardons** — with stewarding enabled, a league manager's pardon command replaces the penalty review's button, open from results posted until attendance points are distributed; the race-banned driver's automatic pardon (C38).
 - **Attendance spec, distribution moment** — with stewarding enabled, attendance points are distributed when the report verdicts are posted (C39).
 - **Core, cancelling a division or season** — while a stewarding cycle of one of its rounds stands open, it is marked cancelled only once that cycle closes (C40).
@@ -1178,6 +1176,12 @@ Recorded as the walk-through decides them. None is to be made until stewarding i
 - **Core, "Principal division"** — the highest tier division (lowest tier number) in which a driver holds a full-time seat; a reserve-only or unseated driver has none. A core concept by the user's judgement (2026-09-19); defined in the steward spec's Concepts until core carries it, then referenced from there.
 - **Results spec and image spec, standings (T1)** — the drivers' and constructors' standings mark points deductions (text footnote; optional image column) and show a championship disqualification as "DSQ" in place of the points, ranked beneath the classified.
 - **Core — the pack (R42).** Core's pack section names the signup module's channel and roles among what a pack clears. It should name this module's alike: the stewarding team and its head steward, its five roles and its channels, and the refusal while any ticket is open.
+
+Filed as issues instead, being defects of their own rather than work stewarding owes:
+
+- The results how-to saying results, standings and verdicts may share a channel — issue #264.
+- The attendance documents never saying a check-in call is deleted when the next round's is posted — issue #274.
+- The base role and the signed-up role moving from the signup module to core, which `steward conduct start` needs — issue #276.
 
 ## Parked during the walk-through
 
@@ -1259,3 +1263,15 @@ Decisions:
 - R44 Licence sheet image: "After Round X" is mandatory, but the opening sheet (R27) and a sheet reposted on a CoC verdict or revocation stand after no round.
 - R45 CoC form: its "Involved users" field asks for witnesses, while the ballot gives every involved user a line; "Mandatory" with 0..n.
 - R43 (after R42) A further read-through of the whole spec, the championship and team penalties (T1–T8) being a large addition made during this one.
+
+## Second read-through (R43), on main at ceb1d44
+
+- R47 Championship record: "never active penalties" contradicted the Active penalty concept and the revokes. Settled.
+- R48 Auto-rules could hand out championship penalties with no division or season named. Settled: the round's division, or each division the driver races in for a CoC-triggered rule, held where they race in none.
+- R49 Plurality, tie-break buttons and the decision message described an option by its drivers alone, leaving team lines out. Settled.
+- R50 The verdict output provided for one team row. Settled: a row per team, in the order the ticket lists them, carrying the infringement most often given its own drivers; no team row and no heading where the verdict gives none.
+- R51 "Live season" replaced throughout by the core specification's ongoing states.
+- R52 A CoC verdict reposting standings for a division that has raced no round: the opening classification's label.
+- R53 The championship and team revokes asked for a season a completed season cannot give; a held penalty is named by its ticket.
+- R54 Championship penalties upon the licence sheet — closed with no change; the verdicts and the standings carry them.
+- R55 A failed command reaches the steward log as well as the log channel, per core's new rule from #270.
