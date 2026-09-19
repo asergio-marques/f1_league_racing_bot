@@ -4,9 +4,12 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
+import discord
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -245,3 +248,159 @@ async def test_the_wipe_leaves_no_scratch_behind(db_path, tmp_path):
     await factory_reset_service.wipe(db_path, MagicMock())
 
     assert sorted(p.name for p in tmp_path.iterdir() if "fresh" in p.name) == []
+
+
+# ── The Discord clean-up ──────────────────────────────────────────────────
+
+BOT_ID = 1000
+MEMBER_ID = 2000
+
+
+class _Message:
+    def __init__(self, author_id: int, age: timedelta, channel=None) -> None:
+        self.author = SimpleNamespace(id=author_id)
+        self.created_at = NOW - age
+        self.channel = channel
+        self.deleted = False
+
+    async def delete(self) -> None:
+        self.deleted = True
+
+
+class _Channel:
+    def __init__(self, channel_id: int, name: str, messages=(), *, fail=None) -> None:
+        self.id = channel_id
+        self.name = name
+        self.messages = list(messages)
+        self.bulk: list[list] = []
+        self.gone = False
+        self._fail = fail
+
+    async def history(self, limit=None):
+        if self._fail is not None:
+            raise self._fail
+        for message in list(self.messages):
+            yield message
+
+    async def delete_messages(self, messages) -> None:
+        self.bulk.append(list(messages))
+        for message in messages:
+            message.deleted = True
+
+    async def delete(self, reason=None) -> None:
+        if self._fail is not None:
+            raise self._fail
+        self.gone = True
+
+
+def _guild(*channels):
+    by_id = {channel.id: channel for channel in channels}
+    return SimpleNamespace(get_channel=by_id.get)
+
+
+def _forbidden():
+    return discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "Missing Access")
+
+
+async def test_the_created_channels_are_deleted():
+    wizard = _Channel(40, "signup-driver")
+    guild = _guild(wizard)
+    targets = factory_reset_service.DiscordTargets(created=(40,), channels=())
+
+    outcome = await factory_reset_service.clean_discord(
+        guild, BOT_ID, targets, AsyncMock(), now=NOW
+    )
+
+    assert wizard.gone
+    assert outcome.channels_deleted == 1
+
+
+async def test_only_the_bot_s_messages_are_deleted():
+    mine = _Message(BOT_ID, timedelta(days=1))
+    theirs = _Message(MEMBER_ID, timedelta(days=1))
+    channel = _Channel(10, "results", [mine, theirs])
+
+    outcome = await factory_reset_service.clean_discord(
+        _guild(channel), BOT_ID,
+        factory_reset_service.DiscordTargets(created=(), channels=(10,)), AsyncMock(), now=NOW,
+    )
+
+    assert mine.deleted and not theirs.deleted
+    assert outcome.messages_deleted == 1
+
+
+async def test_young_messages_go_in_bulk_and_old_ones_singly():
+    young = [_Message(BOT_ID, timedelta(days=13)) for _ in range(3)]
+    old = _Message(BOT_ID, timedelta(days=15))
+    channel = _Channel(10, "results", [*young, old])
+
+    await factory_reset_service.clean_discord(
+        _guild(channel), BOT_ID,
+        factory_reset_service.DiscordTargets(created=(), channels=(10,)), AsyncMock(), now=NOW,
+    )
+
+    assert channel.bulk == [young]
+    assert old.deleted
+
+
+async def test_a_bulk_request_carries_at_most_a_hundred():
+    young = [_Message(BOT_ID, timedelta(hours=1)) for _ in range(250)]
+    channel = _Channel(10, "results", young)
+
+    outcome = await factory_reset_service.clean_discord(
+        _guild(channel), BOT_ID,
+        factory_reset_service.DiscordTargets(created=(), channels=(10,)), AsyncMock(), now=NOW,
+    )
+
+    assert [len(batch) for batch in channel.bulk] == [100, 100, 50]
+    assert outcome.messages_deleted == 250
+
+
+async def test_progress_names_each_channel_before_it_is_worked():
+    """So an interrupted run's last report names the channel it stopped in."""
+    first = _Channel(10, "results")
+    second = _Channel(11, "standings")
+    report = AsyncMock()
+
+    await factory_reset_service.clean_discord(
+        _guild(first, second), BOT_ID,
+        factory_reset_service.DiscordTargets(created=(), channels=(10, 11)), report, now=NOW,
+    )
+
+    reports = [call.args[0] for call in report.await_args_list]
+    assert "0 of 2" in reports[0] and "#results" in reports[0]
+    assert "1 of 2" in reports[1] and "#standings" in reports[1]
+    assert reports[-1].startswith("✅")
+
+
+async def test_a_channel_that_cannot_be_cleaned_is_reported_and_skipped():
+    locked = _Channel(10, "locked", fail=_forbidden())
+    mine = _Message(BOT_ID, timedelta(days=1))
+    open_channel = _Channel(11, "open", [mine])
+    report = AsyncMock()
+
+    outcome = await factory_reset_service.clean_discord(
+        _guild(locked, open_channel), BOT_ID,
+        factory_reset_service.DiscordTargets(created=(), channels=(10, 11)), report, now=NOW,
+    )
+
+    assert mine.deleted
+    assert outcome.done == 2
+    assert "#locked" in outcome.faults[0]
+    assert "#locked" in report.await_args_list[-1].args[0]
+
+
+async def test_a_channel_no_longer_there_is_passed_over():
+    outcome = await factory_reset_service.clean_discord(
+        _guild(), BOT_ID,
+        factory_reset_service.DiscordTargets(created=(40,), channels=(10,)), AsyncMock(),
+        now=NOW,
+    )
+
+    assert (outcome.done, outcome.channels_deleted, outcome.faults) == (2, 0, [])
+
+
+def test_the_final_report_fits_one_discord_message():
+    outcome = factory_reset_service.CleanOutcome(total=50, faults=["x" * 400] * 40)
+
+    assert len(factory_reset_service._finished(outcome)) < 2000

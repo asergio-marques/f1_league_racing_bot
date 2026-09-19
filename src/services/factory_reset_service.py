@@ -21,9 +21,12 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import discord
 
 from db.database import get_connection, run_migrations
 from services import backup_service
@@ -176,3 +179,138 @@ async def wipe(db_path: str, scheduler_service, bot=None) -> None:
 def _remove_database(path: Path) -> None:
     for suffix in ("", "-wal", "-shm", "-journal"):
         Path(f"{path}{suffix}").unlink(missing_ok=True)
+
+
+# ── The Discord clean-up ──────────────────────────────────────────────────
+
+#: Discord bulk-deletes only messages younger than fourteen days. A minute's margin keeps a
+#: message that ages past the line mid-run out of a bulk request that would then be refused.
+BULK_DELETE_AGE = timedelta(days=14) - timedelta(minutes=1)
+
+#: The most messages one bulk request takes.
+BULK_DELETE_BATCH = 100
+
+#: How many faults the final report names before it counts the rest.
+_FAULTS_SHOWN = 8
+
+Report = Callable[[str], Awaitable[None]]
+
+
+@dataclass
+class CleanOutcome:
+    """What the clean-up did, and where it stopped if it did not finish."""
+
+    total: int
+    done: int = 0
+    channels_deleted: int = 0
+    messages_deleted: int = 0
+    faults: list[str] = field(default_factory=list)
+
+
+async def clean_discord(
+    guild,
+    bot_user_id: int,
+    targets: DiscordTargets,
+    report: Report,
+    *,
+    now: datetime | None = None,
+) -> CleanOutcome:
+    """Delete the channels the bot created, then the bot's own messages everywhere else.
+
+    **Only the bot's messages are touched.** A member's message is never deleted, in any
+    channel; the author is checked message by message.
+
+    **Progress is reported as it goes, and before each channel as well as after it**, through
+    *report* — the command edits one direct message to the owner with it (decided
+    2026-09-19). A run can take far longer than an interaction lives: messages older than
+    fourteen days are deleted one request at a time, under Discord's rate limits. So if the
+    process stops part-way, the last report names the channel it was working in, and the
+    ones before it were finished. A channel that cannot be cleaned is reported and skipped
+    rather than ending the run.
+
+    Channels are visited in the order `gather_targets` gives, which is sorted, so a report
+    of where it stopped reads the same against a second run.
+    """
+    moment = now or datetime.now(timezone.utc)
+    outcome = CleanOutcome(total=len(targets.created) + len(targets.channels))
+
+    for channel_id in targets.created:
+        channel = guild.get_channel(channel_id)
+        if channel is not None:
+            await report(_progress(outcome, f"deleting #{channel.name}"))
+            try:
+                await channel.delete(reason="Factory reset")
+                outcome.channels_deleted += 1
+            except discord.HTTPException as exc:
+                outcome.faults.append(f"#{channel.name} could not be deleted: {exc}")
+        outcome.done += 1
+
+    for channel_id in targets.channels:
+        channel = guild.get_channel(channel_id)
+        if channel is not None and hasattr(channel, "history"):
+            await report(_progress(outcome, f"clearing #{channel.name}"))
+            try:
+                outcome.messages_deleted += await _delete_own_messages(
+                    channel, bot_user_id, moment
+                )
+            except discord.HTTPException as exc:
+                outcome.faults.append(f"#{channel.name} could not be cleared: {exc}")
+        outcome.done += 1
+
+    await report(_finished(outcome))
+    for fault in outcome.faults:
+        log.warning("factory reset: %s", fault)
+    log.info(
+        "factory reset: %d channel(s) deleted, %d message(s) deleted, %d fault(s)",
+        outcome.channels_deleted, outcome.messages_deleted, len(outcome.faults),
+    )
+    return outcome
+
+
+async def _delete_own_messages(channel, bot_user_id: int, now: datetime) -> int:
+    """Delete the bot's messages in *channel*: in bulk where Discord allows, singly where not."""
+    deleted = 0
+    batch: list = []
+    async for message in channel.history(limit=None):
+        if message.author.id != bot_user_id:
+            continue
+        if now - message.created_at < BULK_DELETE_AGE:
+            batch.append(message)
+            if len(batch) == BULK_DELETE_BATCH:
+                await channel.delete_messages(batch)
+                deleted += len(batch)
+                batch = []
+        else:
+            try:
+                await message.delete()
+                deleted += 1
+            except discord.NotFound:
+                pass  # gone already
+    if batch:
+        await channel.delete_messages(batch)
+        deleted += len(batch)
+    return deleted
+
+
+def _progress(outcome: CleanOutcome, doing: str) -> str:
+    return (
+        f"🧹 Factory reset: cleaning up Discord — {outcome.done} of {outcome.total} "
+        f"channel(s) done, now {doing}.\n"
+        f"If this message stops changing, the clean-up stopped there; every channel before "
+        f"it was finished."
+    )
+
+
+def _finished(outcome: CleanOutcome) -> str:
+    lines = [
+        f"✅ Factory reset: Discord cleaned up — {outcome.channels_deleted} channel(s) "
+        f"deleted and {outcome.messages_deleted} of the bot's message(s) deleted, across "
+        f"{outcome.total} channel(s)."
+    ]
+    if outcome.faults:
+        # Held under Discord's 2,000 characters for one message; the host log has them all.
+        lines.append("These could not be cleaned:")
+        lines.extend(f"• {fault[:150]}" for fault in outcome.faults[:_FAULTS_SHOWN])
+        if len(outcome.faults) > _FAULTS_SHOWN:
+            lines.append(f"…and {len(outcome.faults) - _FAULTS_SHOWN} more, in the host log.")
+    return "\n".join(lines)
