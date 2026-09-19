@@ -166,8 +166,14 @@ def _interaction(*, guild=True):
 
 
 def _patches(
-    *, apply_result=None, announce_error=None, attendance_errors=None, sanction_outcome=None
+    *, apply_result=None, announce_error=None, attendance_errors=None, sanction_outcome=None,
+    repost_faults=None,
 ):
+    """*repost_faults* are the lines the results cascade could not post (#237).
+
+    Both repost functions return a list of faults rather than ``None``, so the stubs must
+    too: the approvals now add what comes back to what they report.
+    """
     attendance_errors = attendance_errors or {}
     return {
         "snapshot": patch(
@@ -182,10 +188,12 @@ def _patches(
             new=AsyncMock(return_value=apply_result if apply_result is not None else [{}]),
         ),
         "repost": patch(
-            "services.results_post_service.delete_and_repost_final_results", new=AsyncMock()
+            "services.results_post_service.delete_and_repost_final_results",
+            new=AsyncMock(return_value=list(repost_faults or [])),
         ),
         "subsequent": patch(
-            "services.results_post_service.repost_subsequent_standings", new=AsyncMock()
+            "services.results_post_service.repost_subsequent_standings",
+            new=AsyncMock(return_value=[]),
         ),
         "banner": patch(
             "services.verdict_announcement_service.banner_for_round", new=MagicMock()
@@ -670,3 +678,90 @@ async def test_a_failing_appeals_audit_does_not_stop_the_close(tmp_path):
     stubs = await _run(finalize_appeals_review, state)
 
     stubs["close"].assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# A repost that did not land reaches the league (#237)
+#
+# The cascade deletes each message before posting its replacement, so a channel that has
+# gone missing leaves the round with nothing posted. It used to be swallowed entirely: the
+# approval logged `| Success` and the manager was told the same.
+# ---------------------------------------------------------------------------
+
+FAULT = "**Alpha** — the results channel <#501> no longer exists."
+
+
+async def test_a_repost_that_could_not_post_tells_the_manager(tmp_path):
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, staged=[_penalty()])
+    interaction = _interaction()
+
+    await _run(
+        finalize_penalty_review, state, interaction, repost_faults=[FAULT]
+    )
+
+    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
+    assert FAULT in said
+    assert "/results rounds sync" in said
+
+
+async def test_a_repost_that_could_not_post_reaches_the_log_channel(tmp_path):
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, staged=[_penalty()])
+
+    await _run(finalize_penalty_review, state, repost_faults=[FAULT])
+
+    logged = _logged(state)
+    assert "RESULTS_REPOST | Incomplete" in logged
+    assert FAULT in logged
+
+
+async def test_the_approval_is_logged_as_incomplete_when_the_repost_failed(tmp_path):
+    """The audit line says what the approval achieved, not what it attempted."""
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, staged=[_penalty()])
+
+    await _run(finalize_penalty_review, state, repost_faults=[FAULT])
+
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in _logged(state)
+
+
+async def test_the_approval_is_logged_as_success_when_everything_posted(tmp_path):
+    """The counterpart, so `| Incomplete` cannot be the answer to everything."""
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, staged=[_penalty()])
+
+    await _run(finalize_penalty_review, state)
+
+    logged = _logged(state)
+    assert "PENALTY_REVIEW_APPROVED | Success" in logged
+    assert "RESULTS_REPOST | Incomplete" not in logged
+
+
+async def test_a_missing_guild_is_reported_rather_than_skipped(tmp_path):
+    """`if guild:` used to skip both reposts without a word (#237)."""
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, staged=[_penalty()])
+
+    await _run(finalize_penalty_review, state, _interaction(guild=False))
+
+    logged = _logged(state)
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in logged
+    assert "could not be reached" in logged
+
+
+async def test_the_appeals_approval_reports_an_unpostable_repost(tmp_path):
+    """The same, on the approval that takes a round to FINAL."""
+    db_path = await _make_db(
+        tmp_path, name="appeals_unpostable", round_status="AWAITING_APPEAL_VERDICTS"
+    )
+    state = _state(db_path, appeals=[_penalty()])
+    interaction = _interaction()
+
+    await _run(finalize_appeals_review, state, interaction, repost_faults=[FAULT])
+
+    logged = _logged(state)
+    assert "APPEALS_REVIEW_APPROVED | Incomplete" in logged
+    assert FAULT in logged
+    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
+    assert "/results standings sync" in said
