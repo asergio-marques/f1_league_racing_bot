@@ -685,7 +685,7 @@
 ### Trigger
 - <NEW COMMAND> A "steward conduct start" command will be made available to the head steward and the temporary head steward, and to every steward where "steward conduct steward-start-toggle" allows it, which will have as input one or more members of the server holding the base role, whether or not they are drivers, so that a CoC investigation is opened against them.
 - When valid usage, a form shall be shown, collecting the following:
-  - Involved users - Mandatory - 0..n mentions - Other users directly or indirectly involved in the event being investigated, whose footage or evidence may be of use to the stewarding team's deliberations.
+  - Involved users - Optional - 0..n mentions - Further users to be investigated alongside those the command named. Each becomes an involved user of the investigation, and is given a line upon the ballot as they are.
   - Complaint - Mandatory - String - Full description of the event being investigated by the stewarding team.
   - Evidence files - Optional - 0..5 media (image or video) - One or multiple images or video files that provide basis for the claims in the complaint.
     - Evidence files are attached as part of lodging the ticket, before it is filed.
@@ -966,8 +966,8 @@
   - While the aspect is off, or where generating the image fails, the licence sheet shall be posted as text.
 - The image output will be similar to that of the attendance sheet, and consistent with the visual outputs the image module already draws. As every one of them does, it shall admit the division logo and the per-tier colours the image module provides, and a league's own logo is artwork of its template rather than a field. The following data elements shall be allowed:
   - Season, division - Mandatory
-  - After Round X - Mandatory
-  - Grand Prix name - Optional
+  - Occasion - Mandatory - The occasion the sheet stands at, as text: "After Round <n>" naming the latest round of the division that has been raced, whatever caused the sheet to be posted, a Code of Conduct verdict or a revocation included; and "Opening Licences" where no round of the division has been raced yet
+  - Grand Prix name - Optional - The round the occasion names, and left out upon an opening sheet
   - Type of post - Mandatory, always "Licence Information", can be hardcoded
   - Table-list of drivers - Mandatory, with the following columns:
     - Driver display name - Mandatory
