@@ -22,6 +22,14 @@ configuration it does not use — the module-output rule, applied to reads rathe
 republishing a forecast the division has already read, and every restart would otherwise post
 the whole season's forecasts afresh.
 
+**Only a round still to be run is recovered** (issue #272). A cancelled round, a round of a
+cancelled division and a round whose race time has passed are passed over, however their phases
+stand — a forecast for any of them tells the division nothing, and a cancelled round's division
+was told none would follow. The race time is the marker rather than the round's status, because
+a round leaves *not run* only by a scheduled job, and one that fell due while the bot was down
+has been thrown away. The tests that mean "every phase is overdue" therefore seed ``RACE_SOON``,
+not a past date, which the recovery now skips outright.
+
 **Mystery rounds are excluded at the query.** They have no phases to recover — their one notice
 is posted by a different path — so including them would fire a forecast for a round whose whole
 point is that there isn't one.
@@ -301,6 +309,32 @@ async def test_a_season_not_running_recovers_nothing(tmp_path):
     )
 
     assert await _recover(_bot(db_path)) == []
+
+
+async def test_a_round_already_raced_recovers_nothing(tmp_path):
+    """Every horizon has passed and no phase was performed, but so has the race: a
+    forecast now would tell the division nothing, and its record would read as though it
+    had stood. The race time decides it, not the round's status, which nothing moves off
+    *not run* while the bot is down."""
+    db_path = await _make_db(tmp_path, rounds=((1, -1, False, False, False, "NORMAL"),))
+
+    assert await _recover(_bot(db_path)) == []
+
+
+async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
+    """The skip is per round: a raced round does not end the sweep for the one still to
+    be run."""
+    db_path = await _make_db(
+        tmp_path,
+        rounds=(
+            (1, -1, False, False, False, "NORMAL"),
+            (2, RACE_SOON, False, False, False, "NORMAL"),
+        ),
+    )
+
+    fired = await _recover(_bot(db_path))
+
+    assert sorted(fired) == [(1, 2), (2, 2), (3, 2)]
 
 
 async def test_a_cancelled_round_recovers_nothing(tmp_path):
