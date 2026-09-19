@@ -290,11 +290,19 @@ async def _withdraw_call(bot, round_id: int, division_id: int) -> str | None:
     """
     from services.rsvp_service import withdraw_rsvp_call
 
+    undeleted: list[str] = []
     try:
-        await withdraw_rsvp_call(round_id, division_id, bot)
+        await withdraw_rsvp_call(round_id, division_id, bot, undeleted=undeleted)
     except Exception as exc:  # noqa: BLE001 — one call never stops the rest
         log.exception("cancellation notice: could not take down the call of round %s", round_id)
         return f"could not be taken down ({exc})"
+    if undeleted:
+        # Left standing, so a league manager must delete it by hand; its buttons refuse a
+        # cancelled round's answers in the meantime.
+        return (
+            f"{len(undeleted)} message(s) could not be deleted and must be removed by hand "
+            f"(ids {', '.join(undeleted)})"
+        )
     return None
 
 

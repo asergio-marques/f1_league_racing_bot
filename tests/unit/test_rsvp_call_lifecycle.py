@@ -296,6 +296,54 @@ async def test_a_channel_the_bot_can_no_longer_see_still_clears_the_row(tmp_path
     assert await _embed_rows(db_path) == 0
 
 
+async def test_a_message_discord_refuses_to_delete_is_reported(tmp_path):
+    """A cancellation must be able to tell the admin a call is still standing (#175). The row
+    goes all the same, as it always has."""
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path)
+    channel = _make_channel()
+    channel.fetch_message = AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403), "missing permissions")
+    )
+    bot = _make_bot(db_path, channel)
+    undeleted: list[str] = []
+
+    assert await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, undeleted=undeleted) is True
+
+    assert undeleted == [str(CALL_MSG_ID)]
+    assert await _embed_rows(db_path) == 0
+
+
+async def test_a_message_already_gone_is_not_reported(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(db_path)
+    channel = _make_channel()
+    channel.fetch_message = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404), "unknown message")
+    )
+    bot = _make_bot(db_path, channel)
+    undeleted: list[str] = []
+
+    await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, undeleted=undeleted)
+
+    assert undeleted == []
+
+
+async def test_a_channel_gone_reports_every_message_in_it(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _seed_embed_row(
+        db_path, last_notice=LAST_NOTICE_MSG_ID, distribution=DISTRIBUTION_MSG_ID
+    )
+    bot = _make_bot(db_path, channel=None)
+    undeleted: list[str] = []
+
+    await withdraw_rsvp_call(ROUND_ID, DIVISION_ID, bot, undeleted=undeleted)
+
+    assert sorted(undeleted) == sorted(
+        str(m) for m in (CALL_MSG_ID, LAST_NOTICE_MSG_ID, DISTRIBUTION_MSG_ID)
+    )
+
+
 async def test_withdrawing_leaves_every_recorded_answer_untouched(tmp_path):
     """Withdrawal is half of a repost, and the answers are what the repost carries over."""
     db_path = await _make_db(tmp_path)

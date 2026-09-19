@@ -621,3 +621,22 @@ async def test_an_audit_that_cannot_be_read_still_lets_the_call_come_down(
 
     assert [f.target for f in report.failures] == ["check-in audit"]
     assert CALL_MSG in deleted
+
+
+async def test_a_call_discord_would_not_delete_is_named_for_removal_by_hand(tmp_path):
+    """The row goes regardless, so nothing would take the call down later; the admin must
+    be told it is still standing."""
+    db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
+    bot = _with_attendance(_bot(db_path))
+    _call_channel(bot, refuse=True)
+    guild, _ = _guild()
+
+    report = await cns.announce_cancellation(
+        bot, guild, [_division()], scope=cns.SCOPE_ROUND, round_ids=frozenset({ROUND_ID})
+    )
+
+    assert [f.target for f in report.failures] == ["check-in call"]
+    reason = report.failures[0].reason
+    assert "3 message(s) could not be deleted" in reason
+    assert str(CALL_MSG) in reason

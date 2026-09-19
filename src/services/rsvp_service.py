@@ -617,10 +617,21 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
 # ── withdraw_rsvp_call / repost_rsvp_call ─────────────────────────────────────
 
 
-async def withdraw_rsvp_call(round_id: int, division_id: int, bot) -> bool:  # type: ignore[type-arg]
+async def withdraw_rsvp_call(
+    round_id: int,
+    division_id: int,
+    bot,  # type: ignore[no-untyped-def]
+    *,
+    undeleted: list[str] | None = None,
+) -> bool:
     """Take down the check-in call posted for *round_id*, and everything posted beside it.
 
     Returns True where a call was standing and has been removed, False where there was none.
+
+    *undeleted*, where given, collects the id of every message that could not be deleted — the
+    channel gone, or Discord refusing — so a caller that must say so can. A message already
+    deleted, by hand or otherwise, is not among them: it is gone, which is what was asked. The
+    row goes either way, since nothing would take the messages down again from it.
 
     `run_rsvp_notice` clears a division's *previous* rounds' messages and deliberately skips the
     round it is posting for, so a round whose call is posted twice would end up with both
@@ -635,20 +646,30 @@ async def withdraw_rsvp_call(round_id: int, division_id: int, bot) -> bool:  # t
     if stored is None:
         return False
 
-    channel = bot.get_channel(int(stored.channel_id))
-    if channel is not None:
+    posted = [
+        message_id
         for message_id in (
             stored.message_id,
             stored.last_notice_msg_id,
             stored.distribution_msg_id,
-        ):
-            if message_id is None:
-                continue
+        )
+        if message_id is not None
+    ]
+    channel = bot.get_channel(int(stored.channel_id))
+    if channel is None:
+        if undeleted is not None:
+            undeleted.extend(str(m) for m in posted)
+    else:
+        for message_id in posted:
             try:
                 message = await channel.fetch_message(int(message_id))
                 await message.delete()
+            except discord.NotFound:
+                pass  # Already gone — which is what was asked.
             except discord.HTTPException:
-                pass  # Already gone, or no permission — the row goes either way.
+                # No permission, or Discord failing. The row goes either way.
+                if undeleted is not None:
+                    undeleted.append(str(message_id))
 
     async with get_connection(bot.db_path) as db:
         await db.execute(
