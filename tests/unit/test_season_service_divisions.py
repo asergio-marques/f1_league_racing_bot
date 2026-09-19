@@ -1,8 +1,7 @@
 """The division and season writes in `SeasonService` that nothing else exercised.
 
-Issue #208. `duplicate_division`, `add_division`'s tier checks, `load_all_setup_seasons` and
-`increment_previous_season_number` were uncovered at the service level — the cogs that call
-them are tested with the service stubbed, which is the right shape for the cogs and left the
+Issue #208. `duplicate_division`, `add_division`'s tier checks and `load_all_setup_seasons` were
+uncovered at the service level — the cogs that call them are tested with the service stubbed, which is the right shape for the cogs and left the
 SQL itself unread.
 
 **A tier is unique within a season, and zero means "not yet tiered".** Both `add_division` and
@@ -258,23 +257,3 @@ async def test_a_setup_season_with_no_divisions_rebuilds_empty(tmp_path):
     [season] = await service.load_all_setup_seasons()
 
     assert season["divisions"] == []
-
-
-# ---------------------------------------------------------------------------
-# The previous season number
-# ---------------------------------------------------------------------------
-
-
-async def test_the_previous_season_number_is_incremented(tmp_path):
-    db_path = await _make_db(tmp_path, name="increment")
-    service = SeasonService(db_path)
-
-    await service.increment_previous_season_number()
-    await service.increment_previous_season_number()
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT previous_season_number FROM server_configs WHERE server_id = ?",
-            (SERVER_ID,),
-        )
-        assert (await cursor.fetchone())[0] == 2

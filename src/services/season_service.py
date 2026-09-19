@@ -467,16 +467,6 @@ class SeasonService:
 
         return result
 
-    async def increment_previous_season_number(self) -> None:
-        """Increment server_configs.previous_season_number by 1."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE server_configs "
-                "SET previous_season_number = previous_season_number + 1 "
-                "",
-            )
-            await db.commit()
-
     async def validate_division_tiers(self, season_id: int) -> None:
         """Validate division tiers form a gapless sequence 1..N.
 
