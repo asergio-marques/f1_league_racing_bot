@@ -8,10 +8,9 @@ two, those returned an arbitrary one — `/test-mode roster add` seated mock dri
 season's divisions while `/season placements-review` drew the other's, giving a full roster listing
 beside an empty lineup with neither command reporting a fault.
 
-Migration 049 makes the state impossible rather than teaching each reader a precedence.
-It also repairs a database that already holds the state, which is the case that matters
-for a bot that has been running: an ACTIVE season is kept over a SETUP one, since a
-season being *run* outranks a draft of the next and the draft can be rebuilt.
+The schema makes the state impossible rather than teaching each reader a precedence. (The
+migration that introduced it also repaired databases already holding two; that history went
+with the squash of the chain into one baseline, #254.)
 
 The archive is deliberately untouched — a league keeps every completed and cancelled
 season it has ever had, and the constraint covers only the live rows.
@@ -19,7 +18,6 @@ season it has ever had, and the constraint covers only the live rows.
 from __future__ import annotations
 
 import os
-import sqlite3
 import sys
 
 import aiosqlite
@@ -28,7 +26,6 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
-from tests.support.migration_steps import migrate_before, run_migrations_through  # noqa: E402
 
 SERVER_ID = 4242
 
@@ -103,93 +100,6 @@ async def test_a_league_keeps_every_season_of_its_history(db_path):
             "SELECT COUNT(*) FROM seasons"
         )
         assert (await cursor.fetchone())[0] == 5
-
-
-# ── Repairing a database that already breaks the rule ──────────────────────
-
-
-def _schema_before_049(path):
-    """Build the schema as it stood before migration 049, and dirty it.
-
-    Every migration before 049 and none after it — a later one may have rebuilt the very table
-    049 indexes (068 took its server_id away) — built once per session and copied (#252).
-    """
-    migrate_before(path, "049")
-    return sqlite3.connect(path)
-
-
-@pytest.mark.parametrize(
-    "rows, survivor",
-    [
-        # (id, status) pairs → the id expected to remain live.
-        ([(10, "ACTIVE"), (11, "SETUP")], 10),   # the running season outranks the draft
-        ([(10, "SETUP"), (11, "ACTIVE")], 11),   # whichever order they were written in
-        ([(10, "SETUP"), (11, "SETUP")], 11),    # among equals, the newest
-        ([(10, "ACTIVE"), (11, "ACTIVE")], 11),
-    ],
-)
-async def test_the_migration_repairs_a_database_that_already_holds_two(
-    tmp_path, rows, survivor
-):
-    path = str(tmp_path / "dirty.db")
-    con = _schema_before_049(path)
-    con.execute(
-        "INSERT INTO server_configs (server_id, interaction_role_id, "
-        "interaction_channel_id, log_channel_id) VALUES (?, 1, 2, 3)",
-        (SERVER_ID,),
-    )
-    for season_id, status in rows:
-        con.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (?, ?, '2026-03-01', ?, 1)",
-            (season_id, SERVER_ID, status),
-        )
-    con.commit()
-    con.close()
-
-    await run_migrations_through(path, "049_one_live_season_per_server.sql")
-
-    async with get_connection(path) as db:
-        cursor = await db.execute(
-            "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE')"
-        )
-        live = [r[0] for r in await cursor.fetchall()]
-        cursor = await db.execute("SELECT COUNT(*) FROM seasons")
-        total = (await cursor.fetchone())[0]
-
-    assert live == [survivor]
-    # The losing season is cancelled, never deleted: rounds, teams and assignments hang
-    # off it behind foreign keys that do not cascade.
-    assert total == len(rows)
-
-
-async def test_the_repair_leaves_the_archive_alone(tmp_path):
-    path = str(tmp_path / "dirty_archive.db")
-    con = _schema_before_049(path)
-    con.execute(
-        "INSERT INTO server_configs (server_id, interaction_role_id, "
-        "interaction_channel_id, log_channel_id) VALUES (?, 1, 2, 3)",
-        (SERVER_ID,),
-    )
-    for season_id, status in ((8, "COMPLETED"), (9, "CANCELLED"), (10, "ACTIVE"), (11, "SETUP")):
-        con.execute(
-            "INSERT INTO seasons (id, server_id, start_date, status, season_number) "
-            "VALUES (?, ?, '2026-03-01', ?, 1)",
-            (season_id, SERVER_ID, status),
-        )
-    con.commit()
-    con.close()
-
-    await run_migrations_through(path, "049_one_live_season_per_server.sql")
-
-    async with get_connection(path) as db:
-        cursor = await db.execute("SELECT id, status FROM seasons ORDER BY id")
-        rows = {r[0]: r[1] for r in await cursor.fetchall()}
-
-    assert rows[8] == "COMPLETED", "an archived season must not be touched"
-    assert rows[9] == "CANCELLED"
-    assert rows[10] == "ACTIVE", "the running season is the one kept"
-    assert rows[11] == "CANCELLED"
 
 
 async def test_the_migration_is_idempotent(tmp_path):

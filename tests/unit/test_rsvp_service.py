@@ -631,7 +631,7 @@ class TestStandbyClassification:
 
 
 async def _make_attendance_db(tmp_path) -> str:
-    """Create DB with attendance tables (mirrors migration 031_attendance_rsvp.sql)."""
+    """Create DB with attendance tables (mirrors the schema's attendance tables)."""
     path = str(tmp_path / "att_crud.db")
     async with aiosqlite.connect(path) as db:
         await db.executescript(

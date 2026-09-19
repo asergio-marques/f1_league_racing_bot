@@ -155,6 +155,13 @@ erroring. A skip is
 not itself a build failure, but it is a gap in what "the suite passes" actually verified — treat
 a new one as something to justify, not a convenient way to silence a broken test.
 
+**Where the Windows job spends its time is measured, not guessed** (decided 2026-09-19). The
+Windows job runs some four times as long as the Linux one, spread thinly over thousands of
+tests rather than in any slow one. Both jobs keep their JUnit report as an artifact for 30
+days, and `python3 tools/compare_test_timings.py --run <run id>` pairs every test across the
+two and groups the extra Windows time by file and by whether the file raises a database or is
+async. Read that before trying to make the Windows job faster.
+
 **The floor applies to each module as well as to `src/` as a whole** (decided 2026-09-16,
 issue #208 — it reverses the earlier "reported, never gated"). One number for the whole
 repository is something a module with no tests at all can sit inside unnoticed, which issue
@@ -240,11 +247,16 @@ already holds data, or the set of migration files differs from the one a templat
 from. Do not sidestep it by opening a connection and running the SQL yourself: that
 reintroduces the cost it exists to remove. Applying every migration and committing after each
 runs to some forty flushes per database, which Linux absorbs and Windows does not — it is
-what took the `windows-latest` job from three minutes to over an hour. A test that needs the
-schema as it stood **before** a migration calls `migrate_before` in
-`tests/support/migration_steps.py`, which caches the same way; never loop over the migrations
-directory yourself, which four files did until issue #252 timed the Windows job out, and which
-`tests/unit/test_migration_steps.py` now refuses.
+what took the `windows-latest` job from three minutes to over an hour. Never loop over the
+migrations directory yourself, which four files did until issue #252 timed the Windows job
+out, and which `tests/unit/test_migration_steps.py` now refuses.
+
+**The schema starts from one baseline** (decided 2026-09-19, issue #254). The 61 migrations
+that built it before go-live were squashed into `src/db/migrations/001_baseline.sql`; git keeps
+them, and no test of a historic migration remains. Until go-live, a schema change edits the
+baseline. From go-live on, every schema change is a new migration numbered after it, with a
+test of its own, and no applied file is ever edited. `run_migrations` refuses a database that
+records a migration the bot does not carry. The docstring there holds the detail.
 
 **A test that needs Inkscape carries the `rasteriser` marker and does not run in CI.** Inkscape
 is a separate program, too heavy to install on a hosted runner for what it returns there, so

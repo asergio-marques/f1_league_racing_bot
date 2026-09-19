@@ -1,113 +1,34 @@
-"""`migrate_before` builds each schema once per session and copies it — issue #252.
+"""No test builds the schema by applying the migration files itself — issues #252 and #254.
 
-Thirty-five tests each raising the migration chain afresh took the Windows CI job past its
-timeout: `executescript` commits every statement on its own, and a Windows runner pays for
-each one. These pin the cache that removed that cost, and that a copy is the schema a fresh
-build makes.
+Four test files once looped over the migrations directory, raising the schema afresh in every
+test and skipping `tests/conftest.py`'s template, which is how the Windows job came to time
+out (#252). Since the chain was squashed into one baseline (#254) there is no older schema to
+build: every test takes the schema from `run_migrations`, which the template makes cheap.
 """
 from __future__ import annotations
 
-import sqlite3
-from unittest.mock import patch
-
-import pytest
-
-from tests.support import migration_steps
-from tests.support.migration_steps import migrate_before
+from pathlib import Path
 
 
-def _schema(db_path: str) -> list[tuple]:
-    db = sqlite3.connect(db_path)
-    try:
-        return db.execute(
-            "SELECT type, name, sql FROM sqlite_master WHERE name != 'schema_migrations' "
-            "ORDER BY type, name"
-        ).fetchall()
-    finally:
-        db.close()
+def test_no_test_builds_the_schema_from_the_migration_files():
+    """A file that lists the migrations directory and runs `executescript` on what it reads
+    from a file is building the schema by hand; `run_migrations` is the one way to raise it.
+    An `executescript` of SQL written in the test itself — seeding rows, standing up an old
+    database to be refused — is not."""
+    import re
 
-
-def _applied(db_path: str) -> list[str]:
-    db = sqlite3.connect(db_path)
-    try:
-        return [r[0] for r in db.execute("SELECT version FROM schema_migrations ORDER BY version")]
-    finally:
-        db.close()
-
-
-@pytest.fixture
-def fresh_cache(monkeypatch):
-    """An empty cache, so a test sees the first build rather than another test's."""
-    monkeypatch.setattr(migration_steps, "_BEFORE", {})
-
-
-def test_a_schema_before_a_migration_is_built_once_per_session(tmp_path, fresh_cache):
-    real = migration_steps._build_before
-    with patch.object(migration_steps, "_build_before", side_effect=real) as build:
-        migrate_before(str(tmp_path / "a.db"), "049")
-        migrate_before(str(tmp_path / "b.db"), "049")
-
-    assert build.call_count == 1
-    assert _schema(str(tmp_path / "a.db")) == _schema(str(tmp_path / "b.db"))
-
-
-def test_a_copy_holds_the_same_schema_as_a_fresh_build(tmp_path, fresh_cache):
-    migrate_before(str(tmp_path / "warm.db"), "061")
-    migrate_before(str(tmp_path / "copy.db"), "061")
-    files = [f for f in migration_steps._files() if f < "061"]
-    migration_steps._build_before(str(tmp_path / "fresh.db"), "061", files)
-
-    assert _schema(str(tmp_path / "copy.db")) == _schema(str(tmp_path / "fresh.db"))
-
-
-def test_each_version_gets_a_schema_of_its_own(tmp_path, fresh_cache):
-    migrate_before(str(tmp_path / "049.db"), "049")
-    migrate_before(str(tmp_path / "061.db"), "061")
-
-    assert _schema(str(tmp_path / "049.db")) != _schema(str(tmp_path / "061.db"))
-    assert not any(v.startswith("061") for v in _applied(str(tmp_path / "061.db")))
-
-
-def test_the_copy_records_what_it_applied(tmp_path, fresh_cache):
-    """So `run_migrations_through` carries on from the copy rather than starting again."""
-    migrate_before(str(tmp_path / "a.db"), "053")
-
-    assert _applied(str(tmp_path / "a.db")) == [
-        f for f in migration_steps._files() if f < "053"
-    ]
-
-
-def test_a_target_holding_data_is_refused(tmp_path):
-    target = tmp_path / "seeded.db"
-    db = sqlite3.connect(str(target))
-    db.execute("CREATE TABLE kept (x)")
-    db.commit()
-    db.close()
-
-    with pytest.raises(ValueError):
-        migrate_before(str(target), "049")
-
-
-def test_no_test_builds_the_migration_chain_by_hand():
-    """#252. Four files had each written their own loop over the migrations directory,
-    raising the chain afresh in every test and skipping every template — which is how the
-    Windows job came to time out. A schema before a migration comes from `migrate_before`;
-    the full schema from `run_migrations`. A file that lists the migrations directory and
-    runs `executescript` is doing neither."""
-    from pathlib import Path
-
+    reads_a_file = re.compile(r"executescript\(\s*\w+\.read(?:_text)?\(")
     tests_root = Path(__file__).resolve().parents[1]
-    allowed = {tests_root / "support" / "migration_steps.py"}
     offenders = sorted(
         str(path.relative_to(tests_root))
         for path in tests_root.rglob("*.py")
-        if path not in allowed
-        and path != Path(__file__).resolve()
-        and "executescript" in (text := path.read_text(encoding="utf-8"))
+        if path != Path(__file__).resolve()
+        and reads_a_file.search(text := path.read_text(encoding="utf-8"))
         and "listdir(" in text
         and "migrations" in text.lower()
     )
 
     assert offenders == [], (
-        "these build the migration chain by hand; use migrate_before: " + ", ".join(offenders)
+        "these build the schema from the migration files; use run_migrations: "
+        + ", ".join(offenders)
     )

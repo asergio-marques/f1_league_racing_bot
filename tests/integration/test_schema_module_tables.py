@@ -1,8 +1,8 @@
-"""Integration test for migration 009_module_system.sql — T033.
+"""The module system's tables and columns, in the schema as it stands.
 
-Verifies that the full migration chain (001–009) applies cleanly,
-that all expected new tables exist, that forecast_channel_id is nullable
-on divisions, and that server_configs has the new boolean columns defaulting to 0.
+Verifies that the signup module's tables exist, that forecast_channel_id is nullable on
+divisions, and that server_configs has the module flags defaulting to 0. First written for
+migration 009 (T033); since the squash into one baseline (#254) it checks today's schema.
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 @pytest.mark.asyncio
-async def test_migration_009_applies_cleanly() -> None:
-    """Migration chain through 009 must apply without error."""
+async def test_the_signup_module_tables_exist() -> None:
+    """The schema holds the signup module's tables."""
     from db.database import run_migrations, get_connection
 
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -40,7 +40,7 @@ async def test_migration_009_applies_cleanly() -> None:
             "signup_availability_slots",
         }
         assert expected_new.issubset(tables), (
-            f"Missing tables after migration 009: {expected_new - tables}"
+            f"Missing tables: {expected_new - tables}"
         )
     finally:
         os.unlink(db_path)
@@ -48,7 +48,7 @@ async def test_migration_009_applies_cleanly() -> None:
 
 @pytest.mark.asyncio
 async def test_forecast_channel_id_is_nullable() -> None:
-    """divisions.forecast_channel_id must accept NULL after migration."""
+    """divisions.forecast_channel_id must accept NULL."""
     from db.database import run_migrations, get_connection
 
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:

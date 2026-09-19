@@ -11,7 +11,6 @@ import os
 import sqlite3
 import sys
 
-import aiosqlite
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -26,22 +25,8 @@ from models.season import (  # noqa: E402
     status_of_stage,
 )
 from services.season_service import SeasonService  # noqa: E402
-from tests.support.migration_steps import migrate_before  # noqa: E402
 
 SERVER_ID = 2200
-_MIGRATIONS = os.path.join(os.path.dirname(__file__), "..", "..", "src", "db", "migrations")
-_MIGRATION_057 = os.path.join(_MIGRATIONS, "057_season_lifecycle.sql")
-
-
-async def _schema_before_057(db) -> None:
-    """Ready a connection opened on a schema `migrate_before(path, "057")` raised.
-
-    Deliberately not `run_migrations`: the rows have to be written before 057 runs, which the
-    full schema template cannot stop short of. The chain itself is built once per session and
-    copied (#252).
-    """
-    # Migration 001 turns foreign keys on; the rows seeded here stand alone.
-    await db.execute("PRAGMA foreign_keys = OFF")
 
 
 @pytest.fixture
@@ -99,34 +84,6 @@ def test_every_stage_names_its_transitions():
 
 
 # ── The migration and its triggers ──────────────────────────────────────────────────
-
-
-async def test_migration_backfills_the_stage_of_existing_seasons(tmp_path):
-    """Seasons already stored take the stage their status implies."""
-    path = str(tmp_path / "pre_057.db")
-    migrate_before(path, "057")
-    async with aiosqlite.connect(path) as db:
-        await _schema_before_057(db)
-        await db.executescript(
-            """
-            INSERT INTO seasons (server_id, start_date, status) VALUES
-                (1, '2026-01-01', 'SETUP'),
-                (2, '2026-01-01', 'ACTIVE'),
-                (3, '2026-01-01', 'COMPLETED'),
-                (4, '2026-01-01', 'CANCELLED');
-            """
-        )
-        with open(_MIGRATION_057, encoding="utf-8") as fh:
-            await db.executescript(fh.read())
-        cursor = await db.execute("SELECT status, stage FROM seasons ORDER BY id")
-        rows = [tuple(r) for r in await cursor.fetchall()]
-
-    assert rows == [
-        ("SETUP", "PLACEMENTS"),
-        ("ACTIVE", "ONGOING"),
-        ("COMPLETED", "COMPLETED"),
-        ("CANCELLED", "CANCELLED"),
-    ]
 
 
 @pytest.mark.parametrize(

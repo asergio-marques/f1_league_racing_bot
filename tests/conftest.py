@@ -61,12 +61,11 @@ def _install_template_migrations() -> None:
     So the migrations run once and the finished file is copied thereafter. Two cases must
     still migrate in earnest, and both are recognised rather than listed by name:
 
-    - **A target that already holds something.** `test_migration_043` upgrades a populated
-      042-era database, and `test_database` proves that a second run changes nothing. Both
-      would be destroyed by a copy.
-    - **A different set of migration files.** `test_migration_043` builds its 042 database
-      by hiding the newest migration from the directory and migrating without it, so a
-      template raised from the full set would be the wrong schema entirely. The templates
+    - **A target that already holds something.** `test_database` proves that a second run
+      changes nothing, which a copy over the first would destroy.
+    - **A different set of migration files.** A test that hides a migration from the
+      directory, as the historic-migration tests did before the chain was squashed into one
+      baseline (#254), needs the schema those files make, not the full set's. The templates
       are therefore keyed on the set of files each was built from, and a set never seen
       before gets its own.
 

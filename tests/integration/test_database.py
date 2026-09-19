@@ -80,7 +80,6 @@ async def test_run_migrations_creates_tables() -> None:
             "lap_records",
         }
         assert expected.issubset(tables), f"Missing tables: {expected - tables}"
-        assert "track_rpc_params" not in tables, "track_rpc_params should have been dropped by migration 029"
     finally:
         _remove_database(db_path)
 
@@ -112,6 +111,50 @@ async def test_run_migrations_idempotent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_database_from_before_the_baseline_is_refused_untouched(tmp_path) -> None:
+    """#254. A database the 61-file chain built records `001_initial.sql` and the rest;
+    applying the baseline over it would fail part-way. It is refused before anything is
+    written, the journal mode included, and names what it found."""
+    from db.database import DatabasePredatesBaselineError
+
+    db_path = str(tmp_path / "old.db")
+    db = sqlite3.connect(db_path)
+    db.executescript(
+        """
+        CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL);
+        INSERT INTO schema_migrations VALUES ('001_initial.sql', '2026-04-21');
+        CREATE TABLE server_configs (server_id INTEGER PRIMARY KEY);
+        """
+    )
+    db.commit()
+    before = db.execute("SELECT type, name, sql FROM sqlite_master ORDER BY name").fetchall()
+    mode = db.execute("PRAGMA journal_mode").fetchone()
+    db.close()
+
+    with pytest.raises(DatabasePredatesBaselineError, match="001_initial.sql"):
+        await run_migrations(db_path)
+
+    db = sqlite3.connect(db_path)
+    try:
+        assert db.execute("SELECT type, name, sql FROM sqlite_master ORDER BY name").fetchall() == before
+        assert db.execute("PRAGMA journal_mode").fetchone() == mode
+    finally:
+        db.close()
+
+
+def test_the_baseline_is_the_only_migration() -> None:
+    """#254 squashed the chain into one file. Until go-live a schema change edits it; from
+    go-live on this test is updated to admit each new, numbered migration after it."""
+    from db import database
+
+    files = sorted(
+        f for f in os.listdir(database._MIGRATIONS_DIR)
+        if f.endswith(".sql") and not f.startswith("__")
+    )
+    assert files == ["001_baseline.sql"]
+
+
+@pytest.mark.asyncio
 async def test_foreign_keys_enabled() -> None:
     """get_connection should enable PRAGMA foreign_keys."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -127,8 +170,8 @@ async def test_foreign_keys_enabled() -> None:
 
 
 @pytest.mark.asyncio
-async def test_migration_029_track_tables() -> None:
-    """Migration 029 should seed 28 tracks, drop track_rpc_params, and create track_records/lap_records."""
+async def test_the_baseline_seeds_every_track() -> None:
+    """The schema seeds the 28 circuits a league can schedule, beside the two record tables."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
 
@@ -140,12 +183,6 @@ async def test_migration_029_track_tables() -> None:
             cursor = await db.execute("SELECT COUNT(*) FROM tracks")
             (track_count,) = await cursor.fetchone()
             assert track_count == 28, f"Expected 28 track rows, got {track_count}"
-
-            # track_rpc_params was dropped
-            cursor = await db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='track_rpc_params'"
-            )
-            assert await cursor.fetchone() is None, "track_rpc_params should not exist after migration 029"
 
             # track_records and lap_records exist
             cursor = await db.execute(
