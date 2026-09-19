@@ -29,10 +29,11 @@ approved with is not the tier it was built with.
 **Cancel asks for `CONFIRM` typed exactly.** It is irreversible and it stands down a division's
 whole calendar; a click-through would make it an accident rather than a decision.
 
-**Cancel's notice to the drivers cannot fail the cancellation.** The division is already stood
-down and its jobs already cancelled by the time the message is attempted, so a channel that has
-been deleted or that the bot cannot post in must be logged and stepped over — the alternative is
-a half-cancelled division whose jobs are gone and whose status still says ACTIVE.
+**Cancel's announcements cannot fail the cancellation.** The division is already stood down
+and its jobs already cancelled by the time the modules are told, so a channel that has been
+deleted or that the bot cannot post in is stepped over and named to the admin — the alternative
+is a half-cancelled division whose jobs are gone and whose status still says ACTIVE. What each
+module says, and where, is `cancellation_notice_service`'s and is tested there (#175).
 """
 from __future__ import annotations
 
@@ -40,7 +41,7 @@ import json
 import os
 import sys
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
@@ -191,8 +192,12 @@ async def _amend(cog, interaction, *, name="Pro", new_name=None, tier=None, role
     )
 
 
-async def _cancel(cog, interaction, *, name="Pro", confirm="CONFIRM"):
-    return await undecorate(SeasonCog.division_cancel)(cog, interaction, name, confirm)
+async def _cancel(cog, interaction, *, name="Pro", confirm="CONFIRM", failures=()):
+    """Run the command with the modules' announcements stubbed, returning the stub."""
+    announce = AsyncMock(return_value=list(failures))
+    with patch("services.cancellation_notice_service.announce_cancellation", new=announce):
+        await undecorate(SeasonCog.division_cancel)(cog, interaction, name, confirm)
+    return announce
 
 
 async def _division_row(db_path: str) -> dict:
@@ -680,43 +685,55 @@ async def test_the_jobs_go_before_the_division_is_stood_down(tmp_path):
     assert order == ["job", "division"]
 
 
-async def test_the_drivers_are_told_in_their_division_channel(tmp_path):
-    """A cancellation nobody announced leaves a division waiting for a forecast that is
-    never coming."""
+async def test_the_modules_are_told_the_division_is_off(tmp_path):
+    """Each enabled module says so in its own channel — never core, and never the forecast
+    channel regardless of the weather module (#175)."""
+    from services import cancellation_notice_service as cns
+
     db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_notice")
     channel = MagicMock()
     channel.send = AsyncMock()
     cog = _make_cog(db_path, divisions=[_division(channel=4242)])
 
-    await _cancel(cog, _interaction(channel=channel))
+    announce = await _cancel(cog, _interaction(channel=channel))
 
-    posted = str(channel.send.await_args.args[0])
-    assert "Division Cancelled" in posted
-    assert "Pro" in posted
-
-
-async def test_a_missing_channel_does_not_stop_the_cancellation(tmp_path):
-    """The division is already stood down and its jobs already gone by the time the notice
-    is attempted; failing here would leave it half-cancelled."""
-    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_nochannel")
-    cog = _make_cog(db_path, divisions=[_division(channel=4242)])
-
-    await _cancel(cog, _interaction(channel=None))
-
-    cog.bot.season_service.cancel_division.assert_awaited_once()
+    announce.assert_awaited_once()
+    assert announce.await_args.kwargs["scope"] == cns.SCOPE_DIVISION
+    assert [d.id for d in announce.await_args.args[2]] == [DIVISION_ID]
+    channel.send.assert_not_awaited()
 
 
-async def test_a_channel_that_refuses_the_notice_does_not_stop_the_cancellation(tmp_path):
+async def test_the_modules_are_told_after_the_division_is_recorded_cancelled(tmp_path):
+    """The calendar is posted again as it now stands, so the rounds must already be
+    recorded cancelled when it is read."""
+    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_notice_order")
+    cog = _make_cog(db_path)
+    order: list[str] = []
+    cog.bot.season_service.cancel_division.side_effect = (
+        lambda **_: order.append("division")
+    )
+    announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or [])
+    with patch("services.cancellation_notice_service.announce_cancellation", new=announce):
+        await undecorate(SeasonCog.division_cancel)(cog, _interaction(), "Pro", "CONFIRM")
+    assert order == ["division", "announce"]
+
+
+async def test_what_could_not_be_told_is_named_to_the_admin(tmp_path):
+    from services.cancellation_notice_service import NoticeFailure
+
     db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_refused")
-    channel = MagicMock()
-    channel.send = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "nope"))
-    cog = _make_cog(db_path, divisions=[_division(channel=4242)])
-    interaction = _interaction(channel=channel)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
 
-    await _cancel(cog, interaction)
+    await _cancel(
+        cog, interaction,
+        failures=[NoticeFailure("Pro", "forecast channel", "the channel could not be found")],
+    )
 
     cog.bot.season_service.cancel_division.assert_awaited_once()
-    assert "cancelled" in _replied(interaction)
+    replied = _replied(interaction)
+    assert "cancelled" in replied
+    assert "forecast channel: the channel could not be found" in replied
 
 
 async def test_the_cancellation_is_deferred_only_once_the_gates_are_past(tmp_path):

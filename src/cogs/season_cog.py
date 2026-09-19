@@ -3506,19 +3506,19 @@ class SeasonCog(commands.Cog):
         except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
             log.exception("could not wind the season down")
 
-        try:
-            channel = interaction.guild.get_channel(div.forecast_channel_id)
-            if channel is not None:
-                await channel.send(
-                    f"\U0001f4e2 **Division Cancelled: {div.name}**\n"
-                    "This division has been cancelled by an administrator. "
-                    "No further weather forecasts will be posted for this division."
-                )
-        except Exception:
-            log.exception("Failed to post division cancel notice for %s", div.name)
+        # Each enabled module says what the cancellation means for it, in its own channel, and
+        # the calendar is posted again with the division's rounds struck through (#175).
+        failures = await cancellation_notice_service.announce_cancellation(
+            self.bot,
+            interaction.guild,
+            [div],
+            scope=cancellation_notice_service.SCOPE_DIVISION,
+            season_number=getattr(season, "number", None),
+        )
 
         await interaction.followup.send(
-            f"\u2705 Division **{name}** cancelled.",
+            f"\u2705 Division **{name}** cancelled."
+            + cancellation_notice_service.failure_lines(failures),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
