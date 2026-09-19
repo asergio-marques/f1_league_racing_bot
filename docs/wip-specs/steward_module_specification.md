@@ -919,6 +919,11 @@
   - Incident - Mandatory - as in the textual output, placed where the image module places a verdict's description. An Appeal Verdict adds the grounds of appeal.
   - Justification given for outcome - Mandatory
 
+## Standings output
+- The standings of the results & standings module shall show the championship penalties this module gives, in the drivers' and the constructors' standings alike.
+- A points deduction lowers the total of the driver or team it is given to, and shall be marked: in the textual output by a footnote to the total, stating the points deducted; in the image output by an optional column holding the points deducted.
+- A driver or team disqualified from the championship shall be shown in the standings with "DSQ" in place of their points total, the exact tally of their points not displayed, and ranked beneath every driver or team classified.
+
 ## Licence sheet output
 - The licence sheet for a given division shall be posted in the channel configured by "division licence-channel".
 - Whenever a driver licence changes, whatever caused the change — a cycle close, a Code of Conduct Verdict, a ruling upon a ban served or not served, a revocation, or a merge — the licence sheet of every division in which they hold a seat shall be posted anew, the last message containing it being deleted.
