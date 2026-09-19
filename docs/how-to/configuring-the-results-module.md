@@ -344,6 +344,20 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 
 Both delete what the bot posted and post it again from what it holds: the first for the standings, the second for every session of every round. Reach for them when somebody deleted a channel's history, or after a correction made outside the normal flow.
 
+### A repost the bot told you it could not make
+
+Approving either review stage, and `/round results amend`, republish the round's results and every later round's standings. When any of that cannot be posted, you are told twice: in your own reply to the approval, and in the log channel as a `RESULTS_REPOST | Incomplete` entry. The approval's own log line reads `Incomplete` rather than `Success`.
+
+Work it in this order.
+
+1. **Read what you are told.** Both messages name the division and the channel, and end with the exact `/results rounds sync` and `/results standings sync` commands to run.
+2. **Repair the cause.** Usually the channel has been deleted, or the bot's **View Channel**, **Send Messages** or **Read Message History** has been taken away on it. Where the channel is gone for good, point the division at a new one with `/division results-channel` or `/division standings-channel` first.
+3. **Run the two sync commands.** Only then — running them before the cause is repaired fails the same way.
+
+**What is already posted is left alone when this happens.** The bot checks the channel before it deletes anything, so a failure leaves the league reading the version from before the approval rather than an empty channel. That version is out of date until you run the syncs, which is why the entry is worth acting on the same day.
+
+**The approval itself went through.** The penalties are applied, the championship is recalculated and the round has moved on. Only the posting is outstanding — do not approve anything a second time to try to fix it.
+
 ---
 
 ## What you cannot change
