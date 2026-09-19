@@ -139,7 +139,8 @@
 - The phases of an amended round shall be armed at the league's own configured horizons, not at the packaged ones.
 - The notice, the scheduling and the performance of phases are this module's own output and shall happen only while the module is enabled.
 - The invalidation of a withdrawn phase's result, the clearing of its slots, the marking of it as not performed and the deletion of the message posted for it shall happen whatever the module's state, since a forecast that no longer stands is wrong however the module stands, and so that enabling the module later does not find that phase already performed.
-- Where a round is cancelled, all scheduled phases for it shall be cancelled and the division informed that no forecast shall be posted for that round. Forecasts already posted shall not be deleted.
+- Where a round is cancelled, all scheduled phases for it shall be cancelled. Forecasts already posted shall not be deleted.
+- Where a round, a division or a season is cancelled, the bot shall post to the division's forecast channel a note that no forecast shall be posted for that round, or no further forecasts for that division or season. The note shall be posted silently, mentioning nobody and notifying nobody, the notification being the attendance module's to carry. It is this module's own output and shall be posted only while the module is enabled; a league running without weather is told nothing here. Decided 2026-09-19 (#175).
 
 ## Recovery
 - Upon starting, the bot shall perform any phase of any round of a season whose placements have been confirmed, and which is not yet completed or cancelled, whose horizon has passed and which has not yet been performed.

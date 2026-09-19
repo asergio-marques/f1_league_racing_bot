@@ -111,6 +111,7 @@
     - Where the deadline computed from the round's new moment has passed, nothing shall be posted and nothing taken down.
 - Where the call is posted again, every answer already recorded shall be carried over and drivers may change them as usual until the deadline. A driver of the division holding no recorded answer shall be recorded as not having answered, and an answer recorded for a driver no longer of the division shall be discarded.
 - The last notice and the distribution announcement posted for the round shall be taken down with the call they belong to, so that a division is never left reading a reminder or a distribution for a round that has since changed.
+- Where a round, a division or a season is cancelled, the bot shall post to the division's check-in channel a notice that the round, the division or the season has been cancelled and that there is no check-in to answer for it. The notice shall mention the division's role, as the check-in call does: it is the one notification a cancellation carries, the weather and results modules posting only silent notes and core posting nothing. It shall be posted only while the module is enabled. Decided 2026-09-19 (#175).
 
 ## Attendance
 - Once the initial round results are submitted, the attendance sheet of the round will be filled. Being listed in any of the sessions of the round will be enough to count as having attended.

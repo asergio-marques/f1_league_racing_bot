@@ -240,6 +240,7 @@
 - A driver shall be recorded under one team role across every session of a round; see "One driver, one team, for the whole of a round" below.
 - The channel shall be private to the server's admin role, and shall be deleted once the round is settled.
 - <MODIFIED COMMAND> There is a "round cancel" command initially implemented in the scope of the weather module. Its functionality shall be enhanced to also cancel the request for round results specified by the first bullet point. If this request for round results has already been triggered, the "round cancel" command will fail. It shall equally fail once any results exist for the round.
+- Where a round, a division or a season is cancelled, the bot shall post to the division's results channel a note that no results shall be posted for that round, or no further results for that division or season. The note shall be posted silently, mentioning nobody and notifying nobody, the notification being the attendance module's to carry, and only while the module is enabled. Decided 2026-09-19 (#175).
 
 #### The two sanction columns of an amendment
 - The formats below describe a first submission. A re-insertion through "round results amend" shall carry two further columns after them, holding the post-race penalty and the appeal penalty, so that an amendment preserves sanctions already applied rather than discarding them.
