@@ -20,6 +20,14 @@ from models.server_config import ServerConfig
 log = logging.getLogger(__name__)
 
 
+#: Frees the claim: the server and the four settings, leaving the row. Shared with
+#: `pack_service`, which runs it inside its own transaction.
+RELEASE_CLAIM_SQL = (
+    "UPDATE server_configs SET server_id = NULL, interaction_role_id = NULL, "
+    "interaction_channel_id = NULL, log_channel_id = NULL, league_admin_role_id = NULL"
+)
+
+
 class ConfigService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -163,14 +171,10 @@ class ConfigService:
         """Free the claim on the league's server: clear it and the four settings.
 
         The row stays, and with it test mode and the module flags; see the module docstring.
-        `/bot pack` is the only caller.
+        `/bot pack` runs the same statement inside its own transaction.
         """
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE server_configs SET server_id = NULL, interaction_role_id = NULL, "
-                "interaction_channel_id = NULL, log_channel_id = NULL, "
-                "league_admin_role_id = NULL"
-            )
+            await db.execute(RELEASE_CLAIM_SQL)
             await db.commit()
 
     # ------------------------------------------------------------------
