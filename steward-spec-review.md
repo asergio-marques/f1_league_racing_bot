@@ -1164,9 +1164,18 @@ Recorded as the walk-through decides them. None is to be made until stewarding i
 - **README lines 269 and 663** — "eight" channel commands and channels (A6).
 - **Image spec, verdict graphic and banner** — amended to carry the steward spec's verdict output (A10).
 - **Results how-to, line 80** — says results, standings and verdicts "can be the same channel"; contradicts core line 60. A defect in the guide regardless of stewarding; candidate issue, not yet drafted.
-- **Image spec, aspects list and "images config toggle"** — the license sheet aspect, its toggle value and "images template license" (A16).
+- **Image spec, aspects list and "images config toggle"** — the licence sheet aspect, its toggle value and "images template licence" (A16).
 - **Core, "A driver's accounts"** — the season ban and league ban roles move with the current account, as signed-up, division and team roles do (A20).
 - **Results spec, amendment approval (#242)** — the verdicts channel is checked where any auto-rule is configured, as it is where autosack/autoreserve is set (A27).
+- **Attendance spec** — state that a round's check-in call, its last notice and its reserve-distribution message are deleted when the next round's check-in call is posted (the code does this; the spec is silent). The qualifying-ban notices ride along with them (C21).
+- **Attendance spec, pardons** — with stewarding enabled, a league manager's pardon command replaces the penalty review's button, open from results posted until attendance points are distributed; the race-banned driver's automatic pardon (C38).
+- **Attendance spec, distribution moment** — with stewarding enabled, attendance points are distributed when the report verdicts are posted (C39).
+- **Core, cancelling a division or season** — while a stewarding cycle of one of its rounds stands open, it is marked cancelled only once that cycle closes (C40).
+- **Results spec, disabling** — refused while a stewarding cycle is open; otherwise cascades to stewarding (C40).
+- **Core, "When the bot stops"** — add the stewarding module's work to what is recovered; downtime extends the windows in which users act (C41).
+- **Core, a hub channel** — a server-wide channel set by its own command (e.g. `bot-hub-channel`), open to holders of the base role, or to every member where no base role is configured, holding one panel whose options each enabled module adds; stewarding adds "View licence" (any driver's licence, a public record), stats will add its own (D1).
+- **Licence view image (owed to the image spec)** — a "licence" view graphic distinct from the licence sheet, with a principal-division logo and colours (the league logo coloured by them), and division fields addressed by row (a logo and optional colour accent per Current row), which no graphic declares today.
+- **Core, "Principal division"** — the highest tier division (lowest tier number) in which a driver holds a full-time seat; a reserve-only or unseated driver has none. A core concept by the user's judgement (2026-09-19); defined in the steward spec's Concepts until core carries it, then referenced from there.
 
 ## Parked during the walk-through
 
@@ -1175,18 +1184,13 @@ Recorded as the walk-through decides them. None is to be made until stewarding i
 - ~~Bans for drivers in several divisions~~ — settled 2026-09-19: served in the principal division (highest tier full-time seat), deliberately, the licence pooling points across divisions; a reserve-only driver serves at the next upcoming round of all their divisions.
 - ~~Configurable decision window~~ — settled 2026-09-19: the hour stays fixed, D13 having moved the incident text out of it.
 - ~~Witnesses as a separate kind of party~~ — settled 2026-09-19: one kind of involved driver. A split would raise who may choose it, and would fail where the driver added turns out to be at fault; being named in a verdict is no mark by itself, only a penalty is.
-- **Attendance spec** — state that a round's check-in call, its last notice and its reserve-distribution message are deleted when the next round's check-in call is posted (the code does this; the spec is silent). The qualifying-ban notices ride along with them (C21).
-- **Attendance spec, pardons** — with stewarding enabled, a league manager's pardon command replaces the penalty review's button, open from results posted until attendance points are distributed; the race-banned driver's automatic pardon (C38).
-- **Attendance spec, distribution moment** — with stewarding enabled, attendance points are distributed when the report verdicts are posted (C39).
-- **Core, cancelling a division or season** — while a stewarding cycle of one of its rounds stands open, it is marked cancelled only once that cycle closes (C40).
-- **Results spec, disabling** — refused while a stewarding cycle is open; otherwise cascades to stewarding (C40).
-- **Core, "When the bot stops"** — add the stewarding module's work to what is recovered; downtime extends the windows in which users act (C41).
-- **Core, a hub channel** — a server-wide channel set by its own command (e.g. `bot-hub-channel`), open to holders of the base role, or to every member where no base role is configured, holding one panel whose options each enabled module adds; stewarding adds "View license" (any driver's licence, a public record), stats will add its own (D1).
 - ~~Output of "View licence"~~ — specified 2026-09-19 from the licence card mock-up; the league will adjust the arrangement.
+- ~~Narrowing who may appeal~~ — settled 2026-09-19: anyone in the division, as specified. A league may narrow it by its own rules, rejecting such appeals.
 
 ## Notes for implementation — engineering, not specification (G1–G5, 2026-09-19)
 
 The spec no longer lists the persisted ticket record field by field; that is for the code and its docstrings. When it is built, the record must at least hold, so that nothing the stages rely on is lost:
+- **Results reposts (H5)** — the reposting of a round's results and standings after report verdicts and after appeal verdicts can reuse the results module's existing repost code; the spec no longer says so.
 - the unique ID, and the season, division tier (frozen when minted), round, session and lap;
 - the complainant (or the stewarding team, for a steward's report), the involved drivers by driver profile and the account each was named under, and for an appeal, the appellant;
 - the complaint and every evidence file and link, the incident text as settled, and for an appeal the grounds as settled;
@@ -1196,12 +1200,8 @@ The spec no longer lists the persisted ticket record field by field; that is for
 - the stage it stands in, with the moment each stage began and is due to end, and every downtime extension applied (C41);
 - the settled verdict, the justification as settled, whether it was withdrawn or rejected as a duplicate (C35), and the IDs of the verdict messages posted;
 - tokens spent and refunded, for an appeal.
-- **Results reposts (H5)** — the reposting of a round's results and standings after report verdicts and after appeal verdicts can reuse the results module's existing repost code; the spec no longer says so.
 - **Republishing a verdict in place (H5)** — discord.py's `Message.edit` accepts a new list of attachments, so a verdict's image can be replaced in the message it was posted in; no deletion or repost is needed.
-- ~~Narrowing who may appeal~~ — settled 2026-09-19: anyone in the division, as specified. A league may narrow it by its own rules, rejecting such appeals.
 - **Choosing involved drivers (J1)** — Discord's user select menu searches members by typed name rather than listing them all, so it scales to any server; it cannot be limited to one division, so the bot validates the choices against the division's seats afterwards. A string select of the division's drivers was ruled out: 13 teams of two already exceed its 25 options.
 - **Forms (K1)** — the spec describes each form by what it collects. A Discord modal holds at most five inputs; the larger forms (outcome add/modify, the report and appeal forms, the four auto-rule adds) must be split into steps, as the results module's penalty wizard is, or presented as a private card, as the ballot is. Fixed values (season, division, round, IDs) are shown, not asked for. Deletions confirm with Confirm/Cancel buttons.
 - **Evidence files (K2)** — where a form cannot take file uploads, a private step before the ticket is filed asks the complainant, appellant or steward to attach their files; the ticket is filed only once the evidence rule is met.
 - **Long lists (K4)** — list replies split across messages under Discord's 2,000-character limit.
-- **Licence view image (owed to the image spec)** — a "licence" view graphic distinct from the licence sheet, with a principal-division logo and colours (the league logo coloured by them), and division fields addressed by row (a logo and optional colour accent per Current row), which no graphic declares today.
-- **Core, "Principal division"** — the highest tier division (lowest tier number) in which a driver holds a full-time seat; a reserve-only or unseated driver has none. A core concept by the user's judgement (2026-09-19); defined in the steward spec's Concepts until core carries it, then referenced from there.
