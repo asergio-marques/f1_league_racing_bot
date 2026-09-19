@@ -1196,3 +1196,5 @@ The spec no longer lists the persisted ticket record field by field; that is for
 - the stage it stands in, with the moment each stage began and is due to end, and every downtime extension applied (C41);
 - the settled verdict, the justification as settled, whether it was withdrawn or rejected as a duplicate (C35), and the IDs of the verdict messages posted;
 - tokens spent and refunded, for an appeal.
+- **Results reposts (H5)** — the reposting of a round's results and standings after report verdicts and after appeal verdicts can reuse the results module's existing repost code; the spec no longer says so.
+- **Republishing a verdict in place (H5)** — discord.py's `Message.edit` accepts a new list of attachments, so a verdict's image can be replaced in the message it was posted in; no deletion or repost is needed.
