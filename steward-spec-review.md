@@ -1206,6 +1206,7 @@ The spec no longer lists the persisted ticket record field by field; that is for
 - **Forms (K1)** — the spec describes each form by what it collects. A Discord modal holds at most five inputs; the larger forms (outcome add/modify, the report and appeal forms, the four auto-rule adds) must be split into steps, as the results module's penalty wizard is, or presented as a private card, as the ballot is. Fixed values (season, division, round, IDs) are shown, not asked for. Deletions confirm with Confirm/Cancel buttons.
 - **Evidence files (K2)** — where a form cannot take file uploads, a private step before the ticket is filed asks the complainant, appellant or steward to attach their files; the ticket is filed only once the evidence rule is met.
 - **Long lists (K4)** — list replies split across messages under Discord's 2,000-character limit.
+- **Time penalty floor (R8)** — the results & standings module already refuses a negative sanction that would take a driver's time penalties below zero; the appeal path can reuse it.
 
 ## Read-through after the rebase onto main (2026-09-19)
 
@@ -1254,3 +1255,4 @@ Decisions:
 - R40 Conduct evidence "private to the stewarding team or shared" — never settable.
 - R41 Test-mode commands: core makes every test-mode command a league admin's.
 - R42 /bot pack (#257): stewarding team, its roles and channels on the new server.
+- R43 (after R42) A further read-through of the whole spec, the championship and team penalties (T1–T8) being a large addition made during this one.
