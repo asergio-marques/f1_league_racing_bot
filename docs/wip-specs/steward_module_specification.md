@@ -252,6 +252,10 @@
   - At least one of the "Time penalty", "Disqualification", "Warning point", "Penalty point", "Qualifying ban", "Race ban", "Season ban", "League ban" fields must be different from 0.
 - <NEW COMMAND> A "steward outcome remove" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then a modal dialog asking for confirmation of deletion of the outcome will appear. If accepted, then the outcome shall be removed from the list.
   - This command shall fail if any report deliberation or appeal deliberation phases are on-going.
+- <NEW COMMAND> A "steward outcome toggle" command will be made available to league managers, which shall have as input an outcome's ID, pausing the outcome where it is active and resuming it where it is paused.
+  - A paused outcome is offered upon no ballot. It stays in the list, "steward outcome list" marking it as paused, and verdicts that gave it are untouched.
+  - This command shall fail if any report deliberation or appeal deliberation phases are on-going, and for NFA, which cannot be paused.
+  - A paused outcome does not count towards the 24 a session's list may hold. Resuming one shall be refused where it would bring the qualifying list or the race list above 24, naming the list that is full.
 - <NEW COMMAND> A "steward outcome list" command will be made available to league managers and stewards, which shall have as input a string standing for a session type (qualifying or race). In reply, the bot will post a transient (temporary, seen only to the command user) list with all the outcomes currently available for that session type, as a bullet point list as follows:
   - <brief>
     - ID: <id>
@@ -315,6 +319,10 @@
   - At least one of the "Discipline points", "Qualifying bans", "Race bans", "Season ban", "League ban" fields must be different from 0.
 - <NEW COMMAND> A "steward conduct-outcome remove" command will be made available to league managers, which shall have as input a string standing for an conduct outcome's ID. If this ID is valid, then a modal dialog asking for confirmation of deletion of the conduct outcome will appear. If accepted, then the conduct outcome shall be removed from the list.
   - This command shall fail if any investigation deliberation phase is on-going.
+- <NEW COMMAND> A "steward conduct-outcome toggle" command will be made available to league managers, which shall have as input a conduct outcome's ID, pausing it where it is active and resuming it where it is paused.
+  - A paused conduct outcome is offered upon no ballot. It stays in the list, "steward conduct-outcome list" marking it as paused, and verdicts that gave it are untouched.
+  - This command shall fail if any investigation deliberation phase is on-going, and for NFA, which cannot be paused.
+  - A paused conduct outcome does not count towards the 24 the list may hold. Resuming one shall be refused where it would bring the list above 24.
 - <NEW COMMAND> A "steward conduct-outcome list" command will be made available to league managers and stewards, which shall have no inputs. In reply, the bot will post a transient (temporary, seen only to the command user) list with all the conduct outcomes currently available, as a bullet point list as follows:
   - <brief>
     - ID: <id>
@@ -396,6 +404,9 @@
   - This works in both "ways"; an multi-round rule being triggered can cause the triggering of an active accumulation rule, and vice-versa, for example.
 - <NEW COMMAND> A "steward auto-rule modify" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog similar to the one triggered when a user attempts to add an auto-rule of the same type as the one coded by the ID input will appear, with the data from the input auto-rule preloaded and modifiable. The ID cannot be modified, hence that field shall be greyed-out.
 - <NEW COMMAND> A "steward auto-rule remove" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog will show up for confirmation of deletion of the auto-rule. Once confirmed, the auto-rule will no longer be active and enforceable, and it will be deleted from the current list.
+- <NEW COMMAND> A "steward auto-rule toggle" command will be made available to league managers, which shall have as input the ID of an auto-rule, pausing it where it is active and resuming it where it is paused.
+  - A paused auto-rule is checked at no cycle close, and "steward auto-rule list" shall mark it as paused.
+  - Resuming an auto-rule counts as adding it anew: every driver already over its threshold is held as having already triggered it, so that nothing that happened while it was paused is punished by it.
 - <NEW COMMAND> A "steward auto-rule list" command will be made available to league managers and stewards, which shall have no inputs. In reply, the bot will post a transient (temporary, seen only to the command user) list with all the auto-rules currently available, as a plain text table with the following columns in order: ID, Auto-rule type, Infringement, Number of rounds, Type of infractions committed, No. of infractions committed, penalty given, number of penalties given.
   - For rules of non-multi-round-type, the "number of rounds" column shall be empty.
 
