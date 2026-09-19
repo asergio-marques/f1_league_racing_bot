@@ -2781,22 +2781,30 @@ class SeasonCog(commands.Cog):
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         active_divs = [d for d in divisions if d.status != "CANCELLED"]
-        for div in active_divs:
-            try:
-                channel = interaction.guild.get_channel(div.forecast_channel_id)
-                if channel is not None:
-                    await channel.send(
-                        "\U0001f4e2 **Season Cancelled**\n"
-                        "The active season has been cancelled by an administrator."
-                    )
-            except Exception:
-                log.exception("Failed to post cancellation notice for division %s", div.name)
 
+        # The rounds the cascade below is about to call off: those whose results are not yet
+        # in, exactly as `ROUND_CANCELLABLE` has it for the cascade itself.
+        to_cancel: set[int] = set()
         for div in divisions:
             div_rounds = await self.bot.season_service.get_division_rounds(div.id)
             for rnd in div_rounds:
                 self.bot.scheduler_service.cancel_round(rnd.id)
+                if rnd.status in ROUND_CANCELLABLE:
+                    to_cancel.add(rnd.id)
         self.bot.scheduler_service.cancel_season_end()
+
+        # Each division still running is told by each enabled module, in its own channel, and
+        # its calendar posted again with the called-off rounds struck through (#175). Done
+        # before the cascade, since a season recorded cancelled no longer has its channels
+        # read — so the rounds about to be cancelled are named rather than read back.
+        failures = await cancellation_notice_service.announce_cancellation(
+            self.bot,
+            interaction.guild,
+            active_divs,
+            scope=cancellation_notice_service.SCOPE_SEASON,
+            season_number=season.season_number,
+            also_cancelled=frozenset(to_cancel),
+        )
 
         # A cancelled season is still league history: it happened, and the drivers raced in it.
         #
@@ -2833,7 +2841,7 @@ class SeasonCog(commands.Cog):
         )
 
         await interaction.followup.send(
-            "\u2705 Season cancelled.",
+            "\u2705 Season cancelled." + cancellation_notice_service.failure_lines(failures),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(

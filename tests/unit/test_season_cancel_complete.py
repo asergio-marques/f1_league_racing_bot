@@ -173,8 +173,15 @@ def _season_end(order=None, history_error=None):
     )
 
 
-async def _cancel(cog, interaction, confirm: str = "CONFIRM"):
-    await undecorate(SeasonCog.season_cancel)(cog, interaction, confirm)
+async def _cancel(cog, interaction, confirm: str = "CONFIRM", failures=()):
+    """Run the command with the modules' announcements stubbed, returning the stub.
+
+    What each module says is `cancellation_notice_service`'s and is tested there (#175).
+    """
+    announce = AsyncMock(return_value=list(failures))
+    with patch("services.cancellation_notice_service.announce_cancellation", new=announce):
+        await undecorate(SeasonCog.season_cancel)(cog, interaction, confirm)
+    return announce
 
 
 async def _complete(cog, interaction):
@@ -287,63 +294,91 @@ async def test_a_failed_history_write_leaves_the_season_standing():
 # ---------------------------------------------------------------------------
 
 
-async def test_every_division_is_told_in_its_own_channel():
-    """The drivers are the people affected, and they read their division's channel."""
+async def test_every_division_still_running_is_told_by_its_modules():
+    """Each enabled module says so in its own channel — never core, and never the forecast
+    channel regardless of the weather module (#175)."""
+    from services import cancellation_notice_service as cns
+
     cog = _make_cog(
-        divisions=[_division(11, "Division 1"), _division(12, "Division 2")]
+        divisions=[
+            _division(11, "Division 1"),
+            _division(12, "Division 2"),
+            _division(13, "Division 3", status="CANCELLED"),
+        ]
     )
     interaction = _interaction()
     history, roles = _season_end()
 
     with history, roles:
-        await _cancel(cog, interaction)
+        announce = await _cancel(cog, interaction)
 
-    assert interaction._channel.send.await_count == 2
-    assert "Season Cancelled" in interaction._channel.send.await_args.args[0]
-
-
-async def test_a_division_already_cancelled_is_not_told_again():
-    """It was announced when it was cancelled; saying it twice reads as a second event."""
-    cog = _make_cog(
-        divisions=[_division(11, "Division 1", status="CANCELLED")]
-    )
-    interaction = _interaction()
-    history, roles = _season_end()
-
-    with history, roles:
-        await _cancel(cog, interaction)
-
+    announce.assert_awaited_once()
+    assert announce.await_args.kwargs["scope"] == cns.SCOPE_SEASON
+    assert announce.await_args.kwargs["season_number"] == 3
+    # A division already cancelled was announced when it was; saying it twice reads as a
+    # second event.
+    assert [d.id for d in announce.await_args.args[2]] == [11, 12]
     interaction._channel.send.assert_not_awaited()
 
 
-async def test_a_division_whose_channel_is_gone_does_not_stop_the_cancellation():
-    """The announcement is a courtesy; the cancellation is the command."""
+async def test_the_rounds_about_to_be_cancelled_are_drawn_cancelled():
+    """The calendars are posted before the cascade records the rounds cancelled, so the
+    rounds it will cancel are named: those whose results are not yet in."""
     cog = _make_cog()
-    interaction = _interaction(channel=None)
+    cog.bot.season_service.get_division_rounds = AsyncMock(
+        return_value=[
+            SimpleNamespace(id=1, status="FINAL"),
+            SimpleNamespace(id=2, status="AWAITING_RESULTS"),
+            SimpleNamespace(id=3, status="NOT_RUN"),
+            SimpleNamespace(id=4, status="AWAITING_REPORT_VERDICTS"),
+        ]
+    )
     history, roles = _season_end()
 
     with history, roles:
-        await _cancel(cog, interaction)
+        announce = await _cancel(cog, _interaction())
 
-    cog.bot.season_service.cancel_season_cascade.assert_awaited_once()
+    assert announce.await_args.kwargs["also_cancelled"] == frozenset({2, 3})
 
 
-async def test_a_failed_announcement_does_not_stop_the_cancellation():
+async def test_the_modules_are_told_before_the_cascade():
+    """Once the season is recorded cancelled its channels are no longer read."""
+    order: list[str] = []
+    cog = _make_cog(order=order)
+    announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or [])
+    history, roles = _season_end()
+
+    with history, roles, patch(
+        "services.cancellation_notice_service.announce_cancellation", new=announce
+    ):
+        await undecorate(SeasonCog.season_cancel)(cog, _interaction(), "CONFIRM")
+
+    assert order.index("announce") < order.index("cascade")
+
+
+async def test_what_could_not_be_told_is_named_to_the_admin():
+    from services.cancellation_notice_service import NoticeFailure
+
     cog = _make_cog()
     interaction = _interaction()
-    interaction._channel.send = AsyncMock(side_effect=RuntimeError("forbidden"))
     history, roles = _season_end()
 
     with history, roles:
-        await _cancel(cog, interaction)
+        await _cancel(
+            cog, interaction,
+            failures=[NoticeFailure("Division 1", "calendar", "forbidden")],
+        )
 
     cog.bot.season_service.cancel_season_cascade.assert_awaited_once()
+    replied = _replied(interaction)
+    assert "Season cancelled" in replied
+    assert "**Division 1** — calendar: forbidden" in replied
 
 
 async def test_every_scheduled_job_is_cancelled():
     """A cancelled season must produce nothing further — forecasts, check-ins and the
     season-end job alike."""
-    rounds = [SimpleNamespace(id=1), SimpleNamespace(id=2)]
+    rounds = [SimpleNamespace(id=1, status="NOT_RUN"), SimpleNamespace(id=2, status="NOT_RUN")]
     cog = _make_cog()
     cog.bot.season_service.get_division_rounds = AsyncMock(return_value=rounds)
     history, roles = _season_end()
