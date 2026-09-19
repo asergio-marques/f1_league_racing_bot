@@ -26,6 +26,8 @@ __all__ = [
     "ChannelUse",
     "find_channel_use",
     "SETTING_LABELS",
+    "DIVISION_SOURCES",
+    "SERVER_SOURCES",
     "missing_channel_fault",
     "unpostable_channel_fault",
 ]
@@ -72,7 +74,7 @@ class ChannelUse:
 
 #: The per-division settings, as (setting key, table, column). The divisions row carries
 #: three of them directly; the other five hang off it in two config tables.
-_DIVISION_SOURCES: tuple[tuple[str, str, str], ...] = (
+DIVISION_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("weather", "divisions", "forecast_channel_id"),
     ("lineup", "divisions", "lineup_channel_id"),
     ("calendar", "divisions", "calendar_channel_id"),
@@ -84,7 +86,8 @@ _DIVISION_SOURCES: tuple[tuple[str, str, str], ...] = (
 )
 
 #: The league-wide settings, as (setting key, table, column). Each table holds one row.
-_SERVER_SOURCES: tuple[tuple[str, str, str], ...] = (
+#: Both lists are read by the factory reset too, to find every channel the bot posts to.
+SERVER_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("interaction", "server_configs", "interaction_channel_id"),
     ("log", "server_configs", "log_channel_id"),
     ("signup", "signup_module_config", "signup_channel_id"),
@@ -108,7 +111,7 @@ async def find_channel_use(
     thing, not colliding with its own history.
     """
     async with get_connection(db_path) as db:
-        for setting, table, column in _SERVER_SOURCES:
+        for setting, table, column in SERVER_SOURCES:
             if ignore is not None and ignore.setting == setting:
                 continue
             cursor = await db.execute(
@@ -117,7 +120,7 @@ async def find_channel_use(
             if await cursor.fetchone() is not None:
                 return ChannelUse(setting)
 
-        for setting, table, column in _DIVISION_SOURCES:
+        for setting, table, column in DIVISION_SOURCES:
             if table == "divisions":
                 sql = (
                     f"SELECT d.name FROM divisions d "
