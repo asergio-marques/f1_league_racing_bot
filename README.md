@@ -1676,6 +1676,8 @@ Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in
 | `round_number` | Integer | ✅ | Round number to amend |
 | `session` | Choice | — | Session to amend. If omitted the bot will prompt for one |
 
+> **What it could not repost is named in the log.** Applying the amendment replaces the round's posted results and every later round's standings. Any of that the bot could not post — a channel deleted, or a permission taken away — leaves what is already posted standing, and is named in the log channel under `RESULT_AMENDED | Incomplete` instead of `Success`, ending with the `/results rounds sync` and `/results standings sync` commands to run once the cause is repaired. The amendment itself is applied either way.
+
 ---
 
 #### Mid-Season Points Amendment
