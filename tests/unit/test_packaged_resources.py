@@ -396,10 +396,13 @@ def test_the_calendar_cards_tile_without_overlapping():
     catches that.
     """
     root = etree.parse(str(RESOURCES / "templates" / f"{CALENDAR}.svg")).getroot()
+    # The cancellation overlay (#175) is drawn the size of its card on purpose, veiling it
+    # exactly, so it is not a second card and is left out of the count.
     cards = sorted(
         (float(rect.get("y")), float(rect.get("height")))
         for rect in root.iter(f"{{{SVG_NS}}}rect")
         if rect.get("width") == "676" and rect.get("height") not in (None, "0")
+        and not (rect.getparent().get("id") or "").endswith("_cancelled")
     )
     assert cards, "the shipped calendar declares no round card"
     for (top, height), (next_top, _) in zip(cards, cards[2:]):

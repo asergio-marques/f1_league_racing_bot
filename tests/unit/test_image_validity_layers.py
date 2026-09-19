@@ -50,6 +50,7 @@ VALID_SVG = (
     b'<text id="round_1_race_name">R</text>'
     b'<text id="round_1_date">1 Jan</text>'
     b'<rect id="round_1_vertical_crop_point" x="0" y="675" width="1" height="1"/>'
+    b'<g id="round_1_cancelled"/>'
     b'<g id="team_1_group"><text id="team_1_name">T</text>'
     b'<text id="team_1_driver_1_name">N</text></g>'
     b'<g id="reserve_group"><text id="reserve_driver_1_name">N</text></g>'
