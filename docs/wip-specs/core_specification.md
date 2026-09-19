@@ -298,8 +298,8 @@ it only to place it; the rules governing it belong to its own specification.
 
 #### Cancelling a season
 - Cancelling a season shall be a league admin's, shall require the word `CONFIRM`, and shall be refused in any state but the three ongoing states. A season is cancelled where it should not go on; a season that was raced to its end is completed.
-- Cancelling a season shall be announced to each division still running, as set out under Announcing a cancellation below, shall cancel every piece of scheduled work, shall cancel every division of it that is not already cancelled, and shall discard every placement not yet committed.
-- It shall then record a history entry for every division each driver took part in, as completing one does, revoke the same roles, close the signup window where one is open, run the driver pass, switch test mode off, and only then mark the season cancelled. A season that was cancelled is league history: it happened, and its drivers raced in it.
+- Cancelling a season shall cancel every piece of scheduled work, shall cancel every division of it that is not already cancelled, and shall discard every placement not yet committed.
+- It shall then record a history entry for every division each driver took part in, as completing one does, announce the cancellation to each division still running as set out under Announcing a cancellation below, revoke the same roles, close the signup window where one is open, run the driver pass, switch test mode off, and only then mark the season cancelled. A season that was cancelled is league history: it happened, and its drivers raced in it.
 - A cancellation shall never discard a result. Only a round not yet run, or run but with its results not yet entered, may be cancelled — by itself, or by the cancelling of the division or season above it. A round further along shall keep its place and its results.
 
 #### Aborting a season
@@ -395,9 +395,9 @@ it only to place it; the rules governing it belong to its own specification.
     - The attendance module carries the one notification, in the division's check-in channel.
     - The weather and results modules each carry a note, posted silently, in the forecast and results channels.
 - The calendar of each division told shall be posted again, as it then stands, with every round called off shown as cancelled. It is not a posting the command asked for, so a graphic that cannot be drawn falls back to the textual calendar as it does at the confirmation of placements. A division whose calendar was never posted is left alone.
-- A season is announced before it is recorded cancelled, its channels no longer being read afterwards. The rounds its cancellation is about to call off are shown as cancelled on the calendar all the same.
+- A season is announced once its history entries are recorded, and before its roles are revoked and before it is recorded cancelled: the check-in notice mentions the division role, and a season recorded cancelled no longer has its channels read. The rounds its cancellation is about to call off are shown as cancelled on the calendar all the same.
 - A division already cancelled shall not be told again when its season is cancelled.
-- No announcement shall fail the cancellation. Every place one could not reach — a channel not set, a channel not found, a message refused, a calendar not posted — shall be named to the league admin in the command's reply, as well as logged.
+- No announcement shall fail the cancellation. Every place one could not reach — a channel not set, a channel not found, a message refused, a calendar not posted — shall be named to the league admin in the command's reply and in the log channel. A calendar posted as text because its graphic could not be drawn shall be named the same way.
 
 ## Tracks
 - The bot shall ship a fixed list of circuits. A league shall neither add, edit nor remove one.

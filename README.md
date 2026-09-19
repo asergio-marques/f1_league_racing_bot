@@ -638,7 +638,7 @@ Cancels scheduled jobs for the round, sets its status to `CANCELLED`, and tells 
 >
 > A silent note sits in the channel for anyone reading it but pings and pushes nobody. A league with none of the three turned on is sent nothing.
 >
-> **The calendar is reposted either way**, with the cancelled round struck through in the text calendar, or covered by its cancellation overlay in the picture. The same applies to `/division cancel` and `/season cancel`, and a division already cancelled is not told twice. If anything could not be posted — a channel not set or not found, a message the bot was not allowed to send, a calendar that failed — your reply to the command lists it, and so does the log channel. The cancellation itself goes through regardless.
+> **The calendar is reposted either way**, with the cancelled round struck through in the text calendar, or covered by its cancellation overlay in the picture. The same applies to `/division cancel` and `/season cancel`, and a division already cancelled is not told twice. If anything could not be posted — a channel not set or not found, a message the bot was not allowed to send, a calendar that failed or had to fall back to text — your reply to the command lists it, and the log channel lists all of it. The cancellation itself goes through regardless.
 
 #### `/division cancel` — Cancel a division in the active season
 *Access: League admin · Ongoing only*
