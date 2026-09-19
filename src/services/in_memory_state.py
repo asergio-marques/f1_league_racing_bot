@@ -31,11 +31,6 @@ def clear_in_memory_state(bot: Any) -> None:
 
     admin_review_cog._PENDING_REASONS.clear()
 
-    # Drivers displaced by a pending season snapshot, awaiting their seats back.
-    season_service = getattr(bot, "season_service", None)
-    if season_service is not None:
-        season_service._pending_driver_seats.clear()
-
     # A correction-parameter timeout, which would otherwise fire into a wizard that has gone.
     wizard_service = getattr(bot, "wizard_service", None)
     if wizard_service is not None:

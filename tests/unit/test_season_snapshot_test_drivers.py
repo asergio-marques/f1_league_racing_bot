@@ -1,14 +1,15 @@
-"""A mock roster survives season setup rewriting its snapshot.
+"""A placed grid, mock or real, survives every season-setup command.
 
-`save_pending_snapshot` deletes and re-creates the whole SETUP season — divisions,
-teams and seats all take new row IDs — and it runs on every season-setup command, not
-on the first. Until this was fixed it also deleted every mock driver seated in that
-season, so a test-mode roster built during setup vanished the moment the manager ran
-`/round add`, or restarted the bot and ran another setup command.
+Every `/round add`, `/round amend`, round import and `/division add` writes the SETUP season
+through `SeasonService.sync_pending_config`. Until issue #147 that deleted and re-created the
+whole season — divisions, teams and seats all taking new row IDs — and reseated the drivers
+from memory afterwards. Before that reseating existed it deleted every mock driver outright,
+and then every real driver's placement, so a grid built during setup vanished the moment the
+manager ran `/round add`.
 
-The rule these pin: a seated mock driver is a league manager's work and outlives the
-snapshot, reseated by division name, team name and seat number the same way channel
-configuration is carried across the rebuild.
+The rule these pin: a seated driver is a league manager's work and a setup command does not
+touch it. Since #147 nothing beneath the season is rewritten, so the seat, the seat number and
+the assignment are the very rows the manager made.
 """
 from __future__ import annotations
 
@@ -79,9 +80,9 @@ async def _seed_setup_season(db_path):
 
 
 async def _snapshot(svc, db_path, season_id, divisions=None, forecast_channel_id=None):
-    """Re-snapshot the way a setup command does, re-seeding teams as the cog then does."""
+    """Write the season the way a setup command does, seeding teams as the cog then does."""
     divisions = divisions or [DIVISION]
-    new_season_id, _ = await svc.save_pending_snapshot(
+    new_season_id, _, unseeded_division_ids = await svc.sync_pending_config(
         date(2026, 3, 1),
         season_id,
         [
@@ -96,13 +97,9 @@ async def _snapshot(svc, db_path, season_id, divisions=None, forecast_channel_id
         ],
     )
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id FROM divisions WHERE season_id = ? ORDER BY id", (new_season_id,)
-        )
-        for row in await cursor.fetchall():
-            await _seed_teams(db, row[0])
+        for division_id in unseeded_division_ids:
+            await _seed_teams(db, division_id)
         await db.commit()
-    await svc.restore_driver_seats(new_season_id)
     return new_season_id
 
 
@@ -145,8 +142,8 @@ async def test_mock_driver_keeps_its_seat_number(db_path):
     assert await _seat_map(db_path) == before
 
 
-async def test_season_assignment_is_restored_under_the_new_season(db_path):
-    """The assignment must point at the new season and division IDs, not the dead ones."""
+async def test_season_assignment_still_points_at_the_season_and_division(db_path):
+    """One assignment, naming the live season and division — no duplicate, no orphan."""
     season_id = await _seed_setup_season(db_path)
     added = await add_test_driver("Mock Alpha", "Redline", DIVISION, db_path)
     profile_id = added["profile_id"]
@@ -170,12 +167,12 @@ async def test_season_assignment_is_restored_under_the_new_season(db_path):
     assert rows[0]["division_id"] == new_div_id
 
 
-async def test_the_restored_assignment_carries_its_team_seat_id(db_path):
+async def test_the_assignment_still_carries_its_team_seat_id(db_path):
     """`team_seat_id` must name the seat the driver actually sits in.
 
     Everything that reads a seated driver joins `team_seats` through this column —
     `/season placements-review`'s lineup block and the whole attendance module among them — so an
-    assignment restored without it is invisible to every one of them. The driver is
+    assignment left without it is invisible to every one of them. The driver is
     seated, `/test-mode roster list` shows them, and the review reports the division
     empty. That is what a NULL here looks like from the outside.
     """
@@ -233,17 +230,17 @@ async def test_repeated_snapshots_do_not_accumulate_assignments(db_path):
     assert len(await list_test_drivers(DIVISION, db_path)) == 1
 
 
-async def test_driver_in_a_removed_division_is_left_unseated_not_deleted(db_path):
-    """A division dropped from the setup takes the seat with it, but not the profile.
+async def test_a_division_missing_from_the_config_keeps_its_mock_driver(db_path):
+    """A setup command never removes a division, so it never unseats anyone.
 
-    The driver stops being seated because there is nowhere to seat them; deleting the
-    profile instead would be the very data loss this change exists to stop.
+    Removal has its own command. The rebuild used to delete a division the pending config
+    no longer named, and with it the seat of everyone in it.
     """
     season_id = await _seed_setup_season(db_path)
     added = await add_test_driver("Mock Alpha", "Redline", DIVISION, db_path)
     profile_id = added["profile_id"]
 
-    # Re-snapshot with the division renamed — the one they sat in no longer exists.
+    # A config naming another division only: the one they sit in is not in it.
     await _snapshot(SeasonService(db_path), db_path, season_id, divisions=["Division 2"])
 
     async with get_connection(db_path) as db:
@@ -256,12 +253,12 @@ async def test_driver_in_a_removed_division_is_left_unseated_not_deleted(db_path
         )
         seats = (await cursor.fetchone())[0]
 
-    assert profile is not None, "the profile survives even when its division does not"
-    assert seats == 0
+    assert profile is not None
+    assert seats == 1
 
 
-async def test_reserve_driver_is_reseated(db_path):
-    """The reserve team pre-creates no seats, so its occupant needs one made again."""
+async def test_reserve_driver_keeps_their_seat(db_path):
+    """The reserve team pre-creates no seats; its occupant's seat is made on placement."""
     season_id = await _seed_setup_season(db_path)
     added = await add_test_driver("Mock Sub", "Reserve", DIVISION, db_path)
     assert not isinstance(added, str), added
@@ -378,7 +375,7 @@ async def test_a_real_drivers_assignment_points_at_the_new_season(db_path):
 
 
 async def test_real_and_mock_drivers_survive_together(db_path):
-    """A test-mode league and a real one are restored by one pass, not two."""
+    """A test-mode league and a real one alike."""
     season_id = await _seed_setup_season(db_path)
     real_id = await _seat_real_driver(db_path, season_id, seat_number=1)
     mock = await add_test_driver("Mock Alpha", "Redline", DIVISION, db_path)
@@ -413,8 +410,8 @@ async def test_repeated_setup_commands_do_not_accumulate_real_assignments(db_pat
     assert seats == 1
 
 
-async def test_a_real_driver_whose_division_is_dropped_is_unseated_not_deleted(db_path):
-    """A division removed from the setup takes the seat, never the driver."""
+async def test_a_division_missing_from_the_config_keeps_its_real_driver(db_path):
+    """A setup command never removes a division, so it never unplaces anyone."""
     season_id = await _seed_setup_season(db_path)
     profile_id = await _seat_real_driver(db_path, season_id)
 
@@ -427,16 +424,15 @@ async def test_a_real_driver_whose_division_is_dropped_is_unseated_not_deleted(d
         profile = await cursor.fetchone()
 
     assert profile is not None, "a season-setup command must never delete a real driver"
-    assert await _lineup_sees(db_path) == []
+    assert [r["profile_id"] for r in await _lineup_sees(db_path)] == [profile_id]
 
 
-# ── Everything else the rebuild must carry ────────────────────────────────
+# ── Everything else a league configures ───────────────────────────────────
 #
-# The snapshot drops every division, team, seat and round and re-inserts them with new
-# row ids, so anything keyed on the old ids is lost unless it is saved before the
-# teardown and restored after it. Each setting a league configures per division is
-# pinned here, because the failure is silent: the command reports success and the
-# configuration is simply gone.
+# The snapshot this replaced dropped every division and re-inserted it with a new row id,
+# so anything keyed on the old id was lost unless it was saved and restored. Each setting a
+# league configures per division is pinned here, because the failure is silent: the command
+# reports success and the configuration is simply gone.
 
 
 async def _configure_everything(db_path, season_id):
@@ -474,11 +470,11 @@ async def test_every_configured_channel_survives_a_setup_command(db_path):
     season_id = await _seed_setup_season(db_path)
     await _configure_everything(db_path, season_id)
 
-    # The weather channel travels in the PendingConfig rather than being saved and
-    # restored here, so the snapshot is given it the way `_pending_to_division_models`
-    # gives it — from `PendingDivision.channel_id`.
+    # The pending config does not know the weather channel: `/division channel weather`
+    # writes it to the DB alone. The rebuild re-inserted the division from the config and
+    # lost it; the sync never writes an existing division, so the DB's value stands.
     new_season_id = await _snapshot(
-        SeasonService(db_path), db_path, season_id, forecast_channel_id=111
+        SeasonService(db_path), db_path, season_id, forecast_channel_id=None
     )
 
     async with get_connection(db_path) as db:
@@ -508,7 +504,7 @@ async def test_every_configured_channel_survives_a_setup_command(db_path):
             )
         ).fetchall()
 
-    # Weather, via the PendingConfig; lineup and calendar, saved and restored by name.
+    # All three live on the divisions row, which a setup command does not rewrite.
     assert division["forecast_channel_id"] == 111, "weather forecast channel lost"
     assert division["lineup_channel_id"] == 222, "lineup channel lost"
     assert division["calendar_channel_id"] == 333, "calendar channel lost"
@@ -527,7 +523,7 @@ async def test_every_configured_channel_survives_a_setup_command(db_path):
 
 
 async def test_the_configuration_survives_repeated_setup_commands(db_path):
-    """Building a calendar is many commands, not one — each re-runs the whole rebuild."""
+    """Building a calendar is many commands, not one."""
     season_id = await _seed_setup_season(db_path)
     await _configure_everything(db_path, season_id)
 

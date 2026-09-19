@@ -47,8 +47,8 @@ def _make_interaction(guild_id: int = 1) -> MagicMock:
     interaction = MagicMock()
     interaction.guild_id = guild_id
     interaction.user.id = 42
-    # These commands defer before doing any work — the snapshot rebuild outlasts
-    # Discord's three-second window — so every reply arrives as a followup.
+    # These commands defer before doing any work, as every season-setup command does,
+    # so every reply arrives as a followup.
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -59,9 +59,8 @@ def _make_cog(pending_cfg: PendingConfig | None) -> tuple[SeasonCog, MagicMock]:
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
-    bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))
+    bot.season_service.sync_pending_config = AsyncMock(return_value=(42, 1, []))
     bot.season_service.get_divisions = AsyncMock(return_value=[])
-    bot.season_service.restore_driver_seats = AsyncMock()
     bot.team_service.seed_division_teams = AsyncMock()
     bot.output_router.post_log = AsyncMock()
 
@@ -108,6 +107,29 @@ async def test_pending_amend_track_change() -> None:
     args, kwargs = interaction.followup.send.call_args
     assert "✅" in (args[0] if args else kwargs.get("content", ""))
     assert kwargs.get("ephemeral") is True
+
+
+async def test_pending_amend_reply_says_the_round_is_saved() -> None:
+    """The amend is written to the season at once, through `_snapshot_pending`.
+
+    The reply used to say "no DB write — it is committed when placements are confirmed",
+    which was never true: every setup command persists what it changes.
+    """
+    pending = _make_pending()
+    cog, bot = _make_cog(pending)
+    interaction = _make_interaction()
+
+    await undecorate(cog.round_amend)(cog, interaction,
+        division_name="Pro",
+        round_number=1,
+        scheduled_at="2026-05-02T14:00:00",
+    )
+
+    bot.season_service.sync_pending_config.assert_awaited_once()
+    args, kwargs = interaction.followup.send.call_args
+    reply = args[0] if args else kwargs.get("content", "")
+    assert "saved to the season" in reply
+    assert "no DB write" not in reply
 
 
 async def test_pending_amend_scheduled_at_change() -> None:

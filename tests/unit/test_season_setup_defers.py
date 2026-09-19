@@ -1,12 +1,13 @@
 """The season-setup commands defer before they do their work.
 
-Each of `/season setup`, `/division add`, `/round add` and `/round amend` rewrites the
-whole SETUP season through `_snapshot_pending` — every division, team, seat and round
-deleted and re-inserted — and `/round add` additionally loads and parses the calendar
-template to check its capacity. On a season holding more than one division that work
-outlasts Discord's three-second window, the interaction token expires, and the reply
-raises `404 Unknown interaction` *after* the round has already been written. What a
-league manager sees is a command that appears to fail while having silently succeeded.
+Each of `/season setup`, `/division add`, `/round add` and `/round amend` writes the SETUP
+season through `_snapshot_pending`, and `/round add` and `/round amend` also load and parse
+the calendar template to check its capacity. Until issue #147 the write rebuilt the whole
+season, and on a season holding more than one division that work outlasted Discord's
+three-second window: the interaction token expired, and the reply raised `404 Unknown
+interaction` *after* the round had already been written. What a league manager saw was a
+command that appeared to fail while having silently succeeded. The write is small now, but
+the template parse is not, and a deferral costs nothing.
 
 Deferring first buys fifteen minutes, so these pin two things: that the deferral happens
 before any of that work, and that every reply thereafter goes to `followup` — a
@@ -88,9 +89,8 @@ def _bot() -> MagicMock:
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     bot.season_service.get_setup_season = AsyncMock(return_value=None)
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
-    bot.season_service.save_pending_snapshot = AsyncMock(return_value=(42, 1))
+    bot.season_service.sync_pending_config = AsyncMock(return_value=(42, 1, []))
     bot.season_service.get_divisions = AsyncMock(return_value=[])
-    bot.season_service.restore_driver_seats = AsyncMock()
     bot.team_service.seed_division_teams = AsyncMock()
     bot.output_router.post_log = AsyncMock()
     return bot
@@ -215,5 +215,5 @@ async def test_season_setup_begins_the_season_in_configuration():
 
     await undecorate(SeasonCog.season_setup)(cog, interaction, game_edition=2026)
 
-    kwargs = cog.bot.season_service.save_pending_snapshot.await_args.kwargs
+    kwargs = cog.bot.season_service.sync_pending_config.await_args.kwargs
     assert kwargs["initial_stage"] is SeasonStage.CONFIGURATION

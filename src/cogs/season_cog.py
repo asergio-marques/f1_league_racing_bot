@@ -183,9 +183,8 @@ async def apply_round_import(
     them: these are add commands, and a calendar too long for one modal is imported in
     two passes.
 
-    Does not snapshot. The caller does that once, after every division has been applied —
-    `_snapshot_pending` rebuilds the entire season, so once per import rather than once
-    per round is the difference between one teardown and twenty.
+    Does not snapshot. The caller does that once, after every division has been applied,
+    so the whole import lands in one transaction.
     """
     errors: list[str] = []
     staged: dict[str, list[dict[str, Any]]] = {}
@@ -377,7 +376,7 @@ async def _run_round_import(
         await interaction.followup.send(_format_import_errors(errors), ephemeral=True)
         return
 
-    # Once, after every division. The snapshot rebuilds the whole season.
+    # Once, after every division: the import lands in one transaction.
     await cog._snapshot_pending(cfg)
 
     total = sum(len(rounds) for rounds in applied.values())
@@ -475,9 +474,8 @@ class SeasonCog(commands.Cog):
         game_edition: app_commands.Range[int, 1, 9999],
     ) -> None:
         """Begin season setup."""
-        # Deferred before any work: the snapshot rebuild below rewrites the whole
-        # SETUP season, which outlasts Discord's three-second window on a season of
-        # any size, and the reply then lands on an expired token.
+        # Deferred before any work, as every season-setup command is: a reply after
+        # Discord's three-second window lands on an expired token.
         await interaction.response.defer(ephemeral=True)
 
         if self._get_pending() is not None:
@@ -3011,9 +3009,8 @@ class SeasonCog(commands.Cog):
         role: discord.Role,
         tier: int,
     ) -> None:
-        # Deferred before any work: the snapshot rebuild below rewrites the whole
-        # SETUP season, which outlasts Discord's three-second window once the season
-        # holds a division or two, and the reply then lands on an expired token.
+        # Deferred before any work, as every season-setup command is: a reply after
+        # Discord's three-second window lands on an expired token.
         await interaction.response.defer(ephemeral=True)
 
         cfg = self._pending.get(interaction.user.id) or self._get_pending()
@@ -4194,10 +4191,10 @@ class SeasonCog(commands.Cog):
         scheduled_at: str,
         track: str = "",
     ) -> None:
-        # Deferred before any work: the snapshot rebuild and the calendar capacity
-        # guard below both outlast Discord's three-second window on a season of any
-        # size, and the reply then lands on an expired token (404 Unknown interaction)
-        # while the round itself has already been written.
+        # Deferred before any work: the calendar capacity guard below loads and parses
+        # the calendar template, which can outlast Discord's three-second window, and the
+        # reply then lands on an expired token (404 Unknown interaction) while the round
+        # itself has already been written.
         await interaction.response.defer(ephemeral=True)
 
         cfg = self._pending.get(interaction.user.id) or self._get_pending()
@@ -4406,10 +4403,10 @@ class SeasonCog(commands.Cog):
         scheduled_at: str = "",
         format: str = "",
     ) -> None:
-        # Deferred before any work: the snapshot rebuild and the calendar capacity
-        # guard below both outlast Discord's three-second window on a season of any
-        # size, and the reply then lands on an expired token (404 Unknown interaction)
-        # while the round itself has already been written.
+        # Deferred before any work: the calendar capacity guard below loads and parses
+        # the calendar template, which can outlast Discord's three-second window, and the
+        # reply then lands on an expired token (404 Unknown interaction) while the round
+        # itself has already been written.
         await interaction.response.defer(ephemeral=True)
 
         if not any([track, scheduled_at, format]):
@@ -4517,8 +4514,9 @@ class SeasonCog(commands.Cog):
                 for r in pend_div.rounds
             ]
             await interaction.followup.send(
-                f"\u2705 Round {round_number} in **{pend_div.name}** updated in pending setup "
-                f"(no DB write \u2014 it is committed when placements are confirmed from `/season placements-review`).\n\n"
+                f"\u2705 Round {round_number} in **{pend_div.name}** updated and saved to the "
+                f"season being set up. Its sessions are created when placements are confirmed "
+                f"from `/season placements-review`.\n\n"
                 + format_round_list(round_models),
                 ephemeral=True,
             )
@@ -5315,8 +5313,9 @@ class SeasonCog(commands.Cog):
     ) -> None:
         """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id.
 
-        *initial_stage* is the stage a season created by this snapshot begins in, and is
-        passed only by `/season setup`; see ``SeasonService.save_pending_snapshot``.
+        Only what changed is written, in place; see ``SeasonService.sync_pending_config``.
+        *initial_stage* is the stage a season created by this call begins in, and is passed
+        only by `/season setup`.
         """
         divisions_data = [
             {
@@ -5329,24 +5328,22 @@ class SeasonCog(commands.Cog):
             for d in cfg.divisions
             if d.name
         ]
-        new_season_id, season_number = await self.bot.season_service.save_pending_snapshot(
-            cfg.start_date,
-            cfg.season_id,
-            divisions_data,
-            cfg.game_edition,
-            initial_stage=initial_stage,
+        season_id, season_number, unseeded_division_ids = (
+            await self.bot.season_service.sync_pending_config(
+                cfg.start_date,
+                cfg.season_id,
+                divisions_data,
+                cfg.game_edition,
+                initial_stage=initial_stage,
+            )
         )
-        cfg.season_id = new_season_id
+        cfg.season_id = season_id
         cfg.season_number = season_number
 
-        # Re-seed teams for all new divisions (old team_instances were cleaned up by snapshot)
-        new_divisions = await self.bot.season_service.get_divisions(cfg.season_id)
-        for div in new_divisions:
-            await self.bot.team_service.seed_division_teams(div.id)
-
-        # Only now do the teams exist to seat them in: put back the mock drivers the
-        # snapshot displaced, so a test-mode roster survives every season-setup command.
-        await self.bot.season_service.restore_driver_seats(cfg.season_id)
+        # A division with no teams yet — new, or one whose seeding a restart interrupted.
+        # Every other keeps the teams it has.
+        for division_id in unseeded_division_ids:
+            await self.bot.team_service.seed_division_teams(division_id)
 
     async def _reload_pending_from_db(self, cfg: PendingConfig) -> None:
         """Resync the in-memory PendingConfig.divisions from DB (after direct DB operations)."""

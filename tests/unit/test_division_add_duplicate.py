@@ -224,8 +224,7 @@ async def test_a_division_is_added_to_the_pending_setup(tmp_path):
 
 
 async def test_adding_defers_before_any_work(tmp_path):
-    """The snapshot rebuild rewrites the whole SETUP season, which outlasts Discord's
-    three-second window once the season holds a division or two."""
+    """Every season-setup command defers first, so no reply lands on an expired token."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, cfg=_pending())
     interaction = _interaction()
