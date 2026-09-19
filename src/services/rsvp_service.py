@@ -176,8 +176,16 @@ class _RsvpButton(discord.ui.Button):
 # this gate's, and nothing here should try to compensate for it.
 
 
-async def _attendance_enabled_for_round(round_id: int, bot) -> bool:  # type: ignore[type-arg]
-    """Return True when *round_id* exists and the league has the attendance module enabled."""
+async def _check_in_runs_for_round(round_id: int, bot) -> bool:  # type: ignore[type-arg]
+    """Return True when *round_id*'s check-in work should still run.
+
+    The module gate above, and one thing more: a round **recorded as cancelled** has no
+    check-in left to run. Cancelling a round unschedules its three jobs, so ordinarily none of
+    them reaches this — but the removal swallows what the scheduler raises, the job store is
+    durable and outlives a restart, and the cancellation now takes the call down (#175). A job
+    that survived would otherwise post a call, a reminder or a distribution for a round that is
+    off, and re-create the row that says a call is standing.
+    """
     async with get_connection(bot.db_path) as db:
         cur = await db.execute(
             """
@@ -186,6 +194,7 @@ async def _attendance_enabled_for_round(round_id: int, bot) -> bool:  # type: ig
               JOIN divisions d ON d.id = r.division_id
               JOIN seasons s ON s.id = d.season_id
              WHERE r.id = ?
+               AND r.status != 'CANCELLED'
             """,
             (round_id,),
         )
@@ -390,9 +399,10 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
 
     Produces nothing while the attendance module is disabled — see the module gate above.
     """
-    if not await _attendance_enabled_for_round(round_id, bot):
+    if not await _check_in_runs_for_round(round_id, bot):
         log.info(
-            "run_rsvp_notice: attendance module disabled for round %d — no check-in call posted",
+            "run_rsvp_notice: attendance module disabled, or the round is cancelled, for "
+            "round %d — no check-in call posted",
             round_id,
         )
         return
@@ -726,9 +736,10 @@ async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type
 
     Produces nothing while the attendance module is disabled — see the module gate above.
     """
-    if not await _attendance_enabled_for_round(round_id, bot):
+    if not await _check_in_runs_for_round(round_id, bot):
         log.info(
-            "run_rsvp_last_notice: attendance module disabled for round %d — no reminder posted",
+            "run_rsvp_last_notice: attendance module disabled, or the round is cancelled, "
+            "for round %d — no reminder posted",
             round_id,
         )
         return
@@ -841,9 +852,10 @@ async def run_rsvp_deadline(round_id: int, bot) -> None:  # type: ignore[type-ar
     ``is_standby`` onto drivers, moving reserves into seats for a module the league has
     switched off.
     """
-    if not await _attendance_enabled_for_round(round_id, bot):
+    if not await _check_in_runs_for_round(round_id, bot):
         log.info(
-            "run_rsvp_deadline: attendance module disabled for round %d — no distribution run",
+            "run_rsvp_deadline: attendance module disabled, or the round is cancelled, for "
+            "round %d — no distribution run",
             round_id,
         )
         return
