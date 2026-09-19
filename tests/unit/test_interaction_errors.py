@@ -203,3 +203,37 @@ async def test_a_failure_before_any_command_was_found_is_still_answered():
     await _tree().on_error(interaction, app_commands.AppCommandError("tree"))
 
     interaction.response.send_message.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+
+
+# ── Buttons, menus and forms ──────────────────────────────────────────────
+
+
+async def test_a_failed_button_tells_the_member_and_the_log_channel():
+    from utils.league_server import LeagueView
+
+    view = LeagueView()
+    button = discord.ui.Button(label="Approve")
+    interaction = _interaction()
+
+    await view.on_error(interaction, KeyError("x"), button)
+
+    interaction.response.send_message.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+    line = interaction.client.output_router.post_log.await_args.args[0]
+    assert line.startswith("❌ the “Approve” button failed")
+    assert "KeyError" in line
+
+
+async def test_a_failed_form_tells_the_member_and_the_log_channel():
+    from utils.league_server import LeagueModal
+
+    class _Form(LeagueModal, title="Edit round"):
+        pass
+
+    interaction = _interaction(done=True)
+
+    await _Form().on_error(interaction, ValueError("x"))
+
+    interaction.followup.send.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+    line = interaction.client.output_router.post_log.await_args.args[0]
+    assert line.startswith("❌ the “Edit round” form failed")
+    assert "ValueError" in line

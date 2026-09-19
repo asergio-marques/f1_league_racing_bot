@@ -150,6 +150,11 @@ class LeagueView(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
         return await admits(interaction.client, interaction, while_unclaimed=False)
 
+    async def on_error(
+        self, interaction: discord.Interaction, error: Exception, item: discord.ui.Item, /
+    ) -> None:
+        await report_failure(interaction, error, what=describe(interaction, item))
+
 
 class LeagueModal(discord.ui.Modal):
     """The base of every modal the bot shows, refusing a submission from a server not the
@@ -157,6 +162,9 @@ class LeagueModal(discord.ui.Modal):
 
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
         return await admits(interaction.client, interaction, while_unclaimed=False)
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, /) -> None:
+        await report_failure(interaction, error, what=describe_form(self))
 
 
 def warn_if_serving_several(bot: Any) -> None:
