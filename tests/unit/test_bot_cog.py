@@ -791,3 +791,31 @@ async def test_a_second_factory_reset_waits_for_the_first_clean_up(tmp_path):
 
     assert "still cleaning" in interaction.response.send_message.call_args.args[0]
     cog._clean_up.cancel()
+
+
+def test_nothing_current_names_a_withdrawn_bot_command():
+    """The five setup commands became `/bot …` and `/bot-reset` was withdrawn (issue #247).
+
+    A reply or a guide naming the old form sends a league to a command Discord no longer
+    offers. `specs/` and the constitution's sync reports are historical records and are not
+    read; everything a league or a maintainer reads as current is.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    withdrawn = re.compile(
+        r"/bot-(?:init|log-channel|interaction-channel|interaction-role|admin-role|reset)\b"
+    )
+    paths = [
+        *sorted((root / "src").rglob("*.py")),
+        root / "README.md",
+        *sorted((root / "docs" / "how-to").glob("*.md")),
+        *sorted((root / "docs" / "wip-specs").glob("*.md")),
+    ]
+    offenders = sorted(
+        str(path.relative_to(root))
+        for path in paths
+        if withdrawn.search(path.read_text(encoding="utf-8"))
+    )
+    assert offenders == []
