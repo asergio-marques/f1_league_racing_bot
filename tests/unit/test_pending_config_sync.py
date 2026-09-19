@@ -426,6 +426,35 @@ async def test_sync_refuses_a_season_that_does_not_exist(db_path):
 
 
 # ---------------------------------------------------------------------------
+# A new season's number
+# ---------------------------------------------------------------------------
+
+
+async def test_a_new_season_on_an_empty_league_is_number_one(db_path):
+    _, season_number, _ = await _sync(SeasonService(db_path), 0, [])
+
+    assert season_number == 1
+
+
+async def test_a_new_season_follows_the_latest_number_across_a_gap(db_path):
+    """Issue #153. The number is the latest one plus one, not the count plus one. With a gap
+    in the history a count falls below the highest number in use, and the next season would
+    be issued a number another already holds."""
+    async with get_connection(db_path) as db:
+        for number in (1, 3):
+            await db.execute(
+                "INSERT INTO seasons (start_date, status, season_number) "
+                "VALUES ('2025-01-01', 'COMPLETED', ?)",
+                (number,),
+            )
+        await db.commit()
+
+    _, season_number, _ = await _sync(SeasonService(db_path), 0, [])
+
+    assert season_number == 4
+
+
+# ---------------------------------------------------------------------------
 # The cog seeds teams for new divisions only
 # ---------------------------------------------------------------------------
 

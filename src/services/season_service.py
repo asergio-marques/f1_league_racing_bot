@@ -354,7 +354,7 @@ class SeasonService:
         """
         async with get_connection(self._db_path) as db:
             if season_id == 0:
-                season_number = await self.count_persisted_seasons() + 1
+                season_number = await self.get_previous_season_number() + 1
                 cursor = await db.execute(
                     "INSERT INTO seasons "
                     "(start_date, status, season_number, game_edition, stage) "
