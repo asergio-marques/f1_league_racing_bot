@@ -29,6 +29,10 @@ Autocomplete is refused by offering nothing, Discord accepting no message in rep
 foreign, and every command falls through to the tier guards — which refuse all but `/bot init`
 and its four setting commands, as they always have. Buttons and forms are refused outright
 while no server is claimed; see `LeagueView`.
+
+**The same three classes are where a failure is answered.** A command, button or form that
+raises is reported to its member, the log channel and the host's log by
+`utils.interaction_errors.report_failure`, which each class's `on_error` calls (issue #156).
 """
 
 from __future__ import annotations
@@ -38,6 +42,8 @@ from typing import Any
 
 import discord
 from discord import app_commands
+
+from utils.interaction_errors import describe, describe_form, report_failure
 
 log = logging.getLogger(__name__)
 
@@ -112,10 +118,21 @@ async def admits(
 
 
 class LeagueCommandTree(app_commands.CommandTree):
-    """The command tree, refusing every command from a server that is not the league's."""
+    """The command tree, refusing every command from a server that is not the league's, and
+    answering every command that fails."""
 
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
         return await admits(self.client, interaction)
+
+    async def on_error(
+        self, interaction: discord.Interaction, error: app_commands.AppCommandError, /
+    ) -> None:
+        command = interaction.command
+        if command is not None and command._has_any_error_handlers():
+            # A command that handles its own errors has answered already, as the library's
+            # own handler assumes.
+            return
+        await report_failure(interaction, error, what=describe(interaction))
 
 
 class LeagueView(discord.ui.View):

@@ -165,3 +165,41 @@ def test_an_interaction_with_no_command_is_still_named():
 def test_a_form_is_named_by_its_title():
     assert describe_form(MagicMock(title="Edit round")) == "the “Edit round” form"
     assert describe_form(object()) == "the `object` form"
+
+
+# ── The command tree ──────────────────────────────────────────────────────
+
+
+def _tree():
+    from bot import create_bot
+
+    return create_bot().tree
+
+
+async def test_a_failed_command_tells_the_member_and_the_log_channel():
+    interaction = _interaction()
+    interaction.command._has_any_error_handlers = MagicMock(return_value=False)
+
+    await _tree().on_error(interaction, _invoke_error(KeyError("x")))
+
+    interaction.response.send_message.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
+    line = interaction.client.output_router.post_log.await_args.args[0]
+    assert line.startswith("❌ `/season approve` failed")
+
+
+async def test_a_command_with_its_own_error_handler_is_left_alone():
+    interaction = _interaction()
+    interaction.command._has_any_error_handlers = MagicMock(return_value=True)
+
+    await _tree().on_error(interaction, _invoke_error(KeyError("x")))
+
+    interaction.response.send_message.assert_not_awaited()
+    interaction.client.output_router.post_log.assert_not_awaited()
+
+
+async def test_a_failure_before_any_command_was_found_is_still_answered():
+    interaction = _interaction(command_name=None)
+
+    await _tree().on_error(interaction, app_commands.AppCommandError("tree"))
+
+    interaction.response.send_message.assert_awaited_once_with(FAILURE_REPLY, ephemeral=True)
