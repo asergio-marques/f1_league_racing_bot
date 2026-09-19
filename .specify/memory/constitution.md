@@ -1,6 +1,38 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-19 — v13.1.0 → v13.1.1: PATCH — the enable catch-up is no longer a path (issue #174)]
+  Version change    : 13.1.0 → 13.1.1
+  Bump rationale    : PATCH. A path that no longer exists is removed from a list. The rule it
+                      sat in, that every path arming or judging a phase uses the league's own
+                      horizons, is unchanged for every path that remains, and nothing the old
+                      text required is forbidden. MINOR was weighed and rejected: no guidance
+                      is added or expanded.
+
+  Modified sections :
+    - Principle IV, the paragraph binding every path that arms a phase or judges its horizon to
+      the league's own horizons — "the catch-up performed when the module is enabled" is
+      removed. The approval arming, the re-arming of an amended round's and the recovery on
+      start remain.
+
+  Why the constitution is the document that moved:
+    - Issue #220, merged as #225, removed `_catchup_and_schedule_weather` from
+      `src/cogs/module_cog.py`. `/module enable weather` is refused once a season's placements
+      are confirmed, and a season holding a round whose phase horizon has passed cannot be
+      confirmed, so enabling the module never has a passed horizon to catch up on.
+    - Issue #174 reported that catch-up forecasting rounds already raced. It no longer
+      reproduces; this amendment removes the path's last mention from the body. The weather
+      module specification and `README.md` were corrected in the same change.
+    - Earlier reports that name the catch-up (v9.2.0, issue #111) are historical and unedited.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred items    : none.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-19 — v13.0.0 → v13.1.0: MINOR — a pack and a factory reset replace the reset (issue #247)]
   Version change    : 13.0.0 → 13.1.0
   Bump rationale    : MINOR. Principle I gains a rule block (the server owner's factory reset)
@@ -4672,9 +4704,8 @@ that case, still the one that stands. The division holds the latest phase that s
 
 Every path that arms a phase or judges whether its horizon has passed MUST use the league's own
 configured horizons, not the packaged defaults. This governs the arming of a season's phases at
-approval, the re-arming of an amended round's, the catch-up performed when the module is enabled,
-and the recovery performed when the bot starts. No two of them may reach different answers about
-the same round.
+approval, the re-arming of an amended round's, and the recovery performed when the bot starts. No
+two of them may reach different answers about the same round.
 
 Withdrawal of a phase's record — the `INVALIDATED` marker, the cleared draws, the not-performed
 flag and the deletion of its posted output — MUST happen whatever the module's enabled state, a
@@ -7898,4 +7929,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 13.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-19
+**Version**: 13.1.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-19
