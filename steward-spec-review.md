@@ -1275,3 +1275,7 @@ Decisions:
 - R53 The championship and team revokes asked for a season a completed season cannot give; a held penalty is named by its ticket.
 - R54 Championship penalties upon the licence sheet — closed with no change; the verdicts and the standings carry them.
 - R55 A failed command reaches the steward log as well as the log channel, per core's new rule from #270.
+
+## Open-issue sweep (2026-09-19)
+
+- R56 #175 / PR 277 — each enabled module announces a cancellation in its own channel. Stewarding said nothing; it now posts silently in the division's ticket channel and in each open ticket's channel.

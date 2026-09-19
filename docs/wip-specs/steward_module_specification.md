@@ -560,6 +560,7 @@
   - It is then awaiting appeal verdicts until the verdicts of its appeals are posted, and becomes final at the close of its cycle.
   - Where no appeal is lodged, the round becomes final once appeal submission ends.
   - Where appeals are disabled, the round becomes final once the verdicts of its reports are posted, and never awaits appeal verdicts.
+- Where a round, a division or a season is cancelled, the stewarding module shall say what it means for it, as the core specification requires of each enabled module. In the ticket channel of each division told, posted silently, it shall say that no report or appeal may be lodged for a round called off, and that the cycles of rounds already raced run to their close, their verdicts to be posted as usual. In the channel of each open ticket it shall say the same, so that its parties know it goes on.
 - A round cancelled before its scheduled start has no stewarding cycle, report submission never having opened for it. A round cannot be cancelled once its scheduled start has passed.
 - A round whose every session is submitted as cancelled shall have its stewarding cycle ended once its results are posted, and its tickets closed without a verdict.
   - The bot shall post in each such ticket's channel that the round was cancelled and the ticket closed without a verdict. The channel shall then be removed as any closed ticket's channel is.
