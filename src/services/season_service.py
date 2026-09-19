@@ -787,8 +787,23 @@ class SeasonService:
 
         What `/season abort` leaves of a season whose placements were never confirmed: nothing
         at all, its signups included (issue #220).
+
+        Raises ``ValueError`` for a season not in SETUP, before anything is deleted. Its number
+        is committed from the moment it leaves SETUP, and that number is how a league names
+        its own history: removing one would leave a gap nothing explains (issue #153). A season
+        id that names no season is not an error.
         """
         async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT status FROM seasons WHERE id = ?", (season_id,)
+            )
+            row = await cursor.fetchone()
+            if row is not None and row["status"] != SeasonStatus.SETUP.value:
+                raise ValueError(
+                    f"season {season_id} is {row['status']}; a season whose number is "
+                    "committed cannot be deleted"
+                )
+
             cursor = await db.execute(
                 "SELECT id FROM divisions WHERE season_id = ?", (season_id,)
             )
