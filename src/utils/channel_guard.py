@@ -17,7 +17,7 @@ property of the server — it carries the power to delete channels and ban membe
 given for reasons that have nothing to do with a racing league. A tier is a property of the
 league.
 
-The single exception is `bot_setup_only`, worn by `/bot-init` and the four single-setting
+The single exception is `bot_setup_only`, worn by `/bot init` and the four single-setting
 commands. Those accept the Administrator permission as well as the role, and run from any
 channel, because they are what repairs the settings every other guard reads: a deleted
 interaction channel, or a league admin role removed from the server, would otherwise be
@@ -30,7 +30,7 @@ it should is a separate question, tracked in issue #145, and is not settled here
 **Before the bot is set up.** With no `ServerConfig` there is no channel to check and no role
 anyone can hold, so only `bot_setup_only` proceeds — on the Administrator permission, which
 is the only thing that can exist at that point. Every other command is refused and told to
-run `/bot-init`. The guard this replaced let such a command through untouched.
+run `/bot init`. The guard this replaced let such a command through untouched.
 
 **A refusal names a role, never mentions one.** A refusal that pinged the league admin role
 would notify every holder of it each time somebody mistyped a command.
@@ -76,14 +76,14 @@ LEAGUE_ADMIN = "league admin"
 LEAGUE_MANAGER = "league manager"
 
 _NOT_SET_UP = (
-    "⛔ This server has not been set up yet. A server administrator must run `/bot-init`."
+    "⛔ This server has not been set up yet. A server administrator must run `/bot init`."
 )
 _NOT_IN_A_SERVER = "⛔ This command can only be used inside a server."
 _WRONG_CHANNEL = "⛔ This command can only be used in the configured interaction channel."
 _NO_ADMIN_ROLE = (
     "⛔ No league admin role is configured, so nobody holds the tier this command asks "
     "for. Somebody with Discord's **Administrator** permission can set one with "
-    "`/bot-admin-role`, from any channel."
+    "`/bot admin-role`, from any channel."
 )
 
 
@@ -236,7 +236,7 @@ league_manager_only = _tier_guard(LEAGUE_MANAGER)
 
 
 def bot_setup_only(func: Callable) -> Callable:
-    """`/bot-init` and the four commands that change one setting each.
+    """`/bot init` and the four commands that change one setting each.
 
     A league admin's tier, but reachable by Discord's Administrator permission as well, and
     from any channel. Both exemptions have the same cause: these commands repair the very

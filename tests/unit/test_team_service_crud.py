@@ -202,7 +202,7 @@ async def test_seeding_an_empty_server_creates_only_the_reserve(tmp_path):
 
 
 async def test_seeding_leaves_an_existing_team_list_alone(tmp_path):
-    """`/bot-init` may be run again on a configured server."""
+    """`/bot init` may be run again on a configured server."""
     db_path = await _make_db(tmp_path)
     service = TeamService(db_path)
     await service.add_default_team("Alpha")

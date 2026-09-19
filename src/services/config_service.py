@@ -71,7 +71,7 @@ class ConfigService:
         below, which write a single column each.
 
         An upsert here used to overwrite `test_mode_active` from whatever the caller's
-        `ServerConfig` happened to carry. `/bot-init` builds one without reading the stored
+        `ServerConfig` happened to carry. `/bot init` builds one without reading the stored
         row first, so its `force` path silently switched test mode off while leaving the
         test drivers seated. Refusing to update at all makes that unreachable rather than
         merely corrected.
@@ -128,7 +128,7 @@ class ConfigService:
             await db.commit()
             return cursor.rowcount > 0
 
-    #: The four settings `/bot-init` establishes and the four commands beside it repair.
+    #: The four settings `/bot init` establishes and the four commands beside it repair.
     #: Named here rather than interpolated from the caller so that no command can reach a
     #: column of its own choosing.
     _SETTABLE_COLUMNS = {

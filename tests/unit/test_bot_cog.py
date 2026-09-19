@@ -1,4 +1,4 @@
-"""Core server configuration — `/bot-init` and the four settings beside it.
+"""Core server configuration — `/bot init` and the four settings beside it.
 
 Three properties are pinned here, each of which a plausible tidy-up would undo.
 
@@ -11,12 +11,12 @@ configuration. The tests below invoke them from the wrong channel, by a user hol
 role, and require them to work anyway.
 
 **Each writes exactly one column.** `save_server_config` once carried a whole `ServerConfig`
-into an upsert, which is how `/bot-init force:True` came to switch test mode off: the model
+into an upsert, which is how `/bot init force:True` came to switch test mode off: the model
 it was handed had never read the stored row, so `test_mode_active` defaulted to False and
 overwrote a live setting. The setters write a single column so no such carry-over is
 possible.
 
-**`/bot-init` runs once.** A second run is refused rather than overwriting, which is what
+**`/bot init` runs once.** A second run is refused rather than overwriting, which is what
 makes the clobber above unreachable rather than merely corrected.
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.init_cog import InitCog  # noqa: E402
+from cogs.bot_cog import BotCog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.config_service import ConfigService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
@@ -127,13 +127,13 @@ def _role(role_id: int) -> MagicMock:
     return role
 
 
-# ── /bot-init runs once ───────────────────────────────────────────────────
+# ── /bot init runs once ───────────────────────────────────────────────────
 
 
 async def test_bot_init_configures_an_unconfigured_server(tmp_path):
     db_path = await _make_db(tmp_path)
     bot = _bot(db_path)
-    cog = InitCog(bot)
+    cog = BotCog(bot)
     interaction = _interaction()
 
     await _unwrap(cog.handle_bot_init)(
@@ -157,7 +157,7 @@ async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_pat
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _bot(db_path)
-    cog = InitCog(bot)
+    cog = BotCog(bot)
     interaction = _interaction()
 
     await _unwrap(cog.handle_bot_init)(
@@ -166,10 +166,10 @@ async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_pat
 
     reply = interaction.response.send_message.call_args.args[0]
     assert "runs once" in reply
-    assert "/bot-log-channel" in reply
-    assert "/bot-interaction-channel" in reply
-    assert "/bot-interaction-role" in reply
-    assert "/bot-admin-role" in reply
+    assert "/bot log-channel" in reply
+    assert "/bot interaction-channel" in reply
+    assert "/bot interaction-role" in reply
+    assert "/bot admin-role" in reply
 
     row = await _row(db_path)
     assert row["interaction_role_id"] == CONFIGURED_ROLE
@@ -182,13 +182,13 @@ async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_pat
 async def test_a_second_bot_init_does_not_switch_test_mode_off(tmp_path):
     """The regression this change exists to make unreachable.
 
-    `/bot-init force:True` built a `ServerConfig` without reading the stored row, so
+    `/bot init force:True` built a `ServerConfig` without reading the stored row, so
     `test_mode_active` defaulted to False and the upsert wrote it — leaving test mode off
     with the test drivers still seated, and nothing said so.
     """
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path, test_mode=1)
-    cog = InitCog(_bot(db_path))
+    cog = BotCog(_bot(db_path))
 
     await _unwrap(cog.handle_bot_init)(
         cog, _interaction(), _role(900), _role(903), _channel(901), _channel(902)
@@ -202,7 +202,7 @@ async def test_bot_init_on_a_second_server_is_refused_and_writes_nothing(tmp_pat
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _bot(db_path)
-    cog = InitCog(bot)
+    cog = BotCog(bot)
     interaction = _interaction()
     interaction.guild_id = SERVER_ID + 1
 
@@ -228,7 +228,7 @@ async def test_a_full_reset_frees_the_server_for_another(tmp_path):
     scheduler.cancel_all_weather_for_rounds = MagicMock()
     await reset_server_data(db_path, scheduler, full=True)
     bot = _bot(db_path)
-    cog = InitCog(bot)
+    cog = BotCog(bot)
     interaction = _interaction()
     interaction.guild_id = SERVER_ID + 1
 
@@ -252,7 +252,7 @@ async def test_a_lost_race_to_another_server_names_the_other_server(tmp_path):
     bot.config_service.get_league_server_id = real.get_league_server_id
     bot.config_service.get_server_config = real.get_server_config
     bot.config_service.save_server_config = _lose
-    cog = InitCog(bot)
+    cog = BotCog(bot)
     interaction = _interaction()
     interaction.guild_id = SERVER_ID + 1
 
@@ -329,7 +329,7 @@ async def test_a_setting_command_writes_only_its_own_column(
 ):
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = InitCog(_bot(db_path))
+    cog = BotCog(_bot(db_path))
     before = await _row(db_path)
 
     await _unwrap(getattr(cog, attribute))(cog, _interaction(), factory(new_id))
@@ -350,7 +350,7 @@ async def test_a_setting_command_works_outside_the_interaction_channel(
     """Guarding these on the settings they repair would make the failure unrecoverable."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = InitCog(_bot(db_path))
+    cog = BotCog(_bot(db_path))
 
     # The whole decorator chain, not the unwrapped body: a channel-bound guard added later
     # would refuse this interaction, and refusing it is the failure this test is for.
@@ -368,12 +368,12 @@ async def test_a_setting_command_refuses_an_unconfigured_server(
     tmp_path, attribute, column, factory, new_id
 ):
     db_path = await _make_db(tmp_path)
-    cog = InitCog(_bot(db_path))
+    cog = BotCog(_bot(db_path))
     interaction = _interaction()
 
     await _unwrap(getattr(cog, attribute))(cog, interaction, factory(new_id))
 
-    assert "/bot-init" in interaction.response.send_message.call_args.args[0]
+    assert "/bot init" in interaction.response.send_message.call_args.args[0]
     assert await _row(db_path) == {}
 
 
@@ -386,7 +386,7 @@ async def test_a_setting_command_refuses_a_member_of_neither_tier(
     """`bot_setup_only` is the whole of the gate on these, so it had better be on."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = InitCog(_bot(db_path))
+    cog = BotCog(_bot(db_path))
 
     interaction = _interaction()
     interaction.user.guild_permissions.administrator = False
@@ -408,7 +408,7 @@ async def test_a_setting_command_admits_the_league_admin_role(
     """The role is the tier; Administrator is only the way back when the role is gone."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = InitCog(_bot(db_path))
+    cog = BotCog(_bot(db_path))
 
     interaction = _interaction()
     interaction.user.guild_permissions.administrator = False
@@ -422,9 +422,9 @@ async def test_a_setting_command_admits_the_league_admin_role(
 async def test_a_setting_command_admits_an_administrator_before_the_bot_is_configured(
     tmp_path,
 ):
-    """The bootstrap. `/bot-init` has no configuration to read a role out of."""
+    """The bootstrap. `/bot init` has no configuration to read a role out of."""
     db_path = await _make_db(tmp_path)
-    cog = InitCog(_bot(db_path))
+    cog = BotCog(_bot(db_path))
 
     interaction = _interaction()
     interaction.user.guild_permissions.administrator = True
@@ -465,7 +465,7 @@ def test_no_core_command_is_bound_to_the_interaction_channel(attribute):
     is asserted rather than the number of decorators: counting them said the same thing only
     for as long as the guards came in pairs, and said nothing about which guards they were.
     """
-    from cogs.init_cog import InitCog as Cog
+    from cogs.bot_cog import BotCog as Cog
     from utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_ADMIN, TIER_ATTRIBUTE
 
     callback = getattr(Cog, attribute).callback
@@ -487,7 +487,7 @@ def test_bot_init_requires_the_league_admin_role():
     somebody noticed. Asking for it up front is what stops that, and making the parameter
     optional again would quietly undo it.
     """
-    from cogs.init_cog import InitCog as Cog
+    from cogs.bot_cog import BotCog as Cog
 
     parameter = next(
         p for p in Cog.handle_bot_init.parameters if p.name == "league_admin_role"
@@ -522,7 +522,7 @@ async def test_a_server_configured_before_the_role_existed_reads_none(tmp_path):
     """The migration adds the column nullable, and NULL means "not yet chosen".
 
     No value is invented for a league that predates the role. Reading it back as ``None``
-    is what lets the guards refuse a league admin command and name `/bot-admin-role`,
+    is what lets the guards refuse a league admin command and name `/bot admin-role`,
     rather than falling back to a Discord permission the league never picked.
     """
     db_path = await _make_db(tmp_path)

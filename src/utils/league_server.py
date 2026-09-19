@@ -53,7 +53,7 @@ async def is_foreign_guild(bot: Any, guild_id: int | None) -> bool:
     """Whether *guild_id* is a server other than the league's.
 
     False outside a server (a DM carries no guild, and the tier guards refuse it themselves)
-    and False while no league is set up, so that `/bot-init` can reach the server that will
+    and False while no league is set up, so that `/bot init` can reach the server that will
     become the league's.
     """
     if guild_id is None:

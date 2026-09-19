@@ -3,7 +3,7 @@
 Issue #244. The league's server is the one `server_configs` row; every command from any other
 server is refused before its body runs, every button, menu and modal from one is refused
 before its callback runs, and the host is warned when the bot sits in more than one. The claim itself — that a second server cannot be set up — is pinned in
-`test_init_cog.py`, where `/bot-init` and `save_server_config` are.
+`test_bot_cog.py`, where `/bot init` and `save_server_config` are.
 """
 from __future__ import annotations
 
@@ -99,7 +99,7 @@ async def test_autocomplete_in_another_server_offers_nothing_and_sends_nothing()
 
 
 async def test_before_any_server_is_set_up_every_server_proceeds():
-    """So that `/bot-init` can reach the server that will become the league's."""
+    """So that `/bot init` can reach the server that will become the league's."""
     bot = _bot(None)
 
     assert await bot.tree.interaction_check(_interaction(ELSEWHERE)) is True

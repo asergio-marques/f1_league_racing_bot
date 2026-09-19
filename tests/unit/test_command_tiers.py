@@ -50,11 +50,11 @@ SETUP = "league admin, any channel"
 #: manager's, which is the default the core specification states.
 LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
     # The bot upon the server. These five repair the settings every other guard reads.
-    "bot-init": SETUP,
-    "bot-admin-role": SETUP,
-    "bot-interaction-role": SETUP,
-    "bot-interaction-channel": SETUP,
-    "bot-log-channel": SETUP,
+    "bot init": SETUP,
+    "bot admin-role": SETUP,
+    "bot interaction-role": SETUP,
+    "bot interaction-channel": SETUP,
+    "bot log-channel": SETUP,
     # Starting over, and deleting the bot's own messages.
     "bot-reset": ADMIN,
     "clean-bot": ADMIN,
@@ -180,11 +180,11 @@ def test_only_the_five_setup_commands_run_outside_the_interaction_channel():
         if getattr(command.callback, CHANNEL_EXEMPT_ATTRIBUTE, False)
     )
     assert exempt == [
-        "bot-admin-role",
-        "bot-init",
-        "bot-interaction-channel",
-        "bot-interaction-role",
-        "bot-log-channel",
+        "bot admin-role",
+        "bot init",
+        "bot interaction-channel",
+        "bot interaction-role",
+        "bot log-channel",
     ]
 
 

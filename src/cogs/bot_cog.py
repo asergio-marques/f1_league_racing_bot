@@ -1,7 +1,11 @@
-"""InitCog — core server configuration: /bot-init and the four settings beside it.
+"""BotCog — the `/bot` group: the bot upon its server.
 
-Every command here is exempt from the interaction-channel rule, and each accepts Discord's
-Administrator permission as well as the league admin role. For `/bot-init` that is the
+`/bot init` and the four settings beside it configure the bot upon the league's server.
+They were five top-level `/bot-…` commands, and were gathered into one group with the
+commands that release the server (decided 2026-09-19, issue #247).
+
+Every setup command here is exempt from the interaction-channel rule, and each accepts Discord's
+Administrator permission as well as the league admin role. For `/bot init` that is the
 original chicken-and-egg: no configuration exists to gate against. For the other four it is
 load-bearing in a different way — the ordinary guards admit a command only in the configured
 interaction channel and only to holders of a configured role, so gating these on the very
@@ -25,8 +29,8 @@ log = logging.getLogger(__name__)
 
 #: Named in every refusal, so an administrator meeting one is told where to go next.
 _SETTINGS_COMMANDS = (
-    "`/bot-log-channel`, `/bot-interaction-channel`, `/bot-interaction-role` "
-    "and `/bot-admin-role`"
+    "`/bot log-channel`, `/bot interaction-channel`, `/bot interaction-role` "
+    "and `/bot admin-role`"
 )
 
 #: One bot serves one league (issue #244). The tree refuses a command from another server
@@ -37,16 +41,24 @@ _ANOTHER_SERVER = (
 )
 
 
-class InitCog(commands.Cog):
+class BotCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
+    # Not named `bot`, which is the cog's handle on the bot itself, nor `bot_…`, which
+    # discord.py reserves.
+    group = app_commands.Group(
+        name="bot",
+        description="The bot upon the league's server",
+        guild_only=True,
+    )
+
     # ------------------------------------------------------------------
-    # /bot-init — once per server
+    # /bot init — once per server
     # ------------------------------------------------------------------
 
-    @app_commands.command(
-        name="bot-init",
+    @group.command(
+        name="init",
         description="One-time bot setup: register interaction role and channels.",
     )
     @app_commands.describe(
@@ -69,8 +81,8 @@ class InitCog(commands.Cog):
         There is no `force`: a second run is refused outright rather than overwriting.
         Each of the four settings has a command of its own now, so the only thing an
         overwrite offered was the chance to reset the others by accident — which is
-        precisely what it did to test mode. `/bot-reset full:True` removes the row for a
-        server that genuinely means to start again.
+        precisely what it did to test mode. `/bot pack` frees the claim for a league that
+        genuinely means to start again, on this server or another.
 
         The league admin role is asked for here rather than left to be set afterwards
         because it is the tier that governs the bot: a server initialised without one has
@@ -87,9 +99,9 @@ class InitCog(commands.Cog):
         existing = await self.bot.config_service.get_server_config()
         if existing:
             await interaction.response.send_message(
-                "⚠️ This server is already configured, and `/bot-init` runs once.\n"
+                "⚠️ This server is already configured, and `/bot init` runs once.\n"
                 f"To change a setting use {_SETTINGS_COMMANDS}.\n"
-                "To start over entirely, use `/bot-reset full:True` first.",
+                "To move the league to another server, use `/bot pack` first.",
                 ephemeral=True,
             )
             return
@@ -103,13 +115,13 @@ class InitCog(commands.Cog):
         )
         created = await self.bot.config_service.save_server_config(cfg)
         if not created:
-            # Lost a race with a concurrent /bot-init. Report the refusal that fits whoever
+            # Lost a race with a concurrent /bot init. Report the refusal that fits whoever
             # won rather than claiming a success that wrote nothing.
             if await self.bot.config_service.get_league_server_id() != server_id:
                 await interaction.response.send_message(_ANOTHER_SERVER, ephemeral=True)
                 return
             await interaction.response.send_message(
-                "⚠️ This server is already configured, and `/bot-init` runs once.\n"
+                "⚠️ This server is already configured, and `/bot init` runs once.\n"
                 f"To change a setting use {_SETTINGS_COMMANDS}.",
                 ephemeral=True,
             )
@@ -126,7 +138,7 @@ class InitCog(commands.Cog):
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot-init | Success\n"
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot init | Success\n"
             f"  interaction_role: {interaction_role.name} (<@&{interaction_role.id}>)\n"
             f"  interaction_channel: <#{interaction_channel.id}>\n"
             f"  log_channel: <#{log_channel.id}>",
@@ -177,7 +189,7 @@ class InitCog(commands.Cog):
         changed = await self.bot.config_service.set_core_setting(column, value)
         if not changed:
             await interaction.response.send_message(
-                "⛔ This server is not configured yet — run `/bot-init` first.",
+                "⛔ This server is not configured yet — run `/bot init` first.",
                 ephemeral=True,
             )
             return
@@ -193,8 +205,8 @@ class InitCog(commands.Cog):
         )
         log.info("%s set %s", interaction.user, column)
 
-    @app_commands.command(
-        name="bot-log-channel",
+    @group.command(
+        name="log-channel",
         description="Change the channel the bot writes its calculation log to.",
     )
     @app_commands.describe(channel="The channel where calculation logs are posted.")
@@ -206,13 +218,13 @@ class InitCog(commands.Cog):
             interaction,
             column="log_channel_id",
             value=channel.id,
-            command="/bot-log-channel",
+            command="/bot log-channel",
             label="Log channel",
             mention=f"<#{channel.id}>",
         )
 
-    @app_commands.command(
-        name="bot-interaction-channel",
+    @group.command(
+        name="interaction-channel",
         description="Change the channel the bot accepts commands in.",
     )
     @app_commands.describe(channel="The channel where bot commands are accepted.")
@@ -224,13 +236,13 @@ class InitCog(commands.Cog):
             interaction,
             column="interaction_channel_id",
             value=channel.id,
-            command="/bot-interaction-channel",
+            command="/bot interaction-channel",
             label="Interaction channel",
             mention=f"<#{channel.id}>",
         )
 
-    @app_commands.command(
-        name="bot-interaction-role",
+    @group.command(
+        name="interaction-role",
         description="Change the role allowed to use bot commands.",
     )
     @app_commands.describe(role="The role allowed to use bot commands.")
@@ -242,13 +254,13 @@ class InitCog(commands.Cog):
             interaction,
             column="interaction_role_id",
             value=role.id,
-            command="/bot-interaction-role",
+            command="/bot interaction-role",
             label="Interaction role",
             mention=f"<@&{role.id}>",
         )
 
-    @app_commands.command(
-        name="bot-admin-role",
+    @group.command(
+        name="admin-role",
         description="Change the role that governs the bot and may undo a league entire.",
     )
     @app_commands.describe(role="The role holding the league admin tier.")
@@ -267,7 +279,7 @@ class InitCog(commands.Cog):
             interaction,
             column="league_admin_role_id",
             value=role.id,
-            command="/bot-admin-role",
+            command="/bot admin-role",
             label="League admin role",
             mention=f"<@&{role.id}>",
         )
