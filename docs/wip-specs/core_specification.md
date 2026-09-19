@@ -396,7 +396,7 @@ it only to place it; the rules governing it belong to its own specification.
     - The weather and results modules each carry a note, posted silently, in the forecast and results channels.
 - The calendar of each division told shall be posted again, as it then stands, with every round called off shown as cancelled. It is not a posting the command asked for, so a graphic that cannot be drawn falls back to the textual calendar as it does at the confirmation of placements. A division whose calendar was never posted is left alone.
 - A season is announced once its history entries are recorded, and before its roles are revoked and before it is recorded cancelled: the check-in notice mentions the division role, and a season recorded cancelled no longer has its channels read. The rounds its cancellation is about to call off are shown as cancelled on the calendar all the same.
-- A division already cancelled shall not be told again when its season is cancelled.
+- A division already cancelled shall not be told again when its season is cancelled, and a division already finished shall not be told at all, holding no round to call off.
 - No announcement shall fail the cancellation. Every place one could not reach — a channel not set, a channel not found, a message refused, a calendar not posted — shall be named to the league admin in the command's reply and in the log channel. A calendar posted as text because its graphic could not be drawn shall be named the same way.
 
 ## Tracks

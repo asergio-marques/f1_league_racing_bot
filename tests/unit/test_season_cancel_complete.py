@@ -322,6 +322,24 @@ async def test_every_division_still_running_is_told_by_its_modules():
     interaction._channel.send.assert_not_awaited()
 
 
+async def test_a_division_already_finished_is_not_told(tmp_path=None):
+    """It has no round left to call off, so there is nothing to tell it and nothing to redraw
+    on its calendar — the spec's "each division still running"."""
+    cog = _make_cog(
+        divisions=[
+            _division(11, "Division 1"),
+            _division(12, "Division 2", status="FINISHED"),
+            _division(13, "Division 3", status="CANCELLED"),
+        ]
+    )
+    history, roles = _season_end()
+
+    with history, roles:
+        announce = await _cancel(cog, _interaction())
+
+    assert [d.id for d in announce.await_args.args[2]] == [11]
+
+
 async def test_the_rounds_about_to_be_cancelled_are_drawn_cancelled():
     """The calendars are posted before the cascade records the rounds cancelled, so the
     rounds it will cancel are named: those whose results are not yet in."""

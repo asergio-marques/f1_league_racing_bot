@@ -2780,16 +2780,20 @@ class SeasonCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         divisions = await self.bot.season_service.get_divisions(season.id)
-        active_divs = [d for d in divisions if d.status != "CANCELLED"]
+        # Told: every division still running. A division already cancelled was told when it
+        # was, and one already finished has no round left to call off and nothing to hear.
+        active_divs = [d for d in divisions if d.status not in ("CANCELLED", "FINISHED")]
 
-        # The rounds the cascade below is about to call off: those whose results are not yet
-        # in, exactly as `ROUND_CANCELLABLE` has it for the cascade itself.
+        # The rounds the cascade below is about to call off: those of the divisions it
+        # cancels whose results are not yet in, exactly as `ROUND_CANCELLABLE` has it for the
+        # cascade itself. The jobs of every division go, told or not.
+        cancelled_divs = {d.id for d in divisions if d.status != "CANCELLED"}
         to_cancel: set[int] = set()
         for div in divisions:
             div_rounds = await self.bot.season_service.get_division_rounds(div.id)
             for rnd in div_rounds:
                 self.bot.scheduler_service.cancel_round(rnd.id)
-                if rnd.status in ROUND_CANCELLABLE:
+                if rnd.status in ROUND_CANCELLABLE and div.id in cancelled_divs:
                     to_cancel.add(rnd.id)
         self.bot.scheduler_service.cancel_season_end()
 
