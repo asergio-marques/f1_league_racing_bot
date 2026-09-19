@@ -143,6 +143,7 @@
 
 ## Recovery
 - Upon starting, the bot shall perform any phase of any round of a season whose placements have been confirmed, and which is not yet completed or cancelled, whose horizon has passed and which has not yet been performed.
+- It shall do so only for a round still to be run. No phase shall be performed on starting for a cancelled round, for a round of a cancelled division, or for a round whose scheduled race time has passed.
 - The horizons it shall judge those phases by are the league's own configured ones, not the packaged ones, so that a restart, the confirmation of placements and an amendment cannot disagree about a round.
 
 ## Image generation

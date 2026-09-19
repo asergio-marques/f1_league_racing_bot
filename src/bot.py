@@ -389,6 +389,14 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
 
     The config is resolved once rather than once per round, since the league has one, and only
     after the module gate, so a league with weather switched off is never queried for it.
+
+    Only a round still to be run is recovered (issue #272): never a cancelled round, a round of a
+    cancelled division, or a round whose race time has passed. Cancellation is filtered in the
+    query. The race time is judged here, after the timestamp is made aware, because rows written
+    without an offset still exist, and SQL would compare them as text against a timestamp that
+    carries one. It is the race time rather than the round's status that decides, since a round leaves
+    ``NOT_RUN`` only by its result-submission job, and a job that fell due while the bot was down
+    was discarded by the scheduler's misfire grace rather than run.
     """
     from db.database import get_connection
     from services.phase1_service import run_phase1
@@ -412,6 +420,8 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
             JOIN seasons s ON s.id = d.season_id
             WHERE s.status = 'ACTIVE'
               AND r.format != 'MYSTERY'
+              AND r.status != 'CANCELLED'
+              AND d.status != 'CANCELLED'
             """
         )
         rows = await cursor.fetchall()
@@ -421,6 +431,10 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
         scheduled_at = datetime.fromisoformat(scheduled_at_str)
         if scheduled_at.tzinfo is None:
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+
+        # A round already raced has no forecast owing, whatever its flags say.
+        if scheduled_at <= now:
+            continue
 
         # Only recover phases for servers with weather module active
         if not await bot.module_service.is_weather_enabled():  # type: ignore[attr-defined]

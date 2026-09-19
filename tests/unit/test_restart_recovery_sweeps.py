@@ -283,7 +283,7 @@ async def test_a_naive_scheduled_time_is_read_as_utc(tmp_path):
     """SQLite hands the column back as text with no offset, and comparing the parsed value
     to an aware "now" raises — which would abort the sweep partway through a season."""
     db_path = await _base_db(tmp_path, "phases_naive")
-    naive = (datetime.now(timezone.utc) - timedelta(days=1)).replace(tzinfo=None)
+    naive = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None)
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format) "
