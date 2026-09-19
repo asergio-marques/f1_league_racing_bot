@@ -785,3 +785,38 @@ async def test_a_fault_both_reposts_found_is_reported_once(tmp_path):
     said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
     assert said.count(FAULT) == 1
     assert _logged(state).count(FAULT) == 1
+
+
+async def test_a_log_channel_that_refuses_still_tells_the_manager(tmp_path):
+    """The report is two messages, and neither may take the other down with it.
+
+    The log channel is the league's record and the reply is the manager's; a failure to
+    write one must not swallow the other, or the approval goes back to being silent in
+    exactly the way #237 is about.
+    """
+    db_path = await _make_db(tmp_path, name="log_refuses")
+    state = _state(db_path, staged=[_penalty()])
+    state.bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("no log channel"))
+    interaction = _interaction()
+
+    await _run(
+        finalize_penalty_review, state, interaction, repost_faults=[FAULT]
+    )
+
+    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
+    assert FAULT in said
+
+
+async def test_a_reply_that_fails_does_not_stop_the_approval(tmp_path):
+    """The manager may have dismissed the interaction; the approval still stands."""
+    db_path = await _make_db(tmp_path, name="reply_fails")
+    state = _state(db_path, staged=[_penalty()])
+    interaction = _interaction()
+    interaction.followup.send = AsyncMock(side_effect=RuntimeError("unknown webhook"))
+
+    await _run(
+        finalize_penalty_review, state, interaction, repost_faults=[FAULT]
+    )
+
+    assert "RESULTS_REPOST | Incomplete" in _logged(state)
+    assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
