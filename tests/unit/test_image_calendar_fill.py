@@ -47,6 +47,7 @@ SUFFIXES = (
     "date",
     "time",
     "vertical_crop_point",
+    "cancelled",
 )
 
 
@@ -188,9 +189,10 @@ def test_rounds_beyond_the_division_are_never_treated_as_unresolved():
 
 
 def test_a_round_below_the_cut_is_left_for_the_crop_to_remove():
-    """Stacked rounds all fall below the cut, so nothing is removed by group."""
+    """Stacked rounds all fall below the cut, so nothing is removed by group. The one
+    thing removed is the drawn round's cancellation overlay, the round being still on."""
     spec = build_fill_spec(_draw([_round(1)]), _template(3, group=True))
-    assert spec.remove == []
+    assert spec.remove == ["round_1_cancelled"]
 
 
 def test_a_round_beside_the_final_one_leaves_by_its_group():
@@ -209,7 +211,7 @@ def test_a_round_beside_the_final_one_leaves_by_its_group():
             child.set("y", "200" if suffix == "vertical_crop_point" else "10")
 
     spec = build_fill_spec(_draw([_round(1)]), root)
-    assert spec.remove == ["round_2_group"]
+    assert spec.remove == ["round_1_cancelled", "round_2_group"]
 
 
 def test_a_round_beside_the_final_one_leaves_field_by_field_without_a_group():
@@ -325,3 +327,44 @@ def test_a_mystery_round_resolves_each_class_from_its_own_directory():
     spec = _spec_for_ids(["round_1_flag", "round_1_image"], mystery=True)
     assert spec.image_data["round_1_flag"] == ("flag", "Mystery")
     assert spec.image_data["round_1_image"] == ("track", "Mystery")
+
+
+# ── The cancellation overlay (#175) ───────────────────────────────────────
+
+
+def _cancelled(number: int):
+    entry = _round(number)
+    entry.status = "CANCELLED"
+    return entry
+
+
+def test_a_round_still_on_loses_its_overlay():
+    spec = build_fill_spec(_draw([_round(1), _round(2)]), _template(2))
+    assert "round_1_cancelled" in spec.remove
+    assert "round_2_cancelled" in spec.remove
+
+
+def test_a_cancelled_round_keeps_its_overlay():
+    spec = build_fill_spec(_draw([_round(1), _cancelled(2)]), _template(2))
+    assert "round_2_cancelled" not in spec.remove
+    assert "round_1_cancelled" in spec.remove
+
+
+def test_a_cancelled_round_is_still_drawn_in_full():
+    """The overlay veils the round; it does not take the round's values away."""
+    spec = build_fill_spec(_draw([_cancelled(1)]), _template(1))
+    assert spec.text["round_1_number"] == "1"
+    assert spec.text["round_1_race_name"]
+    assert "round_1_cancelled" not in spec.text
+
+
+def test_a_cancelled_mystery_round_keeps_its_overlay():
+    entry = _round(1, fmt="MYSTERY")
+    entry.status = "CANCELLED"
+    spec = build_fill_spec(_draw([entry]), _template(1))
+    assert "round_1_cancelled" not in spec.remove
+
+
+def test_resolution_marks_only_the_cancelled_round():
+    drawing = _draw([_round(1), _cancelled(2), _round(3)])
+    assert [entry.cancelled for entry in drawing.rounds] == [False, True, False]

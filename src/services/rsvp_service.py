@@ -176,8 +176,16 @@ class _RsvpButton(discord.ui.Button):
 # this gate's, and nothing here should try to compensate for it.
 
 
-async def _attendance_enabled_for_round(round_id: int, bot) -> bool:  # type: ignore[type-arg]
-    """Return True when *round_id* exists and the league has the attendance module enabled."""
+async def _check_in_runs_for_round(round_id: int, bot) -> bool:  # type: ignore[type-arg]
+    """Return True when *round_id*'s check-in work should still run.
+
+    The module gate above, and one thing more: a round **recorded as cancelled** has no
+    check-in left to run. Cancelling a round unschedules its three jobs, so ordinarily none of
+    them reaches this — but the removal swallows what the scheduler raises, the job store is
+    durable and outlives a restart, and the cancellation now takes the call down (#175). A job
+    that survived would otherwise post a call, a reminder or a distribution for a round that is
+    off, and re-create the row that says a call is standing.
+    """
     async with get_connection(bot.db_path) as db:
         cur = await db.execute(
             """
@@ -186,6 +194,7 @@ async def _attendance_enabled_for_round(round_id: int, bot) -> bool:  # type: ig
               JOIN divisions d ON d.id = r.division_id
               JOIN seasons s ON s.id = d.season_id
              WHERE r.id = ?
+               AND r.status != 'CANCELLED'
             """,
             (round_id,),
         )
@@ -390,9 +399,10 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
 
     Produces nothing while the attendance module is disabled — see the module gate above.
     """
-    if not await _attendance_enabled_for_round(round_id, bot):
+    if not await _check_in_runs_for_round(round_id, bot):
         log.info(
-            "run_rsvp_notice: attendance module disabled for round %d — no check-in call posted",
+            "run_rsvp_notice: attendance module disabled, or the round is cancelled, for "
+            "round %d — no check-in call posted",
             round_id,
         )
         return
@@ -617,10 +627,21 @@ async def run_rsvp_notice(round_id: int, bot) -> None:  # type: ignore[type-arg]
 # ── withdraw_rsvp_call / repost_rsvp_call ─────────────────────────────────────
 
 
-async def withdraw_rsvp_call(round_id: int, division_id: int, bot) -> bool:  # type: ignore[type-arg]
+async def withdraw_rsvp_call(
+    round_id: int,
+    division_id: int,
+    bot,  # type: ignore[no-untyped-def]
+    *,
+    undeleted: list[str] | None = None,
+) -> bool:
     """Take down the check-in call posted for *round_id*, and everything posted beside it.
 
     Returns True where a call was standing and has been removed, False where there was none.
+
+    *undeleted*, where given, collects the id of every message that could not be deleted — the
+    channel gone, or Discord refusing — so a caller that must say so can. A message already
+    deleted, by hand or otherwise, is not among them: it is gone, which is what was asked. The
+    row goes either way, since nothing would take the messages down again from it.
 
     `run_rsvp_notice` clears a division's *previous* rounds' messages and deliberately skips the
     round it is posting for, so a round whose call is posted twice would end up with both
@@ -635,20 +656,30 @@ async def withdraw_rsvp_call(round_id: int, division_id: int, bot) -> bool:  # t
     if stored is None:
         return False
 
-    channel = bot.get_channel(int(stored.channel_id))
-    if channel is not None:
+    posted = [
+        message_id
         for message_id in (
             stored.message_id,
             stored.last_notice_msg_id,
             stored.distribution_msg_id,
-        ):
-            if message_id is None:
-                continue
+        )
+        if message_id is not None
+    ]
+    channel = bot.get_channel(int(stored.channel_id))
+    if channel is None:
+        if undeleted is not None:
+            undeleted.extend(str(m) for m in posted)
+    else:
+        for message_id in posted:
             try:
                 message = await channel.fetch_message(int(message_id))
                 await message.delete()
+            except discord.NotFound:
+                pass  # Already gone — which is what was asked.
             except discord.HTTPException:
-                pass  # Already gone, or no permission — the row goes either way.
+                # No permission, or Discord failing. The row goes either way.
+                if undeleted is not None:
+                    undeleted.append(str(message_id))
 
     async with get_connection(bot.db_path) as db:
         await db.execute(
@@ -705,9 +736,10 @@ async def run_rsvp_last_notice(round_id: int, bot) -> None:  # type: ignore[type
 
     Produces nothing while the attendance module is disabled — see the module gate above.
     """
-    if not await _attendance_enabled_for_round(round_id, bot):
+    if not await _check_in_runs_for_round(round_id, bot):
         log.info(
-            "run_rsvp_last_notice: attendance module disabled for round %d — no reminder posted",
+            "run_rsvp_last_notice: attendance module disabled, or the round is cancelled, "
+            "for round %d — no reminder posted",
             round_id,
         )
         return
@@ -820,9 +852,10 @@ async def run_rsvp_deadline(round_id: int, bot) -> None:  # type: ignore[type-ar
     ``is_standby`` onto drivers, moving reserves into seats for a module the league has
     switched off.
     """
-    if not await _attendance_enabled_for_round(round_id, bot):
+    if not await _check_in_runs_for_round(round_id, bot):
         log.info(
-            "run_rsvp_deadline: attendance module disabled for round %d — no distribution run",
+            "run_rsvp_deadline: attendance module disabled, or the round is cancelled, for "
+            "round %d — no distribution run",
             round_id,
         )
         return

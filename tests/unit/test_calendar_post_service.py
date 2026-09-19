@@ -384,3 +384,27 @@ async def test_the_replacement_deletion_is_not_test_mode_suppressed(tmp_path):
     assert "test_mode" not in body
     assert "flush_pending_deletions" not in body
     assert "forecast_cleanup_service" not in body
+
+
+# ── A cancelled round (#175) ──────────────────────────────────────────────
+
+
+def test_a_cancelled_round_is_struck_through_in_the_text():
+    """The calendar keeps the round the league planned, and says it was called off."""
+    rounds = _rounds(2)
+    rounds[1].status = "CANCELLED"
+    unix = int(rounds[1].scheduled_at.timestamp())
+    text = cps.textual_calendar("Elite", rounds)
+    assert (
+        f"~~Round {rounds[1].round_number}: {rounds[1].track_name} — <t:{unix}:F>~~ — Cancelled"
+        in text.splitlines()
+    )
+
+
+def test_a_round_still_on_is_not_struck_through():
+    rounds = _rounds(2)
+    rounds[0].status = "NOT_RUN"
+    rounds[1].status = "CANCELLED"
+    first = cps.textual_calendar("Elite", rounds).splitlines()[1]
+    assert "~~" not in first
+    assert "Cancelled" not in first

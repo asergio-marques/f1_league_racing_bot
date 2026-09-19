@@ -267,3 +267,27 @@ def test_every_sample_nationality_maps_to_a_country():
     # The "Other" case is deliberately present, and is not a country.
     assert "Other" in SAMPLE_LINEUP_NATIONALITIES
     assert country_for_nationality("Other") == "Other"
+
+
+def test_the_calendar_sample_draws_a_cancelled_round():
+    """The overlay is mandatory of a calendar template (#175), so the sample a template is
+    checked against must exercise it — otherwise the one shape an author is told to draw is
+    the one no render of theirs ever shows."""
+    from lxml import etree
+
+    from services.image_calendar_service import build_fill_spec
+    from tests.support.image_sample_data import build_calendar_drawing
+
+    from pathlib import Path
+
+    template = (
+        Path(__file__).resolve().parents[2]
+        / "resources" / "defaults" / "templates" / "calendar_template.svg"
+    )
+    root = etree.parse(str(template)).getroot()
+    drawing = build_calendar_drawing(root)
+
+    assert [entry.ordinal for entry in drawing.rounds if entry.cancelled] == [2]
+    spec = build_fill_spec(drawing, root)
+    assert "round_2_cancelled" not in spec.remove
+    assert "round_1_cancelled" in spec.remove

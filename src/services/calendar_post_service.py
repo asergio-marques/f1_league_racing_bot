@@ -25,10 +25,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from db.database import get_connection
+from models.round import RoundStatus
 
 log = logging.getLogger(__name__)
 
 CALENDAR_ASPECT = "calendar"
+#: A round's status once it is called off; read from the round model rather than restated.
+CANCELLED_STATUS = RoundStatus.CANCELLED.value
 TEMPLATE_KEY = "calendar_template"
 
 
@@ -64,6 +67,10 @@ def textual_calendar(division_name: str, rounds) -> str:
 
     A round's time is a Discord timestamp, which every reader sees in their own zone —
     the one thing the graphic cannot do (Constitution XIV.15).
+
+    A cancelled round keeps its line, struck through and marked, so the calendar still shows
+    the season as it was planned and says which weekend was called off (#175). Every other
+    line is unchanged, byte for byte.
     """
     lines = [calendar_heading(division_name)]
     # Ordered by the moment each is run, which is the key the inline implementation this
@@ -72,7 +79,10 @@ def textual_calendar(division_name: str, rounds) -> str:
     for entry in sorted(rounds, key=lambda r: r.scheduled_at):
         unix = int(entry.scheduled_at.timestamp())
         track = entry.track_name or "Mystery"
-        lines.append(f"Round {entry.round_number}: {track} — <t:{unix}:F>")
+        line = f"Round {entry.round_number}: {track} — <t:{unix}:F>"
+        if getattr(entry, "status", None) == CANCELLED_STATUS:
+            line = f"~~{line}~~ — Cancelled"
+        lines.append(line)
     return "\n".join(lines)
 
 

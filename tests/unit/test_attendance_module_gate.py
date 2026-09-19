@@ -437,3 +437,58 @@ async def test_test_mode_sets_no_check_in_status_while_attendance_is_disabled(tm
     interaction.response.send_modal.assert_not_awaited()
     reply = interaction.response.send_message.await_args.args[0]
     assert "Attendance module is not enabled" in reply
+
+
+# ---------------------------------------------------------------------------
+# A round recorded as cancelled — the same three jobs (#175)
+# ---------------------------------------------------------------------------
+#
+# Cancelling a round unschedules its jobs, so ordinarily none of these fires at all. The gate
+# is what holds when one survives: the scheduler's removal swallows what it raises, the job
+# store is durable and outlives a restart, and the cancellation now takes the call down — a
+# surviving job would post a call, a reminder or a distribution for a round that is off, and
+# write back the row that says a call is standing.
+
+
+async def _cancel_the_round(db_path: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (ROUND_ID,))
+        await db.commit()
+
+
+async def test_no_check_in_call_is_posted_for_a_cancelled_round(tmp_path):
+    db_path = await _make_db(tmp_path, attendance_enabled=True)
+    await _cancel_the_round(db_path)
+    bot = _make_bot(db_path, attendance_enabled=True)
+
+    await rsvp_service.run_rsvp_notice(ROUND_ID, bot)
+
+    bot.get_channel.assert_not_called()
+    attendance_rows, embed_rows, _ = await _counts(db_path)
+    assert attendance_rows == 0
+    assert embed_rows == 0, "a cancelled round recorded a check-in call as standing"
+
+
+async def test_no_reminder_is_posted_for_a_cancelled_round(tmp_path):
+    db_path = await _make_db(tmp_path, attendance_enabled=True)
+    await _seed_rsvp_rows(db_path, reserve_accepted=False)
+    await _cancel_the_round(db_path)
+    bot = _make_bot(db_path, attendance_enabled=True)
+
+    await rsvp_service.run_rsvp_last_notice(ROUND_ID, bot)
+
+    bot.get_channel.assert_not_called()
+
+
+async def test_the_deadline_distributes_nobody_for_a_cancelled_round(tmp_path):
+    db_path = await _make_db(tmp_path, attendance_enabled=True)
+    await _seed_rsvp_rows(db_path)
+    await _seed_embed_message(db_path)
+    await _cancel_the_round(db_path)
+    bot = _make_bot(db_path, attendance_enabled=True)
+
+    await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
+
+    bot.get_channel.assert_not_called()
+    _, _, distributed = await _counts(db_path)
+    assert distributed == 0, "a cancelled round moved a reserve driver into a seat"

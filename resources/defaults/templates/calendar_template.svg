@@ -75,9 +75,14 @@
        it. Nothing on this template may be drawn between two fields that can be
        emptied independently.
 
+       "round_<x>_cancelled" is the veil over a round called off: a panel the size
+       of the card, all but opaque, with the word across it. It is the last thing
+       drawn in its round so it lies over everything else there, and the bot keeps
+       it only for a cancelled round, removing it from every other.
+
        Mandatory : division_name, round_<x>_number, round_<x>_country_name,
                    round_<x>_race_name, round_<x>_date,
-                   round_<x>_vertical_crop_point
+                   round_<x>_vertical_crop_point, round_<x>_cancelled
        Optional  : season_number, division_tier, season_number_group, division_tier_group,
                    round_<x>_group, round_<x>_image, round_<x>_time,
                    round_<x>_track_name, round_<x>_format
@@ -98,6 +103,7 @@
       .rsub2    { font-size:12px; fill:#6A7383; line-height:1.1; inline-size:130px; max-lines:2 }
       .date     { font-size:16px; fill:#F2F5F8; font-weight:600; inline-size:280px; max-lines:1 }
       .time     { font-size:12px; fill:#8A94A3; inline-size:68px; max-lines:1 }
+      .xout     { font-size:28px; fill:#E8113C; letter-spacing:.3em; font-weight:800 }
     </style>
   </defs>
 
@@ -147,6 +153,10 @@
     <text id="round_1_country_name" inkscape:label="round_1_country_name" class="rsub2" x="380" y="378">Country</text>
     <text id="round_1_time" inkscape:label="round_1_time" class="time" x="590" y="378" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_1_vertical_crop_point" inkscape:label="round_1_vertical_crop_point" x="48" y="420" width="676" height="0" fill="none"/>
+    <g id="round_1_cancelled" inkscape:label="round_1_cancelled">
+      <rect x="48" y="252" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="386" y="338" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
   <!--  round 2  -->
@@ -163,6 +173,10 @@
     <text id="round_2_country_name" inkscape:label="round_2_country_name" class="rsub2" x="1104" y="378">Country</text>
     <text id="round_2_time" inkscape:label="round_2_time" class="time" x="1314" y="378" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_2_vertical_crop_point" inkscape:label="round_2_vertical_crop_point" x="772" y="420" width="676" height="0" fill="none"/>
+    <g id="round_2_cancelled" inkscape:label="round_2_cancelled">
+      <rect x="772" y="252" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="1110" y="338" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
   <!--  round 3  -->
@@ -179,6 +193,10 @@
     <text id="round_3_country_name" inkscape:label="round_3_country_name" class="rsub2" x="380" y="546">Country</text>
     <text id="round_3_time" inkscape:label="round_3_time" class="time" x="590" y="546" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_3_vertical_crop_point" inkscape:label="round_3_vertical_crop_point" x="48" y="588" width="676" height="0" fill="none"/>
+    <g id="round_3_cancelled" inkscape:label="round_3_cancelled">
+      <rect x="48" y="420" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="386" y="506" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
   <!--  round 4  -->
@@ -195,6 +213,10 @@
     <text id="round_4_country_name" inkscape:label="round_4_country_name" class="rsub2" x="1104" y="546">Country</text>
     <text id="round_4_time" inkscape:label="round_4_time" class="time" x="1314" y="546" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_4_vertical_crop_point" inkscape:label="round_4_vertical_crop_point" x="772" y="588" width="676" height="0" fill="none"/>
+    <g id="round_4_cancelled" inkscape:label="round_4_cancelled">
+      <rect x="772" y="420" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="1110" y="506" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
   <!--  round 5  -->
@@ -211,6 +233,10 @@
     <text id="round_5_country_name" inkscape:label="round_5_country_name" class="rsub2" x="380" y="714">Country</text>
     <text id="round_5_time" inkscape:label="round_5_time" class="time" x="590" y="714" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_5_vertical_crop_point" inkscape:label="round_5_vertical_crop_point" x="48" y="756" width="676" height="0" fill="none"/>
+    <g id="round_5_cancelled" inkscape:label="round_5_cancelled">
+      <rect x="48" y="588" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="386" y="674" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
   <!--  round 6  -->
@@ -227,6 +253,10 @@
     <text id="round_6_country_name" inkscape:label="round_6_country_name" class="rsub2" x="1104" y="714">Country</text>
     <text id="round_6_time" inkscape:label="round_6_time" class="time" x="1314" y="714" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_6_vertical_crop_point" inkscape:label="round_6_vertical_crop_point" x="772" y="756" width="676" height="0" fill="none"/>
+    <g id="round_6_cancelled" inkscape:label="round_6_cancelled">
+      <rect x="772" y="588" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="1110" y="674" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
   <!--  round 7  -->
@@ -243,6 +273,10 @@
     <text id="round_7_country_name" inkscape:label="round_7_country_name" class="rsub2" x="380" y="882">Country</text>
     <text id="round_7_time" inkscape:label="round_7_time" class="time" x="590" y="882" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_7_vertical_crop_point" inkscape:label="round_7_vertical_crop_point" x="48" y="924" width="676" height="0" fill="none"/>
+    <g id="round_7_cancelled" inkscape:label="round_7_cancelled">
+      <rect x="48" y="756" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="386" y="842" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
   <!--  round 8  -->
@@ -259,6 +293,10 @@
     <text id="round_8_country_name" inkscape:label="round_8_country_name" class="rsub2" x="1104" y="882">Country</text>
     <text id="round_8_time" inkscape:label="round_8_time" class="time" x="1314" y="882" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_8_vertical_crop_point" inkscape:label="round_8_vertical_crop_point" x="772" y="924" width="676" height="0" fill="none"/>
+    <g id="round_8_cancelled" inkscape:label="round_8_cancelled">
+      <rect x="772" y="756" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="1110" y="842" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
   <!--  round 9  -->
@@ -275,6 +313,10 @@
     <text id="round_9_country_name" inkscape:label="round_9_country_name" class="rsub2" x="380" y="1050">Country</text>
     <text id="round_9_time" inkscape:label="round_9_time" class="time" x="590" y="1050" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_9_vertical_crop_point" inkscape:label="round_9_vertical_crop_point" x="48" y="1092" width="676" height="0" fill="none"/>
+    <g id="round_9_cancelled" inkscape:label="round_9_cancelled">
+      <rect x="48" y="924" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="386" y="1010" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
   <!--  round 10  -->
@@ -291,6 +333,10 @@
     <text id="round_10_country_name" inkscape:label="round_10_country_name" class="rsub2" x="1104" y="1050">Country</text>
     <text id="round_10_time" inkscape:label="round_10_time" class="time" x="1314" y="1050" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_10_vertical_crop_point" inkscape:label="round_10_vertical_crop_point" x="772" y="1092" width="676" height="0" fill="none"/>
+    <g id="round_10_cancelled" inkscape:label="round_10_cancelled">
+      <rect x="772" y="924" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="1110" y="1010" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
   <!--  round 11  -->
@@ -307,6 +353,10 @@
     <text id="round_11_country_name" inkscape:label="round_11_country_name" class="rsub2" x="380" y="1218">Country</text>
     <text id="round_11_time" inkscape:label="round_11_time" class="time" x="590" y="1218" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_11_vertical_crop_point" inkscape:label="round_11_vertical_crop_point" x="48" y="1260" width="676" height="0" fill="none"/>
+    <g id="round_11_cancelled" inkscape:label="round_11_cancelled">
+      <rect x="48" y="1092" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="386" y="1178" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
   <!--  round 12  -->
@@ -323,6 +373,10 @@
     <text id="round_12_country_name" inkscape:label="round_12_country_name" class="rsub2" x="1104" y="1218">Country</text>
     <text id="round_12_time" inkscape:label="round_12_time" class="time" x="1314" y="1218" text-anchor="end" style="font-variant-numeric:tabular-nums">00:00 UTC</text>
     <rect id="round_12_vertical_crop_point" inkscape:label="round_12_vertical_crop_point" x="772" y="1260" width="676" height="0" fill="none"/>
+    <g id="round_12_cancelled" inkscape:label="round_12_cancelled">
+      <rect x="772" y="1092" width="676" height="152" rx="12" fill="#0B0D10" fill-opacity="0.86"/>
+      <text class="xout" x="1110" y="1178" text-anchor="middle">CANCELLED</text>
+    </g>
   </g>
 
 </svg>

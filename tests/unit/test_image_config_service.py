@@ -175,6 +175,7 @@ _VALID_CALENDAR_SVG = (
     b'<text id="round_1_race_name">R</text>'
     b'<text id="round_1_date">1 Jan</text>'
     b'<rect id="round_1_vertical_crop_point" x="0" y="675" width="1" height="1"/>'
+    b'<g id="round_1_cancelled"/>'
     b"</svg>"
 )
 

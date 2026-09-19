@@ -38,7 +38,7 @@ from models.division import Division
 from models.round import Round as RoundModel
 from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from models.season import SeasonStage
-from services import season_points_service
+from services import cancellation_notice_service, season_points_service
 import services.track_service as track_service
 from services.season_service import SeasonImmutableError
 from utils.autocomplete import bounded_autocomplete
@@ -2780,22 +2780,21 @@ class SeasonCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         divisions = await self.bot.season_service.get_divisions(season.id)
-        active_divs = [d for d in divisions if d.status != "CANCELLED"]
-        for div in active_divs:
-            try:
-                channel = interaction.guild.get_channel(div.forecast_channel_id)
-                if channel is not None:
-                    await channel.send(
-                        "\U0001f4e2 **Season Cancelled**\n"
-                        "The active season has been cancelled by an administrator."
-                    )
-            except Exception:
-                log.exception("Failed to post cancellation notice for division %s", div.name)
+        # Told: every division still running. A division already cancelled was told when it
+        # was, and one already finished has no round left to call off and nothing to hear.
+        active_divs = [d for d in divisions if d.status not in ("CANCELLED", "FINISHED")]
 
+        # The rounds the cascade below is about to call off: those of the divisions it
+        # cancels whose results are not yet in, exactly as `ROUND_CANCELLABLE` has it for the
+        # cascade itself. The jobs of every division go, told or not.
+        cancelled_divs = {d.id for d in divisions if d.status != "CANCELLED"}
+        to_cancel: set[int] = set()
         for div in divisions:
             div_rounds = await self.bot.season_service.get_division_rounds(div.id)
             for rnd in div_rounds:
                 self.bot.scheduler_service.cancel_round(rnd.id)
+                if rnd.status in ROUND_CANCELLABLE and div.id in cancelled_divs:
+                    to_cancel.add(rnd.id)
         self.bot.scheduler_service.cancel_season_end()
 
         # A cancelled season is still league history: it happened, and the drivers raced in it.
@@ -2819,6 +2818,25 @@ class SeasonCog(commands.Cog):
 
         await _write_driver_history_entries(season, self.bot, force_cancelled=True)
 
+        # Each division still running is told by each enabled module, in its own channel, and
+        # its calendar posted again with the called-off rounds struck through (#175).
+        #
+        # The placing is deliberate on both sides. **After** the history, which is the step a
+        # failure is most likely to stop and the admin to run again, so that running it again
+        # does not tell every division twice. **Before** the roles are revoked, since the
+        # check-in notice mentions the division role and a role nobody holds any more reaches
+        # nobody; and before the cascade, since a season recorded cancelled no longer has its
+        # channels read — which is also why the rounds about to be cancelled are named here
+        # rather than read back.
+        report = await cancellation_notice_service.announce_cancellation(
+            self.bot,
+            interaction.guild,
+            active_divs,
+            scope=cancellation_notice_service.SCOPE_SEASON,
+            season_number=season.season_number,
+            round_ids=frozenset(to_cancel),
+        )
+
         # The roles, the driver pass, the window and test mode — as completing a season does.
         if interaction.guild is not None:
             await _revoke_season_roles(
@@ -2833,11 +2851,13 @@ class SeasonCog(commands.Cog):
         )
 
         await interaction.followup.send(
-            "\u2705 Season cancelled.",
+            "\u2705 Season cancelled." + cancellation_notice_service.failure_lines(report.failures),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season cancel | Success",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season cancel | Success"
+            + report.audit
+            + cancellation_notice_service.failure_log_lines(report.failures),
         )
 
     @season.command(
@@ -3492,6 +3512,9 @@ class SeasonCog(commands.Cog):
         rounds = await self.bot.season_service.get_division_rounds(div.id)
         for rnd in rounds:
             self.bot.scheduler_service.cancel_round(rnd.id)
+        # The rounds the cascade below calls off, read before it does: those whose results are
+        # not yet in, exactly as `ROUND_CANCELLABLE` has it for the cascade itself.
+        called_off = frozenset(r.id for r in rounds if r.status in ROUND_CANCELLABLE)
 
         await self.bot.season_service.cancel_division(
             division_id=div.id,
@@ -3506,24 +3529,27 @@ class SeasonCog(commands.Cog):
         except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
             log.exception("could not wind the season down")
 
-        try:
-            channel = interaction.guild.get_channel(div.forecast_channel_id)
-            if channel is not None:
-                await channel.send(
-                    f"\U0001f4e2 **Division Cancelled: {div.name}**\n"
-                    "This division has been cancelled by an administrator. "
-                    "No further weather forecasts will be posted for this division."
-                )
-        except Exception:
-            log.exception("Failed to post division cancel notice for %s", div.name)
+        # Each enabled module says what the cancellation means for it, in its own channel, and
+        # the calendar is posted again with the division's rounds struck through (#175).
+        report = await cancellation_notice_service.announce_cancellation(
+            self.bot,
+            interaction.guild,
+            [div],
+            scope=cancellation_notice_service.SCOPE_DIVISION,
+            season_number=season.season_number,
+            round_ids=called_off,
+        )
 
         await interaction.followup.send(
-            f"\u2705 Division **{name}** cancelled.",
+            f"\u2705 Division **{name}** cancelled."
+            + cancellation_notice_service.failure_lines(report.failures),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division cancel | Success\n"
-            f"  division: {name}",
+            f"  division: {name}"
+            + report.audit
+            + cancellation_notice_service.failure_log_lines(report.failures),
         )
 
     # ------------------------------------------------------------------
@@ -4812,25 +4838,31 @@ class SeasonCog(commands.Cog):
         except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
             log.exception("could not wind the season down")
 
-        try:
-            channel = interaction.guild.get_channel(div.forecast_channel_id)
-            if channel is not None:
-                await channel.send(
-                    f"\U0001f4e2 **Round {round_number} Cancelled: {div.name}**\n"
-                    f"Round {round_number} ({rnd.track_name or 'Mystery'}) has been cancelled by "
-                    "an administrator. No weather forecast will be posted for this round."
-                )
-        except Exception:
-            log.exception("Failed to post round cancel notice for round %s in %s", round_number, div.name)
+        # Each enabled module says what the cancellation means for it, in its own channel, and
+        # the calendar is posted again with the round struck through (#175). Core posts
+        # nothing of its own; what could not be reached is named to the admin below.
+        report = await cancellation_notice_service.announce_cancellation(
+            self.bot,
+            interaction.guild,
+            [div],
+            scope=cancellation_notice_service.SCOPE_ROUND,
+            round_number=round_number,
+            track_name=rnd.track_name,
+            season_number=season.season_number,
+            round_ids=frozenset({rnd.id}),
+        )
 
         await interaction.followup.send(
-            f"\u2705 Round **{round_number}** in **{division_name}** cancelled.",
+            f"\u2705 Round **{round_number}** in **{division_name}** cancelled."
+            + cancellation_notice_service.failure_lines(report.failures),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round cancel | Success\n"
             f"  division: {division_name}\n"
-            f"  round: {round_number}",
+            f"  round: {round_number}"
+            + report.audit
+            + cancellation_notice_service.failure_log_lines(report.failures),
         )
 
     # ------------------------------------------------------------------

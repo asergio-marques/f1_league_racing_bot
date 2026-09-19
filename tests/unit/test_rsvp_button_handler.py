@@ -129,6 +129,21 @@ async def _make_db(
             (ROUND_ID, DIVISION_ID, (datetime.now(timezone.utc) + starts_in).isoformat()),
         )
 
+        # The row `run_rsvp_notice` writes when it posts the call. The handler reads it to
+        # know a call is still standing (#175), so a press with no row is one on a call
+        # already taken down.
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages "
+            "(round_id, division_id, message_id, channel_id, posted_at) "
+            "VALUES (?, ?, '900500', ?, ?)",
+            (
+                ROUND_ID,
+                DIVISION_ID,
+                str(RSVP_CHANNEL_ID),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+
         await db.execute(
             "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
             "VALUES (10, ?, 'Alpha', 2, 0)",
@@ -291,6 +306,38 @@ async def test_someone_with_no_driver_profile_is_turned_away(tmp_path):
     await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
 
     assert "not registered as a driver" in _reply(interaction)
+
+
+async def test_a_call_no_longer_standing_records_no_answer(tmp_path):
+    """A cancelled season takes its calls down several steps before its rounds are recorded
+    cancelled; a failure in between must not leave a withdrawn call still answerable."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
+    before = await _status(db_path, FULL_TIME_PROFILE)
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM rsvp_embed_messages WHERE round_id = ?", (ROUND_ID,))
+        await db.commit()
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+
+    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert "no longer open" in _reply(interaction)
+    assert await _status(db_path, FULL_TIME_PROFILE) == before
+
+
+async def test_a_cancelled_round_records_no_answer(tmp_path):
+    """Its call is taken down with the cancellation (#175); a press that raced it, or lands
+    on a call the bot could not delete, must not record an answer to a round that is off."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
+    before = await _status(db_path, FULL_TIME_PROFILE)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (ROUND_ID,))
+        await db.commit()
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+
+    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert "no longer open" in _reply(interaction)
+    assert await _status(db_path, FULL_TIME_PROFILE) == before
 
 
 async def test_a_driver_of_another_division_is_turned_away(tmp_path):
@@ -572,7 +619,7 @@ async def test_the_call_is_edited_in_place_when_an_answer_changes(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO rsvp_embed_messages "
+            "INSERT OR REPLACE INTO rsvp_embed_messages "
             "(round_id, division_id, message_id, channel_id, posted_at) "
             "VALUES (?, ?, '900500', ?, ?)",
             (

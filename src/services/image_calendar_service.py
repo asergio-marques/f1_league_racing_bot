@@ -27,6 +27,7 @@ from models.image_catalogues import (
     CapacityError,
     catalogue_for,
 )
+from models.round import RoundStatus
 from utils.date_formatting import format_date_and_time
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
@@ -77,6 +78,8 @@ class CalendarRound:
     race_name: str
     track_name: str
     image_datum: str
+    #: Whether the round was called off, which keeps its ``round_<x>_cancelled`` overlay.
+    cancelled: bool = False
 
 
 @dataclass(frozen=True)
@@ -190,6 +193,7 @@ def resolve_drawing(
                 race_name=race_name,
                 track_name=track_name,
                 image_datum=datum,
+                cancelled=getattr(entry, "status", None) == RoundStatus.CANCELLED.value,
             )
         )
 
@@ -289,10 +293,19 @@ def build_fill_spec(
         if f"{prefix}_image" in declared:
             image_data[f"{prefix}_image"] = ("track", entry.image_datum)
 
+    # The overlay a cancelled round is drawn under (#175). Every calendar template declares
+    # one per round; it stays over a round called off and leaves every other, so a round
+    # still to be raced is drawn exactly as it was before the overlay existed.
+    remove: list[str] = [
+        f"{_ROUND_PREFIX}_{entry.ordinal}_cancelled"
+        for entry in drawn
+        if not entry.cancelled
+        and f"{_ROUND_PREFIX}_{entry.ordinal}_cancelled" in declared
+    ]
+
     # Rounds the template declares beyond the division's last. The crop removes whatever
     # is drawn *below* the cut; whatever stands *beside* the final round is above it and
     # must leave by its group. The two divide the work between them.
-    remove: list[str] = []
     off_canvas: set[str] = set()
     crop_id = f"{_ROUND_PREFIX}_{final_ordinal}_vertical_crop_point"
     crop_y = _y_of(index, crop_id)

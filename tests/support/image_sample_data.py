@@ -73,7 +73,8 @@ def build_calendar_drawing(root):
     declared height instead.
 
     Covers, as far as the round count allows: one round of each format including mystery;
-    one whose track has no image file, exercising the fallback and its notice; and dates
+    one whose track has no image file, exercising the fallback and its notice; one recorded
+    as cancelled, so the overlay drawn over a round called off is on the preview; and dates
     spanning more than one month. A round with **no time** is deliberately absent — a
     round records date and time as one moment by design, so the shape cannot be
     fabricated (see specs/037-calendar-image-generation/research.md § R5).
@@ -107,6 +108,13 @@ def build_calendar_drawing(root):
                 # Seven days apart, so any calendar of three rounds or more spans a month
                 # boundary and the configured date format can be judged on real variety.
                 scheduled_at=start + timedelta(days=7 * (index - 1)),
+                # The second round is drawn as one called off, so the cancellation overlay a
+                # calendar template must declare is on the preview (#175). Without it the one
+                # shape an author cannot see is the one they have just been told to draw, and
+                # an overlay put in the wrong place, or under the text instead of over it,
+                # would first show itself in a league's channel the day a round is cancelled.
+                # A division of one round keeps it live, there being a whole calendar to show.
+                status="CANCELLED" if index == 2 else "NOT_RUN",
             )
         )
         tracks[name] = SimpleNamespace(name=name, gp_name=gp_name, country=country)

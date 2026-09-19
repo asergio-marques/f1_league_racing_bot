@@ -836,12 +836,23 @@ CALENDAR_CATALOGUE = _with_division_logo(FieldCatalogue(
                 "date",
                 "time",
                 "vertical_crop_point",
+                # The overlay a cancelled round is drawn under (#175). Mandatory, so every
+                # calendar can show a round called off; valueless, being chrome the render
+                # keeps for a cancelled round and removes for every other, never text.
+                "cancelled",
             }
         ),
         mandatory_fields=frozenset(
-            {"number", "country_name", "race_name", "date", "vertical_crop_point"}
+            {
+                "number",
+                "country_name",
+                "race_name",
+                "date",
+                "vertical_crop_point",
+                "cancelled",
+            }
         ),
-        valueless_fields=frozenset({"vertical_crop_point"}),
+        valueless_fields=frozenset({"vertical_crop_point", "cancelled"}),
         assets={"flag": "flag", "image": "track"},
     ),
 ))

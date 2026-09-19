@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -24,8 +25,16 @@ from services.image_validity_service import (
     evaluate_template,
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 HEADER = '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
-SUFFIXES = ("number", "country_name", "race_name", "date", "vertical_crop_point")
+SUFFIXES = (
+    "number",
+    "country_name",
+    "race_name",
+    "date",
+    "vertical_crop_point",
+    "cancelled",
+)
 
 
 def _config():
@@ -154,6 +163,58 @@ def test_a_missing_crop_point_is_named(named):
     report = named(_template(rounds=(1,), omit="vertical_crop_point"))
     assert not report.valid
     assert "round_1_vertical_crop_point" in report.reason
+
+
+def test_a_missing_cancellation_overlay_is_named(named):
+    """Every calendar must be able to show a round called off (#175), so a round with no
+    overlay is refused as a missing crop point is."""
+    report = named(_template(rounds=(1, 2), omit="cancelled"))
+    assert not report.valid
+    assert "round_2_cancelled" in report.reason
+
+
+def test_the_packaged_calendar_veils_every_round_it_declares():
+    from lxml import etree
+
+    from models.image_catalogues import catalogue_for
+    from utils.svg_document import FieldIndex
+
+    path = PROJECT_ROOT / "resources" / "defaults" / "templates" / "calendar_template.svg"
+    root = etree.parse(str(path)).getroot()
+    declared = FieldIndex(root).declared()
+    capacity = catalogue_for("calendar_template").capacity(root)
+    assert capacity
+    assert all(f"round_{n}_cancelled" in declared for n in range(1, capacity + 1))
+
+
+def test_an_overlay_drawn_under_its_round_is_refused(named):
+    """The placement rules apply through the layers, so they hold at all three moments a
+    template is judged, not only in the function that states them (#175)."""
+    body = '<text id="division_name">d</text>'
+    body += '<g id="round_1_cancelled"/>'
+    body += "".join(f'<text id="round_1_{suffix}">x</text>' for suffix in SUFFIXES[:-1])
+    report = named((HEADER + body + "</svg>").encode())
+
+    assert not report.valid
+    assert report.failed_layer == LAYER_CATALOGUE
+    assert "round_1_cancelled" in report.reason
+    assert "drawn before" in report.reason
+
+
+def test_a_calendar_drawn_wrong_throughout_is_refused_briefly(named):
+    """One fault a round, and a template is usually drawn wrong throughout — the refusal is
+    read in Discord, so it names a few and counts the rest."""
+    body = '<text id="division_name">d</text>'
+    for ordinal in range(1, 9):
+        body += f'<g id="round_{ordinal}_cancelled"/>'
+        body += "".join(
+            f'<text id="round_{ordinal}_{suffix}">x</text>' for suffix in SUFFIXES[:-1]
+        )
+    report = named((HEADER + body + "</svg>").encode())
+
+    assert not report.valid
+    assert report.reason.count("drawn before") == 3
+    assert "and 5 more rounds the same" in report.reason
 
 
 def test_a_template_declaring_no_round_is_rejected(named):
