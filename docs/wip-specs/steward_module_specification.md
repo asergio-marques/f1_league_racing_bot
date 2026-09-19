@@ -194,7 +194,7 @@
 - If neither "steward justification final-mode" nor "steward justification fallback-mode" are feasible options, then the bot will take the longest justification among the ballots of the winning option, which is always possible, every ballot carrying one.
 
 ### Outcomes
-- <NEW COMMAND> A "steward outcome add" command will be made available to league managers, which shall open a modal window with the following input fields:
+- <NEW COMMAND> A "steward outcome add" command will be made available to league managers, which shall open a form collecting the following:
   - ID - Mandatory - Unique ID for the outcome. Maximum of 12 characters.
   - Brief - Mandatory - Unique short description of the outcome. Maximum of 50 characters.
   - Description - Optional - Long form description of the outcome. Maximum of 250 characters.
@@ -211,16 +211,17 @@
   - A session's list of outcomes shall hold at most 25, NFA among them. The command shall be refused where it would bring the qualifying list or the race list above 24 outcomes a league defines, and the refusal shall name the list that is full.
   - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Time penalty", "Disqualification", "Warning point", "Penalty point", "Qualifying ban", "Race ban", "Season ban", "League ban" fields must be different from 0.
-- <NEW COMMAND> A "steward outcome modify" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then a modal dialog much like the one opened by "steward outcome add" shall open, prefilled with the values of the outcome of the input ID. All fields with the exception of the ID can be modified.
+- <NEW COMMAND> A "steward outcome modify" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then a form much like the one opened by "steward outcome add" shall open, prefilled with the values of the outcome of the input ID. All fields with the exception of the ID can be modified.
   - The command shall be refused where the change would bring the qualifying list or the race list above 24 outcomes a league defines, and the refusal shall name the list that is full.
   - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Time penalty", "Disqualification", "Warning point", "Penalty point", "Qualifying ban", "Race ban", "Season ban", "League ban" fields must be different from 0.
-- <NEW COMMAND> A "steward outcome remove" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then a modal dialog asking for confirmation of deletion of the outcome will appear. If accepted, then the outcome shall be removed from the list.
+- <NEW COMMAND> A "steward outcome remove" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then the bot shall ask for confirmation of the deletion of the outcome, with Confirm and Cancel buttons. If confirmed, then the outcome shall be removed from the list.
 - <NEW COMMAND> A "steward outcome toggle" command will be made available to league managers, which shall have as input an outcome's ID, pausing the outcome where it is active and resuming it where it is paused.
   - A paused outcome is offered upon no ballot. It stays in the list, "steward outcome list" marking it as paused, and verdicts that gave it are untouched.
   - NFA cannot be paused.
   - A paused outcome does not count towards the 24 a session's list may hold. Resuming one shall be refused where it would bring the qualifying list or the race list above 24, naming the list that is full.
 - <NEW COMMAND> A "steward outcome list" command will be made available to league managers and stewards, which shall have as input a string standing for a session type (qualifying or race). In reply, the bot will post a transient (temporary, seen only to the command user) list with all the outcomes currently available for that session type, as a bullet point list as follows:
+  - The list is shown in full, over several messages where it does not fit in one.
   - <brief>
     - ID: <id>
     - Rule description: <description, if not empty, otherwise this line is skipped>
@@ -255,7 +256,7 @@
   - Season end - The season ban expires when the season is completed, a league admin completing it.
     - A season ban applied once none of the divisions in which the driver held a seat has a round left in the season, as at the cycle close of the final round, expires instead at the completion of the next season, so that a season ban is never served by a season already over. Where no season is under way when it applies, it expires at the completion of the next season.
     - A season ban stacked behind another expires at the completion of the season after the one ending the ban before it.
-  - Timed - The season ban expires only after a set amount of time, expressed in days. If this option is picked, a modal dialog shall appear for the user to introduce the number of days for the season ban, and if confirmed, it will take effect.
+  - Timed - The season ban expires only after a set amount of time, expressed in days. If this option is picked, the command shall take the number of days for the season ban as well.
   - By default, this will be set to "number of rounds".
 - <NEW COMMAND> A "steward penalty warning-point-expiry" command will be made available to league managers, which shall have as single input one of the following behaviours, determining when warning points expire:
   - Number of rounds - Warning points expire once a number of rounds has taken place, counted as the rounds of a season ban are: those of the division in which they were received, carrying into the division of the same tier in a later season. The number is either one the league sets, or the length of the season, being the number of rounds of that division in the season in which the points were received.
@@ -267,7 +268,7 @@
 - <NEW COMMAND> A "steward role league-ban" command will be made available to league managers, which shall have as mandatory single input a role to be attributed when any driver is season banned, and removed when any driver's league ban is revoked.
 
 ### Automated penalty rules
-- <NEW COMMAND> A "steward auto-rule add-single-round" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks for configured criteria on the outcomes of that round exclusively upon the closing of the stewarding cycle of any given round. Upon usage of this command, a modal dialog will open, with the following fields:
+- <NEW COMMAND> A "steward auto-rule add-single-round" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks for configured criteria on the outcomes of that round exclusively upon the closing of the stewarding cycle of any given round. Upon usage of this command, a form will open, collecting the following:
   - ID - Mandatory - String - Unique ID for this rule. Must not overlap with that of other auto rules, regardless of type. Maximum of 12 characters.
   - Infringement - Optional - String - An optional string for league managers to add a rule number to be printed out in the verdict.
   - Type of infractions committed - Mandatory - Dropdown - Type of penalty that must be given out to a driver in the quantity above for this rule to be triggered.
@@ -278,7 +279,7 @@
     - This value must be greater than 0.
   - Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list with the "single round" type and made active immediately.
 - As configured, a single-round rule will be interpreted as meaning "if a driver receives a certain amount of pre-defined penalty type in a single round, they will be handed out a number of penalties of a certain, different, kind".
-- <NEW COMMAND> A "steward auto-rule add-multi-round" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks for configured criteria on the outcomes of a previous number of rounds, the latest round completed included, upon the closing of the stewarding cycle of any given round. Upon usage of this command, a modal dialog will open, with the following fields:
+- <NEW COMMAND> A "steward auto-rule add-multi-round" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks for configured criteria on the outcomes of a previous number of rounds, the latest round completed included, upon the closing of the stewarding cycle of any given round. Upon usage of this command, a form will open, collecting the following:
   - ID - String - Unique ID for this rule. Must not overlap with that of other auto rules, regardless of type. Maximum of 12 characters.
   - Infringement - Optional - String - An optional string for league managers to add a rule number to be printed out in the verdict.
   - Number of rounds - Integer - Number of previous rounds' outcomes that will be checked for the type of infractions committed by a same driver.
@@ -291,7 +292,7 @@
     - This value must be greater than 0.
   - Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list with the "multi round" type and made active immediately.
 - As configured, a multi-round rule will be interpreted as meaning "if a driver receives a certain amount of pre-defined penalty type across the last X rounds, they will be handed out a number of penalties of a certain, different, kind".
-- <NEW COMMAND> A "steward auto-rule add-active-accumulation" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks the drivers' licences for a given number of active penalties (that is, penalties that are yet to serve or expire) of a certain kind, upon the closing of the stewarding cycle of any given round. Upon usage of this command, a modal dialog will open, with the following fields:
+- <NEW COMMAND> A "steward auto-rule add-active-accumulation" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks the drivers' licences for a given number of active penalties (that is, penalties that are yet to serve or expire) of a certain kind, upon the closing of the stewarding cycle of any given round. Upon usage of this command, a form will open, collecting the following:
   - ID - Mandatory - String - Unique ID for this rule. Must not overlap with that of other auto rules, regardless of type. Maximum of 12 characters.
   - Infringement - Optional - String - An optional string for league managers to add a rule number to be printed out in the verdict.
   - Type of infractions committed - Mandatory - Dropdown - Type of penalty that must be active in a driver licence.
@@ -302,7 +303,7 @@
     - This value must be greater than 0.
   - Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list with the "active accumulation" type and made active immediately.
 - As configured, an accumulation of active penalties rule will be interpreted as meaning "if a driver licence holds a certain amount of active penalties, meaning penalties not served or expired, of a pre-defined type, they will be handed out a number of penalties of a certain, different, kind".
-- <NEW COMMAND> A "steward auto-rule add-historical-accumulation" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks the drivers' licences for a given number of penalties of a certain kind across their whole history in the server, upon the closing of the stewarding cycle of any given round. Upon usage of this command, a modal dialog will open, with the following fields:
+- <NEW COMMAND> A "steward auto-rule add-historical-accumulation" command will be made available to league managers, which shall have no inputs. The final output of this command is a rule that, without any further user input, checks the drivers' licences for a given number of penalties of a certain kind across their whole history in the server, upon the closing of the stewarding cycle of any given round. Upon usage of this command, a form will open, collecting the following:
   - ID - Mandatory - String - Unique ID for this rule. Must not overlap with that of other auto rules, regardless of type. Maximum of 12 characters.
   - Infringement - Optional - String - An optional string for league managers to add a rule number to be printed out in the verdict.
   - Type of infractions committed - Mandatory - Dropdown - Type of penalty conferred to a driver licence throughout their lifetime in the present league.
@@ -321,12 +322,13 @@
 - The type counted and the type handed out may be the same, each auto-rule being triggered at most once for a driver in one cycle close, and re-arming as its type does.
 - A penalty type that is disabled shall be offered neither to count nor to hand out. Discipline points are offered only while the conduct cycle is enabled.
 - Several auto-rules may be triggered after the same round, and one being triggered may trigger another, of whichever type, as set out under Auto-rule triggering.
-- <NEW COMMAND> A "steward auto-rule modify" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog similar to the one triggered when a user attempts to add an auto-rule of the same type as the one coded by the ID input will appear, with the data from the input auto-rule preloaded and modifiable. The ID cannot be modified, hence that field shall be greyed-out.
-- <NEW COMMAND> A "steward auto-rule remove" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog will show up for confirmation of deletion of the auto-rule. Once confirmed, the auto-rule will no longer be active and enforceable, and it will be deleted from the current list.
+- <NEW COMMAND> A "steward auto-rule modify" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a form similar to the one opened when an auto-rule of the same type is added will appear, prefilled with the auto-rule's data, all of it modifiable. The ID is shown, and cannot be changed.
+- <NEW COMMAND> A "steward auto-rule remove" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, the bot shall ask for confirmation of the deletion of the auto-rule, with Confirm and Cancel buttons. Once confirmed, the auto-rule will no longer be active and enforceable, and it will be deleted from the current list.
 - <NEW COMMAND> A "steward auto-rule toggle" command will be made available to league managers, which shall have as input the ID of an auto-rule, pausing it where it is active and resuming it where it is paused.
   - A paused auto-rule is checked at no cycle close, and "steward auto-rule list" shall mark it as paused.
   - Resuming an auto-rule counts as adding it anew: every driver already over its threshold is held as having already triggered it, so that nothing that happened while it was paused is punished by it.
 - <NEW COMMAND> A "steward auto-rule list" command will be made available to league managers and stewards, which shall have no inputs. In reply, the bot will post a transient (temporary, seen only to the command user) list with all the auto-rules currently available, as a plain text table with the following columns in order: ID, Auto-rule type, Infringement, Number of rounds, Type of infractions committed, No. of infractions committed, penalty given, number of penalties given.
+  - The list is shown in full, over several messages where it does not fit in one.
   - For rules of non-multi-round-type, the "number of rounds" column shall be empty.
 
 ### Backups
@@ -353,7 +355,7 @@
 - <NEW COMMAND> A "steward conduct deliberation-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the number of hours during which members of the stewarding team can discuss and vote on the verdict pertaining to a given Code of Conduct investigation. After this time elapses, the investigation deliberation phase is over.
   - By default, this value will be set to 24.
   - Input value must be equal or greater than 1.
-- <NEW COMMAND> A "steward conduct-outcome add" command will be made available to league managers, which shall open a modal window with the following input fields:
+- <NEW COMMAND> A "steward conduct-outcome add" command will be made available to league managers, which shall open a form collecting the following:
   - ID - Mandatory - Unique ID for the conduct outcome, among conduct outcomes. It may be the same as the ID of a report or appeal outcome, the two lists being independent. Maximum of 12 characters.
   - Brief - Mandatory - Unique short description of the conduct outcome. Maximum of 50 characters.
   - Description - Optional - Long form description of the conduct outcome. Maximum of 250 characters.
@@ -365,15 +367,16 @@
   - The list of conduct outcomes shall hold at most 25, NFA among them. The command shall be refused where it would bring the list above 24 conduct outcomes a league defines.
   - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Discipline points", "Qualifying bans", "Race bans", "Season ban", "League ban" fields must be different from 0.
-- <NEW COMMAND> A "steward conduct-outcome modify" command will be made available to league managers, which shall have as input a string standing for a conduct outcome's ID. If this ID is valid, then a modal dialog much like the one opened by "steward conduct-outcome add" shall open, prefilled with the values of the conduct outcome of the input ID. All fields with the exception of the ID can be modified.
+- <NEW COMMAND> A "steward conduct-outcome modify" command will be made available to league managers, which shall have as input a string standing for a conduct outcome's ID. If this ID is valid, then a form much like the one opened by "steward conduct-outcome add" shall open, prefilled with the values of the conduct outcome of the input ID. All fields with the exception of the ID can be modified.
   - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Discipline points", "Qualifying bans", "Race bans", "Season ban", "League ban" fields must be different from 0.
-- <NEW COMMAND> A "steward conduct-outcome remove" command will be made available to league managers, which shall have as input a string standing for a conduct outcome's ID. If this ID is valid, then a modal dialog asking for confirmation of deletion of the conduct outcome will appear. If accepted, then the conduct outcome shall be removed from the list.
+- <NEW COMMAND> A "steward conduct-outcome remove" command will be made available to league managers, which shall have as input a string standing for a conduct outcome's ID. If this ID is valid, then the bot shall ask for confirmation of the deletion of the conduct outcome, with Confirm and Cancel buttons. If confirmed, then the conduct outcome shall be removed from the list.
 - <NEW COMMAND> A "steward conduct-outcome toggle" command will be made available to league managers, which shall have as input a conduct outcome's ID, pausing it where it is active and resuming it where it is paused.
   - A paused conduct outcome is offered upon no ballot. It stays in the list, "steward conduct-outcome list" marking it as paused, and verdicts that gave it are untouched.
   - NFA cannot be paused.
   - A paused conduct outcome does not count towards the 24 the list may hold. Resuming one shall be refused where it would bring the list above 24.
 - <NEW COMMAND> A "steward conduct-outcome list" command will be made available to league managers and stewards, which shall have no inputs. In reply, the bot will post a transient (temporary, seen only to the command user) list with all the conduct outcomes currently available, as a bullet point list as follows:
+  - The list is shown in full, over several messages where it does not fit in one.
   - <brief>
     - ID: <id>
     - Rule description: <description, if not empty, otherwise this line is skipped>
@@ -442,16 +445,16 @@
     - If pressed by the one who initiated the ticket or an involved driver, the justification is mandatory. When confirmed, the bot will post the request in the ticket's channel, for the effective head steward to approve or reject there. If approved, then the driver will be removed from the ticket; if rejected, the bot will note so. The request message will be deleted either way.
     - The command is rejected if the targeted user is the one who initiated the ticket, or if they are not in the involved drivers list, or if the ticket is already in report deliberation or appeal deliberation.
   - Request exclusion - Can be used by any member of the effective stewarding team for this ticket. The exact behaviour depends on who triggered the exclusion:
-    - If the one requesting this exclusion is a regular member of the effective stewarding team, a modal is opened so that a justification is input (mandatory). When confirmed, the bot will post in the steward command channel a message tagging the effective head steward for the ticket and identifying the steward that requested the exclusion, plus the justification. If approved, then the steward will be removed from the effective stewarding team for this ticket, and mentioned in a message in the steward command channel informing them of it. If rejected, then a modal will be opened to assign a justification (optional), and after confirmation, the steward who requested the exclusion will be mentioned in a message in the steward command channel informing them of the decision and the justification given.
-    - If the one requesting this exclusion is the effective head steward, a modal is opened so that a justification is input and another member of the effective stewarding team is mentioned, so that they will be assigned effective head steward privileges for this ticket. Once confirmed, the member will be requested to accept or reject. If accepted, they are made the effective head steward for the ticket's effective stewarding team. If rejected, then a modal will be opened to assign a justification (optional), and after confirmation, the steward will be mentioned in a message in the steward command channel informing of the decision.
+    - If the one requesting this exclusion is a regular member of the effective stewarding team, a form is opened so that a justification is input (mandatory). When confirmed, the bot will post in the steward command channel a message tagging the effective head steward for the ticket and identifying the steward that requested the exclusion, plus the justification. If approved, then the steward will be removed from the effective stewarding team for this ticket, and mentioned in a message in the steward command channel informing them of it. If rejected, then a form will be opened to give a justification (optional), and after confirmation, the steward who requested the exclusion will be mentioned in a message in the steward command channel informing them of the decision and the justification given.
+    - If the one requesting this exclusion is the effective head steward, a form is opened so that a justification is input and another member of the effective stewarding team is mentioned, so that they will be assigned effective head steward privileges for this ticket. Once confirmed, the member will be requested to accept or reject. If accepted, they are made the effective head steward for the ticket's effective stewarding team. If rejected, then a form will be opened to give a justification (optional), and after confirmation, the steward will be mentioned in a message in the steward command channel informing of the decision.
       - The effective head steward remains so until a member accepts. After a rejection, they may name another member of the effective stewarding team, as many times as they wish.
       - Where no member has accepted by the time the deliberation phase is reached, the bot shall choose one as it chooses a replacement for an effective head steward who has not assigned one, the effective head steward who asked to be excluded being passed over.
       - Once a member accepts, the former effective head steward is excluded from the ticket and leaves its effective stewarding team.
     - A member of the effective stewarding team who has cast a ballot shall be refused an exclusion. They shall remove their ballot first, and may then request it.
-  - Mute - Can be used by any member of the effective stewarding team for this ticket. When pressed, a modal is opened so that the user inputs 1..n mentions of users from whom to remove write message/attach file permissions.
+  - Mute - Can be used by any member of the effective stewarding team for this ticket. When pressed, a form is opened so that the user inputs 1..n mentions of users from whom to remove write message/attach file permissions.
     - Until the deliberation phase, the command is rejected for any user who is neither the one who initiated the ticket nor in the involved drivers list.
     - During the deliberation phase, it applies to members of the effective stewarding team instead, and only the effective head steward may use it upon them; the effective head steward cannot be its target. A steward so muted loses only the writing of messages and the attaching of media in the channel: they may still read it, cast and change their ballot, and request exclusion.
-  - Unmute - Can be used by any member of the effective stewarding team for this ticket. When pressed, a modal is opened so that the user inputs 1..n mentions of users to whom to get write message/attach file permissions.
+  - Unmute - Can be used by any member of the effective stewarding team for this ticket. When pressed, a form is opened so that the user inputs 1..n mentions of users to whom to get write message/attach file permissions.
     - Until the deliberation phase, the command is rejected for any user who is neither the one who initiated the ticket nor in the involved drivers list.
     - During the deliberation phase, it applies to members of the effective stewarding team instead, and only the effective head steward may use it upon them; the effective head steward cannot be its target. A steward so muted loses only the writing of messages and the attaching of media in the channel: they may still read it, cast and change their ballot, and request exclusion.
 - The buttons above remain in the channel through the deliberation phase, save "Add driver" and "Remove driver", which shall be withdrawn once it begins: the involved drivers are fixed once voting opens, so that every ballot covers the same drivers. "Request exclusion", the effective head steward's handover among it, "Mute" and "Unmute" remain available.
@@ -481,7 +484,7 @@
 - If a steward reopens their ballot after having voted, it will show their ballot as it was cast.
 - A ballot shall be counted whole. Two ballots are the same option only where they give every involved driver the same outcome, and no ballot shall be divided by driver for counting.
 - The bot shall show no steward the ballots of others, nor any count of them, before the deliberation closes. Stewards may discuss in the channel and change their ballots until it closes.
-- If the steward has chosen "Confirm" upon reopening their ballot, the previously persisted ballot will be modified to align with the current information in the modal.
+- If the steward has chosen "Confirm" upon reopening their ballot, the previously persisted ballot will be modified to align with the ballot as it now stands.
 - If the steward has chosen "Cancel" upon reopening their ballot, no change is to occur to their current ballot.
 - If the steward has chosen "Remove vote" upon reopening their ballot, the previously persisted ballot will be deleted, and it will be as if the steward had never voted.
 - At the end of the countdown period for this phase, all stewarding team members except for the effective head steward lose message write permission for the ticket's channel.
@@ -495,7 +498,7 @@
     - A ballot's time is the moment it was last confirmed. An option reaches its final count at the latest time among its ballots, and of the tied options, the one whose moment came first shall be the final verdict.
 - Once the ultimate result of a ticket is reached through any of the mediums above, the bot will:
   - Post a message informing the effective head steward of the decision reached (the outcome given each involved driver, and for each the infringement most often given them among the ballots of the winning option), providing a default justification text determined via the method configured by "steward justification final-mode" (or "steward justification final-mode", if the primary method is not feasible).
-  - Buttons usable only by the effective head steward of the ticket, one for accepting the default justification text as provided by the bot as-is, another to modify the default justification via a modal (text is already autoloaded into modal prompt).
+  - Buttons usable only by the effective head steward of the ticket, one for accepting the default justification text as provided by the bot as-is, another to modify the default justification in a form, prefilled with it.
   - In a message different from the one above, the justifications of all ballots of the winning option will be presented as a reference.
   - Start a timer counting down 1 hour from the moment the buttons are posted; if the effective head steward has not confirmed the justification text once this timer runs out, then the one provided by the bot will be utilised for the verdict post.
 - Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
@@ -532,10 +535,10 @@
 - It shall be possible to members of the stewarding team to report an incident in the same manner a regular driver can.
   - Where the steward holds no seat in the division, full-time or reserve, the report is a steward's report. The stewarding team as a whole is its complainant, shown as "The Stewards" wherever a user can see it. The steward who lodged it is named in the steward log alone, and is not an involved driver.
   - Where the steward holds a seat in the division, the report is a driver's report as any other. Before it is filed, the bot shall warn them that they are filing it as a driver and not as a member of the stewarding team, and they shall confirm or withdraw.
-- When a user presses the "Report incident" button, a modal dialog shall appear, with the following elements:
-  - Season - Mandatory - Integer - Automatically generated, cannot be changed by anyone. Derived from the current season's number.
-  - Division - Mandatory - String - Automatically generated, cannot be changed by anyone. Derived from the division to which the ticket channel is associated.
-  - Round - Mandatory -  Integer - Automatically generated, cannot be changed by anyone. Derived from the round whose report submission is open, as named by the button pressed.
+- When a user presses the "Report incident" button, a form shall appear, collecting the following:
+  - Season - Shown, and not asked for. Derived from the current season's number.
+  - Division - Shown, and not asked for. Derived from the division to which the ticket channel is associated.
+  - Round - Shown, and not asked for. Derived from the round whose report submission is open, as named by the button pressed.
   - Involved drivers - Optional - 0..n members - Other drivers directly or indirectly involved in the incident, whose footage or evidence may be of use to the stewarding team's deliberations. They are chosen from the server's members by searching for them by name, several at once, and not from a list of every member; any who holds no seat in the division, full-time or reserve, is refused and named, and the form is shown again with the rest kept.
     - These drivers must be assigned to the division this report pertains to.
     - The report will not be valid if there is any entry here that is not an involved driver.
@@ -544,12 +547,12 @@
   - Lap - Mandatory where the session is a race, a sprint race or the feature race; not asked otherwise - Integer - The race lap in which the incident took place.
   - Complaint - Mandatory - String - Full description of the incident as per the complainant's understanding.
   - Evidence files - Optional - 0..5 media (image or video) - One or multiple images or video files that provide basis for the claims in the complaint.
+    - Evidence files are attached as part of lodging the ticket, before it is filed.
   - Evidence links - Optional - 0..5 links - One or multiple images or video links that provide basis for the claims in the complaint.
     - Between "evidence files" and "evidence links", there must be at least one file/link. Otherwise, the report will not be valid.
-- The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
-  - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
+- The information shall be validated before the form is closed, so that users do not have to enter it twice. Where it is not valid, the form shall be shown again with what was entered kept.
 - After valid submission, the report will be henceforth identified with a unique ID following the format "S<x>_D<y>_R<z>_<w>", where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round, always written in three digits (001, 002 … 999), so that the IDs of a round sort in the order the reports were lodged.
-- After valid submission, a channel bearing the report's unique ID as the title will be created, with the information from the modal dialog input by the complainant summarised and posted as the header message in the channel. All involved drivers shall be mentioned properly in this message.
+- After valid submission, a channel bearing the report's unique ID as the title will be created, with the information from the form, as entered by the complainant summarised and posted as the header message in the channel. All involved drivers shall be mentioned properly in this message.
 - After valid submission, the ticket's state changes immediately to the defence submission stage, and the report is recorded against its season, division and round.
   - Defence submission for the ticket stays open until the period configured by "steward report defence-period" has run from the end of report submission. Every ticket of the round thus leaves defence submission at the same moment, and a ticket lodged in the last minute of report submission still has the whole of that period for its defence.
 - There is no limit upon the number of reports a driver may lodge in a round.
@@ -585,22 +588,22 @@
   - Is part of the division of that report, whether or not they were involved in it: a driver may appeal a ruling they believe incongruent with others, though it concerned other drivers.
   - Their current number of tokens is equal to or greater than the cost configured by "steward appeal tokens".
 - Where the user is a member of the stewarding team, the bot shall warn them before the appeal is filed that they are filing it as a driver and not as a member of the stewarding team, and they shall confirm or withdraw.
-- Once it is determined that the user meets the requirements to perform an appeal, a modal dialog shall appear, with the following elements:
-  - Season - Mandatory - Integer - Automatically generated, cannot be changed by anyone. Derived from the current season's number.
-  - Division - Mandatory - String - Automatically generated, cannot be changed by anyone. Derived from the division to which the ticket channel is associated.
-  - Round - Mandatory -  Integer - Automatically generated, cannot be changed by anyone. Derived from the round whose appeal submission is open, as named by the button pressed.
+- Once it is determined that the user meets the requirements to perform an appeal, a form shall appear, collecting the following:
+  - Season - Shown, and not asked for. Derived from the current season's number.
+  - Division - Shown, and not asked for. Derived from the division to which the ticket channel is associated.
+  - Round - Shown, and not asked for. Derived from the round whose appeal submission is open, as named by the button pressed.
   - Report ID - Mandatory - String - The unique ID of the report that the driver wishes to appeal, as per the report's channel's title and its verdict.
     - Auto-rule verdicts' or other appeals' IDs are not accepted. A steward's report may be appealed as any other.
     - A report may be appealed once. Where an appeal of it has already been lodged, the appeal shall be refused, naming the appeal already open. The driver who lodged the open appeal alone pays for it in tokens, and alone is refunded.
     - The driver who lodges an appeal is an involved driver of it, whether or not they were involved in the report, and their licence is on the line as every involved driver's is: the ballots of the appeal give an outcome to them as to the report's involved drivers.
   - Justification - Mandatory - String - Reason for the appeal, outlining the reason as to why the user disagreed with the initial verdict handed out.
   - Evidence files - Optional - 0..5 media (image or video) - One or multiple images or video files that provide basis for the claims in the complaint.
+    - Evidence files are attached as part of lodging the ticket, before it is filed.
   - Evidence links - Optional - 0..5 links - One or multiple images or video links that provide basis for the claims in the complaint.
     - Between "evidence files" and "evidence links", there must be at least one file/link. Otherwise, the appeal will not be valid.
-- The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
-  - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
+- The information shall be validated before the form is closed, so that users do not have to enter it twice. Where it is not valid, the form shall be shown again with what was entered kept.
 - After valid submission, the appeal will be henceforth identified with a unique ID following the format "<Report ID>_APPEAL", where <Report ID> is the full ID of the original report.
-- After valid submission, a channel bearing the appeal's unique ID as the title will be created, with the information from the modal dialog input by the appellant summarised and posted as the header message in the channel, and with an additional link to the channel that pertains to the original report, for the stewarding team's reference.
+- After valid submission, a channel bearing the appeal's unique ID as the title will be created, with the information from the form, as entered by the appellant summarised and posted as the header message in the channel, and with an additional link to the channel that pertains to the original report, for the stewarding team's reference.
 - As this is considered a different ticket, the effective stewarding team for this ticket may not necessarily be the same one as the original report's by default.
 - The rules for a ticket open to its parties, set out under Tickets, hold throughout this phase.
 - If a report is not appealed by the end of the appeal submission phase, the stewarding cycle for that ticket will be deemed closed.
@@ -632,7 +635,7 @@
   - Auto-rule handling is set out under Auto-rule triggering.
 - Once auto-rules are verified, the previous licence sheet shall be deleted, and an updated one, with the penalties of the latest round updated, will be posted.
   - Licence sheet posting is set out under Licence sheet output.
-- <NEW COMMAND> A "steward verdict republish" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory input the unique ID for a report or appeal. If the input ID was indeed a valid one, then a modal dialog will show up, containing the original information of the report/appeal chosen (ID, involved drivers, outcome, driver struck with outcome, justification). Of these, all but justification will be greyed-out, and this exception shall be only modifiable aspect. The user must confirm before validation of the change is done.
+- <NEW COMMAND> A "steward verdict republish" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory input the unique ID of a report, an appeal or a CoC investigation. If the ID is valid, a form will show the verdict as published — its ID, its decision and its justification — of which the justification alone may be changed. The user must confirm before the change is validated.
   - If there was an actual modification to the justification, and if this field is not empty/whitespace, the verdict shall be edited in place: its text, and its image rendered again, in the message in which it was originally posted. No other verdict is touched, and the verdicts channel keeps its order.
   - A verdict may be republished only until the next batch of verdicts lands upon it, so that the verdicts channel keeps its order:
     - A report's verdict, until the round's appeal verdicts are posted; or, where appeals are disabled or none was lodged, until the round's cycle closes.
@@ -646,17 +649,17 @@
 
 ### Trigger
 - <NEW COMMAND> A "steward conduct start" command will be made available to the head steward and the temporary head steward, and to every steward where "steward conduct steward-start-toggle" allows it, to be utilised in the channel configured by "steward channel command" exclusively, which will have as input 1 or more user IDs of a server member (not necessarily a driver, only requires the "base_role" as configured by "module enable signup"), so that a CoC investigation is opened against said user.
-- When valid usage, a modal dialog shall be displayed, with the following elements:
+- When valid usage, a form shall be shown, collecting the following:
   - Involved users - Mandatory - 0..n mentions - Other users directly or indirectly involved in the event being investigated, whose footage or evidence may be of use to the stewarding team's deliberations.
   - Complaint - Mandatory - String - Full description of the event being investigated by the stewarding team.
   - Evidence files - Optional - 0..5 media (image or video) - One or multiple images or video files that provide basis for the claims in the complaint.
+    - Evidence files are attached as part of lodging the ticket, before it is filed.
   - Evidence links - Optional - 0..5 links - One or multiple images or video links that provide basis for the claims in the complaint.
     - Between "evidence files" and "evidence links", there must be at least one file/link. Otherwise, the investigation will not be valid.
 - Usage of the "steward conduct start" shall be valid at all times of a season's, a division's, or round's lifecycle, and is therefore not pegged to any one round, division or season.
-- The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
-  - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
+- The information shall be validated before the form is closed, so that users do not have to enter it twice. Where it is not valid, the form shall be shown again with what was entered kept.
 - After valid submission, the investigation will be henceforth identified with a unique ID following the format "COC_INV<x>", where <x> is the number of the previous CoC investigation of this league plus 1, written in at least three digits: COC_INV001 … COC_INV999, then COC_INV1000, and so on, their order being that of their numbers
-- After valid submission, a channel bearing the investigation's unique ID as the title will be created, with the information from the modal dialog input by the steward who opened it summarised and posted as the header message in the channel. All involved users shall be mentioned properly in this message.
+- After valid submission, a channel bearing the investigation's unique ID as the title will be created, with the information from the form, as entered by the steward who opened it summarised and posted as the header message in the channel. All involved users shall be mentioned properly in this message.
 - Upon valid submission, a CoC investigation ticket will move immediately onto the defence submission stage.
 
 ### Defence submission
