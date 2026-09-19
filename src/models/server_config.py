@@ -15,7 +15,7 @@ class ServerConfig:
     #: chosen one, which is every server configured before the role existed — a league
     #: admin command is refused while it stands rather than falling back to a Discord
     #: permission, a league that has not picked the role not having decided who may cancel
-    #: its season. Set by ``/bot-admin-role``, and by ``/bot-init`` on a new server.
+    #: its season. Set by ``/bot admin-role``, and by ``/bot init`` on a new server.
     league_admin_role_id: int | None = None
     test_mode_active: bool = field(default=False)
     #: The test-mode counterpart of signup nationality collection. While test mode is

@@ -253,7 +253,7 @@ Building a season to test one thing is slow, and testing the next thing usually 
 5. `/test-mode advance` repeatedly, checking each posted message as it appears.
 6. For attendance rounds, `/test-mode rsvp set-status` once the check-in has been advanced into existence.
 7. `/season complete` when `advance` reports nothing left. Test mode switches itself off and the fake drivers are deleted, their history kept.
-8. `/season setup` and `/test-mode toggle` again to go round once more — or, to throw away a test season that never reached ongoing, `/season abort confirm:CONFIRM`, which leaves nothing behind. `/bot-reset confirm:CONFIRM` is still there for wiping the server's seasons outright.
+8. `/season setup` and `/test-mode toggle` again to go round once more — or, to throw away a test season that never reached ongoing, `/season abort confirm:CONFIRM`, which leaves nothing behind. To erase everything outright, `/bot factory-reset confirm:CONFIRM` is the server owner's: it backs both databases up as `*.factory-<moment>.db` beside the live ones, then leaves a freshly migrated `bot.db` and an empty job store.
 
 ---
 
@@ -261,4 +261,4 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 Every command in this document is a **league admin's** — it requires the league admin role and the configured command channel. The whole of test mode sits at that tier, `/test-mode backup` no more than the rest: switching test mode on rewrites what the bot believes about a server, and a restore replaces everything it holds. Full parameter tables are in the [Test Mode Commands](../../README.md#test-mode-commands) section of the README.
 
-The league admin role carries the interaction role's tier within it, so a league admin does not need to be given the interaction role as well. Discord's Administrator permission is not a way in — it reaches only `/bot-init` and the four commands that change one setting each.
+The league admin role carries the interaction role's tier within it, so a league admin does not need to be given the interaction role as well. Discord's Administrator permission is not a way in — it reaches only `/bot init` and the four commands that change one setting each.

@@ -3,7 +3,7 @@
 Issue #244. The league's server is the one `server_configs` row; every command from any other
 server is refused before its body runs, every button, menu and modal from one is refused
 before its callback runs, and the host is warned when the bot sits in more than one. The claim itself — that a second server cannot be set up — is pinned in
-`test_init_cog.py`, where `/bot-init` and `save_server_config` are.
+`test_bot_cog.py`, where `/bot init` and `save_server_config` are.
 """
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from bot import create_bot  # noqa: E402
 from utils.league_server import (  # noqa: E402
     REFUSAL,
+    UNCLAIMED_REFUSAL,
     LeagueCommandTree,
     LeagueModal,
     LeagueView,
@@ -98,7 +99,7 @@ async def test_autocomplete_in_another_server_offers_nothing_and_sends_nothing()
 
 
 async def test_before_any_server_is_set_up_every_server_proceeds():
-    """So that `/bot-init` can reach the server that will become the league's."""
+    """So that `/bot init` can reach the server that will become the league's."""
     bot = _bot(None)
 
     assert await bot.tree.interaction_check(_interaction(ELSEWHERE)) is True
@@ -184,6 +185,63 @@ async def test_the_sign_up_button_left_on_an_old_server_is_refused():
     interaction = _pressed_on(ELSEWHERE, LEAGUE)
 
     assert await SignupButtonView().interaction_check(interaction) is False
+
+
+# ── While no server is claimed ─────────────────────────────────────────────
+#
+# Between `/bot pack` and the next `/bot init` no server is foreign, so without a rule of its
+# own a button left on the server the league moved from would act on its data (issue #247).
+
+
+async def test_a_press_while_no_server_is_claimed_is_refused():
+    interaction = _pressed_on(ELSEWHERE, None)
+
+    assert await LeagueView().interaction_check(interaction) is False
+    interaction.response.send_message.assert_awaited_once_with(
+        UNCLAIMED_REFUSAL, ephemeral=True
+    )
+
+
+async def test_a_press_in_a_direct_message_while_no_server_is_claimed_is_refused():
+    interaction = _pressed_on(None, None)
+
+    assert await LeagueView().interaction_check(interaction) is False
+
+
+async def test_a_press_in_a_direct_message_while_a_server_is_claimed_proceeds():
+    interaction = _pressed_on(None, LEAGUE)
+
+    assert await LeagueView().interaction_check(interaction) is True
+    interaction.response.send_message.assert_not_awaited()
+
+
+async def test_a_modal_submitted_while_no_server_is_claimed_is_refused():
+    interaction = _pressed_on(ELSEWHERE, None)
+
+    class _Modal(LeagueModal, title="t"):
+        pass
+
+    assert await _Modal().interaction_check(interaction) is False
+    interaction.response.send_message.assert_awaited_once_with(
+        UNCLAIMED_REFUSAL, ephemeral=True
+    )
+
+
+async def test_the_sign_up_button_left_behind_by_a_pack_is_refused():
+    from cogs.signup_cog import SignupButtonView
+
+    interaction = _pressed_on(ELSEWHERE, None)
+
+    assert await SignupButtonView().interaction_check(interaction) is False
+
+
+async def test_a_command_while_no_server_is_claimed_still_reaches_the_tier_guards():
+    """The tree lets it through, so that `/bot init` can claim the new server."""
+    bot = _bot(None)
+    interaction = _interaction(ELSEWHERE)
+
+    assert await bot.tree.interaction_check(interaction) is True
+    interaction.response.send_message.assert_not_awaited()
 
 
 def test_every_view_and_modal_derives_from_the_league_s_own():

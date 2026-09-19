@@ -52,7 +52,7 @@ Three things have to be done on that computer, by hand, before any command in th
 
 > **If you keep backups, keep both.** `bot.db` on its own is not a complete backup: without `scheduler.db` a restored season still knows its rounds, but every weather phase, RSVP notice and result submission it was waiting to send has gone, and only reviewing and approving the season again brings them back. Copying `bot.db` while the bot is running can also miss the most recent changes, because they may still be sitting in a `bot.db-wal` file next to it. The safe ways are in [Backing up](../../README.md#backing-up). Backups are optional and entirely your choice — but a half-backup is worse than none, because it looks complete.
 
-**Invite it to your league's server, and to no other.** The first `/bot-init` claims the server it runs in. On any other server the bot refuses every command, and the computer running it logs a warning for as long as it sits in more than one — see [One bot, one server](../../README.md#one-bot-one-server).
+**Invite it to your league's server, and to no other.** `/bot init` claims the server it runs in. On any other server the bot refuses every command, and the computer running it logs a warning for as long as it sits in more than one — see [One bot, one server](../../README.md#one-bot-one-server).
 
 **Invite it with the right permissions.** All of them listed under [Required Permissions](../../README.md#required-permissions) are genuinely used, and the two worth checking twice are **Manage Roles** — the bot cannot place a driver without it — and **Mention @everyone, @here, and All Roles**, which it needs to ping a division role even though it never pings everyone.
 
@@ -65,7 +65,7 @@ If somebody else hosts the bot for you, you need their help for those three step
 ## Step 1 — Tell the bot who is in charge
 
 ```
-/bot-init interaction_role:@Stewards league_admin_role:@Owners interaction_channel:#bot-commands log_channel:#bot-logs
+/bot init interaction_role:@Stewards league_admin_role:@Owners interaction_channel:#bot-commands log_channel:#bot-logs
 ```
 
 Four decisions, and they shape everything after:
@@ -88,9 +88,10 @@ Run it anywhere, and run it as a server administrator: until it has run there is
 | To run | You need |
 |---|---|
 | Most commands in this guide | The **interaction role** |
-| Anything that cannot be undone: `/bot-reset`, `/clean-bot`, `/module enable` and `/module disable`, cancelling or deleting a season, division or round, aborting or completing a season, `/team remove`, `/driver sack`, and every `/test-mode` command | The **league admin role** |
+| Anything that cannot be undone: `/bot pack`, `/clean-bot`, `/module enable` and `/module disable`, cancelling or deleting a season, division or round, aborting or completing a season, `/team remove`, `/driver sack`, and every `/test-mode` command | The **league admin role** |
 | Confirming a season's configuration or its placements, on the button `/season config-review` or `/season placements-review` posts | Whoever ran that review, or the league admin role |
-| `/bot-init` and the four commands that change one setting | The league admin role **or** Discord's **Administrator** permission, from any channel |
+| `/bot init` and the four commands that change one setting | The league admin role **or** Discord's **Administrator** permission, from any channel |
+| `/bot factory-reset` | The Discord **server owner**, and nobody else, from any channel |
 
 The league admin role covers everything the interaction role does, so whoever holds it can
 run everything in this guide without also being given the interaction role.
@@ -98,31 +99,32 @@ run everything in this guide without also being given the interaction role.
 **Discord's own permissions do not come into it.** Administrator and Manage Server govern
 your *server*; these two roles govern your *league*, and the bot reads only the roles. The
 one exception is the five setup commands in the row above — they take Administrator too,
-because they are what repairs the settings everything else depends on.
+because they are what repairs the settings everything else depends on. `/bot factory-reset`
+stands apart from both roles: it erases the league entire, so it is the server owner's alone.
 
 So the interaction role is not a licence to reconfigure the league — it is the gate
 everything else sits behind. Drivers do not need it.
 
-**`/bot-init` runs once.** Run it a second time and it politely refuses — it will not overwrite what is already there. To change one of the four settings afterwards, use the command for that setting:
+**`/bot init` runs once.** Run it a second time and it politely refuses — it will not overwrite what is already there. To change one of the four settings afterwards, use the command for that setting:
 
 ```
-/bot-log-channel channel:#new-bot-logs
-/bot-interaction-channel channel:#new-bot-commands
-/bot-interaction-role role:@NewStewards
-/bot-admin-role role:@NewOwners
+/bot log-channel channel:#new-bot-logs
+/bot interaction-channel channel:#new-bot-commands
+/bot interaction-role role:@NewStewards
+/bot admin-role role:@NewOwners
 ```
 
 Each changes that one setting and touches nothing else.
 
 > **These work from any channel, and a server administrator can run them.** That is on purpose. They exist for the day something goes wrong with the four settings themselves — somebody deletes the log channel, archives the command channel, or removes one of the two roles. If they needed the command channel or a league role to run, the one thing you could not repair would be the thing that had broken; and if they needed the league admin role, a server that had lost that role could never get it back. So these five, and only these five, also accept Discord's **Administrator** permission.
 >
-> `/bot-reset` is **not** one of them. It destroys the settings rather than repairing them, so it asks for the league admin role and is given in the command channel like everything else.
+> `/bot pack` is **not** one of them. It clears the settings rather than repairing them, so it asks for the league admin role and is given in the command channel like everything else.
 
-If you would rather start over from nothing, `/bot-reset full:True` clears the configuration and `/bot-init` becomes available again. It also frees the bot's claim on your server, so this is how a league moves to a new server: reset in full, then run `/bot-init` on the new one.
+To move your league to another server, or to start over from nothing, see [Starting over](#starting-over).
 
 > **A command run in the wrong channel is refused, not ignored.** You get a short message only you can see. If a command seems to do nothing, check which channel you are in first.
 
-**One team already exists.** `/bot-init` creates the **Reserve** team, which has unlimited seats and belongs to every division. You cannot remove or rename it. Nothing else is created — your team list starts empty apart from it.
+**One team already exists.** `/bot init` creates the **Reserve** team, which has unlimited seats and belongs to every division. You cannot remove or rename it. Nothing else is created — your team list starts empty apart from it.
 
 ---
 
@@ -376,7 +378,7 @@ The other six belong to modules. Set the ones whose module you turned on in step
 
 > **A channel can be repointed at any stage of the season.** If one is deleted mid-season, run the same command with its replacement; nothing about the season has to be undone. The channels belong to that season: once it ends they no longer count, and the next season's divisions are given their own.
 
-> **A channel does one job.** Every one of these commands refuses a channel that is already set as something else — including your `/bot-init` command and log channels, your signup channel, and the same kind of channel in another division. A two-division league therefore needs its own results channel for each, its own calendar channel for each, and so on.
+> **A channel does one job.** Every one of these commands refuses a channel that is already set as something else — including your `/bot init` command and log channels, your signup channel, and the same kind of channel in another division. A two-division league therefore needs its own results channel for each, its own calendar channel for each, and so on.
 >
 > It is not tidiness. Several of these postings **replace** the message they put up last, finding it by an id they store against the channel — so two purposes sharing a channel is how a lineup comes to delete a standings table.
 >
@@ -600,7 +602,7 @@ Where the window closes with nobody left to settle, the season goes straight bac
 > nothing should be able to delete it. As at approval, a division whose sheets will not post is
 > named in the log channel and the season completes regardless.
 
-An archived season cannot be edited. Start the next one with `/season setup` and a new game edition; your team list, your modules and your `/bot-init` settings all carry over.
+An archived season cannot be edited. Start the next one with `/season setup` and a new game edition; your team list, your modules and your `/bot init` settings all carry over.
 
 **You cannot build next season while this one is still live.** A server holds one live season at a time, whatever its stage, so the season has to be completed, cancelled or aborted before `/season setup` will start another. Archived seasons are not live and never get in the way: every completed and cancelled season you have ever run stays in the database, with its rounds, results, standings and driver histories intact, and the stats commands keep reading them.
 
@@ -634,18 +636,60 @@ A season whose placements were never confirmed — one in configuration, waiting
 
 ## Starting over
 
+There are two ways, and they are very different. **`/bot pack`** moves your league to another
+server and keeps it. **`/bot factory-reset`** erases it.
+
+### Moving the league to another server
+
+Your drivers, past seasons, team list, points configurations and module settings all come with
+you. The old server's channels and roles do not, so you set those again on the new one.
+
+1. **Finish the season you are running.** `/bot pack` is refused while a season is current — at
+   any stage short of completed or cancelled. Complete it, or cancel or abort it.
+2. **Pack, in the command channel:**
+
+   ```
+   /bot pack confirm:CONFIRM
+   ```
+
+   The bot writes the pack to the log channel, then lets go of this server. From now until the
+   next step, every button and form it has ever posted is refused, wherever it is pressed.
+3. **Invite the bot to the new server** and run `/bot init` there, as in step 1. It claims the
+   new server and takes the four settings afresh; test mode and your module settings are as you
+   left them.
+4. **Give each team its role again**, with `/team role` and `/team reserve-role` — the roles on
+   the old server mean nothing on the new one. If the signup module is on, set its channel and
+   roles again too: `/signup channel`, `/signup base-role` and `/signup complete-role`.
+5. **Set up the next season** as normal. Each division takes its role and channels from the new
+   server.
+6. **Remove the bot from the old server** when you are ready. Its messages there stay, and their
+   buttons refuse; nothing on the old server acts on your league any more.
+
+> Test mode does not stop a pack. Test drivers move with the league like everybody else.
+
+### Erasing everything
+
 ```
-/bot-reset confirm:CONFIRM
+/bot factory-reset confirm:CONFIRM
 ```
 
-Deletes every season, division, round and result, and keeps your `/bot-init` settings and team list so the bot stays usable straight away. Add `full:True` to wipe the `/bot-init` configuration too, in which case you start again from step 1 — but **not** from step 3: your team list survives either way, and there is no command that deletes it wholesale.
+Only the Discord **server owner** can run this, from any channel. It takes a backup of both of
+the bot's databases on the computer running it, and erases nothing if the backup fails. Then it
+erases the league — seasons, drivers, teams, settings, all of it — and deletes the channels the
+bot created and every message the bot posted on this server. Nobody else's messages are touched.
+Afterwards you start again from step 1 of this guide.
+
+The clean-up can take a long while on a server with a long history. The bot sends you a direct
+message and keeps it up to date; if that message stops changing, it names the channel the
+clean-up stopped in. Getting the backup back is done on the computer running the bot, not by a
+command.
 
 ---
 
 ## Checklist before you confirm placements
 
 - [ ] The bot is running, and its role sits above every role it must grant
-- [ ] `/bot-init` has been run, both roles are set, and the log channel is one your drivers cannot read
+- [ ] `/bot init` has been run, both roles are set, and the log channel is one your drivers cannot read
 - [ ] Every module you want is on — none can be turned on once placements are confirmed
 - [ ] Every team is on the list, each with a role, and the Reserve team has one too
 - [ ] Division tiers run 1, 2, 3… with no gaps
@@ -666,7 +710,7 @@ Deletes every season, division, round and result, and keeps your `/bot-init` set
 | A command refuses with a short message only you can see | You are not in the command channel, or you hold neither of the two roles. Check the channel first — it is almost always the channel |
 | A command does not appear in Discord's menu at all | The command list has not reached your server yet. Whoever hosts the bot can push it through immediately with `!sync` |
 | "This command is a league admin's" | It asks for the league admin role, which you do not hold. The table at the top of this guide lists which commands those are; someone holding that role has to run them |
-| "No league admin role is configured" | Your league was set up before the bot had one. A server administrator can put that right from any channel with `/bot-admin-role`, and every league admin command works again |
+| "No league admin role is configured" | Your league was set up before the bot had one. A server administrator can put that right from any channel with `/bot admin-role`, and every league admin command works again |
 | The bot placed a driver but the role did not appear | The bot's own role sits below the role it is trying to grant. Move it up |
 | `/division add` or `/season placements-review` refused, naming placements | The season is not in placements yet. Confirm its configuration with `/season config-review`, and close its signup window if it has one |
 | `/team add` or a signup setting refused, naming the season | The season's configuration is confirmed, which fixes them until it ends |

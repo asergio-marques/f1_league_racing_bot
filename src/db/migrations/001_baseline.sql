@@ -9,11 +9,14 @@
 -- every schema change is a new migration numbered after it, with a test of its own.
 
 -- server_configs
+-- One row, always. `server_id` is the claim on the league's server and is NULL while the bot
+-- serves none: `/bot pack` clears it and the four settings, and keeps the rest (issue #247).
 CREATE TABLE server_configs (
-    server_id              INTEGER PRIMARY KEY,
-    interaction_role_id    INTEGER NOT NULL,
-    interaction_channel_id INTEGER NOT NULL,
-    log_channel_id         INTEGER NOT NULL
+    id                     INTEGER PRIMARY KEY CHECK (id = 1),
+    server_id              INTEGER UNIQUE,
+    interaction_role_id    INTEGER,
+    interaction_channel_id INTEGER,
+    log_channel_id         INTEGER
 , test_mode_active INTEGER NOT NULL DEFAULT 0, previous_season_number INTEGER NOT NULL DEFAULT 0, weather_module_enabled INTEGER NOT NULL DEFAULT 0, signup_module_enabled INTEGER NOT NULL DEFAULT 0, test_mode_nationality_required INTEGER NOT NULL DEFAULT 1, league_admin_role_id INTEGER);
 
 -- sessions

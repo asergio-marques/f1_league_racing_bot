@@ -238,7 +238,7 @@ async def test_a_setup_season_counts_as_existing(tmp_path):
 
 
 async def test_a_setup_season_alone_is_not_active_or_completed(tmp_path):
-    """`/bot-init` and the reset command turn on this distinction: a season being built
+    """`/bot init` and the reset command turn on this distinction: a season being built
     has never been raced, so it is not a record to protect."""
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "SETUP")

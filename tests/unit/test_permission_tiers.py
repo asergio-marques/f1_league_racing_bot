@@ -14,7 +14,7 @@ because the check read the role and a Discord permission is not a role.
 
 **An unconfigured admin role refuses rather than falls back.** Every server configured
 before the role existed holds none. Falling back to Administrator there would quietly
-reinstate the conflation being removed, so the refusal names `/bot-admin-role` instead.
+reinstate the conflation being removed, so the refusal names `/bot admin-role` instead.
 
 **The setup commands are the one exception, and they are exempt twice over** — from the
 interaction channel and from the roles — because they repair the settings the other guards
@@ -186,7 +186,7 @@ async def test_a_league_admin_command_is_refused_while_no_admin_role_is_set():
     interaction = _interaction(_member(administrator=True))
     await command(_cog(_config(admin_role=None)), interaction)
     assert ran == []
-    assert "/bot-admin-role" in _reply(interaction)
+    assert "/bot admin-role" in _reply(interaction)
 
 
 # ── league_manager_only ───────────────────────────────────────────────────
@@ -298,7 +298,7 @@ async def test_a_tier_command_is_refused_before_the_bot_is_configured(decorator)
     interaction = _interaction(_member(administrator=True))
     await command(_cog(None), interaction)
     assert ran == []
-    assert "/bot-init" in _reply(interaction)
+    assert "/bot init" in _reply(interaction)
 
 
 # ── Refusals name roles, never mention them ───────────────────────────────

@@ -279,7 +279,7 @@ class TeamService:
             await db.commit()
 
     # ------------------------------------------------------------------
-    # /bot-init seeding (US4)
+    # /bot init seeding (US4)
     # ------------------------------------------------------------------
 
     async def seed_default_teams_if_empty(self) -> None:

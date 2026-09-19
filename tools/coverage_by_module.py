@@ -75,9 +75,10 @@ RULES: list[tuple[str, tuple[str, ...]]] = [
     ("core", (
         "bot.py", "/db/", "module_service", "season_service", "season_lifecycle_service",
         "channel_registry",
-        "config_service", "output_router", "scheduler_service", "reset_service",
-        "backup_service", "retry_service", "init_cog", "admin_review", "amendment",
-        "approval_window", "clean_cog", "module_cog", "reset_cog", "retry_cog",
+        "config_service", "output_router", "scheduler_service",
+        "backup_service", "retry_service", "init_cog", "bot_cog", "admin_review", "amendment",
+        "in_memory_state", "pack_service", "factory_reset_service",
+        "approval_window", "clean_cog", "module_cog", "retry_cog",
         "season_cog", "test_mode", "track_cog", "calendar_post", "channel_guard", "league_server",
         "season_classification", "season_end", "season_fingerprint", "season_points",
         "test_roster_service", "track_service",

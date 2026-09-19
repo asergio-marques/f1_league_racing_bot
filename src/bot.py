@@ -287,11 +287,10 @@ async def main() -> None:
         log.warning("Bot disconnected from Discord")
 
     # --- Load Cogs ---
-    from cogs.init_cog import InitCog
+    from cogs.bot_cog import BotCog
     from cogs.season_cog import SeasonCog
     from cogs.amendment_cog import AmendmentCog
     from cogs.test_mode_cog import TestModeCog
-    from cogs.reset_cog import ResetCog
     from cogs.track_cog import TrackCog
     from cogs.driver_cog import DriverCog
     from cogs.team_cog import TeamCog
@@ -305,11 +304,10 @@ async def main() -> None:
     from cogs.image_cog import ImageCog
     from cogs.clean_cog import CleanCog
 
-    await bot.add_cog(InitCog(bot))
+    await bot.add_cog(BotCog(bot))
     await bot.add_cog(SeasonCog(bot))
     await bot.add_cog(AmendmentCog(bot))
     await bot.add_cog(TestModeCog(bot))
-    await bot.add_cog(ResetCog(bot))
     await bot.add_cog(TrackCog(bot))
     await bot.add_cog(DriverCog(bot))
     await bot.add_cog(TeamCog(bot))
