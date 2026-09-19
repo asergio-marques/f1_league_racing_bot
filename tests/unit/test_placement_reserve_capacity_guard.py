@@ -222,6 +222,19 @@ async def test_drivers_on_ordinary_teams_do_not_count_towards_the_reserve_block(
     await service._guard_reserve_capacity(division_id, RESERVE)
 
 
+async def test_a_change_seating_several_reserves_is_measured_whole(tmp_path):
+    """#150: a test roster seats its reserves in one change, so they are counted together."""
+    db_path, _season_id, division_id = await _seed(tmp_path, reserves=1)
+    template = _template_file(tmp_path, reserve_slots=3)
+    service = _service(db_path, _bot(db_path, {LINEUP: _report(template)}))
+
+    await service._guard_reserve_capacity(division_id, RESERVE, adding=2)
+    with pytest.raises(ValueError) as excinfo:
+        await service._guard_reserve_capacity(division_id, RESERVE, adding=3)
+
+    assert "4 reserve drivers" in str(excinfo.value)
+
+
 # ── Everything it must not raise for ──────────────────────────────────────
 
 

@@ -116,7 +116,9 @@ Real drivers are the awkward part of testing placement, results and attendance: 
 /test-mode roster add driver_name:Test Alpha team_name:Red Bull division:Pro nationality:British
 ```
 
-The team must already exist in that division and have a free seat — this goes through the same seating path a real placement does, so seat-count and team-existence failures surface here exactly as they would in production.
+The team must already exist in that division and have a free seat. The roster seats its drivers itself rather than through `assign_driver`, but it holds them to the same checks a real placement meets, so seat-count and team-existence failures surface here as they would in production.
+
+**So do the template capacities.** A fake driver is refused wherever a real one would be for outgrowing a configured image template — the lineup's reserve slots, the attendance sheet's rows, the driver standings' rows — each only while that image output is on. A roster that seats cleanly has verified the templates hold it, rather than leaving the overflow to show at the first posting.
 
 No Discord account sits behind a synthetic driver, so `/images use-pfp` never obtains a
 portrait for one: their lineup seat draws whatever is in the driver image folder under their
@@ -149,7 +151,7 @@ Paste the file — header row and all — into the box that opens. It seats ever
 
 **A division that already holds drivers is refused.** The file describes a whole grid, so importing it over a division that is already seated would leave drivers somewhere the file does not describe. Clear it with `/test-mode roster clear` first, or import only the divisions that are still empty — the other divisions in the file are refused, not the whole import.
 
-**Nothing is seated unless everything can be.** A misspelt team, a nationality the bot does not know, a division that is not in the season, or a team given more drivers than it has seats: any of these refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time, so there is nothing to undo.
+**Nothing is seated unless everything can be.** A misspelt team, a nationality the bot does not know, a division that is not in the season, a team given more drivers than it has seats, or a division given more drivers than a configured template draws — counted over the whole of the division's roster, not driver by driver: any of these refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time, so there is nothing to undo.
 
 **About seventy drivers fit.** Discord caps the box at 4000 characters, and a roster row is around 55. A grid too large for one paste goes in two, a division at a time.
 

@@ -866,6 +866,7 @@ class TestModeCog(commands.Cog):
             division_name=division,
             db_path=self.bot.db_path,  # type: ignore[attr-defined]
             nationality=nationality,
+            placement_service=self.bot.placement_service,  # type: ignore[attr-defined]
         )
 
         if isinstance(result, str):
@@ -1369,6 +1370,7 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
         seated, errors = await add_test_drivers_in_bulk(
             drivers,
             self._cog.bot.db_path,  # type: ignore[attr-defined]
+            placement_service=self._cog.bot.placement_service,  # type: ignore[attr-defined]
         )
         if errors:
             await interaction.followup.send(
