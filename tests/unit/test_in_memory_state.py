@@ -33,7 +33,6 @@ _STORE = re.compile(
 CLEARED = {
     ("cogs/admin_review_cog.py", "_PENDING_REASONS"),
     ("cogs/season_cog.py", "_pending"),
-    ("services/season_service.py", "_pending_driver_seats"),
     ("services/wizard_service.py", "_correction_tasks"),
 }
 
@@ -78,7 +77,6 @@ async def test_the_clear_empties_every_store():
     task = asyncio.get_running_loop().create_future()
     bot = SimpleNamespace(
         get_cog=lambda name: season_cog if name == "SeasonCog" else None,
-        season_service=SimpleNamespace(_pending_driver_seats={"1": [{}]}),
         wizard_service=SimpleNamespace(_correction_tasks={"7": task}),
     )
     admin_review_cog._PENDING_REASONS[(1, 2)] = {"action": "x"}
@@ -87,6 +85,5 @@ async def test_the_clear_empties_every_store():
 
     season_cog.clear_pending.assert_called_once_with()
     assert admin_review_cog._PENDING_REASONS == {}
-    assert bot.season_service._pending_driver_seats == {}
     assert bot.wizard_service._correction_tasks == {}
     assert task.cancelled()
