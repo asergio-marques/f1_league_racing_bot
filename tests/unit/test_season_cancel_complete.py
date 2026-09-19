@@ -378,6 +378,19 @@ async def test_a_failed_history_write_tells_nobody():
     cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
 
 
+async def test_the_check_in_audit_reaches_the_log():
+    cog = _make_cog()
+    history, roles = _season_end()
+    announce = AsyncMock(return_value=CancellationReport(audit="\n  check-in, Division 1"))
+
+    with history, roles, patch(
+        "services.cancellation_notice_service.announce_cancellation", new=announce
+    ):
+        await undecorate(SeasonCog.season_cancel)(cog, _interaction(), "CONFIRM")
+
+    assert "check-in, Division 1" in cog.bot.output_router.post_log.await_args.args[0]
+
+
 async def test_what_could_not_be_told_is_named_to_the_admin():
     from services.cancellation_notice_service import NoticeFailure
 

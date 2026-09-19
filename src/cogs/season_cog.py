@@ -2852,6 +2852,7 @@ class SeasonCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season cancel | Success"
+            + report.audit
             + cancellation_notice_service.failure_log_lines(report.failures),
         )
 
@@ -3507,6 +3508,9 @@ class SeasonCog(commands.Cog):
         rounds = await self.bot.season_service.get_division_rounds(div.id)
         for rnd in rounds:
             self.bot.scheduler_service.cancel_round(rnd.id)
+        # The rounds the cascade below calls off, read before it does: those whose results are
+        # not yet in, exactly as `ROUND_CANCELLABLE` has it for the cascade itself.
+        called_off = frozenset(r.id for r in rounds if r.status in ROUND_CANCELLABLE)
 
         await self.bot.season_service.cancel_division(
             division_id=div.id,
@@ -3529,6 +3533,7 @@ class SeasonCog(commands.Cog):
             [div],
             scope=cancellation_notice_service.SCOPE_DIVISION,
             season_number=season.season_number,
+            round_ids=called_off,
         )
 
         await interaction.followup.send(
@@ -3539,6 +3544,7 @@ class SeasonCog(commands.Cog):
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division cancel | Success\n"
             f"  division: {name}"
+            + report.audit
             + cancellation_notice_service.failure_log_lines(report.failures),
         )
 
@@ -4839,6 +4845,7 @@ class SeasonCog(commands.Cog):
             round_number=round_number,
             track_name=rnd.track_name,
             season_number=season.season_number,
+            round_ids=frozenset({rnd.id}),
         )
 
         await interaction.followup.send(
@@ -4850,6 +4857,7 @@ class SeasonCog(commands.Cog):
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round cancel | Success\n"
             f"  division: {division_name}\n"
             f"  round: {round_number}"
+            + report.audit
             + cancellation_notice_service.failure_log_lines(report.failures),
         )
 

@@ -437,6 +437,7 @@ async def test_the_modules_are_told_the_round_is_off():
     assert announce.await_args.kwargs["round_number"] == 5
     assert announce.await_args.kwargs["track_name"] == "Monza"
     assert announce.await_args.kwargs["season_number"] == 3
+    assert announce.await_args.kwargs["round_ids"] == frozenset({ROUND_ID})
     assert [d.id for d in announce.await_args.args[2]] == [DIVISION_ID]
     interaction._channel.send.assert_not_awaited()
 
@@ -457,6 +458,18 @@ async def test_the_announcement_follows_the_round_being_recorded_cancelled():
             cog, _interaction(), "Division 1", 5, "CONFIRM"
         )
     assert order == ["record", "announce"]
+
+
+async def test_the_check_in_audit_reaches_the_log():
+    cog = _make_cog()
+    announce = AsyncMock(return_value=CancellationReport(audit="\n  check-in, Division 1"))
+    with _submission(False), patch(
+        "services.cancellation_notice_service.announce_cancellation", new=announce
+    ):
+        await undecorate(SeasonCog.round_cancel)(
+            cog, _interaction(), "Division 1", 5, "CONFIRM"
+        )
+    assert "check-in, Division 1" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 async def test_what_could_not_be_told_is_named_to_the_admin():

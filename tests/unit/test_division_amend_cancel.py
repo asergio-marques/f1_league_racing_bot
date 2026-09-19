@@ -100,8 +100,8 @@ def _division(name="Pro", tier=1, *, id=DIVISION_ID, status="ACTIVE", channel=No
     )
 
 
-def _round(id: int):
-    return SimpleNamespace(id=id, division_id=DIVISION_ID, round_number=id)
+def _round(id: int, status: str = "NOT_RUN"):
+    return SimpleNamespace(id=id, division_id=DIVISION_ID, round_number=id, status=status)
 
 
 def _make_cog(
@@ -705,6 +705,35 @@ async def test_the_modules_are_told_the_division_is_off(tmp_path):
     assert announce.await_args.kwargs["season_number"] == 4
     assert [d.id for d in announce.await_args.args[2]] == [DIVISION_ID]
     channel.send.assert_not_awaited()
+
+
+async def test_only_the_rounds_the_cascade_calls_off_are_named(tmp_path):
+    """A round already raced keeps its results and its check-in; one already cancelled was
+    announced when it was."""
+    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_round_ids")
+    cog = _make_cog(
+        db_path,
+        rounds=[
+            _round(1, "FINAL"),
+            _round(2, "AWAITING_RESULTS"),
+            _round(3, "NOT_RUN"),
+            _round(4, "CANCELLED"),
+            _round(5, "AWAITING_REPORT_VERDICTS"),
+        ],
+    )
+
+    announce = await _cancel(cog, _interaction())
+
+    assert announce.await_args.kwargs["round_ids"] == frozenset({2, 3})
+
+
+async def test_the_check_in_audit_reaches_the_log(tmp_path):
+    db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_audit")
+    cog = _make_cog(db_path)
+    announce = AsyncMock(return_value=CancellationReport(audit="\n  check-in, Pro, Round 2"))
+    with patch("services.cancellation_notice_service.announce_cancellation", new=announce):
+        await undecorate(SeasonCog.division_cancel)(cog, _interaction(), "Pro", "CONFIRM")
+    assert "check-in, Pro, Round 2" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 async def test_the_modules_are_told_after_the_division_is_recorded_cancelled(tmp_path):
