@@ -793,7 +793,7 @@ No parameters. Opens a box; paste the `roster.csv` the roster generator writes, 
 
 **The IDs in the file are the IDs written**, unlike `roster add`, which allocates its own. The generator's other scripts — results, check-ins — name drivers by those IDs, so importing the CSV keeps a generated results file lined up with the grid.
 
-> **A division that already holds drivers is refused.** The file describes a whole grid, so importing over a seated division would leave drivers somewhere the file does not describe. Clear it with `/test-mode roster clear` first. Only the division named is refused, so the rest of a split roster still lands.
+> **A division that already holds drivers is refused.** The file describes a whole grid, so importing over a seated division would leave drivers somewhere the file does not describe. Clear it with `/test-mode roster clear` first. The whole import is refused, so nothing lands until the seated division is cleared.
 
 > **Nothing is seated unless everything can be.** A misspelt team, an unknown nationality, a division not in the season, or a team given more drivers than it has seats refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time.
 
