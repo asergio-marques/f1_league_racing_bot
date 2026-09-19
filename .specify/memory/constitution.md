@@ -1,6 +1,40 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-19 — v13.0.0 → v13.1.0: MINOR — a pack and a factory reset replace the reset (issue #247)]
+  Version change    : 13.0.0 → 13.1.0
+  Bump rationale    : MINOR. Principle I gains a rule block (the server owner's factory reset)
+                      and materially expands another (how the claim is freed, and what the bot
+                      does while none is held). MAJOR was weighed and rejected: the rule that
+                      one row records the claim and that the claim is freed by an explicit
+                      command stands; the command that frees it is renamed and split in two,
+                      and no behaviour the old text required becomes forbidden.
+
+  Modified sections :
+    - Principle I, Trusted Configuration Authority — adds **The server owner, for the factory
+      reset alone**: the one exception to every tier being a configured role, backup first.
+      **One bot, one league** now has a pack or a factory reset free the claim in place of the
+      full reset, refuses a pack while a season is current, keeps the league's data across a
+      pack, and refuses every button and form while no server is claimed. The league admin
+      tier's list names packing in place of starting over; the out-of-channel exemption names
+      the factory reset beside the five setup commands. The rationale gains the 13.1.0
+      paragraph.
+
+  Why the constitution is the document that moved:
+    - Decided with the user on 2026-09-19 and filed as issue #247: the reset is withdrawn,
+      `/bot pack` and `/bot factory-reset` replace it, the factory reset is the server owner's,
+      and nothing a bot posted acts while it serves no server. The five setup commands became
+      the `/bot` group in the same change; the body names none of them, so no text followed.
+
+  Added sections    : none. One rule block and one rationale paragraph were added within
+                      Principle I.
+  Removed sections  : none.
+  Deferred items    : none.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-18 — v12.0.0 → v13.0.0: MAJOR — one bot serves one league (issue #244)]
   Version change    : 12.0.0 → 13.0.0
   Bump rationale    : MAJOR. The server stops being a scope inside the bot. A driver profile was
@@ -4451,7 +4485,8 @@ Follow-up TODOs   : None — all placeholders resolved
 
 Two access tiers MUST govern every command, and every command MUST sit in exactly one of
 them. **Both tiers are Discord roles the league configures.** A Discord permission MUST NOT
-be a route to either, save the single exception stated below.
+be a route to either, save the single exception stated below. One command stands outside
+both tiers, the factory reset, as stated below.
 
 1. **Tier 2 — league manager**: held by the configured **interaction role**, or by the league
    admin role. A league manager runs the league: seasons, divisions, rounds, tracks, teams,
@@ -4462,9 +4497,9 @@ be a route to either, save the single exception stated below.
 
 2. **Tier 1 — league admin**: held by the configured **league admin role**. A league admin
    governs what the bot is upon the server and everything that may undo a league entire:
-   initialising the bot and repairing its four settings, enabling and disabling a module,
-   starting over, every command of test mode, and every command that destroys what a league
-   is built from where nothing puts it back.
+   initialising the bot and repairing its four settings, packing the bot for another server,
+   enabling and disabling a module, every command of test mode, and every command that
+   destroys what a league is built from where nothing puts it back.
 
 The league admin role MUST carry the league manager tier within it: a member holding it
 commands the bot without also holding the interaction role. Where this constitution does not
@@ -4480,10 +4515,22 @@ otherwise be unrepairable.
 A server with no league admin role configured MUST refuse every league admin command and MUST
 name the command that sets the role. It MUST NOT fall back to a Discord permission.
 
+**The server owner, for the factory reset alone.** The factory reset — which backs up both of
+the bot's databases, then erases the league and deletes the bot's own channels and messages
+from the server — MUST be run by the Discord server owner and by nobody else, whatever roles
+or permissions anybody else holds, and MUST run from any channel. It MUST take its backup
+first and MUST erase nothing where the backup fails. This is the one exception to every tier
+being a role the league configures.
+
 **One bot, one league.** One bot MUST serve one league, and a league is one Discord server.
-The first initialisation claims the server; initialisation upon any other server MUST be
-refused. Upon any server but the league's, the bot MUST refuse every command and MUST act on
-no event, and MUST stay rather than leave. Only the full form of the reset frees the claim.
+Initialisation claims the server while none is claimed; initialisation upon any other server
+MUST be refused. Upon any server but the league's, the bot MUST refuse every command and MUST
+act on no event, and MUST stay rather than leave. A pack or a factory reset alone frees the
+claim. A pack MUST be refused while the league has a current season, and MUST keep what is the
+league's rather than the server's — its drivers, its past seasons, its teams, its points
+configurations and every module setting that is not a channel or a role — clearing only what
+names the server. While no server is claimed, every button and form the bot has posted MUST
+be refused wherever it is pressed.
 The league's server MUST be recorded in one place, the single server configuration row, and
 MUST be checked once, at the entry point of every command and event. Nothing past that point
 MAY scope by server: no other table carries a server, and no service takes one. Whenever the
@@ -4499,8 +4546,8 @@ what they are entitled to act upon. A button offered to a driver in their own ch
 ask nothing, a driver needing no role.
 
 The bot MUST refuse an out-of-channel command visibly, the refusal being seen by the
-invoking member alone rather than passing silently — save the five setup commands exempted
-above, which MUST run from any channel. The bot MUST reject unauthorized configuration
+invoking member alone rather than passing silently — save the five setup commands and the
+factory reset exempted above, which MUST run from any channel. The bot MUST reject unauthorized configuration
 commands with a clear, actionable permission error.
 
 **Rationale**: Separating "who can read weather" from "who can change the season" prevents
@@ -4522,6 +4569,13 @@ league never reached another. No league needed it, because a league runs its own
 scope that can never differ is a check that can never fail: it misleads the reader it was
 meant to protect. The guard moved to the one place a second server can arrive, the entry
 point, and the scope left everything behind it.
+
+Starting over in two ways is the substance of the 13.1.0 amendment. The reset it replaced did
+neither job whole: its plain form left drivers placed in seasons it had deleted, and its full
+form freed the server while keeping another server's roles for the next. A pack moves a league
+and keeps it; a factory reset ends one. The factory reset stands outside the configured tiers
+because it destroys the roles that would otherwise grant it, and the owner is the one member
+of a server no role can create or remove.
 
 ### II. Multi-Division Isolation
 
@@ -7844,4 +7898,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 13.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-18
+**Version**: 13.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-19
