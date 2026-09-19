@@ -43,6 +43,19 @@ jobs:
         COVERAGE_CORE: sysmon
       run: coverage run -m pytest tests/ -q -rs -m "not rasteriser" --durations=15 --junitxml=pytest-results.xml
 
+    # Every test's time, kept for Linux so the two runners can be compared test by test
+    # with `tools/compare_test_timings.py`. `if: always()` because a failed or slow run is when
+    # the timings are wanted most. The times here run under coverage, which slows
+    # this job a little; the comparison reads them as they are.
+    - name: Keep the test timings
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-timings-linux
+        path: pytest-results.xml
+        retention-days: 30
+        if-no-files-found: warn
+
     - name: Verify no test failed
       run: |
         python -c '
@@ -129,6 +142,18 @@ jobs:
     # timeout — which is how issue #252 was found, by a timeout and nothing earlier.
     - name: Github Action for testing the code
       run: pytest tests/ -q -rs -m "not rasteriser" --durations=15 --junitxml=pytest-results.xml
+
+    # Every test's time, kept for Windows so the two runners can be compared test by test
+    # with `tools/compare_test_timings.py`. `if: always()` because a failed or slow run is when
+    # the timings are wanted most.
+    - name: Keep the test timings
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-timings-windows
+        path: pytest-results.xml
+        retention-days: 30
+        if-no-files-found: warn
 
     - name: Verify no test failed
       run: |
