@@ -82,7 +82,7 @@ async def _seed_setup_season(db_path):
 async def _snapshot(svc, db_path, season_id, divisions=None, forecast_channel_id=None):
     """Write the season the way a setup command does, seeding teams as the cog then does."""
     divisions = divisions or [DIVISION]
-    new_season_id, _, new_division_ids = await svc.sync_pending_config(
+    new_season_id, _, unseeded_division_ids = await svc.sync_pending_config(
         date(2026, 3, 1),
         season_id,
         [
@@ -97,7 +97,7 @@ async def _snapshot(svc, db_path, season_id, divisions=None, forecast_channel_id
         ],
     )
     async with get_connection(db_path) as db:
-        for division_id in new_division_ids:
+        for division_id in unseeded_division_ids:
             await _seed_teams(db, division_id)
         await db.commit()
     return new_season_id

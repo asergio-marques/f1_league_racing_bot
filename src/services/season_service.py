@@ -309,8 +309,12 @@ class SeasonService:
     ) -> tuple[int, int, list[int]]:
         """Bring the SETUP season in the DB into line with the PendingConfig, in place.
 
-        Returns ``(season_id, season_number, new_division_ids)``. The caller seeds teams for
-        the new divisions, and for no others.
+        Returns ``(season_id, season_number, unseeded_division_ids)``: every division of the
+        season that holds no team, which the caller then seeds, and no other. That is each
+        division this call created, and any an earlier call created whose seeding never
+        landed — seeding commits separately, after this, so a bot stopped between the two
+        leaves a division with no teams. The rebuild healed that on the next command by
+        re-seeding everything; this heals it by asking which divisions still need it.
 
         **Nothing is torn down** (issue #147). This replaced a snapshot that deleted every
         division, team, seat, round and driver assignment beneath the season and re-inserted
@@ -348,7 +352,6 @@ class SeasonService:
         Raises ``ValueError`` where *season_id* names no season, or one no longer in SETUP.
         Sessions are not created here; approval creates them.
         """
-        new_division_ids: list[int] = []
         async with get_connection(self._db_path) as db:
             if season_id == 0:
                 season_number = await self.count_persisted_seasons() + 1
@@ -408,12 +411,19 @@ class SeasonService:
                     )
                     div_id = cursor.lastrowid
                     division_ids[div_data["name"]] = div_id  # type: ignore[assignment]
-                    new_division_ids.append(div_id)  # type: ignore[arg-type]
                 await _sync_division_rounds(db, div_id, div_data["rounds"])  # type: ignore[arg-type]
 
             await db.commit()
 
-        return season_id, season_number, new_division_ids
+            cursor = await db.execute(
+                "SELECT d.id FROM divisions d WHERE d.season_id = ? AND NOT EXISTS "
+                "(SELECT 1 FROM team_instances ti WHERE ti.division_id = d.id) "
+                "ORDER BY d.id",
+                (season_id,),
+            )
+            unseeded = [r["id"] for r in await cursor.fetchall()]
+
+        return season_id, season_number, unseeded
 
     async def load_all_setup_seasons(self) -> list[dict]:
         """Return raw data for every SETUP-status season to rebuild PendingConfig on startup."""

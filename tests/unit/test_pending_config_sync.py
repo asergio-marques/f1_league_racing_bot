@@ -282,6 +282,20 @@ async def test_a_new_division_is_the_only_one_returned_for_seeding(db_path):
     assert rows[new_ids[0]] == "Rookie"
 
 
+async def test_a_division_whose_seeding_was_interrupted_is_returned_again(db_path):
+    """Seeding commits after the sync. A bot stopped between the two leaves a division with
+    no teams, and the next setup command must seed it — the rebuild did, by re-seeding all."""
+    svc = SeasonService(db_path)
+    divisions = [_division("Pro", 1), _division("Am", 2)]
+    season_id, _, (pro_id, am_id) = await _sync(svc, 0, divisions)
+    await _seed_teams_and_seat(db_path, [pro_id])  # Am's seeding never landed
+
+    divisions[0]["rounds"].append(_round(4))
+    _, _, unseeded = await _sync(svc, season_id, divisions)
+
+    assert unseeded == [am_id]
+
+
 async def test_a_division_missing_from_the_config_is_left_alone(db_path):
     svc, season_id, divisions, (pro_id, am_id) = await _two_division_season(db_path)
     before = await _dump(db_path, "divisions")
@@ -416,15 +430,24 @@ async def test_sync_refuses_a_season_that_does_not_exist(db_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_setup_command_seeds_teams_only_for_a_new_division(db_path):
+async def test_a_setup_command_seeds_teams_only_for_a_division_without_them(db_path):
     """Re-seeding every division on every command re-created teams that already existed."""
     from unittest.mock import AsyncMock, MagicMock
 
     from cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
 
+    async def seed(division_id):
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
+                "VALUES (?, 'Redline', 2, 0)",
+                (division_id,),
+            )
+            await db.commit()
+
     bot = MagicMock()
     bot.season_service = SeasonService(db_path)
-    bot.team_service.seed_division_teams = AsyncMock()
+    bot.team_service.seed_division_teams = AsyncMock(side_effect=seed)
     cog = SeasonCog(bot)
 
     pro = PendingDivision(name="Pro", role_id=1, channel_id=None, tier=1, rounds=[_round(1)])

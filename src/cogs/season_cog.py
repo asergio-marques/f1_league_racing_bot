@@ -5327,7 +5327,7 @@ class SeasonCog(commands.Cog):
             for d in cfg.divisions
             if d.name
         ]
-        season_id, season_number, new_division_ids = (
+        season_id, season_number, unseeded_division_ids = (
             await self.bot.season_service.sync_pending_config(
                 cfg.start_date,
                 cfg.season_id,
@@ -5339,8 +5339,9 @@ class SeasonCog(commands.Cog):
         cfg.season_id = season_id
         cfg.season_number = season_number
 
-        # A division the sync created has no teams yet; every other keeps the ones it has.
-        for division_id in new_division_ids:
+        # A division with no teams yet — new, or one whose seeding a restart interrupted.
+        # Every other keeps the teams it has.
+        for division_id in unseeded_division_ids:
             await self.bot.team_service.seed_division_teams(division_id)
 
     async def _reload_pending_from_db(self, cfg: PendingConfig) -> None:
