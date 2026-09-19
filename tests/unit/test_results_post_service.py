@@ -1325,50 +1325,49 @@ async def test_delete_and_repost_final_results_reports_a_missing_channel(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_delete_and_repost_final_results_keeps_the_message_when_the_channel_faults(
+async def test_delete_and_repost_final_results_keeps_the_message_when_posting_is_denied(
     tmp_path,
 ):
     """The regression that matters (#237).
 
-    The function deletes the league's copy before posting its replacement. When the channel
-    cannot be posted to, the old behaviour ran the delete anyway and cleared
-    ``results_message_id`` — leaving the round with nothing posted and no record of what had
-    been. Gating first means the worst case is that the league keeps what it already had.
+    The function deletes the league's copy before posting its replacement. A channel that is
+    still *there* but that the bot may no longer post in got past the old truthiness guard,
+    so the delete ran, ``results_message_id`` was cleared, and the repost then failed —
+    leaving the round with nothing posted and no record of what had been. Gating first means
+    the worst case is that the league keeps what it already had.
+
+    A channel **deleted outright** is deliberately not the case under test here: the old
+    ``if rc is not None`` guard already skipped it without deleting anything, so a test
+    written that way would pass against the unfixed code and pin nothing. That the deleted
+    channel is now *reported* is covered by
+    ``test_delete_and_repost_final_results_reports_a_missing_channel``.
     """
-    from services.results_post_service import delete_and_repost_final_results
-
-    db_path, division_id, round_id, session_result_id = await _seed_round_for_cascade(
-        tmp_path
-    )
-
-    faults = await delete_and_repost_final_results(
-        db_path, round_id, division_id,
-        _guild_for_faults(present=()), "Final Results",
-        bot=_bot_with_images(),
-    )
-
-    assert faults != []
-    assert await _results_message_id(db_path, session_result_id) == 9001
-
-
-@pytest.mark.asyncio
-async def test_delete_and_repost_final_results_keeps_the_message_when_posting_is_denied(
-    tmp_path,
-):
-    """The channel is there, but Send Messages has been revoked — the same protection."""
-    from services.results_post_service import delete_and_repost_final_results
+    from services import results_post_service as rps
 
     db_path, division_id, round_id, session_result_id = await _seed_round_for_cascade(
         tmp_path
     )
 
     guild = _guild_for_faults(permissions=_permissions(send_messages=False))
-    faults = await delete_and_repost_final_results(
-        db_path, round_id, division_id, guild, "Final Results", bot=_bot_with_images(),
-    )
 
-    assert any("Send Messages" in line for line in faults)
+    # The posting itself is stubbed so that the unfixed code gets all the way through and
+    # this test fails on the message it destroyed, rather than on a mock it tripped over
+    # on the way.
+    with patch.object(rps, "_delete_with_continuations", new=AsyncMock()) as deleted, \
+            patch.object(rps, "post_session_results", new=AsyncMock()), \
+            patch.object(rps, "post_standings", new=AsyncMock()), \
+            patch.object(rps, "_clear_standings_messages", new=AsyncMock()), \
+            patch.object(rps, "driver_standings_for_display", new=AsyncMock(return_value=[])):
+        faults = await rps.delete_and_repost_final_results(
+            db_path, round_id, division_id, guild, "Final Results",
+            bot=_bot_with_images(),
+        )
+
+    # Asserted before the fault, so that against the unfixed code this fails on the message
+    # it lost rather than on the return type that changed.
     assert await _results_message_id(db_path, session_result_id) == 9001
+    deleted.assert_not_awaited()
+    assert any("Send Messages" in line for line in faults)
 
 
 @pytest.mark.asyncio
@@ -1386,7 +1385,9 @@ async def test_delete_and_repost_final_results_reports_a_round_it_cannot_read(tm
     assert "could not be read" in faults[0]
 
 
-async def _seed_later_rounds_with_standings(tmp_path, *, standings_id=502, count=3):
+async def _seed_later_rounds_with_standings(
+    tmp_path, *, standings_id=502, count=3, posted=True
+):
     """A division whose rounds 2..*count*+1 each carry a posted standings message.
 
     Round 1 is the one an approval would be finalising; the rest are the later rounds whose
@@ -1434,7 +1435,7 @@ async def _seed_later_rounds_with_standings(tmp_path, *, standings_id=502, count
                 "INSERT INTO driver_standings_snapshots "
                 "(round_id, division_id, driver_user_id, standing_position, "
                 "total_points, standings_message_id) VALUES (?, ?, ?, 1, 25, ?)",
-                (rnd_id, division_id, 1000 + number, 8000 + number),
+                (rnd_id, division_id, 1000 + number, (8000 + number) if posted else None),
             )
         await db.commit()
 
@@ -1485,11 +1486,15 @@ async def test_repost_subsequent_standings_reports_the_channel_once(tmp_path):
 
 @pytest.mark.asyncio
 async def test_repost_subsequent_standings_is_silent_with_nothing_posted(tmp_path):
-    """A round with no standings message posted is not a fault — nothing was lost."""
+    """A later round with no standings message posted is not a fault — nothing was lost.
+
+    The round has to *exist* for this to test anything: seeding none at all leaves the loop
+    with nothing to iterate, and the test passes whatever the guard does.
+    """
     from services import results_post_service as rps
 
     db_path, division_id, round_one_id = await _seed_later_rounds_with_standings(
-        tmp_path, count=0
+        tmp_path, count=2, posted=False
     )
 
     with patch.object(rps, "recompute_standings_from_round", new=AsyncMock()):
@@ -1499,3 +1504,26 @@ async def test_repost_subsequent_standings_is_silent_with_nothing_posted(tmp_pat
         )
 
     assert faults == []
+
+
+@pytest.mark.asyncio
+async def test_merge_faults_does_not_repeat_a_line():
+    """The two reposts word an identical fault identically (#237 review).
+
+    Both run over the same division, so a standings channel that has gone missing is found
+    by each of them and described in the same words. Concatenating handed the manager the
+    same bullet twice, reading as two problems to repair rather than one.
+    """
+    from services.results_post_service import merge_faults
+
+    fault = "**Alpha** — the standings channel <#502> no longer exists."
+    later = "The standings of round 2 were not reposted."
+
+    assert merge_faults([fault], [fault, later]) == [fault, later]
+
+
+@pytest.mark.asyncio
+async def test_merge_faults_keeps_the_order_it_was_given():
+    from services.results_post_service import merge_faults
+
+    assert merge_faults(["a", "b"], ["c"], []) == ["a", "b", "c"]

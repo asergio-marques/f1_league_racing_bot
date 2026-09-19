@@ -1206,14 +1206,25 @@ def _cascade_channel_fault(
 
     What is checked in every case is that the channel still *exists* — the silent case this
     issue is about, and the one that cost a league its posted results.
+
+    **Attach Files is still asked for, and the over-approximation behind it is kept on
+    purpose** (raised in review of #237, decided 2026-09-20). ``aspect_attaches_files``
+    answers "could this channel ever be sent a file" from the module switch and the aspect
+    toggle, not from template validity, so it asks for the permission even where a broken
+    template would have fallen back to text and posted fine. Dropping it here would fix that
+    narrow false refusal and open a far worse one: a league with the aspect on and a
+    *valid* template, missing Attach Files, would have its posted results deleted and the
+    replacement rejected by Discord — which is the data loss this whole issue is about. The
+    two errors are not symmetrical, so the check errs the way the rest of this function
+    does: toward the league keeping what it already has.
     """
-    if guild.get_channel(channel_id) is None:
+    channel = guild.get_channel(channel_id)
+    if channel is None:
         return missing_channel_fault(division_name, setting, channel_id)
 
     if bot_member is None:
         return None
 
-    channel = guild.get_channel(channel_id)
     permissions = channel.permissions_for(bot_member)
     wanted = list(_REPOST_PERMISSIONS)
     if needs_attachment:
@@ -1255,6 +1266,24 @@ async def _channel_faults_for_rows(division_rows, guild, bot_member, bot) -> lis
             if fault is not None:
                 faults.append(fault)
     return faults
+
+
+def merge_faults(*fault_lists: list[str]) -> list[str]:
+    """The faults of several reposts as one list, in order, without repeating a line.
+
+    ``delete_and_repost_final_results`` and ``repost_subsequent_standings`` run one after
+    the other over the *same* division, so a standings channel that has gone missing is
+    found by both and worded identically by both (raised in review of #237). Concatenating
+    handed the manager the same bullet twice, reading as two separate problems to repair.
+    Each function already refuses to repeat itself internally; this keeps that true across
+    the pair.
+    """
+    merged: list[str] = []
+    for faults in fault_lists:
+        for line in faults:
+            if line not in merged:
+                merged.append(line)
+    return merged
 
 
 async def results_sync_hint(db_path: str, division_id: int) -> str:
@@ -1317,8 +1346,10 @@ async def repost_round_results(
     the thing it reports on has already happened: making this raise would turn a stale
     channel into a failed penalty. Every caller now has somewhere to put the return —
     ``penalty_service`` posts it to the log channel, and the two review approvals in
-    ``result_submission_service`` tell the approving manager as well (#237). Discarding it
-    is no longer an option a caller should take.
+    ``result_submission_service`` tell the approving manager as well (#237). One caller
+    still discards it — ``amendment_service.approve_amendment`` — and is left alone
+    deliberately: the amendment path is gated by ``repost_channel_faults`` before it writes
+    anything, so a fault there has already been reported and refused upstream.
     """
     faults: list[str] = []
     async with get_connection(db_path) as db:
@@ -1645,9 +1676,10 @@ async def delete_and_repost_final_results(
     league keeps what it already had", which is why the gate is here rather than in the
     caller: every route into this function has the same window.
 
-    The gate is ``_channel_fault``, the same reading ``repost_channel_faults`` takes, so a
-    channel that is merely unconfigured stays silent while one that is configured and
-    unreachable is reported (#187).
+    The gate is ``_cascade_channel_fault``, which is **not** the pre-flight's
+    ``_channel_fault`` — see its docstring for why the two differ. A channel that is merely
+    unconfigured stays silent, while one that is configured and unreachable is reported
+    (#187's rule against over-reporting, kept).
     """
     faults: list[str] = []
 
@@ -1680,7 +1712,17 @@ async def delete_and_repost_final_results(
     standings_ch_id: int | None = ctx["standings_channel_id"]
     show_reserves: bool = bool(ctx["reserves_in_standings"]) if ctx["reserves_in_standings"] is not None else True
 
-    bot_member = _bot_member(guild, bot) if guild is not None else None
+    # A round with no ACTIVE session results had nothing posted for it, so no channel
+    # fault is owed — the guard ``repost_round_results`` already applies, kept here so the
+    # two functions agree on what counts as a fault (raised in review of #237).
+    if not await _round_has_posted_results(db_path, round_id):
+        log.debug(
+            "delete_and_repost_final_results: round %s has no ACTIVE session results",
+            round_id,
+        )
+        return faults
+
+    bot_member = _bot_member(guild, bot)
     results_graphics = standings_graphics = False
     if bot_member is not None:
         from services.image_validity_service import aspect_attaches_files
@@ -1824,7 +1866,7 @@ async def repost_subsequent_standings(
         )
         rounds = await cursor.fetchall()
 
-    bot_member = _bot_member(guild, bot) if guild is not None else None
+    bot_member = _bot_member(guild, bot)
     standings_graphics = False
     if bot_member is not None:
         from services.image_validity_service import aspect_attaches_files

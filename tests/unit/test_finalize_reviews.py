@@ -167,7 +167,7 @@ def _interaction(*, guild=True):
 
 def _patches(
     *, apply_result=None, announce_error=None, attendance_errors=None, sanction_outcome=None,
-    repost_faults=None,
+    repost_faults=None, subsequent_faults=None,
 ):
     """*repost_faults* are the lines the results cascade could not post (#237).
 
@@ -193,7 +193,7 @@ def _patches(
         ),
         "subsequent": patch(
             "services.results_post_service.repost_subsequent_standings",
-            new=AsyncMock(return_value=[]),
+            new=AsyncMock(return_value=list(subsequent_faults or [])),
         ),
         "banner": patch(
             "services.verdict_announcement_service.banner_for_round", new=MagicMock()
@@ -765,3 +765,23 @@ async def test_the_appeals_approval_reports_an_unpostable_repost(tmp_path):
     assert FAULT in logged
     said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
     assert "/results standings sync" in said
+
+
+async def test_a_fault_both_reposts_found_is_reported_once(tmp_path):
+    """Both reposts run over the same division and word it identically (#237 review).
+
+    The manager repairs one channel, so reading the same bullet twice is a false count of
+    the problems in front of them.
+    """
+    db_path = await _make_db(tmp_path, name="dup_fault")
+    state = _state(db_path, staged=[_penalty()])
+    interaction = _interaction()
+
+    await _run(
+        finalize_penalty_review, state, interaction,
+        repost_faults=[FAULT], subsequent_faults=[FAULT],
+    )
+
+    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
+    assert said.count(FAULT) == 1
+    assert _logged(state).count(FAULT) == 1

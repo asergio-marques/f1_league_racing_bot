@@ -538,12 +538,14 @@ async def finalize_penalty_review(
                 "were not reposted."
             )
         else:
-            repost_faults += await _rps.delete_and_repost_final_results(
-                db_path, round_id, division_id, guild,
-                label="Post-Race Penalty Results", bot=interaction.client,
-            )
-            repost_faults += await _rps.repost_subsequent_standings(
-                db_path, division_id, round_id, guild, bot=interaction.client,
+            repost_faults = _rps.merge_faults(
+                await _rps.delete_and_repost_final_results(
+                    db_path, round_id, division_id, guild,
+                    label="Post-Race Penalty Results", bot=interaction.client,
+                ),
+                await _rps.repost_subsequent_standings(
+                    db_path, division_id, round_id, guild, bot=interaction.client,
+                ),
             )
 
         # Report verdicts are in; the round now waits on appeals.
@@ -899,12 +901,14 @@ async def finalize_appeals_review(
                 "standings were not reposted."
             )
         else:
-            repost_faults += await _rps.delete_and_repost_final_results(
-                db_path, round_id, division_id, guild,
-                label="Final Results", bot=interaction.client,
-            )
-            repost_faults += await _rps.repost_subsequent_standings(
-                db_path, division_id, round_id, guild, bot=interaction.client,
+            repost_faults = _rps.merge_faults(
+                await _rps.delete_and_repost_final_results(
+                    db_path, round_id, division_id, guild,
+                    label="Final Results", bot=interaction.client,
+                ),
+                await _rps.repost_subsequent_standings(
+                    db_path, division_id, round_id, guild, bot=interaction.client,
+                ),
             )
 
         # Appeal verdicts are in; the results stand.
@@ -1311,12 +1315,14 @@ async def amend_session_result(
     guild = await league_guild(bot)
     repost_faults: list[str] = []
     if guild is not None:
-        repost_faults += await results_post_service.delete_and_repost_final_results(
-            db_path, round_id, division_id, guild,
-            label="Final Results", bot=bot,
-        )
-        repost_faults += await results_post_service.repost_subsequent_standings(
-            db_path, division_id, round_id, guild, bot=bot,
+        repost_faults = results_post_service.merge_faults(
+            await results_post_service.delete_and_repost_final_results(
+                db_path, round_id, division_id, guild,
+                label="Final Results", bot=bot,
+            ),
+            await results_post_service.repost_subsequent_standings(
+                db_path, division_id, round_id, guild, bot=bot,
+            ),
         )
     else:
         # The recomputation still runs, so the championship is right in the database; what
