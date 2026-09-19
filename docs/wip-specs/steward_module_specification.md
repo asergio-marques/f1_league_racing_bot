@@ -57,7 +57,7 @@
   - Report submission - Active starting at the scheduled round time, and automatically disabled after a configured amount of time after the scheduled round time. Period of time in which drivers or the stewarding team can initiate reports against other drivers of the division.
   - Defence submission - Active for each ticket from the moment it is lodged, and disabled for every ticket of the round at once, when the configured period has run from the end of report submission. Aims to allow other drivers to provide their own version of events and evidence.
   - Report deliberation - Active from the moment the defence submission stage ends, and automatically disabled after a configured period of time. Aims to allow stewards to vote on the final verdict, providing justification. After this period is over, verdicts of all reports are posted to the configured channel.
-  - Appeal submission - Active for a configured period of time after the report deliberation ends. Lasts for a configured period of time; in it, drivers involved in submitted reports can appeal their outcome, if they have the required number of appeal tokens.
+  - Appeal submission - Active for a configured period of time once the report deliberation ends. In it, any driver of the division may appeal a report's verdict, where they hold the appeal tokens it costs.
   - Appeal deliberation - Active from the moment the appeal submission ends, and automatically disabled after a configured period of time. Aims to allow stewards to vote on the final verdict, providing justification. After this period is over, the verdicts of all appeals are posted to the configured channel. After this, the round is taken as final, and its results cannot be changed.
 - Conduct investigation cycle - The full process for a Code of Conduct investigation can be initiated at any time, by the head steward or temporary head steward, or by any steward where the league allows it. This is an informal concept, meaning it is not a strict definition, just an auxiliary name. It kicks off when the head steward (or temporary head steward) initiates a Code of Conduct investigation targeted at one or more specific driver(s), submitting a justification and evidence (which may be private to the stewarding team or shared with the mentioned drivers).
   - Defence submission - Active from the moment the investigation is triggered, and automatically disabled once a configured period of time elapses. In this stage, the mentioned drivers are allowed to submit defences and additional evidence relevant to the case opened.
@@ -241,7 +241,7 @@
   - League ban - No
 
 ### Penalty types and bans
-- <NEW COMMAND> A "steward penalty toggle" command will be made available to league managers, which shall have as single input a penalty type (warning points, penalty points, time penalties, disqualifications, qualifying bans, race bans, season bans, league bans). This command shall enable that penalty type, if configured, and disable it, if not configured.
+- <NEW COMMAND> A "steward penalty toggle" command will be made available to league managers, which shall have as single input a penalty type (warning points, penalty points, time penalties, disqualifications, qualifying bans, race bans, season bans, league bans). This command shall switch that penalty type off where it is enabled, and on where it is disabled.
   - Discipline points are not among them. They exist only in the conduct cycle, and are switched on and off with it by "steward conduct toggle".
   - By default, all are enabled.
   - Toggling a penalty type off shall be refused while any outcome or conduct outcome would be left with no penalty other than 0, that penalty type being its only one. The refusal shall name those outcomes, which shall be modified or removed first, and nothing shall be changed by it.
@@ -320,9 +320,7 @@
   - Where it was triggered by a CoC investigation, the feature race of the next round the driver takes part in, applied at the close of that round's cycle and shown upon its results. A driver who takes part in no further round never has it applied.
 - The type counted and the type handed out may be the same, each auto-rule being triggered at most once for a driver in one cycle close, and re-arming as its type does.
 - A penalty type that is disabled shall be offered neither to count nor to hand out. Discipline points are offered only while the conduct cycle is enabled.
-- It is possible to trigger multiple auto-rules of different kinds after the same round.
-- It is possible that the triggering an auto-rule of one kind triggers an auto-rule of one kind.
-  - This works in both "ways"; a multi-round rule being triggered can cause the triggering of an active accumulation rule, and vice-versa, for example.
+- Several auto-rules may be triggered after the same round, and one being triggered may trigger another, of whichever type, as set out under Auto-rule triggering.
 - <NEW COMMAND> A "steward auto-rule modify" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog similar to the one triggered when a user attempts to add an auto-rule of the same type as the one coded by the ID input will appear, with the data from the input auto-rule preloaded and modifiable. The ID cannot be modified, hence that field shall be greyed-out.
 - <NEW COMMAND> A "steward auto-rule remove" command will be made available to league managers, which shall have as input the ID of an auto-rule. If the ID is valid, a modal dialog will show up for confirmation of deletion of the auto-rule. Once confirmed, the auto-rule will no longer be active and enforceable, and it will be deleted from the current list.
 - <NEW COMMAND> A "steward auto-rule toggle" command will be made available to league managers, which shall have as input the ID of an auto-rule, pausing it where it is active and resuming it where it is paused.
@@ -571,7 +569,7 @@
 - Once this phase is entered, a countdown with the period of time configured by "steward report deliberation-period" will start.
 - Once this phase is entered, the bot shall post in the ticket's channel, for the effective head steward, the incident as the verdict is to describe it: proposed as the complaint, word for word. Buttons usable only by the effective head steward shall accept it as it stands, or open it for editing, prefilled. It may be settled at any time until the ultimate result is reached; where it has not been, it joins the justification in the hour that follows, and is published as proposed should that hour run out.
 - The ballot of a report is as set out under Tickets. Its outcomes are those currently configured that are applicable to the session of the incident.
-- Where a tie is left unbroken, the message on the verdicts channel reads "Report verdicts for round <x> are slightly delayed, please stand by."
+- Where a tie is left unbroken, the message on the verdicts channel reads "The report verdicts for Round <x> are delayed while the stewards settle a decision. They will follow shortly." It shall be deleted once the round's report verdicts are posted.
 - Only after the final output is determined for all reports pertaining to a given round of a given division, will they be posted, in the order the reports were lodged, which their IDs follow, in the verdicts channel.
 - The channel will not be deleted upon the publishing of the report verdicts. A ticket's channel is kept until its round's stewarding cycle closes, the appeal submission and appeal deliberation stages having need of it.
 - The report deliberation phase is only considered over once all reports pertaining to a given round of a given division are posted to the appropriate channel.
@@ -615,7 +613,7 @@
   - It shows the Appeal ID.
   - It carries first a Decision - Dropdown - Mandatory - A dropdown consisting of two options, "Uphold initial verdict" and "Change initial verdict".
   - Its line for each involved driver is greyed out unless the decision is "Change initial verdict". Its outcomes are those currently configured that are applicable to the session of the original report's incident, and NFA, and each line is prefilled with the outcome the initial verdict gave that driver.
-  - Where a tie is left unbroken, the message on the verdicts channel reads "Appeal verdicts for round <x> are slightly delayed, please stand by."
+  - Where a tie is left unbroken, the message on the verdicts channel reads "The appeal verdicts for Round <x> are delayed while the stewards settle a decision. They will follow shortly." It shall be deleted once the round's appeal verdicts are posted.
 - A ballot with the decision "Change initial verdict" is only valid where it gives at least one involved driver an outcome other than the initial verdict gave them.
 - A ballot with the decision "Uphold initial verdict" is the option of the initial verdict, and is counted as such.
 - Only after the final output is determined for all appeals pertaining to a given round of a given division, will they be posted, in the order of the reports they appeal, which their IDs follow, and not in the order the appeals were lodged, in the verdicts channel.
@@ -671,8 +669,7 @@
 - Only after the final output is determined for the investigation, it will be posted immediately in the channel configured by "steward channel conduct-verdicts", whether or not the user holds a seat and whether or not a season is live.
   - Where a season is live and the user holds a seat in any of its divisions, full-time or reserve, the verdict shall also be posted in the verdicts channel of each of those divisions, each such post carrying the indication "(repost)".
 - After the verdict is posted successfully, the conduct cycle will be considered closed.
-- After the verdicts are published, if "steward backup conduct-toggle" is toggled on, the content of the channels of all channels will be immediately persisted onto memory, and once successful, the channels will be deleted.
-- After the verdicts are published, if "steward backup conduct-toggle" is toggled off, a 7 day countdown will be initiated, at the end of which the channels will be deleted.
+- Once its verdict is posted, the investigation's channel shall be removed. Where "steward backup conduct-toggle" is toggled on, its content shall be persisted to disk immediately, and once that has succeeded the channel shall be deleted. Where it is toggled off, a 7 day countdown shall be initiated, at the end of which the channel shall be deleted.
 
 ### Cycle close
 - After leaving the investigation deliberation stage, the verdict output of a Code of Conduct investigation will be posted immediately.
