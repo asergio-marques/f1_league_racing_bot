@@ -218,6 +218,66 @@ async def _send(guild, channel_id, content: str, **kwargs) -> str | None:
     return None
 
 
+#: The order the audit lists the answers in, and the words it lists them under.
+_ANSWERS = (
+    ("ACCEPTED", "accepted"),
+    ("TENTATIVE", "tentative"),
+    ("DECLINED", "declined"),
+    ("NO_RSVP", "no answer"),
+)
+
+
+async def _checkin_audit(bot, division, round_id: int) -> str:
+    """The log-channel record of *round_id*'s check-in in *division*, or "" where it had none.
+
+    Every driver the check-in recorded, grouped by their answer, and — where the reserves had
+    already been distributed — who was sent to which team and who stood by. A driver is named
+    as the attendance module's own log lines name one: their mention, with the name a test
+    driver goes by. A round whose call was never posted recorded nobody and is left out.
+    """
+    async with get_connection(bot.db_path) as db:
+        round_row = await (await db.execute(
+            "SELECT round_number, track_name FROM rounds WHERE id = ? AND division_id = ?",
+            (round_id, division.id),
+        )).fetchone()
+        if round_row is None:
+            return ""
+        rows = await (await db.execute(
+            """
+            SELECT dp.discord_user_id, dp.test_display_name,
+                   dra.rsvp_status, dra.is_standby, ti.name AS team_name
+              FROM driver_round_attendance dra
+              JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
+              LEFT JOIN team_instances ti ON ti.id = dra.assigned_team_id
+             WHERE dra.round_id = ? AND dra.division_id = ?
+             ORDER BY CAST(dp.discord_user_id AS INTEGER)
+            """,
+            (round_id, division.id),
+        )).fetchall()
+    if not rows:
+        return ""
+
+    def _name(row) -> str:
+        name = row["test_display_name"]
+        return f"<@{row['discord_user_id']}>" + (f" ({name})" if name else "")
+
+    lines = [
+        f"\n  check-in, {division.name}, "
+        f"{_round_label(round_row['round_number'], round_row['track_name'])}:"
+    ]
+    for status, label in _ANSWERS:
+        named = [_name(r) for r in rows if r["rsvp_status"] == status]
+        lines.append(f"\n    {label}: {', '.join(named) if named else 'none'}")
+    reserves = [
+        f"{_name(r)} to {r['team_name']}" if r["team_name"] else f"{_name(r)} on standby"
+        for r in rows
+        if r["team_name"] or r["is_standby"]
+    ]
+    if reserves:
+        lines.append(f"\n    reserves: {', '.join(reserves)}")
+    return "".join(lines)
+
+
 async def _withdraw_call(bot, round_id: int, division_id: int) -> str | None:
     """Take down *round_id*'s check-in call in *division_id*, if one stands. Returns what went
     wrong, or None.
@@ -309,11 +369,20 @@ async def _announce(
                 ping + attendance_notice(scope, division.name, **words),
                 allowed_mentions=discord.AllowedMentions(roles=bool(role_id)),
             ))
-            # The check-in call of a round called off has nothing left to ask, and its buttons
-            # would go on recording answers to it; it comes down with its last notice and its
-            # distribution announcement, whether or not the notice above could be posted. The
-            # answers already recorded are kept (decided 2026-09-19).
+        if enabled["attendance"]:
+            # Each round called off has its check-in written into the log first, so the answers
+            # its call gathered stand on record beside the cancellation (decided 2026-09-19).
+            # Then the call comes down with its last notice and its distribution announcement,
+            # whether or not the notice above could be posted: it has nothing left to ask, and
+            # its buttons would go on recording answers to it. The answers are kept.
             for round_id in sorted(round_ids):
+                try:
+                    block = await _checkin_audit(bot, division, round_id)
+                except Exception as exc:  # noqa: BLE001 — the audit never stops the rest
+                    log.exception("cancellation notice: could not audit round %s", round_id)
+                    _fail(division, "check-in audit", f"could not be read ({exc})")
+                else:
+                    report.audit += block
                 _fail(division, "check-in call", await _withdraw_call(bot, round_id, division.id))
         if channels is not None and enabled["weather"]:
             _fail(division, "forecast channel", await _send(

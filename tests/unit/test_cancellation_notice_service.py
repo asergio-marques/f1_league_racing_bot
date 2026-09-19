@@ -513,3 +513,111 @@ async def test_a_call_that_cannot_be_taken_down_is_a_failure_not_an_error(
         ("check-in call", "could not be taken down (db locked)")
     ]
     channels[FORECAST].send.assert_awaited_once()
+
+
+# ── The check-in is audited in the log before the call comes down ──────────
+
+
+async def _distribute(db_path) -> None:
+    """Two reserves, one sent to a team and one left standing by."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name) VALUES (51, ?, 'Ferrari')",
+            (DIVISION_ID,),
+        )
+        for profile_id, user_id, team, standby in ((3, "103", 51, 0), (4, "104", None, 1)):
+            await db.execute(
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+                "is_test_driver, test_display_name) VALUES (?, ?, 'ASSIGNED', 1, ?)",
+                (profile_id, user_id, f"Reserve {profile_id}"),
+            )
+            await db.execute(
+                "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id,"
+                " rsvp_status, assigned_team_id, is_standby) VALUES (?, ?, ?, 'ACCEPTED', ?, ?)",
+                (ROUND_ID, DIVISION_ID, profile_id, team, standby),
+            )
+        await db.commit()
+
+
+async def _audit(tmp_path, *, distribute=False, attendance=True, round_ids=(ROUND_ID,)):
+    db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
+    if distribute:
+        await _distribute(db_path)
+    bot = _with_attendance(_bot(db_path, attendance=attendance))
+    _call_channel(bot)
+    guild, _ = _guild()
+    return await cns.announce_cancellation(
+        bot, guild, [_division()], scope=cns.SCOPE_ROUND, round_ids=frozenset(round_ids)
+    )
+
+
+async def test_the_audit_groups_the_drivers_by_their_answer(tmp_path):
+    report = await _audit(tmp_path)
+    assert report.audit == (
+        "\n  check-in, Pro, Round 3 (Monza):"
+        "\n    accepted: <@101>"
+        "\n    tentative: none"
+        "\n    declined: <@102>"
+        "\n    no answer: none"
+    )
+
+
+async def test_the_audit_names_the_reserves_once_they_are_distributed(tmp_path):
+    report = await _audit(tmp_path, distribute=True)
+    assert "\n    accepted: <@101>, <@103> (Reserve 3), <@104> (Reserve 4)" in report.audit
+    assert report.audit.endswith(
+        "\n    reserves: <@103> (Reserve 3) to Ferrari, <@104> (Reserve 4) on standby"
+    )
+
+
+async def test_the_audit_says_nothing_of_reserves_before_a_distribution(tmp_path):
+    report = await _audit(tmp_path)
+    assert "reserves" not in report.audit
+
+
+async def test_a_round_whose_call_never_went_out_is_not_audited(tmp_path):
+    report = await _audit(tmp_path, round_ids=(999,))
+    assert report.audit == ""
+
+
+async def test_with_attendance_off_nothing_is_audited(tmp_path):
+    report = await _audit(tmp_path, attendance=False)
+    assert report.audit == ""
+
+
+async def test_the_audit_is_read_before_the_call_comes_down(tmp_path, monkeypatch):
+    """Nothing the withdrawal does touches the answers, but the order is what the log reads
+    as: the check-in as it stood, then the call gone."""
+    order: list[str] = []
+    original = cns._checkin_audit
+
+    async def _audited(*args):
+        order.append("audit")
+        return await original(*args)
+
+    async def _withdrawn(*args):
+        order.append("withdraw")
+
+    monkeypatch.setattr(cns, "_checkin_audit", _audited)
+    monkeypatch.setattr(cns, "_withdraw_call", _withdrawn)
+    await _audit(tmp_path)
+    assert order == ["audit", "withdraw"]
+
+
+async def test_an_audit_that_cannot_be_read_still_lets_the_call_come_down(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(cns, "_checkin_audit", AsyncMock(side_effect=RuntimeError("locked")))
+    db_path = await _make_db(tmp_path)
+    await _with_call(db_path)
+    bot = _with_attendance(_bot(db_path))
+    deleted = _call_channel(bot)
+    guild, _ = _guild()
+
+    report = await cns.announce_cancellation(
+        bot, guild, [_division()], scope=cns.SCOPE_ROUND, round_ids=frozenset({ROUND_ID})
+    )
+
+    assert [f.target for f in report.failures] == ["check-in audit"]
+    assert CALL_MSG in deleted
