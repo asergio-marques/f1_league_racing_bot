@@ -163,7 +163,6 @@
   - Input value must be equal or greater than 1.
 - The sum of the values of the configurations above may not exceed 168 (7 times 24 hours). This validation must be done everytime one of the commands above is run; if failed, then the new value is not accepted.
   - This bounds the configured periods alone, and not how long a cycle may run: the waits set out under each stage come on top of it.
-- Any changes done to these values above will NOT be applied for a given division until the next round is scheduled to take place.
 
 ### Appeals
 - <NEW COMMAND> A "steward appeal toggle" command will be made available to league managers, which shall have no inputs. This command shall activate and deactivate the appeal system.
@@ -210,20 +209,16 @@
   - Season ban - Optional - Checkbox that, if ticked, means that the offending driver licence will accrue a ban lasted for one season.
   - League ban - Optional - Checkbox that, if ticked, means that the offending driver licence will accrue a league ban.
   - A session's list of outcomes shall hold at most 25, NFA among them. The command shall be refused where it would bring the qualifying list or the race list above 24 outcomes a league defines, and the refusal shall name the list that is full.
-  - Contrary to the others, this command may be accepted if any report deliberation or appeal deliberation phases are on-going. An outcome so added shall be offered upon the ballots of every deliberation still open.
-    - Where an outcome is added while deliberations are open, the bot shall post in the steward command channel the new outcome and each open ticket whose effective stewarding team may now vote for it, so that stewards who have voted may reconsider while their votes can still be changed.
   - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Time penalty", "Disqualification", "Warning point", "Penalty point", "Qualifying ban", "Race ban", "Season ban", "League ban" fields must be different from 0.
 - <NEW COMMAND> A "steward outcome modify" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then a modal dialog much like the one opened by "steward outcome add" shall open, prefilled with the values of the outcome of the input ID. All fields with the exception of the ID can be modified.
   - The command shall be refused where the change would bring the qualifying list or the race list above 24 outcomes a league defines, and the refusal shall name the list that is full.
-  - This command shall fail if any report deliberation or appeal deliberation phases are on-going.
   - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Time penalty", "Disqualification", "Warning point", "Penalty point", "Qualifying ban", "Race ban", "Season ban", "League ban" fields must be different from 0.
 - <NEW COMMAND> A "steward outcome remove" command will be made available to league managers, which shall have as input a string standing for an outcome's ID. If this ID is valid, then a modal dialog asking for confirmation of deletion of the outcome will appear. If accepted, then the outcome shall be removed from the list.
-  - This command shall fail if any report deliberation or appeal deliberation phases are on-going.
 - <NEW COMMAND> A "steward outcome toggle" command will be made available to league managers, which shall have as input an outcome's ID, pausing the outcome where it is active and resuming it where it is paused.
   - A paused outcome is offered upon no ballot. It stays in the list, "steward outcome list" marking it as paused, and verdicts that gave it are untouched.
-  - This command shall fail if any report deliberation or appeal deliberation phases are on-going, and for NFA, which cannot be paused.
+  - NFA cannot be paused.
   - A paused outcome does not count towards the 24 a session's list may hold. Resuming one shall be refused where it would bring the qualifying list or the race list above 24, naming the list that is full.
 - <NEW COMMAND> A "steward outcome list" command will be made available to league managers and stewards, which shall have as input a string standing for a session type (qualifying or race). In reply, the bot will post a transient (temporary, seen only to the command user) list with all the outcomes currently available for that session type, as a bullet point list as follows:
   - <brief>
@@ -269,7 +264,6 @@
   - By default, this will be set to "number of rounds", the number being the length of the season.
 - <NEW COMMAND> A "steward penalty penalty-point-expiry" command will be made available to league managers, which shall have as single input one of the behaviors of "steward penalty warning-point-expiry", determining alike when penalty points expire.
   - By default, this will be set to "number of rounds", the number being the length of the season.
-- A change to the expiry of warning points or penalty points shall govern the points received from then on. Points already upon a licence keep the expiry they were given when received.
 - <NEW COMMAND> A "steward role league-ban" command will be made available to league managers, which shall have as mandatory single input a role to be attributed when any driver is season banned, and removed when any driver's league ban is revoked.
 
 ### Automated penalty rules
@@ -319,7 +313,6 @@
     - This value must be greater than 0.
   - Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule will be added to the list with the "historical accumulation" type and made active immediately.
 - As configured, an accumulation of penalties across one's career in the league rule will be interpreted as meaning "if a driver has received a certain amount of penalties of a pre-defined type, active or not, throughout their in the league as shown by their driver licence, they will be handed out a number of penalties of a certain, different, kind".
-- An auto-rule judges only what happens after it exists. When an auto-rule is added, or modified, every driver whose licence is already over its threshold shall be held as having already triggered it, and it shall be triggered for them only upon a further crossing, as its type re-arms. A single round rule judges only the rounds whose cycles close after it was added or modified.
 - The types an auto-rule may count, as its "Type of infractions committed", are warning points, penalty points, discipline points, time penalties, disqualifications, qualifying bans, race bans and season bans. Time penalties are counted as the cumulative sum of their seconds; every other type by its number.
 - The types an auto-rule may hand out, as its "Penalty given", are warning points, penalty points, discipline points, time penalties, disqualifications, qualifying bans, race bans, a season ban and a league ban.
 - A time penalty or disqualification an auto-rule hands out shall change the result of a race session:
@@ -356,7 +349,6 @@
   - By default, this is toggled off, and only the head steward and temporary head steward may initiate one.
 - <NEW COMMAND> A "steward conduct discipline-point-expiry" command will be made available to league managers, which shall have as single input either "never", or a number of days after which discipline points expire.
   - By default, this will be set to "never".
-  - A change shall govern the discipline points received from then on. Points already upon a licence keep the expiry they were given when received.
 - <NEW COMMAND> A "steward conduct defence-period" command will be made available to league managers, which shall have as input an integer standing for a number of hours. This command configures the number of hours during which any involved/mentioned driver is able to provide evidence or arguments relevant to the Code of Conduct investigation in question. After this time elapses, the defence submission phase is over.
   - By default, this value will be set to 24.
   - Input value must be equal or greater than 1.
@@ -373,19 +365,15 @@
   - Season ban - Optional - Checkbox that, if ticked, means that the offending driver licence will accrue a ban lasted for one season.
   - League ban - Optional - Checkbox that, if ticked, means that the offending driver licence will accrue a league ban.
   - The list of conduct outcomes shall hold at most 25, NFA among them. The command shall be refused where it would bring the list above 24 conduct outcomes a league defines.
-  - Contrary to the others, this command may be accepted if any report investigation deliberation phase is on-going.
-    - Where a conduct outcome is added while investigation deliberations are open, the bot shall post in the steward command channel the new conduct outcome and each open investigation whose effective stewarding team may now vote for it, so that stewards who have voted may reconsider while their votes can still be changed.
   - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Discipline points", "Qualifying bans", "Race bans", "Season ban", "League ban" fields must be different from 0.
 - <NEW COMMAND> A "steward conduct-outcome modify" command will be made available to league managers, which shall have as input a string standing for an conduct outcome's ID. If this ID is valid, then a modal dialog much like the one opened by "steward conduct-outcome add" shall open, prefilled with the values of the conduct outcome of the input ID. All fields with the exception of the ID can be modified.
-  - This command shall fail if any investigation deliberation phase is on-going.
   - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Discipline points", "Qualifying bans", "Race bans", "Season ban", "League ban" fields must be different from 0.
 - <NEW COMMAND> A "steward conduct-outcome remove" command will be made available to league managers, which shall have as input a string standing for an conduct outcome's ID. If this ID is valid, then a modal dialog asking for confirmation of deletion of the conduct outcome will appear. If accepted, then the conduct outcome shall be removed from the list.
-  - This command shall fail if any investigation deliberation phase is on-going.
 - <NEW COMMAND> A "steward conduct-outcome toggle" command will be made available to league managers, which shall have as input a conduct outcome's ID, pausing it where it is active and resuming it where it is paused.
   - A paused conduct outcome is offered upon no ballot. It stays in the list, "steward conduct-outcome list" marking it as paused, and verdicts that gave it are untouched.
-  - This command shall fail if any investigation deliberation phase is on-going, and for NFA, which cannot be paused.
+  - NFA cannot be paused.
   - A paused conduct outcome does not count towards the 24 the list may hold. Resuming one shall be refused where it would bring the list above 24.
 - <NEW COMMAND> A "steward conduct-outcome list" command will be made available to league managers and stewards, which shall have no inputs. In reply, the bot will post a transient (temporary, seen only to the command user) list with all the conduct outcomes currently available, as a bullet point list as follows:
   - <brief>
@@ -409,9 +397,24 @@
   - When saving, a directory shall be created with the unique ID of the investigation, and the channel content shall be saved to that directory as "channel.json".
   - Any attached videos and images will be downloaded and saved, with their original filenames, to the same directory. This includes the content from the original message.
 
+### Changing settings during a season
+- Once a season's placements are confirmed, this module's settings may be changed at any time, save where a rule below sets out otherwise. A change governs what begins after it, and nothing already begun.
+- The type of season ban, set by "steward penalty season-ban-type", shall not be changed while a season is ongoing.
+- A setting of the stewarding cycle — the periods of its stages, whether appeals are enabled, the tokens they cost and whether they are refunded, and "steward team conflict-toggle" — shall take effect from the cycle of each division's next round. A cycle already open finishes under the settings it began with.
+- A change to "steward justification final-mode" or "steward justification fallback-mode" applies to the verdicts reached after it.
+- A change to a setting of the Code of Conduct investigations applies to the investigations opened after it, the expiry of discipline points excepted, which is set out below.
+- Outcomes may be added while report or appeal deliberations are open. An outcome so added shall be offered upon the ballots of every deliberation still open, and the bot shall post in the steward command channel the new outcome and each open ticket whose effective stewarding team may now vote for it, so that stewards who have voted may reconsider while their votes can still be changed.
+- An outcome may not be modified, removed or paused while any report or appeal deliberation is open.
+- Conduct outcomes may be added while investigation deliberations are open. A conduct outcome so added shall be offered upon the ballots of every investigation deliberation still open, and the bot shall post in the steward command channel the new conduct outcome and each open investigation whose effective stewarding team may now vote for it, so that stewards who have voted may reconsider while their votes can still be changed.
+- A conduct outcome may not be modified, removed or paused while any investigation deliberation is open.
+- A penalty type that any outcome or conduct outcome uses may not be switched off while any deliberation is open, as set out under "steward penalty toggle".
+- An auto-rule judges only what happens after it exists. When an auto-rule is added, modified or resumed, every driver whose licence is already over its threshold shall be held as having already triggered it, and it shall be triggered for them only upon a further crossing, as its type re-arms. A single round rule judges only the rounds whose cycles close after it was added, modified or resumed.
+- A change to the expiry of warning points, of penalty points or of discipline points shall govern the points received from then on. Points already upon a licence keep the expiry they were given when received.
+
 ## Tickets
 - What this section sets out holds for every ticket, a report, an appeal and a CoC investigation alike, save where a cycle sets out otherwise. For a CoC investigation, its involved users stand where this section names involved drivers. An investigation has no initiator among its parties: the steward who opened it holds only a steward's place in it, and where this section names the one who initiated the ticket, it names no one in an investigation.
-- All inputs of the stewarding cycle and of the conduct cycle must be auditable via the steward log channel. Attempts to file a report or an investigation (and its data), driver or user addition/removal to tickets, etc etc etc. All logs must include the display name (and user ID) of the input.
+- Every act in a ticket, and every use of a command of this module, shall be written to the steward log channel: what was done, upon which ticket where there is one, when, and by whom, by their display name and user ID. That includes the filing of a ticket and its contents, the adding or removing of a driver, requests and their answers, exclusions and handovers, mutes, the settling of an incident, grounds or justification, merges and withdrawals, and every refusal.
+  - Ballots are the exception while a deliberation is open: the log records only that a steward cast, changed or removed a ballot, and not its content. Every ballot is written to the log in full once the deliberation closes.
 - It is imperative that the stewarding team is seen as a unified front.
   - The effective head steward of a ticket is the face of the stewarding team to the users of that ticket, and may speak to them under their own name. They are its mouthpiece only.
   - No message a driver or other user can see shall attribute a decision, a vote, a request or a justification to any single steward, the effective head steward included. The decisions of the stewarding team are the team's as a whole.
@@ -434,6 +437,7 @@
     - If pressed by the one who initiated the ticket or an involved driver, the justification is mandatory. When confirmed, the bot will post the request in the ticket's channel, for the effective head steward to approve or reject there. If approved, then the driver will be added to the ticket; if rejected, the bot will note so. The request message will be deleted either way.
     - When added, the driver will be given the same permissions as other involved drivers.
     - The command is rejected if the ticket already holds 25 involved drivers, if the driver named holds no seat in the division, full-time or reserve, if they are the one who initiated the ticket, if they are in the involved drivers list already, or if the ticket is already in report deliberation or appeal deliberation.
+    - In a CoC investigation, which pertains to no division, the member named need hold no seat: any member holding the base role may be added, as any may be investigated.
   - Remove driver - Can be used by members of the effective stewarding team for this ticket, by the one who initiated the ticket, and by its involved drivers. Takes a driver out of the list of involved drivers, and removes their permissions as an involved driver. When pressed, a form is opened so that one involved driver is named (mandatory) and a justification is given. The exact behaviour depends on who pressed it:
     - If pressed by the effective head steward, the justification is optional. When confirmed, the driver will be removed from the ticket.
     - If pressed by a regular member of the effective stewarding team, the justification is mandatory. When confirmed, the bot will post in the steward command channel a message tagging the effective head steward for the ticket, identifying the driver to be removed and printing the justification. If approved, then the driver will be removed from the ticket, and the request process message will be deleted. If rejected, the bot will post a message to note that the request was rejected, and the request process message will be deleted.
@@ -548,7 +552,7 @@
   - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
 - After valid submission, the report will be henceforth identified with a unique ID following the format "S<x>_D<y>_R<z>_<w>", where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round, always written in three digits (001, 002 … 999), so that the IDs of a round sort in the order the reports were lodged.
 - After valid submission, a channel bearing the report's unique ID as the title will be created, with the information from the modal dialog input by the complainant summarized and posted as the header message in the channel. All involved drivers shall be mentioned properly in this message.
-- After valid submission, the ticket's state changes immediately to the defence submission stage, and a report data object is recorded in the database associated to this season, division and round.
+- After valid submission, the ticket's state changes immediately to the defence submission stage, and the report is recorded against its season, division and round.
   - Defence submission for the ticket stays open until the period configured by "steward report defence-period" has run from the end of report submission. Every ticket of the round thus leaves defence submission at the same moment, and a ticket lodged in the last minute of report submission still has the whole of that period for its defence.
 - There is no limit upon the number of reports a driver may lodge in a round.
 - Where two or more reports of the same round concern one incident, the effective head steward of any of them may, during defence submission, merge one into another, as an exchange between stewards in the steward command channel. Nothing is merged unless a steward so judges.
@@ -574,7 +578,6 @@
   - If appeals functionality is enabled, then the stewarding cycle will move on to that phase.
   - Otherwise, then the stewarding cycle is considered closed.
 - Once the report deliberation phase is considered over, the round results and the standings after the round will be reposted, with all accured time penalties factored in exclusively.
-  - This functionality is somewhat implemented already, just a matter of reusing it.
   
 ### Appeal submission
 - Once this phase is entered, the bot shall delete the "default" message (written again once the report submission phase ends), and post an "Appeal incident" button to the configured ticket channel of the division, without mentioning the division role.
@@ -620,7 +623,6 @@
   - Where appeals are disabled, or no appeal is lodged, the cycle closes earlier, and its channels are removed from then.
 - The appeal deliberation phase is only considered over once all appeals pertaining to a given round of a given division are posted to the appropriate channel.
 - Once the appeal deliberation phase is considered over, the round results and the standings after the round will be reposted with the appeals' time penalties factored in.
-  - This functionality is somewhat implemented already, just a matter of reusing it.
   - If a verdict was changed in an appeal in comparison to the original report, the time penalty value displayed in the appeals column should take the latter into consideration (e.g. a penalty of 5 seconds that was rescinded should show as -5s in the appeal column)
 
 ### Cycle close
@@ -633,8 +635,7 @@
 - Once auto-rules are verified, the previous licence sheet shall be deleted, and an updated one, with the penalties of the latest round updated, will be posted.
   - Licence sheet posting is set out under Licence sheet output.
 - <NEW COMMAND> A "steward verdict republish" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory input the unique ID for a report or appeal. If the input ID was indeed a valid one, then a modal dialog will show up, containing the original information of the report/appeal chosen (ID, involved drivers, outcome, driver struck with outcome, justification). Of these, all but justification will be greyed-out, and this exception shall be only modifiable aspect. The user must confirm before validation of the change is done.
-  - If there was an actual modification to the justification, and if this field is not empty/whitespace, the verdict image for the repost in question shall be rendered again, and the message in which the verdict was originally posted edited to remove the old verdict image, and attach the new one.
-    - If this is not technically feasible due to Discord API limitations, all verdict messages shall be deleted, rerendered, and reposted, so that the republishing of this verdict is "seamless".
+  - If there was an actual modification to the justification, and if this field is not empty/whitespace, the verdict shall be edited in place: its text, and its image rendered again, in the message in which it was originally posted. No other verdict is touched, and the verdicts channel keeps its order.
   - A verdict may be republished only until the next batch of verdicts lands upon it, so that the verdicts channel keeps its order:
     - A report's verdict, until the round's appeal verdicts are posted; or, where appeals are disabled or none was lodged, until the round's cycle closes.
     - An appeal's verdict, until the division's next round begins; or, for the final round of a season, until the season is completed.
