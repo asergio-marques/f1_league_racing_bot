@@ -1205,3 +1205,51 @@ The spec no longer lists the persisted ticket record field by field; that is for
 - **Forms (K1)** — the spec describes each form by what it collects. A Discord modal holds at most five inputs; the larger forms (outcome add/modify, the report and appeal forms, the four auto-rule adds) must be split into steps, as the results module's penalty wizard is, or presented as a private card, as the ballot is. Fixed values (season, division, round, IDs) are shown, not asked for. Deletions confirm with Confirm/Cancel buttons.
 - **Evidence files (K2)** — where a form cannot take file uploads, a private step before the ticket is filed asks the complainant, appellant or steward to attach their files; the ticket is filed only once the evidence rule is met.
 - **Long lists (K4)** — list replies split across messages under Discord's 2,000-character limit.
+
+## Read-through after the rebase onto main (2026-09-19)
+
+Mechanical — leftovers contradicting decisions already made, or slips:
+- R1 Stewarding cycle concept: end condition wrong where appeals are enabled (A4/C36).
+- R2 "The round is taken as final, and its results cannot be changed" — core lets a league admin amend a final round.
+- R3 Conduct cycle concept: "kicks off when the head steward … initiates" (B5); "driver(s)" / "mentioned drivers" for users; grammar.
+- R4 CoC investigation concept: "cannot lead to any changes in results" (C31).
+- R5 Qualifying ban concept: "must be present in the classification" (C19).
+- R6 Involved driver concept: "the driver who triggered the report" (complainant; appellant, C34).
+- R7 Report concept: "the most recent round" (C1).
+- R8 Time penalty concept: implementation note left in (H5).
+- R9 Effective stewarding team concept: "of a given report"; division exclusion meaningless for a CoC investigation.
+- R10 revoke penalty-point: checks warning points (copy slip).
+- R11 role league-ban: "when any driver is season banned".
+- R12 justification step: "(or final-mode …)" should be fallback-mode.
+- R13 appeal deliberation-period: "a given report".
+- R14 season ban checkboxes: "a ban lasted for one season".
+- R15 NFA intros: missing full stop.
+- R16 ordering example: stray double quote.
+- R17 "removed from him".
+- R18 auto-rule descriptions: "a certain, different, kind" (C31).
+- R19 multi-round form: two Mandatory markers missing.
+- R20 Add/Remove driver refusals: "report deliberation or appeal deliberation".
+- R21 report form Involved drivers: old circular sub-points.
+- R22 report and appeal reposts: time penalties only, "exclusively" (C5 disqualifications).
+- R23 appeal submission: two redundant "cycle closed" lines, "for that ticket".
+- R24 conduct Cycle close: repeats the posting; auto-rules against "any driver" (C30).
+- R25 season and league bans: seat removal and Not Signed Up stated twice each.
+- R26 unserved race ban: "next round of that division" (principal division rule).
+- R27 licence sheet: "at the start of a season" (placements confirmed).
+- R28 licence sheet image: "Total" penalty/warning points where the sheet shows active.
+- R29 licence sheet image: "as well!".
+- R30 report/appeal submission periods: stewards "validated by checking whether they have the stewarding team role" (D4 roster).
+- R31 race ban: "deleted alongside the RSVP" (check-in call).
+- R32 "This is the one change to a licence made before a cycle closes" — revocations, merges and CoC closes change licences too.
+- R33 "Whether a driver has a … ban is only determined after the closing of a stewarding cycle" ×4 — conduct cycles impose bans too.
+- R34 Deliberation: "the final output to be posted in the verdicts channel" — a CoC verdict goes to the conduct verdicts channel.
+- R35 Verdict output intro: "auto-rule triggering" — ban rulings are Automated Rulings too.
+
+Decisions:
+- R36 Which commands run in the steward command channel.
+- R37 "steward role temp-head" on the pre-roster model, and its holder.
+- R38 Two switches disabling appeals (toggle; submission period 0).
+- R39 Revoking points: "active and total" — does a revoked point leave the history?
+- R40 Conduct evidence "private to the stewarding team or shared" — never settable.
+- R41 Test-mode commands: core makes every test-mode command a league admin's.
+- R42 /bot pack (#257): stewarding team, its roles and channels on the new server.
