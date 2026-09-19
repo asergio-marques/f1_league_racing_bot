@@ -63,33 +63,20 @@
   - Defence submission - Active from the moment the investigation is triggered, and automatically disabled once a configured period of time elapses. In this stage, the mentioned drivers are allowed to submit defences and additional evidence relevant to the case opened.
   - Investigation deliberation - Active once the defence submission ends, and automatically disabled once a configured period of time. Aims to allow stewards to vote on the final verdict, providing justification. After this period is over, the verdict is posted as set out under Conduct cycle: the investigation is private, and its verdict public.
 - Complainant - The driver who lodged a report, or the stewarding team as a whole for a steward's report. A driver who is complainant is an involved driver of their report; the stewarding team, as complainant, is not.
+- Feature race and feature qualifying - The Feature Race and Feature Qualifying of a sprint round, or the Race and Qualifying of a round of any other format, where they are the only ones. The league sees each session named as the round's results name it.
 - Involved driver - A group of drivers consisting of all drivers formally added to a report and the driver who triggered the report.
   - A ticket shall hold at most 25 involved drivers, or 25 involved users for a CoC investigation, the complainant among them. A report naming more shall not be valid, and adding a driver or user to a ticket already holding 25 shall be refused.
 - Ticket - A user-submitted incident which may be either a report, an appeal or a Code of Conduct investigation. Every ticket is private: a report or an appeal is seen only by its involved drivers and the stewarding team, and a CoC investigation only by the stewarding team and the users involved in it.
 - Ticket channel - The channel of a division, set by "division ticket-channel", in which the "Report incident" and "Appeal incident" buttons are posted. There is one per division.
 - A ticket's channel - The channel the bot creates for a single ticket, in which its defence and deliberation take place. It may be called the report's, the appeal's or the investigation's channel where the kind of ticket matters.
-- Report - May also be referred to as stewards' report. This is an incident submitted by either a driver or by the stewarding team as an anonymous collective (a steward's report), which may refer to one or more other drivers, pertaining to an incident that occurred during the most recent round. A report ticket object to be persisted in the database will be under a round's own persisted object, and must contain the following information:
-  - Unique ID in the "S<x>_D<y>_R<z>_<w>" format, where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round. The season, division, round values can be extracted from this ID.
-  - Status, which relates to the stewarding cycle stages as follows:
-    - INIT - Appeal just opened, which moves its stage to Defence submission.
-    - Delib - Report deliberation.
-    - CLOSE - Report deliberation over, votes tallied up, outcome decided and verdict posted.
-  - User IDs of the involved drivers.
-  - Session of the round (Sprint Qualifying, Sprint Race, Feature Qualifying, Feature Race).
-  - Lap (empty if round was a Qualifying round).
-  - Effective stewarding team.
-    - For each member, there will be a flag noting the head steward of the effective stewarding team.
-    - For each member, the ID of the outcome object is recorded (empty if no vote was cast).
-  - ID of the outcome object settled after all votes are weighted, at the end of the deliberation phase.
-- Appeal - A special kind of ticket submitted by a driver which aims for a report to be judged once more, so that the ultimate verdict is passed. Only drivers appeal; the stewarding team does not appeal its own rulings. A steward who drives in a division may appeal that division's rulings, and is treated as any other driver in doing so. The submission of an appeal may require 1 or more appeal tokens to be spent. An appeal ticket object to be persisted in the database will follow the same rules as a report ticket object, with the following exceptions:
-  - Status, which relates to the stewarding cycle stages as follows:
-    - INIT - Appeal just opened, appeal submission stage is still underway.
-    - Delib - Appeal deliberation.
-    - CLOSE - Appeal deliberation over, votes tallied up, outcome decided and verdict posted.
+- Report - May also be referred to as stewards' report. This is an incident submitted by either a driver or by the stewarding team as an anonymous collective (a steward's report), which may refer to one or more other drivers, pertaining to an incident that occurred during the most recent round. It is identified by:
+  - Unique ID in the "S<x>_D<y>_R<z>_<w>" format, where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round, always written in three digits (001, 002 … 999), so that the IDs of a round sort in the order the reports were lodged. The season, division, round values can be extracted from this ID.
+- Appeal - A special kind of ticket submitted by a driver which aims for a report to be judged once more, so that the ultimate verdict is passed. Only drivers appeal; the stewarding team does not appeal its own rulings. A steward who drives in a division may appeal that division's rulings, and is treated as any other driver in doing so. The submission of an appeal may require 1 or more appeal tokens to be spent. It is identified by the unique ID of the report it appeals, suffixed as set out under Appeal submission.
+- Every ticket records everything its stages set out — its unique ID, the round and session it concerns, its complainant and involved drivers, its complaint and evidence, its effective stewarding team and effective head steward, every ballot cast, and its verdict — and keeps it for the life of the league. The stage a ticket stands in is the stage of its cycle, as set out under each cycle.
 - Appeal token - A special kind of currency that may be required for drivers to be able to submit an appeal. Appeal tokens are accumulated on a driver licence, and expire upon the current season's end. Upon a successful appeal, drivers are returned their spent tokens, unless the league has switched this off with "steward appeal refund-toggle".
 - Code of Conduct investigation - May also be referred to as a CoC investigation. A special kind of ticket and the only one which is not linked to a round, instead being linked to a driver; as such, it cannot lead to any changes in results (time penalties, warning or penalty points). It may be initiated by the head steward or temporary head steward, and by any steward only where "steward conduct steward-start-toggle" allows it. It cannot be appealed, and any decisions made are final. This functionality is optional and is disabled by default.
-- Outcome - A standardized penalty table item for reports and appeals, which draws a relationship from a "standard penalty description/case" to a "standard penalty", which may be one, or multiple between time penalties, disqualifications, warning points, penalty points, qualifying bans, race bans, season bans and league bans. Each outcome has a unique ID string, which is to be used when voting, and an identifying shorthand. Additionally, there is also a "No Further Action" outcome which sets none of the possible punishments onto a driver. The outcome is decided by plurality among the votes cast, as set out under each deliberation. The list for outcomes is managed separately from that of conduct outcomes, so there may be overlap of IDs of items between the two.
-- Conduct outcome - A standardized penalty table item for CoC investigations, which draws a relationship from a "standard penalty description/case" to a "standard penalty", which may be one, or multiple between discipline points, qualifying bans, race bans, season bans and league bans. Each conduct outcome has a unique ID string, which is to be used when voting, and an identifying shorthand. Additionally, there is also a "No Further Action" outcome which sets none of the possible punishments onto a driver. The conduct outcome is decided by plurality among the votes cast, as set out under each deliberation.  The list for conduct outcomes is managed separately from that of outcomes, so there may be overlap of IDs of items between the two.
+- Outcome - A standardized penalty table item for reports and appeals, which draws a relationship from a "standard penalty description/case" to a "standard penalty", which may be one, or multiple between time penalties, disqualifications, warning points, penalty points, qualifying bans, race bans, season bans and league bans. Each outcome has a unique ID, its identifying shorthand, which is used when voting. Additionally, there is also a "No Further Action" outcome which sets none of the possible punishments onto a driver. The outcome is decided by plurality among the votes cast, as set out under each deliberation. The list for outcomes is managed separately from that of conduct outcomes, so there may be overlap of IDs of items between the two.
+- Conduct outcome - A standardized penalty table item for CoC investigations, which draws a relationship from a "standard penalty description/case" to a "standard penalty", which may be one, or multiple between discipline points, qualifying bans, race bans, season bans and league bans. Each conduct outcome has a unique ID, its identifying shorthand, which is used when voting. Additionally, there is also a "No Further Action" outcome which sets none of the possible punishments onto a driver. The conduct outcome is decided by plurality among the votes cast, as set out under each deliberation.  The list for conduct outcomes is managed separately from that of outcomes, so there may be overlap of IDs of items between the two.
 - Time penalty - A possible direct outcome of a verdict for a report or appeal. Time is added or removed to a participant's total race time; note that it is not possible to remove time from a participant's total race time such that the sum of the in-race and post-race time penalties minus the time removed is lower than zero seconds (this functionality is already implemented in the results & standings module)
 - Disqualification - A possible direct outcome of a verdict for a report or appeal. The driver's entry in the session of the incident is invalidated and ranked last in that session, as the results & standings module disqualifies an entry. It applies to qualifying and race sessions alike.
 - Warning point - A possible direct outcome of a verdict for a report or appeal. Warning points serve as the lightest of penalties, and a minor rebuke to a driver's on-track behavior. Warning points are accumulated on a driver licence, and expire as configured by "steward penalty warning-point-expiry". A league may turn warning points into further sanctions through the auto-rules. Warning points are only applied to a driver licence once the stewarding cycle in which it was bestowed is complete.
@@ -230,7 +217,7 @@
   - If "steward justification final-mode" is changed to "LLM" when "steward justification fallback-mode" is already "LLM", then the latter shall change to "longest".
 - If neither "steward justification final-mode" nor "steward justification fallback-mode" are feasible options, then the bot will take the longest justification among the ballots of the winning option, which is always possible, every ballot carrying one.
 - <NEW COMMAND> A "steward outcome add" command will be made available to league managers, which shall open a modal window with the following input fields:
-  - ID - Mandatory - Unique ID for the outcome. Maximum of 10 characters.
+  - ID - Mandatory - Unique ID for the outcome. Maximum of 12 characters.
   - Brief - Mandatory - Unique short description of the outcome. Maximum of 50 characters.
   - Description - Optional - Long form description of the outcome. Maximum of 250 characters.
   - Applicable to qualifying? - Mandatory - Checkbox that, if ticked, represents that this outcome can be assigned to incidents from a qualifying session.
@@ -244,7 +231,7 @@
   - Season ban - Optional - Checkbox that, if ticked, means that the offending driver licence will accrue a ban lasted for one season.
   - League ban - Optional - Checkbox that, if ticked, means that the offending driver licence will accrue a league ban.
   - A session's list of outcomes shall hold at most 25, NFA among them. The command shall be refused where it would bring the qualifying list or the race list above 24 outcomes a league defines, and the refusal shall name the list that is full.
-  - Contrary to the others, this command may be accepted if any report deliberation or appeal deliberation phases are on-going. This means that the outcome object must be appended to all ticket data objects that are not in status "closed".
+  - Contrary to the others, this command may be accepted if any report deliberation or appeal deliberation phases are on-going. An outcome so added shall be offered upon the ballots of every deliberation still open.
     - Where an outcome is added while deliberations are open, the bot shall post in the steward command channel the new outcome and each open ticket whose effective stewarding team may now vote for it, so that stewards who have voted may reconsider while their votes can still be changed.
   - This command shall fail if the outcome has any disabled penalty types.
   - At least one of the "Time penalty", "Disqualification", "Warning point", "Penalty point", "Qualifying ban", "Race ban", "Season ban", "League ban" fields must be different from 0.
@@ -276,7 +263,8 @@
   - Penalty point - 0
   - Qualifying ban - 0
   - Race ban - 0
-  - Season ban - 0
+  - Season ban - No
+  - League ban - No
 - <NEW COMMAND> A "steward backup report-toggle" command will be made available to league admins, which shall have no inputs. When toggled on, once closed, the content of channels pertaining to reports and appeals will be persisted in disk to a directory.
   - This functionality shall be disabled by default.
   - It is a league admin's, the backups filling the disk of the machine the bot runs upon, which is typically a league admin's own.
@@ -303,7 +291,7 @@
   - By default, this value will be set to 24.
   - Input value must be equal or greater than 1.
 - <NEW COMMAND> A "steward conduct-outcome add" command will be made available to league managers, which shall open a modal window with the following input fields:
-  - ID - Mandatory - Unique ID for the conduct outcome. ap with that of other outcomes. Maximum of 12 characters.
+  - ID - Mandatory - Unique ID for the conduct outcome, among conduct outcomes. It may be the same as the ID of a report or appeal outcome, the two lists being independent. Maximum of 12 characters.
   - Brief - Mandatory - Unique short description of the conduct outcome. Maximum of 50 characters.
   - Description - Optional - Long form description of the conduct outcome. Maximum of 250 characters.
   - Discipline points - Optional - Integer input only. Number of discipline points added to the driver licence of the offending driver.
@@ -338,7 +326,8 @@
   - Discipline point - 0
   - Qualifying ban - 0
   - Race ban - 0
-  - Season ban - 0
+  - Season ban - No
+  - League ban - No
 - <NEW COMMAND> A "steward backup conduct-toggle" command will be made available to league admins, which shall have no inputs. When toggled on, once closed, the content of channels pertaining to Code of Conduct investigations will be persisted in disk to a directory.
   - This functionality shall be disabled by default.
   - It is a league admin's, the backups filling the disk of the machine the bot runs upon, which is typically a league admin's own.
@@ -398,8 +387,8 @@
 - The types an auto-rule may count, as its "Type of infractions committed", are warning points, penalty points, discipline points, time penalties, disqualifications, qualifying bans, race bans and season bans. Time penalties are counted as the cumulative sum of their seconds; every other type by its number.
 - The types an auto-rule may hand out, as its "Penalty given", are warning points, penalty points, discipline points, time penalties, disqualifications, qualifying bans, race bans, a season ban and a league ban.
 - A time penalty or disqualification an auto-rule hands out shall change the result of a race session:
-  - Where the auto-rule was triggered at the close of a round's cycle, that round's final race session, the Feature Race or, in a round of any other format, the Race. It is applied as part of the close, and the round's results and standings reposted once, under the Final Results label.
-  - Where it was triggered by a CoC investigation, the final race session of the next round the driver takes part in, applied at the close of that round's cycle and shown upon its results. A driver who takes part in no further round never has it applied.
+  - Where the auto-rule was triggered at the close of a round's cycle, that round's feature race. It is applied as part of the close, and the round's results and standings reposted once, under the Final Results label.
+  - Where it was triggered by a CoC investigation, the feature race of the next round the driver takes part in, applied at the close of that round's cycle and shown upon its results. A driver who takes part in no further round never has it applied.
 - The type counted and the type handed out may be the same, each auto-rule being triggered at most once for a driver in one cycle close, and re-arming as its type does.
 - A penalty type that is disabled shall be offered neither to count nor to hand out. Discipline points are offered only while the conduct cycle is enabled.
 - It is possible to trigger multiple auto-rules of different kinds after the same round.
@@ -496,14 +485,14 @@
     - The report will not be valid if there is any entry here that is not an involved driver.
     - The driver who triggered the report is considered an involved driver, and is not distinct from the other drivers for the purpose of this ticket.
   - Session - Mandatory - Dropdown - Select which session the incident took place in. Options available depend on round format: if round format is sprint, then the options available shall be "Sprint Qualifying", "Sprint Race", "Feature Qualifying" and "Feature Race", otherwise, the options available are just "Qualifying" and "Race".
-  - Lap - Mandatory if session = "Sprint race" or "Feature race", greyed out otherwise - Integer - The race lap in which the incident took place.
+  - Lap - Mandatory where the session is a race, a sprint race or the feature race; not asked otherwise - Integer - The race lap in which the incident took place.
   - Complaint - Mandatory - String - Full description of the incident as per the complainant's understanding.
   - Evidence files - Optional - 0..5 media (image or video) - One or multiple images or video files that provide basis for the claims in the complaint.
   - Evidence links - Optional - 0..5 links - One or multiple images or video links that provide basis for the claims in the complaint.
     - Between "evidence files" and "evidence links", there must be at least one file/link. Otherwise, the report will not be valid.
 - The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
   - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
-- After valid submission, the report will be henceforth identified with a unique ID following the format "S<x>_D<y>_R<z>_<w>", where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round.
+- After valid submission, the report will be henceforth identified with a unique ID following the format "S<x>_D<y>_R<z>_<w>", where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the report pertaining to this season, tier and round, always written in three digits (001, 002 … 999), so that the IDs of a round sort in the order the reports were lodged.
 - After valid submission, a channel bearing the report's unique ID as the title will be created, with the information from the modal dialog input by the complainant summarized and posted as the header message in the channel. All involved drivers shall be mentioned properly in this message.
 - If the effective head steward is one of the involved drivers, or has a conflict of interest as defined by "steward team conflict-toggle", the bot will post in the steward command channel a message with a button to assign effective head steward for the ticket to someone else of the stewarding team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective stewarding team for the ticket.
   - If the effective head steward does not assign anyone else by the time the report deliberation phase is reached, the bot shall choose one for this position: the temporary head steward, where one is in post and is neither an involved party nor holds a conflict of interest upon the ticket; otherwise, of the members of the effective stewarding team who are neither, the one who joined the stewarding team earliest.
@@ -593,7 +582,7 @@
   - Start a timer counting down 1 hour from the moment the buttons are posted; if the effective head steward has not confirmed the justification text once this timer runs out, then the one provided by the bot will be utilized for the verdict post.
 - Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
   - The format of the final output is set out under Verdict output.
-- Only after the final output is determined for all reports pertaining to a given round of a given division, will they be posted, in report ID alphabetical order (which will coincide with the submission order), in the verdicts channel.
+- Only after the final output is determined for all reports pertaining to a given round of a given division, will they be posted, in the order the reports were lodged, which their IDs follow, in the verdicts channel.
 - The channel will not be deleted upon the publishing of the report verdicts. A ticket's channel is kept until its round's stewarding cycle closes, the appeal submission and appeal deliberation stages having need of it.
 - The report deliberation phase is only considered over once all reports pertaining to a given round of a given division are posted to the appropriate channel.
   - If appeals functionality is enabled, then the stewarding cycle will move on to that phase.
@@ -623,7 +612,7 @@
     - Between "evidence files" and "evidence links", there must be at least one file/link. Otherwise, the appeal will not be valid.
 - The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
   - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
-- After valid submission, the appeal will be henceforth be identified with a unique ID following the format "<Report ID>-APPEAL", where <Report ID> is the full ID of the original report.
+- After valid submission, the appeal will be henceforth identified with a unique ID following the format "<Report ID>_APPEAL", where <Report ID> is the full ID of the original report.
 - After valid submission, a channel bearing the appeal's unique ID as the title will be created, with the information from the modal dialog input by the appellant summarized and posted as the header message in the channel, and with an additional link to the channel that pertains to the original report, for the stewarding team's reference.
 - As this is considered a different ticket, the effective stewarding team for this ticket may not necessarily be the same one as the original report's by default.
 - If the effective head steward is one of the involved drivers, or has a conflict of interest as defined by "steward team conflict-toggle", the bot will post in the steward command channel a message with a button to assign effective head steward for the ticket to someone else of the stewarding team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective stewarding team for the ticket.
@@ -680,7 +669,7 @@
   - Start a timer counting down 1 hour from the moment the buttons are posted; if the effective head steward has not confirmed the justification text once this timer runs out, then the one provided by the bot will be utilized for the verdict post.
 - Once the justification message is settled, either via effective head steward confirmation or by timeout, the bot will remove all write permissions to the channel, and generate the final output to be posted in the verdicts channel.
   - The format of the final output is set out under Verdict output.
-- Only after the final output is determined for all appeals pertaining to a given round of a given division, will they be posted, in appeal ID alphabetical order (which will coincide with the submission order of the original reports), in the verdicts channel.
+- Only after the final output is determined for all appeals pertaining to a given round of a given division, will they be posted, in the order of the reports they appeal, which their IDs follow, and not in the order the appeals were lodged, in the verdicts channel.
 - Once the stewarding cycle of a round closes, the channels of all its tickets, reports and appeals alike, shall be removed. Where "steward backup report-toggle" is toggled on, the content of every one of them shall be persisted to disk immediately, and once that has succeeded the channels shall be deleted. Where it is toggled off, a 7 day countdown shall be initiated, at the end of which the channels shall be deleted.
   - Where appeals are disabled, or no appeal is lodged, the cycle closes earlier, and its channels are removed from then.
 - The appeal deliberation phase is only considered over once all appeals pertaining to a given round of a given division are posted to the appropriate channel.
@@ -730,7 +719,7 @@
 - Usage of the "steward conduct start" shall be valid at all times of a season's, a division's, or round's lifecycle, and is therefore not pegged to any one round, division or season.
 - The validation of the information will be performed before closing the modal, so that users do not have to input information twice.
   - If this is not possible, if the information is not valid, then the modal shall be reopened with the same information.
-- After valid submission, the investigation will be henceforth identified with a unique ID following the format "COC_INV<x>", where <x> is the number of the previous CoC investigation of this league plus 1, with at least two zeros to the left (e.g. COC_INV001, COC_INV067, COC_INV203...)
+- After valid submission, the investigation will be henceforth identified with a unique ID following the format "COC_INV<x>", where <x> is the number of the previous CoC investigation of this league plus 1, written in at least three digits: COC_INV001 … COC_INV999, then COC_INV1000, and so on, their order being that of their numbers
 - After valid submission, a channel bearing the investigation's unique ID as the title will be created, with the information from the modal dialog input by the steward who opened it summarized and posted as the header message in the channel. All involved users shall be mentioned properly in this message.
 - If the effective head steward is one of the involved users, or has a conflict of interest as defined by "steward team conflict-toggle", the bot will post in the steward command channel a message with a button to assign effective head steward for the ticket to someone else of the stewarding team. The user will be validated for the criteria above, and after they are designated effective head steward, the former one will be removed from the effective stewarding team for the investigation.
   - If the effective head steward does not assign anyone else by the time the investigation deliberation phase is reached, the bot shall choose one for this position: the temporary head steward, where one is in post and is neither an involved party nor holds a conflict of interest upon the ticket; otherwise, of the members of the effective stewarding team who are neither, the one who joined the stewarding team earliest.
@@ -813,8 +802,8 @@
 - If any auto-rule configured is infringed upon, then an additional automated verdict document will be published by the bot. Where it was triggered at the close of a round's cycle, it is posted in the verdicts channel of that round's division, under that round's header; where it was triggered by a CoC investigation, it is posted as set out under Verdict output. This document shall inform which rule was broken, and the punishment to be handed out.
   - Its format is set out under Verdict output.
   - For output purposes, two different formats may be used, depending on what was the trigger of the auto-rule:
-    - If the trigger was the close of a round's cycle, the "S<x>_D<y>_R<z>_AR<w>" format will be followed, where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the Automated Ruling of this round. The rulings upon qualifying bans and race bans served or not served share this numbering with the round's auto-rules, so that every Automated Ruling of a round sorts together.
-    - If the trigger was a CoC investigation, the "COC_INV<x>_AR<y>" format will be followed, where <x> is the number of the CoC investigation which triggered the auto-rule, with at least two zeros to the left (e.g. COC_INV001, COC_INV067, COC_INV203...), and <y> is the number of the auto-rule triggered (as in, if there were multiple auto-rules triggered, you start at 1, and increment with each one).
+    - If the trigger was the close of a round's cycle, the "S<x>_D<y>_R<z>_AR<w>" format will be followed, where <x> is the number of the season, <y> the tier of the division, <z> the number of the round, and <w> the number of the Automated Ruling of this round, always written in three digits, as in "S3_D1_R5_AR001". The rulings upon qualifying bans and race bans served or not served share this numbering with the round's auto-rules, so that every Automated Ruling of a round sorts together.
+    - If the trigger was a CoC investigation, the "COC_INV<x>_AR<y>" format will be followed, where <x> is the number of the CoC investigation which triggered the auto-rule, as its own ID writes it, and <y> is the number of the auto-rule triggered by it, starting at 1 and rising with each, written in three digits, as in "COC_INV001_AR001".
   - It is possible that an auto-rule triggers another auto-rule. The auto-rules shall be checked again after any is triggered, until none is triggered that has not already been. Each auto-rule shall be triggered at most once for a driver in one cycle close, so that no rule punishes the same driver twice in one close, and the checking always comes to an end.
 - As a way to prevent drivers from being penalized twice for going over a threshold (e.g. an auto rule being triggered when a driver licence reaches 4 penalty points when a driver goes from 2 penalty points to 5, meaning they could be handed out two instances of the automated penalty), thresholds shall function in a flip-flop manner. This means that, in the example given, once a driver goes over the 4 penalty point threshold of the automated penalty, they can only infringe it after their licence's active penalty points tally goes under 4 penalty points.
   - How a threshold re-arms depends upon the type of the auto-rule:
@@ -926,7 +915,7 @@
 - Verdicts shall be posted sequentially and in alphabetic order of their unique ID, among those of the same kind.
   - Attendance sanctions are the attendance module's own, carry no such ID, and are not ordered by this rule. They shall keep the place the attendance module gives them: after the verdicts of the batch that gave rise to them, under that batch's header.
   - This means that "S1_D1_R1_001", "S1_D1_R1_002", ""S1_D1_R1_003", ... will be the correct order.
-  - For the purpose of appeals, the ID of the report to which they correspond will be taken and suffixed with "-APPEAL".
+  - For the purpose of appeals, the ID of the report to which they correspond will be taken and suffixed with "_APPEAL".
 - If they pertain to a report, appeal, or auto-rule triggered by either (including auto-rules which were triggered by other auto-rules which were triggered by reports or appeals), verdicts shall be posted in the verdicts channel of the division to which they pertain.
   - Every batch of verdicts posted together for a round shall be headed by a header naming the round, by its season, division, round number and grand prix name. The report verdicts of a round, its appeal verdicts, and the automated rulings of its cycle close are each a batch of their own, and each shall be headed.
     - Where the verdict banner aspect of the image module is on, the header is the verdict banner. Where it is off, or the banner cannot be drawn, the header shall be posted as text.
