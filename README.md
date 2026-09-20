@@ -1979,6 +1979,8 @@ Posts the check-in call for the round you name, exactly as the scheduled call wo
 
 > **Limitation:** Available only while the season is ongoing. It is refused, with nothing changed, if the round is cancelled, if a check-in call for it is **already standing**, if the call is **not yet due**, or if the check-in **deadline has passed**.
 >
+> **If the scheduled call posts while you are running this**, nothing is posted on top of it and the reply says so. A round is never left carrying two calls — the second would leave the first still answerable but tracked by nothing, so those answers would be lost and its buttons never closed at the deadline.
+>
 > The last three are deliberate. Before the call is due the scheduled one is still coming, and posting early would override the notice period you set with `/attendance config rsvp-notice`. After the deadline a call arrives with its buttons already locked, so nobody could answer it. And a call already standing is never replaced — [amend the round](#round-amend--amend-a-round-in-the-active-season) instead, which posts the call again and carries every answer already given across.
 
 ---
