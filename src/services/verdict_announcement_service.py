@@ -35,25 +35,50 @@ def _for_message(value: str) -> str:
 #: What a manager can do about a verdict that never reached the channel (#237).
 #:
 #: **A decided verdict cannot be announced again by the bot**, and the hint must say so. No
-#: command re-announces one, and #189 records the reason it could not be built on: the message
+#: command re-announces one, and #189 records the reason one could not be built: the message
 #: id of an announcement is never stored, so the bot holds nothing by which to find, edit or
 #: replace one. The manager repairs the channel and posts the decision themselves.
 #:
-#: Attendance sanctions are the exception. ``/attendance sync`` re-runs the sanctions still
-#: owed at a round and announces them as usual, so for those the bot *can* finish the job.
+#: **Attendance sanctions are not an exception to this**, though it is tempting to write that
+#: they are because `/attendance sync` does re-run the sanctions. It will not re-announce one
+#: that already applied: `sack_driver` deletes the driver's `driver_season_assignments` row
+#: and `move_driver` puts them in the Reserve team, so on a second run they are no longer a
+#: candidate and are passed over without a word. ``attendance_service._failure_reason`` says
+#: this in as many words, and ``sync_attendance``'s docstring repeats it. A hint promising
+#: the sync would announce it would hand the manager the very false confidence this issue
+#: exists to prevent — they would run it, read `Success`, and believe the driver was told.
 _VERDICT_NO_RETRY = (
     "Repair the cause, then post the decision in the verdicts channel yourself — the bot "
     "cannot announce a verdict a second time."
 )
 
-_SANCTION_RETRY = (
-    "Repair the cause, then run `/attendance sync` for the division and round to announce it."
-)
+
+def verdict_repair_hint() -> str:
+    """The line telling a manager how to finish a verdict that was not announced (#237)."""
+    return _VERDICT_NO_RETRY
 
 
 def _n_verdicts(count: int) -> str:
     """``one verdict`` or ``N verdicts``, so a fault line reads as English either way."""
     return "one verdict" if count == 1 else f"{count} verdicts"
+
+
+def _round_label(state) -> str:
+    """The round as a league knows it, not as the database numbers it.
+
+    ``round_id`` is a primary key; a manager reading "Round 21" would go looking for round
+    21 when the round is their third. The review state carries both the number and the
+    division, so the one fault line that cannot read the round from the database can still
+    say which round it was.
+    """
+    try:
+        number = int(getattr(state, "round_number", None))
+    except (TypeError, ValueError):
+        return "The round"
+    division = getattr(state, "division_name", None)
+    return f"Round {number}" + (
+        f" ({division})" if isinstance(division, str) and division else ""
+    )
 
 
 def _driver_label(driver_discord_id) -> str:
@@ -474,8 +499,8 @@ async def post_penalty_announcements(
     if not ctx:
         log.warning("post_penalty_announcements: could not load context for round %s", round_id)
         return [
-            f"Round {round_id} could not be read from the database, so none of its "
-            f"{len(applied_penalties)} penalty verdicts were announced."
+            f"{_round_label(state)} could not be read from the database, so "
+            f"{_n_verdicts(len(applied_penalties))} could not be announced."
         ]
 
     division_name = ctx["division_name"]
@@ -503,17 +528,19 @@ async def post_penalty_announcements(
         ]
 
     season_number = ctx["season_number"]
-    division_name = ctx["division_name"]
     KIND = VerdictKind.PENALTY
     head_the_batch = head or _banner_once(bot, target_channel, ctx)
 
     for record in applied_penalties:
-        # Read outside the try so that a failure below can still name whose verdict it was.
-        driver_discord_id = (
-            record.get("driver_user_id") if hasattr(record, "get")
-            else getattr(record, "driver_user_id", 0)
-        )
+        # Named before the try so a failure below can still say whose verdict it was, but
+        # *read* inside it: a record that cannot even be asked for its driver must cost one
+        # verdict, not abandon every one still to come.
+        driver_discord_id = None
         try:
+            driver_discord_id = (
+                record.get("driver_user_id") if hasattr(record, "get")
+                else getattr(record, "driver_user_id", 0)
+            )
             race_result_id = record.get("race_result_id") if hasattr(record, "get") else getattr(record, "race_result_id", None)
             qual_result_id = record.get("qual_result_id") if hasattr(record, "get") else getattr(record, "qual_result_id", None)
 
@@ -628,8 +655,8 @@ async def post_appeal_announcements(
     if not ctx:
         log.warning("post_appeal_announcements: could not load context for round %s", round_id)
         return [
-            f"Round {round_id} could not be read from the database, so none of its "
-            f"{len(applied_corrections)} appeal verdicts were announced."
+            f"{_round_label(state)} could not be read from the database, so "
+            f"{_n_verdicts(len(applied_corrections))} could not be announced."
         ]
 
     division_name = ctx["division_name"]
@@ -655,17 +682,19 @@ async def post_appeal_announcements(
         ]
 
     season_number = ctx["season_number"]
-    division_name = ctx["division_name"]
     KIND = VerdictKind.APPEAL
     head_the_batch = head or _banner_once(bot, target_channel, ctx)
 
     for record in applied_corrections:
-        # Read outside the try so that a failure below can still name whose verdict it was.
-        driver_discord_id = (
-            record.get("driver_user_id") if hasattr(record, "get")
-            else getattr(record, "driver_user_id", 0)
-        )
+        # Named before the try so a failure below can still say whose verdict it was, but
+        # *read* inside it: a record that cannot even be asked for its driver must cost one
+        # verdict, not abandon every one still to come.
+        driver_discord_id = None
         try:
+            driver_discord_id = (
+                record.get("driver_user_id") if hasattr(record, "get")
+                else getattr(record, "driver_user_id", 0)
+            )
             race_result_id = record.get("race_result_id") if hasattr(record, "get") else getattr(record, "race_result_id", None)
             qual_result_id = record.get("qual_result_id") if hasattr(record, "get") else getattr(record, "qual_result_id", None)
 
@@ -794,7 +823,7 @@ async def post_autosanction_announcement(
         )
         row = await cursor.fetchone()
 
-    sanction_label = "autosack" if sanction_type == "AUTOSACK" else "auto-reserve"
+    sanction_label = "autosack" if sanction_type == "AUTOSACK" else "autoreserve"
 
     if row is None:
         log.warning("post_autosanction_announcement: could not load context for round %s", round_id)

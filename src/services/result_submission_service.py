@@ -858,8 +858,21 @@ async def _report_attendance_not_recorded(
     autosack thresholds read it — so a later round can sanction a driver on a total this
     failure invalidated. ``/attendance sync`` recomputes the round and every later one, which
     is what repairs it.
+
+    **The hint is read from the database defensively, because the database is what failed.**
+    The only way to reach here is that a write raised, and the likeliest causes — a full
+    disk, a lock, a corrupt file — are exactly the ones that would make ``sync_hint``'s two
+    reads raise as well. Computed as a bare argument it would throw out of this function,
+    out of the caller, and past the point where the appeals prompt is posted: the round
+    would be left mid-lifecycle with nothing said, which is this issue's own shape.
     """
     from services.attendance_service import sync_hint
+
+    try:
+        hint = await sync_hint(db_path, division_id, round_id)
+    except Exception:  # noqa: BLE001 — the report matters more than the command in it
+        log.exception("could not build the attendance sync hint for round %s", round_id)
+        hint = "Repair the cause, then run `/attendance sync` for this division and round."
 
     await _report_faults(
         interaction, bot,
@@ -869,7 +882,7 @@ async def _report_attendance_not_recorded(
             "recorded correctly:"
         ),
         faults=faults,
-        hint=await sync_hint(db_path, division_id, round_id),
+        hint=hint,
     )
 
 
@@ -880,6 +893,15 @@ async def _report_unannounced_verdicts(interaction, bot, faults: list[str]) -> N
     re-announces one, and the bot stores no message id by which to find one (#189) — so the
     manager is told to post it themselves rather than to re-run something that would leave
     them believing the job finished.
+
+    **A verdict fault does not mark the approval's own audit line ``Incomplete``**, where a
+    failed repost does (decided 2026-09-20). Two reasons. The repost *is* the result being
+    published, so an approval that could not publish it did not wholly succeed; an
+    announcement is the explanation alongside it, and the decision stands without it. And
+    #239 already settled the shape for the sibling case: attendance sanctions that did not
+    apply raise their own ``ATTENDANCE_SANCTIONS | Incomplete`` entry and leave
+    ``PENALTY_REVIEW_APPROVED`` alone. The audit line is also written before the verdicts go
+    out, so marking it would mean reordering the approval to no one's benefit.
     """
     from services.verdict_announcement_service import verdict_repair_hint
 
