@@ -624,23 +624,45 @@ async def test_a_restart_with_no_amendments_open_does_nothing(tmp_path):
     stub.output_router.post_log.assert_not_awaited()
 
 
-async def test_the_amendment_notice_warns_that_the_scoring_may_have_moved(tmp_path):
-    """An abandoned amendment is not a no-op, and the notice must not imply it is (#345).
+async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
+    """Stage one commits, so abandoning an amendment is not a no-op (#345).
 
-    The amendment is three stages and the **first** commits: the corrected classification is
-    written and the round is scored from it before the reports and appeals are reviewed. A
-    restart between stages therefore leaves a round scored one way and posted another, which
-    re-running the command repairs — but a manager told only "channel deleted, please re-run"
-    would reasonably assume nothing had happened and leave it.
+    The corrected classification is written and the round scored from it before the reports and
+    appeals are reviewed. A restart between stages therefore has to *undo* it, or the round is
+    left scored one way and posted another with nothing that would later notice.
     """
-    db_path = await _base_db(tmp_path, "amend_notice")
+    db_path = await _base_db(tmp_path, "amend_revert")
     await _seed_amend(db_path)
     bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
 
-    await bot_module._recover_orphaned_amend_channels(bot)
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ) as revert:
+        await bot_module._recover_orphaned_amend_channels(bot)
 
+    revert.assert_awaited_once()
     logged = "\n".join(
         str(call.args[0]) for call in bot.output_router.post_log.await_args_list
     )
+    assert "put back as it was" in logged
     assert "re-run /round results amend" in logged
-    assert "may not match what is scored" in logged
+
+
+async def test_a_revert_that_fails_still_clears_the_channel(tmp_path):
+    """A round that cannot be put back must not also keep a channel nobody is listening to.
+
+    The two are separate harms and the second is always fixable; leaving the channel because the
+    revert raised would compound them.
+    """
+    db_path = await _base_db(tmp_path, "amend_revert_fails")
+    await _seed_amend(db_path)
+    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(side_effect=RuntimeError("locked")),
+    ):
+        await bot_module._recover_orphaned_amend_channels(bot)
+
+    assert await _amend_rows(db_path) == 0

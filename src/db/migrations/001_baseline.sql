@@ -617,6 +617,17 @@ CREATE TABLE "round_amend_channels" (
     channel_id   INTEGER NOT NULL,
     session_type TEXT    NOT NULL,
     created_at   TEXT    NOT NULL,
+    -- pre_amendment_state: the round as it stood before stage one overwrote it, as JSON
+    -- (#345). The amendment's first stage commits the corrected classification, so an
+    -- amendment abandoned before its last stage is approved leaves the round scored one way
+    -- and posted another. This is what the revert puts back: the session header, the driver
+    -- rows of the amended session, and where each verdict pointed. NULL until stage one has
+    -- written, and cleared when the amendment completes.
+    pre_amendment_state TEXT,
+    -- expires_at: when an unapproved amendment is reverted. The stages have no timeout of
+    -- their own, so without this a manager who walks away leaves the round on "Provisional
+    -- Results" for ever.
+    expires_at   TEXT,
     UNIQUE (round_id, session_type)
 );
 
