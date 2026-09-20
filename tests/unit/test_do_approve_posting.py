@@ -29,6 +29,7 @@ approval is four attempts at a season they are trying to start.
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -513,6 +514,37 @@ async def test_each_divisions_calendar_is_posted(db_path):
     stubs = await _approve(cog, interaction)
 
     assert stubs["calendar"].await_count == 2
+
+
+async def test_the_calendar_is_posted_with_the_season_number(db_path):
+    """Issue #213. Approval posted every calendar with no `season_number` at all, so the
+    league received a calendar missing the season number the manager saw on the preview
+    they approved from — and, where the template groups the field, missing the whole
+    "SEASON n" line. The calendar tests here never looked at the arguments, which is why
+    it survived."""
+    cog = _cog(db_path, divisions=[_division(1, "Pro")])
+
+    stubs = await _approve(cog, _interaction())
+
+    assert stubs["calendar"].await_args.kwargs["season_number"] == 1
+
+
+async def test_a_season_with_no_number_still_draws_and_is_logged(db_path, caplog):
+    """A falsy season number is drawn, not hidden, and the fault is logged (#213).
+
+    `seasons.season_number` is `NOT NULL` and numbering starts at one, so a `0` means a
+    malformed row. Normalising it to `None` would empty the field and hide the fault the
+    same way the defect above did; this fails if anyone reaches for `or None`.
+    """
+    cog = _cog(db_path, divisions=[_division(1, "Pro")])
+    cog._pending[USER_ID].season_number = 0
+
+    with caplog.at_level(logging.WARNING):
+        stubs = await _approve(cog, _interaction())
+
+    assert stubs["calendar"].await_args.kwargs["season_number"] == 0
+    assert stubs["calendar"].await_args.kwargs["season_number"] is not None
+    assert "SEASON 0" in caplog.text
 
 
 async def test_a_division_with_no_calendar_channel_posts_no_calendar(db_path):

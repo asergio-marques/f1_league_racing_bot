@@ -6048,12 +6048,28 @@ class SeasonCog(commands.Cog):
             # fallback where a graphic was wanted but could not be produced. Approval is a
             # command, but the calendar posting within it is not the thing commanded, so a
             # failed render degrades to text rather than refusing the season (XIV.7).
+            #
+            # The season's number is passed bare and a falsy one is drawn rather than
+            # hidden (issue #213, decided 2026-09-20). It went unpassed entirely until
+            # then, so every calendar a league received lacked the number the manager saw
+            # on the preview they approved from — and lost the whole "SEASON n" line where
+            # the template groups the field. `cfg.season_number` is authoritative here,
+            # refreshed from the database by `sync_pending_config` above; a `0` can only
+            # mean a malformed row, and is logged and drawn as "SEASON 0" rather than
+            # normalised to None, which would hide the fault the same way.
             if _guild is not None:
                 from services import calendar_post_service as _calendar
 
                 _tracks_by_name = await _calendar.tracks_by_name(self.bot.db_path)
                 _calendar_notices: list[str] = []
                 _calendar_problems: list[str] = []
+
+                if not cfg.season_number:
+                    log.warning(
+                        "_do_approve: season %s carries no number; its calendars will "
+                        "draw 'SEASON 0'",
+                        cfg.season_id,
+                    )
 
                 for _div in divisions:
                     if not _div.calendar_channel_id:
@@ -6065,6 +6081,7 @@ class SeasonCog(commands.Cog):
                             _div,
                             div_rounds.get(_div.id, []),
                             _tracks_by_name,
+                            season_number=cfg.season_number,
                         )
                     except Exception:  # noqa: BLE001
                         # One division must never stop the others being posted.
