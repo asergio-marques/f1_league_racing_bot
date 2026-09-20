@@ -40,6 +40,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from models.season import SeasonStage  # noqa: E402
+
 from cogs.season_cog import SeasonCog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
@@ -105,7 +107,9 @@ def _make_cog(
     db_path: str,
     *,
     results_enabled: bool = True,
-    season=SimpleNamespace(id=SEASON_ID, season_number=7),
+    season=SimpleNamespace(
+        id=SEASON_ID, season_number=7, stage=SeasonStage.ONGOING
+    ),
     divisions=None,
     rounds=None,
 ) -> SeasonCog:
@@ -114,7 +118,7 @@ def _make_cog(
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
     bot.season_service = MagicMock()
-    bot.season_service.get_season_for_server = AsyncMock(return_value=season)
+    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions
         if divisions is not None
@@ -203,7 +207,11 @@ async def test_a_server_with_no_season_is_refused(tmp_path):
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
-    assert "No active season" in _replied(interaction)
+    # The refusal names the archive rule (issue #224): a server whose only season is
+    # completed or cancelled reaches this same branch, because the command now asks for
+    # the *live* season and an archived one is never returned.
+    assert "there is none" in _replied(interaction)
+    assert "archive" in _replied(interaction)
 
 
 async def test_an_unknown_division_is_refused_by_name(tmp_path):
