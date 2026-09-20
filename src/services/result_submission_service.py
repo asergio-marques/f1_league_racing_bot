@@ -725,9 +725,24 @@ async def finalize_penalty_review(
             # left in the host's log alone (#239): the run reports its own failures to the
             # log channel, and the manager who approved is told here, with the command that
             # finishes the job. A run that cannot start at all is told the same way.
+            #
+            # **A sanction is never applied on a record known to be wrong** (#237). The
+            # thresholds are read from `total_points_after`, which the two steps above
+            # write. Where recording failed but the distribution succeeded, that column is
+            # not NULL and so does not exclude the driver from the candidate query — it is
+            # simply wrong, and can be wrong *upward*, because a driver who attended may
+            # have been scored absent. Autosack takes a driver's seat; doing that on a
+            # number the bot already knows is unsound is not a risk worth running for the
+            # sake of finishing the pipeline. The run is deferred instead, and
+            # `/attendance sync` both repairs the record and applies whatever is owed.
             _sanction_failures: list[str] = []
             _run_logged_itself = False
-            if guild is None:
+            if _attendance_write_failures:
+                _sanction_failures = [
+                    "no driver was checked, because this round's attendance record is "
+                    "wrong and the thresholds are read from it"
+                ]
+            elif guild is None:
                 _sanction_failures = ["the league's server could not be reached, so no driver was checked"]
             else:
                 try:

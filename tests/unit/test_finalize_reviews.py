@@ -500,7 +500,14 @@ async def test_a_pardon_is_not_granted_twice(tmp_path):
 
 @pytest.mark.parametrize("failing", ["record", "distribute", "sheet", "sanctions"])
 async def test_one_failing_attendance_step_does_not_stop_the_others(tmp_path, failing):
-    """The penalty verdicts are already published by the time this runs."""
+    """The penalty verdicts are already published by the time this runs.
+
+    **The sanctions are the one exception, and only for the two steps that write** (#237).
+    A failed `record` or `distribute` leaves `total_points_after` wrong rather than absent,
+    so the candidate query cannot screen it out, and an autosack applied on it would take a
+    driver's seat on a number the bot already knows is unsound. Those two defer the run to
+    `/attendance sync`; everything else still carries on regardless.
+    """
     db_path = await _make_db(tmp_path, name=f"att_fail_{failing}")
     state = _state(db_path, attendance_enabled=True)
 
@@ -508,8 +515,13 @@ async def test_one_failing_attendance_step_does_not_stop_the_others(tmp_path, fa
         finalize_penalty_review, state, attendance_errors={failing: RuntimeError("boom")}
     )
 
-    for step in ("record", "distribute", "sheet", "sanctions"):
+    defers_the_sanctions = failing in ("record", "distribute")
+    for step in ("record", "distribute", "sheet"):
         stubs[step].assert_awaited_once()
+    if defers_the_sanctions:
+        stubs["sanctions"].assert_not_awaited()
+    else:
+        stubs["sanctions"].assert_awaited_once()
     assert state.appeals_prompt_message_id == 9900
 
 
@@ -921,3 +933,40 @@ async def test_a_posting_step_that_fails_is_not_reported_as_a_record_failure(tmp
     )
 
     assert "ATTENDANCE_RECORD | Incomplete" not in _logged(state)
+
+
+@pytest.mark.parametrize("failing", ["record", "distribute"])
+async def test_the_sanctions_are_not_run_on_a_record_known_to_be_wrong(tmp_path, failing):
+    """An autosack takes a driver's seat, so it is never applied on unsound totals (#237).
+
+    The thresholds read `total_points_after`, which the two failing steps write. Where
+    recording fails but distribution succeeds the column is populated and *wrong* — and can
+    be wrong upward, a driver who attended having been scored absent — so the candidate
+    query does not screen it out. `/attendance sync` repairs the record and applies whatever
+    is owed, which is where the run belongs.
+    """
+    db_path = await _make_db(tmp_path, name=f"defer_{failing}", attendance_row=True)
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+
+    stubs = await _run(
+        finalize_penalty_review, state,
+        attendance_errors={failing: RuntimeError("disk is full")},
+    )
+
+    stubs["sanctions"].assert_not_awaited()
+    logged = _logged(state)
+    assert "ATTENDANCE_RECORD | Incomplete" in logged
+    assert "no driver was checked" in logged
+
+
+async def test_the_sanctions_still_run_when_the_record_is_sound(tmp_path):
+    """The counterpart — a failed *posting* must not defer them."""
+    db_path = await _make_db(tmp_path, name="defer_none", attendance_row=True)
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+
+    stubs = await _run(
+        finalize_penalty_review, state,
+        attendance_errors={"sheet": RuntimeError("no attendance channel")},
+    )
+
+    stubs["sanctions"].assert_awaited()
