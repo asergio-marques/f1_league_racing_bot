@@ -80,7 +80,7 @@ def phase1_message(division_role_id: int, track: str, rpc_pct: float) -> str:
     """Phase 1 forecast: the round's chance of rain, drawn at the phase 1 horizon.
 
     Titled by ``PHASE_DESCRIPTIONS[1]`` and naming no horizon of its own — see that constant
-    for why. The promise of a closer forecast stays, the weather specification requiring this
+    for why. The promise of a further forecast stays, the weather specification requiring this
     message to indicate that a more detailed one follows; only the "at T−2 days" left it.
     """
     role_mention = f"<@&{division_role_id}>"
@@ -88,7 +88,7 @@ def phase1_message(division_role_id: int, track: str, rpc_pct: float) -> str:
         f"{role_mention} 🏁 **Weather Forecast — {PHASE_DESCRIPTIONS[1]}**\n"
         f"**Track**: {track}\n"
         f"**Rain Probability**: {format_rain_probability(rpc_pct)}\n"
-        f"A more detailed forecast will follow closer to the round."
+        f"A more detailed forecast will follow later."
     )
 
 
