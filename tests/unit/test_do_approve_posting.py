@@ -467,6 +467,65 @@ async def test_a_season_with_no_points_configuration_attached_is_refused(db_path
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
+async def test_a_disabled_results_module_is_not_checked(db_path):
+    """A league not running results is asked for none of its settings.
+
+    Issue #185. This was the one claim `test_season_approval_gates.py` made that nothing
+    else did — and it made it against a copy of the gate rather than the gate, so the
+    `if results_enabled` guard could have been dropped from the cog entirely without a
+    single test noticing. The division below has no channels of any kind and the season
+    has no points configuration attached: every one of the refusals above would fire if
+    the gate were consulted, so the approval going through is the guard working.
+    """
+    cog = _cog(db_path, results_enabled=False)
+    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                name="Pro",
+                results_channel_id=None,
+                standings_channel_id=None,
+                penalty_channel_id=None,
+            )
+        ]
+    )
+
+    await _approve(cog, _interaction())
+
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+async def test_the_results_refusal_lists_every_fault_at_once(db_path):
+    """Four settings wrong is one refusal, not four attempts at starting a season."""
+    cog = _cog(db_path, results_enabled=True)
+    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                name="Pro",
+                results_channel_id=None,
+                standings_channel_id=701,
+                penalty_channel_id=702,
+            ),
+            SimpleNamespace(
+                name="Academy",
+                results_channel_id=800,
+                standings_channel_id=None,
+                penalty_channel_id=None,
+            ),
+        ]
+    )
+    interaction = _interaction()
+
+    await _approve(cog, interaction)
+
+    replied = _replied(interaction)
+    assert "Pro" in replied and "missing a results channel" in replied
+    assert "Academy" in replied and "missing a standings channel" in replied
+    assert "missing a verdicts channel" in replied
+    # The points configuration is unattached too, and is named in the same breath.
+    assert "no points configuration is attached" in replied
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # What approval posts
 # ---------------------------------------------------------------------------
