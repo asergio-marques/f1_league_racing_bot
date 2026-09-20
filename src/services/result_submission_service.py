@@ -1,10 +1,11 @@
 """result_submission_service.py — Round result submission wizard and channel management."""
 from __future__ import annotations
 
+import json as _json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 import discord
@@ -156,6 +157,8 @@ async def close_submission_channel(
             "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?",
             (round_id,),
         )
+        # The amendment is done, so the row and the revert snapshot with it: keeping the
+        # snapshot would let a later sweep undo an amendment that in fact completed.
         await db.execute(
             "DELETE FROM round_amend_channels WHERE round_id = ? AND channel_id = ?",
             (round_id, channel_id),
@@ -870,6 +873,20 @@ async def finalize_penalty_review(
     await _post_appeals_prompt(state, guild, bot, db_path)
 
 
+async def _round_is_final(db_path: str, round_id: int) -> bool:
+    """True where the round has already reached FINAL.
+
+    The durable half of the guard on the three things that move a round (#345). ``is_amendment``
+    is held in memory and a view rebuilt after a restart loses it, so the round's own status is
+    read as well — a settled round is never raised to FINAL, never re-finishes its division and
+    never winds its season down a second time, whichever route reached the finaliser.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT status FROM rounds WHERE id = ?", (round_id,))
+        row = await cursor.fetchone()
+    return bool(row and row["status"] == RoundStatus.FINAL.value)
+
+
 async def _post_appeals_prompt(state, guild, bot, db_path: str) -> None:
     """Open the appeals stage in the channel the report stage ran in.
 
@@ -1193,7 +1210,12 @@ async def finalize_appeals_review(
         # already wound down if that finished it. Replaying the three would raise a settled
         # round to a state it is in, and could finish a division or wind down a season twice —
         # `wind_down_ongoing` in particular is not something to run again for no reason.
-        if not getattr(state, "is_amendment", False):
+        # **Guarded twice, on the flag and on the round itself** (#345). `is_amendment` lives on
+        # the in-memory state, so a view rebuilt by restart recovery cannot carry it; reading the
+        # round's own status as well means a settled round is never moved on, whichever route
+        # reached here. The status guard is the durable one and the flag the explicit one.
+        _already_final = await _round_is_final(db_path, round_id)
+        if not getattr(state, "is_amendment", False) and not _already_final:
             async with get_connection(db_path) as db:
                 await db.execute(
                     f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
@@ -1724,6 +1746,179 @@ async def _clear_round_verdict_records(db_path: str, round_id: int) -> None:
         await db.commit()
 
 
+#: How long an amendment may sit unapproved before it is reverted (#345).
+#:
+#: The amendment's first stage commits: the corrected classification is written and the round
+#: scored from it, before its reports and appeals have been reviewed. A manager who pastes and
+#: then walks away therefore leaves the round scored one way and posted another, with the views
+#: carrying no timeout of their own — so nothing resolves it.
+#:
+#: Half an hour is long enough to work through two review stages without being hurried, and
+#: short enough that an abandoned amendment does not outlive the evening it was started in.
+AMENDMENT_STAGE_TIMEOUT_SECONDS: int = 1800
+
+
+async def snapshot_before_amendment(
+    db_path: str, round_id: int, session_type: SessionType
+) -> None:
+    """Record the round as it stands, so an abandoned amendment can be undone.
+
+    Taken before stage one writes. Captures the session header, every driver row of the session
+    being amended, and where each of the round's verdicts points — which is the whole of what
+    stage one changes that a revert cannot recompute. The standings and the points follow from
+    the driver rows, so restoring those and cascading again reproduces them.
+    """
+    is_qualifying = session_type.is_qualifying
+    rows_table = (
+        "qualifying_session_results" if is_qualifying else "race_session_results"
+    )
+    fk_col = "qual_result_id" if is_qualifying else "race_result_id"
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT * FROM session_results WHERE round_id = ? AND session_type = ?",
+            (round_id, session_type.value),
+        )
+        header = await cursor.fetchone()
+        if header is None:
+            return
+        cursor = await db.execute(
+            f"SELECT * FROM {rows_table} WHERE session_result_id = ? ORDER BY id",  # noqa: S608
+            (header["id"],),
+        )
+        driver_rows = [dict(row) for row in await cursor.fetchall()]
+
+        verdicts: list[dict] = []
+        for table in ("penalty_records", "appeal_records"):
+            cursor = await db.execute(
+                f"SELECT id, {fk_col} AS points_at FROM {table} "  # noqa: S608
+                f"WHERE {fk_col} IN (SELECT id FROM {rows_table} WHERE session_result_id = ?)",
+                (header["id"],),
+            )
+            for row in await cursor.fetchall():
+                verdicts.append(
+                    {"table": table, "id": row["id"], "points_at": row["points_at"]}
+                )
+
+        payload = _json.dumps(
+            {
+                "session_result_id": header["id"],
+                "session_type": session_type.value,
+                "rows_table": rows_table,
+                "fk_col": fk_col,
+                "header": dict(header),
+                "driver_rows": driver_rows,
+                "verdicts": verdicts,
+            }
+        )
+        expires = (
+            datetime.now(timezone.utc)
+            + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS)
+        ).isoformat()
+        await db.execute(
+            "UPDATE round_amend_channels SET pre_amendment_state = ?, expires_at = ? "
+            "WHERE round_id = ? AND session_type = ?",
+            (payload, expires, round_id, session_type.value),
+        )
+        await db.commit()
+
+
+async def revert_abandoned_amendment(
+    db_path: str, round_id: int, session_type: SessionType, bot
+) -> bool:
+    """Put a round back as it was before an amendment nobody approved. Returns True where it did.
+
+    The round keeps the classification it raced rather than a half-amended one: the driver rows
+    of the amended session are restored from the snapshot, each verdict re-pointed at the row it
+    pointed at, the header put back, and the standings cascaded again so the championship follows.
+    The division's channels are then reposted, because what they show is what went wrong.
+
+    Reached by the stage timeout and by restart recovery, both of which meet the same state, and
+    safe to call where no snapshot was taken — an amendment abandoned before stage one wrote has
+    nothing to undo.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT pre_amendment_state FROM round_amend_channels "
+            "WHERE round_id = ? AND session_type = ?",
+            (round_id, session_type.value),
+        )
+        row = await cursor.fetchone()
+    if row is None or not row["pre_amendment_state"]:
+        return False
+
+    state = _json.loads(row["pre_amendment_state"])
+    rows_table: str = state["rows_table"]
+    fk_col: str = state["fk_col"]
+    session_result_id: int = state["session_result_id"]
+
+    async with get_connection(db_path) as db:
+        # The verdicts let go of the rows about to be replaced, exactly as stage one did.
+        for verdict in state["verdicts"]:
+            await db.execute(
+                f"UPDATE {verdict['table']} SET {fk_col} = NULL WHERE id = ?",  # noqa: S608
+                (verdict["id"],),
+            )
+        await db.execute(
+            f"DELETE FROM {rows_table} WHERE session_result_id = ?",  # noqa: S608
+            (session_result_id,),
+        )
+        for driver_row in state["driver_rows"]:
+            columns = ", ".join(driver_row)
+            placeholders = ", ".join("?" for _ in driver_row)
+            await db.execute(
+                f"INSERT INTO {rows_table} ({columns}) VALUES ({placeholders})",  # noqa: S608
+                list(driver_row.values()),
+            )
+        for verdict in state["verdicts"]:
+            await db.execute(
+                f"UPDATE {verdict['table']} SET {fk_col} = ? WHERE id = ?",  # noqa: S608
+                (verdict["points_at"], verdict["id"]),
+            )
+        header = state["header"]
+        await db.execute(
+            "UPDATE session_results SET submitted_by = ?, submitted_at = ?, config_name = ?, "
+            "fl_driver_override = ? WHERE id = ?",
+            (
+                header.get("submitted_by"),
+                header.get("submitted_at"),
+                header.get("config_name"),
+                header.get("fl_driver_override"),
+                session_result_id,
+            ),
+        )
+        await db.execute(
+            "UPDATE round_amend_channels SET pre_amendment_state = NULL, expires_at = NULL "
+            "WHERE round_id = ? AND session_type = ?",
+            (round_id, session_type.value),
+        )
+        await db.commit()
+
+    # The championship follows from the rows, so it is recomputed rather than snapshotted.
+    from services import standings_service, results_post_service
+
+    division_id = await _division_of_round(db_path, round_id)
+    if division_id is None:
+        return True
+    await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
+
+    guild = await league_guild(bot)
+    if guild is not None:
+        await results_post_service.repost_round_results(
+            db_path, round_id, division_id, guild, bot=bot, label="Final Results",
+        )
+    return True
+
+
+async def _division_of_round(db_path: str, round_id: int) -> int | None:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT division_id FROM rounds WHERE id = ?", (round_id,)
+        )
+        row = await cursor.fetchone()
+    return row["division_id"] if row else None
+
+
 async def run_amendment_review_stages(
     db_path: str,
     round_id: int,
@@ -1823,6 +2018,10 @@ async def amend_session_result(
         return default
 
     submitted_at = datetime.now(timezone.utc).isoformat()
+    # The round as it stands, before any of it is overwritten (#345). Stage one commits, so an
+    # amendment abandoned before its last stage is approved would otherwise leave the round
+    # scored from the corrected classification and posted from the old one, for ever.
+    await snapshot_before_amendment(db_path, round_id, session_type)
     async with get_connection(db_path) as db:
         # Immutability guard: reject writes to archived seasons
         cursor = await db.execute(
@@ -4179,3 +4378,77 @@ async def _resubmit_collection_task(
         is_resubmission=True,
     )
 
+
+
+async def sweep_expired_amendments(bot, *, now: datetime | None = None) -> int:
+    """Revert every amendment whose stages went unapproved past their deadline.
+
+    Returns how many were reverted. The round keeps the classification it raced rather than a
+    half-amended one, and the league is told in the log channel — an amendment quietly undone
+    would be worse than one left hanging.
+
+    *now* is taken as a parameter so a test can pin it alongside the deadline it seeds; left out
+    it is the wall clock.
+    """
+    moment = now or datetime.now(timezone.utc)
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT round_id, channel_id, session_type, expires_at "
+            "FROM round_amend_channels WHERE expires_at IS NOT NULL"
+        )
+        candidates = [dict(row) for row in await cursor.fetchall()]
+
+    reverted = 0
+    for row in candidates:
+        try:
+            deadline = datetime.fromisoformat(row["expires_at"])
+        except (TypeError, ValueError):
+            continue
+        if deadline > moment:
+            continue
+
+        session_type = SessionType(row["session_type"])
+        try:
+            undone = await revert_abandoned_amendment(
+                bot.db_path, row["round_id"], session_type, bot
+            )
+        except Exception:  # noqa: BLE001 — one stuck round must not stop the rest
+            log.exception(
+                "sweep_expired_amendments: could not revert round %s", row["round_id"]
+            )
+            continue
+        if not undone:
+            continue
+        reverted += 1
+
+        guild = await league_guild(bot)
+        if guild is not None:
+            channel = guild.get_channel(row["channel_id"])
+            if channel is not None:
+                try:
+                    await channel.delete(reason="Amendment abandoned")
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+        async with get_connection(bot.db_path) as db:
+            await db.execute(
+                "DELETE FROM round_amend_channels WHERE round_id = ? AND session_type = ?",
+                (row["round_id"], row["session_type"]),
+            )
+            await db.commit()
+
+        try:
+            rctx = await _get_round_context(bot.db_path, row["round_id"])
+            await bot.output_router.post_log(
+                f"System | AMEND_REVERTED | Notice\n"
+                f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
+                f"  round: {rctx['round_number']}, session: {row['session_type']}\n"
+                "  The amendment's report and appeal stages were not approved in time, so the "
+                "round has been put back as it was and its results reposted. Re-run "
+                "/round results amend to try again."
+            )
+        except Exception:  # noqa: BLE001 — the revert stands whether or not it was announced
+            log.exception(
+                "sweep_expired_amendments: could not announce the revert of round %s",
+                row["round_id"],
+            )
+    return reverted

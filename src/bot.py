@@ -716,6 +716,16 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
 
         guild = await league_guild(bot)  # type: ignore[attr-defined]
 
+        # **A FINAL round is never restored to a review** (#345). This branch rebuilds the
+        # appeals prompt from a crash, and `_build_penalty_review_state` cannot know the review
+        # it rebuilds was an amendment's — `is_amendment` lives on the in-memory state alone.
+        # Approving such a prompt would run the first-pass path against a settled round:
+        # `refresh_division_status` and `wind_down_ongoing` are not guarded by the round's
+        # status, so a division could be finished and a season wound down a second time.
+        #
+        # Only a round actually awaiting appeals is restored, which an amended round never is.
+        # An amendment interrupted by a restart is abandoned instead, by
+        # `_recover_orphaned_amend_channels`, and the manager told to run it again.
         if in_penalty_review and round_status == "AWAITING_APPEAL_VERDICTS":
             # The bot restarted while a round was awaiting appeals review.
             # Re-post the AppealsReviewView prompt to the submission channel.
@@ -997,6 +1007,23 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
         channel_id: int = row["channel_id"]
         session_type: str = row["session_type"]
 
+        # **The round goes back as it was, where stage one had already written** (#345). The
+        # amendment's first stage commits the corrected classification, so abandoning one
+        # without undoing it leaves the round scored from the new results and posted from the
+        # old — indefinitely, since no later sweep would know to look. Where nothing was
+        # written yet the revert finds no snapshot and does nothing, which is correct.
+        try:
+            from models.points_config import SessionType as _SessionType
+            from services.result_submission_service import revert_abandoned_amendment
+
+            await revert_abandoned_amendment(
+                bot.db_path, round_id, _SessionType(session_type), bot  # type: ignore[attr-defined]
+            )
+        except Exception:
+            log.exception(
+                "Recovery: could not put round %s back after an abandoned amendment", round_id
+            )
+
         # Remove the DB row first so a further crash doesn't re-process it.
         async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
             await db.execute(
@@ -1028,11 +1055,8 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 f"System | Bot restarted mid-amendment | Notice\n"
                 f"  round: {_round_label}, session: {session_type.replace('_', ' ').title()}\n"
-                "  Amendment channel deleted. Please re-run /round results amend.\n"
-                "  Where the corrected classification had already been pasted, it is recorded "
-                "and the round is scored from it, but the reports and appeals were not "
-                "reviewed and the division's channels were not rebuilt — so what is posted "
-                "may not match what is scored until the amendment is run again.",
+                "  Amendment channel deleted, and the round put back as it was. Please "
+                "re-run /round results amend.",
             )
         except Exception:
             log.exception(
