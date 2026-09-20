@@ -398,6 +398,10 @@ Approving stage two shall apply any staged corrections, republish the round's re
 - **A verdict shall survive an amendment.** A penalty or appeal verdict shall follow its driver onto the amended classification, keeping its justification, its author and the time it was given. An amendment shall not discard the record of why a driver's result changed.
     - Where a driver carrying a verdict is absent from the corrected classification, the amendment shall be refused, and the refusal shall name the driver.
 
+- **An amendment shall touch the session it amends and no other.** Decided 2026-09-20 (#345). A round's other sessions keep the decisions they already carry: their reports and appeals are not reopened, not rewritten and not re-applied.
+
+- **An amendment shall publish nothing until its last stage is approved.** The classification is recorded as it is entered, but the league continues to read the round it raced until the reports and appeals have been settled — a round part-way through an amendment shall not be published as provisional.
+
 - **An amendment shall rewrite a round's decisions, not add to them.** Decided 2026-09-20 (#345). Approving a stage shall leave the round carrying exactly the reports, appeals and attendance pardons that stage held — no more and no fewer.
     - The round's existing records shall be removed before the approved set is written, so that a decision kept is kept once rather than twice, and a decision removed in the stage is removed from the round.
     - Every decision shall be shown back in its stage before this happens, so that what is written out again carries the justification, the author and the time it was originally given.

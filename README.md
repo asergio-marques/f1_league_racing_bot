@@ -1720,6 +1720,8 @@ Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in
 
 A **❌ Cancel Amendment** button is posted in the channel to abort at any time. If `session` is omitted you will be prompted to choose one before the channel is created.
 
+> **Nothing is published until the last step.** The corrected classification is recorded when you paste it, but the round your drivers see is unchanged until you approve the appeals — it is never published half-amended. Amending one session also leaves the round's other sessions alone; their penalties and appeals are not reopened.
+
 > **An amendment not carried through is undone.** Step one commits, so the bot does not leave a half-amended round standing: if the report and appeal steps go unapproved for half an hour — or the bot restarts mid-amendment — the round is put back exactly as it was, its results are reposted, and the log channel records an `AMEND_REVERTED` notice telling you it lapsed and can be run again.
 
 > **What you approve is what the round carries.** Each stage rewrites the round's decisions rather than adding to them — keep a penalty and it stays as it was, remove one and it is gone, and amending the same round twice leaves it as the second amendment settled it rather than doubling the first.

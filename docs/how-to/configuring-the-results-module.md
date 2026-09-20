@@ -317,6 +317,8 @@ Opens a private channel for one session of one settled round, and **walks you ba
 
 There is a third parameter, `session`, offering Sprint Qualifying, Sprint Race, Feature Qualifying and Feature Race. Name it up front to go straight to that session; leave it out and the bot posts buttons to pick from. If the configuration the round was scored with is no longer attached to the season and more than one now is, it will also ask you which to rescore with.
 
+> **Nothing is published until you finish.** The corrected classification is recorded as you paste it, but your drivers keep reading the round as it was raced until you approve the appeals — the round is never shown to them half-amended. And amending one session leaves the others alone: their penalties and appeals are not reopened and not re-applied.
+
 > **What you approve is what the round carries.** Each stage rewrites the round's decisions rather than adding to them: keep a report and it stays as it was, remove one and it is gone, and amending the same round twice leaves it as the second amendment settled it rather than doubling the first. That is why the stages show you everything the round already holds before you approve — what you leave alone is written back out with its justification and its author intact.
 
 > **Sanctions keep their reason.** A penalty follows its driver onto the corrected classification with the justification, the author and the time it was given intact — that is why they are reviewed rather than re-typed. If your corrected classification leaves a driver out who carries a penalty or an appeal, the amendment is refused and names them. Put the driver back in, or have the verdict withdrawn first.
