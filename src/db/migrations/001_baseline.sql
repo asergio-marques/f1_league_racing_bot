@@ -203,6 +203,13 @@ CREATE TABLE session_results (
     submitted_by       INTEGER,
     submitted_at       TEXT,
     results_message_id INTEGER, fl_driver_override INTEGER,
+    -- results_message_ids: JSON array of *every* message the posting occupies, the
+    -- anchor first. A table past 2000 characters is split across consecutive messages
+    -- and only the anchor was ever recorded, leaving deletion to guess the rest by
+    -- walking forward over bot-authored messages -- which mistakes an unrelated posting
+    -- below it for a continuation of this one (#345). NULL on a row written before this
+    -- column existed; such a row falls back to the walk.
+    results_message_ids TEXT,
     UNIQUE (round_id, session_type)
 );
 
@@ -220,6 +227,9 @@ CREATE TABLE driver_standings_snapshots (
     finish_counts       TEXT    NOT NULL DEFAULT '{}',
     first_finish_rounds TEXT    NOT NULL DEFAULT '{}',
     standings_message_id INTEGER, driver_profile_id INTEGER REFERENCES driver_profiles(id), constructor_standings_message_id INTEGER,
+    -- The chunk lists of the two standings postings, as session_results' above.
+    standings_message_ids TEXT,
+    constructor_standings_message_ids TEXT,
     UNIQUE (round_id, division_id, driver_user_id)
 );
 CREATE INDEX idx_dss_driver_profile
@@ -387,7 +397,14 @@ CREATE TABLE "penalty_records" (
     justification           TEXT    NOT NULL,
     applied_by              TEXT    NOT NULL,
     applied_at              TEXT    NOT NULL,
-    announcement_channel_id TEXT
+    announcement_channel_id TEXT,
+    -- announcement_message_id: the verdict announcement itself, so an amendment can
+    -- replace it rather than leaving a decision that contradicts the classification it
+    -- was applied to (#189). NULL for a verdict announced before this column existed;
+    -- those cannot be replaced and are re-announced fresh, which the log says (#345).
+    announcement_message_id TEXT,
+    -- The chunk list of that announcement, as elsewhere.
+    announcement_message_ids TEXT
 );
 
 -- appeal_records
@@ -402,7 +419,14 @@ CREATE TABLE "appeal_records" (
     justification           TEXT    NOT NULL,
     submitted_by            TEXT    NOT NULL,
     submitted_at            TEXT    NOT NULL,
-    announcement_channel_id TEXT
+    announcement_channel_id TEXT,
+    -- announcement_message_id: the verdict announcement itself, so an amendment can
+    -- replace it rather than leaving a decision that contradicts the classification it
+    -- was applied to (#189). NULL for a verdict announced before this column existed;
+    -- those cannot be replaced and are re-announced fresh, which the log says (#345).
+    announcement_message_id TEXT,
+    -- The chunk list of that announcement, as elsewhere.
+    announcement_message_ids TEXT
 );
 
 -- attendance_pardons
