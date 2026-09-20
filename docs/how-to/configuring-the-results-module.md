@@ -361,6 +361,27 @@ Work it in this order.
 
 **The approval itself went through.** The penalties are applied, the championship is recalculated and the round has moved on. Only the posting is outstanding — do not approve anything a second time to try to fix it.
 
+### A verdict that was not announced
+
+The verdict in your verdicts channel is the only thing that tells a driver *why* their classification changed. When one cannot be posted, it is named in your reply and in the log channel as a `VERDICTS | Incomplete` entry, with the driver it was owed to.
+
+**This one you have to finish by hand.** There is no command that announces a decided verdict again — the bot keeps no record of the message, so it cannot find or replace one. So:
+
+1. **Repair the cause.** Usually the verdicts channel has been deleted or the bot's permission to post in it has been taken away. If the channel is gone, set a new one with `/division verdicts-channel`.
+2. **Post the decision yourself**, in that channel, naming the driver, the sanction and the reasoning. The entry in the log channel has the details you need.
+
+**A division with no verdicts channel is reported, not skipped.** Unlike a results or standings channel, a verdicts channel is one of the three every division must have before its placements can be confirmed — so if a verdict cannot find one, something has been removed since.
+
+**Automatic attendance sanctions are the exception.** Those *can* be announced again: repair the cause and run `/attendance sync` for the division and round, and the announcement goes out with it.
+
+### Attendance the approval could not record
+
+Approving a penalty review also records who attended the round and awards the attendance points. Both write to the league's record, and the auto-reserve and auto-sack thresholds read it — so a failure here can see a driver sanctioned later on a total that was never right.
+
+You get an `ATTENDANCE_RECORD | Incomplete` entry and a line in your reply, ending with the `/attendance sync` to run. Do it the same day: until you do, the round's attendance is wrong and every total after it is short.
+
+This is deliberately separate from the `ATTENDANCE_SANCTIONS | Incomplete` entry you may also see. That one means a sanction did not apply, with the record itself intact; this one means the record is wrong.
+
 ---
 
 ## What you cannot change
