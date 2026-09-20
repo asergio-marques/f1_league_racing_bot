@@ -1,6 +1,51 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-20 — v13.2.0 → v14.0.0: MAJOR — two stage restrictions on acts that had none (issue #224)]
+  Version change    : 13.2.0 → 14.0.0
+  Bump rationale    : MAJOR. Both changes narrow an existing permission, which is backward
+                      incompatible by construction: a reader complying with the old text is
+                      non-compliant under the new one. Principle IX said a team's Discord role
+                      MAY be changed "in any stage" — an explicit universal, now carrying an
+                      exception. Principle VIII placed no stage condition on making an account
+                      current, and now places two. MINOR was weighed and rejected on the
+                      precedent of v10.1.0 → v11.0.0, where removing states from an exhaustive
+                      enumeration was taken as MAJOR for the same reason.
+
+  Modified sections :
+    - Principle VIII, A driver's accounts — making an account current is permitted only while
+      the season stands in Placements or Ongoing, placements, and refused in every other stage
+      and with no live season. The consequence is stated and accepted: a person who changes
+      account between seasons is re-keyed once the next season reaches placements.
+    - Principle IX, the team bullet — "A team's Discord role MAY be changed in any stage"
+      gains its exception, Pending completion, and states that with no live season the mapping
+      is the server's own and free to change.
+
+  Why the constitution is the document that moved:
+    - Decided with the user on 2026-09-20 while working issue #224, and implemented on branch
+      fix/224-pending-completion-gates. Both rules are enumerated here as well as in
+      docs/wip-specs/core_specification.md, whose "A driver's accounts" and "Teams" sections
+      carry the same two changes; a rule stated in this document cannot be narrowed in the
+      specification alone without the two disagreeing.
+    - The third decision of #224 did not reach this document. The core specification's
+      "Pending completion" section now states an exhaustive permitted list — completing the
+      season, repairing a division's channels, and amending the results of a round already
+      final — which supersedes the earlier rule that also permitted approving an amendment of
+      the season's points. No principle here enumerates what that stage admits, so there was
+      nothing to correct.
+
+  Added sections    : none.
+  Removed sections  : none. One bullet of Principle VIII and one of Principle IX were
+                      reworded in place.
+  Deferred items    : none.
+
+  Templates         : no template reads the reassignment stage rule or the team-role stage
+                      rule; none required changes.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-19 — v13.1.1 → v13.2.0: MINOR — each module announces a cancellation (issue #175)]
   Version change    : 13.1.1 → 13.2.0
   Bump rationale    : MINOR. Principle VII admits a posting to the forecast channel it did not
@@ -4949,7 +4994,12 @@ stewarding module, which will bring the bar together with the commands that impo
 - **A driver's accounts**: A driver profile owns every Discord account the driver has held.
   One is current; any of them identifies the driver. A league manager may make another
   account current, the replaced one joining the past accounts, and may make a past account
-  current again. The replaced and the new account MUST be logged as an audit event
+  current again. Making an account current MUST be permitted only while the season stands in
+  **Placements** or **Ongoing, placements**, and MUST be refused in every other stage and
+  where the server holds no live season: re-keying a profile onto another Discord account is
+  part of settling who sits where, and elsewhere moving a driver is the command for changing
+  where a driver sits. A person who changes account between seasons is therefore re-keyed once
+  the next season reaches placements, which is the moment they would be placed anyway. The replaced and the new account MUST be logged as an audit event
   (Principle V). A reassignment MUST NOT rewrite any record: signups, results, standings and
   history keep the account they were written under, and every reader maps a past account to
   the current one. An account MUST belong to at most one driver in a league. Naming another
@@ -5005,8 +5055,13 @@ point:
   default set, and a league admin MAY remove one — a removed team taking its seats with it,
   and nothing putting it back — only while no season is live or while the live season is in
   **Configuration**. From the confirmation of a season's configuration to that season's end the
-  team list MUST NOT change. A team's Discord role MAY be changed in any stage. A division
-  takes its teams from the default set when it is created.
+  team list MUST NOT change. A team's Discord role MAY be changed in every stage save
+  **Pending completion**, and MAY be changed freely where no season is live, the mapping then
+  being the server's own. The exception is because nothing is raced once every division is
+  finished or cancelled, and completing the season revokes every team role a few steps later:
+  a mapping repaired there would be undone before anyone wore it, so it is repaired once the
+  season has ended, for the season that follows. A division takes its teams from the default
+  set when it is created.
 - **Building a season**: Divisions and rounds MUST be created and deleted only while the
   season is in **Placements** — after its configuration is confirmed and any signup window has
   closed. A season's stages are Configuration, Waiting, Signups and Placements under the
@@ -7974,4 +8029,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 13.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-19
+**Version**: 14.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-20

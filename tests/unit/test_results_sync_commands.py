@@ -39,6 +39,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from models.season import SeasonStage  # noqa: E402
+
 from cogs.results_cog import ResultsCog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
@@ -88,7 +90,7 @@ def _make_cog(
     db_path: str,
     *,
     enabled: bool = True,
-    season=SimpleNamespace(id=SEASON_ID),
+    season=SimpleNamespace(id=SEASON_ID, season_number=1, stage=SeasonStage.ONGOING),
     divisions=None,
 ) -> ResultsCog:
     bot = MagicMock()
@@ -96,7 +98,7 @@ def _make_cog(
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=enabled)
     bot.season_service = MagicMock()
-    bot.season_service.get_season_for_server = AsyncMock(return_value=season)
+    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions
         if divisions is not None
@@ -249,7 +251,11 @@ async def test_a_server_with_no_season_is_refused(tmp_path, label, run):
 
     repost = await run(cog, interaction)
 
-    assert "No active season" in _replied(interaction)
+    # The refusal names the archive rule (issue #224): a server whose only season is
+    # completed or cancelled reaches this same branch, because the command now asks for
+    # the *live* season and an archived one is never returned.
+    assert "there is none" in _replied(interaction)
+    assert "archive" in _replied(interaction)
     repost.assert_not_awaited()
 
 
@@ -440,7 +446,11 @@ async def test_a_server_with_no_season_is_not_toggled(tmp_path):
 
     await _toggle(cog, interaction)
 
-    assert "No active season" in _replied(interaction)
+    # The refusal names the archive rule (issue #224): a server whose only season is
+    # completed or cancelled reaches this same branch, because the command now asks for
+    # the *live* season and an archived one is never returned.
+    assert "there is none" in _replied(interaction)
+    assert "archive" in _replied(interaction)
     assert await _reserves(db_path) == 1
 
 

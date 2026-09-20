@@ -92,7 +92,32 @@ class DriverCog(commands.Cog):
 
         The account it replaces joins the driver's past accounts, and every account the driver
         has held goes on identifying them. Nothing the league holds is rewritten.
+
+        **Only while drivers are being placed** — Placements, or Ongoing, placements (issue
+        #224). Re-keying a profile onto another Discord account is part of settling who sits
+        where; everywhere else `/driver move` is the command for changing where a driver
+        sits, and this one had no stage check at all. The consequence is accepted: a person
+        who changes account between seasons is re-keyed once the next season reaches
+        placements, which is the moment they would be placed anyway.
         """
+        from utils.season_gate import PLACEMENT_STAGES, season_for_command
+
+        # Checked before the parameters, so that a manager running it in the wrong stage is
+        # told the rule rather than told they mis-typed a snowflake.
+        if await season_for_command(
+            interaction,
+            self.bot.season_service,  # type: ignore[attr-defined]
+            "driver reassign",
+            stages=PLACEMENT_STAGES,
+            refusal=(
+                "⛔ A driver's account is changed only while drivers are being placed "
+                "— while the season is in **Placements**, or in **Ongoing, placements** "
+                "with the drivers of a closed signup window still to place. Elsewhere, "
+                "`/driver move` is the command for changing where a driver sits."
+            ),
+        ) is None:
+            return
+
         # Resolve old user ID — accept Member mention or raw snowflake string
         if old_user is not None:
             resolved_old_id = str(old_user.id)

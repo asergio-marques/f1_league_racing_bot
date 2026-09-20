@@ -4126,12 +4126,18 @@ class SeasonCog(commands.Cog):
         keyboard is the one able to fix the template.
         """
         from services import calendar_post_service as _calendar
+        from utils.season_gate import season_for_command
 
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
+        # Refused once every division is done (issue #224): the calendar describes rounds
+        # somebody will drive, and a season pending completion has none left. It is no part
+        # of the end-of-season output either — completing posts the final classification and
+        # the final attendance sheet, and neither is a calendar.
+        season = await season_for_command(
+            interaction, self.bot.season_service, "division calendar-sync"  # type: ignore[attr-defined]
+        )
         if season is None:
-            await interaction.followup.send("❌ No season is live, so there is no calendar to sync.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
@@ -4920,9 +4926,22 @@ class SeasonCog(commands.Cog):
         from db.database import get_connection
 
         # --- Resolve division and round ---
-        season = await self.bot.season_service.get_season_for_server()
+        # The live season, not the most recent one (issue #224). This read
+        # `get_season_for_server` — the highest season id whatever its status — so it
+        # amended a **completed or cancelled** season's results, which the core
+        # specification's archive rule says shall never change, and which this command
+        # destroys rather than supersedes.
+        #
+        # Pending completion is named deliberately. Amending a final round's results is one
+        # of the three things still open there (decided 2026-09-20) — a season's last chance
+        # to correct its record before `/season complete` draws the final classification off
+        # it — so the whole of a live season is the right set, not the default.
+        from utils.season_gate import LIVE_STAGES, season_for_command
+
+        season = await season_for_command(
+            interaction, self.bot.season_service, "round results amend", stages=LIVE_STAGES
+        )
         if season is None:
-            await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)

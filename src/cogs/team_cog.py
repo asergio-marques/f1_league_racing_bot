@@ -41,6 +41,34 @@ class TeamCog(commands.Cog):
         )
         return True
 
+    async def _refuse_once_the_season_is_done(
+        self, interaction: discord.Interaction, command: str
+    ) -> bool:
+        """Refuse a role mapping once every division of the season is finished or cancelled.
+
+        A team's role may be repaired in every stage of a live season but Pending completion
+        (issue #224), and with no live season at all the mapping is the server's own and free
+        to change — the team list itself is settled on the same terms. So this refuses only
+        where a season is live and has run its course, and lets the no-season case through,
+        which the shared gate would otherwise turn away.
+
+        Returns True where the command was refused, having answered the interaction.
+        """
+        from models.season import SeasonStage
+
+        season = await self.bot.season_service.get_setup_or_active_season(  # type: ignore[attr-defined]
+
+        )
+        if season is None or season.stage is not SeasonStage.PENDING_COMPLETION:
+            return False
+        await interaction.response.send_message(
+            f"⛔ Every division of Season {season.season_number} is done, so `/team "
+            f"{command}` no longer has anything to act on — completing the season "
+            "revokes the team roles. Repair the mapping once the season has ended.",
+            ephemeral=True,
+        )
+        return True
+
     team = app_commands.Group(
         name="team",
         description="Team configuration commands",
@@ -177,7 +205,7 @@ class TeamCog(commands.Cog):
 
     @team.command(
         name="role",
-        description="Set the Discord role of a team. Available in any season state, for repairs.",
+        description="Set the Discord role of a team, while the season is being built or raced.",
     )
     @app_commands.describe(
         name="Exact name of the team.",
@@ -190,12 +218,19 @@ class TeamCog(commands.Cog):
         name: str,
         role: discord.Role,
     ) -> None:
-        """Map a team of the server list to a role, whatever the state of the season.
+        """Map a team of the server list to a role, in any stage but Pending completion.
 
         Unlike the team list, a team's role is never fixed: nothing stops a role being
         deleted from the server mid-season, and a league must be able to point the team
         at its replacement. The Reserve team keeps its own command.
+
+        **Except once every division is done** (issue #224). Nothing is raced in Pending
+        completion, and completing the season revokes every team role a few steps later, so
+        a mapping repaired there would be undone before anyone wore it. The repair is made
+        once the season has ended, for the season that follows.
         """
+        if await self._refuse_once_the_season_is_done(interaction, "role"):
+            return
         teams = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
 
         )
@@ -436,6 +471,12 @@ class TeamCog(commands.Cog):
         interaction: discord.Interaction,
         role: discord.Role | None = None,
     ) -> None:
+        """Set or clear the Reserve team's role, on the same terms as `/team role`.
+
+        Refused once the season is pending completion, for the reason given there.
+        """
+        if await self._refuse_once_the_season_is_done(interaction, "reserve-role"):
+            return
         await interaction.response.defer(ephemeral=True)
         teams = await self.bot.team_service.get_teams_with_roles()  # type: ignore[attr-defined]
         old_role_id = next((t["role_id"] for t in teams if t["is_reserve"]), None)

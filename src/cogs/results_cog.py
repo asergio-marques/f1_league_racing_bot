@@ -20,6 +20,7 @@ from services.season_points_service import (
 )
 from utils.channel_guard import league_admin_only, league_manager_only
 from utils.league_server import LeagueModal, LeagueView
+from utils.season_gate import season_for_command
 
 log = logging.getLogger(__name__)
 
@@ -248,9 +249,13 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
 
         await interaction.response.defer(ephemeral=True)
 
-        season = await interaction.client.season_service.get_season_for_server()  # type: ignore[attr-defined]
+        # Gated here as well as on the command that opened it (issue #224). A modal can be
+        # submitted long after it was shown, and the season can reach Pending completion in
+        # between — a window that writes to the store is exactly the one worth closing twice.
+        season = await season_for_command(
+            interaction, interaction.client.season_service, "results amend bulk-session"  # type: ignore[attr-defined]
+        )
         if season is None:
-            await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
 
         valid, errors = _parse_bulk_lines(self.entries.value)
@@ -947,6 +952,24 @@ class ResultsCog(commands.Cog):
     # ------------------------------------------------------------------
     # /results amend group — T025
     # ------------------------------------------------------------------
+    #
+    # Every command of this group, and of the reserves, standings and rounds groups below,
+    # asks `season_for_command` for its season rather than reading the most recent one
+    # (issue #224). Two rules follow from that one call, and both were broken before it:
+    #
+    #   * A **completed or cancelled** season is an archive and is never changed. These
+    #     commands read `get_season_for_server` — the highest season id, whatever its status
+    #     — so amendment mode could be switched on against a finished season and its points
+    #     rewritten, and the reserves toggle wrote to one outright.
+    #   * A season **pending completion** has had every division finish or be cancelled.
+    #     Nothing is raced, so a standings repost, a results repost and the reserves display
+    #     describe nothing anyone will drive under, and the season's points are settled.
+    #     What remains open there is repairing a division's channels, amending the results of
+    #     a round already final, and completing the season (decided 2026-09-20).
+    #
+    # Amendment mode left switched on when a season reaches Pending completion therefore
+    # cannot be switched off again. That is accepted: nothing blocks `/season complete` on
+    # it, so the season still ends and the modification store is simply never applied.
 
     amend_group = app_commands.Group(
         name="amend", description="Mid-season points amendment management", parent=results_group
@@ -966,9 +989,10 @@ class ResultsCog(commands.Cog):
             get_amendment_state,
         )
 
-        season = await self.bot.season_service.get_season_for_server()
+        season = await season_for_command(
+            interaction, self.bot.season_service, "results amend toggle"
+        )
         if season is None:
-            await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
 
         state = await get_amendment_state(self.bot.db_path, season.id)
@@ -1011,9 +1035,10 @@ class ResultsCog(commands.Cog):
             revert_modification_store,
         )
 
-        season = await self.bot.season_service.get_season_for_server()
+        season = await season_for_command(
+            interaction, self.bot.season_service, "results amend revert"
+        )
         if season is None:
-            await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
 
         state = await get_amendment_state(self.bot.db_path, season.id)
@@ -1056,9 +1081,10 @@ class ResultsCog(commands.Cog):
             modify_session_points,
         )
 
-        season = await self.bot.season_service.get_season_for_server()
+        season = await season_for_command(
+            interaction, self.bot.season_service, "results amend session"
+        )
         if season is None:
-            await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
 
         try:
@@ -1108,9 +1134,10 @@ class ResultsCog(commands.Cog):
 
         from services.amendment_service import AmendmentNotActiveError, modify_fl_bonus
 
-        season = await self.bot.season_service.get_season_for_server()
+        season = await season_for_command(
+            interaction, self.bot.season_service, "results amend fl"
+        )
         if season is None:
-            await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
 
         try:
@@ -1149,9 +1176,10 @@ class ResultsCog(commands.Cog):
 
         from services.amendment_service import AmendmentNotActiveError, modify_fl_position_limit
 
-        season = await self.bot.season_service.get_season_for_server()
+        season = await season_for_command(
+            interaction, self.bot.season_service, "results amend fl-plimit"
+        )
         if season is None:
-            await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
 
         try:
@@ -1183,6 +1211,12 @@ class ResultsCog(commands.Cog):
         session: app_commands.Choice[str],
     ) -> None:
         if not await self._module_gate(interaction):
+            return
+        # Before the modal, not after: showing one and refusing its submission would have a
+        # manager type a screenful of positions to no purpose.
+        if await season_for_command(
+            interaction, self.bot.season_service, "results amend bulk-session"
+        ) is None:
             return
         await interaction.response.send_modal(
             BulkAmendSessionModal(name, session, self.bot.db_path)
@@ -1219,9 +1253,10 @@ class ResultsCog(commands.Cog):
             validate_modification_ordering,
         )
 
-        season = await self.bot.season_service.get_season_for_server()
+        season = await season_for_command(
+            interaction, self.bot.season_service, "results amend review"
+        )
         if season is None:
-            await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
 
         state = await get_amendment_state(self.bot.db_path, season.id)
@@ -1365,9 +1400,10 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server()
+        season = await season_for_command(
+            interaction, self.bot.season_service, "results reserves toggle"
+        )
         if season is None:
-            await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
@@ -1429,9 +1465,10 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server()
+        season = await season_for_command(
+            interaction, self.bot.season_service, "results standings sync"
+        )
         if season is None:
-            await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
@@ -1481,9 +1518,10 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_season_for_server()
+        season = await season_for_command(
+            interaction, self.bot.season_service, "results rounds sync"
+        )
         if season is None:
-            await interaction.followup.send("\u274c No active season.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)

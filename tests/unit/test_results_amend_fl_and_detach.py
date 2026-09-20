@@ -27,6 +27,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from models.season import SeasonStage  # noqa: E402
+
 from cogs.results_cog import ResultsCog  # noqa: E402
 from services.amendment_service import AmendmentNotActiveError  # noqa: E402
 from services.season_points_service import (  # noqa: E402
@@ -48,9 +50,17 @@ def _make_cog(*, enabled=True, season=_UNSET):
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=enabled)
     bot.season_service = MagicMock()
-    bot.season_service.get_season_for_server = AsyncMock(
-        return_value=SimpleNamespace(id=SEASON_ID, status="SETUP") if season is _UNSET else season
+    # Two lookups, because this file covers two groups. `/results config detach` still reads
+    # the most recent season and is guarded by `SeasonNotInSetupError` instead, while every
+    # `/results amend` command reads the *live* season for its stage (issue #224) and is
+    # refused once that season is pending completion or has ended.
+    _season_row = (
+        SimpleNamespace(id=SEASON_ID, status="SETUP", stage=SeasonStage.CONFIGURATION)
+        if season is _UNSET
+        else season
     )
+    bot.season_service.get_season_for_server = AsyncMock(return_value=_season_row)
+    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=_season_row)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
     cog = ResultsCog.__new__(ResultsCog)
@@ -212,7 +222,10 @@ async def test_an_amend_with_no_season_is_refused(tmp_path, command):
 
     modify = await _fl(cog, interaction, command=command)
 
-    assert "No active season" in _replied(interaction)
+    # The shared gate's wording (issue #224): the branch a server whose only season is
+    # completed or cancelled reaches too, an archived one never being returned.
+    assert "there is none" in _replied(interaction)
+    assert "archive" in _replied(interaction)
     modify.assert_not_awaited()
 
 

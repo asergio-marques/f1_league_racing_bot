@@ -572,7 +572,7 @@ and one whose placements have never been confirmed is abandoned with `/season ab
 No parameters. Triggers the season-end flow manually. The bot refuses while any division of the
 season is neither finished nor cancelled, and lists the rounds still to be finalised.
 
-> **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then the only things left are amending the results of a round already final, approving an amendment of the season's points, and completing the season — no module can be disabled. A season with a signup window open, or mid-season placements still to confirm, moves there too: there is no round left to place anyone into, so the window is closed, every placement not yet confirmed is discarded, and every driver still unplaced, unconfirmed, awaiting approval or mid-correction returns to Not Signed Up as `/driver reject` would. Once every
+> **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then there are three things left, and no others: **amending the results of a round already final**, **repairing a division's channels** — completing posts the final classification and the final attendance sheet to them, so one deleted has to be repointed — and **completing the season**. Everything else that would act on the season is refused and says so: `/division calendar-sync`, `/team role`, `/team reserve-role`, `/results standings sync`, `/results rounds sync`, `/results reserves toggle` and every `/results amend` command. No module can be disabled either. Nothing is being raced by then, so a grid, a lineup and a calendar no longer describe anything anyone will drive under. A season with a signup window open, or mid-season placements still to confirm, moves there too: there is no round left to place anyone into, so the window is closed, every placement not yet confirmed is discarded, and every driver still unplaced, unconfirmed, awaiting approval or mid-correction returns to Not Signed Up as `/driver reject` would. Once every
 division is done it ends the season, in this order: each division's final classification is posted;
 a history entry is written for every division each driver took part in, whether or not they still sit in it — a driver moved, released or sacked mid-season keeps an entry for every division they held a confirmed seat in; the division, team and
 signed-up roles are revoked; an open signup window is closed; every driver who was Unassigned, placed,
@@ -739,6 +739,8 @@ The calendar is posted when the season is approved, and reposted by itself only 
 It reposts in whichever form your configuration calls for: the image where the images module and the `calendar` aspect are both on, the traditional text otherwise. It works either way, and is not gated on the images module.
 
 > **Why it reposts rather than edits.** An attachment cannot be added to a message that already exists, so the bot posts the new calendar first and deletes the old one only once the new one is up. If generation fails, nothing is deleted and nothing is posted — you are told what is wrong and the previous calendar still stands.
+
+> **Refused once every division is done.** A season pending completion has no round left to run, so its calendar describes nothing — and the calendar is no part of what completing the season posts.
 
 ---
 
@@ -987,6 +989,8 @@ A driver owns every Discord account they have raced under. One is their **curren
 
 Name the driver by any of their accounts: `old_user` where it is still in the server, or `old_user_id` — the raw snowflake — where it has gone.
 
+> **Only while you are placing drivers.** Available while the season is in **placements**, or mid-season while the drivers of a closed signup window are being placed, and refused in every other state — including with no season at all. Re-keying a profile onto another account is part of settling who sits where; once the season is being raced, `/driver move` is the command for changing where a driver sits. So a person who changes account between seasons is re-keyed when the next season reaches placements — which is when you would be placing them anyway.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `new_user` | Member | ✅ | The account to make current — a new one, or one of the driver's own past accounts. Must be in the server. |
@@ -1003,7 +1007,7 @@ Name the driver by any of their accounts: `old_user` where it is still in the se
 
 > **Refused, changing nothing, when:** `new_user` is already the driver's current account; it is a past account of another driver — an account belongs to one driver; both sides hold a seat or a signup in the live season; both took part in the same division of the same season — by a confirmed seat or by results — which would put one person in one season's standings twice (the same division name in different seasons is fine); either side is a test-mode driver; or either side has a signup in progress (collecting, in review, or in correction) — finish it, approve or reject it, or have it withdrawn first. An account with no driver of its own but leftover results here is held to the same division rule.
 
-> **A past account cannot sign up.** The Sign Up button refuses it and names the driver's current account. Run this command first if the driver wants to use it again.
+> **A past account cannot sign up.** The Sign Up button refuses it and names the driver's current account. You cannot fix that mid-window — this command is refused while signups are open — so have the driver sign up on the account the bot names, and re-key them once the window closes and you are placing its drivers.
 
 > **The portrait of the replaced account is discarded.** A portrait is the picture of the Discord account itself, so the one taken for the replaced account goes, and the new current account's own is fetched before the next graphic is drawn. A portrait you placed in the driver directory yourself is never touched.
 
@@ -1130,7 +1134,9 @@ Renames the team in the server's default list and updates its role mapping key. 
 #### `/team role` — Set a team's Discord role
 *Access: League manager*
 
-Points a team of the server list at a different Discord role. Unlike the list itself, a team's role can be changed **in any season state** — nothing stops a role being deleted from the server mid-season, and this is how you repair it. The Reserve team's role is set with `/team reserve-role`.
+Points a team of the server list at a different Discord role. Unlike the list itself, a team's role can be changed **in any season state but pending completion** — nothing stops a role being deleted from the server mid-season, and this is how you repair it. The Reserve team's role is set with `/team reserve-role`.
+
+> **Refused once every division is done.** Nothing is raced in pending completion, and completing the season revokes every team role a few steps later — so a mapping repaired there would be undone before anyone wore it. Repair it once the season has ended, for the next one. With no season at all the mapping is the server's own and free to change.
 
 **The team's drivers follow its role.** Every driver seated in the team whose placement is confirmed has the old role taken away — unless another team still maps to it — and the new one granted, in every division of the season being raced. The reply says how many drivers were moved.
 
@@ -1157,7 +1163,7 @@ Displays the placed drivers for each team seat in the active season. If a divisi
 #### `/team reserve-role` — Set or clear the Reserve team's Discord role
 *Access: League manager*
 
-Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping. As with `/team role`, the drivers already seated in Reserve with a confirmed placement follow the change: the old role is taken and the new one, where given, granted.
+Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping. As with `/team role`, the drivers already seated in Reserve with a confirmed placement follow the change: the old role is taken and the new one, where given, granted — and, as with `/team role`, it is refused once the season is pending completion.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1624,7 +1630,7 @@ Only members holding the configured interaction role may use these buttons.
 
 **✅ Approve** commits on the first press, with no confirmation step: it applies all staged penalties, recomputes positions and points for all affected sessions, deletes and reposts the results and standings under the **Post-Race Penalty Results** label, cascades standing recalculations to subsequent rounds, posts one verdict per decision to the division's verdicts channel, and runs the attendance pipeline where that module is enabled. The submission channel then enters **appeals review** (see below) — it is not closed here, and the round is not yet final.
 
-> **A repost that could not land is named, not swallowed.** Approving either review stage deletes the results and standings already posted and puts the recalculated ones in their place. The bot establishes that the channel is still there, and still takes its postings, **before** it deletes anything: a channel that has been removed, or that the bot's permission has been taken away on, leaves what is already posted standing, so you keep the older version rather than losing both. Whatever could not be posted is named in your own reply and in the log channel, as a `RESULTS_REPOST | Incomplete` entry ending with the `/results rounds sync` and `/results standings sync` commands to run once the cause is repaired — and the approval's own log entry reads `Incomplete` rather than `Success`. The approval itself goes through either way: the penalties are applied, the championship is recalculated and the round moves on, with only the posting outstanding. A channel the division was never given is not reported.
+> **A repost that could not land is named, not swallowed.** Approving either review stage deletes the results and standings already posted and puts the recalculated ones in their place. The bot establishes that the channel is still there, and still takes its postings, **before** it deletes anything: a channel that has been removed, or that the bot's permission has been taken away on, leaves what is already posted standing, so you keep the older version rather than losing both. Whatever could not be posted is named in your own reply and in the log channel, as a `RESULTS_REPOST | Incomplete` entry ending with the `/results rounds sync` and `/results standings sync` commands to run once the cause is repaired — or, where every division is already done and both of those are closed, with the `/round results amend` to run again instead — and the approval's own log entry reads `Incomplete` rather than `Success`. The approval itself goes through either way: the penalties are applied, the championship is recalculated and the round moves on, with only the posting outstanding. A channel the division was never given is not reported.
 >
 > **`/round results amend` is protected the same way, but reports only to the log.** It runs no button and has nobody to reply to, so what it could not post is named in its own `RESULT_AMENDED | Incomplete` entry rather than a separate one — with the same sync commands at the end.
 
@@ -1682,11 +1688,21 @@ Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in
 
 > **Attendance is recalculated with it.** With the attendance module on, approving the amendment charges that round's attendance points again and carries the corrected totals through every later round whose penalties have been approved, then reposts the sheet and re-checks the auto-reserve and auto-sack thresholds. Each round's total is the driver's total **as at that round**, so the sheet posted and the thresholds checked are those of the division's **latest** approved round — where the totals now stand — and not those of the round you amended. Pardons already granted are kept. A driver the bot had recorded as present stays present, even where the corrected classification no longer lists them — use [`/attendance sync`](#attendance-sync--recalculate-a-divisions-attendance-and-apply-any-sanction-still-owed) where a recorded attendance genuinely has to be taken back.
 
-> **What it could not repost is named in the log.** Applying the amendment replaces the round's posted results and every later round's standings. Any of that the bot could not post — a channel deleted, or a permission taken away — leaves what is already posted standing, and is named in the log channel under `RESULT_AMENDED | Incomplete` instead of `Success`, ending with the `/results rounds sync` and `/results standings sync` commands to run once the cause is repaired. The amendment itself is applied either way.
+> **What it could not repost is named in the log.** Applying the amendment replaces the round's posted results and every later round's standings. Any of that the bot could not post — a channel deleted, or a permission taken away — leaves what is already posted standing, and is named in the log channel under `RESULT_AMENDED | Incomplete` instead of `Success`, ending with the `/results rounds sync` and `/results standings sync` commands to run once the cause is repaired — or, where every division is already done and both of those are closed, with the `/round results amend` to run again instead, which replaces the round's results and every later round's standings just the same. The amendment itself is applied either way.
 
 ---
 
 #### Mid-Season Points Amendment
+
+> **Mid-season means mid-season.** Every command below acts on the season you are racing, and
+> every one is refused once that season is **pending completion** — with all divisions done the
+> points are settled, and the final classification is drawn next. They are refused on a
+> completed or cancelled season too: that is an archive and nothing changes it.
+>
+> One consequence worth knowing before you start: amendment mode left switched **on** when the
+> last division finishes cannot be switched off again, because `/results amend toggle` is
+> refused too. Nothing stops you completing the season — the staged changes are simply never
+> applied. Revert or approve before the last round, or leave it and let the season end.
 
 ##### `/results amend toggle` — Enable or disable amendment mode
 *Access: League manager*
@@ -1773,6 +1789,8 @@ No parameters. Displays a diff of the staged changes against the current season 
 
 Deletes every existing standings Discord message for the division and reposts fresh standings for each round that has results, in round order. Useful after manual data corrections or if standings messages were accidentally deleted.
 
+> **Only while the season is being raced.** Refused once every division is done, and on a completed or cancelled season. If an amendment's repost failed in pending completion, the log tells you to run `/round results amend` again instead — that replaces the round's results *and* every later round's standings, so it recovers the same ground.
+
 ---
 
 ##### `/results rounds sync` — Force a full results repost for a division
@@ -1784,6 +1802,8 @@ Deletes every existing standings Discord message for the division and reposts fr
 
 Deletes every existing session results Discord message for the division and reposts fresh results for each session of each round, in round order. Useful after manual data corrections or if results messages were accidentally deleted.
 
+> **Only while the season is being raced,** on the same terms as `/results standings sync` above.
+
 ---
 ##### `/results reserves toggle` — Toggle reserve driver visibility in standings
 *Access: League manager*
@@ -1793,6 +1813,8 @@ Deletes every existing session results Discord message for the division and repo
 | `division` | String | ✅ | Division name |
 
 Toggles whether reserve drivers appear in the publicly posted standings for the specified division. Reserves are **shown by default**. Hiding them affects presentation only: a hidden reserve still accrues points, and those points still count towards the team whose car they drove.
+
+> **Only while the season is being raced.** Once every division is done the display is settled — decide before the last round. Refused on a completed or cancelled season too.
 
 ---
 

@@ -21,6 +21,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from models.season import SeasonStage  # noqa: E402
+
 from cogs.results_cog import ResultsCog, _ordering_notice  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
@@ -358,8 +360,10 @@ async def season(db_path):
 
 def _cog_with_season(db_path, season_id):
     cog = _cog(db_path)
-    cog.bot.season_service.get_season_for_server = AsyncMock(
-        return_value=SimpleNamespace(id=season_id)
+    # The live season, with a stage: `/results amend` reads one now and is refused once
+    # the season is pending completion or has ended (issue #224).
+    cog.bot.season_service.get_setup_or_active_season = AsyncMock(
+        return_value=SimpleNamespace(id=season_id, stage=SeasonStage.ONGOING)
     )
     return cog
 
@@ -412,8 +416,8 @@ async def test_a_bulk_amend_out_of_order_warns_once_and_stages_every_line(db_pat
     modal = BulkAmendSessionModal("100%", _FEATURE_RACE, db_path)
     modal.entries._value = "1, 10\n2, 25"
     interaction = _interaction()
-    interaction.client.season_service.get_season_for_server = AsyncMock(
-        return_value=SimpleNamespace(id=season)
+    interaction.client.season_service.get_setup_or_active_season = AsyncMock(
+        return_value=SimpleNamespace(id=season, stage=SeasonStage.ONGOING)
     )
 
     await modal.on_submit(interaction)
