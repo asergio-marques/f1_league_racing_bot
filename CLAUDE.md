@@ -103,13 +103,15 @@ later polish phase.
 is expected to pass in full. Any failure is a real one; do not write it off as pre-existing
 without first confirming it on a clean tree.
 
-**A full run is cheap — use it.** `pytest tests/ -q` is some 8,200 tests and finishes in about
-eight minutes on the Pi (measured 2026-09-16 at 476s, up from 319s for 4,980 when issue #208
-roughly doubled the suite), because the schema-template substitution
-described below removed the per-test migration cost. Guidance that a full run costs the better
-part of an hour predates that change and is wrong by an order of magnitude; there is no need to
-work from a grep-derived subset to avoid it. A subset is a convenience while iterating on one
+**A full run is cheap enough — use it.** The schema-template substitution described below
+removed the per-test migration cost that once made a full run something to avoid, so there is
+no need to work from a grep-derived subset. A subset is a convenience while iterating on one
 module, never a substitute for the full run the paragraph above asks for.
+
+**No measured duration or test count belongs in this file.** The suite grows steadily, so any
+figure written here is stale within weeks and then misleads the next reader into budgeting —
+or avoiding — a run on a number that no longer holds. Measure it when you actually need to
+know, and keep the answer somewhere that is cheap to correct.
 
 **Never run two pytest sessions at once.** They race on the shared schema template described
 below, and the loser reads a half-built database — which surfaces as a mass failure scattered

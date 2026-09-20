@@ -391,6 +391,16 @@ Approving stage two shall apply any staged corrections, republish the round's re
     - After insertion, the results are validated for format, and the standings of all rounds after the one that was amended (including) shall be output once more.
     - The points configuration recorded for the session shall be kept where it is still attached to the season; otherwise the user shall be asked to choose one.
 
+#### A republication that does not land shall be reported
+Committing either review stage, and amending a submitted session, republish the round's results and the standings of every later round. Where any of that could not be posted, the league shall be told rather than left to find out from an empty channel.
+
+- The republication shall establish that a channel can receive a posting before it deletes what is already there. Where it cannot, what is already posted shall be left standing, so the worst outcome is that the league keeps the older version rather than losing both.
+- Everything that could not be posted shall be named in the log channel, under an entry marked `Incomplete` rather than `Success`, ending with the commands that finish the job once the cause is repaired.
+- Where the revision was worked from a button, the league manager who approved it shall be told the same in their own reply, in place of a plain success.
+- A channel a division has never been given shall not be reported. Nothing is posted for it and nothing is owed.
+- The revision itself shall go through regardless. The penalties are applied, the corrections stand, the round's state moves on and the championship is recalculated; only the posting is outstanding.
+
+
 ## Standings
 ### Design
 - Standings have two forms: driver standings and team standings. In both, the ranking criteria shall be as follows, in order:

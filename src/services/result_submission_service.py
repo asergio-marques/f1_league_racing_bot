@@ -526,14 +526,26 @@ async def finalize_penalty_review(
         _notice_channel,
         "\U0001f3a8 Updating results, standings and verdicts — one moment.",
     ):
-        # Repost results/standings with "Post-Race Penalty Results" label
-        if guild:
-            await _rps.delete_and_repost_final_results(
-                db_path, round_id, division_id, guild,
-                label="Post-Race Penalty Results", bot=interaction.client,
+        # Repost results/standings with "Post-Race Penalty Results" label.
+        #
+        # What the cascade could not post is collected rather than discarded (#237). A
+        # missing guild is a fault in its own right: it used to skip both reposts in
+        # silence, leaving the round rescored and every posted standing stale.
+        repost_faults: list[str] = []
+        if guild is None:
+            repost_faults.append(
+                "The league's server could not be reached, so the results and standings "
+                "were not reposted."
             )
-            await _rps.repost_subsequent_standings(
-                db_path, division_id, round_id, guild, bot=interaction.client,
+        else:
+            repost_faults = _rps.merge_faults(
+                await _rps.delete_and_repost_final_results(
+                    db_path, round_id, division_id, guild,
+                    label="Post-Race Penalty Results", bot=interaction.client,
+                ),
+                await _rps.repost_subsequent_standings(
+                    db_path, division_id, round_id, guild, bot=interaction.client,
+                ),
             )
 
         # Report verdicts are in; the round now waits on appeals.
@@ -589,8 +601,9 @@ async def finalize_penalty_review(
                 srv_row = await cursor.fetchone()
             if srv_row:
                 n_penalties = len(state.staged)
+                outcome = "Incomplete" if repost_faults else "Success"
                 summary = (
-                    f"<@{actor_id}> | PENALTY_REVIEW_APPROVED | Success\n"
+                    f"<@{actor_id}> | PENALTY_REVIEW_APPROVED | {outcome}\n"
                     f"  round: {state.round_number} ({state.division_name})\n"
                     + (f"  penalties: {n_penalties}\n" if n_penalties else "  penalties: none\n")
                     + f"  old={old_val}\n  new={new_val}"
@@ -600,6 +613,11 @@ async def finalize_penalty_review(
                 )
         except Exception:
             log.exception("finalize_penalty_review: error writing audit log for round %s", round_id)
+
+        if repost_faults:
+            await _report_unpostable_results(
+                interaction, bot, db_path, division_id, repost_faults
+            )
 
         # One banner heads everything this approval posts to the verdicts channel — the
         # penalty verdicts here, and the attendance sanctions the pipeline below enforces
@@ -746,6 +764,45 @@ async def _report_incomplete_sanctions(
         log.exception("finalize_penalty_review: could not tell the manager about the sanctions")
 
 
+async def _report_unpostable_results(
+    interaction, bot, db_path: str, division_id: int, faults: list[str],
+) -> None:
+    """Tell the manager and the log channel what the repost could not post (#237).
+
+    The shape ``_report_incomplete_sanctions`` uses for attendance (#239), applied to the
+    results cascade: the log channel carries the record, and the manager who pressed approve
+    reads it in their own reply rather than a plain success. Both end with the commands that
+    finish the job once the cause is repaired.
+
+    Unlike the sanctions, there is no *logged* flag: the cascade has no route to the log
+    channel of its own, so this is the only place it is written.
+    """
+    from services.results_post_service import results_sync_hint
+
+    hint = await results_sync_hint(db_path, division_id)
+
+    try:
+        await bot.output_router.post_log(
+            "RESULTS_REPOST | Incomplete\n"
+            + "\n".join(f"  {line}" for line in faults)
+            + f"\n  {hint}"
+        )
+    except Exception:
+        log.exception(
+            "could not log the unpostable results for division %s", division_id
+        )
+
+    try:
+        await interaction.followup.send(
+            "⚠️ The approval went through, but some results could not be posted:\n"
+            + "\n".join(f"• {line}" for line in faults)
+            + f"\n{hint}",
+            ephemeral=True,
+        )
+    except Exception:
+        log.exception("could not tell the manager about the unpostable results")
+
+
 async def finalize_appeals_review(
     interaction: discord.Interaction,
     state,  # PenaltyReviewState — forward-ref to avoid import cycle
@@ -833,14 +890,25 @@ async def finalize_appeals_review(
         _notice_channel,
         "\U0001f3a8 Updating results and standings — one moment.",
     ):
-        # Repost results/standings with "Final Results" label
-        if guild:
-            await _rps.delete_and_repost_final_results(
-                db_path, round_id, division_id, guild,
-                label="Final Results", bot=interaction.client,
+        # Repost results/standings with "Final Results" label.
+        #
+        # Collected, not discarded, for the reason given in ``finalize_penalty_review``
+        # (#237) — and it matters more here, because this is where a round becomes FINAL.
+        repost_faults: list[str] = []
+        if guild is None:
+            repost_faults.append(
+                "The league's server could not be reached, so the final results and "
+                "standings were not reposted."
             )
-            await _rps.repost_subsequent_standings(
-                db_path, division_id, round_id, guild, bot=interaction.client,
+        else:
+            repost_faults = _rps.merge_faults(
+                await _rps.delete_and_repost_final_results(
+                    db_path, round_id, division_id, guild,
+                    label="Final Results", bot=interaction.client,
+                ),
+                await _rps.repost_subsequent_standings(
+                    db_path, division_id, round_id, guild, bot=interaction.client,
+                ),
             )
 
         # Appeal verdicts are in; the results stand.
@@ -888,8 +956,9 @@ async def finalize_appeals_review(
                 srv_row = await cursor.fetchone()
             if srv_row:
                 n_corrections = len(state.staged_appeals)
+                outcome = "Incomplete" if repost_faults else "Success"
                 summary = (
-                    f"<@{actor_id}> | APPEALS_REVIEW_APPROVED | Success\n"
+                    f"<@{actor_id}> | APPEALS_REVIEW_APPROVED | {outcome}\n"
                     f"  round: {state.round_number} ({state.division_name})\n"
                     + (f"  corrections: {n_corrections}\n" if n_corrections else "  corrections: none\n")
                     + f"  old={old_val}\n  new={new_val}"
@@ -899,6 +968,11 @@ async def finalize_appeals_review(
                 )
         except Exception:
             log.exception("finalize_appeals_review: error writing audit log for round %s", round_id)
+
+        if repost_faults:
+            await _report_unpostable_results(
+                interaction, bot, db_path, division_id, repost_faults
+            )
 
         # Post appeal announcements (non-blocking)
         if applied_correction_records:
@@ -1239,22 +1313,42 @@ async def amend_session_result(
 
     rctx = await _get_round_context(db_path, round_id)
     guild = await league_guild(bot)
+    repost_faults: list[str] = []
     if guild is not None:
-        await results_post_service.delete_and_repost_final_results(
-            db_path, round_id, division_id, guild,
-            label="Final Results", bot=bot,
-        )
-        await results_post_service.repost_subsequent_standings(
-            db_path, division_id, round_id, guild, bot=bot,
+        repost_faults = results_post_service.merge_faults(
+            await results_post_service.delete_and_repost_final_results(
+                db_path, round_id, division_id, guild,
+                label="Final Results", bot=bot,
+            ),
+            await results_post_service.repost_subsequent_standings(
+                db_path, division_id, round_id, guild, bot=bot,
+            ),
         )
     else:
+        # The recomputation still runs, so the championship is right in the database; what
+        # a league can see of it is not, and saying so is the whole of #237. This branch is
+        # not the silent one the issue describes — it is a deliberate fallback — but its
+        # outcome was reported as an unqualified success all the same.
         await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
+        repost_faults.append(
+            "The league's server could not be reached, so the amended results and "
+            "standings were recalculated but not reposted."
+        )
 
-    await bot.output_router.post_log(
-        f"<@{amended_by}> | RESULT_AMENDED | Success\n"
+    # The third caller of the cascade, and the third to discard what it could not post
+    # (#237). It has no interaction to answer — the amendment is applied by a wizard that
+    # has moved on — so the log channel is the only route, as in ``apply_penalties``.
+    outcome = "Incomplete" if repost_faults else "Success"
+    summary = (
+        f"<@{amended_by}> | RESULT_AMENDED | {outcome}\n"
         f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
-        f"  round: {rctx['round_number']}, session: {session_type.value}",
+        f"  round: {rctx['round_number']}, session: {session_type.value}"
     )
+    if repost_faults:
+        hint = await results_post_service.results_sync_hint(db_path, division_id)
+        summary += "\n" + "\n".join(f"  {line}" for line in repost_faults)
+        summary += f"\n  {hint}"
+    await bot.output_router.post_log(summary)
 
 
 # ---------------------------------------------------------------------------

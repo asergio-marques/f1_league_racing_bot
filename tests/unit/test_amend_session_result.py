@@ -142,14 +142,22 @@ async def _amend(
     bot=None,
     config_name="Standard",
     fl_override=None,
+    repost_faults=None,
 ):
+    """*repost_faults* are the lines the cascade could not post (#237).
+
+    Both repost functions return a list of faults rather than ``None``, so the stubs must
+    too: the amendment now adds what comes back to the line it logs.
+    """
     bot = bot or _bot()
     with patch(
         "services.result_submission_service._apply_points_from_config", new=AsyncMock()
     ) as apply_points, patch(
-        "services.results_post_service.delete_and_repost_final_results", new=AsyncMock()
+        "services.results_post_service.delete_and_repost_final_results",
+        new=AsyncMock(return_value=list(repost_faults or [])),
     ) as repost, patch(
-        "services.results_post_service.repost_subsequent_standings", new=AsyncMock()
+        "services.results_post_service.repost_subsequent_standings",
+        new=AsyncMock(return_value=[]),
     ) as subsequent, patch(
         "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
     ) as cascade:
@@ -453,3 +461,58 @@ async def test_the_amendment_is_logged(tmp_path):
     assert f"<@{AMENDER}>" in logged
     assert "round: 3" in logged
     assert "FEATURE_RACE" in logged
+
+
+# ---------------------------------------------------------------------------
+# The amendment says what it could not repost (#237)
+#
+# The third caller of the cascade, and the third to throw away what it could not post. It
+# has no interaction to answer, so the log channel is the only route — as in
+# `apply_penalties`.
+# ---------------------------------------------------------------------------
+
+AMEND_FAULT = "**Alpha** \u2014 the results channel <#501> no longer exists."
+
+
+def _amend_log(stubs) -> str:
+    return "\n".join(
+        str(c.args[0]) for c in stubs["bot"].output_router.post_log.await_args_list
+    )
+
+
+async def test_an_amendment_that_could_not_repost_is_logged_as_incomplete(tmp_path):
+    db_path = await _make_db(tmp_path, name="amend_incomplete")
+
+    stubs = await _amend(db_path, [_race_row(101, 1)], repost_faults=[AMEND_FAULT])
+
+    logged = _amend_log(stubs)
+    assert "RESULT_AMENDED | Incomplete" in logged
+    assert AMEND_FAULT in logged
+    assert "/results rounds sync" in logged
+
+
+async def test_an_amendment_that_posted_everything_is_still_a_success(tmp_path):
+    """The counterpart, so `| Incomplete` cannot become the answer to everything."""
+    db_path = await _make_db(tmp_path, name="amend_complete")
+
+    stubs = await _amend(db_path, [_race_row(101, 1)])
+
+    logged = _amend_log(stubs)
+    assert "RESULT_AMENDED | Success" in logged
+    assert "sync" not in logged
+
+
+async def test_an_amendment_with_no_guild_says_it_was_not_reposted(tmp_path):
+    """The fallback recomputes the championship but posts none of it.
+
+    Not the silent branch #237 describes \u2014 it is a deliberate fallback \u2014 but it reported
+    an unqualified success all the same, while everything a league can see went stale.
+    """
+    db_path = await _make_db(tmp_path, name="amend_no_guild")
+
+    stubs = await _amend(db_path, [_race_row(101, 1)], bot=_bot(guild=False))
+
+    logged = _amend_log(stubs)
+    assert "RESULT_AMENDED | Incomplete" in logged
+    assert "not reposted" in logged
+    stubs["cascade"].assert_awaited()

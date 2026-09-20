@@ -1140,18 +1140,9 @@ async def repost_channel_faults(
     unresolvable bot member is itself a fault rather than a reason to wave the season
     through.
     """
-    if guild is None:
-        return [
-            "The bot is not in this server, so nothing can be reposted. "
-            "Check that it is still a member and try again."
-        ]
-
-    bot_member = _bot_member(guild, bot)
-    if bot_member is None:
-        return [
-            "The bot cannot read its own permissions in this server, so it cannot tell "
-            "whether the reposting would succeed. Try again in a moment."
-        ]
+    bot_member, faults = _repost_gate(guild, bot)
+    if faults:
+        return faults
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -1167,6 +1158,85 @@ async def repost_channel_faults(
         )
         division_rows = await cursor.fetchall()
 
+    return await _channel_faults_for_rows(division_rows, guild, bot_member, bot)
+
+
+def _repost_gate(guild: "discord.Guild | None", bot):
+    """The bot member the permission arithmetic needs, or the fault standing in its way.
+
+    Shared by the season-wide and division-wide gates so that the two cannot drift: both
+    refuse a guild they cannot reach, and both treat an unresolvable bot member as a fault
+    rather than as leave to assume (#187).
+    """
+    if guild is None:
+        return None, [
+            "The bot is not in this server, so nothing can be reposted. "
+            "Check that it is still a member and try again."
+        ]
+
+    bot_member = _bot_member(guild, bot)
+    if bot_member is None:
+        return None, [
+            "The bot cannot read its own permissions in this server, so it cannot tell "
+            "whether the reposting would succeed. Try again in a moment."
+        ]
+
+    return bot_member, []
+
+
+def _cascade_channel_fault(
+    guild, bot_member, division_name: str, setting: str, channel_id: int,
+    *, needs_attachment: bool,
+) -> str | None:
+    """The fault standing between the cascade and *channel_id*, or None (#237).
+
+    **Deliberately more permissive than the pre-flight**, because it runs where the posting
+    cannot be refused. ``repost_channel_faults`` gates an amendment *before* a row is
+    overwritten, so it is right to refuse whenever it cannot satisfy itself — an
+    unresolvable bot member, a channel that is not a ``TextChannel``. Here the penalty is
+    already applied and the round has already moved on, so every such refusal would itself
+    become "the results were not reposted", which is the outcome this issue exists to
+    prevent. It reports only what is *positively* wrong.
+
+    Two differences follow. Without a bot member there is no permission arithmetic to do,
+    and its absence is not itself a fault. And the pre-flight's ``isinstance`` check is
+    dropped: a channel of an unexpected type is left to the posting to reject, where the
+    failure surfaces as an answered command (#156) rather than as a repost refused on
+    suspicion.
+
+    What is checked in every case is that the channel still *exists* — the silent case this
+    issue is about, and the one that cost a league its posted results.
+
+    **Attach Files is still asked for, and the over-approximation behind it is kept on
+    purpose** (raised in review of #237, decided 2026-09-20). ``aspect_attaches_files``
+    answers "could this channel ever be sent a file" from the module switch and the aspect
+    toggle, not from template validity, so it asks for the permission even where a broken
+    template would have fallen back to text and posted fine. Dropping it here would fix that
+    narrow false refusal and open a far worse one: a league with the aspect on and a
+    *valid* template, missing Attach Files, would have its posted results deleted and the
+    replacement rejected by Discord — which is the data loss this whole issue is about. The
+    two errors are not symmetrical, so the check errs the way the rest of this function
+    does: toward the league keeping what it already has.
+    """
+    channel = guild.get_channel(channel_id)
+    if channel is None:
+        return missing_channel_fault(division_name, setting, channel_id)
+
+    if bot_member is None:
+        return None
+
+    permissions = channel.permissions_for(bot_member)
+    wanted = list(_REPOST_PERMISSIONS)
+    if needs_attachment:
+        wanted.append(_ATTACHMENT_PERMISSION)
+    missing = [name for attr, name in wanted if not getattr(permissions, attr, False)]
+    if missing:
+        return unpostable_channel_fault(division_name, setting, channel_id, missing)
+    return None
+
+
+async def _channel_faults_for_rows(division_rows, guild, bot_member, bot) -> list[str]:
+    """The faults across *division_rows*, each row carrying a division's two channel ids."""
     # Asked of the image module rather than read out of its configuration here: a posting
     # service hands the image module an occasion and acts on what comes back, and does not
     # read its settings (#187, and the layering
@@ -1196,6 +1266,43 @@ async def repost_channel_faults(
             if fault is not None:
                 faults.append(fault)
     return faults
+
+
+def merge_faults(*fault_lists: list[str]) -> list[str]:
+    """The faults of several reposts as one list, in order, without repeating a line.
+
+    ``delete_and_repost_final_results`` and ``repost_subsequent_standings`` run one after
+    the other over the *same* division, so a standings channel that has gone missing is
+    found by both and worded identically by both (raised in review of #237). Concatenating
+    handed the manager the same bullet twice, reading as two separate problems to repair.
+    Each function already refuses to repeat itself internally; this keeps that true across
+    the pair.
+    """
+    merged: list[str] = []
+    for faults in fault_lists:
+        for line in faults:
+            if line not in merged:
+                merged.append(line)
+    return merged
+
+
+async def results_sync_hint(db_path: str, division_id: int) -> str:
+    """The line telling a manager how to finish a repost that did not land (#237).
+
+    Names both sync commands, because the cascade posts two things a league reads
+    separately — the round's own results and the division's standings — and each has its
+    own command. Modelled on ``attendance_service.sync_hint``, which does the same for a
+    run of sanctions that did not all apply (#239).
+    """
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
+        ).fetchone()
+    name = (row["name"] if row is not None else None) or f"division {division_id}"
+    return (
+        f"Repair the cause, then run `/results rounds sync division:{name}` and "
+        f"`/results standings sync division:{name}`."
+    )
 
 
 async def repost_round_results(
@@ -1235,10 +1342,14 @@ async def repost_round_results(
     and not even the host's log file recorded anything. ``repost_results_for_division``
     already warns in exactly this case; this function was the outlier.
 
-    A caller that does not care may ignore the return, which is why the missing channel
-    is reported this way rather than raised: ``penalty_service`` reposts one round after
-    applying a penalty and has nowhere to put a fault, and making this raise would turn a
-    stale channel into a failed penalty.
+    The missing channel is reported this way rather than raised because a repost runs after
+    the thing it reports on has already happened: making this raise would turn a stale
+    channel into a failed penalty. Every caller now has somewhere to put the return —
+    ``penalty_service`` posts it to the log channel, and the two review approvals in
+    ``result_submission_service`` tell the approving manager as well (#237). One caller
+    still discards it — ``amendment_service.approve_amendment`` — and is left alone
+    deliberately: the amendment path is gated by ``repost_channel_faults`` before it writes
+    anything, so a fault there has already been reported and refused upstream.
     """
     faults: list[str] = []
     async with get_connection(db_path) as db:
@@ -1538,9 +1649,13 @@ async def delete_and_repost_final_results(
     label: str,
     *,
     bot=None,
-) -> None:
+) -> list[str]:
     """Delete all interim results/standings Discord messages for *round_id* and
     repost the final (post-penalty) versions.
+
+    Returns the faults it met, as lines a league can read, and an empty list where
+    everything it was asked to do was done — the same contract
+    :func:`repost_round_results` keeps.
 
     For each non-cancelled session:
     1. Fetch ``results_message_id`` from ``session_results``.
@@ -1551,14 +1666,31 @@ async def delete_and_repost_final_results(
     4. Find the current ``standings_message_id`` for this round.
     5. Delete that Discord message if it still exists.
     6. Post fresh final standings and update ``standings_message_id``.
+
+    **A channel is gated before anything of its is deleted** (#237). The order above
+    destroys the league's copy before it has established that a new one can be put in its
+    place, so a channel that has been deleted, or one the bot's Send Messages has since been
+    revoked on, used to leave the round with no results posted at all — silently, because
+    ``guild.get_channel`` returning ``None`` raises nothing and the caller went on to log the
+    approval as a success. Reading the channel first turns the worst case back into "the
+    league keeps what it already had", which is why the gate is here rather than in the
+    caller: every route into this function has the same window.
+
+    The gate is ``_cascade_channel_fault``, which is **not** the pre-flight's
+    ``_channel_fault`` — see its docstring for why the two differ. A channel that is merely
+    unconfigured stays silent, while one that is configured and unreachable is reported
+    (#187's rule against over-reporting, kept).
     """
+    faults: list[str] = []
+
     async with get_connection(db_path) as db:
         ctx_cursor = await db.execute(
             """
-            SELECT r.round_number, r.track_name,
+            SELECT r.round_number, r.track_name, d.name AS division_name,
                    drc.results_channel_id, drc.standings_channel_id,
                    drc.reserves_in_standings
             FROM rounds r
+            JOIN divisions d ON d.id = r.division_id
             LEFT JOIN division_results_config drc ON drc.division_id = r.division_id
             WHERE r.id = ?
             """,
@@ -1568,18 +1700,46 @@ async def delete_and_repost_final_results(
 
     if ctx is None:
         log.warning("delete_and_repost_final_results: round %s not found", round_id)
-        return
+        return [
+            "The round could not be read from the database, so its results and standings "
+            "were not reposted."
+        ]
 
     round_number: int = ctx["round_number"]
     track_name: str = ctx["track_name"] or "Unknown"
+    division_name: str = ctx["division_name"] or f"division {division_id}"
     results_ch_id: int | None = ctx["results_channel_id"]
     standings_ch_id: int | None = ctx["standings_channel_id"]
     show_reserves: bool = bool(ctx["reserves_in_standings"]) if ctx["reserves_in_standings"] is not None else True
 
+    # A round with no ACTIVE session results had nothing posted for it, so no channel
+    # fault is owed — the guard ``repost_round_results`` already applies, kept here so the
+    # two functions agree on what counts as a fault (raised in review of #237).
+    if not await _round_has_posted_results(db_path, round_id):
+        log.debug(
+            "delete_and_repost_final_results: round %s has no ACTIVE session results",
+            round_id,
+        )
+        return faults
+
+    bot_member = _bot_member(guild, bot)
+    results_graphics = standings_graphics = False
+    if bot_member is not None:
+        from services.image_validity_service import aspect_attaches_files
+
+        results_graphics = await aspect_attaches_files(bot, "results")
+        standings_graphics = await aspect_attaches_files(bot, "standings")
+
     # ── Delete interim results messages and re-post final ──────────────────
     if results_ch_id:
-        rc = guild.get_channel(results_ch_id)
-        if rc is not None:
+        results_fault = _cascade_channel_fault(
+            guild, bot_member, division_name, "results", int(results_ch_id),
+            needs_attachment=results_graphics,
+        )
+        if results_fault is not None:
+            faults.append(results_fault)
+        else:
+            rc = guild.get_channel(results_ch_id)
             # Fetch session rows with their existing message IDs
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
@@ -1628,8 +1788,14 @@ async def delete_and_repost_final_results(
 
     # ── Delete interim standings message and re-post final ─────────────────
     if standings_ch_id:
-        sc = guild.get_channel(standings_ch_id)
-        if sc is not None:
+        standings_fault = _cascade_channel_fault(
+            guild, bot_member, division_name, "standings", int(standings_ch_id),
+            needs_attachment=standings_graphics,
+        )
+        if standings_fault is not None:
+            faults.append(standings_fault)
+        else:
+            sc = guild.get_channel(standings_ch_id)
             # Both championships' interim messages go, whichever flow posted them.
             await _clear_standings_messages(db_path, division_id, round_id, sc)
 
@@ -1644,6 +1810,8 @@ async def delete_and_repost_final_results(
                 sc, driver_snaps, team_snaps, guild, show_reserves, label, bot=bot,
             )
 
+    return faults
+
 
 async def repost_subsequent_standings(
     db_path: str,
@@ -1652,14 +1820,29 @@ async def repost_subsequent_standings(
     guild: discord.Guild,
     *,
     bot=None,
-) -> None:
+) -> list[str]:
     """Cascade-recompute standings and repost Discord standings messages for all
     rounds *after* *from_round_id* in the division that have an existing
     ``standings_message_id``.
 
     This is called after :func:`delete_and_repost_final_results` so that
     subsequent rounds' standings reflect any penalty-driven point changes.
+
+    Returns the faults it met, as lines a league can read, and an empty list where
+    everything it was asked to do was done.
+
+    **The channel is gated before any round's standings are cleared** (#237), for the
+    reason given on :func:`delete_and_repost_final_results`: this function deletes each
+    round's standings before reposting them, and an unreachable channel used to be skipped
+    by a bare ``continue`` — leaving every later round of the division with its standings
+    deleted and nothing put back, with nobody told.
+
+    **The fault is reported once, not once per round.** The standings channel is a division
+    setting, so every round in the loop would raise the identical line; the rounds that went
+    unreposted because of it are named together in a line of their own instead.
     """
+    faults: list[str] = []
+
     # Cascade recompute DB snapshots for all subsequent rounds, ordered on the names the
     # reposts below will draw.
     await recompute_standings_from_round(db_path, division_id, from_round_id, guild, bot)
@@ -1669,8 +1852,10 @@ async def repost_subsequent_standings(
         cursor = await db.execute(
             """
             SELECT r.id AS round_id, r.round_number, r.track_name, r.status,
+                   d.name AS division_name,
                    drc.standings_channel_id, drc.reserves_in_standings
             FROM rounds r
+            JOIN divisions d ON d.id = r.division_id
             LEFT JOIN division_results_config drc ON drc.division_id = r.division_id
             WHERE r.division_id = ?
               AND r.round_number > (SELECT round_number FROM rounds WHERE id = ?)
@@ -1680,6 +1865,16 @@ async def repost_subsequent_standings(
             (division_id, from_round_id),
         )
         rounds = await cursor.fetchall()
+
+    bot_member = _bot_member(guild, bot)
+    standings_graphics = False
+    if bot_member is not None:
+        from services.image_validity_service import aspect_attaches_files
+
+        standings_graphics = await aspect_attaches_files(bot, "standings")
+
+    gated: dict[int, str | None] = {}
+    skipped_rounds: list[int] = []
 
     for rnd in rounds:
         rnd_id: int = rnd["round_id"]
@@ -1703,9 +1898,20 @@ async def repost_subsequent_standings(
         if not any(msg_id is not None for msg_id in posted):
             continue  # No standings message posted for this round — skip
 
-        sc = guild.get_channel(standings_ch_id)
-        if sc is None:
+        if standings_ch_id not in gated:
+            gated[standings_ch_id] = _cascade_channel_fault(
+                guild, bot_member, rnd["division_name"] or f"division {division_id}",
+                "standings", int(standings_ch_id),
+                needs_attachment=standings_graphics,
+            )
+        channel_fault = gated[standings_ch_id]
+        if channel_fault is not None:
+            if channel_fault not in faults:
+                faults.append(channel_fault)
+            skipped_rounds.append(rnd_number)
             continue
+
+        sc = guild.get_channel(standings_ch_id)
 
         # Delete old standings message(s) for both championships and forget their ids
         await _clear_standings_messages(db_path, division_id, rnd_id, sc)
@@ -1721,6 +1927,15 @@ async def repost_subsequent_standings(
             db_path, division_id, rnd_id, rnd_number, rnd_track,
             sc, driver_snaps, team_snaps, guild, show_reserves, rnd_label, bot=bot,
         )
+
+    if skipped_rounds:
+        listed = ", ".join(f"round {n}" for n in skipped_rounds)
+        faults.append(
+            f"The standings of {listed} were not reposted, so they still show the points "
+            f"as they stood before."
+        )
+
+    return faults
 
 
 # ---------------------------------------------------------------------------

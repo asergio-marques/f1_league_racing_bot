@@ -661,3 +661,140 @@ async def test_apply_penalties_reposts_when_not_skipping(tmp_path):
     assert posted, "apply_penalties reposted nothing"
     # The label is the round's own stage, derived rather than demanded of the caller.
     assert any("Post-Race Penalty Results" in content for content in posted), posted
+
+
+# ---------------------------------------------------------------------------
+# What the repost could not post reaches the log channel (#237)
+#
+# `apply_penalties` rescores a championship and then reposts it. The repost's outcome was
+# discarded, an unreachable guild skipped it in silence, and the `PENALTIES_APPLIED |
+# Success` line was written *before* any of it ran — so a penalty could leave every posted
+# standing stale with nobody told.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_for_penalty_log(tmp_path):
+    """A division with one round to apply a penalty to. Returns ``(db_path, division_id,
+    round_id)``."""
+    from db.database import get_connection, run_migrations
+
+    path = str(tmp_path / "penalty_log.db")
+    await run_migrations(path)
+
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
+        )
+        cursor = await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 1)"
+        )
+        season_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (?, 'Alpha', 777)",
+            (season_id,),
+        )
+        division_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO division_results_config "
+            "(division_id, results_channel_id, standings_channel_id) VALUES (?, 501, 502)",
+            (division_id,),
+        )
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+            "VALUES (?, 1, 'STANDARD', 'AWAITING_APPEAL_VERDICTS', '2026-06-01T18:00:00')",
+            (division_id,),
+        )
+        round_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
+            (round_id, division_id),
+        )
+        await db.commit()
+
+    return path, division_id, round_id
+
+
+def _logged_lines(bot) -> str:
+    return "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
+
+
+async def test_apply_penalties_reports_an_unreachable_guild(tmp_path):
+    """`league_guild` returns None out of the cache and raises nothing (#244).
+
+    `if guild:` therefore skipped the repost in silence while the log said Success.
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from services import results_post_service as rps
+    from services.penalty_service import apply_penalties
+
+    path, division_id, round_id = await _seed_for_penalty_log(tmp_path)
+
+    bot = MagicMock()
+    bot.output_router.post_log = AsyncMock()
+
+    with patch("utils.league_server.league_guild", new=AsyncMock(return_value=None)), \
+            patch.object(rps, "recompute_standings_from_round", new=AsyncMock()):
+        await apply_penalties(path, round_id, division_id, [], applied_by=99, bot=bot)
+
+    logged = _logged_lines(bot)
+    assert "PENALTIES_APPLIED | Incomplete" in logged
+    assert "could not be reached" in logged
+    assert "/results rounds sync" in logged
+
+
+async def test_apply_penalties_reports_what_the_repost_could_not_post(tmp_path):
+    """The repost's return used to be thrown away by this caller."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from services import results_post_service as rps
+    from services.penalty_service import apply_penalties
+
+    path, division_id, round_id = await _seed_for_penalty_log(tmp_path)
+
+    bot = MagicMock()
+    bot.output_router.post_log = AsyncMock()
+    fault = "**Alpha** — the standings channel <#502> no longer exists."
+
+    with patch("utils.league_server.league_guild", new=AsyncMock(return_value=MagicMock())), \
+            patch.object(rps, "recompute_standings_from_round", new=AsyncMock()), \
+            patch.object(rps, "repost_round_results", new=AsyncMock(return_value=[fault])):
+        await apply_penalties(path, round_id, division_id, [], applied_by=99, bot=bot)
+
+    logged = _logged_lines(bot)
+    assert "PENALTIES_APPLIED | Incomplete" in logged
+    assert fault in logged
+
+
+async def test_apply_penalties_logs_success_only_after_the_repost(tmp_path):
+    """The audit line is written after the posting it describes, not before it.
+
+    Written first, it claimed a success the cascade had not yet earned — and might never
+    earn. `season_end_service` already keeps this ordering.
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from services import results_post_service as rps
+    from services.penalty_service import apply_penalties
+
+    path, division_id, round_id = await _seed_for_penalty_log(tmp_path)
+
+    order: list[str] = []
+
+    bot = MagicMock()
+    bot.output_router.post_log = AsyncMock(side_effect=lambda *_a, **_k: order.append("log"))
+
+    async def _repost(*_args, **_kwargs):
+        order.append("repost")
+        return []
+
+    with patch("utils.league_server.league_guild", new=AsyncMock(return_value=MagicMock())), \
+            patch.object(rps, "recompute_standings_from_round", new=AsyncMock()), \
+            patch.object(rps, "repost_round_results", new=_repost):
+        await apply_penalties(path, round_id, division_id, [], applied_by=99, bot=bot)
+
+    assert order == ["repost", "log"]
+    assert "PENALTIES_APPLIED | Success" in _logged_lines(bot)
