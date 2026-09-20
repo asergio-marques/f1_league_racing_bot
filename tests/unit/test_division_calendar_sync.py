@@ -36,7 +36,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.season_cog import SeasonCog  # noqa: E402
-from models.season import Season, SeasonStatus  # noqa: E402
+from models.season import Season, SeasonStage, SeasonStatus  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 13208
@@ -47,12 +47,19 @@ SERVER_ID = 13208
 # ---------------------------------------------------------------------------
 
 
-def _season():
+def _season(stage: SeasonStage = SeasonStage.ONGOING):
+    """The season the command finds. A stage is given because the command now reads one.
+
+    Nothing in production hands out a stageless season — the schema's triggers fill the
+    column on every insert — so a `Season()` left at the dataclass default would be a
+    fixture the bot never produces, and would refuse for a reason no league can meet.
+    """
     return Season(
         id=1,
         start_date=date(2026, 1, 1),
         status=SeasonStatus.ACTIVE,
         season_number=7,
+        stage=stage,
     )
 
 
@@ -189,7 +196,10 @@ async def test_a_server_with_no_season_is_refused(tmp_path):
 
     post = await _sync(cog, interaction)
 
-    assert "No season is live" in _replied(interaction)
+    # The shared gate's wording (issue #224): the same branch a server whose only
+    # season is completed or cancelled reaches, because an archived one is never returned.
+    assert "there is none" in _replied(interaction)
+    assert "archive" in _replied(interaction)
     post.assert_not_awaited()
 
 

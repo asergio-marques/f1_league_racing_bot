@@ -4126,12 +4126,18 @@ class SeasonCog(commands.Cog):
         keyboard is the one able to fix the template.
         """
         from services import calendar_post_service as _calendar
+        from utils.season_gate import season_for_command
 
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
+        # Refused once every division is done (issue #224): the calendar describes rounds
+        # somebody will drive, and a season pending completion has none left. It is no part
+        # of the end-of-season output either — completing posts the final classification and
+        # the final attendance sheet, and neither is a calendar.
+        season = await season_for_command(
+            interaction, self.bot.season_service, "division calendar-sync"  # type: ignore[attr-defined]
+        )
         if season is None:
-            await interaction.followup.send("❌ No season is live, so there is no calendar to sync.", ephemeral=True)
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
