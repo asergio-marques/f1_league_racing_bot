@@ -53,6 +53,29 @@ def format_session_weather_type(slot_type: str) -> str:
     return str(slot_type).capitalize()
 
 
+#: The description of the phase a forecast stands for — the one naming of a phase, shared by
+#: the message and by the graphic drawn in its place (Constitution XIV.7).
+#:
+#: **No forecast names its own horizon** (issue #112, decided 2026-09-20). The wording once
+#: read "(5 days out)", "(2 days out)" and "(2 hours out)", which was right only for a league
+#: that had left all three deadlines at their defaults: the posts were built from string
+#: literals and no caller passed the configured horizons in, so a league on seven days was
+#: told five. Rather than substitute the configured numbers — a second rendering of the
+#: deadlines beside the graphic's qualitative one, and every builder obliged to read the
+#: configuration — a phase is named by what it is worth: an early figure, a first look at the
+#: sessions, the final word. That holds at any deadline, which is why the graphics have always
+#: described themselves this way and why the text now borrows their wording rather than
+#: keeping a parallel set of its own.
+#:
+#: It lives here, beside the other shared renderings, because the image module imports from
+#: this module and never the reverse; ``image_weather_service`` re-exports it.
+PHASE_DESCRIPTIONS = {
+    1: "Initial chance of rain",
+    2: "Initial session forecast",
+    3: "Final session forecast",
+}
+
+
 def phase1_message(division_role_id: int, track: str, rpc_pct: float) -> str:
     """Phase 1 forecast: rain probability preview (T−5 days)."""
     role_mention = f"<@&{division_role_id}>"
