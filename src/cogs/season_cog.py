@@ -5309,7 +5309,10 @@ class SeasonCog(commands.Cog):
                 await cfg_view.wait()
                 config_name = cfg_view.selected or config_names[0]
 
-            from services.result_submission_service import amend_session_result
+            from services.result_submission_service import (
+                AmendmentWouldOrphanVerdictError,
+                amend_session_result,
+            )
             try:
                 await amend_session_result(
                     self.bot.db_path,
@@ -5322,6 +5325,18 @@ class SeasonCog(commands.Cog):
                     interaction.client,
                     fl_driver_override=fl_amend_override,
                 )
+            except AmendmentWouldOrphanVerdictError as exc:
+                # A refusal, not a fault. The admin gets the reason where they are looking
+                # rather than a traceback in a channel they may not have open, because this
+                # one is theirs to act on: include the driver, or withdraw the verdict (#345).
+                await self.bot.output_router.post_log(
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_REFUSED | "
+                    f"round {rnd.round_number} session {chosen_session_type.value}\n"
+                    f"  {exc}",
+                )
+                await _cleanup_channel()
+                await interaction.followup.send(f"\u274c {exc}", ephemeral=True)
+                return
             except Exception as exc:
                 import traceback as _tb
                 error_summary = f"{type(exc).__name__}: {exc}"

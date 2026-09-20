@@ -1329,6 +1329,140 @@ async def _save_session_result_in_tx(
     return session_result_id
 
 
+class AmendmentWouldOrphanVerdictError(Exception):
+    """An amendment would leave a penalty or appeal verdict with no result row to point at.
+
+    Raised where a driver carrying a verdict is absent from the corrected classification. The
+    amendment is refused rather than applied, because every disposal open to the bot is worse
+    than not proceeding: deleting the verdict discards the audit of why the driver lost places,
+    and orphaning it keeps a row nothing can ever find — every read of these tables is by the
+    foreign key, so a detached verdict is invisible to the republish and to the DSQ map alike.
+
+    Whether an amendment may drop a driver who carries a verdict, and what becomes of that
+    verdict, is a rule the results specification does not yet state. Refusing is the conservative
+    reading until it does (issue #345), and it is what the three-stage replay supersedes: the
+    wizard shows the manager the verdict and lets them decide, which is the answer this exception
+    stands in for.
+    """
+
+
+#: The two tables whose rows point at a driver's result row, with the column each uses.
+#: ``results_purge_service._delete_rows`` names the same pair for the same reason.
+_VERDICT_TABLES: tuple[str, ...] = ("penalty_records", "appeal_records")
+
+
+def _verdict_fk_column(session_type: SessionType) -> str:
+    """The column of a verdict record that points at *session_type*'s result rows."""
+    return "qual_result_id" if session_type.is_qualifying else "race_result_id"
+
+
+async def _verdicts_by_driver(
+    db, session_result_id: int, session_type: SessionType
+) -> dict[str, dict[int, list[int]]]:
+    """Map every verdict of this session to the driver it was applied to, before the rows go.
+
+    Returned as ``{table: {driver_user_id: [verdict row id, ...]}}``. A driver may carry several
+    verdicts in one session — the penalty wizard stages one record per incident, not per driver —
+    so the value is a list rather than a single id.
+
+    Read **before** the driver rows are deleted, because the driver a verdict belongs to is only
+    recoverable through the row it points at: ``penalty_records`` and ``appeal_records`` store
+    neither ``driver_user_id`` nor ``session_type``.
+    """
+    fk_col = _verdict_fk_column(session_type)
+    table = "qualifying_session_results" if session_type.is_qualifying else "race_session_results"
+    by_table: dict[str, dict[int, list[int]]] = {}
+    for verdict_table in _VERDICT_TABLES:
+        cursor = await db.execute(
+            f"""
+            SELECT v.id AS verdict_id, r.driver_user_id AS driver_user_id
+            FROM {verdict_table} v
+            JOIN {table} r ON r.id = v.{fk_col}
+            WHERE r.session_result_id = ?
+            ORDER BY v.id
+            """,  # noqa: S608 — table and column names come from the two constants above
+            (session_result_id,),
+        )
+        per_driver: dict[int, list[int]] = {}
+        for row in await cursor.fetchall():
+            per_driver.setdefault(row["driver_user_id"], []).append(row["verdict_id"])
+        if per_driver:
+            by_table[verdict_table] = per_driver
+    return by_table
+
+
+async def _detach_verdicts(
+    db, session_type: SessionType, verdicts: dict[str, dict[int, list[int]]]
+) -> None:
+    """Null every verdict's reference so the driver rows can be deleted.
+
+    The foreign key is checked on the DELETE itself, so re-pointing afterwards is too late — the
+    reference has to be released first. The rows are detached only within the transaction that
+    re-points them a few statements later, and :func:`_repoint_verdicts` refuses before writing
+    anything where a driver is missing, so no verdict is ever left detached once the transaction
+    settles: either all of them are re-pointed and committed, or the whole of it is abandoned.
+    """
+    if not verdicts:
+        return
+    fk_col = _verdict_fk_column(session_type)
+    for verdict_table, per_driver in verdicts.items():
+        ids = [vid for vids in per_driver.values() for vid in vids]
+        placeholders = ", ".join("?" for _ in ids)
+        await db.execute(
+            f"UPDATE {verdict_table} SET {fk_col} = NULL WHERE id IN ({placeholders})",  # noqa: S608
+            ids,
+        )
+
+
+async def _repoint_verdicts(
+    db,
+    session_result_id: int,
+    session_type: SessionType,
+    verdicts: dict[str, dict[int, list[int]]],
+) -> None:
+    """Point every verdict of this session at its driver's **new** result row.
+
+    The amendment deletes a session's driver rows and re-inserts them, so a verdict recorded
+    against the old row would fail the foreign key on the delete and, were the constraint absent,
+    point at nothing afterwards. The verdict follows its driver: the audit it carries — the
+    justification, who applied it and when — is the only record of why that driver lost places,
+    and an amendment correcting a lap time has no business discarding it (issue #345).
+
+    Raises :class:`AmendmentWouldOrphanVerdictError` where a driver carrying a verdict is not in
+    the corrected classification. Nothing is written in that case; the caller's transaction is
+    abandoned whole.
+    """
+    if not verdicts:
+        return
+    fk_col = _verdict_fk_column(session_type)
+    table = "qualifying_session_results" if session_type.is_qualifying else "race_session_results"
+    cursor = await db.execute(
+        f"SELECT id, driver_user_id FROM {table} WHERE session_result_id = ?",  # noqa: S608
+        (session_result_id,),
+    )
+    new_row_of: dict[int, int] = {r["driver_user_id"]: r["id"] for r in await cursor.fetchall()}
+
+    orphaned: set[int] = set()
+    for per_driver in verdicts.values():
+        orphaned.update(set(per_driver) - set(new_row_of))
+    if orphaned:
+        named = ", ".join(f"<@{driver}>" for driver in sorted(orphaned))
+        raise AmendmentWouldOrphanVerdictError(
+            f"The corrected classification leaves out {named}, who carries a penalty or appeal "
+            f"verdict for this session. Amending would discard the record of why that driver's "
+            f"result changed, so the amendment was refused and nothing was altered. Include the "
+            f"driver in the classification, or ask for the verdict to be withdrawn first."
+        )
+
+    for verdict_table, per_driver in verdicts.items():
+        for driver_user_id, verdict_ids in per_driver.items():
+            for verdict_id in verdict_ids:
+                await db.execute(
+                    f"UPDATE {verdict_table} SET {fk_col} = ? WHERE id = ?",  # noqa: S608
+                    (new_row_of[driver_user_id], verdict_id),
+                )
+
+
 async def amend_session_result(
     db_path: str,
     round_id: int,
@@ -1407,6 +1541,14 @@ async def amend_session_result(
                 f"No session_results row found for round={round_id} session={session_type.value}"
             )
         session_result_id = row["id"]
+        # **A verdict is re-pointed, not deleted** (#345). The driver rows below are deleted and
+        # re-inserted, and `penalty_records` / `appeal_records` reference them without
+        # `ON DELETE CASCADE` while `PRAGMA foreign_keys` is ON — so the delete was refused
+        # outright for any round that had reached a penalty or appeal verdict, which is every
+        # round eligible for amendment. Which driver a verdict belongs to is only knowable while
+        # the old rows stand, so it is read first and applied after the re-insertion.
+        _verdicts = await _verdicts_by_driver(db, session_result_id, session_type)
+        await _detach_verdicts(db, session_type, _verdicts)
         # Clear existing rows from new tables before re-inserting
         if session_type.is_qualifying:
             await db.execute(
@@ -1451,6 +1593,9 @@ async def amend_session_result(
                     (drv_profile_id,),
                 )
         await _insert_new_tables_in_tx(db, session_result_id, session_type, _amend_rows_normalized, _amend_profile_map)
+        # The verdicts follow their drivers onto the rows just inserted. Refuses, without
+        # writing, where a driver carrying one is no longer in the classification.
+        await _repoint_verdicts(db, session_result_id, session_type, _verdicts)
         await db.commit()
 
     # Apply points from the config so points_awarded / fastest_lap_bonus are populated

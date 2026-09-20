@@ -42,7 +42,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
-from services.result_submission_service import amend_session_result  # noqa: E402
+from services.result_submission_service import (  # noqa: E402
+    AmendmentWouldOrphanVerdictError,
+    amend_session_result,
+)
 from services.season_service import SeasonImmutableError  # noqa: E402
 
 SERVER_ID = 12908
@@ -553,3 +556,230 @@ async def test_an_amendment_with_no_guild_says_it_was_not_reposted(tmp_path):
     assert "RESULT_AMENDED | Incomplete" in logged
     assert "not reposted" in logged
     stubs["cascade"].assert_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Verdicts survive an amendment (#345)
+# ---------------------------------------------------------------------------
+#
+# `penalty_records` and `appeal_records` point at a driver's row in `race_session_results` or
+# `qualifying_session_results` without `ON DELETE CASCADE`, and `PRAGMA foreign_keys` is ON. The
+# amendment deletes those rows, so **every round that had reached a verdict was un-amendable** —
+# and since amendment is gated to FINAL rounds, which are exactly the rounds that went through
+# penalty review, that was the documented path rather than an edge case.
+#
+# The verdict follows its driver onto the new row. Deleting it instead would discard the audit of
+# why that driver lost places, and — because the post-race and appeal DSQ marks are drawn from
+# these two tables alone, never from the stored penalty columns — would silently blank the mark on
+# the republished table as well.
+
+
+async def _verdict_rows(db_path, table: str, column: str = "race_result_id"):
+    """Every row of *table*, as (id, the result row it points at), oldest first."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(f"SELECT id, {column} FROM {table} ORDER BY id")
+        return [(r[0], r[1]) for r in await cursor.fetchall()]
+
+
+async def _add_penalty(db_path, result_id: int, *, table: str = "penalty_records",
+                       column: str = "race_result_id") -> int:
+    """Record one verdict against *result_id*, as the penalty wizard would have."""
+    async with get_connection(db_path) as db:
+        if table == "penalty_records":
+            cursor = await db.execute(
+                f"INSERT INTO {table} ({column}, penalty_type, time_seconds, description, "
+                "justification, applied_by, applied_at) "
+                "VALUES (?, 'TIME', 5, 'Contact at turn 1', 'Wholly at fault', '9001', "
+                "'2026-02-02T00:00:00+00:00')",
+                (result_id,),
+            )
+        else:
+            cursor = await db.execute(
+                f"INSERT INTO {table} ({column}, status, penalty_type, time_seconds, "
+                "description, justification, submitted_by, submitted_at) "
+                "VALUES (?, 'UPHELD', 'TIME', 3, 'Appeal upheld', 'Evidence accepted', '9002', "
+                "'2026-02-03T00:00:00+00:00')",
+                (result_id,),
+            )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def _race_result_id(db_path, driver: int) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM race_session_results WHERE driver_user_id = ?", (driver,)
+        )
+        return (await cursor.fetchone())[0]
+
+
+async def test_a_round_carrying_a_penalty_can_be_amended_at_all(tmp_path):
+    """The defect itself: the delete was refused and nothing could be amended.
+
+    Before the fix this raised `IntegrityError: FOREIGN KEY constraint failed` and the admin was
+    told the amendment had failed for an internal reason, with no route by which they could ever
+    succeed.
+    """
+    db_path = await _make_db(tmp_path, name="amend_with_penalty")
+    await _add_penalty(db_path, await _race_result_id(db_path, 101))
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
+
+
+async def test_the_verdict_follows_its_driver_to_the_new_row(tmp_path):
+    """The audit is kept, and kept against the right driver.
+
+    The row id changes — the old one is deleted — so the test asserts the verdict points at the
+    row the *same driver* now holds, which is the whole of what re-pointing means.
+    """
+    db_path = await _make_db(tmp_path, name="amend_verdict_follows")
+    verdict_id = await _add_penalty(db_path, await _race_result_id(db_path, 101))
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    rows = await _verdict_rows(db_path, "penalty_records")
+    assert rows == [(verdict_id, await _race_result_id(db_path, 101))]
+
+
+async def test_the_justification_survives_the_amendment(tmp_path):
+    """Re-pointing keeps the record, not merely a row of the right shape.
+
+    The justification and the applier are the only account a league has of why a driver lost
+    places; an amendment correcting a lap time has no business discarding them.
+    """
+    db_path = await _make_db(tmp_path, name="amend_verdict_audit")
+    await _add_penalty(db_path, await _race_result_id(db_path, 101))
+
+    await _amend(db_path, [_race_row(101, 1), _race_row(102, 2)])
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT justification, applied_by, time_seconds FROM penalty_records"
+        )
+        row = await cursor.fetchone()
+    assert row["justification"] == "Wholly at fault"
+    assert row["applied_by"] == "9001"
+    assert row["time_seconds"] == 5
+
+
+async def test_an_appeal_verdict_is_re_pointed_too(tmp_path):
+    """`appeal_records` carries the same reference and was refused by the same constraint."""
+    db_path = await _make_db(tmp_path, name="amend_appeal_verdict")
+    verdict_id = await _add_penalty(
+        db_path, await _race_result_id(db_path, 102), table="appeal_records"
+    )
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    rows = await _verdict_rows(db_path, "appeal_records")
+    assert rows == [(verdict_id, await _race_result_id(db_path, 102))]
+
+
+async def test_several_verdicts_on_one_driver_are_all_re_pointed(tmp_path):
+    """A driver may collect more than one verdict in a session.
+
+    The wizard stages one record per incident, not per driver, so a mapping that kept a single id
+    per driver would silently drop all but the last.
+    """
+    db_path = await _make_db(tmp_path, name="amend_two_verdicts")
+    first = await _add_penalty(db_path, await _race_result_id(db_path, 101))
+    second = await _add_penalty(db_path, await _race_result_id(db_path, 101))
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    new_id = await _race_result_id(db_path, 101)
+    assert await _verdict_rows(db_path, "penalty_records") == [(first, new_id), (second, new_id)]
+
+
+async def test_a_qualifying_verdict_is_re_pointed_on_its_own_column(tmp_path):
+    """Qualifying verdicts use `qual_result_id`, and the qualifying branch had the same defect."""
+    db_path = await _make_db(tmp_path, name="amend_qual_verdict")
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM qualifying_session_results WHERE driver_user_id = 101"
+        )
+        qual_row_id = (await cursor.fetchone())[0]
+    verdict_id = await _add_penalty(db_path, qual_row_id, column="qual_result_id")
+
+    await _amend(
+        db_path,
+        [{"driver_user_id": 101, "team_role_id": 3001, "position": 1,
+          "outcome": "CLASSIFIED", "best_lap": "1:20.000"}],
+        session_type=SessionType.FEATURE_QUALIFYING,
+    )
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM qualifying_session_results WHERE driver_user_id = 101"
+        )
+        new_qual_id = (await cursor.fetchone())[0]
+    assert await _verdict_rows(db_path, "penalty_records", "qual_result_id") == [
+        (verdict_id, new_qual_id)
+    ]
+
+
+async def test_amending_one_session_leaves_the_other_sessions_verdicts_alone(tmp_path):
+    """The scope is the session, as the delete's is.
+
+    A round has up to four sessions; amending the feature race must not disturb a verdict
+    recorded against the feature qualifying.
+    """
+    db_path = await _make_db(tmp_path, name="amend_scoped_verdict")
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM qualifying_session_results WHERE driver_user_id = 101"
+        )
+        qual_row_id = (await cursor.fetchone())[0]
+    qual_verdict = await _add_penalty(db_path, qual_row_id, column="qual_result_id")
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    assert await _verdict_rows(db_path, "penalty_records", "qual_result_id") == [
+        (qual_verdict, qual_row_id)
+    ]
+
+
+async def test_an_amendment_dropping_a_driver_who_carries_a_verdict_is_refused(tmp_path):
+    """Refused by name, rather than failing on a constraint the admin cannot read.
+
+    Deleting the verdict would discard the audit and orphaning it would leave a row nothing can
+    ever find, every read of these tables being by the foreign key. Refusing is the conservative
+    answer until the specification states one, and the message names the driver so the admin can
+    act on it.
+    """
+    db_path = await _make_db(tmp_path, name="amend_orphan_refused")
+    await _add_penalty(db_path, await _race_result_id(db_path, 102))
+
+    with pytest.raises(AmendmentWouldOrphanVerdictError) as excinfo:
+        await _amend(db_path, [_race_row(101, 1)])
+
+    assert "<@102>" in str(excinfo.value)
+
+
+async def test_a_refused_amendment_changes_nothing_at_all(tmp_path):
+    """The whole transaction is abandoned, so the league keeps the round it raced.
+
+    A refusal that had already deleted the driver rows would be far worse than the defect it
+    replaces.
+    """
+    db_path = await _make_db(tmp_path, name="amend_orphan_intact")
+    verdict_id = await _add_penalty(db_path, await _race_result_id(db_path, 102))
+    before = await _race_result_id(db_path, 102)
+
+    with pytest.raises(AmendmentWouldOrphanVerdictError):
+        await _amend(db_path, [_race_row(101, 1)])
+
+    assert await _race_drivers(db_path) == [(101, 1), (102, 2)]
+    assert await _verdict_rows(db_path, "penalty_records") == [(verdict_id, before)]
+
+
+async def test_an_amendment_with_no_verdicts_is_unaffected(tmp_path):
+    """The ordinary case keeps working, so the fix cannot be read as a special path."""
+    db_path = await _make_db(tmp_path, name="amend_no_verdicts")
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
+    assert await _verdict_rows(db_path, "penalty_records") == []
