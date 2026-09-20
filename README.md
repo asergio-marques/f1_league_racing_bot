@@ -1965,6 +1965,22 @@ It is safe to run more than once: a driver already sacked or already in the Rese
 
 > **Limitation:** Available only while the season is ongoing, and only for a round whose penalties have been approved. It is refused, with nothing changed, if a channel it would post to cannot be reached.
 
+#### `/attendance post-check-in` — Post a round's check-in call by hand
+*Access: League manager*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division` | String | ✅ | Division name |
+| `round` | Integer | ✅ | Round number whose check-in call is missing |
+
+Posts the check-in call for the round you name, exactly as the scheduled call would have posted it, and opens the round's attendance records with it. The reply tells you whether a call is now standing — not merely that the command was accepted — and the run is written to the log channel either way.
+
+**This is a last resort.** A round whose check-in call never went out opens no attendance records, so it is afterwards recorded as perfect attendance for the whole division. This is how you repair that. If you find yourself reaching for it routinely, something is failing that has not been fixed — the log channel entry for the failed call says what.
+
+> **Limitation:** Available only while the season is ongoing. It is refused, with nothing changed, if the round is cancelled, if a check-in call for it is **already standing**, if the call is **not yet due**, or if the check-in **deadline has passed**.
+>
+> The last three are deliberate. Before the call is due the scheduled one is still coming, and posting early would override the notice period you set with `/attendance config rsvp-notice`. After the deadline a call arrives with its buttons already locked, so nobody could answer it. And a call already standing is never replaced — [amend the round](#round-amend--amend-a-round-in-the-active-season) instead, which posts the call again and carries every answer already given across.
+
 ---
 
 ### Image Module
