@@ -14,6 +14,7 @@ documents carry the project's knowledge, and all of them go stale silently:
 | `docs/wip-specs/*.md` | **The source of truth for rules.** What the bot shall do. | The author, and every future session |
 | `README.md` | **What a league sees.** Commands, behaviour, authoring conventions. | League admins and managers |
 | `docs/how-to/*.md` | **The order to do a job in.** One guide per module, plus the core bot. Becoming the source of truth on behaviour and how to use it. | A league manager setting the bot up |
+| `docs/design/*.md` | **Why the code is shaped as it is.** One file per module: the structure, what was rejected, and the trade-offs. Source for intent, never for detail — where it and the code disagree about what the code *does*, the code wins and the file is corrected. It restates no functional rule, citing the wip-spec instead. | Whoever changes that module next |
 
 `specs/NNN-*/` is **derived** — spec-kit's own output for one increment. Never hand-maintain
 it, and never copy a rule into it that belongs in a wip-spec.
@@ -126,18 +127,23 @@ league-facing guide changed.
    impact report.
 2. **Does the README claim anything that is no longer true?** Search it for the behaviour
    you changed, not just for the place you expect the text to be.
-3. **Does any how-to guide claim anything that is no longer true?** Grep all of
+3. **Did the change alter the shape of a module?** A new service, a table, a different place
+   where work is scheduled or a responsibility moved between layers goes in
+   `docs/design/<module>.md`. A decision that constrains one function belongs in that
+   function's docstring, pinned by a named test where a later reader might tune it away —
+   both, not either. A change inside the shape that already stands needs neither.
+4. **Does any how-to guide claim anything that is no longer true?** Grep all of
    `docs/how-to/` for the command, setting or behaviour you changed — a guide other than the
    obvious one often mentions it in passing, and a module's guide can be stale about a
    prerequisite it only links to. Read the surrounding steps, not only the matching line: a
    guide can be wrong about the order while every sentence in it is individually true.
-4. **Did a decision get made in this session that is written down nowhere?** Re-read the
+5. **Did a decision get made in this session that is written down nowhere?** Re-read the
    session for the user's answers, not just your own edits.
-5. **Is the test suite green?** Run `pytest tests/ -q` from the repo root and report the
+6. **Is the test suite green?** Run `pytest tests/ -q` from the repo root and report the
    result. Every production change carries its unit tests with it; a change reported complete
    without a test run is not complete. Any failure is a real one until confirmed on a clean
    tree.
-6. **What did the change do to coverage?** Where production code changed, measure coverage
+7. **What did the change do to coverage?** Where production code changed, measure coverage
    **before and after** — on the base branch (usually `main`) and on the finished branch — and
    compare them per module and for `src/` as a whole. Take the base-branch figures from a
    separate worktree, never by checking out over your work, and run the two measurements one
