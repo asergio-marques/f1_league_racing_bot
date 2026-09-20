@@ -579,6 +579,13 @@ class AttendanceCog(commands.Cog):
             return
 
         cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
+        if cfg is None:
+            await interaction.followup.send(
+                "\u274c No attendance configuration found. Enable the module first.",
+                ephemeral=True,
+            )
+            return
+
         scheduled_at = _as_utc(round_row["scheduled_at"])
         now = datetime.now(timezone.utc)
 

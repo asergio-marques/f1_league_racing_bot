@@ -358,3 +358,21 @@ async def test_the_run_is_written_to_the_log_channel(tmp_path):
     assert "/attendance post-check-in | Success" in logged
     assert "Division 1" in logged
     assert "round: 1" in logged
+
+
+async def test_a_missing_attendance_configuration_is_refused(tmp_path):
+    """The timings come from the configuration, so without one there is no window to judge.
+
+    `get_config` returns None where the row is absent, and reading `rsvp_notice_days` off it
+    would raise in the middle of a recovery command — the worst place to hand a manager a
+    traceback instead of an answer.
+    """
+    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
+    cog = _cog(db_path)
+    cog.bot.attendance_service.get_config = AsyncMock(return_value=None)
+    interaction = _interaction()
+
+    notice = await _invoke(cog, interaction)
+
+    notice.assert_not_awaited()
+    assert "No attendance configuration" in _replied(interaction)
