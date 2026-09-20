@@ -25,6 +25,8 @@ You do not need to read those first. Start here.
 
 **Round** — one race weekend in a division's calendar. You never type a round number; the bot works them out by sorting your rounds by date.
 
+**Principal division** — the highest tier division a driver holds a full-time seat in. A driver can race in more than one division at once — full-time in one, a reserve in others — and this is the one the rules name when only one will do. Somebody full-time in tier 2 who reserves in tier 1 has tier 2 as their principal division; somebody who only ever reserves, or who holds no seat, has none. You never set it. The bot works it out from the seats the driver holds, so it follows along when you place, move or release them.
+
 **Stage** — where a season has got to. This matters more than anything else in this guide, because it decides which commands will even run. A season moves through them in one direction:
 
 | Stage | What happens in it | How it ends |
