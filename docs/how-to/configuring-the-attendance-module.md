@@ -246,7 +246,9 @@ The ordinary locks still decide whether they are in time. Move a full-time drive
 
 **Points are only charged when the round is finished with.** Not at provisional results, but when post-race penalties are approved. That is deliberate: it gives you a window to correct a classification that accidentally left somebody out before anyone is charged for it, and before a sanction can fire on a mistake.
 
-**Amending the results afterwards puts it right.** Re-run through `/round results amend` and the bot recalculates that round's attendance, every later round's totals, reposts the sheet and re-checks the thresholds. Pardons you granted are kept. Two things to expect: the round has to be **FINAL** before `/round results amend` will touch it, so a round still sitting at post-race penalties is refused; and the recalculation happens when you *approve* the amendment, not when you submit it.
+**Amending the results afterwards puts it right.** Re-run through `/round results amend` and the bot recalculates that round's attendance, every later round's totals, reposts the sheet and re-checks the thresholds. Two things to expect: the round has to be **FINAL** before `/round results amend` will touch it, so a round still sitting at post-race penalties is refused; and the recalculation happens when you approve the **last** of the amendment's three steps, not when you paste the corrected classification.
+
+> **The amendment is also where you change a pardon.** Pardons you granted are carried into the amendment's report step and kept as they are unless you say otherwise — and that step is the only place to add one, edit one or take one back after a round has gone final. See [the results guide](configuring-the-results-module.md#a-classification-that-was-wrong) for the three steps in order.
 
 > **The sheet you get back is the division's current one, not the amended round's.** Each round's total is what the driver stood on at that round, so after correcting round 3 of ten the totals you want to see are round 10's. That is the sheet posted, and those are the numbers the auto-reserve and auto-sack limits are checked against.
 

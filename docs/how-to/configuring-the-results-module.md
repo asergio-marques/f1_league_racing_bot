@@ -307,11 +307,23 @@ Neither is a round's standings, so neither is replaced by anything and neither i
 /round results amend division_name: Division One  round_number: 3
 ```
 
-Opens a private channel for one session of one settled round; paste the corrected classification and the bot validates it, rescores it, and republishes that round and every later standing. The format has **two extra columns** for the post-race and appeal penalties, so the corrected version carries the sanctions you had applied rather than losing them — the exact layout is under [`/round results amend`](../../README.md#round-results-amend--re-submit-results-for-a-completed-session).
+Opens a private channel for one session of one settled round, and **walks you back through the round the way you raced it** — the classification, then the reports, then the appeals. It is three steps rather than one paste, and you are not finished until the third is approved.
+
+**Step one — the classification.** Paste the corrected results. The format is the same as a first submission: the exact layout is under [`/round results amend`](../../README.md#round-results-amend--re-submit-results-for-a-completed-session). If you have a paste saved from before, note that the **two extra sanction columns have been withdrawn** — the bot will refuse a block that still carries them and tell you why. Sanctions are not pasted any more; you review them in step two.
+
+**Step two — the reports.** The bot lists the penalties this round already carries and gives you a button beside each. Keep them, change them, remove them, add new ones. This is also the only place to amend the round's **attendance pardons**. Approving without touching anything leaves every decision exactly as it stood, so a correction to one driver's lap time costs you nothing here.
+
+**Step three — the appeals.** The same again for the appeals. Approving this last step is what commits the amendment and rebuilds the channels.
 
 There is a third parameter, `session`, offering Sprint Qualifying, Sprint Race, Feature Qualifying and Feature Race. Name it up front to go straight to that session; leave it out and the bot posts buttons to pick from. If the configuration the round was scored with is no longer attached to the season and more than one now is, it will also ask you which to rescore with.
 
-> **You get one attempt.** A block the bot rejects, an internal failure, or five minutes of silence deletes the channel, and you re-run the command to try again. The reason for a rejection goes to the log channel rather than to the channel you are looking at, so have that open. A restart also deletes an amend channel and abandons the amendment. There is a **❌ Cancel Amendment** button if you want out deliberately, and the channel only listens to the person who ran the command — nobody else can paste into it.
+> **Sanctions keep their reason.** A penalty follows its driver onto the corrected classification with the justification, the author and the time it was given intact — that is why they are reviewed rather than re-typed. If your corrected classification leaves a driver out who carries a penalty or an appeal, the amendment is refused and names them. Put the driver back in, or have the verdict withdrawn first.
+
+> **You get one attempt at the paste.** A block the bot rejects, an internal failure, or five minutes of silence deletes the channel, and you re-run the command to try again. The reason for a rejection goes to the log channel rather than to the channel you are looking at, so have that open. A restart deletes an amend channel and abandons the amendment at whatever step it had reached. There is a **❌ Cancel Amendment** button if you want out deliberately, and the channel only listens to the person who ran the command — nobody else can paste into it.
+
+> **Expect the whole division to be reposted, and expect it to take a minute.** Once you approve the appeals, every round of the division goes up again in round order across the results, standings and verdicts channels, with the attendance sheet reposted beside them. That is deliberate: a repost is a new message at the bottom of the channel, so replacing only round 1 of five would leave the channel reading 2, 3, 4, 5, 1. The new messages are posted **before** the old ones come down, so for up to a minute you will see both — that is the bot working, not a fault, and it resolves itself. Anything it could not repost is named in the log channel under `RESULT_AMENDED | Incomplete`.
+
+> **Old verdict announcements are replaced where the bot can find them.** Every verdict announced from now on records which message it went in, so an amendment can take it down and post the corrected one. Verdicts announced *before* that record existed cannot be found again — the log names those, and you delete the superseded announcement by hand. The bot will not pretend it replaced something it did not.
 
 ### The points system itself, mid-season
 

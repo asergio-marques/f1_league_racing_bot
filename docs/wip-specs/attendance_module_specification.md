@@ -136,6 +136,7 @@
     - The attendance pardons shall be displayed together with the list of staged penalties.
     - The drivers who had one of their attendance penalties waived by this process shall not receive attendance points for that reason.
 - After the post-race penalties are approved, attendance pardons cannot be applied.
+    - **Amending a round reopens them.** Decided 2026-09-20 (#345). An amendment replays the round's report stage, where the pardons it already carries shall be shown back, each able to be kept, changed or removed, and further ones added — on the same terms as the reports beside them, and in that stage alone.
 
 ### Updating attendance sheets
 - Once the post-race penalties are approved and posted, the updated attendance total shall be posted in the configured attendance channel for the division.
@@ -149,7 +150,9 @@
 - Neither sheet is about a round, so neither is prevented by a round recorded as cancelled. Where either is written out as text rather than drawn, it is headed by the phrase naming the occasion — "Attendance — Opening Classification" or "Attendance — Final Classification".
 - The opening sheet takes the place of the previous sheet in the ordinary way, so that the sheet of the first round replaces it and the division is never left holding a stale opening sheet beside a live one. The **final sheet does not**: it is posted beside the sheet of the last round and both stand. This is the one exception to the rule above that only one attendance total stands in the channel at a time.
 - The failure of either shall never prevent a season's placements from being confirmed nor the season from completing, and the failure of one division shall not prevent the others.
-- The attendance sheet for a round must be recalculated in the case "round results amend" is used. The pardons handed out previously will be taken in considerations as well.
+- The attendance sheet for a round must be recalculated in the case "round results amend" is used. The pardons the round carries after the amendment shall be taken into consideration as well.
+    - The sheet shall be reposted against the round the running totals stand at — the division's latest — and not against the round amended, there being one live sheet rather than one per round.
+    - Any sanction the recalculation warrants shall be enforced against that latest round and no earlier one. A correction to an earlier round shall not undo a sanction already applied nor apply one retrospectively: the past is not rewritten. Decided 2026-09-20 (#345).
 - Recalculating a round's attendance shall carry the new totals through every later round of the division whose penalties have been approved, so that no sheet later drawn against one of them — the final sheet of the season included — publishes a total the recalculation has superseded.
 - The total recorded against a round shall be the driver's total **as at that round**: the points of every earlier round of the division whose penalties have been approved, and that round's own. It shall not be the season's total, so that a figure which looks wrong can be traced round by round.
 - It follows that a division's current total stands at its latest such round. Where a recalculation carries totals forward, the sheet posted and the limits verified shall be those of the latest round it recalculated, not of the round it was asked to recalculate from.
