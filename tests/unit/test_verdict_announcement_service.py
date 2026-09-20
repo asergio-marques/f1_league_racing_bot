@@ -56,10 +56,17 @@ class TestTranslatePenalty:
 # ---------------------------------------------------------------------------
 
 def _make_state(db_path: str, round_id: int = 1) -> MagicMock:
+    """A stand-in for ``PenaltyReviewState``.
+
+    ``round_number`` and ``division_name`` are set because the fault lines read them: left
+    to a bare ``MagicMock`` they would be mock objects, and the message would name one.
+    """
     state = MagicMock()
     state.db_path = db_path
     state.round_id = round_id
     state.division_id = 1
+    state.round_number = 3
+    state.division_name = "Division A"
     return state
 
 
@@ -654,8 +661,10 @@ async def test_a_round_that_cannot_be_read_reports_every_verdict_owed(tmp_path):
     )
 
     assert len(faults) == 1
-    assert "999999" in faults[0].replace(",", "")
-    assert "2 penalty verdicts" in faults[0]
+    # The round a league knows, not the primary key, and a count that reads as English.
+    assert "Round 3 (Division A)" in faults[0]
+    assert "999999" not in faults[0].replace(",", "")
+    assert "2 verdicts" in faults[0]
 
 
 @pytest.mark.asyncio
@@ -766,10 +775,15 @@ async def test_an_unannounced_autosanction_says_it_was_still_applied(tmp_path):
 def test_the_repair_hint_says_a_verdict_cannot_be_announced_twice():
     """There is no re-announce command, and #189 records why one could not be built.
 
-    Telling a manager to re-run something would be worse than telling them nothing: they
-    would believe the job finished.
+    **Attendance sanctions are no exception**, though `/attendance sync` re-runs them: a
+    driver already sacked or already moved to Reserve is no longer a candidate, so a second
+    run passes over them without a word. ``attendance_service._failure_reason`` states this,
+    and an earlier draft of this hint promised the opposite — which would have had a manager
+    run the sync, read `Success`, and believe the driver had been told.
     """
     from services.verdict_announcement_service import verdict_repair_hint
 
-    assert "cannot announce a verdict a second time" in verdict_repair_hint()
-    assert "/attendance sync" in verdict_repair_hint(sanction=True)
+    hint = verdict_repair_hint()
+    assert "cannot announce a verdict a second time" in hint
+    assert "yourself" in hint
+    assert "/attendance sync" not in hint

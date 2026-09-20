@@ -173,7 +173,10 @@ async def _enforce(db_path, *, sack=None, post=None):
                new=post or AsyncMock()) as posted, \
             patch("services.verdict_announcement_service.banner_for_round", return_value=None), \
             patch("services.verdict_announcement_service.post_autosanction_announcement",
-                  new=AsyncMock()):
+                  # `[] += AsyncMock()` rebinds posting_faults to a MagicMock rather
+                  # than extending it, which leaves SanctionOutcome.complete false
+                  # for every run in this file. It must return a list (#237).
+                  new=AsyncMock(return_value=[])):
         await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1)
     return posted
 
@@ -238,7 +241,10 @@ async def test_autosack_reposts_every_division(db_path):
     with patch("services.attendance_service.post_attendance_sheet", new=AsyncMock()) as posted, \
             patch("services.verdict_announcement_service.banner_for_round", return_value=None), \
             patch("services.verdict_announcement_service.post_autosanction_announcement",
-                  new=AsyncMock()):
+                  # `[] += AsyncMock()` rebinds posting_faults to a MagicMock rather
+                  # than extending it, which leaves SanctionOutcome.complete false
+                  # for every run in this file. It must return a list (#237).
+                  new=AsyncMock(return_value=[])):
         await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1)
 
     posted_divisions = sorted(call.args[4] for call in posted.await_args_list)
