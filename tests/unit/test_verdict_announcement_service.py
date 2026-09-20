@@ -677,6 +677,7 @@ async def test_a_record_with_no_result_is_named_and_the_next_still_posts(tmp_pat
 
     channel.send = _send
     bot = MagicMock()
+    bot.db_path = db_path  # the image path reads it; a mock here writes a file named after itself
     bot.get_channel.return_value = channel
     state = _make_state(db_path, round_id=seeded["round_id"])
 
@@ -700,6 +701,7 @@ async def test_a_verdict_whose_posting_raises_is_named(tmp_path):
     channel = MagicMock()
     channel.send = AsyncMock(side_effect=RuntimeError("Missing Permissions"))
     bot = MagicMock()
+    bot.db_path = db_path  # as above — a mock db_path becomes a file in the repo root
     bot.get_channel.return_value = channel
     state = _make_state(db_path, round_id=seeded["round_id"])
 
