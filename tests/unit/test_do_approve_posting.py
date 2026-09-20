@@ -467,6 +467,66 @@ async def test_a_season_with_no_points_configuration_attached_is_refused(db_path
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
+async def test_a_disabled_results_module_is_not_checked(db_path):
+    """A league not running results is asked for none of its settings.
+
+    Issue #185. This was the one claim the since-deleted `test_season_approval_gates.py`
+    made that nothing else did — and it made it against a copy of the gate rather than
+    the gate itself, so the `if results_enabled` guard could have been dropped from the
+    cog entirely without a single test noticing. The division below has no channels of
+    any kind and the season has no points configuration attached: every one of the
+    refusals above would fire if the gate were consulted, so the approval going through
+    is the guard working.
+    """
+    cog = _cog(db_path, results_enabled=False)
+    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                name="Pro",
+                results_channel_id=None,
+                standings_channel_id=None,
+                penalty_channel_id=None,
+            )
+        ]
+    )
+
+    await _approve(cog, _interaction())
+
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+async def test_the_results_refusal_lists_every_fault_at_once(db_path):
+    """Four settings wrong is one refusal, not four attempts at starting a season."""
+    cog = _cog(db_path, results_enabled=True)
+    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                name="Pro",
+                results_channel_id=None,
+                standings_channel_id=701,
+                penalty_channel_id=702,
+            ),
+            SimpleNamespace(
+                name="Academy",
+                results_channel_id=800,
+                standings_channel_id=None,
+                penalty_channel_id=None,
+            ),
+        ]
+    )
+    interaction = _interaction()
+
+    await _approve(cog, interaction)
+
+    replied = _replied(interaction)
+    assert "Pro" in replied and "missing a results channel" in replied
+    assert "Academy" in replied and "missing a standings channel" in replied
+    assert "missing a verdicts channel" in replied
+    # The points configuration is unattached too, and is named in the same breath.
+    assert "no points configuration is attached" in replied
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # What approval posts
 # ---------------------------------------------------------------------------
@@ -700,4 +760,132 @@ async def test_nothing_is_posted_without_a_guild(db_path):
 
     stubs["calendar"].assert_not_awaited()
     cog.bot.placement_service._refresh_lineup_post.assert_not_awaited()
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# What approval schedules
+#
+# Issue #185. The choice between the two schedulers had a test that never made it:
+# `test_module_service.py` re-stated the condition as a bare `if` in the test body
+# and called the scheduler itself, so it asserted that `if True:` calls what follows
+# it. The real branch is three-way and carries the weather pipeline's horizons, none
+# of which a copy of its first line can reach. These drive `_do_approve`.
+# ---------------------------------------------------------------------------
+
+
+async def _attach_points(db_path: str, config_name: str = "Standard") -> None:
+    """A real, well-ordered points configuration attached to the season.
+
+    The results arm of the branch sits past the points gate, so without this the
+    approval is refused before any scheduling is reached.
+    """
+    from models.points_config import SessionType
+    from services import points_config_service, season_points_service
+
+    await points_config_service.create_config(db_path, config_name)
+    for position, pts in ((1, 25), (2, 18)):
+        await points_config_service.set_session_points(
+            db_path, config_name, SessionType.FEATURE_RACE, position, pts
+        )
+    await season_points_service.attach_config(
+        db_path, SEASON_ID, config_name, "SETUP"
+    )
+
+
+def _scheduler(cog):
+    """The two scheduling calls the branch chooses between."""
+    return (
+        cog.bot.scheduler_service.schedule_all_rounds,
+        cog.bot.scheduler_service.schedule_result_submission_jobs,
+    )
+
+
+async def test_weather_on_schedules_every_round_through_the_pipeline(db_path):
+    """Weather owns the schedule when it is on: one call carrying the phase horizons.
+
+    `schedule_round` raises the weather phase jobs and the results job together, which
+    is why the results arm is an `elif` and not a second `if`.
+    """
+    division = _division(1, "Pro")
+    division.forecast_channel_id = 900
+    cog = _cog(db_path, divisions=[division])
+    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+
+    await _approve(cog, _interaction())
+
+    all_rounds, submission = _scheduler(cog)
+    submission.assert_not_called()
+    (_rounds,), kwargs = all_rounds.call_args
+    assert [r.id for r in _rounds] == [10]
+    assert kwargs["division_meta"] == {1: (1, 1)}
+    # The league's own horizons, defaulted here because no row was written.
+    assert kwargs["phase_1_days"] == 5
+    assert kwargs["phase_2_days"] == 2
+    assert kwargs["phase_3_hours"] == 2
+
+
+async def test_weather_off_and_results_on_schedules_the_submission_jobs_instead(db_path):
+    """The other arm: no forecast to raise, but a result still has to be asked for."""
+    await _attach_points(db_path)
+    cog = _cog(db_path, results_enabled=True)
+    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                name="Pro",
+                results_channel_id=700,
+                standings_channel_id=701,
+                penalty_channel_id=702,
+            )
+        ]
+    )
+
+    await _approve(cog, _interaction())
+
+    all_rounds, submission = _scheduler(cog)
+    all_rounds.assert_not_called()
+    (_rounds,), kwargs = submission.call_args
+    assert [r.id for r in _rounds] == [10]
+    assert kwargs["division_meta"] == {1: (1, 1)}
+
+
+async def test_test_mode_schedules_no_submission_jobs(db_path):
+    """Test mode's rounds are past-dated, and a past-dated job fires the moment it is
+    registered. The advance command drives those rounds from database state instead, so
+    scheduling them here would post a submission call for every round at once."""
+    await _attach_points(db_path)
+    cog = _cog(db_path, results_enabled=True)
+    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                name="Pro",
+                results_channel_id=700,
+                standings_channel_id=701,
+                penalty_channel_id=702,
+            )
+        ]
+    )
+    cog.bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(
+            test_mode_active=True, interaction_role_id=1, league_admin_role_id=None
+        )
+    )
+
+    await _approve(cog, _interaction())
+
+    all_rounds, submission = _scheduler(cog)
+    all_rounds.assert_not_called()
+    submission.assert_not_called()
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+async def test_neither_module_on_schedules_nothing(db_path):
+    """A league running neither module has nothing to schedule, and is still approved."""
+    cog = _cog(db_path)
+
+    await _approve(cog, _interaction())
+
+    all_rounds, submission = _scheduler(cog)
+    all_rounds.assert_not_called()
+    submission.assert_not_called()
     cog.bot.season_service.transition_to_active.assert_awaited_once()
