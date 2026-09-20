@@ -8,6 +8,8 @@ FR-024 (amended 2026-03-04):
   - Single-slot sessions (len == 1) are EXEMPT — no simplification treatment.
 """
 
+import re
+
 import pytest
 from utils.message_builder import format_slots_for_forecast, format_slots_for_log
 
@@ -127,10 +129,13 @@ class TestFormatSlotsForLog:
 # ---------------------------------------------------------------------------
 
 from utils.message_builder import (  # noqa: E402
+    PHASE_DESCRIPTIONS,
     format_rain_probability,
     format_session_weather_type,
     format_slot_sequence,
     phase1_message,
+    phase2_message,
+    phase3_message,
     session_type_label,
 )
 
@@ -214,3 +219,91 @@ class TestSessionTypeLabel:
     )
     def test_the_length_qualifier_is_stripped(self, raw, expected):
         assert session_type_label(raw) == expected
+
+
+# ---------------------------------------------------------------------------
+# How a forecast names itself (issue #112)
+#
+# The three posts described their own timing in fixed wording — "(5 days out)", "(2 days
+# out)", "(2 hours out)" — and pointed forward to fixed ones. None of the builders was given
+# the league's configured deadlines, so every league but one left on the defaults was told
+# the wrong time. Nothing in the suite asserted on a heading, which is how it sat there.
+# ---------------------------------------------------------------------------
+
+
+def _phase1() -> str:
+    return phase1_message(1, "Spa", 0.30)
+
+
+def _phase2() -> str:
+    return phase2_message(1, "Spa", [("Qualifying", "rain"), ("Race", "mixed")])
+
+
+def _phase3() -> str:
+    return phase3_message(
+        1, "Spa", [("Qualifying", ["Clear"]), ("Race", ["Wet", "Very Wet"])]
+    )
+
+
+class TestAForecastNamesNoHorizon:
+    """No forecast describes when it was posted or when the next one arrives (#112)."""
+
+    @pytest.mark.parametrize(
+        "message", [_phase1(), _phase2(), _phase3()], ids=["phase1", "phase2", "phase3"]
+    )
+    def test_no_message_names_a_horizon(self, message):
+        """The wording the issue reported, in every form it took."""
+        for horizon in ("days out", "hours out", "T−2", "T-2", "T−5", "T-5"):
+            assert horizon not in message
+
+    @pytest.mark.parametrize(
+        "message", [_phase1(), _phase2(), _phase3()], ids=["phase1", "phase2", "phase3"]
+    )
+    def test_no_message_counts_days_or_hours_at_all(self, message):
+        """A number of days or hours in any phrasing, not just the three literals replaced.
+
+        The fix is that a forecast says nothing about its own timing — a rewording that
+        reintroduced "in 5 days" or "2 hours before" would pass the test above and still be
+        the defect.
+        """
+        assert not re.search(r"\d+\s*(day|hour)", message, re.IGNORECASE)
+
+    @pytest.mark.parametrize("phase", [1, 2, 3])
+    def test_each_message_is_titled_by_its_phase_description(self, phase):
+        message = {1: _phase1, 2: _phase2, 3: _phase3}[phase]()
+        heading = message.splitlines()[0]
+        assert PHASE_DESCRIPTIONS[phase] in heading
+
+    def test_no_message_names_a_phase_number(self):
+        """The heading read "Phase 1", "Phase 2", "Phase 3"; the description replaces it.
+
+        The graphics have never drawn a phase number (FR-011, FR-022) and the text no longer
+        does either, the two now naming a phase from one constant.
+        """
+        for message in (_phase1(), _phase2(), _phase3()):
+            assert "Phase 1" not in message
+            assert "Phase 2" not in message
+            assert "Phase 3" not in message
+
+    def test_the_message_and_the_graphic_name_the_phase_alike(self):
+        """One constant serves both, so a fork cannot open between them (XIV.7)."""
+        from services.image_weather_service import (
+            PHASE_DESCRIPTIONS as graphic_descriptions,
+        )
+
+        assert graphic_descriptions is PHASE_DESCRIPTIONS
+
+    def test_the_earlier_phases_still_promise_a_closer_forecast(self):
+        """The weather spec obliges phase 1 to say a more detailed forecast follows.
+
+        Dropping the horizon does not drop the promise — only the hour it named.
+        """
+        assert "will follow" in _phase1()
+        assert "will follow" in _phase2()
+
+    def test_the_final_forecast_promises_nothing_further(self):
+        assert "will follow" not in _phase3()
+
+    def test_phase_2_says_the_final_forecast_is_the_more_accurate(self):
+        """The qualitative statement that replaced the timing (decided 2026-09-20)."""
+        assert "more accurate" in _phase2()

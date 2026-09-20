@@ -77,13 +77,18 @@ PHASE_DESCRIPTIONS = {
 
 
 def phase1_message(division_role_id: int, track: str, rpc_pct: float) -> str:
-    """Phase 1 forecast: rain probability preview (T−5 days)."""
+    """Phase 1 forecast: the round's chance of rain, drawn at the phase 1 horizon.
+
+    Titled by ``PHASE_DESCRIPTIONS[1]`` and naming no horizon of its own — see that constant
+    for why. The promise of a closer forecast stays, the weather specification requiring this
+    message to indicate that a more detailed one follows; only the "at T−2 days" left it.
+    """
     role_mention = f"<@&{division_role_id}>"
     return (
-        f"{role_mention} 🏁 **Weather Forecast — Phase 1** (5 days out)\n"
+        f"{role_mention} 🏁 **Weather Forecast — {PHASE_DESCRIPTIONS[1]}**\n"
         f"**Track**: {track}\n"
         f"**Rain Probability**: {format_rain_probability(rpc_pct)}\n"
-        f"A more detailed forecast will follow at T−2 days."
+        f"A more detailed forecast will follow closer to the round."
     )
 
 
@@ -92,14 +97,18 @@ def phase2_message(
     track: str,
     session_slots: list[tuple[str, str]],
 ) -> str:
-    """Phase 2 forecast: session-level rain/mixed/sunny slot assignment (T−2 days).
+    """Phase 2 forecast: session-level rain/mixed/sunny slot assignment.
+
+    Titled by ``PHASE_DESCRIPTIONS[2]`` and naming no horizon of its own — see that constant
+    for why. Its closing line still points at the final forecast, saying that it is nearer the
+    round and more accurate rather than naming the hour it arrives.
 
     Args:
         session_slots: list of (session_type_label, slot_type) e.g. ('Qualifying', 'rain')
     """
     role_mention = f"<@&{division_role_id}>"
     lines = [
-        f"{role_mention} 🏁 **Weather Forecast — Phase 2** (2 days out)",
+        f"{role_mention} 🏁 **Weather Forecast — {PHASE_DESCRIPTIONS[2]}**",
         f"**Track**: {track}",
         "",
         "**Session Overview**:",
@@ -110,7 +119,10 @@ def phase2_message(
             f"  {icon} **{session_label}**: "
             f"{format_session_weather_type(slot)} conditions expected"
         )
-    lines.append("\nFull slot-by-slot forecast will follow at T−2 hours.")
+    lines.append(
+        "\nA full slot-by-slot forecast will follow closer to the round, and will be more "
+        "accurate than this one."
+    )
     return "\n".join(lines)
 
 
@@ -119,14 +131,18 @@ def phase3_message(
     track: str,
     session_weather: list[tuple[str, list[str]]],
 ) -> str:
-    """Phase 3 forecast: slot-by-slot weather for all sessions (T−2 hours).
+    """Phase 3 forecast: slot-by-slot weather for all sessions.
+
+    Titled by ``PHASE_DESCRIPTIONS[3]`` and naming no horizon of its own — see that constant
+    for why. It carries no forward reference at all, being the last forecast a round receives,
+    and the "Final" it once spelled out in its own heading now comes from the description.
 
     Args:
         session_weather: list of (session_label, [weather_slot, ...])
     """
     role_mention = f"<@&{division_role_id}>"
     lines = [
-        f"{role_mention} 🏁 **Final Weather Forecast — Phase 3** (2 hours out)",
+        f"{role_mention} 🏁 **Weather Forecast — {PHASE_DESCRIPTIONS[3]}**",
         f"**Track**: {track}",
         "",
         "**Slot-by-Slot Forecast**:",
