@@ -62,9 +62,9 @@ async def main() -> None:
     # A staged restore is swapped in **here**, before a single service is constructed and
     # before the scheduler opens its job store. Every service captures its path and holds
     # connections open, so this is the one moment in the process at which replacing the
-    # files underneath them is safe. `/backup restore` stages and does no more, precisely
-    # so that the swap can happen at this point on the next start — under a service or
-    # from a terminal alike.
+    # files underneath them is safe. `/test-mode backup restore` stages and does no more,
+    # precisely so that the swap can happen at this point on the next start — under a
+    # service or from a terminal alike.
     from services.backup_service import apply_staged_restore
     from services.scheduler_service import default_jobstore_path
 
