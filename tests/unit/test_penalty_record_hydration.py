@@ -260,3 +260,45 @@ async def test_another_rounds_verdicts_are_not_picked_up(tmp_path):
     reports, _, _ = await load_staged_from_records(db_path, ROUND_ID)
 
     assert [(r.driver_user_id, r.penalty_seconds) for r in reports] == [(102, 7)]
+
+
+async def test_the_pairing_holds_because_both_rows_come_from_one_staged_appeal(tmp_path):
+    """Why matching on shape is sound rather than lucky.
+
+    `finalize_appeals_review` runs `apply_penalties(..., _phase="APPEAL")`, which inserts a
+    `penalty_records` row, and then writes the `appeal_records` row from the **same**
+    `StagedPenalty` — the driver, the session, the type and the seconds are copied from one
+    object into both tables in one pass. There is no route by which the pair can disagree, so
+    an appeal always accounts for exactly the penalty row it created.
+
+    Pinned because the pairing would otherwise look like a guess: a reader who assumed the two
+    rows were written independently would be right to distrust it, and might "fix" it into
+    something that double-counts.
+    """
+    db_path, ids = await _seed(tmp_path, "hydrate_pair_source")
+    # Exactly what that code path produces: one penalty row and one appeal row of one shape.
+    await _penalty(db_path, ids["race_101"], penalty_type="TIME", seconds=8)
+    await _appeal(db_path, ids["race_101"], penalty_type="TIME", seconds=8)
+
+    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+
+    assert reports == []
+    assert len(appeals) == 1
+    assert appeals[0].penalty_seconds == 8
+
+
+async def test_a_report_of_a_different_shape_is_never_claimed_by_an_appeal(tmp_path):
+    """A genuine report survives beside an appeal, which is the failure mode that matters.
+
+    Losing a report to an over-eager match would silently drop a steward's decision from the
+    stage that is meant to show it back.
+    """
+    db_path, ids = await _seed(tmp_path, "hydrate_pair_distinct")
+    await _penalty(db_path, ids["race_101"], penalty_type="TIME", seconds=8)
+    await _penalty(db_path, ids["race_102"], penalty_type="DSQ", seconds=None)
+    await _appeal(db_path, ids["race_101"], penalty_type="TIME", seconds=8)
+
+    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+
+    assert [(r.driver_user_id, r.penalty_type) for r in reports] == [(102, "DSQ")]
+    assert [(a.driver_user_id, a.penalty_type) for a in appeals] == [(101, "TIME")]

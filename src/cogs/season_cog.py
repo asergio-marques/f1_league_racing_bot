@@ -5156,7 +5156,10 @@ class SeasonCog(commands.Cog):
         cancel_view = _CancelView()
         prompt_msg = await amend_channel.send(
             f"📋 **Amend Results — {session_label} | Round {round_number} ({division_name})**\n"
-            "Paste the corrected results below (same format as original submission).\n"
+            "**Stage 1 of 3.** Paste the corrected results below, in the same format as a "
+            "first submission — the two sanction columns amendments used to take have been "
+            "withdrawn, and the round's reports and appeals are reviewed in the two stages "
+            "that follow this one.\n"
             "Click **❌ Cancel Amendment** to abort and delete this channel.",
             view=cancel_view,
         )
