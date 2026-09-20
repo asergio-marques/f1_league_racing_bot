@@ -5,6 +5,7 @@ configured verdicts (penalty) channel after the respective review is approved.
 """
 from __future__ import annotations
 
+import json as _json
 import logging
 import re
 from pathlib import Path
@@ -359,6 +360,54 @@ def _build_announcement_message(
     )
 
 
+def _record_id(record) -> int | None:
+    """The row id of a verdict record, whether it arrived as a dict or a dataclass.
+
+    Every other field in these two functions is read through the same pair of accessors; the
+    id was simply never needed until there was something to write back against it.
+    """
+    value = record.get("id") if hasattr(record, "get") else getattr(record, "id", None)
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+async def _record_announcement(
+    db_path: str, table: str, record_id: int | None, message, channel_id: int | None
+) -> None:
+    """Record which message carries a verdict, so it can be found again (#189).
+
+    ``penalty_records`` and ``appeal_records`` stored the channel an announcement went to and
+    nothing more, so the bot could not edit, delete or replace one by any route. An amendment
+    therefore rescored the classification a verdict was applied to and left the verdict itself
+    standing, contradicting it, with no command to put it right.
+
+    Both the anchor id and the chunk list are written. A verdict is one message today, but the
+    column pair is the one every other posting uses and a batch that grows past Discord's limit
+    would otherwise reintroduce the guesswork `_delete_posting` exists to remove (#345).
+
+    A failure here is logged, never raised: the verdict *was* announced, and losing the record
+    of where is a smaller harm than turning a delivered announcement into a reported fault.
+    """
+    if record_id is None or message is None:
+        return
+    message_id = getattr(message, "id", None)
+    if message_id is None:
+        return
+    try:
+        async with get_connection(db_path) as db:
+            await db.execute(
+                f"UPDATE {table} SET announcement_message_id = ?, "  # noqa: S608 — literal table
+                "announcement_message_ids = ?, announcement_channel_id = ? WHERE id = ?",
+                (str(message_id), _json.dumps([message_id]), 
+                 str(channel_id) if channel_id is not None else None, record_id),
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001 — the announcement went out; only the record of it failed
+        log.exception("could not record the announcement of %s row %s", table, record_id)
+
+
 async def _send_verdict(
     bot,
     target_channel,
@@ -377,8 +426,12 @@ async def _send_verdict(
     description_text: str,
     justification_text: str,
     team_name: str | None = None,
-) -> None:
+) -> "object | None":
     """Post one verdict: as a graphic where the toggle allows, as text otherwise.
+
+    Returns the message it sent, so the caller can record which message carries this verdict
+    (#189). Without that the bot held nothing by which to find an announcement again, and an
+    amendment left a decision standing that contradicted the classification it was applied to.
 
     The graphic **displaces the whole announcement but the mention** (Constitution XIV.7): its
     heading, driver line, sanction, description and justification all move onto the canvas and
@@ -437,10 +490,9 @@ async def _send_verdict(
         # verdict belongs to, and leaking the raw template key was never intended.
         attachment = _discord.File(str(render.png), filename=Path(render.png).name)
         try:
-            await target_channel.send(f"<@{driver_discord_id}>", file=attachment)
+            return await target_channel.send(f"<@{driver_discord_id}>", file=attachment)
         finally:
             image_verdict_post.discard(render, attachment)
-        return
 
     content = _build_announcement_message(
         season_number,
@@ -453,7 +505,7 @@ async def _send_verdict(
         justification_text,
         driver_display_name=driver_display_name,
     )
-    await target_channel.send(content)
+    return await target_channel.send(content)
 
 
 async def post_penalty_announcements(
@@ -589,7 +641,7 @@ async def post_penalty_announcements(
 
             await head_the_batch()
 
-            await _send_verdict(
+            _sent = await _send_verdict(
                 bot,
                 target_channel,
                 db_path=db_path,
@@ -611,6 +663,10 @@ async def post_penalty_announcements(
                 description_text=description_text or NOT_PROVIDED,
                 justification_text=justification_text or NOT_PROVIDED,
                 team_name=team_name,
+            )
+            await _record_announcement(
+                db_path, "penalty_records", _record_id(record), _sent,
+                getattr(target_channel, "id", None),
             )
 
         except Exception as exc:  # noqa: BLE001 — recorded, and the next verdict taken
@@ -742,7 +798,7 @@ async def post_appeal_announcements(
 
             await head_the_batch()
 
-            await _send_verdict(
+            _sent = await _send_verdict(
                 bot,
                 target_channel,
                 db_path=db_path,
@@ -765,6 +821,10 @@ async def post_appeal_announcements(
                 justification_text=justification_text or NOT_PROVIDED,
                 team_name=team_name,
             )
+            await _record_announcement(
+                db_path, "appeal_records", _record_id(record), _sent,
+                getattr(target_channel, "id", None),
+            )
 
         except Exception as exc:  # noqa: BLE001 — recorded, and the next verdict taken
             log.exception(
@@ -774,6 +834,94 @@ async def post_appeal_announcements(
                 f"**{division_name}** — the appeal verdict for "
                 f"{_driver_label(driver_discord_id)} was not announced: {exc}"
             )
+
+    return faults
+
+
+async def delete_verdict_announcements(
+    bot, db_path: str, round_id: int
+) -> list[str]:
+    """Take down every verdict announced for *round_id*, so replacements can stand alone.
+
+    What #189 could not offer and the amendment replay needs: a round being replayed announces
+    its verdicts afresh, and the announcements of the classification it replaced have to go, or
+    the channel carries two decisions for one incident with nothing saying which is current.
+
+    **A verdict announced before the message id was recorded cannot be taken down.** Those rows
+    hold no id, nothing else identifies the message, and guessing by adjacency would delete
+    whatever happens to sit there. They are named in the returned lines so the replay can say so
+    rather than claiming a clean replacement (#345).
+
+    Deletes by the recorded chunk list through :func:`results_post_service._delete_posting`, so
+    a verdict that outgrew one message goes entirely. Returns the faults met, as lines a league
+    can read, and an empty list where every announcement was removed.
+    """
+    from services.results_post_service import _delete_posting, _parse_ids
+
+    faults: list[str] = []
+    rows: list[dict] = []
+    async with get_connection(db_path) as db:
+        for table, fk_col, join_table in (
+            ("penalty_records", "race_result_id", "race_session_results"),
+            ("penalty_records", "qual_result_id", "qualifying_session_results"),
+            ("appeal_records", "race_result_id", "race_session_results"),
+            ("appeal_records", "qual_result_id", "qualifying_session_results"),
+        ):
+            cursor = await db.execute(
+                f"""
+                SELECT v.id AS record_id, v.announcement_message_id AS anchor,
+                       v.announcement_message_ids AS chunks,
+                       v.announcement_channel_id AS channel_id,
+                       r.driver_user_id AS driver_user_id
+                FROM {table} v
+                JOIN {join_table} r ON r.id = v.{fk_col}
+                JOIN session_results sr ON sr.id = r.session_result_id
+                WHERE sr.round_id = ?
+                ORDER BY v.id
+                """,  # noqa: S608 — every name comes from the tuple above
+                (round_id,),
+            )
+            for row in await cursor.fetchall():
+                entry = dict(row)
+                entry["table"] = table
+                rows.append(entry)
+
+    for row in rows:
+        if not row["anchor"]:
+            faults.append(
+                f"the verdict for {_driver_label(row['driver_user_id'])} was announced before "
+                f"the bot began recording its message, so the old announcement is still "
+                f"standing and has to be removed by hand"
+            )
+            continue
+        channel = bot.get_channel(int(row["channel_id"])) if row["channel_id"] else None
+        if channel is None:
+            faults.append(
+                f"the verdict for {_driver_label(row['driver_user_id'])} could not be taken "
+                f"down: its channel is no longer reachable"
+            )
+            continue
+        await _delete_posting(
+            channel, int(row["anchor"]), _parse_ids(row["chunks"]), label="verdict",
+        )
+
+    # Forget the announcements just removed, and only those. The two tables number their rows
+    # independently, so a record id is only meaningful beside the table it came from — clearing
+    # by id across both would blank an unrelated verdict that happened to share a number.
+    cleared: dict[str, list[int]] = {}
+    for row in rows:
+        if row["anchor"]:
+            cleared.setdefault(row["table"], []).append(row["record_id"])
+    if cleared:
+        async with get_connection(db_path) as db:
+            for table, ids in cleared.items():
+                placeholders = ", ".join("?" for _ in ids)
+                await db.execute(
+                    f"UPDATE {table} SET announcement_message_id = NULL, "  # noqa: S608
+                    f"announcement_message_ids = NULL WHERE id IN ({placeholders})",
+                    ids,
+                )
+            await db.commit()
 
     return faults
 

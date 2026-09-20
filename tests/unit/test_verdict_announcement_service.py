@@ -1,12 +1,16 @@
 """Tests for verdict_announcement_service — translate_penalty and post helpers."""
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
+
+import discord
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.verdict_announcement_service import (
     translate_penalty,
+    delete_verdict_announcements,
     post_penalty_announcements,
     post_appeal_announcements,
 )
@@ -242,12 +246,20 @@ class _Guild:
 
 
 class _Channel:
-    def __init__(self, member: "_Member | None" = None) -> None:
+    #: What a sent message's id counts up from, so a test can assert on a known value.
+    FIRST_MESSAGE_ID = 770001
+
+    def __init__(self, member: "_Member | None" = None, *, channel_id: int = 4242) -> None:
         self.sent: list[tuple] = []
         self.guild = _Guild(member)
+        self.id = channel_id
 
     async def send(self, content=None, *, file=None, **_kwargs):
         self.sent.append((content, file))
+        # Discord hands back the message it created, and the bot now keeps it: a verdict that
+        # cannot be found again cannot be replaced when the round is amended (#189).
+        message = SimpleNamespace(id=self.FIRST_MESSAGE_ID + len(self.sent) - 1)
+        return message
 
 
 class _Bot:
@@ -808,3 +820,314 @@ async def test_the_repair_hint_is_defined_exactly_once(tmp_path):
     source = inspect.getsource(module)
     assert source.count("def verdict_repair_hint") == 1
     assert "_SANCTION_RETRY" not in source
+
+
+# ---------------------------------------------------------------------------
+# Recording which message carries a verdict (#189)
+# ---------------------------------------------------------------------------
+#
+# The two tables stored the channel an announcement went to and nothing more, so the bot could
+# not find, edit, delete or replace a verdict it had posted. Amending a round therefore rescored
+# the classification a verdict was applied to and left the verdict standing beside it, saying
+# something the results no longer said, with no command able to put it right.
+#
+# The message is recorded as it is sent. The chunk list is written alongside the anchor because
+# that is the pair every other posting uses, and a verdict batch that outgrew Discord's limit
+# would otherwise bring back exactly the guesswork it was removed to prevent (#345).
+
+
+async def _announcement_row(db_path: str, table: str) -> dict:
+    from db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT announcement_message_id, announcement_message_ids, "
+            f"announcement_channel_id FROM {table}"
+        )
+        return dict(await cursor.fetchone())
+
+
+async def _insert_penalty(db_path: str, race_result_id: int, table: str = "penalty_records") -> int:
+    from db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        if table == "penalty_records":
+            cursor = await db.execute(
+                "INSERT INTO penalty_records (race_result_id, penalty_type, time_seconds, "
+                "description, justification, applied_by, applied_at) "
+                "VALUES (?, 'TIME', 5, 'Contact', 'At fault', '77', '2026-02-02T00:00:00+00:00')",
+                (race_result_id,),
+            )
+        else:
+            cursor = await db.execute(
+                "INSERT INTO appeal_records (race_result_id, status, penalty_type, "
+                "time_seconds, description, justification, submitted_by, submitted_at) "
+                "VALUES (?, 'UPHELD', 'TIME', 3, 'Appeal', 'Upheld', '78', "
+                "'2026-02-03T00:00:00+00:00')",
+                (race_result_id,),
+            )
+        await db.commit()
+        return cursor.lastrowid
+
+
+@pytest.mark.asyncio
+async def test_a_penalty_verdict_records_the_message_it_was_announced_in(tmp_path):
+    """The id is stored against the record, which is the whole of what #189 asked for."""
+    db_path = str(tmp_path / "record_penalty.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+    record_id = await _insert_penalty(db_path, seeded["race_result_id"])
+
+    channel = _Channel(_Member("Ada"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    record = _penalty_record(seeded["race_result_id"]) | {"id": record_id}
+    assert await post_penalty_announcements(bot, state, [record]) == []
+
+    row = await _announcement_row(db_path, "penalty_records")
+    assert row["announcement_message_id"] == str(_Channel.FIRST_MESSAGE_ID)
+
+
+@pytest.mark.asyncio
+async def test_a_penalty_verdict_records_the_channel_it_went_to(tmp_path):
+    """The channel is written from the one actually posted to, not left to an earlier guess."""
+    db_path = str(tmp_path / "record_channel.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+    record_id = await _insert_penalty(db_path, seeded["race_result_id"])
+
+    channel = _Channel(_Member("Ada"), channel_id=5150)
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"]) | {"id": record_id}]
+    )
+
+    assert (await _announcement_row(db_path, "penalty_records"))[
+        "announcement_channel_id"
+    ] == "5150"
+
+
+@pytest.mark.asyncio
+async def test_a_verdict_records_its_chunk_list_too(tmp_path):
+    """One message today, recorded in the form every other posting uses.
+
+    Deleting a posting reads the list; a verdict that recorded only an anchor would fall back to
+    the adjacency walk, which is wrong precisely where the amendment replay puts it (#345).
+    """
+    db_path = str(tmp_path / "record_chunks.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+    record_id = await _insert_penalty(db_path, seeded["race_result_id"])
+
+    channel = _Channel(_Member("Ada"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"]) | {"id": record_id}]
+    )
+
+    row = await _announcement_row(db_path, "penalty_records")
+    assert json.loads(row["announcement_message_ids"]) == [_Channel.FIRST_MESSAGE_ID]
+
+
+@pytest.mark.asyncio
+async def test_an_appeal_verdict_records_its_message(tmp_path):
+    """`appeal_records` carries the same columns and was equally unfindable."""
+    db_path = str(tmp_path / "record_appeal.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+    record_id = await _insert_penalty(
+        db_path, seeded["race_result_id"], table="appeal_records"
+    )
+
+    channel = _Channel(_Member("Ada"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    record = _penalty_record(seeded["race_result_id"]) | {"id": record_id}
+    assert await post_appeal_announcements(bot, state, [record]) == []
+
+    row = await _announcement_row(db_path, "appeal_records")
+    assert row["announcement_message_id"] == str(_Channel.FIRST_MESSAGE_ID)
+
+
+@pytest.mark.asyncio
+async def test_a_record_with_no_id_is_announced_all_the_same(tmp_path):
+    """The announcement is the point; the record of it is not worth failing one over.
+
+    `post_autosanction_announcement` posts a verdict with no row behind it at all, and a caller
+    assembling records by hand may omit the id. Neither may lose the driver their explanation.
+    """
+    db_path = str(tmp_path / "no_id.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+
+    channel = _Channel(_Member("Ada"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    faults = await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"])]
+    )
+
+    assert faults == []
+    assert len(channel.sent) == 1
+
+
+# ---------------------------------------------------------------------------
+# Taking a round's verdicts down again (#189, #345)
+# ---------------------------------------------------------------------------
+
+
+def _deleting_channel(*, existing: set[int] | None = None):
+    """A channel that serves and deletes messages, recording which ids it removed."""
+    channel = SimpleNamespace()
+    channel.id = 4242
+    channel.deleted = []
+    known = existing
+
+    async def _fetch(message_id):
+        if known is not None and message_id not in known:
+            raise discord.NotFound(
+                SimpleNamespace(status=404, reason="Not Found"), "unknown message"
+            )
+        message = SimpleNamespace(id=message_id)
+
+        async def _delete():
+            channel.deleted.append(message_id)
+
+        message.delete = _delete
+        return message
+
+    channel.fetch_message = _fetch
+    return channel
+
+
+async def _set_announcement(db_path: str, table: str, record_id: int, anchor, chunks, channel_id):
+    from db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            f"UPDATE {table} SET announcement_message_id = ?, announcement_message_ids = ?, "
+            f"announcement_channel_id = ? WHERE id = ?",
+            (anchor, chunks, channel_id, record_id),
+        )
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_a_rounds_verdict_announcements_are_deleted(tmp_path):
+    """The replacement stands alone; two decisions for one incident is what this prevents."""
+    db_path = str(tmp_path / "del_verdicts.db")
+    seeded = await _seed_round(db_path)
+    record_id = await _insert_penalty(db_path, seeded["race_result_id"])
+    await _set_announcement(db_path, "penalty_records", record_id, "9001", "[9001]", "4242")
+
+    channel = _deleting_channel()
+    bot = _Bot(db_path, channel)
+
+    assert await delete_verdict_announcements(bot, db_path, seeded["round_id"]) == []
+    assert channel.deleted == [9001]
+
+
+@pytest.mark.asyncio
+async def test_every_message_of_a_split_verdict_is_deleted(tmp_path):
+    """The chunk list is honoured, so a verdict that outgrew one message goes entirely."""
+    db_path = str(tmp_path / "del_split.db")
+    seeded = await _seed_round(db_path)
+    record_id = await _insert_penalty(db_path, seeded["race_result_id"])
+    await _set_announcement(
+        db_path, "penalty_records", record_id, "9001", "[9001, 9002, 9003]", "4242"
+    )
+
+    channel = _deleting_channel()
+    bot = _Bot(db_path, channel)
+
+    await delete_verdict_announcements(bot, db_path, seeded["round_id"])
+
+    assert channel.deleted == [9001, 9002, 9003]
+
+
+@pytest.mark.asyncio
+async def test_a_verdict_announced_before_ids_were_recorded_is_named(tmp_path):
+    """It cannot be taken down, and saying so is the point.
+
+    Nothing identifies the message, and guessing by adjacency would delete whatever sits there.
+    Reporting it lets the replay tell the league the old announcement is still standing rather
+    than claim a clean replacement.
+    """
+    db_path = str(tmp_path / "del_legacy.db")
+    seeded = await _seed_round(db_path)
+    await _insert_penalty(db_path, seeded["race_result_id"])
+
+    channel = _deleting_channel()
+    bot = _Bot(db_path, channel)
+
+    faults = await delete_verdict_announcements(bot, db_path, seeded["round_id"])
+
+    assert len(faults) == 1
+    assert "by hand" in faults[0]
+    assert channel.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_a_message_already_gone_is_not_a_fault(tmp_path):
+    """Somebody deleted it by hand. The end state is the one asked for, so nothing is owed."""
+    db_path = str(tmp_path / "del_missing.db")
+    seeded = await _seed_round(db_path)
+    record_id = await _insert_penalty(db_path, seeded["race_result_id"])
+    await _set_announcement(db_path, "penalty_records", record_id, "9001", "[9001]", "4242")
+
+    channel = _deleting_channel(existing=set())
+    bot = _Bot(db_path, channel)
+
+    assert await delete_verdict_announcements(bot, db_path, seeded["round_id"]) == []
+
+
+@pytest.mark.asyncio
+async def test_the_record_forgets_the_announcement_it_no_longer_has(tmp_path):
+    """A stale id outliving its message would send the next delete at somebody else's post."""
+    db_path = str(tmp_path / "del_forget.db")
+    seeded = await _seed_round(db_path)
+    record_id = await _insert_penalty(db_path, seeded["race_result_id"])
+    await _set_announcement(db_path, "penalty_records", record_id, "9001", "[9001]", "4242")
+
+    bot = _Bot(db_path, _deleting_channel())
+    await delete_verdict_announcements(bot, db_path, seeded["round_id"])
+
+    row = await _announcement_row(db_path, "penalty_records")
+    assert row["announcement_message_id"] is None
+    assert row["announcement_message_ids"] is None
+
+
+@pytest.mark.asyncio
+async def test_an_appeal_verdict_of_the_same_number_is_left_alone(tmp_path):
+    """The two tables number their rows independently.
+
+    Clearing by id across both would blank an unrelated verdict that happened to share a number
+    with the one just taken down.
+    """
+    db_path = str(tmp_path / "del_crosstable.db")
+    seeded = await _seed_round(db_path)
+    penalty_id = await _insert_penalty(db_path, seeded["race_result_id"])
+    appeal_id = await _insert_penalty(
+        db_path, seeded["race_result_id"], table="appeal_records"
+    )
+    assert penalty_id == appeal_id  # both are row 1 of their own table
+    await _set_announcement(db_path, "penalty_records", penalty_id, "9001", "[9001]", "4242")
+    await _set_announcement(db_path, "appeal_records", appeal_id, None, None, "4242")
+
+    bot = _Bot(db_path, _deleting_channel())
+    await delete_verdict_announcements(bot, db_path, seeded["round_id"])
+
+    from db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT announcement_channel_id FROM appeal_records WHERE id = ?", (appeal_id,)
+        )
+        assert (await cursor.fetchone())["announcement_channel_id"] == "4242"
