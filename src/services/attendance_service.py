@@ -1779,7 +1779,7 @@ async def recalculate_attendance_for_round(
     holding a write transaction open across it would block every other writer for as long
     as Discord took to answer.
     """
-    await _recalculate_forward(db_path, round_id, division_id, recompute_every_round=False)
+    await _recalculate_forward(db_path, round_id, division_id, recompute="round")
 
     # FR-031: re-post sheet and re-evaluate sanctions.
     await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
@@ -1789,21 +1789,38 @@ async def recalculate_attendance_for_round(
 
 
 async def _recalculate_forward(
-    db_path: str, round_id: int, division_id: int, *, recompute_every_round: bool
+    db_path: str, round_id: int, division_id: int, *, recompute: str
 ) -> list[int]:
     """Recompute *round_id* and carry the running total through every finalised round after
     it, in **one transaction** (#187). Returns the ids of the rounds it touched, in order.
 
-    The round itself is always fully recomputed (FR-028). With *recompute_every_round* the
-    rounds after it are too, which is what `/attendance sync` asks for: it repairs a round
-    whose recording failed, not only a total carried from an amended one. Without it they are
-    only redistributed (FR-030), as an amendment needs.
+    *recompute* says how much of the attended record is rebuilt from the results, and is one
+    of three values. Every one of them redistributes the points of every round it touches;
+    they differ only in whose attended flags are rebuilt first.
+
+    ``"all"``
+        Every round from this one on is rebuilt from its results, which is what
+        `/attendance sync` asks for: it repairs a round whose recording failed, not only a
+        total carried from an amended one.
+    ``"round"``
+        Only the named round is rebuilt; the rounds after it are redistributed (FR-030), as
+        an amendment approval needs.
+    ``"none"``
+        None is. The caller has already recorded the attendance under the upgrade-only rule
+        and wants the totals carried forward and nothing else — see
+        :func:`cascade_attendance_from_round`.
+
+    The rebuild is a **full** one (FR-028), without the upgrade-only constraint, so it can
+    flip a driver from present to absent. That is why it is not reached under ``"none"``.
     """
+    if recompute not in {"all", "round", "none"}:
+        raise ValueError(f"unknown recompute mode {recompute!r}")
     async with get_connection(db_path) as db:
         # FR-028: full recompute without upgrade-only constraint.
-        await record_attendance_from_results_full_recompute(
-            db_path, round_id, division_id, db=db
-        )
+        if recompute in {"all", "round"}:
+            await record_attendance_from_results_full_recompute(
+                db_path, round_id, division_id, db=db
+            )
 
         # FR-029: pardons are already persisted — just recompute points using them.
         await distribute_attendance_points(db_path, round_id, division_id, db=db)
@@ -1822,7 +1839,7 @@ async def _recalculate_forward(
         subsequent_rounds = [row["id"] for row in await cursor.fetchall()]
 
         for sub_round_id in subsequent_rounds:
-            if recompute_every_round:
+            if recompute == "all":
                 await record_attendance_from_results_full_recompute(
                     db_path, sub_round_id, division_id, db=db
                 )
@@ -1852,7 +1869,7 @@ async def sync_attendance(
     in Reserve is passed over, so a second run applies only what the first did not.
     """
     touched = await _recalculate_forward(
-        db_path, from_round_id, division_id, recompute_every_round=True
+        db_path, from_round_id, division_id, recompute="all"
     )
     latest = touched[-1]
     await post_attendance_sheet(bot, guild, db_path, latest, division_id)
