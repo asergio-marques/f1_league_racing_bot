@@ -482,3 +482,127 @@ async def apply_penalties(
 
     return inserted_records
 
+
+# ---------------------------------------------------------------------------
+# Reading a decided round back into staged form (#345)
+# ---------------------------------------------------------------------------
+
+
+async def load_staged_from_records(
+    db_path: str, round_id: int
+) -> tuple[list[StagedPenalty], list[StagedPenalty], list["StagedPardon"]]:
+    """Rebuild a round's decided reports, appeals and pardons as staged entries.
+
+    The amendment replay shows a manager what was decided and lets them change it, which means
+    reading the decisions back out of the tables they were written to. Nothing did that before:
+    :class:`StagedPenalty` was only ever built from a steward's typed input, and the review
+    wizard's own restart recovery deliberately reopens with an **empty** staged list rather than
+    re-hydrating one.
+
+    **The driver and the session have to be recovered by join.** ``penalty_records`` and
+    ``appeal_records`` store neither ``driver_user_id`` nor ``session_type`` — only a reference
+    to one driver's row in ``race_session_results`` or ``qualifying_session_results``, from which
+    the driver reads directly and the session through ``session_results``.
+
+    **Which list a penalty record belongs to is not recorded either.** ``apply_penalties``
+    inserts into ``penalty_records`` on both phases, so the appeal phase writes a row there *and*
+    a row in ``appeal_records``. The appeals are therefore taken from ``appeal_records`` alone,
+    and a ``penalty_records`` row is a report unless an appeal record of the same driver, session
+    and sanction accounts for it — matched once each, so two identical penalties are not both
+    swallowed by one appeal.
+
+    Returned in the order the records were written, so a manager reads them as they were decided.
+    """
+    from services.penalty_wizard import StagedPardon
+
+    reports: list[StagedPenalty] = []
+    appeals: list[StagedPenalty] = []
+    pardons: list[StagedPardon] = []
+
+    async with get_connection(db_path) as db:
+        rows_of: dict[str, list[dict]] = {"penalty_records": [], "appeal_records": []}
+        for table in ("penalty_records", "appeal_records"):
+            for fk_col, result_table in (
+                ("race_result_id", "race_session_results"),
+                ("qual_result_id", "qualifying_session_results"),
+            ):
+                cursor = await db.execute(
+                    f"""
+                    SELECT v.id AS record_id, v.penalty_type, v.time_seconds,
+                           v.description, v.justification,
+                           r.driver_user_id AS driver_user_id,
+                           sr.session_type AS session_type
+                    FROM {table} v
+                    JOIN {result_table} r ON r.id = v.{fk_col}
+                    JOIN session_results sr ON sr.id = r.session_result_id
+                    WHERE sr.round_id = ?
+                    ORDER BY v.id
+                    """,  # noqa: S608 — names come from the two tuples above
+                    (round_id,),
+                )
+                rows_of[table].extend(dict(row) for row in await cursor.fetchall())
+
+        for row in sorted(rows_of["appeal_records"], key=lambda r: r["record_id"]):
+            appeals.append(_staged_from_record(row))
+
+        # One appeal accounts for one penalty row of the same shape, never two.
+        unclaimed = [_record_shape(row) for row in rows_of["appeal_records"]]
+        for row in sorted(rows_of["penalty_records"], key=lambda r: r["record_id"]):
+            shape = _record_shape(row)
+            if shape in unclaimed:
+                unclaimed.remove(shape)
+                continue
+            reports.append(_staged_from_record(row))
+
+        cursor = await db.execute(
+            """
+            SELECT p.attendance_id, p.pardon_type, p.justification, p.granted_by,
+                   a.driver_profile_id AS driver_profile_id,
+                   d.discord_user_id AS discord_user_id
+            FROM attendance_pardons p
+            JOIN driver_round_attendance a ON a.id = p.attendance_id
+            JOIN driver_profiles d ON d.id = a.driver_profile_id
+            WHERE a.round_id = ?
+            ORDER BY p.id
+            """,
+            (round_id,),
+        )
+        for row in await cursor.fetchall():
+            try:
+                driver_user_id = int(row["discord_user_id"])
+            except (TypeError, ValueError):
+                driver_user_id = 0
+            pardons.append(
+                StagedPardon(
+                    driver_user_id=driver_user_id,
+                    driver_profile_id=row["driver_profile_id"],
+                    attendance_id=row["attendance_id"],
+                    pardon_type=row["pardon_type"],
+                    justification=row["justification"] or "",
+                    grantor_id=int(row["granted_by"]) if row["granted_by"] else 0,
+                )
+            )
+
+    return reports, appeals, pardons
+
+
+def _record_shape(row) -> tuple:
+    """What makes two verdict records the same sanction, for pairing an appeal to its penalty."""
+    return (
+        row["driver_user_id"],
+        row["session_type"],
+        row["penalty_type"],
+        row["time_seconds"],
+    )
+
+
+def _staged_from_record(row) -> StagedPenalty:
+    """One verdict record as the staged entry a steward would have typed to produce it."""
+    return StagedPenalty(
+        driver_user_id=row["driver_user_id"],
+        session_type=SessionType(row["session_type"]),
+        penalty_type=row["penalty_type"],
+        penalty_seconds=row["time_seconds"],
+        description=row["description"] or "",
+        justification=row["justification"] or "",
+    )
