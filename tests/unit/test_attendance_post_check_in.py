@@ -376,3 +376,38 @@ async def test_a_missing_attendance_configuration_is_refused(tmp_path):
 
     notice.assert_not_awaited()
     assert "No attendance configuration" in _replied(interaction)
+
+
+async def test_the_scheduled_call_winning_the_race_stops_this_one(tmp_path):
+    """A call that appears between the manager's check and the post is not posted over.
+
+    The scheduled call falls due at exactly the moment this command's window opens, so the two
+    genuinely race. `run_rsvp_notice` has no guard of its own — it skips the current round when
+    clearing a division's old calls — and `insert_embed_message` upserts, so a second post
+    would overwrite the first's message id and leave a live, answerable call in the channel
+    that nothing tracks and the deadline never locks.
+
+    Here the call appears after the command's first check has passed, which is why the second
+    check exists. Deleting it would leave this test as the only thing that noticed.
+    """
+    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(days=1))
+    cog = _cog(db_path)
+    interaction = _interaction()
+
+    from cogs import attendance_cog
+
+    calls = {"n": 0}
+
+    async def _stands(bot, round_id, division_id):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return False  # nothing standing when the manager is answered
+        await _record_call(db_path)  # the scheduled call lands right here
+        return True
+
+    with patch.object(attendance_cog, "_call_stands", _stands):
+        notice = await _invoke(cog, interaction)
+
+    notice.assert_not_awaited()
+    assert "posted while this ran" in _replied(interaction)
+    assert calls["n"] == 2, "the second check is what catches the race"

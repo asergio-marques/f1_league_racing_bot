@@ -526,6 +526,21 @@ class AttendanceCog(commands.Cog):
         The post itself is `run_rsvp_notice`, unchanged. That returns silently on every fault
         it handles, so the reply is decided by whether a call *stands* afterwards rather than by
         it returning — otherwise a failed post would be reported as a success.
+
+        **This is the first path that posts a call without first taking one down.** The
+        scheduler, the restart recovery and `/test-mode advance` all post a call the round is
+        not expected to have; `repost_rsvp_call` withdraws before it posts. So the standing-call
+        check is load-bearing here in a way it is nowhere else, and it is made twice — once to
+        answer the manager, and again immediately before posting, because the scheduled call
+        falls due at the very moment this command's window opens.
+
+        A residual window remains between that second check and the `channel.send` inside
+        `run_rsvp_notice`, which no check on this side can close; shutting it properly means
+        claiming the `rsvp_embed_messages` row before posting and releasing it on failure, which
+        is a change to the shared posting path rather than to this command. It is not closed
+        here because the two posters would have to collide inside a span of a few hundred
+        milliseconds, after a call had already failed to post once. `test_the_scheduled_call_
+        winning_the_race_stops_this_one` pins the check that does the work.
         """
         if not await self._guard_module_enabled(interaction):
             return
@@ -609,6 +624,21 @@ class AttendanceCog(commands.Cog):
                     ephemeral=True,
                 )
                 return
+
+        # The scheduled call becomes due at exactly the moment the window above opens, so a
+        # manager running this around that moment races it. `run_rsvp_notice` does not guard
+        # against a call already standing for its own round — it skips it when clearing a
+        # division's old calls, "shouldn't exist yet" — and `insert_embed_message` upserts, so
+        # the second post to land would overwrite the first's id and orphan a live call in the
+        # channel: still answerable, tracked by nothing, never locked at the deadline. Checking
+        # again here, as late as possible, is what keeps the two apart.
+        if await _call_stands(self.bot, round_id, div.id):
+            await interaction.followup.send(
+                f"\u26d4 The scheduled check-in call for round {round} of **{div.name}** "
+                f"posted while this ran, so nothing was posted on top of it.",
+                ephemeral=True,
+            )
+            return
 
         from services.rsvp_service import run_rsvp_notice
 
