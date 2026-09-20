@@ -207,6 +207,19 @@ def _patches(
                 side_effect=announce_error, return_value=list(verdict_faults or [])
             ),
         ),
+        # The amendment's own rebuild (#345). Stubbed so the appeals finaliser can be driven
+        # with `is_amendment=True` without reaching Discord or the attendance module.
+        "replay": patch(
+            "services.results_post_service.replay_division_channels",
+            new=AsyncMock(return_value=[]),
+        ),
+        "amend_attendance": patch(
+            "services.result_submission_service._repost_attendance_after_amendment",
+            new=AsyncMock(return_value=[]),
+        ),
+        "cascade_standings": patch(
+            "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
+        ),
         "appeal_announce": patch(
             "services.verdict_announcement_service.post_appeal_announcements",
             new=AsyncMock(
@@ -1035,3 +1048,262 @@ async def test_the_sanctions_still_run_when_the_record_is_sound(tmp_path):
     )
 
     stubs["sanctions"].assert_awaited()
+
+
+# ---------------------------------------------------------------------------
+# An amendment rewrites the round's decisions rather than adding to them (#345)
+# ---------------------------------------------------------------------------
+#
+# These drive the finaliser with `apply_penalties` **real** and count rows, because that is the
+# only thing that catches the defect they exist for. `apply_penalties` only ever inserts, and
+# adds to the stored penalty columns; replaying a round's reports over records still in place
+# duplicated every one of them, and doubled the sanction again on a second amendment. The
+# structural assertions in `test_amendment_replays_without_moving_the_round.py` cannot see any
+# of that — an earlier version of that file asserted the defect and called it correct.
+
+
+async def _verdict_count(db_path, table: str = "penalty_records") -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(f"SELECT COUNT(*) AS n FROM {table}")
+        return (await cursor.fetchone())["n"]
+
+
+async def _pardon_count(db_path) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) AS n FROM attendance_pardons")
+        return (await cursor.fetchone())["n"]
+
+
+async def _seed_driver_row(db_path, driver: int = 101) -> None:
+    """A race result row for the penalised driver, which `apply_penalties` attaches to.
+
+    The shared fixture seeds a session header and no driver rows — enough for every test that
+    stubs `apply_penalties`, and not enough for one that lets it write.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM session_results WHERE round_id = ? AND session_type = ?",
+            (ROUND_ID, "FEATURE_RACE"),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            cursor = await db.execute(
+                "INSERT INTO session_results (round_id, division_id, session_type, status) "
+                "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
+                (ROUND_ID, DIVISION_ID),
+            )
+            session_id = cursor.lastrowid
+        else:
+            session_id = row["id"]
+        await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position) VALUES (?, ?, 3001, 1)",
+            (session_id, driver),
+        )
+        await db.commit()
+
+
+async def _run_real_apply(fn, state, interaction=None, **patch_kwargs):
+    """As `_run`, but with `apply_penalties` left real so its writes can be counted."""
+    interaction = interaction or _interaction()
+    patches = {k: v for k, v in _patches(**patch_kwargs).items() if k != "apply"}
+    started = {key: p.start() for key, p in patches.items()}
+    try:
+        await fn(interaction, state)
+    finally:
+        for p in patches.values():
+            p.stop()
+    return started
+
+
+async def test_an_amendment_does_not_duplicate_the_rounds_penalty_records(tmp_path):
+    """**The defect the independent review found.**
+
+    Stage two hydrates the round's existing reports into `state.staged` and approving re-applies
+    them. With the old records still in place that left two rows for one incident — and a second
+    amendment then hydrated both, applying twice the sanction the steward gave.
+    """
+    db_path = await _make_db(tmp_path, name="amend_no_dupe")
+    await _seed_driver_row(db_path)
+    state = _state(db_path, staged=[_penalty()])
+    state.is_amendment = True
+
+    await _run_real_apply(finalize_penalty_review, state)
+    first = await _verdict_count(db_path)
+
+    # Replay it again, as a second amendment of the same round would.
+    state_again = _state(db_path, staged=[_penalty()])
+    state_again.is_amendment = True
+    await _run_real_apply(finalize_penalty_review, state_again)
+
+    assert first == 1
+    assert await _verdict_count(db_path) == 1
+
+
+async def test_an_amendment_writes_the_reports_the_manager_approved(tmp_path):
+    """The other half: the edits must actually land.
+
+    The idempotence probe read the *first pass's* `staged_penalties` column, which an amendment
+    neither owns nor resets — so on a round originally reviewed with penalties it read "already
+    applied" and discarded every edit the manager had just made, silently.
+    """
+    db_path = await _make_db(tmp_path, name="amend_edits_land")
+    await _seed_driver_row(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET staged_penalties = ? WHERE round_id = ?",
+            ('[{"driver_user_id": 101}]', ROUND_ID),
+        )
+        await db.commit()
+    state = _state(db_path, staged=[_penalty()])
+    state.is_amendment = True
+
+    await _run_real_apply(finalize_penalty_review, state)
+
+    assert await _verdict_count(db_path) == 1
+
+
+async def test_an_amendment_does_not_overwrite_the_first_passs_crash_guard(tmp_path):
+    """That column belongs to the original review; an amendment must leave it as it found it."""
+    db_path = await _make_db(tmp_path, name="amend_guard_intact")
+    await _seed_driver_row(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET staged_penalties = ? WHERE round_id = ?",
+            ('["original"]', ROUND_ID),
+        )
+        await db.commit()
+    state = _state(db_path, staged=[_penalty()])
+    state.is_amendment = True
+
+    await _run_real_apply(finalize_penalty_review, state)
+
+    assert await _staged_column(db_path) == '["original"]'
+
+
+async def test_a_first_pass_still_records_and_applies_once(tmp_path):
+    """The ordinary path is untouched — the guards must not have cost it its own behaviour."""
+    db_path = await _make_db(tmp_path, name="first_pass_intact")
+    await _seed_driver_row(db_path)
+    state = _state(db_path, staged=[_penalty()])
+
+    await _run_real_apply(finalize_penalty_review, state)
+
+    assert await _verdict_count(db_path) == 1
+    assert await _staged_column(db_path) is not None
+
+
+async def test_a_report_removed_in_stage_two_is_removed_from_the_record(tmp_path):
+    """Delete-and-rewrite is what makes the stage editable at all.
+
+    Approving with a report taken out has to leave it out; `INSERT OR IGNORE` semantics would
+    have kept the row and made the Remove button decorative.
+    """
+    db_path = await _make_db(tmp_path, name="amend_removal")
+    await _seed_driver_row(db_path)
+    state = _state(db_path, staged=[_penalty()])
+    state.is_amendment = True
+    await _run_real_apply(finalize_penalty_review, state)
+    assert await _verdict_count(db_path) == 1
+
+    # The manager removes it and approves again.
+    emptied = _state(db_path, staged=[])
+    emptied.is_amendment = True
+    await _run_real_apply(finalize_penalty_review, emptied)
+
+    assert await _verdict_count(db_path) == 0
+
+
+async def test_an_amendment_does_not_post_the_attendance_sheet_itself(tmp_path):
+    """The sheet and the sanctions belong to the final stage (#345).
+
+    Running both posted two sheets — the first built on attended flags describing the round
+    being replaced, because this stage's cascade does not rebuild them — and enforced the
+    sanctions twice, so a driver could be sacked by a sheet the next stage was about to correct.
+    """
+    db_path = await _make_db(tmp_path, name="amend_no_sheet")
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+    state.is_amendment = True
+
+    stubs = await _run(finalize_penalty_review, state)
+
+    stubs["sheet"].assert_not_awaited()
+    stubs["sanctions"].assert_not_awaited()
+
+
+async def test_a_first_pass_still_posts_the_attendance_sheet(tmp_path):
+    """The counterpart, so the guard cannot become "never post a sheet"."""
+    db_path = await _make_db(tmp_path, name="first_pass_sheet")
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+
+    stubs = await _run(finalize_penalty_review, state)
+
+    stubs["sheet"].assert_awaited()
+
+
+async def test_an_amendment_still_reaches_the_appeal_stage(tmp_path):
+    """Leaving the report stage early must not strand the amendment.
+
+    The classification is corrected and the reports approved; with no appeals prompt there is
+    no route to the appeals, and none to the rebuild that follows them.
+    """
+    db_path = await _make_db(tmp_path, name="amend_reaches_appeals")
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+    state.is_amendment = True
+
+    await _run(finalize_penalty_review, state)
+
+    assert state.appeals_prompt_message_id is not None
+
+
+async def test_an_amendment_announces_each_appeal_verdict_once(tmp_path):
+    """The rebuild announces the round's verdicts; announcing them again doubled them (#345).
+
+    `replay_division_channels` re-announces every verdict of every round from the amended one
+    forward — the appeals just written among them. Posting them a second time here gave the
+    driver the same decision twice, and the second could not be removed: the superseded set was
+    captured before either went up, so neither was in it.
+    """
+    db_path = await _make_db(tmp_path, name="amend_appeal_once")
+    state = _state(db_path, appeals=[_penalty()])
+    state.is_amendment = True
+
+    stubs = await _run(finalize_appeals_review, state)
+
+    stubs["appeal_announce"].assert_not_awaited()
+
+
+async def test_a_first_pass_still_announces_its_appeal_verdicts(tmp_path):
+    """The counterpart: an ordinary round has no rebuild to announce them for it."""
+    db_path = await _make_db(tmp_path, name="first_pass_appeal_announce")
+    state = _state(db_path, appeals=[_penalty()])
+
+    stubs = await _run(finalize_appeals_review, state)
+
+    stubs["appeal_announce"].assert_awaited_once()
+
+
+async def test_an_amendment_rebuilds_the_division_once_at_the_end(tmp_path):
+    """The whole point of the third stage: every decision is in, so the channels go back in
+    order — and the round-only repost a first pass uses is *not* also run."""
+    db_path = await _make_db(tmp_path, name="amend_rebuild_once")
+    state = _state(db_path, appeals=[_penalty()])
+    state.is_amendment = True
+
+    stubs = await _run(finalize_appeals_review, state)
+
+    stubs["replay"].assert_awaited_once()
+    stubs["amend_attendance"].assert_awaited_once()
+    stubs["repost"].assert_not_awaited()
+
+
+async def test_a_first_pass_reposts_its_own_round_and_not_the_division(tmp_path):
+    """Sending every round through the division-wide rebuild would repost the whole
+    championship at the end of every ordinary race weekend."""
+    db_path = await _make_db(tmp_path, name="first_pass_round_only")
+    state = _state(db_path, appeals=[_penalty()])
+
+    stubs = await _run(finalize_appeals_review, state)
+
+    stubs["repost"].assert_awaited_once()
+    stubs["replay"].assert_not_awaited()

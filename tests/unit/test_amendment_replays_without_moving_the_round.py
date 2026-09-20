@@ -67,19 +67,37 @@ def test_the_report_review_guards_its_forward_transition():
     )
 
 
-def test_the_report_review_still_applies_its_penalties_on_an_amendment():
-    """The stages are replayed, not skipped — only the round's movement is withheld.
+def test_the_report_review_clears_the_rounds_records_before_re_applying():
+    """**The defect an earlier version of this test actively asserted.**
 
-    A guard that swallowed the penalty application would make an amendment a no-op with a
-    confirmation screen.
+    `apply_penalties` only inserts, and adds to the stored penalty columns. Replaying a round's
+    reports over records that were still there duplicated every one of them, and doubled the
+    sanction again on a second amendment. An earlier version of this file asserted that
+    `apply_penalties` runs on an amendment and called that correct — which it is, but only once
+    the round's existing records have gone first.
+
+    Asserted structurally *and* behaviourally: `test_finalize_reviews.py` drives the finaliser
+    and counts the rows, which is what actually catches a regression here. This one pins that
+    the clearing call has not simply been removed.
     """
     node = _function(MODULE, "finalize_penalty_review")
-    guarded = "\n".join(
-        _guarded_source(node, guard) for guard in _amendment_guards(node)
-    )
+    source = ast.unparse(node)
 
-    assert "apply_penalties" not in guarded
-    assert "apply_penalties" in ast.unparse(node)
+    assert "_clear_round_verdict_records" in source
+    assert "apply_penalties" in source
+
+
+def test_the_appeal_stage_is_reached_by_both_exits_of_the_report_stage():
+    """An amendment leaves the report stage early, the attendance pipeline being the final
+    stage's — and both exits owe the manager the next stage.
+
+    Returning without posting it would leave the amendment stranded: the classification
+    corrected, the reports approved, and no way to reach the appeals or the rebuild.
+    """
+    node = _function(MODULE, "finalize_penalty_review")
+    source = ast.unparse(node)
+
+    assert source.count("_post_appeals_prompt") == 2
 
 
 # ── The appeal review ─────────────────────────────────────────────────────
@@ -149,8 +167,7 @@ def test_the_appeal_stage_is_labelled_for_an_amendment():
     amendment channel in that case — so the stage needs no separate posting, only a heading
     saying where the manager is.
     """
-    node = _function(MODULE, "finalize_penalty_review")
-    source = ast.unparse(node)
+    source = ast.unparse(_function(MODULE, "_post_appeals_prompt"))
 
     assert "Stage 3 of 3" in source
     assert "is_amendment" in source

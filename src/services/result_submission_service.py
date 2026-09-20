@@ -492,7 +492,20 @@ async def finalize_penalty_review(
             (round_id,),
         )
         _rsc_row = await _rsc.fetchone()
-    penalties_already_applied = bool(_rsc_row and _rsc_row["staged_penalties"] is not None)
+    # **The probe belongs to a first pass alone** (#345). It reads the *submission* channel's
+    # row, which an amendment does not own and never writes — the amendment runs in an amend
+    # channel — and `staged_penalties` is never reset, so on a round that was originally
+    # reviewed with penalties it reads "already applied" and the amendment silently discarded
+    # every edit the manager had just made.
+    is_amendment = bool(getattr(state, "is_amendment", False))
+    penalties_already_applied = (
+        not is_amendment and bool(_rsc_row and _rsc_row["staged_penalties"] is not None)
+    )
+
+    # The round's existing records go before the approved set is written, so that replaying a
+    # report keeps it rather than adding a second of it.
+    if is_amendment:
+        await _clear_round_verdict_records(db_path, round_id)
 
     if state.staged and not penalties_already_applied:
         penalty_json = _json.dumps(
@@ -508,12 +521,16 @@ async def finalize_penalty_review(
                 for sp in state.staged
             ]
         )
-        async with get_connection(db_path) as _db:
-            await _db.execute(
-                "UPDATE round_submission_channels SET staged_penalties = ? WHERE round_id = ?",
-                (penalty_json, round_id),
-            )
-            await _db.commit()
+        # Not written by an amendment: the column is the first pass's crash guard, and an
+        # amendment overwriting it would tell a later recovery that the original review's
+        # penalties were something other than what it applied.
+        if not is_amendment:
+            async with get_connection(db_path) as _db:
+                await _db.execute(
+                    "UPDATE round_submission_channels SET staged_penalties = ? WHERE round_id = ?",
+                    (penalty_json, round_id),
+                )
+                await _db.commit()
 
         applied_records = await _ps.apply_penalties(
             db_path, round_id, division_id, state.staged,
@@ -681,7 +698,20 @@ async def finalize_penalty_review(
             )
             _srv_row = await _srv_cur.fetchone()
 
-        if _srv_row and await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+        # **Not on an amendment** (#345). The amendment's attendance is the final stage's, which
+        # recomputes with `recompute="round"` — rebuilding the amended round's attended flags
+        # from the corrected classification, which `cascade_attendance_from_round` below does
+        # not. Running both posted two sheets, the first built on flags describing the round
+        # being replaced, and enforced the sanctions twice: a driver could be sacked by a sheet
+        # the next stage was about to correct.
+        #
+        # The pardons are not skipped with it — they are written below, because stage two is
+        # where a manager edits them and they have to be in the database before the final stage
+        # recomputes the totals that honour them.
+        if (
+            _srv_row
+            and await bot.module_service.is_attendance_enabled()  # type: ignore[attr-defined]
+        ):
             _att_season_id = int(_srv_row["season_id"])
 
             # The two steps that write to the database are reported, and the two that post
@@ -706,6 +736,23 @@ async def finalize_penalty_review(
                 )
 
             # T010: Persist staged attendance pardons (INSERT OR IGNORE for idempotency).
+            #
+            # **An amendment rewrites them rather than adding to them** (#345). `INSERT OR
+            # IGNORE` cannot express a pardon the manager has just *removed* in stage two — the
+            # row would simply stay — so the round's pardons go first and the approved set is
+            # written whole, as its reports and appeals are.
+            if is_amendment:
+                async with get_connection(db_path) as _db:
+                    await _db.execute(
+                        """
+                        DELETE FROM attendance_pardons
+                        WHERE attendance_id IN (
+                            SELECT id FROM driver_round_attendance WHERE round_id = ?
+                        )
+                        """,
+                        (round_id,),
+                    )
+                    await _db.commit()
             if state.staged_pardons:
                 _now_iso = _dt.now(_tz.utc).isoformat()
                 async with get_connection(db_path) as _db:
@@ -720,6 +767,21 @@ async def finalize_penalty_review(
                              _sp.grantor_id, _now_iso),
                         )
                     await _db.commit()
+
+            # **The rest of the pipeline is the final stage's on an amendment** (#345). That
+            # stage recomputes with `recompute="round"`, rebuilding the amended round's attended
+            # flags from the corrected classification — which `cascade_attendance_from_round`
+            # below does not do. Running both posted two sheets, the first built on flags
+            # describing the round being replaced, and enforced the sanctions twice: a driver
+            # could be sacked by a sheet the next stage was about to correct.
+            if is_amendment:
+                if _attendance_write_failures:
+                    await _report_attendance_not_recorded(
+                        interaction, bot, db_path, division_id, round_id,
+                        _attendance_write_failures,
+                    )
+                await _post_appeals_prompt(state, guild, bot, db_path)
+                return
 
             # T012: Distribute attendance points, and carry the new totals through every
             # later finalised round (#238). Amending round 3 of ten corrected round 3's
@@ -805,22 +867,36 @@ async def finalize_penalty_review(
 
         # === END Attendance pipeline ===
 
-    # Stage three follows stage two in the same channel, for an amendment exactly as for a
-    # first pass — `submission_channel_id` is the amendment channel in that case (#345). Only
-    # the heading differs, so a manager replaying a settled round can see where they are.
+    await _post_appeals_prompt(state, guild, bot, db_path)
+
+
+async def _post_appeals_prompt(state, guild, bot, db_path: str) -> None:
+    """Open the appeals stage in the channel the report stage ran in.
+
+    Stage three follows stage two in the same place, for an amendment exactly as for a first
+    pass — ``submission_channel_id`` is the amendment channel in that case (#345). Only the
+    heading differs, so a manager replaying a settled round can see where they are.
+
+    Its own function because the amendment path leaves ``finalize_penalty_review`` early, the
+    attendance pipeline between the two being the final stage's rather than this one's, and
+    both exits owe the manager the next stage.
+    """
+    from services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
+
     appeals_view = AppealsReviewView(state=state)
     sub_channel = guild.get_channel(state.submission_channel_id) if guild else None
-    if sub_channel is not None:
-        content = await _render_appeals_prompt_content(state)
-        if getattr(state, "is_amendment", False):
-            content = (
-                "**Stage 3 of 3 — Appeals.** The appeals this round already carries are "
-                "listed below. Approving keeps them as they stand, and then rebuilds the "
-                "division's channels.\n\n" + content
-            )
-        msg = await sub_channel.send(content, view=appeals_view)
-        state.appeals_prompt_message_id = msg.id
-        bot.add_view(appeals_view, message_id=msg.id)  # type: ignore[attr-defined]
+    if sub_channel is None:
+        return
+    content = await _render_appeals_prompt_content(state)
+    if getattr(state, "is_amendment", False):
+        content = (
+            "**Stage 3 of 3 — Appeals.** The appeals this round already carries are "
+            "listed below. Approving keeps them as they stand, and then rebuilds the "
+            "division's channels.\n\n" + content
+        )
+    msg = await sub_channel.send(content, view=appeals_view)
+    state.appeals_prompt_message_id = msg.id
+    bot.add_view(appeals_view, message_id=msg.id)  # type: ignore[attr-defined]
 
 
 async def _report_incomplete_sanctions(
@@ -1177,8 +1253,13 @@ async def finalize_appeals_review(
             )
 
         # Post appeal announcements. Non-blocking, but no longer silent (#237).
+        #
+        # **Not on an amendment** (#345). The rebuild above has already announced every verdict
+        # of every round from the amended one forward, these among them — announcing them here
+        # as well gave the driver the same appeal verdict twice, and the second could not be
+        # taken down, the superseded set having been captured before either was posted.
         verdict_faults: list[str] = []
-        if applied_correction_records:
+        if applied_correction_records and not getattr(state, "is_amendment", False):
             try:
                 verdict_faults = await _vas.post_appeal_announcements(
                     bot, state, applied_correction_records
@@ -1602,6 +1683,45 @@ async def _season_id_for_division(db_path: str, division_id: int) -> int | None:
         )
         row = await cursor.fetchone()
     return row["season_id"] if row else None
+
+
+async def _clear_round_verdict_records(db_path: str, round_id: int) -> None:
+    """Remove a round's penalty and appeal records so the approved set can be written whole.
+
+    **The amendment rewrites rather than adds** (#345). ``apply_penalties`` only ever inserts,
+    and adds to the stored penalty columns; replaying a round's reports over records that are
+    still there duplicated every one of them, and doubled the sanction again on a second
+    amendment. The times were right — stage one re-inserts the driver rows with those columns
+    at zero — but the audit was not.
+
+    **Nothing a league can see is lost.** The reports and appeals were read back into the
+    review stages before this runs, carrying their justification, their author and the time
+    they were given; approving writes them out again with those intact. What changes is the
+    row id, which no league reads. That is the price of a stage where removing a report
+    actually removes it.
+
+    Deleting them is also what releases the foreign key, so the rows may be rewritten against
+    whichever driver rows the corrected classification produced.
+    """
+    async with get_connection(db_path) as db:
+        for table, fk_col, result_table in (
+            ("penalty_records", "race_result_id", "race_session_results"),
+            ("penalty_records", "qual_result_id", "qualifying_session_results"),
+            ("appeal_records", "race_result_id", "race_session_results"),
+            ("appeal_records", "qual_result_id", "qualifying_session_results"),
+        ):
+            await db.execute(
+                f"""
+                DELETE FROM {table}
+                WHERE {fk_col} IN (
+                    SELECT r.id FROM {result_table} r
+                    JOIN session_results sr ON sr.id = r.session_result_id
+                    WHERE sr.round_id = ?
+                )
+                """,  # noqa: S608 — every name comes from the tuple above
+                (round_id,),
+            )
+        await db.commit()
 
 
 async def run_amendment_review_stages(
