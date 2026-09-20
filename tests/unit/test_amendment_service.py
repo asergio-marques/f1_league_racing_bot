@@ -1029,6 +1029,71 @@ async def test_approve_amendment_still_overwrites_the_points(db_path):
     assert not state.modified_flag
 
 
+@pytest.mark.asyncio
+async def test_approve_amendment_overwrites_the_fastest_lap_points(db_path):
+    """The fastest lap bonus is overwritten by the same transaction as the points.
+
+    Issue #185. The test that claimed to cover this transaction simulated it by hand and
+    knew only about `season_points_entries` — so the whole `season_points_fl` half could
+    have been dropped from `approve_amendment` and nothing would have failed. A league
+    amending the bonus would have seen the panel accept the change and the old bonus keep
+    being awarded.
+    """
+    from services.amendment_service import approve_amendment, modify_fl_bonus
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO season_points_fl "
+            "(season_id, config_name, session_type, fl_points, fl_position_limit) "
+            "VALUES (?, 'STD', 'FEATURE_RACE', 1, 10)",
+            (season_id,),
+        )
+        await db.commit()
+
+    await enable_amendment_mode(path, season_id)
+    await modify_fl_bonus(path, season_id, "STD", "FEATURE_RACE", 3)
+
+    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+
+    async with get_connection(path) as db:
+        row = await (
+            await db.execute(
+                "SELECT fl_points FROM season_points_fl WHERE season_id = ?",
+                (season_id,),
+            )
+        ).fetchone()
+    assert row is not None and row["fl_points"] == 3
+
+
+@pytest.mark.asyncio
+async def test_an_approved_amendment_empties_the_modification_store(db_path):
+    """The staging tables are cleared, so the next amendment starts from the season.
+
+    A store left behind is what a second amendment would build on: reopening amendment
+    mode would show the previous amendment's figures as though they were pending changes,
+    and approving it would rewrite the season with them.
+    """
+    from services.amendment_service import approve_amendment, modify_fl_bonus
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await modify_fl_bonus(path, season_id, "STD", "FEATURE_RACE", 3)
+
+    await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
+
+    async with get_connection(path) as db:
+        for table in ("season_modification_entries", "season_modification_fl"):
+            cursor = await db.execute(
+                f"SELECT COUNT(*) AS n FROM {table} WHERE season_id = ?",  # noqa: S608
+                (season_id,),
+            )
+            assert (await cursor.fetchone())["n"] == 0, f"{table} was left behind"
+
+
 # ---------------------------------------------------------------------------
 # An amendment that could not be published is refused entire (#187)
 #
