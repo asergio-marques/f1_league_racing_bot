@@ -780,8 +780,10 @@ its own. Nothing here forbids that, and the scheme is built for it:
 - **A new issue is added to this document** with the rules it owns, and put on the milestone. Where
   it takes rules from an issue not yet filed, move them; where it takes them from one already
   closed, the new issue says so rather than the old one being rewritten.
-- **The coverage table is generated, not maintained.** Regenerate it after any change and it will
-  name any rule owned twice or by nobody, which is the check that this document still matches the
-  spec.
+- **The coverage is generated, not maintained.** `steward_coverage.py` holds the allocation and
+  writes [steward-rule-coverage.md](steward-rule-coverage.md), a row per rule naming the issue
+  that owns it. Run it after any change to the spec or to this document: a rule owned by nobody
+  shows as `—`, and one owned twice stops the run. That is the check that these three files still
+  agree.
 - **A rule that changes after its issue is closed needs an issue of its own** — the spec is the
   source, and a closed issue is a record of what was built, not of what is true.
