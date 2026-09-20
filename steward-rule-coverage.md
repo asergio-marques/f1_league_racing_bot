@@ -48,7 +48,7 @@ as `—`, which is the gap this table exists to find.
 - **S37** — Test mode  ·  #326
 - **S38** — The LLM justification mode  ·  #327
 
-**900 rules. Rules owned by no issue: 0.**
+**902 rules. Rules owned by no issue: 0.**
 
 
 ## MOD — The module itself
@@ -96,7 +96,9 @@ as `—`, which is the gap this table exists to find.
 | STW-CON-011 | S01 | The qualifying bans and race bans each has yet to serve shall be added together, and so shall t… |
 | STW-CON-012 | S01 | Season bans shall stack as any season bans do. Where either is league banned, the merged driver… |
 | STW-CON-013 | S01 | The merged driver shall hold the lower of the two numbers of appeal tokens. |
-| STW-CON-014 | S01 | An auto-rule threshold crossed on either licence shall be held as crossed on the merged one, so… |
+| STW-CON-014 | S01 | An auto-rule already awarded upon either licence shall be held as awarded upon the merged one,… |
+| STW-CON-075 | S01 | Where rules stand at 20 and at 30 penalty points, a driver whose two licences hold 13 and 19 tr… |
+| STW-CON-076 | S01 | The merged licence shall be checked against the auto-rules at the next cycle close, as any lice… |
 | STW-CON-015 | S01 | A merge shall not be refused because either driver is banned, merging being how a league brings… |
 | STW-CON-016 | S01 | Where another account is made a driver's current one, the season ban and league ban roles shall… |
 | STW-CON-017 | S01 | Where another account is made a driver's current one while they are party to an open ticket, th… |

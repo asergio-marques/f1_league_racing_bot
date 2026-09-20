@@ -460,14 +460,18 @@ loop, the signup correction timeout and the signup view's own — so the downtim
 misfire grace cannot disagree about one boundary. Below it, everybody's window is quietly
 shortened by the outage; that is accepted.
 
-**What the flip-flop latch of a historical-accumulation rule becomes on a merge.** [STW-CON-014]
-says a threshold crossed on either licence is held as crossed on the merged one, so the merge
-punishes nothing already punished. For the three flip-flopping types that is the OR of the two
-latches. For the historical one, which triggers at each further multiple [STW-ART-011], it is
-ambiguous: two licences each holding one multiple's worth merge into a tally worth three, and
-taking the higher of the two latches would fire the rule twice at the next close. Taking the
-multiple the merged tally implies avoids that but forgives a crossing neither licence had reached.
-The spec supports either reading.
+**~~What the flip-flop latch of a historical-accumulation rule becomes on a merge.~~** Settled
+2026-09-20, and [STW-CON-014] rewritten with a worked pair in [STW-CON-075]: what carries over is
+what was **already awarded**, not what the merged tally implies. A crossing the merged licence
+reaches that neither licence was sanctioned for fires at the next close, because the merged driver
+is one person and their record is what it always was. Licences of 13 and 19 against rules at 20 and
+30 therefore fire both; licences of 21 and 11 fire the 30 alone, the 20 having been awarded. The
+same holds for the active-accumulation type, where two licences under the threshold can merge to a
+tally above it: the latch is armed where either was, and an unarmed merged crossing fires.
+
+The design consequence is that `steward_auto_rule_arming` is merged by taking the **highest awarded
+multiple** of the two rows per rule, rather than by recomputing from the merged tally, and that the
+merge is followed by an ordinary auto-rule check rather than a silent re-arm.
 
 **What happens when a ticket's channel cannot be created.** Every ticket gets a channel
 [STW-CON-046], and a busy league can reach Discord's per-server channel limit or lose the bot's

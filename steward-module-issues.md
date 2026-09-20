@@ -53,7 +53,7 @@ each true, rather than left as a list.
 ## S01 — The driver licence and the module's vocabulary  ·  #290
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
-**Rules:** STW-CON-001..020, 040..041, 055..067, 073..074
+**Rules:** STW-CON-001..020, 040..041, 055..067, 073..076
 **Depends on:** —
 **Blocked by:** #278 (principal division), #280 (the constitution's ban state)
 
