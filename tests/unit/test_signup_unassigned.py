@@ -325,6 +325,21 @@ async def test_an_availability_naming_a_removed_slot_says_unknown_slot(tmp_path)
     assert "Sat_18_00" not in sent
 
 
+async def test_two_removed_slots_read_as_two_unknowns(tmp_path):
+    """One entry per answer, as the wizard's review panel already does
+    (``test_wizard_availability`` pins the same shape there). Collapsing them would
+    understate how much of a driver's availability has been lost."""
+    interaction = _interaction()
+    slots = [_slot(1, "Monday 19:00 UTC", "Mon_19_00")]
+    cog = _make_cog(
+        listed=[_seeded(1, availability=("Sat_18_00", "Sun_20_00"))], slots=slots
+    )
+
+    await _list(cog, interaction)
+
+    assert "Unknown slot, Unknown slot" in _sent(interaction)
+
+
 async def test_a_driver_with_no_availability_shows_a_dash(tmp_path):
     """Consistent with how the same line renders an absent team or teammate: a blank
     mid-line reads as a bug rather than as an answer."""

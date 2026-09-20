@@ -1813,8 +1813,9 @@ class SignupCog(commands.Cog):
 
         # Availability is the question a division is built around, so it is named in full
         # here rather than summarised: a league may configure 25 slots, and a driver who
-        # ticks every one of them still costs some 500 characters, inside the chunk budget
-        # below (decided 2026-09-20, issue #184).
+        # ticks every one of them costs a ~500-character line, taking the worst single
+        # driver block to some 800 — inside the 1900-character chunk budget below, which
+        # splits between drivers and so could not divide one (decided 2026-09-20, #184).
         #
         # The labels are matched on the slot's durable ``slot_id`` and rendered in the
         # league's own chronological order. Matching on ``slot_sequence_id`` instead would
