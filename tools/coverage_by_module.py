@@ -65,9 +65,10 @@ RULES: list[tuple[str, tuple[str, ...]]] = [
         "tyre_compound", "country_data", "nationality_data",
     )),
     ("attendance", ("attendance", "rsvp")),
+    ("stewarding", ("steward_", "steward_cog")),
     ("results", (
         "results_", "result_submission", "placement_service", "points_config",
-        "points_ordering", "penalty", "verdict", "steward", "standings_service",
+        "points_ordering", "penalty", "verdict", "standings_service",
     )),
     ("signup", (
         "signup", "driver_", "team_", "roster_import", "availability", "wizard_service",

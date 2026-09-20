@@ -42,15 +42,15 @@ Three of these exist; two would need filing before the issues that depend on the
 |---|---|
 | "Principal division" defined in core | filed, #278 |
 | The base role and signed-up role moved to core | filed, #276 |
-| A hub channel in core, with a panel each module adds to | filed, #279 — blocks S23 |
-| Constitution: the licence is the ban state, and "Upheld" means the initial verdict stands | filed, #280 — blocks S01 and S15 |
+| A hub channel in core, with a panel each module adds to | filed, #279 — blocks S23 (#312) |
+| Constitution: the licence is the ban state, and "Upheld" means the initial verdict stands | filed, #280 — blocks S01 (#290) and S15 (#304) |
 
 The 21 cross-document edits the review file records are attached below to the issue that makes
 each true, rather than left as a list.
 
 ---
 
-## S01 — The driver licence and the module's vocabulary
+## S01 — The driver licence and the module's vocabulary  ·  #290
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CON-001..020, 040..041, 055..067, 073..074
@@ -70,7 +70,7 @@ itself and the concepts that describe what may sit upon it.
   principal division, and the feature race and feature qualifying.
 
 **What a league can see:** nothing yet, by design — this is the data structure. It is observable
-through S23's "View licence" and S33's licence sheet, which are the first things to read it.
+through S23 (#312)'s "View licence" and S33 (#322)'s licence sheet, which are the first things to read it.
 
 **Owed document edits:** core's rule that a driver returning to Not Signed Up is deleted, which a
 licence recording a sanction now prevents; core's "A driver shall not be banned", which should
@@ -78,11 +78,11 @@ name the licence's active bans as the bar; constitution Principle VIII.
 
 ---
 
-## S02 — Enabling and disabling the module, and the four levels of authority
+## S02 — Enabling and disabling the module, and the four levels of authority  ·  #291
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-MOD-001..010, 015..016, 018..023; STW-CFG-001..002
-**Depends on:** S01
+**Depends on:** S01 (#290)
 
 - `/module enable steward` and `/module disable steward`, off by default, enabled only before a
   season's placements are confirmed, disabled only while no cycle stands open.
@@ -101,11 +101,11 @@ spec's disabling rule.
 
 ---
 
-## S03 — The module's channels
+## S03 — The module's channels  ·  #292
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CHN-001..015
-**Depends on:** S02
+**Depends on:** S02 (#291)
 
 `division ticket-channel`, `division licence-channel`, `steward channel conduct-verdicts`,
 `steward channel command` and `steward channel log`, the inherited `division verdicts-channel`,
@@ -120,11 +120,11 @@ becomes six and ten; the README's two counts of eight.
 
 ---
 
-## S04 — The stewarding team, its roles and its head
+## S04 — The stewarding team, its roles and its head  ·  #293
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-TEM-001..032; STW-CON-021..029
-**Depends on:** S02, S03
+**Depends on:** S02 (#291), S03 (#292)
 
 - The team as a list the bot keeps, with the roles mirroring it.
 - `steward team add`, `remove`, `list`, `head-assign`, `temp-head-assign`, `temp-head-remove`, and
@@ -138,26 +138,26 @@ season that will not start without a head steward.
 
 ---
 
-## S05 — Timings, appeals and justification configuration
+## S05 — Timings, appeals and justification configuration  ·  #294
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-TIM-001..018; STW-APL-001..006, 008..009; STW-JUS-001..003, 008..015
-**Depends on:** S02
+**Depends on:** S02 (#291)
 
 The five period commands with their defaults and their 168-hour cap; the appeal toggle and its
 refusal where the cap would be breached; the appeal token pair and the refund toggle; the
-justification final and fallback modes, other than the LLM mode, which is S38.
+justification final and fallback modes, other than the LLM mode, which is S38 (#327).
 
 **What a league can see:** every timing and appeal setting can be set and read back, and an
 invalid combination is refused with the sum named.
 
 ---
 
-## S06 — Outcomes
+## S06 — Outcomes  ·  #295
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-OUT-001..055; STW-CON-053..054
-**Depends on:** S02
+**Depends on:** S02 (#291)
 
 `steward outcome add`, `modify`, `remove`, `toggle` and `list`; the form and every field it
 collects; the 25-per-session limit; the permanent NFA outcome; the rule that an outcome sets at
@@ -168,11 +168,11 @@ offer.
 
 ---
 
-## S07 — Penalty types, expiries and the ban configuration
+## S07 — Penalty types, expiries and the ban configuration  ·  #296
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-PEN-001..024
-**Depends on:** S01, S06
+**Depends on:** S01 (#290), S06 (#295)
 
 `steward penalty toggle` over the twelve penalty types, with its refusals where an outcome would
 be left empty; the season ban role and type, in its three forms; the warning and penalty point
@@ -183,26 +183,26 @@ refused where turning one off would empty an outcome.
 
 ---
 
-## S08 — Automated penalty rules, as configuration
+## S08 — Automated penalty rules, as configuration  ·  #297
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-ARL-001..066; STW-CON-068..072
-**Depends on:** S07
+**Depends on:** S07 (#296)
 
 The four `steward auto-rule add-…` commands and their forms, `modify`, `remove`, `toggle` and
 `list`; which types may be counted and handed out; the rule that an auto-rule judges one licence
 and never a team; and where the penalties it hands out land.
 
 **What a league can see:** rules like "three penalty points in a round means a race ban" exist and
-can be listed, though nothing triggers them until S19.
+can be listed, though nothing triggers them until S19 (#308).
 
 ---
 
-## S09 — Changing settings during a season
+## S09 — Changing settings during a season  ·  #298
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-SET-001..012
-**Depends on:** S05, S06, S07, S08
+**Depends on:** S05 (#294), S06 (#295), S07 (#296), S08 (#297)
 
 What may be changed once placements are confirmed and from when each change governs: a cycle
 already open finishes under the settings it began with, an outcome may be added mid-deliberation
@@ -213,27 +213,27 @@ stewards are told in the command channel when an outcome appears mid-deliberatio
 
 ---
 
-## S10 — The ticket framework
+## S10 — The ticket framework  ·  #299
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-TKT-001..051; STW-CON-042..046, 050
-**Depends on:** S03, S04
+**Depends on:** S03 (#292), S04 (#293)
 
 Everything a ticket is, independent of which kind it is: its channel and who can see it, the
 record it keeps, the steward log, the unified front the stewarding team presents, the effective
 head steward and how a ticket is handed on, and the five buttons — Add driver, Remove driver,
 Request exclusion, Mute and Unmute — with the approval each needs.
 
-**What a league can see:** nothing on its own; it is the frame S12, S14 and S28 each fill. It is
+**What a league can see:** nothing on its own; it is the frame S12 (#301), S14 (#303) and S28 (#317) each fill. It is
 its own issue because all three would otherwise build it three times.
 
 ---
 
-## S11 — Deliberation and the ballot
+## S11 — Deliberation and the ballot  ·  #300
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-DEL-001..037
-**Depends on:** S06, S10
+**Depends on:** S06 (#295), S10 (#299)
 
 - The ballot: a line per involved driver, a line per team that may be sanctioned, and one
   justification for the whole of it.
@@ -245,15 +245,15 @@ its own issue because all three would otherwise build it three times.
   happens when that hour runs out.
 - The default justification and the hour to accept or rewrite it.
 
-**What a league can see:** stewards vote and a decision is reached; publishing it is S30's.
+**What a league can see:** stewards vote and a decision is reached; publishing it is S30 (#319)'s.
 
 ---
 
-## S12 — Report submission and defence
+## S12 — Report submission and defence  ·  #301
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CYC-022..054; STW-CON-031..032, 039, 047..048
-**Depends on:** S10, S03, S06
+**Depends on:** S10 (#299), S03 (#292), S06 (#295)
 
 The "Report incident" button and its window, the report form and its evidence, the ID format, the
 channel the bot creates, a steward's report as against a driver's, the defence period that ends
@@ -264,11 +264,11 @@ channel with the drivers involved.
 
 ---
 
-## S13 — Report deliberation and the round's report verdicts
+## S13 — Report deliberation and the round's report verdicts  ·  #302
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CYC-055..064; STW-CON-033
-**Depends on:** S11, S12, S30
+**Depends on:** S11 (#300), S12 (#301), S30 (#319)
 
 The deliberation period, the incident as the verdict will describe it, the whole round's verdicts
 posted together in the order the reports were lodged, the delay message where a tie stands, and
@@ -280,11 +280,11 @@ move with them.
 
 ---
 
-## S14 — Appeal submission and the appeal tokens
+## S14 — Appeal submission and the appeal tokens  ·  #303
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-CYC-065..091; STW-CON-034, 049, 051; STW-APL-007, 010..011
-**Depends on:** S13, S05
+**Depends on:** S13 (#302), S05 (#294)
 
 Who may appeal and when, the cost in tokens and the refund where an appeal succeeds, the appeal
 form and its ID, one appeal per report, the appellant as an involved driver of their own appeal,
@@ -295,11 +295,11 @@ charges, and gets it back if the stewards change the verdict.
 
 ---
 
-## S15 — Appeal deliberation
+## S15 — Appeal deliberation  ·  #304
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-CYC-092..107; STW-CON-035
-**Depends on:** S14, S11, S30
+**Depends on:** S14 (#303), S11 (#300), S30 (#319)
 **Blocked by:** #280 (the constitution's appeals lifecycle)
 
 The appeal ballot with its Uphold or Change decision, lines prefilled from the initial verdict and
@@ -314,11 +314,11 @@ verdict stands.
 
 ---
 
-## S16 — The cycle close
+## S16 — The cycle close  ·  #305
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CYC-108..115; STW-CON-030
-**Depends on:** S13, S15, S07, S32, S33
+**Depends on:** S13 (#302), S15 (#304), S07 (#296), S32 (#321), S33 (#322)
 
 The close applied entire or not at all: every channel checked before anything is written, then
 points and bans written to the licences, the auto-rules checked, the sheets reposted, and the
@@ -329,11 +329,11 @@ or nothing moves and the league is told which channel is at fault.
 
 ---
 
-## S17 — The cycle moves the round, and cancellation
+## S17 — The cycle moves the round, and cancellation  ·  #306
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CYC-001..021
-**Depends on:** S12, S13, S15, S16
+**Depends on:** S12 (#301), S13 (#302), S15 (#304), S16 (#305)
 
 The round's states driven by the cycle rather than by the results module's reviews; the labels the
 results and standings carry as the round moves; a round whose cycle is open refusing cancellation,
@@ -348,11 +348,11 @@ core's cancellation of a division or season with a cycle open.
 
 ---
 
-## S18 — Republishing a verdict
+## S18 — Republishing a verdict  ·  #307
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-CYC-116..123
-**Depends on:** S30, S13
+**Depends on:** S30 (#319), S13 (#302)
 
 `steward verdict republish`, editing a verdict's justification in the message it was posted in,
 only until the next batch lands upon it, and the rule that no command corrects an outcome.
@@ -362,11 +362,11 @@ verdicts channel losing its order. Subsumes #189.
 
 ---
 
-## S19 — Auto-rule triggering
+## S19 — Auto-rule triggering  ·  #308
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-ART-001..011
-**Depends on:** S08, S16, S30
+**Depends on:** S08 (#297), S16 (#305), S30 (#319)
 
 Rules checked at a cycle close and after a CoC verdict, the Automated Ruling published for each,
 the ID formats, one rule triggering another until none is left, and the flip-flop that keeps a
@@ -377,11 +377,11 @@ an Automated Ruling.
 
 ---
 
-## S20 — Season bans and league bans
+## S20 — Season bans and league bans  ·  #309
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-BAN-001, 007..008, 047..065
-**Depends on:** S01, S07, S16
+**Depends on:** S01 (#290), S07 (#296), S16 (#305)
 
 A driver returned to Not Signed Up with every seat freed; the ban roles; the bar on signing up, on
 being placed and on checking in; season bans stacking and expiring by rounds, by a season's end or
@@ -393,11 +393,11 @@ ban ends.
 
 ---
 
-## S21 — Serving a qualifying ban or a race ban
+## S21 — Serving a qualifying ban or a race ban  ·  #310
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-BAN-002..006, 016..018, 023..035, 040..046
-**Depends on:** S01, S20, S30
+**Depends on:** S01 (#290), S20 (#309), S30 (#319)
 **Blocked by:** #278 (principal division)
 
 Which division a ban is served in, judging from the round's results whether it was served, the
@@ -407,11 +407,11 @@ Automated Ruling posted either way, a ban unserved carrying on, and a ban outliv
 
 ---
 
-## S22 — Bans while the module is disabled
+## S22 — Bans while the module is disabled  ·  #311
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-BAN-010..015
-**Depends on:** S20, S21, S02
+**Depends on:** S20 (#309), S21 (#310), S02 (#291)
 
 Season and league bans staying in force with the module off, nothing expiring meanwhile, and every
 count resuming where it stood when the module is enabled again.
@@ -420,27 +420,27 @@ count resuming where it stood when the module is enabled again.
 
 ---
 
-## S23 — Viewing a licence, as text
+## S23 — Viewing a licence, as text  ·  #312
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-LIC-001..011
-**Depends on:** S01
+**Depends on:** S01 (#290)
 **Blocked by:** #279 (the hub channel)
 
 "View licence" on the hub panel: any member names a driver and reads their licence, seen by them
 alone — active points with their expiries, active bans with where each is served, the ban history,
 the championship record, the tokens, and the ticket each entry came from.
 
-**What a league can see:** the first window onto the licence, and the first proof S01 holds what
+**What a league can see:** the first window onto the licence, and the first proof S01 (#290) holds what
 it should.
 
 ---
 
-## S24 — Viewing a licence, as a graphic
+## S24 — Viewing a licence, as a graphic  ·  #313
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-LIC-012..020
-**Depends on:** S23
+**Depends on:** S23 (#312)
 
 The licence drawn, dressed in the principal division's logo and colours, with a row per division
 the driver races in.
@@ -450,11 +450,11 @@ by row, which no graphic declares today.
 
 ---
 
-## S25 — What stewarding changes in the attendance module
+## S25 — What stewarding changes in the attendance module  ·  #314
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-MOD-011..014; STW-BAN-009, 019..022, 036..039
-**Depends on:** S13, S20, S21
+**Depends on:** S13 (#302), S20 (#309), S21 (#310)
 
 Attendance pardons given by a league manager's command in place of the penalty review's button;
 attendance points distributed when the report verdicts are posted; a race-banned driver's check-in
@@ -468,25 +468,25 @@ not allowed to enter.
 
 ---
 
-## S26 — Code of Conduct investigations, as configuration
+## S26 — Code of Conduct investigations, as configuration  ·  #315
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-COC-001..063
-**Depends on:** S06, S07
+**Depends on:** S06 (#295), S07 (#296)
 
 The conduct toggle, off by default; who may start an investigation; the discipline point expiry;
 the defence and deliberation periods; and the whole conduct outcome table, with its own NFA.
 
 **What a league can see:** a league that wants conduct investigations can configure them, though
-none can be started until S28.
+none can be started until S28 (#317).
 
 ---
 
-## S27 — Backing up a ticket's channel
+## S27 — Backing up a ticket's channel  ·  #316
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-BKP-001..009
-**Depends on:** S10
+**Depends on:** S10 (#299)
 
 `steward backup report-toggle` and the JSON written to `./tickets`, with the attachments; a
 channel not deleted where its backup failed, with a button to try again; and the warning when the
@@ -497,11 +497,11 @@ runs on.
 
 ---
 
-## S28 — The conduct investigation cycle
+## S28 — The conduct investigation cycle  ·  #317
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-CCY-001..026; STW-CON-036..038, 052
-**Depends on:** S26, S10, S11, S30
+**Depends on:** S26 (#315), S10 (#299), S11 (#300), S30 (#319)
 **Blocked by:** #276 (the base role moved to core)
 
 `steward conduct start` and its form, the investigation's ID and channel, the defence and
@@ -514,11 +514,11 @@ verdict is public while the investigation was not.
 
 ---
 
-## S29 — Revoking a penalty
+## S29 — Revoking a penalty  ·  #318
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-REV-001..037
-**Depends on:** S01, S20, S21, S32, S33
+**Depends on:** S01 (#290), S20 (#309), S21 (#310), S32 (#321), S33 (#322)
 
 The eleven revoke commands, each taking whether the sanction is annulled — as though never given —
 or lifted, which keeps it on the record and ends it early; the refusals; the standings reposted
@@ -530,11 +530,11 @@ it never happened.
 
 ---
 
-## S30 — Verdict output, as text
+## S30 — Verdict output, as text  ·  #319
 
 **Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-VER-001..017, 019..041
-**Depends on:** S11
+**Depends on:** S11 (#300)
 
 Every verdict this module issues, shaped one way: its label, its ID, the round and session, a
 decision line per involved driver and per team sanctioned, the incident, the justification, the
@@ -546,11 +546,11 @@ module is doing. Subsumes #246 and #204.
 
 ---
 
-## S31 — Verdict output, as a graphic
+## S31 — Verdict output, as a graphic  ·  #320
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-VER-018, 042..054
-**Depends on:** S30
+**Depends on:** S30 (#319)
 
 The verdict graphic's fields, a row per driver and per team, drawn in the division's colours.
 
@@ -559,11 +559,11 @@ section.
 
 ---
 
-## S32 — Championship penalties in the standings
+## S32 — Championship penalties in the standings  ·  #321
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-STD-001..005
-**Depends on:** S01
+**Depends on:** S01 (#290)
 
 A points deduction marked by a footnote in the text and an optional column in the graphic; a
 championship disqualification shown as "DSQ" beneath the classified; a penalty taking effect with
@@ -576,11 +576,11 @@ that looks wrong.
 
 ---
 
-## S33 — The licence sheet, as text
+## S33 — The licence sheet, as text  ·  #322
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-SHT-001..015
-**Depends on:** S01, S03
+**Depends on:** S01 (#290), S03 (#292)
 
 The sheet posted per division: points, outstanding bans and suspended drivers, ordered by active
 points, reposted whenever a licence changes, and posted as an opening sheet when placements are
@@ -591,11 +591,11 @@ channel.
 
 ---
 
-## S34 — The licence sheet, as a graphic
+## S34 — The licence sheet, as a graphic  ·  #323
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-SHT-016..038
-**Depends on:** S33
+**Depends on:** S33 (#322)
 
 The sheet as an image module aspect: its toggle, its template command, its fields and its
 per-round column.
@@ -604,11 +604,11 @@ per-round column.
 
 ---
 
-## S35 — Packing the bot
+## S35 — Packing the bot  ·  #324
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-PCK-001..003
-**Depends on:** S02, S03, S04
+**Depends on:** S02 (#291), S03 (#292), S04 (#293)
 
 A pack clearing the team, the roles and the channels, keeping every licence, and refusing while a
 ticket is open.
@@ -617,11 +617,11 @@ ticket is open.
 
 ---
 
-## S36 — Surviving a restart
+## S36 — Surviving a restart  ·  #325
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-RST-001..004
-**Depends on:** S12, S13, S15, S16
+**Depends on:** S12 (#301), S13 (#302), S15 (#304), S16 (#305)
 
 Every scheduled stage carried out on start-up in the order it would have happened, buttons and
 ballots still working, and downtime lengthening every window in which a user or steward acts.
@@ -632,11 +632,11 @@ ballots still working, and downtime lengthening every window in which a user or 
 
 ---
 
-## S37 — Test mode
+## S37 — Test mode  ·  #326
 
 **Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-TST-001..006; STW-MOD-017
-**Depends on:** S12, S13, S15
+**Depends on:** S12 (#301), S13 (#302), S15 (#304)
 
 `test-mode report lodge`, `test-mode appeal lodge` and `test-mode ballot cast`, fake drivers on
 the stewarding team, and the stages stepped through with core's test-mode commands.
@@ -645,11 +645,11 @@ the stewarding team, and the stages stepped through with core's test-mode comman
 
 ---
 
-## S38 — The LLM justification mode
+## S38 — The LLM justification mode  ·  #327
 
 **Labels:** `module-stewarding`, `feature-request`, `Low`
 **Rules:** STW-JUS-004..007
-**Depends on:** S05, S11
+**Depends on:** S05 (#294), S11 (#300)
 
 The third justification mode, available only where whoever runs the bot has connected an LLM, with
 the fallback used where it fails and the warning that the stewards' justifications leave the
@@ -665,20 +665,20 @@ longest of them.
 Derived from the dependencies above. Everything in a wave can be built in parallel; a wave
 cannot start until the one before it is done.
 
-**Wave 1** — S01
-**Wave 2** — S02, S23, S32
-**Wave 3** — S03, S05, S06, S24
-**Wave 4** — S04, S07, S33
-**Wave 5** — S08, S10, S26, S34, S35
-**Wave 6** — S09, S11, S12, S27
-**Wave 7** — S30, S38
-**Wave 8** — S13, S28, S31
-**Wave 9** — S14, S18
-**Wave 10** — S15
-**Wave 11** — S16, S37
-**Wave 12** — S17, S19, S20, S36
-**Wave 13** — S21
-**Wave 14** — S22, S25, S29
+**Wave 1** — S01 (#290)
+**Wave 2** — S02 (#291), S23 (#312), S32 (#321)
+**Wave 3** — S03 (#292), S05 (#294), S06 (#295), S24 (#313)
+**Wave 4** — S04 (#293), S07 (#296), S33 (#322)
+**Wave 5** — S08 (#297), S10 (#299), S26 (#315), S34 (#323), S35 (#324)
+**Wave 6** — S09 (#298), S11 (#300), S12 (#301), S27 (#316)
+**Wave 7** — S30 (#319), S38 (#327)
+**Wave 8** — S13 (#302), S28 (#317), S31 (#320)
+**Wave 9** — S14 (#303), S18 (#307)
+**Wave 10** — S15 (#304)
+**Wave 11** — S16 (#305), S37 (#326)
+**Wave 12** — S17 (#306), S19 (#308), S20 (#309), S36 (#325)
+**Wave 13** — S21 (#310)
+**Wave 14** — S22 (#311), S25 (#314), S29 (#318)
 
 ---
 
@@ -688,44 +688,44 @@ Generated from the spec: all 899 rules, each owned by exactly one issue, none ow
 
 | Issue | Rules |
 |---|---|
-| S01 | STW-CON-001..020, STW-CON-040..041, STW-CON-055..067, STW-CON-073..074 |
-| S02 | STW-CFG-001..002, STW-MOD-001..010, STW-MOD-015..016, STW-MOD-018..023 |
-| S03 | STW-CHN-001..015 |
-| S04 | STW-CON-021..029, STW-TEM-001..032 |
-| S05 | STW-APL-001..006, STW-APL-008..009, STW-JUS-001..003, STW-JUS-008..015, STW-TIM-001..018 |
-| S06 | STW-CON-053..054, STW-OUT-001..055 |
-| S07 | STW-PEN-001..024 |
-| S08 | STW-ARL-001..066, STW-CON-068..072 |
-| S09 | STW-SET-001..012 |
-| S10 | STW-CON-042..046, STW-CON-050, STW-TKT-001..051 |
-| S11 | STW-DEL-001..037 |
-| S12 | STW-CON-031..032, STW-CON-039, STW-CON-047..048, STW-CYC-022..054 |
-| S13 | STW-CON-033, STW-CYC-055..064 |
-| S14 | STW-APL-007, STW-APL-010..011, STW-CON-034, STW-CON-049, STW-CON-051, STW-CYC-065..091 |
-| S15 | STW-CON-035, STW-CYC-092..107 |
-| S16 | STW-CON-030, STW-CYC-108..115 |
-| S17 | STW-CYC-001..021 |
-| S18 | STW-CYC-116..123 |
-| S19 | STW-ART-001..011 |
-| S20 | STW-BAN-001, STW-BAN-007..008, STW-BAN-047..065 |
-| S21 | STW-BAN-002..006, STW-BAN-016..018, STW-BAN-023..035, STW-BAN-040..046 |
-| S22 | STW-BAN-010..015 |
-| S23 | STW-LIC-001..011 |
-| S24 | STW-LIC-012..020 |
-| S25 | STW-BAN-009, STW-BAN-019..022, STW-BAN-036..039, STW-MOD-011..014 |
-| S26 | STW-COC-001..063 |
-| S27 | STW-BKP-001..009 |
-| S28 | STW-CCY-001..026, STW-CON-036..038, STW-CON-052 |
-| S29 | STW-REV-001..037 |
-| S30 | STW-VER-001..017, STW-VER-019..041 |
-| S31 | STW-VER-018, STW-VER-042..054 |
-| S32 | STW-STD-001..005 |
-| S33 | STW-SHT-001..015 |
-| S34 | STW-SHT-016..038 |
-| S35 | STW-PCK-001..003 |
-| S36 | STW-RST-001..004 |
-| S37 | STW-MOD-017, STW-TST-001..006 |
-| S38 | STW-JUS-004..007 |
+| S01 (#290) | STW-CON-001..020, STW-CON-040..041, STW-CON-055..067, STW-CON-073..074 |
+| S02 (#291) | STW-CFG-001..002, STW-MOD-001..010, STW-MOD-015..016, STW-MOD-018..023 |
+| S03 (#292) | STW-CHN-001..015 |
+| S04 (#293) | STW-CON-021..029, STW-TEM-001..032 |
+| S05 (#294) | STW-APL-001..006, STW-APL-008..009, STW-JUS-001..003, STW-JUS-008..015, STW-TIM-001..018 |
+| S06 (#295) | STW-CON-053..054, STW-OUT-001..055 |
+| S07 (#296) | STW-PEN-001..024 |
+| S08 (#297) | STW-ARL-001..066, STW-CON-068..072 |
+| S09 (#298) | STW-SET-001..012 |
+| S10 (#299) | STW-CON-042..046, STW-CON-050, STW-TKT-001..051 |
+| S11 (#300) | STW-DEL-001..037 |
+| S12 (#301) | STW-CON-031..032, STW-CON-039, STW-CON-047..048, STW-CYC-022..054 |
+| S13 (#302) | STW-CON-033, STW-CYC-055..064 |
+| S14 (#303) | STW-APL-007, STW-APL-010..011, STW-CON-034, STW-CON-049, STW-CON-051, STW-CYC-065..091 |
+| S15 (#304) | STW-CON-035, STW-CYC-092..107 |
+| S16 (#305) | STW-CON-030, STW-CYC-108..115 |
+| S17 (#306) | STW-CYC-001..021 |
+| S18 (#307) | STW-CYC-116..123 |
+| S19 (#308) | STW-ART-001..011 |
+| S20 (#309) | STW-BAN-001, STW-BAN-007..008, STW-BAN-047..065 |
+| S21 (#310) | STW-BAN-002..006, STW-BAN-016..018, STW-BAN-023..035, STW-BAN-040..046 |
+| S22 (#311) | STW-BAN-010..015 |
+| S23 (#312) | STW-LIC-001..011 |
+| S24 (#313) | STW-LIC-012..020 |
+| S25 (#314) | STW-BAN-009, STW-BAN-019..022, STW-BAN-036..039, STW-MOD-011..014 |
+| S26 (#315) | STW-COC-001..063 |
+| S27 (#316) | STW-BKP-001..009 |
+| S28 (#317) | STW-CCY-001..026, STW-CON-036..038, STW-CON-052 |
+| S29 (#318) | STW-REV-001..037 |
+| S30 (#319) | STW-VER-001..017, STW-VER-019..041 |
+| S31 (#320) | STW-VER-018, STW-VER-042..054 |
+| S32 (#321) | STW-STD-001..005 |
+| S33 (#322) | STW-SHT-001..015 |
+| S34 (#323) | STW-SHT-016..038 |
+| S35 (#324) | STW-PCK-001..003 |
+| S36 (#325) | STW-RST-001..004 |
+| S37 (#326) | STW-MOD-017, STW-TST-001..006 |
+| S38 (#327) | STW-JUS-004..007 |
 
 ---
 
@@ -733,32 +733,32 @@ Generated from the spec: all 899 rules, each owned by exactly one issue, none ow
 
 Five things worth your judgement before any of this is filed.
 
-**1. Verdict output has to come before the report cycle finishes.** S30 lands in wave 7, two waves
-before S13 can close a report. It reads oddly — the output before the thing it outputs — but a
+**1. Verdict output has to come before the report cycle finishes.** S30 (#319) lands in wave 7, two waves
+before S13 (#302) can close a report. It reads oddly — the output before the thing it outputs — but a
 report cycle cannot finish without publishing a verdict, and every other kind of verdict (appeals,
-CoC, Automated Rulings) reuses the same shaping. Building it once, early, is what keeps S13, S15,
-S19, S21 and S28 from each inventing their own.
+CoC, Automated Rulings) reuses the same shaping. Building it once, early, is what keeps S13 (#302), S15 (#304),
+S19 (#308), S21 (#310) and S28 (#317) from each inventing their own.
 
 **2. The cycle close and the auto-rules depend on each other.** The close checks the auto-rules;
-the auto-rules only ever run at a close. I broke it by making S16 the close with nothing to check
-yet, and S19 the rules engine that hooks into it. The alternative is one large issue covering
+the auto-rules only ever run at a close. I broke it by making S16 (#305) the close with nothing to check
+yet, and S19 (#308) the rules engine that hooks into it. The alternative is one large issue covering
 both.
 
-**3. Two issues have no output a league can see: S10 (the ticket framework) and S11
-(deliberation).** They are observable only through S12 and S13. I kept them separate because
-reports, appeals and CoC investigations all three build on them, and merging S10 into S12 would
+**3. Two issues have no output a league can see: S10 (#299) (the ticket framework) and S11 (#300)
+(deliberation).** They are observable only through S12 (#301) and S13 (#302). I kept them separate because
+reports, appeals and CoC investigations all three build on them, and merging S10 (#299) into S12 (#301) would
 have the appeal and conduct cycles inherit a framework shaped around reports. If you would rather
-every issue stand on its own, merge S10 into S12 and S11 into S13, and accept that those two
+every issue stand on its own, merge S10 (#299) into S12 (#301) and S11 (#300) into S13 (#302), and accept that those two
 become large.
 
-**4. Three issues are big enough to split again**, if the increments turn out unwieldy: S08 (66
-rules — four near-identical auto-rule forms), S26 (63 — the whole conduct outcome table beside the
-toggles), S06 (55 — the outcome table and its five commands). Each is internally repetitive, which
+**4. Three issues are big enough to split again**, if the increments turn out unwieldy: S08 (#297) (66
+rules — four near-identical auto-rule forms), S26 (#315) (63 — the whole conduct outcome table beside the
+toggles), S06 (#295) (55 — the outcome table and its five commands). Each is internally repetitive, which
 is why I left them whole.
 
 **5. The two prerequisites that needed issues now have them.**
 
-Both are now filed, on the same milestone: **#279** for the hub channel, which S23 cannot be built
+Both are now filed, on the same milestone: **#279** for the hub channel, which S23 (#312) cannot be built
 without and which #258 and #260 are also waiting on, and **#280** for the constitution, carrying
 the licence as the ban state and the appeals lifecycle wording as one amendment — one
 `/speckit-constitution` run, one version bump, one sync impact report.

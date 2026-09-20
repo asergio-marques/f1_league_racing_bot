@@ -241,10 +241,33 @@ def test_a_module_breakdown_lists_worst_covered_first():
 def test_asking_for_an_unknown_module_says_so_rather_than_raising():
     report = _report(("src/services/phase1_service.py", 10, 0))
 
-    text = cbm.format_module(cbm.group(report), "stewarding")
+    text = cbm.format_module(cbm.group(report), "telemetry")
 
-    assert "stewarding" in text
+    assert "telemetry" in text
     assert "weather" in text  # the known modules are named, so the typo is obvious
+
+
+def test_the_stewarding_module_is_its_own_bucket_and_not_the_results_one():
+    """Its services are named `steward_*`, and `results` used to claim them.
+
+    `RULES` is ordered and the first match wins, so while the `results` bucket carried a
+    bare "steward" pattern the whole module's coverage was reported as the results module's
+    and hidden from the per-module floor — the failure issue #208 added that floor to make
+    visible.
+    """
+    report = _report(
+        ("src/services/steward_licence_service.py", 10, 5),
+        ("src/services/results_post_service.py", 10, 0),
+    )
+
+    buckets = cbm.group(report)
+
+    assert [f[0] for f in buckets["stewarding"]["files"]] == [
+        "src/services/steward_licence_service.py"
+    ]
+    assert [f[0] for f in buckets["results"]["files"]] == [
+        "src/services/results_post_service.py"
+    ]
 
 
 # ---------------------------------------------------------------------------

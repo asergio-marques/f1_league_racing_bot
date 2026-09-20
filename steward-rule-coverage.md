@@ -9,44 +9,44 @@ as `—`, which is the gap this table exists to find.
 
 ## The issues
 
-- **S01** — The driver licence and the module's vocabulary
-- **S02** — Enabling and disabling the module, and the four levels of authority
-- **S03** — The module's channels
-- **S04** — The stewarding team, its roles and its head
-- **S05** — Timings, appeals and justification configuration
-- **S06** — Outcomes
-- **S07** — Penalty types, expiries and the ban configuration
-- **S08** — Automated penalty rules, as configuration
-- **S09** — Changing settings during a season
-- **S10** — The ticket framework
-- **S11** — Deliberation and the ballot
-- **S12** — Report submission and defence
-- **S13** — Report deliberation and the round's report verdicts
-- **S14** — Appeal submission and the appeal tokens
-- **S15** — Appeal deliberation
-- **S16** — The cycle close
-- **S17** — The cycle moves the round, and cancellation
-- **S18** — Republishing a verdict
-- **S19** — Auto-rule triggering
-- **S20** — Season bans and league bans
-- **S21** — Serving a qualifying ban or a race ban
-- **S22** — Bans while the module is disabled
-- **S23** — Viewing a licence, as text
-- **S24** — Viewing a licence, as a graphic
-- **S25** — What stewarding changes in the attendance module
-- **S26** — Code of Conduct investigations, as configuration
-- **S27** — Backing up a ticket's channel
-- **S28** — The conduct investigation cycle
-- **S29** — Revoking a penalty
-- **S30** — Verdict output, as text
-- **S31** — Verdict output, as a graphic
-- **S32** — Championship penalties in the standings
-- **S33** — The licence sheet, as text
-- **S34** — The licence sheet, as a graphic
-- **S35** — Packing the bot
-- **S36** — Surviving a restart
-- **S37** — Test mode
-- **S38** — The LLM justification mode
+- **S01** — The driver licence and the module's vocabulary  ·  #290
+- **S02** — Enabling and disabling the module, and the four levels of authority  ·  #291
+- **S03** — The module's channels  ·  #292
+- **S04** — The stewarding team, its roles and its head  ·  #293
+- **S05** — Timings, appeals and justification configuration  ·  #294
+- **S06** — Outcomes  ·  #295
+- **S07** — Penalty types, expiries and the ban configuration  ·  #296
+- **S08** — Automated penalty rules, as configuration  ·  #297
+- **S09** — Changing settings during a season  ·  #298
+- **S10** — The ticket framework  ·  #299
+- **S11** — Deliberation and the ballot  ·  #300
+- **S12** — Report submission and defence  ·  #301
+- **S13** — Report deliberation and the round's report verdicts  ·  #302
+- **S14** — Appeal submission and the appeal tokens  ·  #303
+- **S15** — Appeal deliberation  ·  #304
+- **S16** — The cycle close  ·  #305
+- **S17** — The cycle moves the round, and cancellation  ·  #306
+- **S18** — Republishing a verdict  ·  #307
+- **S19** — Auto-rule triggering  ·  #308
+- **S20** — Season bans and league bans  ·  #309
+- **S21** — Serving a qualifying ban or a race ban  ·  #310
+- **S22** — Bans while the module is disabled  ·  #311
+- **S23** — Viewing a licence, as text  ·  #312
+- **S24** — Viewing a licence, as a graphic  ·  #313
+- **S25** — What stewarding changes in the attendance module  ·  #314
+- **S26** — Code of Conduct investigations, as configuration  ·  #315
+- **S27** — Backing up a ticket's channel  ·  #316
+- **S28** — The conduct investigation cycle  ·  #317
+- **S29** — Revoking a penalty  ·  #318
+- **S30** — Verdict output, as text  ·  #319
+- **S31** — Verdict output, as a graphic  ·  #320
+- **S32** — Championship penalties in the standings  ·  #321
+- **S33** — The licence sheet, as text  ·  #322
+- **S34** — The licence sheet, as a graphic  ·  #323
+- **S35** — Packing the bot  ·  #324
+- **S36** — Surviving a restart  ·  #325
+- **S37** — Test mode  ·  #326
+- **S38** — The LLM justification mode  ·  #327
 
 **899 rules. Rules owned by no issue: 0.**
 
