@@ -1004,7 +1004,7 @@ All three commands share the same preconditions, checked in this order:
 
 Every successful reply echoes the other two deadlines, and the change is written to the log channel. There is no `/weather config view`: **`/season placements-review`** is the only place the three values are read back.
 
-> **The posted forecasts do not describe your configured horizons.** The message text carries the fixed wording "(5 days out)", "(2 days out)" and "(2 hours out)" whatever the deadlines are set to. The forecast is published at the configured time; only its self-description is wrong.
+> **The posted forecasts do not name a horizon.** Each is titled by what it is — "Initial chance of rain", "Initial session forecast", "Final session forecast" — and the first two say a further forecast follows closer to the round, the second adding that it will be more accurate. None states when it was posted or when the next arrives, so the wording is right at whatever deadlines you set. The graphics have always described themselves this way and the text now matches them.
 
 > **A restart keeps the horizons you set.** When the bot starts again with forecasts still outstanding, it works out which ones it missed from your configured deadlines, the same ones confirming placements and `/round amend` use. It used to fall back to the packaged 5 / 2 / 2, as `/round amend` once did; neither does now. It catches up only on rounds still to be run: a cancelled round, every round of a cancelled division, and a round whose race time passed while the bot was down get no forecast.
 

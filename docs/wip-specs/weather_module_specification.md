@@ -123,6 +123,11 @@
 - At the horizon of Phase 1, the bot shall post to the weather forecast channel of the division a fixed notice stating that the weather of the round is not pre-generated and shall be determined by the game at race time. That notice shall carry no mention of the division role, the conditions being unknown to every participant alike, and shall stand in the place of the Phase 1 message for such a round. Nothing shall be posted at the horizons of Phases 2 and 3.
 - Whether a round is of the Mystery format shall be determined at the moment a phase fires, so that a round whose format changed after being scheduled behaves according to its current format.
 
+## How a forecast names itself
+- Each forecast, drawn as a message or as a graphic alike, shall be titled by the description of its phase: "Initial chance of rain" for Phase 1, "Initial session forecast" for Phase 2 and "Final session forecast" for Phase 3. The message and the graphic shall carry the same description.
+- No forecast shall state the horizon at which it was posted, the horizon of any other phase, or the number of the phase it stands for. A horizon is configurable and a forecast that named one would be wrong for every league that had changed it.
+- The Phase 1 and Phase 2 messages shall each indicate that a further forecast follows nearer to the round, and the Phase 2 message shall indicate that the forecast following it is the more accurate. The Phase 3 message, being the last a round receives, shall indicate no forecast to follow.
+
 ## Supersession and cleanup
 - Each phase's message shall supersede the previous phase's, so that a division holds only one forecast for a round at any time.
 - The superseded message shall be deleted only once the new message has been posted, so that a failure to post leaves the previous forecast standing.
