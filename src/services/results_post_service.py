@@ -1,6 +1,7 @@
 """results_post_service.py — Post and edit results/standings in Discord channels."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -50,6 +51,29 @@ def _split_content(text: str) -> list[str]:
     if current:
         chunks.append("".join(current).rstrip("\n"))
     return chunks or [text[:_MSG_MAX]]
+
+
+#: Seconds to wait between one posting and the next when rebuilding a division's channels.
+#:
+#: Discord's practical limit is around five messages to a channel in five seconds, and a
+#: whole-division replay posts every round of every channel in one go — some tens of messages
+#: where the ordinary path posts two or three. discord.py waits out a 429 by itself, so this is
+#: not what makes the replay correct; it is what stops it spending its time in rate-limit
+#: backoff, which is slower and far less predictable than simply going at a walking pace.
+#:
+#: A second is comfortably inside the limit and keeps a forty-message rebuild under a minute.
+#: Tests patch it to zero — see ``tests/unit/test_replay_throttle.py``.
+POSTING_THROTTLE_SECONDS: float = 1.0
+
+
+async def throttle() -> None:
+    """Wait ``POSTING_THROTTLE_SECONDS`` before the next posting of a division-wide replay.
+
+    A function rather than a bare ``sleep`` at each call site so the pacing is named, is read
+    from one place, and can be stood down in a test without patching :mod:`asyncio`.
+    """
+    if POSTING_THROTTLE_SECONDS > 0:
+        await asyncio.sleep(POSTING_THROTTLE_SECONDS)
 
 
 async def _send_chunked(
@@ -1613,11 +1637,18 @@ async def repost_results_for_division(
     *,
     bot=None,
 ) -> str:
-    """Delete and repost all session results messages for every round in the division.
+    """Repost every round's session results, in round order, then take the old ones down.
 
-    For each round that has at least one ACTIVE session result:
-    - Deletes the existing Discord results message for each session (if any).
-    - Reposts a fresh results table and saves the new ``results_message_id``.
+    **The replacement is produced before the original is destroyed** (Constitution XIV.8, and
+    #345). Every round's new messages are posted first, in round order, and only once all of
+    them are up are the messages they replace deleted. It used to go the other way, one session
+    at a time, which meant a failure part-way left the division's channel holding the rounds it
+    had reached and nothing for the rest — with the originals already gone.
+
+    Two things follow. The channel briefly carries **both** copies, the new set beneath the old,
+    for as long as the rebuild takes; that is accepted, and it resolves itself. And a failure
+    before the deletions raises with the originals untouched, so the caller can take the new
+    messages down again and leave the league exactly what it had.
 
     Returns one of three status strings:
     - ``"ok"``         — results reposted successfully
@@ -1669,6 +1700,12 @@ async def repost_results_for_division(
     if not round_rows:
         return "no_rounds"
 
+    # ── Produce ───────────────────────────────────────────────────────────
+    # Each session's superseded posting, remembered while the replacement goes up. Nothing is
+    # deleted until every round has been reposted, so a failure part-way leaves the league the
+    # results it already had rather than a channel half rebuilt.
+    superseded: list[tuple[int, int, list[int] | None]] = []
+
     for rnd in round_rows:
         round_id: int = rnd["round_id"]
         round_number: int = rnd["round_number"]
@@ -1693,13 +1730,16 @@ async def repost_results_for_division(
         for sr_row in session_rows:
             session_result = _sr_from_row(sr_row)
 
-            # Delete the existing Discord message(s) for this session (if any)
             old_msg_id: int | None = sr_row["results_message_id"]
             if old_msg_id is not None:
-                await _delete_posting(
-                    rc, old_msg_id, _parse_ids(sr_row["results_message_ids"]),
-                    label="results message",
+                superseded.append(
+                    (sr_row["id"], old_msg_id, _parse_ids(sr_row["results_message_ids"]))
                 )
+
+            # The stored id is cleared **before** the repost, so `post_session_results` writes
+            # a new one rather than believing it is editing the message it is replacing. The
+            # id itself is already held in `superseded`, so clearing it loses nothing.
+            if old_msg_id is not None:
                 async with get_connection(db_path) as db:
                     await db.execute(
                         "UPDATE session_results SET results_message_id = NULL, "
@@ -1708,7 +1748,6 @@ async def repost_results_for_division(
                     )
                     await db.commit()
 
-            # Load driver rows and repost
             driver_rows = await _load_driver_rows(db_path, sr_row["id"], SessionType(sr_row["session_type"]))
             points_map = {
                 r.driver_user_id: r.points_awarded + getattr(r, "fastest_lap_bonus", 0)
@@ -1719,6 +1758,13 @@ async def repost_results_for_division(
                 db_path, session_result, driver_rows, points_map, rc, guild,
                 round_number, track_name, rnd_label, is_sprint, bot=bot,
             )
+            await throttle()
+
+    # ── Then destroy ──────────────────────────────────────────────────────
+    # Every replacement is up. The originals go now, oldest first, so the channel reads in
+    # round order throughout rather than shuffling as it empties.
+    for _session_id, old_msg_id, old_ids in superseded:
+        await _delete_posting(rc, old_msg_id, old_ids, label="results message")
 
     return "ok"
 

@@ -18,10 +18,17 @@ manager's side the two are the same problem — there is nowhere to post — and
 results to show, and a superseded one is not what the round is any more. Both are excluded by
 the query rather than skipped in the loop, which is why each is worth its own test.
 
-**The stored message id is cleared between the delete and the repost**, for the same reason as
-the final repost: `post_session_results` edits when it finds an id and inserts when it does not,
-so leaving a stale one has it edit a message that has just been deleted — and the repost silently
-never appears, which is precisely the fault the manager was trying to fix.
+**The stored message id is cleared before the repost**, for the same reason as the final repost:
+`post_session_results` edits when it finds an id and inserts when it does not, so leaving a stale
+one has it edit the very message it is meant to be replacing — and the replacement silently never
+appears, which is precisely the fault the manager was trying to fix.
+
+**The replacement is produced before the original is destroyed** (Constitution XIV.8, #345).
+Every round is reposted first, in round order, and only then are the messages they replace taken
+down. The old ordering — delete this session, repost it, move on — left a failure part-way through
+with the rounds it had reached rebuilt and the rest deleted with nothing put back. Now a failure
+before the deletions leaves the league exactly the board it had, and the caller takes the new
+messages down again.
 
 **Standings take the reserve setting once, and results take each round's own label.** A round
 still awaiting verdicts is provisional and a finalised one is not, and a sync that labelled a
@@ -128,7 +135,7 @@ def _guild(*, missing: bool = False):
 async def _results(db_path, *, guild=None, driver_rows=None):
     driver_rows = driver_rows if driver_rows is not None else []
     with patch(
-        "services.results_post_service._delete_with_continuations", new=AsyncMock()
+        "services.results_post_service._delete_posting", new=AsyncMock()
     ) as delete, patch(
         "services.results_post_service._load_driver_rows",
         new=AsyncMock(return_value=driver_rows),
@@ -527,3 +534,147 @@ async def test_a_round_is_reposted_under_its_own_number_and_track(tmp_path):
     args = post.await_args.args
     assert args[3] == 1
     assert args[4] == "Track 1"
+
+
+# ---------------------------------------------------------------------------
+# The replacement is produced before the original is destroyed (#345)
+# ---------------------------------------------------------------------------
+
+
+async def _results_recording_order(db_path, *, guild=None, fail_on_post: int | None = None):
+    """Repost a division, recording posts and deletions in the order they happened.
+
+    *fail_on_post* raises from the *n*th posting (1-based), to exercise a rebuild that does not
+    finish.
+    """
+    events: list[tuple[str, object]] = []
+    posts = 0
+
+    async def _post(_db, session_result, *_a, **_kw):
+        nonlocal posts
+        posts += 1
+        if fail_on_post is not None and posts == fail_on_post:
+            raise RuntimeError("Discord said no")
+        events.append(("post", session_result.id))
+        return 9000 + posts
+
+    async def _delete(_channel, anchor, _ids, **_kw):
+        events.append(("delete", anchor))
+
+    with patch(
+        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+    ), patch(
+        "services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
+    ), patch(
+        "services.results_post_service.post_session_results",
+        new=AsyncMock(side_effect=_post),
+    ):
+        try:
+            status = await repost_results_for_division(
+                db_path, DIVISION_ID, guild or _guild(), bot=MagicMock()
+            )
+        except RuntimeError:
+            status = "raised"
+    return status, events
+
+
+async def test_nothing_is_deleted_until_everything_has_been_posted(tmp_path):
+    """The rule itself (Constitution XIV.8).
+
+    Deleting as it went meant a rebuild that stopped half way had already destroyed what it had
+    not yet replaced. Every post must precede every delete.
+    """
+    db_path = await _make_db(
+        tmp_path,
+        name="ptd_order",
+        rounds=((1, "FINAL", "NORMAL"), (2, "FINAL", "NORMAL")),
+        sessions=(("FEATURE_QUALIFYING", "ACTIVE", 8801), ("FEATURE_RACE", "ACTIVE", 8802)),
+    )
+
+    status, events = await _results_recording_order(db_path)
+
+    assert status == "ok"
+    kinds = [kind for kind, _ in events]
+    assert kinds == ["post"] * 4 + ["delete"] * 4
+
+
+async def test_a_failure_part_way_leaves_every_original_standing(tmp_path):
+    """**The reason the order was inverted.**
+
+    A rebuild that fails on its third posting must not have deleted the first two rounds — the
+    league would be left with neither the board it had nor the one it was promised. Nothing is
+    destroyed, so the caller can take the new messages down and leave things exactly as found.
+    """
+    db_path = await _make_db(
+        tmp_path,
+        name="ptd_failure",
+        rounds=((1, "FINAL", "NORMAL"), (2, "FINAL", "NORMAL")),
+        sessions=(("FEATURE_QUALIFYING", "ACTIVE", 8801), ("FEATURE_RACE", "ACTIVE", 8802)),
+    )
+
+    status, events = await _results_recording_order(db_path, fail_on_post=3)
+
+    assert status == "raised"
+    assert [kind for kind, _ in events] == ["post", "post"]
+
+
+async def test_the_originals_are_taken_down_in_round_order(tmp_path):
+    """So the channel reads in round order throughout, rather than shuffling as it empties."""
+    db_path = await _make_db(
+        tmp_path,
+        name="ptd_delete_order",
+        rounds=((1, "FINAL", "NORMAL"), (2, "FINAL", "NORMAL")),
+        sessions=(("FEATURE_RACE", "ACTIVE", 8801),),
+    )
+
+    _, events = await _results_recording_order(db_path)
+
+    deleted = [anchor for kind, anchor in events if kind == "delete"]
+    assert deleted == [8801, 8801]  # round 1's, then round 2's
+
+
+async def test_a_session_never_posted_is_not_deleted(tmp_path):
+    """There is nothing to take down, and a delete against a null id would reach for anything."""
+    db_path = await _make_db(
+        tmp_path,
+        name="ptd_no_prior",
+        sessions=(("FEATURE_RACE", "ACTIVE", None),),
+    )
+
+    _, events = await _results_recording_order(db_path)
+
+    assert [kind for kind, _ in events] == ["post"]
+
+
+async def test_the_stored_id_is_cleared_before_its_replacement_is_posted(tmp_path):
+    """Otherwise `post_session_results` edits the very message it is replacing.
+
+    The id is already held for the deletion pass, so clearing it early costs nothing — and
+    leaving it would have the replacement overwrite the original in place, which is neither a
+    replacement nor a deletion.
+    """
+    db_path = await _make_db(
+        tmp_path, name="ptd_cleared", sessions=(("FEATURE_RACE", "ACTIVE", 8801),)
+    )
+    seen: list = []
+
+    async def _post(_db, session_result, *_a, **_kw):
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT results_message_id FROM session_results WHERE id = ?",
+                (session_result.id,),
+            )
+            seen.append((await cursor.fetchone())["results_message_id"])
+        return 9001
+
+    with patch(
+        "services.results_post_service._delete_posting", new=AsyncMock()
+    ), patch(
+        "services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
+    ), patch(
+        "services.results_post_service.post_session_results",
+        new=AsyncMock(side_effect=_post),
+    ):
+        await repost_results_for_division(db_path, DIVISION_ID, _guild(), bot=MagicMock())
+
+    assert seen == [None]
