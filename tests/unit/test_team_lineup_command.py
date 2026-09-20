@@ -36,6 +36,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from models.season import SeasonStage  # noqa: E402
+
 from cogs.team_cog import TeamCog  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
@@ -75,6 +77,13 @@ def _make_cog(
     bot = MagicMock()
     bot.season_service = MagicMock()
     bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
+    # `/team reserve-role` is refused once the season is pending completion (issue #224), so
+    # it reads the live season for its stage. Ongoing: the mapping is repaired mid-season.
+    bot.season_service.get_setup_or_active_season = AsyncMock(
+        return_value=SimpleNamespace(
+            id=SEASON_ID, season_number=1, stage=SeasonStage.ONGOING
+        )
+    )
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division(11, "Division 1", 1)]
     )

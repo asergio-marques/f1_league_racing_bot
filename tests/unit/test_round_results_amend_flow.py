@@ -40,6 +40,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from models.season import SeasonStage  # noqa: E402
+
 from cogs.season_cog import SeasonCog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
@@ -117,8 +119,12 @@ def _make_cog(db_path, *, league_admin_role=True):
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     bot.season_service = MagicMock()
-    bot.season_service.get_season_for_server = AsyncMock(
-        return_value=SimpleNamespace(id=SEASON_ID, season_number=7)
+    # The live season, with a stage: the command reads one now (issue #224). Ongoing,
+    # because a round reaches FINAL while its season is still being raced.
+    bot.season_service.get_setup_or_active_season = AsyncMock(
+        return_value=SimpleNamespace(
+            id=SEASON_ID, season_number=7, stage=SeasonStage.ONGOING
+        )
     )
     bot.season_service.get_divisions = AsyncMock(
         return_value=[SimpleNamespace(id=DIVISION_ID, name="Pro Division", tier=1)]

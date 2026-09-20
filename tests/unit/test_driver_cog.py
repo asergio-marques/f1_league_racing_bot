@@ -58,7 +58,11 @@ def _member(user_id: int, name: str) -> MagicMock:
 
 def _season(status: str = "ACTIVE", stage: str = "PLACEMENTS") -> SimpleNamespace:
     """A season. Its stage defaults to Placements, where assign and unassign are available
-    (issue #220); the stage gates have tests of their own in test_placement_committed.py."""
+    (issue #220); the stage gates have tests of their own in test_placement_committed.py.
+
+    `/driver reassign` is limited to the same two placement stages (issue #224), which is why
+    the tests below hand it one of these rather than relying on `_make_cog`'s seasonless
+    default. Its own stage gate is pinned in `test_reassign_stage_gate.py`."""
     from models.season import SeasonStage
 
     return SimpleNamespace(
@@ -185,7 +189,7 @@ MUTATING = [
 
 
 async def test_reassign_accepts_a_mentioned_old_user(tmp_path):
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     interaction = _interaction()
 
     await undecorate(DriverCog.reassign)(
@@ -200,7 +204,7 @@ async def test_reassign_accepts_a_mentioned_old_user(tmp_path):
 async def test_reassign_accepts_a_raw_snowflake_for_the_old_user(tmp_path):
     """The account being replaced has often left the server, so it cannot be mentioned —
     the raw id is the only way to name it, and is the reason the parameter exists."""
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     interaction = _interaction()
 
     await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, " 4242 ")
@@ -209,7 +213,7 @@ async def test_reassign_accepts_a_raw_snowflake_for_the_old_user(tmp_path):
 
 
 async def test_reassign_with_neither_old_user_nor_id_is_refused(tmp_path):
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     interaction = _interaction()
 
     await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, None)
@@ -220,7 +224,7 @@ async def test_reassign_with_neither_old_user_nor_id_is_refused(tmp_path):
 
 async def test_a_mentioned_old_user_wins_over_a_raw_id(tmp_path):
     """Both may be given. The mention is the more specific of the two and is taken."""
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     interaction = _interaction()
 
     await undecorate(DriverCog.reassign)(
@@ -231,7 +235,7 @@ async def test_a_mentioned_old_user_wins_over_a_raw_id(tmp_path):
 
 
 async def test_a_refused_reassignment_is_reported_not_raised(tmp_path):
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     cog.bot.driver_service.reassign_user_id = AsyncMock(
         side_effect=ValueError("No profile for that account.")
     )
@@ -278,7 +282,7 @@ async def test_reassign_removes_the_portrait_of_the_account_left_behind(
 ):
     directory = tmp_path / "drivers"
     directory.mkdir()
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     remover = _with_portraits(cog, directory, monkeypatch)
     interaction = _interaction()
 
@@ -297,7 +301,7 @@ async def test_reassign_leaves_the_portrait_where_no_directory_resolves(
 
     directory = tmp_path / "drivers"
     directory.mkdir()
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     remover = _with_portraits(cog, directory, monkeypatch)
     monkeypatch.setattr(
         image_render_service,
@@ -334,7 +338,7 @@ async def test_a_portrait_that_cannot_be_removed_does_not_fail_the_re_key(
     must not turn a successful command into a reported failure."""
     directory = tmp_path / "drivers"
     directory.mkdir()
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     _with_portraits(
         cog, directory, monkeypatch, remover=AsyncMock(side_effect=OSError("read-only"))
     )
@@ -584,7 +588,7 @@ async def test_a_successful_sacking_is_logged(tmp_path):
 
 
 async def test_reassign_reports_the_current_and_past_accounts(tmp_path):
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     interaction = _interaction()
 
     await undecorate(DriverCog.reassign)(
@@ -596,7 +600,7 @@ async def test_reassign_reports_the_current_and_past_accounts(tmp_path):
 
 
 async def test_a_switch_back_is_reported_as_one(tmp_path):
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     outcome = await cog.bot.driver_service.reassign_user_id("1", "2")
     outcome.switched_back = True
     cog.bot.driver_service.reassign_user_id = AsyncMock(return_value=outcome)
@@ -611,7 +615,7 @@ async def test_a_switch_back_is_reported_as_one(tmp_path):
 
 async def test_reassign_moves_the_roles_to_the_new_current_account(tmp_path):
     """Issue #243: from the account replaced to the one made current."""
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     interaction = _interaction()
 
     await undecorate(DriverCog.reassign)(
@@ -624,7 +628,7 @@ async def test_reassign_moves_the_roles_to_the_new_current_account(tmp_path):
 
 async def test_roles_discord_would_not_move_are_reported_and_the_reassign_stands(tmp_path):
     """E44."""
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     cog.bot.placement_service.move_driver_roles = AsyncMock(
         return_value=["the roles could not be given to <@2>: Missing Permissions"]
     )
@@ -640,7 +644,7 @@ async def test_roles_discord_would_not_move_are_reported_and_the_reassign_stands
 
 
 async def test_reassign_moves_a_held_signup_channel_to_the_new_current_account(tmp_path):
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     interaction = _interaction()
 
     await undecorate(DriverCog.reassign)(
@@ -653,7 +657,7 @@ async def test_reassign_moves_a_held_signup_channel_to_the_new_current_account(t
 
 
 async def test_a_merge_is_reported_as_one(tmp_path):
-    cog = _make_cog()
+    cog = _make_cog(season=_season())
     outcome = await cog.bot.driver_service.reassign_user_id("1", "2")
     outcome.merged_accounts = ["2", "3"]
     cog.bot.driver_service.reassign_user_id = AsyncMock(return_value=outcome)
