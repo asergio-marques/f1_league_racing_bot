@@ -157,6 +157,7 @@
 - A division with no reserve team shall be a failure of the autoreserve of each driver owed one, not a sanction silently passed over.
 - Where any sanction did not apply, or applied but could not be announced, the log channel shall be told in one entry naming each driver, the sanction and the reason, ending with the "attendance sync" command that finishes the job. The league manager whose action set the sanctions off — the approval of a penalty review, or of an amendment — shall be told the same in the reply to that action, which shall no longer report a plain success.
 - A run of the sanctions that cannot begin at all, the league's server being unreachable or the run failing outright, shall be reported the same way.
+- **The sanctions shall not run at all upon a round whose attendance record is known to be wrong.** Where recording the round's attendance, or awarding its points, failed, the totals the thresholds are read from are unsound, and a driver could be sacked upon a number the bot has already established it cannot trust. The run shall be deferred and reported as such, and the "attendance sync" command shall both repair the record and apply whatever is then owed. A failure merely to *post* — a sheet, an announcement — does not make the record wrong and shall not defer the run.
 
 ### Resynchronising attendance
 - <NEW COMMAND> An "attendance sync" command shall be made available to league managers, which shall have as input a division name and a round number.

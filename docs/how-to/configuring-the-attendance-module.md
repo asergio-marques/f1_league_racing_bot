@@ -297,6 +297,8 @@ You get an `ATTENDANCE_RECORD | Incomplete` entry in the log channel and a line 
 
 Run the sync the same day. Until you do, that round's attendance is wrong and every total after it is short.
 
+**The sanctions are held back when this happens**, and the entry says so. The thresholds are read from the totals those two steps write, so a driver could otherwise be sacked on a number the bot already knows is wrong — and wrong in either direction, since a driver who raced may have been scored absent. Running `/attendance sync` repairs the record and then applies whatever is genuinely owed, in one go. A sheet or an announcement that failed to post does *not* hold the sanctions back: the record is sound in that case, only the picture of it is missing.
+
 ---
 
 ## What you cannot change

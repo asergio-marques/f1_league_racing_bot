@@ -1891,6 +1891,8 @@ No parameters. Displays the full attendance configuration for this server as an 
 
 Every driver over a threshold is attempted, and one driver's sanction failing never stops the next. Nothing already applied is undone. Where any sanction did not apply — the division has no Reserve team, the bot could not change a driver's roles, or the sanction took effect but its announcement could not be posted — the log channel gets one `ATTENDANCE_SANCTIONS | Incomplete` entry naming each driver and the reason. The manager who approved the penalty review or the amendment is told the same in their reply, instead of a plain success. Both end with the `/attendance sync` command to run once the cause is repaired.
 
+> **If the round's attendance could not be recorded, the sanctions do not run at all.** The thresholds are read from the totals that recording writes, so a driver could otherwise be sacked on a number the bot already knows is wrong. You get an `ATTENDANCE_RECORD | Incomplete` entry instead, and `/attendance sync` repairs the record and applies whatever is owed together. A sheet or announcement that failed to post does not hold the sanctions back — the record is sound, only the posting is missing.
+
 ---
 
 #### `/attendance sync` — Recalculate a division's attendance and apply any sanction still owed
