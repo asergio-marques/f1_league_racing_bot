@@ -81,6 +81,9 @@ async def test_a_later_round_s_total_is_corrected(tmp_path):
     await cascade_attendance_from_round(db_file, round_ids[0], division_id)
 
     assert await _awarded(db_file, round_ids[0]) == 2
+    assert await _total(db_file, round_ids[0]) == 2, (
+        "the amended round holds the season's total rather than its own"
+    )
     assert await _total(db_file, round_ids[1]) == 5, (
         "the later round still holds a total worked out from the amended round's old figure"
     )
@@ -170,3 +173,36 @@ async def test_an_unknown_recompute_mode_is_refused(tmp_path):
         )
 
     assert await _awarded(db_file, round_ids[0]) is None
+
+
+@pytest.mark.asyncio
+async def test_a_round_scored_again_keeps_its_own_running_total(tmp_path):
+    """A round's stored total is the driver's total **as at that round** (#238).
+
+    The sum used to be taken over every *other* finalised round of the division, with
+    nothing holding it to the ones before this one, so scoring round 1 a second time — with
+    round 2 already scored — wrote the whole season's figure onto round 1. Each round's copy
+    is kept precisely so a figure that looks wrong can be traced round by round, and a
+    flattened one cannot be.
+    """
+    db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
+    await _score_both_rounds(db_file, division_id, round_ids)
+
+    await distribute_attendance_points(db_file, round_ids[0], division_id)
+
+    assert await _total(db_file, round_ids[0]) == 3
+    assert await _total(db_file, round_ids[1]) == 6
+
+
+@pytest.mark.asyncio
+async def test_the_division_s_current_total_stands_on_the_last_round_touched(tmp_path):
+    """Which is why the caller posts the sheet and enforces the sanctions against that
+    round, and not against the amended one."""
+    db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
+    await _score_both_rounds(db_file, division_id, round_ids)
+    await _set_attended(db_file, round_ids[0], 1)
+
+    touched = await cascade_attendance_from_round(db_file, round_ids[0], division_id)
+
+    assert touched[-1] == round_ids[1]
+    assert await _total(db_file, touched[-1]) == 5

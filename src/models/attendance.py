@@ -37,7 +37,7 @@ class DriverRoundAttendance:
     is_standby: bool
     attended: bool | None   # None until results submitted
     points_awarded: int | None      # Net points after pardons; set at finalization
-    total_points_after: int | None  # Cumulative total across all rounds in division
+    total_points_after: int | None  # The driver's division total as at this round (#238)
 
 
 @dataclass
