@@ -4124,6 +4124,16 @@ class SeasonCog(commands.Cog):
         A **commanded** posting, so a fatal render rejects the command and posts nothing
         rather than quietly substituting text (Constitution XIV.7): the person at the
         keyboard is the one able to fix the template.
+
+        **The season's number is passed bare, and a falsy one is drawn rather than hidden**
+        (issue #213, decided 2026-09-20). `seasons.season_number` is `NOT NULL` with no
+        default and numbering starts at one, so a season reaching this command always
+        carries a real number; a `0` can only come from a malformed row and is a bug. The
+        obvious reflex, `season.season_number or None`, would empty the template's field
+        and silently drop the whole "SEASON n" line where the template groups it — the same
+        quiet failure this issue was raised for. Drawing "SEASON 0" is visibly wrong and
+        gets reported, so the value goes through untouched and the fault is logged beside
+        it. Pinned by `test_a_season_with_no_number_still_draws_and_is_logged`.
         """
         from services import calendar_post_service as _calendar
         from utils.season_gate import season_for_command
@@ -4159,13 +4169,21 @@ class SeasonCog(commands.Cog):
         rounds = await self.bot.season_service.get_division_rounds(div.id)  # type: ignore[attr-defined]
         tracks = await _calendar.tracks_by_name(self.bot.db_path)  # type: ignore[attr-defined]
 
+        if not season.season_number:
+            log.warning(
+                "division_calendar_sync: season %s carries no number; the calendar for "
+                "%s will draw 'SEASON 0'",
+                season.id,
+                div.name,
+            )
+
         posting = await _calendar.post_division_calendar(
             self.bot,
             interaction.guild,
             div,
             rounds,
             tracks,
-            season_number=getattr(season, "number", None),
+            season_number=season.season_number,
             commanded=True,
         )
 

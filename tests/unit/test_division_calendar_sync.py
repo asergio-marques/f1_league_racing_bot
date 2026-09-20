@@ -16,15 +16,18 @@ has just been refused will otherwise assume the channel is now empty.
 **The reply says which form it posted in.** A manager expecting a graphic and getting text
 needs to know that is what happened, rather than finding out by looking at the channel.
 
-**The season number it draws with is read from an attribute the season does not have.** The
-command passes `getattr(season, "number", None)`; the `Season` model's field is
-`season_number`. So a resynced graphic is drawn with no season number, where the copy shown at
-`/season placements-review` carries it. `test_the_season_number_is_not_passed_today` pins that as it stands
-— the same is true of the calendar approval posts, which pass none at all — and it is
-recorded as issue #213 rather than corrected here, since #208 is a coverage change.
+**The season number it draws with is passed bare, and a falsy one draws rather than hides**
+(issue #213). The command read `getattr(season, "number", None)` until 2026-09-20, where the
+`Season` model's field is `season_number` — so every resynced graphic drew with no season
+number, and where a template groups the field the whole "SEASON n" line went missing. Corrected
+to `season.season_number`, passed straight through: a season reaching this command always holds
+a real number, so a `0` means a malformed row, and drawing "SEASON 0" is reported where an empty
+field is mistaken for a template choice. `test_a_season_with_no_number_still_draws_and_is_logged`
+pins that, and fails if the value is ever normalised to `None` again.
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from datetime import date
@@ -47,7 +50,7 @@ SERVER_ID = 13208
 # ---------------------------------------------------------------------------
 
 
-def _season(stage: SeasonStage = SeasonStage.ONGOING):
+def _season(stage: SeasonStage = SeasonStage.ONGOING, *, season_number: int = 7):
     """The season the command finds. A stage is given because the command now reads one.
 
     Nothing in production hands out a stageless season — the schema's triggers fill the
@@ -58,7 +61,7 @@ def _season(stage: SeasonStage = SeasonStage.ONGOING):
         id=1,
         start_date=date(2026, 1, 1),
         status=SeasonStatus.ACTIVE,
-        season_number=7,
+        season_number=season_number,
         stage=stage,
     )
 
@@ -241,13 +244,33 @@ async def test_the_command_defers_before_working(tmp_path):
     interaction.response.defer.assert_awaited_once()
 
 
-async def test_the_season_number_is_not_passed_today(tmp_path):
-    """**A defect, pinned as it stands.** The command reads `season.number`; the model's
-    field is `season_number`, so a resynced graphic draws with no season number. Written to
-    fail when that is corrected, so whoever corrects it moves the assertion with the code."""
+async def test_the_seasons_number_is_passed_to_the_render(tmp_path):
+    """Issue #213. The command read `season.number`, which the model does not carry, so
+    every resynced calendar drew without its season number while the preview the manager
+    approved from carried one."""
     assert not hasattr(_season(), "number")
     cog = _make_cog()
 
     post = await _sync(cog, _interaction())
 
-    assert post.await_args.kwargs["season_number"] is None
+    assert post.await_args.kwargs["season_number"] == 7
+
+
+async def test_a_season_with_no_number_still_draws_and_is_logged(tmp_path, caplog):
+    """A falsy season number is drawn, not hidden, and the fault is logged (#213).
+
+    `seasons.season_number` is `NOT NULL` and numbering starts at one, so a `0` here means a
+    malformed row rather than a season without a number. Normalising it to `None` would empty
+    the template's field — and drop the whole "SEASON n" line where the template groups it —
+    hiding the fault exactly as this issue's own defect did. This fails if anyone reaches for
+    `or None` again.
+    """
+    cog = _make_cog(season=_season(season_number=0))
+
+    with caplog.at_level(logging.WARNING):
+        post = await _sync(cog, _interaction())
+
+    assert post.await_args.kwargs["season_number"] == 0
+    assert post.await_args.kwargs["season_number"] is not None
+    assert "SEASON 0" in caplog.text
+    assert "Pro" in caplog.text
