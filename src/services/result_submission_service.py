@@ -1475,6 +1475,91 @@ async def _repoint_verdicts(
                 )
 
 
+def _amend_verdict_state(db_path: str, division_id: int, bot):
+    """Build the state each round's verdict announcement needs during a replay (#345).
+
+    The announcement functions read the round, the division and the database off a
+    ``PenaltyReviewState``. Republishing walks several rounds, so it is handed a factory rather
+    than one state — the round changes, everything else does not.
+    """
+    from services.penalty_wizard import PenaltyReviewState
+
+    def _factory(round_id: int) -> PenaltyReviewState:
+        return PenaltyReviewState(
+            round_id=round_id,
+            division_id=division_id,
+            submission_channel_id=0,
+            session_types_present=[],
+            db_path=db_path,
+            bot=bot,
+            is_amendment=True,
+        )
+
+    return _factory
+
+
+async def _repost_attendance_after_amendment(
+    db_path: str, round_id: int, division_id: int, bot, guild
+) -> list[str]:
+    """Recompute the division's attendance from the amended round and repost its sheet.
+
+    **The sheet is not a sequence.** A division keeps one live sheet in one slot, so unlike
+    results, standings and verdicts there is nothing to reorder — it is posted once, against
+    the round the running totals now stand at.
+
+    **That round is the latest, not the amended one** (#345). Every round's row stores the
+    driver's total *as at that round*, so correcting round 3 of ten carries forward through
+    the rest; the sheet a league reads and the thresholds a sanction is measured against are
+    those of the division's latest round. Sanctions are enforced there and nowhere earlier:
+    the past is not rewritten, and a sack that was warranted at round 5 is not undone by a
+    correction to round 3.
+
+    ``recompute="round"`` rebuilds the amended round's attendance from its corrected results
+    and carries the totals forward, which is the amendment's own mode (FR-030) —
+    ``cascade_attendance_from_round`` hardcodes ``"none"`` and would leave the amended round's
+    attended flags describing the classification it replaced.
+
+    Returns the faults met, as lines a league can read.
+    """
+    from services import attendance_service
+
+    if not await bot.module_service.is_attendance_enabled():
+        return []
+
+    try:
+        touched = await attendance_service._recalculate_forward(
+            db_path, round_id, division_id, recompute="round"
+        )
+    except Exception:  # noqa: BLE001 — the results stand; the attendance sheet is downstream
+        log.exception("amendment: could not recalculate attendance from round %s", round_id)
+        return [
+            "The attendance totals could not be recalculated, so the sheet still shows the "
+            "round as it was."
+        ]
+
+    latest = touched[-1] if touched else round_id
+    await attendance_service.post_attendance_sheet(
+        bot, guild, db_path, latest, division_id
+    )
+
+    season_id = await _season_id_for_division(db_path, division_id)
+    if season_id is None:
+        return []
+    outcome = await attendance_service.enforce_attendance_sanctions(
+        bot, guild, db_path, latest, division_id, season_id
+    )
+    return [] if outcome.complete else list(outcome.failure_lines())
+
+
+async def _season_id_for_division(db_path: str, division_id: int) -> int | None:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
+        )
+        row = await cursor.fetchone()
+    return row["season_id"] if row else None
+
+
 async def amend_session_result(
     db_path: str,
     round_id: int,
@@ -1617,22 +1702,26 @@ async def amend_session_result(
             db_path, session_result_id, season_id, config_name, session_type
         )
 
-    # Delete old Discord messages, repost all session results + standings for the
-    # amended round, then cascade-recompute and repost subsequent rounds' standings.
+    # Rebuild everything the division's channels show, in the order a league reads them
+    # (#345). Not the amended round alone: a repost is a new message at the bottom of a
+    # channel, so amending round 1 of five and reposting only round 1 would leave the results
+    # channel reading 2, 3, 4, 5, 1. Every round is reposted in round order, and within each
+    # channel the replacements go up before the superseded messages come down.
     from services import standings_service, results_post_service  # lazy imports
 
     rctx = await _get_round_context(db_path, round_id)
     guild = await league_guild(bot)
     repost_faults: list[str] = []
     if guild is not None:
+        # The standings of the amended round and every later one are recomputed first, so the
+        # rebuild draws the corrected championship rather than reposting the old one.
+        await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
         repost_faults = results_post_service.merge_faults(
-            await results_post_service.delete_and_repost_final_results(
-                db_path, round_id, division_id, guild,
-                label="Final Results", bot=bot,
-            ),
-            await results_post_service.repost_subsequent_standings(
+            await results_post_service.replay_division_channels(
                 db_path, division_id, round_id, guild, bot=bot,
+                verdict_state_factory=_amend_verdict_state(db_path, division_id, bot),
             ),
+            await _repost_attendance_after_amendment(db_path, round_id, division_id, bot, guild),
         )
     else:
         # The recomputation still runs, so the championship is right in the database; what

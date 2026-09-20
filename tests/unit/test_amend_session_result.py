@@ -128,12 +128,15 @@ def _race_row(driver: int, position: int, *, total_time: str = "1:30:00.000", **
     return row
 
 
-def _bot(*, guild=True):
+def _bot(*, guild=True, attendance=False):
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.get_guild = MagicMock(return_value=MagicMock() if guild else None)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
+    # The amendment reposts the attendance sheet where the module is on (#345); off by
+    # default here so these tests stay about the results.
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
     return bot
 
 
@@ -156,10 +159,10 @@ async def _amend(
     with patch(
         "services.result_submission_service._apply_points_from_config", new=AsyncMock()
     ) as apply_points, patch(
-        "services.results_post_service.delete_and_repost_final_results",
+        "services.results_post_service.replay_division_channels",
         new=AsyncMock(return_value=list(repost_faults or [])),
     ) as repost, patch(
-        "services.results_post_service.repost_subsequent_standings",
+        "services.result_submission_service._repost_attendance_after_amendment",
         new=AsyncMock(return_value=[]),
     ) as subsequent, patch(
         "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
@@ -433,15 +436,36 @@ async def test_the_points_are_re_applied_from_the_configuration(tmp_path):
     assert args[3] == "Standard"
 
 
-async def test_the_round_and_every_later_standing_are_reposted(tmp_path):
+async def test_the_whole_division_is_reposted_in_order(tmp_path):
+    """Not the amended round alone (#345).
+
+    A repost is a new message at the bottom of a channel, so reposting only the amended round
+    would leave a five-round division reading 2, 3, 4, 5, 1. Every round goes up again in round
+    order, across results, standings and verdicts, and the attendance sheet is reposted beside
+    them against the round the totals now stand at.
+    """
     db_path = await _make_db(tmp_path, name="amend_repost")
 
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
     stubs["repost"].assert_awaited_once()
-    assert stubs["repost"].await_args.kwargs["label"] == "Final Results"
+    assert stubs["repost"].await_args.args[1] == DIVISION_ID
+    assert stubs["repost"].await_args.args[2] == ROUND_ID
     stubs["subsequent"].assert_awaited_once()
-    stubs["cascade"].assert_not_awaited()
+
+
+async def test_the_standings_are_recomputed_before_the_channels_are_rebuilt(tmp_path):
+    """Or the rebuild reposts the championship the amendment has just corrected.
+
+    The cascade used to be the *fallback* for having no guild; with the whole division being
+    reposted it has to run first on the ordinary path too, so the messages drawn carry the new
+    figures rather than the old ones.
+    """
+    db_path = await _make_db(tmp_path, name="amend_recompute_first")
+
+    stubs = await _amend(db_path, [_race_row(101, 1)])
+
+    stubs["cascade"].assert_awaited_once()
 
 
 async def test_without_a_guild_the_standings_are_still_recomputed(tmp_path):
