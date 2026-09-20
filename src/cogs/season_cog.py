@@ -5249,7 +5249,10 @@ class SeasonCog(commands.Cog):
                 reserve_role_id,
                 driver_team_map,
                 reserve_driver_ids,
-                amend_format=True,
+                # The submission format, not the old eight-column amend one (#345). The
+                # sanctions are decided in the replay's report and appeal stages now, so a
+                # paste carrying them would apply each one twice.
+                amend_format=False,
                 other_active_assignments=other_assignments,
                 current_of=current_of,
             )

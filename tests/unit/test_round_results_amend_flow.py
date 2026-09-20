@@ -205,7 +205,11 @@ async def _amend(
     timeout=False,
 ):
     stubs = {
-        "validate": AsyncMock(),
+        # Sync, as the real one is: it parses text and returns rows or errors. It was an
+        # AsyncMock here and unused, which hid that the patch below went to a literal.
+        "validate": MagicMock(
+            return_value=parsed if parsed is not None else _parsed(101, 102)
+        ),
         "amend": AsyncMock(side_effect=amend_error),
     }
     patches = [
@@ -223,7 +227,7 @@ async def _amend(
         ),
         patch(
             "services.result_submission_service.validate_submission_block",
-            new=MagicMock(return_value=parsed if parsed is not None else _parsed(101, 102)),
+            new=stubs["validate"],
         ),
         patch(
             "services.season_points_service.get_season_config_names",
@@ -532,3 +536,20 @@ async def test_a_channel_that_will_not_delete_does_not_fail_the_amendment(tmp_pa
 
     assert "Session amended" in _replied(interaction)
     assert await _amend_rows(db_path) == 0
+
+
+async def test_the_amendment_validates_against_the_submission_format(tmp_path):
+    """Not the retired eight-column one (#345).
+
+    `apply_penalties` adds to the stored penalty columns, and the replay re-inserts the driver
+    rows at zero before running the round's report and appeal stages over them. A paste that
+    also carried the sanctions would have each applied twice — so the amendment asks for the
+    same format a first submission takes, and `amend_format` must be false to get it.
+    """
+    db_path = await _make_db(tmp_path)
+    interaction = _interaction(_amend_channel(), message=_message())
+
+    stubs = await _amend(_make_cog(db_path), interaction)
+
+    stubs["validate"].assert_called_once()
+    assert stubs["validate"].call_args.kwargs["amend_format"] is False

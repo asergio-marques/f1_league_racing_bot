@@ -1764,6 +1764,31 @@ def _tyre_error(tyre: str) -> str | None:
     return f"Tyre must be one of {tyre_compound_list()}, got `{tyre}`"
 
 
+#: What to tell somebody who pasted the amendment's old eight-column format (#345).
+#:
+#: Amending a round used to take two extra columns carrying the post-race and appeal penalties,
+#: so that a re-inserted classification kept the sanctions already applied. The replay decides
+#: those in its report and appeal stages instead, where they keep their justification and their
+#: author — and where a disqualification can carry the mark that only a verdict record produces.
+#: Pasting them now would apply each sanction twice, the stages adding to columns the paste had
+#: already filled, so the format is refused rather than ignored.
+_RETIRED_SANCTION_COLUMNS = (
+    "Amending a round now takes the **same format as a first submission** — without the "
+    "post-race and appeal penalty columns. Sanctions are no longer pasted: the amendment "
+    "replays the round's report and appeal stages, where you keep or change each one with "
+    "its justification intact."
+)
+
+
+def _field_count_error(parts: list[str], expected: int, line: str) -> str:
+    """The error for a row of the wrong width, naming the retired columns where that is why."""
+    got = len(parts)
+    message = f"Expected {expected} comma-separated fields, got {got}: `{line.strip()}`"
+    if got == expected + 2:
+        message += f"\n{_RETIRED_SANCTION_COLUMNS}"
+    return message
+
+
 def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
     """Parse and validate a single qualifying-result line for the main submission wizard (6 fields).
 
@@ -1772,7 +1797,7 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
     """
     parts = [p.strip() for p in line.strip().split(",")]
     if len(parts) != 6:
-        return f"Expected 6 comma-separated fields, got {len(parts)}: `{line.strip()}`"
+        return _field_count_error(parts, 6, line)
 
     pos_str, driver_str, team_str, tyre, best_lap, gap = parts
 
@@ -1827,7 +1852,7 @@ def _validate_race_row_wizard(line: str, is_first: bool) -> ParsedRaceRow | str:
     """
     parts = [p.strip() for p in line.strip().split(",")]
     if len(parts) != 6:
-        return f"Expected 6 comma-separated fields, got {len(parts)}: `{line.strip()}`"
+        return _field_count_error(parts, 6, line)
 
     pos_str, driver_str, team_str, total_time, fastest_lap, ingame_penalties = parts
 
