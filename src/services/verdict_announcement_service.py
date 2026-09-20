@@ -1066,3 +1066,163 @@ async def post_autosanction_announcement(
             f"the {sanction_label} of {_driver_label(driver_discord_id)} was applied, but "
             f"its announcement failed: {exc}"
         ]
+
+
+def _parse_chunk_ids(raw):
+    """The stored chunk list of an announcement, via the one parser that reads them."""
+    from services.results_post_service import _parse_ids
+
+    return _parse_ids(raw)
+
+
+async def _rounds_from(db_path: str, division_id: int, from_round_id: int) -> list[dict]:
+    """The division's rounds from *from_round_id* forward, in round order.
+
+    Inclusive of the round named. Cancelled rounds are left out: they have no classification
+    for a verdict to describe, and their messages are not part of the sequence a league reads.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT r.id AS round_id, r.round_number
+            FROM rounds r
+            WHERE r.division_id = ?
+              AND r.status != 'CANCELLED'
+              AND r.round_number >= (SELECT round_number FROM rounds WHERE id = ?)
+            ORDER BY r.round_number
+            """,
+            (division_id, from_round_id),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+
+async def _records_for_round(db_path: str, round_id: int, table: str) -> list[dict]:
+    """A round's verdict records of one table, oldest first, shaped as the posters expect.
+
+    The announcement functions read ``driver_user_id`` and the two result-id columns off each
+    record, none of which ``penalty_records`` and ``appeal_records`` carry together — the
+    driver comes from the result row the verdict points at.
+    """
+    rows: list[dict] = []
+    async with get_connection(db_path) as db:
+        for fk_col, result_table in (
+            ("race_result_id", "race_session_results"),
+            ("qual_result_id", "qualifying_session_results"),
+        ):
+            cursor = await db.execute(
+                f"""
+                SELECT v.id AS id, v.race_result_id, v.qual_result_id,
+                       v.penalty_type, v.time_seconds, v.description, v.justification,
+                       r.driver_user_id AS driver_user_id, r.team_role_id AS team_role_id
+                FROM {table} v
+                JOIN {result_table} r ON r.id = v.{fk_col}
+                JOIN session_results sr ON sr.id = r.session_result_id
+                WHERE sr.round_id = ?
+                ORDER BY v.id
+                """,  # noqa: S608 — names come from the tuple above and the caller's literal
+                (round_id,),
+            )
+            rows.extend(dict(row) for row in await cursor.fetchall())
+    return sorted(rows, key=lambda r: r["id"])
+
+
+async def republish_verdicts_from_round(
+    bot, db_path: str, division_id: int, from_round_id: int, state_factory
+) -> list[str]:
+    """Announce every verdict of every round from *from_round_id* forward, in order.
+
+    **The whole of a round's verdicts, not only those that changed** — a decision taken with
+    the replay (#345). A round's verdicts are a contiguous run in the channel, and re-announcing
+    a subset would interleave new decisions with old ones, leaving the run in an order that
+    matches neither the classification nor the sequence it was decided in.
+
+    **Produced before the originals are destroyed** (Constitution XIV.8). Every replacement for
+    every round goes up first; only then are the announcements they replace taken down. A
+    failure part-way therefore leaves the league the verdicts it already had.
+
+    *state_factory* builds the ``PenaltyReviewState`` each round's announcement needs, the
+    posters reading the round and division from it.
+
+    Returns the faults met, as lines a league can read — including a named line for every
+    verdict announced before the bot recorded message ids, which cannot be taken down and is
+    left standing beside its replacement rather than silently doubled.
+    """
+    faults: list[str] = []
+    rounds = await _rounds_from(db_path, division_id, from_round_id)
+
+    # **Captured before a single replacement is posted.** Announcing overwrites
+    # `announcement_message_id` on the very rows the superseded messages are identified by, so
+    # reading them afterwards would return the new announcements and delete what had just been
+    # put up. The old ones are noted here and taken down at the end.
+    superseded: list[tuple[object, int, list[int] | None, int]] = []
+    async with get_connection(db_path) as db:
+        for rnd in rounds:
+            for table in ("penalty_records", "appeal_records"):
+                for fk_col, result_table in (
+                    ("race_result_id", "race_session_results"),
+                    ("qual_result_id", "qualifying_session_results"),
+                ):
+                    cursor = await db.execute(
+                        f"""
+                        SELECT v.announcement_message_id AS anchor,
+                               v.announcement_message_ids AS chunks,
+                               v.announcement_channel_id AS channel_id,
+                               r.driver_user_id AS driver_user_id
+                        FROM {table} v
+                        JOIN {result_table} r ON r.id = v.{fk_col}
+                        JOIN session_results sr ON sr.id = r.session_result_id
+                        WHERE sr.round_id = ?
+                        ORDER BY v.id
+                        """,  # noqa: S608 — names come from the two tuples above
+                        (rnd["round_id"],),
+                    )
+                    for row in await cursor.fetchall():
+                        if not row["anchor"]:
+                            faults.append(
+                                f"the verdict for {_driver_label(row['driver_user_id'])} was "
+                                f"announced before the bot began recording its message, so "
+                                f"the superseded announcement is still standing and has to be "
+                                f"removed by hand"
+                            )
+                            continue
+                        superseded.append(
+                            (
+                                row["channel_id"],
+                                int(row["anchor"]),
+                                _parse_chunk_ids(row["chunks"]),
+                                row["driver_user_id"],
+                            )
+                        )
+
+    # ── Produce ───────────────────────────────────────────────────────────
+    for rnd in rounds:
+        round_id = rnd["round_id"]
+        penalties = await _records_for_round(db_path, round_id, "penalty_records")
+        appeals = await _records_for_round(db_path, round_id, "appeal_records")
+        if not penalties and not appeals:
+            continue
+
+        state = state_factory(round_id)
+        head = banner_for_round(bot, db_path, round_id)
+
+        if penalties:
+            faults.extend(
+                await post_penalty_announcements(bot, state, penalties, head=head)
+            )
+        if appeals:
+            faults.extend(await post_appeal_announcements(bot, state, appeals))
+
+    # ── Then destroy ──────────────────────────────────────────────────────
+    from services.results_post_service import _delete_posting
+
+    for channel_id, anchor, chunk_ids, driver_user_id in superseded:
+        channel = bot.get_channel(int(channel_id)) if channel_id else None
+        if channel is None:
+            faults.append(
+                f"the superseded verdict for {_driver_label(driver_user_id)} could not be "
+                f"taken down: its channel is no longer reachable"
+            )
+            continue
+        await _delete_posting(channel, anchor, chunk_ids, label="verdict")
+
+    return faults
