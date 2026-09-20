@@ -93,11 +93,6 @@ def _driver_label(driver_discord_id) -> str:
         return "an unidentified driver"
 
 
-def verdict_repair_hint(*, sanction: bool = False) -> str:
-    """The line telling a manager how to finish a verdict that was not announced (#237)."""
-    return _SANCTION_RETRY if sanction else _VERDICT_NO_RETRY
-
-
 async def _graphic_name(
     bot,
     guild,
