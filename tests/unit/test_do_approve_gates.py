@@ -640,3 +640,111 @@ async def test_the_refusal_names_every_phantom_at_once(db_path):
     replies = _replies(interaction)
     assert "Standrad" in replies
     assert "Haf Points" in replies
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Gate 1 — the weather forecast channel (FR-011)
+#
+# Issue #185. This gate had a test that never reached it: a helper in
+# `test_season_approval_gates.py` re-derived the rule from the same two service
+# calls and asserted against its own answer, so the gate could have been deleted
+# from the cog outright and the suite would have stayed green. These drive
+# `_do_approve`, which is the only thing that proves the gate is still wired in.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def _division_without_forecast(name: str = "Premier", div_id: int = 1):
+    """A division the weather module has nowhere to post a forecast to."""
+    return SimpleNamespace(id=div_id, name=name, tier=1, forecast_channel_id=None)
+
+
+def _cog_with_weather(db_path, divisions):
+    """Weather on, results off, and rounds far enough out that no window gate bites."""
+    cog = _cog(db_path)
+    cog.bot.season_service.get_divisions = AsyncMock(return_value=divisions)
+    cog.bot.season_service.get_division_rounds = AsyncMock(
+        side_effect=lambda div_id: [_round_in(30, div_id=div_id)]
+    )
+    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
+    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    return cog
+
+
+async def test_a_division_without_a_forecast_channel_refuses_the_approval(db_path):
+    """Weather on and nowhere to post: the season is refused, naming the division.
+
+    Approving anyway would arm a forecast pipeline that posts into nothing — a module
+    switched on and silently producing no output, which the league would discover on
+    race week rather than at setup.
+    """
+    cog = _cog_with_weather(db_path, [_division_without_forecast("Premier")])
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "Premier" in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_the_forecast_channel_refusal_names_every_division_at_once(db_path):
+    """A manager fixing one division per refused approval is the check failing them."""
+    cog = _cog_with_weather(
+        db_path,
+        [
+            _division_without_forecast("Premier", 1),
+            _division_without_forecast("Challenger", 2),
+        ],
+    )
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "Premier" in replies
+    assert "Challenger" in replies
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_only_the_division_missing_a_channel_is_named(db_path):
+    """The one that is configured is not dragged into the refusal."""
+    cog = _cog_with_weather(
+        db_path,
+        [
+            SimpleNamespace(id=1, name="Premier", tier=1, forecast_channel_id="9"),
+            _division_without_forecast("Challenger", 2),
+        ],
+    )
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "Challenger" in replies
+    assert "Premier" not in replies
+
+
+async def test_a_division_with_a_forecast_channel_still_approves(db_path):
+    """The positive half: the gate passes rather than refusing everything."""
+    cog = _cog_with_weather(
+        db_path,
+        [SimpleNamespace(id=1, name="Premier", tier=1, forecast_channel_id="9")],
+    )
+
+    await _run(cog, _interaction())
+
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+async def test_the_weather_gate_is_not_checked_when_the_module_is_off(db_path):
+    """A league not running weather is not asked for a channel it has no use for.
+
+    This is the half a re-derived helper cannot pin: the gate's `if` guard could be
+    dropped and only a test that runs the real function would notice.
+    """
+    cog = _cog_with_weather(db_path, [_division_without_forecast("Premier")])
+    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+
+    await _run(cog, _interaction())
+
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
