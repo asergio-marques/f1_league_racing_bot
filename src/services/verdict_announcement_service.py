@@ -52,7 +52,7 @@ _SANCTION_RETRY = (
 
 
 def _n_verdicts(count: int) -> str:
-    """"one verdict" or "N verdicts", so a fault line reads as English either way."""
+    """``one verdict`` or ``N verdicts``, so a fault line reads as English either way."""
     return "one verdict" if count == 1 else f"{count} verdicts"
 
 
@@ -803,7 +803,7 @@ async def post_autosanction_announcement(
             f"round {round_id} could not be read, so it was not announced"
         ]
 
-    division_name_for_fault: str = row["division_name"] or f"division {round_id}"
+    division_name_for_fault: str = row["division_name"] or "the division"
 
     penalty_channel_id_raw = row["penalty_channel_id"]
     if penalty_channel_id_raw is None:
