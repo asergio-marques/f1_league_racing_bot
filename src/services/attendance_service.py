@@ -661,19 +661,32 @@ async def distribute_attendance_points(
     """Compute and persist points_awarded and total_points_after for every full-time
     driver in the division for this round (FR-012–FR-015).
 
+    ``total_points_after`` is the driver's total **as at this round**: the points of every
+    earlier finalised round of the division, plus this round's. It is not the season's total
+    (#238). The distinction only shows once a round is scored a second time — the sum used to
+    be taken over every *other* finalised round, with nothing to hold it to the ones before
+    this, so recomputing round 3 of ten wrote the whole season's figure onto round 3 and every
+    round the cascade then touched read the same. Each round's copy is kept precisely so a
+    figure that looks wrong can be traced round by round, which a flattened one cannot be.
+
+    It follows that the latest round is where a division's current total stands, and that is
+    the round a sheet is drawn against and the sanctions enforced upon — see
+    :func:`cascade_attendance_from_round` and :func:`sync_attendance`.
+
     *db* joins a transaction the caller already opened, and is then the caller's to commit;
     see :func:`_shared_or_own`.
     """
     async with _shared_or_own(db_path, db) as (db, _owned):
         # Guard: skip if round is cancelled (no penalties for cancelled rounds).
         cursor = await db.execute(
-            "SELECT status FROM rounds WHERE id = ?",
+            "SELECT status, round_number FROM rounds WHERE id = ?",
             (round_id,),
         )
         round_row = await cursor.fetchone()
         if round_row is None or round_row["status"] == "CANCELLED":
             log.info("distribute_attendance_points: skipping cancelled round %s", round_id)
             return
+        this_round_number: int = round_row["round_number"]
 
         # Load penalty config for this division's server.
         cursor = await db.execute(
@@ -752,10 +765,11 @@ async def distribute_attendance_points(
                 WHERE dra2.driver_profile_id = ?
                   AND dra2.division_id = ?
                   AND r.status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL')
+                  AND r.round_number < ?
                   AND dra2.round_id != ?
                   AND dra2.points_awarded IS NOT NULL
                 """,
-                (row["driver_profile_id"], division_id, round_id),
+                (row["driver_profile_id"], division_id, this_round_number, round_id),
             )
             prior_row = await c3.fetchone()
             prior_total: int = prior_row["prior_total"] if prior_row else 0
@@ -819,10 +833,11 @@ async def distribute_attendance_points(
                 WHERE dra2.driver_profile_id = ?
                   AND dra2.division_id = ?
                   AND r.status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL')
+                  AND r.round_number < ?
                   AND dra2.round_id != ?
                   AND dra2.points_awarded IS NOT NULL
                 """,
-                (row["driver_profile_id"], division_id, round_id),
+                (row["driver_profile_id"], division_id, this_round_number, round_id),
             )
             prior_row = await c3.fetchone()
             prior_total: int = prior_row["prior_total"] if prior_row else 0
@@ -1779,31 +1794,55 @@ async def recalculate_attendance_for_round(
     holding a write transaction open across it would block every other writer for as long
     as Discord took to answer.
     """
-    await _recalculate_forward(db_path, round_id, division_id, recompute_every_round=False)
+    touched = await _recalculate_forward(
+        db_path, round_id, division_id, recompute="round"
+    )
+    latest = touched[-1]
 
-    # FR-031: re-post sheet and re-evaluate sanctions.
-    await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
+    # FR-031: re-post sheet and re-evaluate sanctions, against the last round recalculated
+    # rather than the one named (#238). Each round's stored total is the driver's total as at
+    # that round, so the division's current standing is on the last of them. Its only caller
+    # names the latest finalised round already, which makes the two the same round today —
+    # the rule is written out so it stays right if that ever changes.
+    await post_attendance_sheet(bot, guild, db_path, latest, division_id)
     return await enforce_attendance_sanctions(
-        bot, guild, db_path, round_id, division_id, season_id
+        bot, guild, db_path, latest, division_id, season_id
     )
 
 
 async def _recalculate_forward(
-    db_path: str, round_id: int, division_id: int, *, recompute_every_round: bool
+    db_path: str, round_id: int, division_id: int, *, recompute: str
 ) -> list[int]:
     """Recompute *round_id* and carry the running total through every finalised round after
     it, in **one transaction** (#187). Returns the ids of the rounds it touched, in order.
 
-    The round itself is always fully recomputed (FR-028). With *recompute_every_round* the
-    rounds after it are too, which is what `/attendance sync` asks for: it repairs a round
-    whose recording failed, not only a total carried from an amended one. Without it they are
-    only redistributed (FR-030), as an amendment needs.
+    *recompute* says how much of the attended record is rebuilt from the results, and is one
+    of three values. Every one of them redistributes the points of every round it touches;
+    they differ only in whose attended flags are rebuilt first.
+
+    ``"all"``
+        Every round from this one on is rebuilt from its results, which is what
+        `/attendance sync` asks for: it repairs a round whose recording failed, not only a
+        total carried from an amended one.
+    ``"round"``
+        Only the named round is rebuilt; the rounds after it are redistributed (FR-030), as
+        an amendment approval needs.
+    ``"none"``
+        None is. The caller has already recorded the attendance under the upgrade-only rule
+        and wants the totals carried forward and nothing else — see
+        :func:`cascade_attendance_from_round`.
+
+    The rebuild is a **full** one (FR-028), without the upgrade-only constraint, so it can
+    flip a driver from present to absent. That is why it is not reached under ``"none"``.
     """
+    if recompute not in {"all", "round", "none"}:
+        raise ValueError(f"unknown recompute mode {recompute!r}")
     async with get_connection(db_path) as db:
         # FR-028: full recompute without upgrade-only constraint.
-        await record_attendance_from_results_full_recompute(
-            db_path, round_id, division_id, db=db
-        )
+        if recompute in {"all", "round"}:
+            await record_attendance_from_results_full_recompute(
+                db_path, round_id, division_id, db=db
+            )
 
         # FR-029: pardons are already persisted — just recompute points using them.
         await distribute_attendance_points(db_path, round_id, division_id, db=db)
@@ -1822,7 +1861,7 @@ async def _recalculate_forward(
         subsequent_rounds = [row["id"] for row in await cursor.fetchall()]
 
         for sub_round_id in subsequent_rounds:
-            if recompute_every_round:
+            if recompute == "all":
                 await record_attendance_from_results_full_recompute(
                     db_path, sub_round_id, division_id, db=db
                 )
@@ -1830,6 +1869,38 @@ async def _recalculate_forward(
 
         await db.commit()
     return [round_id, *subsequent_rounds]
+
+
+async def cascade_attendance_from_round(
+    db_path: str, round_id: int, division_id: int
+) -> list[int]:
+    """Award *round_id*'s attendance points and carry the new totals through every later
+    finalised round, in one transaction. Returns the ids of the rounds it touched.
+
+    What `finalize_penalty_review` calls where it once called `distribute_attendance_points`
+    alone (#238). A driver's total is the sum of their rounds, but a copy of the answer is
+    stored on every round's row as ``total_points_after``, and the sheet and the sanctions
+    read a copy rather than the sum. Amending round 3 of ten and correcting only round 3's
+    copy left rounds 4 to 10 holding a total worked out from the old figure — which the
+    season's **final** sheet then published, that sheet being drawn against the last round
+    with results. Standings already cascade from this same path through
+    ``standings_service.cascade_recompute_from_round``; attendance did not.
+
+    **It deliberately does not rebuild the attended flags.** On this path the recording was
+    done by ``record_attendance_from_results``, which only ever upgrades a driver to present
+    and never revokes it (FR-003): a driver dropped from the results was given no chance to
+    justify themselves, and the record errs in their favour.
+    ``record_attendance_from_results_full_recompute`` can flip present to absent, so it is
+    not reached from here — it is unused on this path by design, not by oversight.
+
+    **The last id returned is where the division's total now stands**, each round's copy being
+    that driver's total as at that round and no further. The caller posts its sheet and
+    enforces its sanctions against that round, not against the amended one, exactly as
+    :func:`sync_attendance` does.
+    """
+    return await _recalculate_forward(
+        db_path, round_id, division_id, recompute="none"
+    )
 
 
 async def sync_attendance(
@@ -1852,7 +1923,7 @@ async def sync_attendance(
     in Reserve is passed over, so a second run applies only what the first did not.
     """
     touched = await _recalculate_forward(
-        db_path, from_round_id, division_id, recompute_every_round=True
+        db_path, from_round_id, division_id, recompute="all"
     )
     latest = touched[-1]
     await post_attendance_sheet(bot, guild, db_path, latest, division_id)

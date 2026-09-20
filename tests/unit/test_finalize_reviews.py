@@ -456,6 +456,70 @@ async def test_the_attendance_pipeline_does_not_run_where_attendance_is_off(tmp_
         stubs[step].assert_not_awaited()
 
 
+async def _later_rounds(db_path, statuses: dict[int, str]) -> None:
+    """Rounds after the fixture's round 3, by number, with the ids 100 + the number."""
+    async with get_connection(db_path) as db:
+        for number, status in statuses.items():
+            await db.execute(
+                "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
+                "status) VALUES (?, ?, ?, '2026-03-01T18:00:00+00:00', 'NORMAL', ?)",
+                (100 + number, DIVISION_ID, number, status),
+            )
+        await db.commit()
+
+
+async def test_an_amended_round_redistributes_every_later_round(tmp_path):
+    """Issue #238. `/round results amend` re-runs this review for a round that may sit well
+    behind the season's latest, and every later round's stored total was worked out from the
+    figure the amendment has just changed. A round not yet finalised holds no total to
+    correct and is left alone."""
+    db_path = await _make_db(tmp_path, name="att_cascade")
+    await _later_rounds(db_path, {4: "FINAL", 5: "AWAITING_APPEAL_VERDICTS", 6: "NOT_RUN"})
+
+    stubs = await _run(finalize_penalty_review, _state(db_path, attendance_enabled=True))
+
+    assert [c.args[1] for c in stubs["distribute"].await_args_list] == [ROUND_ID, 104, 105]
+
+
+async def test_the_sheet_and_the_sanctions_follow_the_cascade_to_its_last_round(tmp_path):
+    """Issue #238. Each round's stored total is the driver's total as at that round, so
+    amending round 3 of ten leaves the division's current standing on the last round scored —
+    and it is the current standing the sheet must show and the thresholds must be read
+    from."""
+    db_path = await _make_db(tmp_path, name="att_cascade_latest")
+    await _later_rounds(db_path, {4: "FINAL", 5: "FINAL"})
+
+    stubs = await _run(finalize_penalty_review, _state(db_path, attendance_enabled=True))
+
+    assert stubs["sheet"].await_args.args[3] == 105
+    assert stubs["sanctions"].await_args.args[3] == 105
+
+
+async def test_a_failed_cascade_leaves_the_sheet_on_the_round_approved(tmp_path):
+    """Nothing was written, so there is no later round to follow it to — and the sanctions
+    are deferred in any case."""
+    db_path = await _make_db(tmp_path, name="att_cascade_failed")
+    await _later_rounds(db_path, {4: "FINAL"})
+
+    stubs = await _run(
+        finalize_penalty_review,
+        _state(db_path, attendance_enabled=True),
+        attendance_errors={"distribute": RuntimeError("boom")},
+    )
+
+    assert stubs["sheet"].await_args.args[3] == ROUND_ID
+    stubs["sanctions"].assert_not_awaited()
+
+
+async def test_rounds_before_the_amended_one_keep_their_totals(tmp_path):
+    db_path = await _make_db(tmp_path, name="att_cascade_earlier")
+    await _later_rounds(db_path, {1: "FINAL", 2: "FINAL"})
+
+    stubs = await _run(finalize_penalty_review, _state(db_path, attendance_enabled=True))
+
+    stubs["distribute"].assert_awaited_once()
+
+
 async def test_staged_pardons_are_persisted(tmp_path):
     db_path = await _make_db(tmp_path, name="att_pardons", attendance_row=True)
     pardon = StagedPardon(
@@ -503,7 +567,8 @@ async def test_one_failing_attendance_step_does_not_stop_the_others(tmp_path, fa
     """The penalty verdicts are already published by the time this runs.
 
     **The sanctions are the one exception, and only for the two steps that write** (#237).
-    A failed `record` or `distribute` leaves `total_points_after` wrong rather than absent,
+    A failed `record`, or a failed distribution — which since #238 carries the later rounds'
+    totals with it — leaves `total_points_after` wrong rather than absent,
     so the candidate query cannot screen it out, and an autosack applied on it would take a
     driver's seat on a number the bot already knows is unsound. Those two defer the run to
     `/attendance sync`; everything else still carries on regardless.
