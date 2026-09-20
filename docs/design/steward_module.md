@@ -443,9 +443,11 @@ for the unit tests every issue carries.
 
 ---
 
-## Questions the specification leaves open
+## Questions the specification left open
 
-Five things this design needs and the spec does not settle. Each is noted rather than decided.
+All five were settled with the user on 2026-09-20 and written into the specification; each is kept
+below, struck through, with what was decided and why. They are kept rather than deleted because the
+reasoning is what a later reader needs when one of them is reopened.
 
 **~~Whether an annulled sanction's row may remain.~~** Settled 2026-09-20: it remains, marked
 `ANNULLED`, read by nothing — [STW-REV-038] now says so. A verdict already posted is never
