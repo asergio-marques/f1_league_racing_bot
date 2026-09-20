@@ -462,3 +462,29 @@ async def test_a_posting_with_nothing_recorded_falls_back_to_the_walk():
     await _delete_posting(channel, ANCHOR_ID, None, label="results message")
 
     assert ANCHOR_ID in channel._deleted
+
+
+async def test_the_anchor_is_deleted_even_if_the_stored_list_omits_it():
+    """Belt and braces on a leak that would be permanent (#345).
+
+    Every list this module writes names the anchor first, but the anchor column and the list
+    column are written and cleared through separate paths — so a list that ever lost it would
+    leave that message standing for ever, with nothing left pointing at it. The anchor is the one
+    id certain to belong to this posting, so it is deleted whether the list names it or not.
+    """
+    messages = [_message(11), _message(12)]
+    channel = _deletable_channel(messages)
+
+    await _delete_posting(channel, 11, [12], label="results message")
+
+    assert sorted(channel._deleted) == [11, 12]
+
+
+async def test_the_anchor_is_not_deleted_twice_when_the_list_names_it():
+    """The ordinary case, so the safeguard cannot become a double delete."""
+    messages = [_message(11), _message(12)]
+    channel = _deletable_channel(messages)
+
+    await _delete_posting(channel, 11, [11, 12], label="results message")
+
+    assert channel._deleted == [11, 12]

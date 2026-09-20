@@ -151,9 +151,14 @@ def _no_posting_throttle(monkeypatch):
     Autouse rather than opt-in: a test that reposts a division does not otherwise have to know
     the throttle exists, and the one that does know — `test_replay_throttle.py` — patches the
     constant itself and is unaffected by this.
+
+    **Imported and patched without a fallback, deliberately.** An earlier version swallowed any
+    import error and returned, and set the attribute with ``raising=False``. Between them those
+    two turned a broken import or a renamed constant into a suite that silently paid a real
+    second per posting again — a slow CI run nobody attributes to the commit that caused it,
+    rather than a failure anyone can see. `results_post_service` imports cleanly wherever the
+    suite runs; if it ever does not, that is worth a loud error.
     """
-    try:
-        from services import results_post_service
-    except Exception:  # noqa: BLE001 — a test that never imports it needs nothing stood down
-        return
-    monkeypatch.setattr(results_post_service, "POSTING_THROTTLE_SECONDS", 0, raising=False)
+    from services import results_post_service
+
+    monkeypatch.setattr(results_post_service, "POSTING_THROTTLE_SECONDS", 0)

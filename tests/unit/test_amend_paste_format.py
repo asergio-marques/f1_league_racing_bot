@@ -109,3 +109,27 @@ def test_a_row_two_columns_too_wide_in_qualifying_also_explains():
     result = _validate(_qualifying(sanction_columns=True), SessionType.FEATURE_QUALIFYING)
 
     assert _RETIRED_SANCTION_COLUMNS in result[0]
+
+
+def test_a_driver_listed_twice_is_refused():
+    """Reviewed as a suspected mis-pointing of verdicts; it does not reach that far (#345).
+
+    `_repoint_verdicts` builds `{driver_user_id: row_id}` from the re-inserted rows, so a driver
+    appearing twice would silently attach their verdict to whichever row was inserted last. The
+    validation above refuses the paste first, on every path including the amendment's — so the
+    mis-pointing is unreachable rather than merely unlikely.
+
+    Pinned here because the two pieces of code are far apart: a future change to either could
+    open the gap without anything obviously breaking.
+    """
+    rows = [
+        f"1, <@{DRIVER}>, <@&{TEAM}>, 1:23:45.678, 1:23.456, N/A",
+        f"2, <@{DRIVER}>, <@&{TEAM}>, +1.000, 1:24.000, N/A",
+    ]
+
+    result = validate_submission_block(
+        rows, SessionType.FEATURE_RACE, {DRIVER}, {TEAM}, None, {DRIVER: TEAM},
+    )
+
+    assert isinstance(result[0], str)
+    assert "appears more than once" in result[0]

@@ -137,6 +137,13 @@ async def _delete_posting(
     path is wrong in exactly the case above; it survives only for rows nothing else can serve.
     """
     if message_ids:
+        # The anchor is included whether or not the stored list happens to name it. Every list
+        # this module writes puts it first (`_ids_json` is handed the messages `_send_chunked`
+        # returned, anchor included), but the anchor and the list are cleared and written through
+        # separate paths — so a list that ever omitted it would leak that message for good, and
+        # the one thing certain about the anchor is that it belongs to this posting (#345).
+        if anchor_msg_id not in message_ids:
+            message_ids = [anchor_msg_id, *message_ids]
         for message_id in message_ids:
             try:
                 message = await channel.fetch_message(message_id)
