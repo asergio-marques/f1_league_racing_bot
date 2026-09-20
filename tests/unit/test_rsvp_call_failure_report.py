@@ -117,3 +117,28 @@ def test_the_report_is_not_guarded_by_any_conditional_in_its_call_sites():
     for fragment in source.split("_report_call_failure(")[:-1]:
         tail = fragment.rsplit("\n", 2)[-2:]
         assert not any(line.strip().startswith("if ") for line in tail), tail
+
+
+def test_the_note_names_the_command_that_posts_the_call_again():
+    """The advice must name a command that exists (#123).
+
+    The note told staff to "post the call again" for as long as there was no command to do it
+    with — sound advice nobody could follow, which is the whole of issue #123. It now names
+    `/attendance post-check-in` and fills in the division and round, so a manager can copy the
+    line out of the log channel. Renaming that command without fixing this note would put the
+    bot back to advising the impossible, which is what this test is here to stop.
+    """
+    source = inspect.getsource(_report_call_failure)
+    assert "/attendance post-check-in" in source
+    assert "{division_name}" in source and "{round_number}" in source
+
+
+def test_the_command_the_note_names_is_a_real_one():
+    """Pinned against the cog itself, so a rename breaks this rather than a league's recovery."""
+    import os
+    import sys
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+    from cogs.attendance_cog import AttendanceCog
+
+    assert "post-check-in" in {c.name for c in AttendanceCog.attendance.commands}
