@@ -35,6 +35,7 @@ from models.image_catalogues import (
     catalogue_for,
 )
 from utils.message_builder import (
+    PHASE_DESCRIPTIONS,
     format_rain_probability,
     format_session_weather_type,
     format_slot_sequence,
@@ -65,13 +66,12 @@ _SPRINT_KEYS = {
 
 MYSTERY_TEMPLATE_KEY = "weather_mystery_template"
 
-#: The description of the phase the graphic stands for — fixed text, and the only place the
-#: phase is named at all. No weather graphic draws a phase *number* (FR-011, FR-022).
-PHASE_DESCRIPTIONS = {
-    1: "Initial chance of rain",
-    2: "Initial session forecast",
-    3: "Final session forecast",
-}
+# The description of the phase the graphic stands for is ``PHASE_DESCRIPTIONS``, imported
+# above and re-exported here. No weather graphic draws a phase *number* (FR-011, FR-022).
+# It moved to ``utils.message_builder`` with issue #112, which made it the textual forecast's
+# heading as well as the graphic's corner: a graphic and the message it stands in for cannot
+# disagree about what a phase is called, for the same reason the rain probability and the slot
+# sequence are rendered there (Constitution XIV.7).
 
 
 class WeatherDataError(Exception):

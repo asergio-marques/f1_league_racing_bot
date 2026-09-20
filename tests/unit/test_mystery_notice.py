@@ -49,6 +49,29 @@ class TestMysteryNoticeMessage:
     def test_no_role_mention(self):
         assert "<@&" not in mystery_notice_message()
 
+    def test_it_names_no_horizon(self):
+        """It posts at the phase 1 horizon and says so nowhere (issue #112).
+
+        Already true when the three phase messages were not, this being fixed text that never
+        described its own timing. Asserted so that a later edit reaching for the wording the
+        other three lost does not reintroduce it here.
+        """
+        notice = mystery_notice_message()
+        for horizon in ("days out", "hours out", "T−5", "T-5", "T−2", "T-2"):
+            assert horizon not in notice
+
+    def test_it_carries_no_phase_description(self):
+        """It stands for no phase's forecast, so it is titled by none of the three.
+
+        The mystery template declares no ``phase_description`` field either — the carve-out
+        the weather specification names, pinned on the textual side.
+        """
+        from utils.message_builder import PHASE_DESCRIPTIONS
+
+        notice = mystery_notice_message()
+        for description in PHASE_DESCRIPTIONS.values():
+            assert description not in notice
+
 
 # ---------------------------------------------------------------------------
 # Helpers

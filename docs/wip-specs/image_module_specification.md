@@ -1243,7 +1243,7 @@ These hold for every image type of the module and are stated here rather than re
 
 ### Resolution of the data to be placed
 - The graphic re-presents the values the textual forecast shows and never derives them by rules of its own. A change to how the textual forecast renders any of them is a change to the graphic by the same stroke.
-- The description of the phase is fixed text: "Initial chance of rain" for phase 1, "Initial session forecast" for phase 2 and "Final session forecast" for phase 3.
+- The description of the phase is fixed text: "Initial chance of rain" for phase 1, "Initial session forecast" for phase 2 and "Final session forecast" for phase 3. It is the same description the textual forecast is titled by, the two naming a phase alike.
 - The likelihood of rain is that calculated in phase 1, rendered as the textual phase 1 message renders it, the percent sign included. The phase 2 and phase 3 graphics carry that same value.
 - The name of the track is that recorded for the round, and is the name the textual forecast carries. The grand prix name and the country are read from the track object.
 - The flag of the round shall be searched for in the configured flag directory under a filename equal to the country recorded by the track object, normalized as the conventions above require, and resolved as the conventions above require. The forecast draws no track map, the round standing upon it as a heading.

@@ -95,7 +95,7 @@ Every reply also tells you where the other two stand, which saves setting one an
 
 > **They also decide how late you can approve.** A season holding a round whose phase 1, 2 or 3 deadline has already passed is named in `/season placements-review`, which then offers no Approve button, and the approval refuses on the same finding — a first round three days away cannot honour a five-day phase 1. Approve earlier, shorten the deadline, or move the round with `/round amend`. Test mode is not exempt, so a test season needs its rounds set beyond all three.
 
-> **The wording of the posts does not follow these settings.** The messages say "5 days out", "2 days out" and "2 hours out" whatever you set. Change phase 1 to seven days and the forecast still arrives seven days ahead — but it will describe itself as five. Worth knowing before your drivers ask.
+> **The posts do not quote your timings back.** Each one is titled by what it is — "Initial chance of rain", then "Initial session forecast", then "Final session forecast" — and says nothing about when it arrived or when the next is due. The first two promise a further forecast later on, and the second tells drivers it will be an accurate one. So whatever you set here, the wording is right: move phase 1 to seven days and the post reads the same as it did at five.
 
 > **An amended round keeps the timings you set here.** It used to fall back to 5 days, 2 days and 2 hours whatever you had configured; it no longer does. A forecast is thrown away only where the round has moved far enough that it would not have been drawn yet — move a round by an hour and the forecasts already posted stand, move it by a month and they are withdrawn and drawn again. The confirmation names which before you commit.
 
@@ -225,7 +225,7 @@ Worth running through before the season is approved.
 | No forecast at all for a division | No forecast channel set for it, or the module is off |
 | No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and nothing anywhere will tell you so: check the round with `/season placements-review` |
 | A season that will not approve | A division is missing its forecast channel, or a round is already inside one of the three deadlines. The division's own calendar in the review names the latest such round, and the button is withheld |
-| The post says "5 days out" but arrived earlier or later | Known: the wording is fixed and does not follow your timing settings. The timing itself is correct |
+| A driver asks when the next forecast is due | The posts do not say, by design — they promise only that an accurate one follows later. Your own deadlines are in `/season placements-review` |
 | `/weather config` refused | Either the season's placements are confirmed, or the value would put the phases out of order. The reply says which |
 | Two invalidation notices for one change | Amending more than one thing at once posts one per change |
 | Text where you expected a picture | The forecast worked and the drawing did not. The log channel names the reason — most often a drawing file or the converter |
