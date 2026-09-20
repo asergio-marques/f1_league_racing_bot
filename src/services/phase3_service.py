@@ -1,4 +1,7 @@
-"""Phase 3 service — Slot-by-slot weather assignment (T−2 hours).
+"""Phase 3 service — Slot-by-slot weather assignment, at the phase 3 horizon.
+
+The horizon is configured (``weather_pipeline_config.phase_3_hours``, two hours by default)
+and is no fixed T−2; see ``phase1_service`` for the whole of that note.
 
 For each session, draws N weather labels using weighted probabilities
 derived from the Phase 2 slot type and Phase 1 Rpc.

@@ -1,4 +1,7 @@
-"""Mystery Notice service — posts a fixed informational notice at T−5 days.
+"""Mystery Notice service — posts a fixed informational notice at the phase 1 horizon.
+
+It stands in the place of the phase 1 message and shares its horizon, which the league
+configures; see ``phase1_service`` for why no horizon is named as fixed.
 
 Called by the APScheduler ``mystery_r{round_id}`` job for Mystery rounds.
 No random draws are performed; no phase_results row is written; no log-channel

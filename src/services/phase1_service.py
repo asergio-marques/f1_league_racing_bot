@@ -1,4 +1,8 @@
-"""Phase 1 service — Rain probability announcement (T−5 days).
+"""Phase 1 service — Rain probability announcement, at the league's phase 1 horizon.
+
+The horizon is configured (``weather_pipeline_config.phase_1_days``, five days by default)
+and is no fixed T−5: see ``PHASE_DESCRIPTIONS`` in ``utils.message_builder`` for what naming
+one as fixed cost a league, in issue #112.
 
 Draws Rpc from the per-track Beta distribution (mu, sigma), persists PhaseResult,
 posts to forecast and log channels.

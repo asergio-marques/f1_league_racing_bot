@@ -1,4 +1,7 @@
-"""Phase 2 service — Session-level rain/mixed/sunny assignment (T−2 days).
+"""Phase 2 service — Session-level rain/mixed/sunny assignment, at the phase 2 horizon.
+
+The horizon is configured (``weather_pipeline_config.phase_2_days``, two days by default)
+and is no fixed T−2; see ``phase1_service`` for the whole of that note.
 
 Reads Phase 1 Rpc, builds 1000-slot pool, draws one slot per session,
 persists results, posts to forecast and log channels.

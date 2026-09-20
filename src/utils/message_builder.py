@@ -232,7 +232,7 @@ def format_slots_for_log(slots: list[str]) -> str:
 
 
 def mystery_notice_message() -> str:
-    """Mystery round notice posted to the forecast channel at T−5 days.
+    """Mystery round notice posted to the forecast channel at the phase 1 horizon.
 
     No division role is tagged — conditions are unknown to all participants;
     weather will be set by the game at race time, not pre-determined by the bot.
