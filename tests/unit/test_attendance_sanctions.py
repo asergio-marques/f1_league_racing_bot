@@ -231,10 +231,14 @@ def _logged(bot) -> str:
 
 @pytest.fixture
 def announcer():
-    """Patch the verdict announcer and banner, yielding both mocks."""
+    """Patch the verdict announcer and banner, yielding both mocks.
+
+    The announcer returns the sanctions it could not announce (#237), so the stub returns an
+    empty list rather than ``None``: the run adds what comes back to its outcome.
+    """
     with patch(
         "services.verdict_announcement_service.post_autosanction_announcement",
-        new=AsyncMock(return_value=None),
+        new=AsyncMock(return_value=[]),
     ) as announce, patch(
         "services.verdict_announcement_service.banner_for_round",
         new=MagicMock(return_value="BANNER"),
@@ -763,3 +767,39 @@ async def test_the_announcement_names_the_sanction_and_its_threshold(
     assert kwargs["sanction_type"] == "AUTOSACK"
     assert kwargs["threshold"] == 20
     assert kwargs["driver_discord_id"] == FULL_TIME_PROFILE
+
+
+async def test_an_unannounced_sanction_is_carried_in_the_outcome(tmp_path, announcer, sheet):
+    """The promise `README.md` already makes, now kept (#237).
+
+    A sanction whose announcement never went out is recorded as a posting fault, so
+    `ATTENDANCE_SANCTIONS | Incomplete` can name it. Before this the announcer returned
+    quietly and only a *raised* failure was ever caught, so the line could not be produced —
+    the sanction applied, the driver lost their seat, and nothing said why.
+    """
+    announce, _banner = announcer
+    announce.return_value = [
+        "the autosack of <@99> was applied, but it was not announced"
+    ]
+
+    db_path = await _make_db(tmp_path, autoreserve=10, autosack=20)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
+    bot = _make_bot(db_path)
+
+    outcome = await _run(bot, db_path)
+
+    assert outcome.applied, "the sanction itself should still have applied"
+    assert any("not announced" in line for line in outcome.failure_lines())
+    assert not outcome.complete
+
+
+async def test_an_announced_sanction_leaves_the_run_complete(tmp_path, announcer, sheet):
+    """The counterpart: an empty list from the announcer must not read as a fault."""
+    db_path = await _make_db(tmp_path, autoreserve=10, autosack=20)
+    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
+    bot = _make_bot(db_path)
+
+    outcome = await _run(bot, db_path)
+
+    assert outcome.applied
+    assert outcome.complete
