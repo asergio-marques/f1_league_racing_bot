@@ -376,11 +376,7 @@ The verdict in your verdicts channel is the only thing that tells a driver *why*
 
 ### Attendance the approval could not record
 
-Approving a penalty review also records who attended the round and awards the attendance points. Both write to the league's record, and the auto-reserve and auto-sack thresholds read it — so a failure here can see a driver sanctioned later on a total that was never right.
-
-You get an `ATTENDANCE_RECORD | Incomplete` entry and a line in your reply, ending with the `/attendance sync` to run. Do it the same day: until you do, the round's attendance is wrong and every total after it is short.
-
-This is deliberately separate from the `ATTENDANCE_SANCTIONS | Incomplete` entry you may also see. That one means a sanction did not apply, with the record itself intact; this one means the record is wrong.
+With the attendance module on, approving a penalty review also records who attended the round. Where that fails you get an `ATTENDANCE_RECORD | Incomplete` entry and a line in your reply, and the sanctions for that round are held back rather than applied to a total the bot knows is wrong. [The attendance guide](configuring-the-attendance-module.md) explains what to do about it.
 
 ---
 
