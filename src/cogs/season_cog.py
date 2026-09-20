@@ -5383,9 +5383,7 @@ class SeasonCog(commands.Cog):
                 self.bot,
                 round_number=rnd.round_number,
                 division_name=div.name,
-                session_types_present=[
-                    SessionType(r["session_type"]) for r in sr_rows
-                ],
+                session_type=chosen_session_type,
             )
             await interaction.followup.send(
                 f"\u2705 Corrected results posted. Review this round's reports and appeals in "

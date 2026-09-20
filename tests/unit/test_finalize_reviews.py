@@ -259,9 +259,12 @@ def _patches(
     }
 
 
-async def _run(fn, state, interaction=None, **patch_kwargs):
+async def _run(fn, state, interaction=None, *, replay_override=False, **patch_kwargs):
+    """*replay_override* leaves the replay unpatched so a caller can patch it themselves."""
     interaction = interaction or _interaction()
     patches = _patches(**patch_kwargs)
+    if replay_override:
+        patches.pop("replay", None)
     started = {key: p.start() for key, p in patches.items()}
     try:
         await fn(interaction, state)
@@ -1293,8 +1296,10 @@ async def test_an_amendment_rebuilds_the_division_once_at_the_end(tmp_path):
     stubs = await _run(finalize_appeals_review, state)
 
     stubs["replay"].assert_awaited_once()
-    stubs["amend_attendance"].assert_awaited_once()
     stubs["repost"].assert_not_awaited()
+    # The attendance sheet is handed to the rebuild as a step rather than run after it, so that
+    # it lands between the standings and the verdicts as the specification states (#345).
+    assert stubs["replay"].await_args.kwargs["attendance_step"] is not None
 
 
 async def test_a_first_pass_reposts_its_own_round_and_not_the_division(tmp_path):
@@ -1307,3 +1312,127 @@ async def test_a_first_pass_reposts_its_own_round_and_not_the_division(tmp_path)
 
     stubs["repost"].assert_awaited_once()
     stubs["replay"].assert_not_awaited()
+
+
+async def test_an_amendment_does_not_double_an_unamended_sessions_penalties(tmp_path):
+    """**The worst defect any review of this change found.**
+
+    `apply_penalties` walks whatever session types the staged set names, and stage one re-inserts
+    only the *amended* session's driver rows — at zero. A report hydrated from an unamended
+    session was therefore added on top of the milliseconds already standing in that session's
+    row: amend the feature race, and the sprint race's 5 s penalty silently became 10 s, taking
+    the driver down the sprint classification and costing them points they were never penalised.
+    Each further amendment added another 5 s.
+
+    Fixed by scoping the replay to the session being amended, which is what the stage driver now
+    puts in `session_types_present`.
+    """
+    db_path = await _make_db(tmp_path, name="amend_other_session")
+    await _seed_driver_row(db_path)
+    async with get_connection(db_path) as db:
+        other = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'SPRINT_RACE', 'ACTIVE')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position, postrace_time_penalties_ms) "
+            "VALUES (?, 101, 3001, 1, 5000)",
+            (other.lastrowid,),
+        )
+        await db.commit()
+
+    # The staged set an amendment of the feature race produces: that session only.
+    state = _state(db_path, staged=[_penalty()])
+    state.is_amendment = True
+    state.session_types_present = [SessionType.FEATURE_RACE]
+
+    await _run_real_apply(finalize_penalty_review, state)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.postrace_time_penalties_ms AS ms FROM race_session_results r "
+            "JOIN session_results sr ON sr.id = r.session_result_id "
+            "WHERE sr.session_type = 'SPRINT_RACE'"
+        )
+        assert (await cursor.fetchone())["ms"] == 5000
+
+
+async def test_the_other_sessions_verdict_records_survive_an_amendment(tmp_path):
+    """Clearing the whole round would drop them, and nothing would write them back.
+
+    The replay only re-approves the amended session's reports, so a record belonging to another
+    session has no route back into the database once deleted.
+    """
+    db_path = await _make_db(tmp_path, name="amend_other_records")
+    await _seed_driver_row(db_path)
+    async with get_connection(db_path) as db:
+        other = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'SPRINT_RACE', 'ACTIVE')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        cursor = await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position) VALUES (?, 101, 3001, 1)",
+            (other.lastrowid,),
+        )
+        await db.execute(
+            "INSERT INTO penalty_records (race_result_id, penalty_type, time_seconds, "
+            "description, justification, applied_by, applied_at) VALUES (?, 'TIME', 5, "
+            "'Sprint contact', 'At fault', '77', '2026-02-02T00:00:00+00:00')",
+            (cursor.lastrowid,),
+        )
+        await db.commit()
+
+    state = _state(db_path, staged=[_penalty()])
+    state.is_amendment = True
+    state.session_types_present = [SessionType.FEATURE_RACE]
+
+    await _run_real_apply(finalize_penalty_review, state)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM penalty_records WHERE description = 'Sprint contact'"
+        )
+        assert (await cursor.fetchone())["n"] == 1
+
+
+async def test_the_deadline_is_cleared_before_the_rebuild_begins(tmp_path):
+    """Or the sweep reverts the round from under a rebuild that is still posting (#345).
+
+    A division-wide rebuild throttles a second between postings and renders graphics, so it can
+    outlast the stage timeout. Approving the appeals is the commitment.
+    """
+    db_path = await _make_db(tmp_path, name="amend_deadline_cleared")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_type, "
+            "created_at, pre_amendment_state, expires_at) "
+            "VALUES (?, 700, 'FEATURE_RACE', '2026-02-02T00:00:00+00:00', '{}', "
+            "'2026-02-02T00:30:00+00:00')",
+            (ROUND_ID,),
+        )
+        await db.commit()
+    state = _state(db_path, appeals=[_penalty()])
+    state.is_amendment = True
+
+    seen: dict = {}
+
+    async def _replay(*_a, **_kw):
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT expires_at FROM round_amend_channels WHERE round_id = ?", (ROUND_ID,)
+            )
+            row = await cursor.fetchone()
+            seen["expires_at"] = row["expires_at"] if row else "gone"
+        return []
+
+    with patch(
+        "services.results_post_service.replay_division_channels",
+        new=AsyncMock(side_effect=_replay),
+    ):
+        await _run(finalize_appeals_review, state, replay_override=True)
+
+    assert seen["expires_at"] is None

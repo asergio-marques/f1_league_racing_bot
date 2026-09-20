@@ -235,18 +235,26 @@ async def test_the_superseded_message_is_the_one_deleted(tmp_path):
     assert deleted == [8001]
 
 
-async def test_a_verdict_with_no_recorded_message_is_named(tmp_path):
-    """It cannot be taken down, so the replay says so rather than doubling it silently."""
+async def test_a_verdict_with_no_recorded_message_is_not_reported_here(tmp_path):
+    """A record with no id is usually one the report stage has just rewritten (#345).
+
+    Approving the amendment's report stage deletes the round's verdict records and writes the
+    approved set back, so the new rows carry no announcement id. Reporting each of those as
+    "announced before the bot began recording its message" was false — the bot had recorded it,
+    and had just discarded the record — and it named a fault the amendment itself caused.
+
+    The predecessor's id is noted before that clearing happens and taken down separately, so
+    this path stays silent rather than reporting the same thing twice.
+    """
     db_path, ids = await _seed(tmp_path, "rep_legacy", rounds=(1,))
     await _verdict(db_path, ids[1], anchor=None, chunks=None)
 
     faults, events = await _republish(db_path, _bot(), from_round_id=1)
 
-    assert len(faults) == 1
-    assert "by hand" in faults[0]
+    assert faults == []
     assert [kind for kind, _ in events if kind == "delete"] == []
-
-
+    # The replacement still goes up; only the taking-down is somebody else's job.
+    assert [kind for kind, _ in events if kind == "penalties"]
 async def test_a_round_with_no_verdicts_is_skipped(tmp_path):
     """Nothing to announce and nothing to remove; the round is simply passed over."""
     db_path, ids = await _seed(tmp_path, "rep_empty", rounds=(1, 2))

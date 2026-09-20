@@ -191,13 +191,21 @@ def test_the_division_is_rebuilt_when_the_appeal_stage_is_approved():
     assert "_repost_attendance_after_amendment" in source
 
 
-def test_stage_one_posts_its_round_and_does_not_rebuild_the_division():
-    """`amend_session_result` writes and posts; it does not cascade the channels."""
+def test_stage_one_publishes_nothing_at_all():
+    """It records the corrected classification; every posting belongs to the final stage.
+
+    Posting here carried the sanctions and DSQ marks of the round being replaced, orphaned the
+    original Final Results message above it with no path left to remove it, and left that
+    posting standing if the amendment was later reverted.
+    """
     node = _function(MODULE, "amend_session_result")
     source = ast.unparse(node)
 
-    assert "repost_round_results" in source
     assert "replay_division_channels" not in source
+    assert "repost_round_results" not in source
+    assert "delete_and_repost_final_results" not in source
+    # The championship is still recalculated — the database has to be right either way.
+    assert "cascade_recompute_from_round" in source
 
 
 def test_a_first_pass_reposts_its_round_and_not_the_whole_division():

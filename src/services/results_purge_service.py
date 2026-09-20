@@ -109,7 +109,9 @@ async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int
     """
     from services.results_post_service import (
         _clear_standings_messages,
+        _delete_posting,
         _delete_with_continuations,
+        _parse_ids,
     )
 
     deleted = 0
@@ -124,14 +126,18 @@ async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int
         if results_channel is not None:
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
-                    "SELECT results_message_id FROM session_results "
+                    "SELECT results_message_id, results_message_ids FROM session_results "
                     "WHERE round_id = ? AND results_message_id IS NOT NULL ORDER BY id",
                     (round_id,),
                 )
-                message_ids = [r[0] for r in await cursor.fetchall()]
-            for message_id in message_ids:
-                await _delete_with_continuations(
-                    results_channel, message_id, label="results message"
+                postings = [(r[0], r[1]) for r in await cursor.fetchall()]
+            for message_id, chunk_ids in postings:
+                # By what the posting recorded, not by what follows it (#345). The adjacency walk
+                # cannot tell this posting's continuation from the next posting down, so purging a
+                # season could destroy a message it was not asked to touch.
+                await _delete_posting(
+                    results_channel, message_id, _parse_ids(chunk_ids),
+                    label="results message",
                 )
                 deleted += 1
 

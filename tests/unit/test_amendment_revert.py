@@ -164,9 +164,10 @@ async def test_the_classification_is_put_back(tmp_path):
     assert await _drivers(db_path) == [(102, 1)]
 
     with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        # An empty list: reverted, and nothing went wrong reposting it.
         assert await revert_abandoned_amendment(
             db_path, ROUND_ID, SessionType.FEATURE_RACE, _bot(db_path)
-        ) is True
+        ) == []
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
@@ -204,9 +205,11 @@ async def test_an_amendment_abandoned_before_stage_one_has_nothing_to_undo(tmp_p
     """Cancelled at the paste, or a restart before it landed. Reverting nothing must be safe."""
     db_path = await _db(tmp_path, "revert_nothing")
 
+    # None, not an empty list: there was nothing to revert, which is not the same as having
+    # reverted cleanly — the sweep must not announce it.
     assert await revert_abandoned_amendment(
         db_path, ROUND_ID, SessionType.FEATURE_RACE, _bot(db_path)
-    ) is False
+    ) is None
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
 
@@ -312,3 +315,67 @@ def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     job = inspect.getsource(scheduler_service._amendment_sweep_job)
     assert "add_job" not in job
     assert "except Exception" in job
+
+
+async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
+    """The stored deadline is UTC-aware, so comparing it with a naive *now* raises `TypeError`.
+
+    That comparison sat outside the guard around `fromisoformat`, so the exception escaped the
+    loop entirely: one bad caller left *every* lapsed amendment unreverted rather than one, and
+    `_amendment_sweep_job`'s blanket `except` logged it where nobody would connect the two.
+    """
+    db_path = await _db(tmp_path, "sweep_naive")
+    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+    await _overwrite_the_classification(db_path)
+    naive = datetime.now() + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
+    assert naive.tzinfo is None
+
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        assert await sweep_expired_amendments(_bot(db_path), now=naive) == 1
+
+    assert await _drivers(db_path) == [(101, 1), (102, 2)]
+
+
+async def test_the_verdict_records_come_back_whole(tmp_path):
+    """Not merely re-pointed (#345).
+
+    The report stage deletes the round's verdict records and writes the approved set back, so an
+    amendment reverted after that point has nothing left to re-point. A snapshot holding only the
+    reference would no-op silently and lose every appeal record the round carried — invisible
+    thereafter to the republish, to the DSQ marks on the results table, and to any later
+    amendment, while the log claimed the round was "put back as it was".
+    """
+    db_path = await _db(tmp_path, "revert_whole_rows")
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM race_session_results ORDER BY finishing_position"
+        )
+        first = (await cursor.fetchall())[0][0]
+        await db.execute(
+            "INSERT INTO appeal_records (race_result_id, status, penalty_type, time_seconds, "
+            "description, justification, submitted_by, submitted_at) VALUES (?, 'UPHELD', "
+            "'DSQ', NULL, 'Appeal', 'Upheld', '78', '2026-02-03T00:00:00+00:00')",
+            (first,),
+        )
+        await db.commit()
+    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+
+    # The report stage deletes the round's records outright.
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM appeal_records")
+        await db.commit()
+    await _overwrite_the_classification(db_path)
+
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        await revert_abandoned_amendment(
+            db_path, ROUND_ID, SessionType.FEATURE_RACE, _bot(db_path)
+        )
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT penalty_type, justification FROM appeal_records"
+        )
+        row = await cursor.fetchone()
+    assert row is not None, "the appeal record was lost by the revert"
+    assert row["penalty_type"] == "DSQ"
+    assert row["justification"] == "Upheld"

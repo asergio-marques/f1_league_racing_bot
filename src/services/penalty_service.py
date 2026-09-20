@@ -489,7 +489,7 @@ async def apply_penalties(
 
 
 async def load_staged_from_records(
-    db_path: str, round_id: int
+    db_path: str, round_id: int, *, session_type: SessionType | None = None
 ) -> tuple[list[StagedPenalty], list[StagedPenalty], list["StagedPardon"]]:
     """Rebuild a round's decided reports, appeals and pardons as staged entries.
 
@@ -511,6 +511,10 @@ async def load_staged_from_records(
     and sanction accounts for it — matched once each, so two identical penalties are not both
     swallowed by one appeal.
 
+    *session_type* narrows the read to one session, which is what an amendment wants: it replays
+    one session, and re-applying a report belonging to another would add to penalty columns that
+    already hold it — the rows of an unamended session were never re-inserted at zero.
+
     Returned in the order the records were written, so a manager reads them as they were decided.
     """
     from services.penalty_wizard import StagedPardon
@@ -519,6 +523,8 @@ async def load_staged_from_records(
     appeals: list[StagedPenalty] = []
     pardons: list[StagedPardon] = []
 
+    scope = "" if session_type is None else " AND sr.session_type = ?"
+    params: list = [round_id] if session_type is None else [round_id, session_type.value]
     async with get_connection(db_path) as db:
         rows_of: dict[str, list[dict]] = {"penalty_records": [], "appeal_records": []}
         for table in ("penalty_records", "appeal_records"):
@@ -535,10 +541,10 @@ async def load_staged_from_records(
                     FROM {table} v
                     JOIN {result_table} r ON r.id = v.{fk_col}
                     JOIN session_results sr ON sr.id = r.session_result_id
-                    WHERE sr.round_id = ?
+                    WHERE sr.round_id = ?{scope}
                     ORDER BY v.id
                     """,  # noqa: S608 — names come from the two tuples above
-                    (round_id,),
+                    params,
                 )
                 rows_of[table].extend(dict(row) for row in await cursor.fetchall())
 

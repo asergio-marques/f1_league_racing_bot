@@ -147,12 +147,12 @@ async def _delete_posting(
         for message_id in message_ids:
             try:
                 message = await channel.fetch_message(message_id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
                 log.warning("_delete_posting: could not fetch %s %s: %s", label, message_id, exc)
                 continue
             try:
                 await message.delete()
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
                 log.warning("_delete_posting: could not delete %s %s: %s", label, message_id, exc)
         return
     await _delete_with_continuations(channel, anchor_msg_id, label=label)
@@ -182,7 +182,7 @@ async def _delete_with_continuations(
     """
     try:
         anchor = await channel.fetch_message(anchor_msg_id)
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+    except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
         log.warning("_delete_with_continuations: could not fetch %s %s: %s", label, anchor_msg_id, exc)
         return
 
@@ -202,12 +202,12 @@ async def _delete_with_continuations(
     for msg in continuations:
         try:
             await msg.delete()
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+        except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
             log.warning("_delete_with_continuations: could not delete continuation %s: %s", msg.id, exc)
 
     try:
         await anchor.delete()
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+    except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
         log.warning("_delete_with_continuations: could not delete %s %s: %s", label, anchor_msg_id, exc)
 
 
@@ -781,7 +781,17 @@ async def post_standings(
                 await existing_msg.edit(content=content)
                 sent_msg = existing_msg
             else:
-                await existing_msg.delete()
+                # The whole posting, not its anchor alone (#345): a three-chunk table deleted by
+                # its first message left two-thirds of a superseded standings table below the
+                # current one, and the row was then overwritten so nothing could reach them.
+                await _delete_posting(
+                    standings_channel,
+                    existing_msg_id,
+                    await _get_standings_message_ids(
+                        db_path, division_id, round_id, STANDINGS_DRIVERS
+                    ),
+                    label="standings message",
+                )
         except (discord.NotFound, discord.HTTPException):
             sent_msg = None
 
@@ -2242,6 +2252,7 @@ async def replay_division_channels(
     *,
     bot=None,
     verdict_state_factory=None,
+    attendance_step=None,
 ) -> list[str]:
     """Rebuild everything a division's channels show, in the order a league reads them.
 
@@ -2261,8 +2272,10 @@ async def replay_division_channels(
 
     **The attendance sheet is not a sequence.** A division keeps one live sheet in one slot, so
     it is reposted once, against the round the running totals now stand at — which is the
-    latest round, not the amended one. The caller does that, this function does not touch it;
-    it is named here so the order is readable in one place.
+    latest round, not the amended one. The caller supplies it as *attendance_step*, an awaitable
+    returning its faults, and it runs here — between the standings and the verdicts — so that the
+    five stages actually happen in the order the specification states rather than merely being
+    named in it.
 
     Returns the faults met across every stage, merged, as lines a league can read.
     """
@@ -2276,6 +2289,10 @@ async def replay_division_channels(
             "the division's results channel could not be reached, so its results were "
             "not reposted"
         )
+    elif results_status not in ("ok", "no_rounds"):
+        # Neither reposted nor an empty division: say so, rather than let an unrecognised
+        # status read as success (#345).
+        faults.append(f"the division's results were not reposted ({results_status})")
 
     standings_status = await repost_standings_for_division(
         db_path, division_id, guild, bot=bot
@@ -2285,6 +2302,14 @@ async def replay_division_channels(
             "the division's standings channel could not be reached, so its standings were "
             "not reposted"
         )
+    elif standings_status not in ("ok", "no_rounds"):
+        faults.append(f"the division's standings were not reposted ({standings_status})")
+
+    # **The attendance sheet goes between the standings and the verdicts**, which is the order
+    # the specification states and the order a league reads them: a sanction's own verdict has to
+    # follow the sheet that warranted it, not precede the report verdicts of later rounds (#345).
+    if attendance_step is not None:
+        faults.extend(await attendance_step())
 
     if bot is not None and verdict_state_factory is not None:
         from services.verdict_announcement_service import republish_verdicts_from_round

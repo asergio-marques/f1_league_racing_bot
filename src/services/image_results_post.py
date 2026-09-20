@@ -20,6 +20,8 @@ alternative output beside the text, never a replacement for it (Constitution XIV
 """
 from __future__ import annotations
 
+import json as _json
+
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -470,8 +472,12 @@ async def try_post(
 
     async with get_connection(bot.db_path) as db:
         await db.execute(
-            "UPDATE session_results SET results_message_id = ? WHERE id = ?",
-            (message.id, session_result.id),
+            # The chunk list is written with the id, not left behind (#345). A graphic is one
+            # message; a stale list from a previous *textual* posting would otherwise claim this
+            # one occupies messages belonging to a posting already destroyed.
+            "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
+            "WHERE id = ?",
+            (message.id, _json.dumps([message.id]), session_result.id),
         )
         await db.commit()
 

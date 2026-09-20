@@ -440,20 +440,24 @@ async def test_the_points_are_re_applied_from_the_configuration(tmp_path):
     assert args[3] == "Standard"
 
 
-async def test_stage_one_posts_the_corrected_round_as_provisional(tmp_path):
-    """Writing the classification is stage **one of three**, not the whole amendment (#345).
+async def test_stage_one_publishes_nothing(tmp_path):
+    """**It records; it does not post** (#345).
 
-    The round's reports and appeals have not been reviewed yet, so what goes up here is the
-    corrected classification carrying the sanctions of the round being replaced — provisional
-    in exactly the sense a first submission is.
+    Posting between the stages was wrong three ways. The reports and appeals were not yet
+    reviewed, so the table carried the sanctions — and the post-race DSQ marks — of the round
+    being replaced. `repost_round_results` has no deletion of its own, so the posting *added* a
+    message and orphaned the original Final Results above it, with its id overwritten and no
+    path left that could remove it. And an amendment reverted before it completed left that
+    provisional posting standing.
+
+    So the league keeps reading the round it raced until the amendment is actually finished.
     """
     db_path = await _make_db(tmp_path, name="amend_repost")
 
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
-    stubs["repost"].assert_awaited_once()
-    assert stubs["repost"].await_args.args[1] == ROUND_ID
-    assert stubs["repost"].await_args.kwargs["label"] == "Provisional Results"
+    stubs["repost"].assert_not_awaited()
+    stubs["replay"].assert_not_awaited()
 
 
 async def test_stage_one_does_not_rebuild_the_division(tmp_path):
@@ -501,10 +505,12 @@ async def test_the_amendment_is_logged(tmp_path):
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
     logged = str(stubs["bot"].output_router.post_log.await_args.args[0])
-    assert "RESULT_AMENDED" in logged
+    assert "AMEND_STAGE_1 | Recorded" in logged
     assert f"<@{AMENDER}>" in logged
     assert "round: 3" in logged
     assert "FEATURE_RACE" in logged
+    # Says where it has reached, not that it succeeded — nothing is published yet (#345).
+    assert "Nothing is published until" in logged
 
 
 # ---------------------------------------------------------------------------
@@ -524,97 +530,33 @@ def _amend_log(stubs) -> str:
     )
 
 
-async def test_an_amendment_that_could_not_repost_is_logged_as_incomplete(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_incomplete")
+async def test_stage_one_does_not_claim_the_amendment_succeeded(tmp_path):
+    """`RESULT_AMENDED` belongs to the final stage.
 
-    stubs = await _amend(db_path, [_race_row(101, 1)], repost_faults=[AMEND_FAULT])
-
-    logged = _amend_log(stubs)
-    assert "RESULT_AMENDED | Incomplete" in logged
-    assert AMEND_FAULT in logged
-    assert "/results rounds sync" in logged
-
-
-async def test_the_hint_names_the_amendment_where_the_season_is_pending_completion(tmp_path):
-    """Both sync commands are refused once every division is done (issue #224), so naming
-    them would send a manager to a door that will not open.
-
-    `/round results amend` is the one repost still available there — and, being the only
-    thing permitted that reposts at all, the only thing that can have failed. Re-running it
-    replaces the round's own results *and* every later round's standings, so it recovers the
-    whole of what was lost.
+    Reporting success here would tell a manager the round was amended when its reports and
+    appeals are still unreviewed and nothing has been published.
     """
-    db_path = await _make_db(tmp_path, name="amend_pending_hint")
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE seasons SET stage = 'PENDING_COMPLETION' WHERE id = ?", (SEASON_ID,)
-        )
-        await db.commit()
-
-    stubs = await _amend(db_path, [_race_row(101, 1)], repost_faults=[AMEND_FAULT])
-
-    logged = _amend_log(stubs)
-    assert "RESULT_AMENDED | Incomplete" in logged
-    assert "/round results amend division_name:Pro" in logged
-    assert "/results rounds sync" not in logged
-    assert "/results standings sync" not in logged
-
-
-async def test_the_hint_names_the_sync_commands_while_the_season_is_ongoing(tmp_path):
-    """The counterpart, so the Pending-completion branch cannot become the only answer."""
-    db_path = await _make_db(tmp_path, name="amend_ongoing_hint")
-
-    stubs = await _amend(db_path, [_race_row(101, 1)], repost_faults=[AMEND_FAULT])
-
-    logged = _amend_log(stubs)
-    assert "/results rounds sync division:Pro" in logged
-    assert "/results standings sync division:Pro" in logged
-    assert "/round results amend" not in logged
-
-
-async def test_an_amendment_that_posted_everything_is_still_a_success(tmp_path):
-    """The counterpart, so `| Incomplete` cannot become the answer to everything."""
     db_path = await _make_db(tmp_path, name="amend_complete")
 
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
     logged = _amend_log(stubs)
-    assert "RESULT_AMENDED | Success" in logged
-    assert "sync" not in logged
+    assert "RESULT_AMENDED" not in logged
+    assert "AMEND_STAGE_1" in logged
 
 
-async def test_an_amendment_with_no_guild_says_it_was_not_reposted(tmp_path):
-    """The fallback recomputes the championship but posts none of it.
+async def test_the_championship_is_recalculated_even_with_no_guild(tmp_path):
+    """The database has to be right whether or not Discord can be reached.
 
-    Not the silent branch #237 describes \u2014 it is a deliberate fallback \u2014 but it reported
-    an unqualified success all the same, while everything a league can see went stale.
+    Stage one publishes nothing either way now, so the two branches differ only in the line the
+    league is left with — and the recalculation happens on both.
     """
     db_path = await _make_db(tmp_path, name="amend_no_guild")
 
     stubs = await _amend(db_path, [_race_row(101, 1)], bot=_bot(guild=False))
 
-    logged = _amend_log(stubs)
-    assert "RESULT_AMENDED | Incomplete" in logged
-    assert "not reposted" in logged
     stubs["cascade"].assert_awaited()
-
-
-# ---------------------------------------------------------------------------
-# Verdicts survive an amendment (#345)
-# ---------------------------------------------------------------------------
-#
-# `penalty_records` and `appeal_records` point at a driver's row in `race_session_results` or
-# `qualifying_session_results` without `ON DELETE CASCADE`, and `PRAGMA foreign_keys` is ON. The
-# amendment deletes those rows, so **every round that had reached a verdict was un-amendable** —
-# and since amendment is gated to FINAL rounds, which are exactly the rounds that went through
-# penalty review, that was the documented path rather than an edge case.
-#
-# The verdict follows its driver onto the new row. Deleting it instead would discard the audit of
-# why that driver lost places, and — because the post-race and appeal DSQ marks are drawn from
-# these two tables alone, never from the stored penalty columns — would silently blank the mark on
-# the republished table as well.
-
-
+    assert "RESULT_AMENDED" not in _amend_log(stubs)
 async def _verdict_rows(db_path, table: str, column: str = "race_result_id"):
     """Every row of *table*, as (id, the result row it points at), oldest first."""
     async with get_connection(db_path) as db:

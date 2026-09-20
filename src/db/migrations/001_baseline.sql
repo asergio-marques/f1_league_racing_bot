@@ -628,6 +628,11 @@ CREATE TABLE "round_amend_channels" (
     -- their own, so without this a manager who walks away leaves the round on "Provisional
     -- Results" for ever.
     expires_at   TEXT,
+    -- superseded_announcements: the verdict announcements standing in the channel when the
+    -- amendment's report stage was approved, as JSON (#345). That stage deletes the round's
+    -- verdict records and writes the approved set back, so the message ids of the announcements
+    -- to be taken down are gone by the time the final stage re-announces — noted here first.
+    superseded_announcements TEXT,
     UNIQUE (round_id, session_type)
 );
 

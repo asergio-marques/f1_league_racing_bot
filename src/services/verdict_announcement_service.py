@@ -1090,12 +1090,12 @@ async def republish_verdicts_from_round(
                     )
                     for row in await cursor.fetchall():
                         if not row["anchor"]:
-                            faults.append(
-                                f"the verdict for {_driver_label(row['driver_user_id'])} was "
-                                f"announced before the bot began recording its message, so "
-                                f"the superseded announcement is still standing and has to be "
-                                f"removed by hand"
-                            )
+                            # No fault. A record with no id here is usually one the amendment's
+                            # report stage has just rewritten — its predecessor's id was noted
+                            # before that happened and is taken down separately (#345). A
+                            # genuinely pre-column verdict is reported by that path instead, so
+                            # reporting it here as well would name it twice, and naming a
+                            # rewritten record at all was simply wrong.
                             continue
                         superseded.append(
                             (

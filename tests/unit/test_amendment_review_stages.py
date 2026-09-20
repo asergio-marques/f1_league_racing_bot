@@ -106,7 +106,7 @@ async def _run(db_path, channel=None):
     state = await run_amendment_review_stages(
         db_path, ROUND_ID, DIVISION_ID, channel, bot,
         round_number=3, division_name="Pro",
-        session_types_present=[SessionType.FEATURE_RACE],
+        session_type=SessionType.FEATURE_RACE,
     )
     return state, channel, bot
 

@@ -141,3 +141,54 @@ async def test_the_verdicts_are_skipped_without_a_state_factory():
     _, order = await _replay(state_factory=None)
 
     assert order == ["results", "standings"]
+
+
+async def test_the_attendance_sheet_lands_between_the_standings_and_the_verdicts():
+    """The order the specification states, and the order a league reads them (#345).
+
+    It used to run *after* this whole function, so a sanction's own verdict was announced after
+    the report and appeal verdicts of later rounds — out of sequence in the one channel where
+    sequence is the point.
+    """
+    order: list[str] = []
+
+    async def _attendance() -> list[str]:
+        order.append("attendance")
+        return []
+
+    async def _results(*_a, **_kw):
+        order.append("results")
+        return "ok"
+
+    async def _standings(*_a, **_kw):
+        order.append("standings")
+        return "ok"
+
+    async def _verdicts(*_a, **_kw):
+        order.append("verdicts")
+        return []
+
+    with patch(
+        "services.results_post_service.repost_results_for_division",
+        new=AsyncMock(side_effect=_results),
+    ), patch(
+        "services.results_post_service.repost_standings_for_division",
+        new=AsyncMock(side_effect=_standings),
+    ), patch(
+        "services.verdict_announcement_service.republish_verdicts_from_round",
+        new=AsyncMock(side_effect=_verdicts),
+    ):
+        await replay_division_channels(
+            "db.sqlite", DIVISION_ID, FROM_ROUND, MagicMock(),
+            bot=MagicMock(), verdict_state_factory=lambda r: MagicMock(round_id=r),
+            attendance_step=_attendance,
+        )
+
+    assert order == ["results", "standings", "attendance", "verdicts"]
+
+
+async def test_an_unrecognised_repost_status_is_reported():
+    """`no_rounds` is an empty division; anything else is a failure and must not read as success."""
+    faults, _ = await _replay(results="something_went_wrong")
+
+    assert any("were not reposted" in line for line in faults)
