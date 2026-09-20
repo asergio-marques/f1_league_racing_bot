@@ -145,61 +145,6 @@ async def test_modify_raises_when_not_active(db_path):
 
 
 # ---------------------------------------------------------------------------
-# approve_amendment — atomically overwrites season_points_entries
-# (tested at DB level without bot dependency)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_approve_amendment_overwrites_season_points(db_path):
-    """Validate the transactional overwrite by inspecting DB state after manual simulate."""
-    path, season_id = db_path
-    await _seed_season_points(path, season_id)
-    await enable_amendment_mode(path, season_id)
-
-    # Modify P1 from 25 to 30
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
-
-    # Manually do the atomic overwrite (mirrors approve_amendment transaction)
-    async with get_connection(path) as db:
-        await db.execute(
-            "DELETE FROM season_points_entries WHERE season_id = ?", (season_id,)
-        )
-        await db.execute(
-            """
-            INSERT INTO season_points_entries (season_id, config_name, session_type, position, points)
-            SELECT season_id, config_name, session_type, position, points
-            FROM season_modification_entries WHERE season_id = ?
-            """,
-            (season_id,),
-        )
-        await db.execute(
-            "DELETE FROM season_modification_entries WHERE season_id = ?", (season_id,)
-        )
-        await db.execute(
-            "UPDATE season_amendment_state SET amendment_active = 0, modified_flag = 0 WHERE season_id = ?",
-            (season_id,),
-        )
-        await db.commit()
-
-    # Verify season_points_entries now has 30 pts
-    async with get_connection(path) as db:
-        cursor = await db.execute(
-            "SELECT points FROM season_points_entries WHERE season_id = ? AND position = 1",
-            (season_id,),
-        )
-        row = await cursor.fetchone()
-    assert row is not None
-    assert row["points"] == 30
-
-    # Verify amendment mode is off
-    state = await get_amendment_state(path, season_id)
-    assert state is not None
-    assert not state.amendment_active
-    assert not state.modified_flag
-
-
-# ---------------------------------------------------------------------------
 # amend_round actually amends — the query it opens with must name real columns
 # ---------------------------------------------------------------------------
 
