@@ -1,6 +1,7 @@
 """results_post_service.py — Post and edit results/standings in Discord channels."""
 from __future__ import annotations
 
+import json
 import logging
 
 import discord
@@ -51,16 +52,79 @@ def _split_content(text: str) -> list[str]:
     return chunks or [text[:_MSG_MAX]]
 
 
-async def _send_chunked(channel: discord.TextChannel, content: str) -> discord.Message:
+async def _send_chunked(
+    channel: discord.TextChannel, content: str
+) -> list[discord.Message]:
     """Send *content* to *channel*, splitting into multiple messages if needed.
 
-    Returns the first (header) message so its ID can be persisted.
+    Returns **every** message sent, the anchor first, so that all of them can be recorded.
+
+    It used to return the anchor alone, and only the anchor was persisted; the rest were found
+    again by walking forward from it over bot-authored messages. That walk cannot tell this
+    posting's continuation from the next posting down, so it was wrong wherever two of the
+    bot's own postings sit together — which the amendment replay makes ordinary, posting a
+    replacement before destroying the original (#345). Recording what was sent removes the
+    guess entirely.
     """
     chunks = _split_content(content)
-    first_msg = await channel.send(chunks[0])
-    for chunk in chunks[1:]:
-        await channel.send(chunk)
-    return first_msg
+    return [await channel.send(chunk) for chunk in chunks]
+
+
+def _ids_json(messages: list[discord.Message]) -> str:
+    """The chunk list as it is stored: a JSON array of message ids, the anchor first."""
+    return json.dumps([m.id for m in messages])
+
+
+def _parse_ids(raw: str | None) -> list[int] | None:
+    """The stored chunk list as message ids, or None where nothing usable was recorded.
+
+    A malformed value is treated as nothing recorded rather than raising: the column is written
+    by this module alone, so a bad one means a bug elsewhere, and refusing to delete anything is
+    a great deal safer than deleting whatever a half-parsed list happened to yield.
+    """
+    if not raw:
+        return None
+    try:
+        ids = json.loads(raw)
+    except (TypeError, ValueError):
+        log.warning("_parse_ids: could not read a stored chunk list: %r", raw)
+        return None
+    if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+        log.warning("_parse_ids: stored chunk list was not a list of ids: %r", raw)
+        return None
+    return ids or None
+
+
+async def _delete_posting(
+    channel: discord.TextChannel,
+    anchor_msg_id: int,
+    message_ids: list[int] | None,
+    label: str = "message",
+) -> None:
+    """Delete a posting: exactly the messages it recorded, or the walk where it recorded none.
+
+    **The recorded list is the truth where there is one** (#345). It is written at send time, so
+    it names this posting's own messages and cannot reach a neighbour's — which matters because
+    the amendment replay posts a replacement directly beneath the original before destroying it,
+    and the two are both the bot's.
+
+    Where no list was recorded the posting predates the column, and
+    :func:`_delete_with_continuations` guesses the rest by adjacency, as it always did. That
+    path is wrong in exactly the case above; it survives only for rows nothing else can serve.
+    """
+    if message_ids:
+        for message_id in message_ids:
+            try:
+                message = await channel.fetch_message(message_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                log.warning("_delete_posting: could not fetch %s %s: %s", label, message_id, exc)
+                continue
+            try:
+                await message.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                log.warning("_delete_posting: could not delete %s %s: %s", label, message_id, exc)
+        return
+    await _delete_with_continuations(channel, anchor_msg_id, label=label)
 
 
 async def _delete_with_continuations(
@@ -70,11 +134,15 @@ async def _delete_with_continuations(
 ) -> None:
     """Delete the anchor message and any immediately-following bot continuation messages.
 
-    When a result/standings post exceeds 2000 chars it is split into multiple
-    consecutive messages via :func:`_send_chunked`.  Only the first message ID is
-    persisted; this helper deletes it *and* any subsequent messages in the same
-    channel that were authored by the same user (the bot), stopping as soon as it
-    encounters a message from someone else.
+    **The fallback, not the route.** Prefer :func:`_delete_posting`, which deletes the messages
+    a posting actually recorded. This one guesses them: it takes every message following the
+    anchor that the bot authored, stopping at someone else's. That cannot distinguish this
+    posting's continuation from the *next posting down*, so it is wrong wherever two of the
+    bot's own postings sit together — which the amendment replay makes ordinary, posting a
+    replacement before destroying the original (#345).
+
+    It survives for rows written before `results_message_ids` and its siblings existed, which
+    recorded an anchor and nothing else. Do not reach for it in new code.
 
     Args:
         channel:       The Discord text channel to operate on.
@@ -471,16 +539,17 @@ async def post_session_results(
         except Exception as exc:  # noqa: BLE001 — never block a posting on the image path
             log.error("results: image path failed for session %s: %s", session_result.id, exc)
 
-    msg = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
+    sent = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
 
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE session_results SET results_message_id = ? WHERE id = ?",
-            (msg.id, session_result.id),
+            "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
+            "WHERE id = ?",
+            (sent[0].id, _ids_json(sent), session_result.id),
         )
         await db.commit()
 
-    return msg.id
+    return sent[0].id
 
 
 # ---------------------------------------------------------------------------
@@ -677,15 +746,22 @@ async def post_standings(
         except (discord.NotFound, discord.HTTPException):
             sent_msg = None
 
+    sent_ids: str | None = None
     if sent_msg is None:
-        sent_msg = await _send_chunked(standings_channel, content)
+        sent = await _send_chunked(standings_channel, content)
+        sent_msg = sent[0]
+        sent_ids = _ids_json(sent)
+    else:
+        # Edited in place, so it is the one message it always was and occupies no others.
+        sent_ids = _ids_json([sent_msg])
 
     # Persist the message ID on the top-ranked driver snapshot. One message carries both
     # championships here, so the constructor column is left null — which is exactly what
     # distinguishes a textual posting from an image one when the next posting reads them.
     if driver_snapshots:
         await _set_standings_message_id(
-            db_path, division_id, round_id, sent_msg.id, STANDINGS_DRIVERS
+            db_path, division_id, round_id, sent_msg.id, STANDINGS_DRIVERS,
+            message_ids=sent_ids,
         )
 
 
@@ -710,8 +786,11 @@ async def _clear_standings_messages(
         if existing_id is None:
             continue
         if channel is not None:
-            await _delete_with_continuations(
-                channel, existing_id, label="standings message"
+            existing_ids = await _get_standings_message_ids(
+                db_path, division_id, round_id, championship
+            )
+            await _delete_posting(
+                channel, existing_id, existing_ids, label="standings message"
             )
         await _set_standings_message_id(
             db_path, division_id, round_id, None, championship
@@ -769,16 +848,21 @@ async def _post_standings_sections(
             db_path, division_id, round_id, championship
         )
 
-        sent_msg = await _send_chunked(standings_channel, content)
+        previous_ids = await _get_standings_message_ids(
+            db_path, division_id, round_id, championship
+        )
+
+        sent = await _send_chunked(standings_channel, content)
 
         if previous_id is not None:
-            await _delete_with_continuations(
-                standings_channel, previous_id, label="standings message"
+            await _delete_posting(
+                standings_channel, previous_id, previous_ids, label="standings message"
             )
 
         if driver_snapshots:
             await _set_standings_message_id(
-                db_path, division_id, round_id, sent_msg.id, championship
+                db_path, division_id, round_id, sent[0].id, championship,
+                message_ids=_ids_json(sent),
             )
 
 
@@ -787,6 +871,12 @@ async def _post_standings_sections(
 _STANDINGS_ID_COLUMNS = {
     STANDINGS_DRIVERS: "standings_message_id",
     STANDINGS_CONSTRUCTORS: "constructor_standings_message_id",
+}
+
+#: The same two, for the chunk list each posting occupies (#345).
+_STANDINGS_IDS_COLUMNS = {
+    STANDINGS_DRIVERS: "standings_message_ids",
+    STANDINGS_CONSTRUCTORS: "constructor_standings_message_ids",
 }
 
 
@@ -818,24 +908,61 @@ async def _get_standings_message_id(
     return row["message_id"] if row and row["message_id"] else None
 
 
+async def _get_standings_message_ids(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    championship: str = STANDINGS_DRIVERS,
+) -> list[int] | None:
+    """Return every message id *championship*'s posting occupies, or None where none was recorded.
+
+    None is not an empty list. A posting written before the chunk list existed recorded only its
+    anchor, and has to fall back to the adjacency walk; a posting that recorded ``[]`` would be
+    claiming to occupy no messages at all. Keeping the two apart is what stops the fallback
+    being reached by accident.
+    """
+    column = _STANDINGS_IDS_COLUMNS[championship]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"""
+            SELECT {column} AS message_ids
+            FROM driver_standings_snapshots
+            WHERE division_id = ? AND round_id = ?
+            ORDER BY standing_position ASC
+            LIMIT 1
+            """,  # noqa: S608 — column comes from the constant map above
+            (division_id, round_id),
+        )
+        row = await cursor.fetchone()
+    return _parse_ids(row["message_ids"] if row else None)
+
+
 async def _set_standings_message_id(
     db_path: str,
     division_id: int,
     round_id: int,
     message_id: int | None,
     championship: str = STANDINGS_DRIVERS,
+    *,
+    message_ids: str | None = None,
 ) -> None:
     """Persist *message_id* for *championship* on the top-ranked driver's row.
 
     Written on every posting, textual or graphic, so the two flows never disagree about
     which message is which. The textual flow leaves the constructor column null.
+
+    *message_ids* is the JSON chunk list of the same posting where the caller has one, so that
+    deleting it later removes every message it occupies rather than guessing at the rest
+    (#345). Clearing an id clears the list with it: a stale list outliving the message it
+    described would send a delete at somebody else's posting.
     """
     column = _STANDINGS_ID_COLUMNS[championship]
+    list_column = _STANDINGS_IDS_COLUMNS[championship]
     async with get_connection(db_path) as db:
         await db.execute(
             f"""
             UPDATE driver_standings_snapshots
-            SET {column} = ?
+            SET {column} = ?, {list_column} = ?
             WHERE round_id = ? AND division_id = ?
               AND driver_user_id = (
                   SELECT driver_user_id FROM driver_standings_snapshots
@@ -843,7 +970,7 @@ async def _set_standings_message_id(
                   ORDER BY standing_position ASC LIMIT 1
               )
             """,
-            (message_id, round_id, division_id, round_id, division_id),
+            (message_id, message_ids, round_id, division_id, round_id, division_id),
         )
         await db.commit()
 
@@ -1545,7 +1672,8 @@ async def repost_results_for_division(
             cursor = await db.execute(
                 """
                 SELECT id, round_id, division_id, session_type, status, config_name,
-                       submitted_by, submitted_at, results_message_id
+                       submitted_by, submitted_at, results_message_id,
+                       results_message_ids
                 FROM session_results
                 WHERE round_id = ? AND status = 'ACTIVE'
                 ORDER BY id
@@ -1560,12 +1688,14 @@ async def repost_results_for_division(
             # Delete the existing Discord message(s) for this session (if any)
             old_msg_id: int | None = sr_row["results_message_id"]
             if old_msg_id is not None:
-                await _delete_with_continuations(
-                    rc, old_msg_id, label="results message"
+                await _delete_posting(
+                    rc, old_msg_id, _parse_ids(sr_row["results_message_ids"]),
+                    label="results message",
                 )
                 async with get_connection(db_path) as db:
                     await db.execute(
-                        "UPDATE session_results SET results_message_id = NULL WHERE id = ?",
+                        "UPDATE session_results SET results_message_id = NULL, "
+                        "results_message_ids = NULL WHERE id = ?",
                         (sr_row["id"],),
                     )
                     await db.commit()
@@ -1765,7 +1895,8 @@ async def delete_and_repost_final_results(
                 cursor = await db.execute(
                     """
                     SELECT id, round_id, division_id, session_type, status,
-                           config_name, submitted_by, submitted_at, results_message_id
+                           config_name, submitted_by, submitted_at, results_message_id,
+                           results_message_ids
                     FROM session_results
                     WHERE round_id = ? AND status = 'ACTIVE'
                     ORDER BY id
@@ -1782,14 +1913,16 @@ async def delete_and_repost_final_results(
                 # Delete old interim Discord message
                 old_msg_id: int | None = sr_row["results_message_id"]
                 if old_msg_id is not None:
-                    await _delete_with_continuations(
-                        rc, old_msg_id, label="interim results message"
+                    await _delete_posting(
+                        rc, old_msg_id, _parse_ids(sr_row["results_message_ids"]),
+                        label="interim results message",
                     )
 
                     # Clear stale message_id so post_session_results inserts a fresh one
                     async with get_connection(db_path) as db:
                         await db.execute(
-                            "UPDATE session_results SET results_message_id = NULL WHERE id = ?",
+                            "UPDATE session_results SET results_message_id = NULL, "
+                            "results_message_ids = NULL WHERE id = ?",
                             (sr_row["id"],),
                         )
                         await db.commit()
