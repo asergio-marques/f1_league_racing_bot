@@ -156,3 +156,17 @@ async def test_it_returns_the_rounds_it_touched_in_order(tmp_path):
     assert await cascade_attendance_from_round(
         db_file, round_ids[0], division_id
     ) == round_ids
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_recompute_mode_is_refused(tmp_path):
+    """The three callers ask for one of three named amounts of rebuilding, and a fourth
+    spelling would otherwise rebuild nothing and look like it had worked."""
+    db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
+
+    with pytest.raises(ValueError, match="unknown recompute mode"):
+        await attendance_service._recalculate_forward(
+            db_file, round_ids[0], division_id, recompute="everything"
+        )
+
+    assert await _awarded(db_file, round_ids[0]) is None
