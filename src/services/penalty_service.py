@@ -587,12 +587,25 @@ async def load_staged_from_records(
 
 
 def _record_shape(row) -> tuple:
-    """What makes two verdict records the same sanction, for pairing an appeal to its penalty."""
+    """What makes two verdict records the same sanction, for pairing an appeal to its penalty.
+
+    **The text is part of it.** ``finalize_appeals_review`` writes the ``appeal_records`` row and
+    the ``penalty_records`` row from the *same* ``StagedPenalty``, copying the description and
+    the justification into both, so a genuine pair always agrees on all six fields.
+
+    Matching on the driver, session, type and seconds alone was enough to stop an appeal being
+    counted twice, but it also claimed a *different* report of the same shape: a driver given a
+    5 s report for one incident and a separate 5 s appeal for another, in one session, lost the
+    report from the review stage entirely — the manager could neither see nor edit it. Including
+    the text distinguishes the two, and costs nothing, because a real pair shares it.
+    """
     return (
         row["driver_user_id"],
         row["session_type"],
         row["penalty_type"],
         row["time_seconds"],
+        row["description"] or "",
+        row["justification"] or "",
     )
 
 

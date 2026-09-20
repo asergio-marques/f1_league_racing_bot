@@ -96,7 +96,13 @@ async def _penalty(db_path, result_id, *, column="race_result_id", penalty_type=
 
 
 async def _appeal(db_path, result_id, *, column="race_result_id", penalty_type="TIME",
-                  seconds=5, description="Appeal", justification="Upheld"):
+                  seconds=5, description="Contact", justification="At fault"):
+    """Defaults match `_penalty`'s, because a real pair shares them.
+
+    `finalize_appeals_review` copies one `StagedPenalty` into both tables, so the description
+    and justification of a genuine penalty/appeal pair are identical. A helper that gave them
+    different text would be testing a state the bot cannot produce.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"INSERT INTO appeal_records ({column}, status, penalty_type, time_seconds, "
@@ -302,3 +308,33 @@ async def test_a_report_of_a_different_shape_is_never_claimed_by_an_appeal(tmp_p
 
     assert [(r.driver_user_id, r.penalty_type) for r in reports] == [(102, "DSQ")]
     assert [(a.driver_user_id, a.penalty_type) for a in appeals] == [(101, "TIME")]
+
+
+async def test_a_report_and_an_appeal_of_the_same_size_for_different_incidents_both_survive(
+    tmp_path,
+):
+    """Shape must include the text, or a genuine report is lost (#345, found in review).
+
+    A driver given a 5 s report for one incident and, separately, a 5 s appeal for another in
+    the same session produces two `penalty_records` rows and one `appeal_record`. Pairing on the
+    driver, session, type and seconds alone had the appeal claim the *report*, which then
+    vanished from the review stage — the manager could neither see it nor edit it, and approving
+    wrote it out of the round's record.
+
+    The pair written by `finalize_appeals_review` always agrees on the text too, both rows being
+    copied from one `StagedPenalty`, so including it separates these without breaking that.
+    """
+    db_path, ids = await _seed(tmp_path, "hydrate_same_size")
+    await _penalty(
+        db_path, ids["race_101"], seconds=5,
+        description="Contact at turn one", justification="Wholly at fault",
+    )
+    await _appeal(
+        db_path, ids["race_101"], seconds=5,
+        description="Track limits, lap 12", justification="Appeal upheld",
+    )
+
+    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+
+    assert [r.description for r in reports] == ["Contact at turn one"]
+    assert [a.description for a in appeals] == ["Track limits, lap 12"]
