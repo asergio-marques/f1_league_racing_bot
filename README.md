@@ -1007,7 +1007,7 @@ Name the driver by any of their accounts: `old_user` where it is still in the se
 
 > **Refused, changing nothing, when:** `new_user` is already the driver's current account; it is a past account of another driver — an account belongs to one driver; both sides hold a seat or a signup in the live season; both took part in the same division of the same season — by a confirmed seat or by results — which would put one person in one season's standings twice (the same division name in different seasons is fine); either side is a test-mode driver; or either side has a signup in progress (collecting, in review, or in correction) — finish it, approve or reject it, or have it withdrawn first. An account with no driver of its own but leftover results here is held to the same division rule.
 
-> **A past account cannot sign up.** The Sign Up button refuses it and names the driver's current account. Run this command first if the driver wants to use it again.
+> **A past account cannot sign up.** The Sign Up button refuses it and names the driver's current account. You cannot fix that mid-window — this command is refused while signups are open — so have the driver sign up on the account the bot names, and re-key them once the window closes and you are placing its drivers.
 
 > **The portrait of the replaced account is discarded.** A portrait is the picture of the Discord account itself, so the one taken for the replaced account goes, and the new current account's own is fetched before the next graphic is drawn. A portrait you placed in the driver directory yourself is never touched.
 
