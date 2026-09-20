@@ -262,3 +262,53 @@ async def test_a_round_with_no_deadline_is_not_swept(tmp_path):
     later = datetime.now(timezone.utc) + timedelta(days=1)
 
     assert await sweep_expired_amendments(_bot(db_path), now=later) == 0
+
+
+# ── The sweep is actually armed ────────────────────────────────────────────
+
+
+def test_the_sweep_is_scheduled_as_a_standing_job():
+    """**A timeout nothing invokes is a promise the documentation would be lying about.**
+
+    The revert machinery was written and tested before anything called it, so the half-hour
+    deadline would never have fired and the README would have described behaviour the bot did
+    not have. Pinned here rather than left to the startup tests, which do not look at what is
+    armed.
+    """
+    import inspect
+
+    from services import scheduler_service
+
+    source = inspect.getsource(scheduler_service)
+    assert "def schedule_amendment_sweep" in source
+    assert "IntervalTrigger" in source
+
+    import bot as bot_module
+
+    startup = inspect.getsource(bot_module)
+    assert "schedule_amendment_sweep()" in startup
+
+
+def test_the_sweep_runs_often_enough_to_honour_the_deadline():
+    """Sweeping less often than the deadline would let a lapsed amendment sit past it.
+
+    Not exactly at the deadline — a round nobody is working on can wait a few minutes — but the
+    interval has to be the smaller of the two or the timeout means nothing.
+    """
+    from services.scheduler_service import AMENDMENT_SWEEP_MINUTES
+
+    assert AMENDMENT_SWEEP_MINUTES * 60 < AMENDMENT_STAGE_TIMEOUT_SECONDS
+
+
+def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
+    """A job that re-arms itself from inside its body stops for good the first time it raises.
+
+    The same reasoning `schedule_portrait_refresh` gives for using a cron trigger.
+    """
+    import inspect
+
+    from services import scheduler_service
+
+    job = inspect.getsource(scheduler_service._amendment_sweep_job)
+    assert "add_job" not in job
+    assert "except Exception" in job

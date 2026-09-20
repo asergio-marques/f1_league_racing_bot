@@ -199,6 +199,17 @@ async def main() -> None:
 
         bot.scheduler_service.register_portrait_refresh_callback(_portrait_refresh_cb)
 
+        # The standing sweep that undoes an amendment nobody carried through (#345). Armed
+        # unconditionally rather than behind a setting: the amendment's first stage commits, so
+        # a league running the results module at all can leave a round half-amended, and the
+        # sweep is what makes that recoverable without anybody noticing it happened.
+        async def _amendment_sweep_cb() -> None:
+            from services.result_submission_service import sweep_expired_amendments
+            await sweep_expired_amendments(bot)
+
+        bot.scheduler_service.register_amendment_sweep_callback(_amendment_sweep_cb)
+        bot.scheduler_service.schedule_amendment_sweep()
+
         try:
             await _recover_portrait_refresh_job(bot)
         except Exception:

@@ -26,6 +26,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from db.database import get_connection
 from models.round import Round, RoundFormat
@@ -102,6 +103,16 @@ async def _signup_close_timer_job() -> None:
 #: One league, so one daily refresh: the job is named by what it does, not by a server.
 PORTRAIT_REFRESH_JOB_ID = "pfp_daily"
 
+#: The standing sweep that undoes an amendment nobody approved (#345).
+AMENDMENT_SWEEP_JOB_ID = "amend_sweep"
+
+#: How often it looks. An amendment lapses after
+#: ``result_submission_service.AMENDMENT_STAGE_TIMEOUT_SECONDS``; sweeping every five minutes
+#: means a lapsed one is undone within five minutes of its deadline rather than at the deadline
+#: exactly, which is close enough for a round nobody is working on and cheap — the sweep reads
+#: one indexed table and almost always finds nothing.
+AMENDMENT_SWEEP_MINUTES = 5
+
 
 async def _portrait_refresh_job() -> None:
     """Module-level APScheduler callable for the daily portrait refresh — picklable for
@@ -114,6 +125,26 @@ async def _portrait_refresh_job() -> None:
         log.warning("_portrait_refresh_job: no callback registered — skipping")
         return
     await cb()
+
+
+async def _amendment_sweep_job() -> None:
+    """Module-level APScheduler callable for the amendment sweep — picklable for the job store.
+
+    Undoes any amendment whose report and appeal stages went unapproved past their deadline: the
+    first stage commits, so one left hanging would otherwise leave a round scored from the
+    corrected classification and published from the old one indefinitely (#345).
+    """
+    if _GLOBAL_SERVICE is None:
+        log.warning("_amendment_sweep_job fired but _GLOBAL_SERVICE is None — skipping")
+        return
+    cb = _GLOBAL_SERVICE._amendment_sweep_callback
+    if cb is None:
+        log.warning("_amendment_sweep_job: no callback registered — skipping")
+        return
+    try:
+        await cb()
+    except Exception:  # noqa: BLE001 — a standing job must outlive one bad run
+        log.exception("_amendment_sweep_job: sweep failed")
 
 
 async def _weather_phase_job(phase_num: int, round_id: int) -> None:
@@ -310,6 +341,8 @@ class SchedulerService:
         # Signup auto-close callback injected after bot starts
         self._signup_close_callback: "Callable | None" = None
         self._portrait_refresh_callback: "Callable | None" = None
+        # Amendment sweep callback injected after bot starts (#345)
+        self._amendment_sweep_callback: "Callable | None" = None
         # Mystery notice callback injected after bot starts
         self._mystery_notice_callback: "Callable | None" = None
         # Post-race forecast cleanup callback injected after bot starts
@@ -857,6 +890,35 @@ class SchedulerService:
             name="Daily driver portrait refresh",
         )
         log.info("Scheduled %s at %s UTC daily", job_id, time_of_day)
+
+    def register_amendment_sweep_callback(self, callback: Callable) -> None:
+        """Register the async callable the standing amendment sweep invokes (#345).
+
+        Injected from `bot.py` after startup, as the other callbacks here are, so the scheduler
+        keeps no reference to the bot and this module stays importable on its own.
+        """
+        self._amendment_sweep_callback = callback
+
+    def schedule_amendment_sweep(self) -> None:
+        """Arm the standing sweep that undoes an amendment nobody carried through (#345).
+
+        An ``IntervalTrigger`` for the reason ``schedule_portrait_refresh`` gives for its cron
+        one: this is a standing instruction rather than an event, and re-arming it from inside
+        its own callback would put the survival of the schedule at the mercy of the job body —
+        a sweep that raised would silently be the last.
+
+        ``replace_existing=True`` so a restart re-arms rather than duplicates it.
+        """
+        self._scheduler.add_job(
+            _amendment_sweep_job,
+            trigger=IntervalTrigger(minutes=AMENDMENT_SWEEP_MINUTES),
+            id=AMENDMENT_SWEEP_JOB_ID,
+            replace_existing=True,
+            name="Revert abandoned round amendments",
+        )
+        log.info(
+            "Scheduled %s every %d minutes", AMENDMENT_SWEEP_JOB_ID, AMENDMENT_SWEEP_MINUTES
+        )
 
     def cancel_portrait_refresh(self) -> None:
         """Remove the daily portrait refresh if it exists."""
