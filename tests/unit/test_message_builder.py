@@ -306,6 +306,10 @@ class TestAForecastNamesNoHorizon:
     def test_the_final_forecast_promises_nothing_further(self):
         assert "will follow" not in _phase3()
 
-    def test_phase_2_says_the_final_forecast_is_the_more_accurate(self):
-        """The qualitative statement that replaced the timing (decided 2026-09-20)."""
-        assert "more accurate" in _phase2()
+    def test_phase_2_says_the_forecast_to_come_is_the_accurate_one(self):
+        """The qualitative statement that replaced the timing (decided 2026-09-20).
+
+        Accuracy is the whole of what phase 2 says about the forecast following it; the
+        wording was shortened to one line on 2026-09-20.
+        """
+        assert "accurate" in _phase2()

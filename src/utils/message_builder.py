@@ -100,8 +100,8 @@ def phase2_message(
     """Phase 2 forecast: session-level rain/mixed/sunny slot assignment.
 
     Titled by ``PHASE_DESCRIPTIONS[2]`` and naming no horizon of its own — see that constant
-    for why. Its closing line still points at the final forecast, saying that it is nearer the
-    round and more accurate rather than naming the hour it arrives.
+    for why. Its closing line still points at the final forecast, calling it accurate and
+    later rather than naming the hour it arrives.
 
     Args:
         session_slots: list of (session_type_label, slot_type) e.g. ('Qualifying', 'rain')
@@ -119,10 +119,7 @@ def phase2_message(
             f"  {icon} **{session_label}**: "
             f"{format_session_weather_type(slot)} conditions expected"
         )
-    lines.append(
-        "\nA full slot-by-slot forecast will follow closer to the round, and will be more "
-        "accurate than this one."
-    )
+    lines.append("\nAn accurate forecast will follow later.")
     return "\n".join(lines)
 
 
