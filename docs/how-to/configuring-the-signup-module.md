@@ -257,7 +257,9 @@ Closing deletes the Sign Up button, posts a **Signups are now closed** notice in
 /signup unassigned export
 ```
 
-Both read the season's signups: every driver still to be settled — Unassigned, awaiting approval, or correcting their signup — with what they entered this season. `list` shows the queue privately, to you alone: seed number, name, platform, driver type, lap total, preferred teams and teammate, and any notes. `export` sends a CSV you can open in a spreadsheet, also privately — one row per driver, one column per time slot marked `X` where they said they were free, plus their three team preferences and platform details. The CSV is the one to use for anything more than a glance, because availability across a dozen slots is unreadable as text.
+Both read the season's signups: every driver still to be settled — Unassigned, awaiting approval, or correcting their signup — with what they entered this season. `list` shows the queue privately, to you alone: seed number, name, platform, driver type, lap total, availability, preferred teams and teammate, and any notes. `export` sends a CSV you can open in a spreadsheet, also privately — one row per driver, one column per time slot marked `X` where they said they were free, plus their three team preferences and platform details.
+
+Use `list` for a glance — checking one driver, or sanity-checking a division you have just filled — and the CSV for a full pass over the field. `list` names every slot a driver picked, so it answers "can this driver make Tuesday?" on its own; the CSV lays the whole field out as a grid, which is what you want when you are building divisions around the times rather than asking after one person.
 
 > **The CSV is not quite everything `list` shows.** The preferred teammate and the notes are missing from it. If either matters to how you place people, read them off `list` — the export will not carry them.
 

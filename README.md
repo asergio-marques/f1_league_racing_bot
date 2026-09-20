@@ -1355,6 +1355,8 @@ No parameters. Displays every unsettled signup in an ephemeral reply. Drivers in
 
 After them come the drivers still in review — awaiting approval, or correcting an answer — marked with that state instead of a seed. They are listed because placements cannot be confirmed while any of them stands.
 
+Each driver's block carries their platform, driver type, lap total, **availability**, preferred teams, preferred teammate and any notes. Availability names every slot the driver picked, in your own chronological slot order — none are elided, however many they ticked. A driver who picked none shows an em dash, and an answer naming a slot you have since removed reads `Unknown slot`.
+
 #### `/signup unassigned export` — Export Unassigned drivers to CSV
 *Access: League manager*
 

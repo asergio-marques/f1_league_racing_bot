@@ -55,6 +55,7 @@ def _seeded(
     preferred_teams=("Alpha",),
     teammate: str | None = "George",
     notes: str | None = None,
+    availability=("Mon_19_00",),
 ):
     return {
         "seed": seed,
@@ -63,6 +64,7 @@ def _seeded(
         "platform": "Steam",
         "driver_type": "Full-Time Driver",
         "total_lap_fmt": "1:23.456",
+        "availability_slot_ids": list(availability),
         "preferred_teams": list(preferred_teams),
         "preferred_teammate": teammate,
         "notes": notes,
@@ -85,8 +87,19 @@ def _exportable(seed: int, name: str = "Lewis Hamilton", *, slots=(1,)):
     }
 
 
-def _slot(sequence: int, label: str):
-    return SimpleNamespace(slot_sequence_id=sequence, display_label=label)
+def _slot(sequence: int, label: str, slot_id: str | None = None):
+    """A configured slot.
+
+    ``slot_id`` is the durable identity a driver's availability is stored against;
+    ``slot_sequence_id`` is the display ordinal, recomputed on every read. The two are
+    given separately here precisely so a test can make them disagree — which is how
+    #126's rule is pinned.
+    """
+    return SimpleNamespace(
+        slot_sequence_id=sequence,
+        display_label=label,
+        slot_id=slot_id if slot_id is not None else f"Slot_{sequence}",
+    )
 
 
 def _make_cog(*, listed=None, exportable=None, slots=None) -> SignupCog:
@@ -100,7 +113,9 @@ def _make_cog(*, listed=None, exportable=None, slots=None) -> SignupCog:
     )
     bot.signup_module_service = MagicMock()
     bot.signup_module_service.get_slots = AsyncMock(
-        return_value=slots if slots is not None else [_slot(1, "Monday 19:00 UTC")]
+        return_value=slots
+        if slots is not None
+        else [_slot(1, "Monday 19:00 UTC", "Mon_19_00")]
     )
     cog = SignupCog.__new__(SignupCog)
     cog.bot = bot
@@ -187,7 +202,15 @@ async def test_a_driver_s_details_are_all_shown(tmp_path):
     await _list(_make_cog(listed=[_seeded(1)]), interaction)
 
     sent = _sent(interaction)
-    for detail in ("Lewis Hamilton", "Steam", "Full-Time Driver", "1:23.456", "Alpha", "George"):
+    for detail in (
+        "Lewis Hamilton",
+        "Steam",
+        "Full-Time Driver",
+        "1:23.456",
+        "Monday 19:00 UTC",
+        "Alpha",
+        "George",
+    ):
         assert detail in sent
 
 
@@ -218,6 +241,141 @@ async def test_a_driver_with_no_notes_gets_no_notes_line(tmp_path):
     await _list(_make_cog(listed=[_seeded(1, notes=None)]), interaction)
 
     assert "Notes:" not in _sent(interaction)
+
+
+# ---------------------------------------------------------------------------
+# Availability on the list (issue #184)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_driver_s_availability_is_shown(tmp_path):
+    """Issue #184. Availability is the question divisions are built around, and the spec
+    has always required it on this command — it was simply never rendered, though the
+    placement service returns it on every call."""
+    interaction = _interaction()
+    slots = [
+        _slot(1, "Monday 19:00 UTC", "Mon_19_00"),
+        _slot(2, "Friday 21:00 UTC", "Fri_21_00"),
+    ]
+    cog = _make_cog(
+        listed=[_seeded(1, availability=("Mon_19_00", "Fri_21_00"))], slots=slots
+    )
+
+    await _list(cog, interaction)
+
+    sent = _sent(interaction)
+    assert "Monday 19:00 UTC" in sent
+    assert "Friday 21:00 UTC" in sent
+
+
+async def test_availability_is_matched_on_the_durable_slot_id_not_the_ordinal(tmp_path):
+    """#126's rule, for this command. The ordinal is a chronological position recomputed on
+    every read, so matching on it would show a driver against somebody else's time as soon
+    as a slot is added or removed. Here the driver's one answer is the slot whose ordinal is
+    2, so a position-matched render would name Monday instead."""
+    interaction = _interaction()
+    slots = [
+        _slot(1, "Monday 19:00 UTC", "Mon_19_00"),
+        _slot(2, "Friday 21:00 UTC", "Fri_21_00"),
+    ]
+    cog = _make_cog(listed=[_seeded(1, availability=("Fri_21_00",))], slots=slots)
+
+    await _list(cog, interaction)
+
+    sent = _sent(interaction)
+    assert "Friday 21:00 UTC" in sent
+    assert "Monday 19:00 UTC" not in sent
+
+
+async def test_availability_reads_in_the_league_s_slot_order(tmp_path):
+    """Two drivers' lines have to be comparable at a glance, so the labels follow the
+    league's own chronological order rather than the order the answers happen to sit in
+    the driver's stored JSON."""
+    interaction = _interaction()
+    slots = [
+        _slot(1, "Monday 19:00 UTC", "Mon_19_00"),
+        _slot(2, "Wednesday 20:00 UTC", "Wed_20_00"),
+        _slot(3, "Friday 21:00 UTC", "Fri_21_00"),
+    ]
+    cog = _make_cog(
+        listed=[_seeded(1, availability=("Fri_21_00", "Mon_19_00", "Wed_20_00"))],
+        slots=slots,
+    )
+
+    await _list(cog, interaction)
+
+    sent = _sent(interaction)
+    assert sent.index("Monday 19:00 UTC") < sent.index("Wednesday 20:00 UTC")
+    assert sent.index("Wednesday 20:00 UTC") < sent.index("Friday 21:00 UTC")
+
+
+async def test_an_availability_naming_a_removed_slot_says_unknown_slot(tmp_path):
+    """The signup spec: availability naming a slot that no longer exists is reported as an
+    unknown slot. The durable ID is a storage form no league should ever be shown."""
+    interaction = _interaction()
+    slots = [_slot(1, "Monday 19:00 UTC", "Mon_19_00")]
+    cog = _make_cog(
+        listed=[_seeded(1, availability=("Mon_19_00", "Sat_18_00"))], slots=slots
+    )
+
+    await _list(cog, interaction)
+
+    sent = _sent(interaction)
+    assert "Unknown slot" in sent
+    assert "Sat_18_00" not in sent
+
+
+async def test_two_removed_slots_read_as_two_unknowns(tmp_path):
+    """One entry per answer, as the wizard's review panel already does
+    (``test_wizard_availability`` pins the same shape there). Collapsing them would
+    understate how much of a driver's availability has been lost."""
+    interaction = _interaction()
+    slots = [_slot(1, "Monday 19:00 UTC", "Mon_19_00")]
+    cog = _make_cog(
+        listed=[_seeded(1, availability=("Sat_18_00", "Sun_20_00"))], slots=slots
+    )
+
+    await _list(cog, interaction)
+
+    assert "Unknown slot, Unknown slot" in _sent(interaction)
+
+
+async def test_a_driver_with_no_availability_shows_a_dash(tmp_path):
+    """Consistent with how the same line renders an absent team or teammate: a blank
+    mid-line reads as a bug rather than as an answer."""
+    interaction = _interaction()
+    cog = _make_cog(listed=[_seeded(1, availability=())])
+
+    await _list(cog, interaction)
+
+    assert "Available: —" in _sent(interaction)
+
+
+async def test_every_slot_is_listed_however_many_there_are(tmp_path):
+    """Decided 2026-09-20: every label, never elided. The spec caps a league at 25 slots,
+    and a driver who ticks all of them still renders in full — measured at some 700
+    characters for the block, well inside the 1900-character chunk budget, so nothing is
+    hidden and the chunker is not disturbed."""
+    interaction = _interaction()
+    slots = [
+        _slot(n, f"Slot {n:02d} label UTC", f"Day_{n:02d}_00") for n in range(1, 26)
+    ]
+    cog = _make_cog(
+        listed=[_seeded(1, availability=tuple(s.slot_id for s in slots))], slots=slots
+    )
+
+    await _list(cog, interaction)
+
+    sent = _sent(interaction)
+    for slot in slots:
+        assert slot.display_label in sent
+    assert "+" not in sent.split("Available:")[1].split("\n")[0]
+    assert len(_messages(interaction)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Chunking
+# ---------------------------------------------------------------------------
 
 
 async def test_a_short_list_arrives_as_one_message(tmp_path):
