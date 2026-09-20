@@ -1811,16 +1811,37 @@ class SignupCog(commands.Cog):
             )
             return
 
+        # Availability is the question a division is built around, so it is named in full
+        # here rather than summarised: a league may configure 25 slots, and a driver who
+        # ticks every one of them still costs some 500 characters, inside the chunk budget
+        # below (decided 2026-09-20, issue #184).
+        #
+        # The labels are matched on the slot's durable ``slot_id`` and rendered in the
+        # league's own chronological order. Matching on ``slot_sequence_id`` instead would
+        # be issue #126: the ordinal is recomputed on every read, so a slot added or removed
+        # since the driver signed up would show them against somebody else's time.
+        slots_ordered = sorted(
+            await self.bot.signup_module_service.get_slots(),  # type: ignore[attr-defined]
+            key=lambda s: s.slot_sequence_id,
+        )
+        slot_labels = {s.slot_id: s.display_label for s in slots_ordered}
+
         lines: list[str] = [f"**Unsettled Signups — Seeded** ({len(drivers)} total)\n"]
         for d in drivers:
             preferred = ", ".join(d["preferred_teams"]) if d["preferred_teams"] else "—"
             teammate = d["preferred_teammate"] or "—"
+            chosen = set(d["availability_slot_ids"])
+            # An answer naming a slot the league has since removed is reported as unknown
+            # rather than printed raw: the durable ID is a storage form no league should see.
+            availability = [s.display_label for s in slots_ordered if s.slot_id in chosen]
+            availability += ["Unknown slot"] * len(chosen - slot_labels.keys())
             marker = f"#{d['seed']}" if d["seed"] is not None else _REVIEW_LABELS.get(
                 d["state"], "In review"
             )
             lines.append(
                 f"**{marker}** **{d['server_display_name']}** (`{d['discord_user_id']}`)\n"
                 f"  Platform: {d['platform']} | Type: {d['driver_type']} | Lap total: {d['total_lap_fmt']}\n"
+                f"  Available: {', '.join(availability) if availability else '—'}\n"
                 f"  Teams: {preferred} | Teammate: {teammate}"
             )
             if d["notes"]:
