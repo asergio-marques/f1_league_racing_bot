@@ -1028,7 +1028,11 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 f"System | Bot restarted mid-amendment | Notice\n"
                 f"  round: {_round_label}, session: {session_type.replace('_', ' ').title()}\n"
-                "  Amendment channel deleted. Please re-run /round results amend.",
+                "  Amendment channel deleted. Please re-run /round results amend.\n"
+                "  Where the corrected classification had already been pasted, it is recorded "
+                "and the round is scored from it, but the reports and appeals were not "
+                "reviewed and the division's channels were not rebuilt — so what is posted "
+                "may not match what is scored until the amendment is run again.",
             )
         except Exception:
             log.exception(

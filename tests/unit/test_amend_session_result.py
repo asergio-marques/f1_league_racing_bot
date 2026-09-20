@@ -159,9 +159,12 @@ async def _amend(
     with patch(
         "services.result_submission_service._apply_points_from_config", new=AsyncMock()
     ) as apply_points, patch(
-        "services.results_post_service.replay_division_channels",
+        "services.results_post_service.repost_round_results",
         new=AsyncMock(return_value=list(repost_faults or [])),
     ) as repost, patch(
+        "services.results_post_service.replay_division_channels",
+        new=AsyncMock(return_value=[]),
+    ) as replay, patch(
         "services.result_submission_service._repost_attendance_after_amendment",
         new=AsyncMock(return_value=[]),
     ) as subsequent, patch(
@@ -182,6 +185,7 @@ async def _amend(
         "bot": bot,
         "apply_points": apply_points,
         "repost": repost,
+        "replay": replay,
         "subsequent": subsequent,
         "cascade": cascade,
     }
@@ -436,22 +440,35 @@ async def test_the_points_are_re_applied_from_the_configuration(tmp_path):
     assert args[3] == "Standard"
 
 
-async def test_the_whole_division_is_reposted_in_order(tmp_path):
-    """Not the amended round alone (#345).
+async def test_stage_one_posts_the_corrected_round_as_provisional(tmp_path):
+    """Writing the classification is stage **one of three**, not the whole amendment (#345).
 
-    A repost is a new message at the bottom of a channel, so reposting only the amended round
-    would leave a five-round division reading 2, 3, 4, 5, 1. Every round goes up again in round
-    order, across results, standings and verdicts, and the attendance sheet is reposted beside
-    them against the round the totals now stand at.
+    The round's reports and appeals have not been reviewed yet, so what goes up here is the
+    corrected classification carrying the sanctions of the round being replaced — provisional
+    in exactly the sense a first submission is.
     """
     db_path = await _make_db(tmp_path, name="amend_repost")
 
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
     stubs["repost"].assert_awaited_once()
-    assert stubs["repost"].await_args.args[1] == DIVISION_ID
-    assert stubs["repost"].await_args.args[2] == ROUND_ID
-    stubs["subsequent"].assert_awaited_once()
+    assert stubs["repost"].await_args.args[1] == ROUND_ID
+    assert stubs["repost"].await_args.kwargs["label"] == "Provisional Results"
+
+
+async def test_stage_one_does_not_rebuild_the_division(tmp_path):
+    """**The rebuild belongs to the final approval, and happens once.**
+
+    Rebuilding here would publish a classification whose sanctions are still the old round's,
+    reposting every round of the division to do it — and then throw all of it away and do it
+    again when the appeals stage is approved minutes later.
+    """
+    db_path = await _make_db(tmp_path, name="amend_no_early_replay")
+
+    stubs = await _amend(db_path, [_race_row(101, 1)])
+
+    stubs["replay"].assert_not_awaited()
+    stubs["subsequent"].assert_not_awaited()
 
 
 async def test_the_standings_are_recomputed_before_the_channels_are_rebuilt(tmp_path):

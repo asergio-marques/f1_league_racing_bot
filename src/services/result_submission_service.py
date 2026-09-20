@@ -142,11 +142,23 @@ async def close_submission_channel(
     guild: discord.Guild,
     db_path: str,
 ) -> None:
-    """Mark the submission channel closed in the DB then delete it from Discord."""
+    """Mark the submission channel closed in the DB then delete it from Discord.
+
+    **Both channel tables are cleared** (#345). A first pass through review runs in a
+    submission channel, recorded in ``round_submission_channels``; an amendment replays the
+    same stages in an amend channel, recorded in ``round_amend_channels``. This closes either,
+    because the appeals stage reaches it by the same path whichever it was — and a row left
+    behind for a channel that no longer exists would have restart recovery announce an
+    abandoned amendment that in fact completed.
+    """
     async with get_connection(db_path) as db:
         await db.execute(
             "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?",
             (round_id,),
+        )
+        await db.execute(
+            "DELETE FROM round_amend_channels WHERE round_id = ? AND channel_id = ?",
+            (round_id, channel_id),
         )
         await db.commit()
     channel = guild.get_channel(channel_id)
@@ -1060,6 +1072,29 @@ async def finalize_appeals_review(
                 "The league's server could not be reached, so the final results and "
                 "standings were not reposted."
             )
+        elif getattr(state, "is_amendment", False):
+            # **The amendment's one rebuild, and the last of its three stages** (#345). The
+            # corrected classification, its re-decided reports and its re-decided appeals are
+            # all in; everything the division's channels show is now put back in round order —
+            # results, standings, the attendance sheet, then the round's verdicts.
+            #
+            # Division-wide rather than this round alone, because a repost is a new message at
+            # the bottom of a channel: replacing only the amended round would leave a
+            # five-round division reading 2, 3, 4, 5, 1.
+            from services import standings_service as _ss
+
+            await _ss.cascade_recompute_from_round(db_path, division_id, round_id)
+            repost_faults = _rps.merge_faults(
+                await _rps.replay_division_channels(
+                    db_path, division_id, round_id, guild, bot=interaction.client,
+                    verdict_state_factory=_amend_verdict_state(
+                        db_path, division_id, interaction.client
+                    ),
+                ),
+                await _repost_attendance_after_amendment(
+                    db_path, round_id, division_id, interaction.client, guild
+                ),
+            )
         else:
             repost_faults = _rps.merge_faults(
                 await _rps.delete_and_repost_final_results(
@@ -1792,15 +1827,15 @@ async def amend_session_result(
     guild = await league_guild(bot)
     repost_faults: list[str] = []
     if guild is not None:
-        # The standings of the amended round and every later one are recomputed first, so the
-        # rebuild draws the corrected championship rather than reposting the old one.
+        # **Stage one posts the corrected classification and stops there.** The division is
+        # rebuilt once, when the appeals stage is approved — the round's reports and appeals
+        # have not been reviewed yet, so a rebuild here would publish a classification whose
+        # sanctions are still those of the round being replaced, and would then be thrown away
+        # and done again a few minutes later.
         await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
-        repost_faults = results_post_service.merge_faults(
-            await results_post_service.replay_division_channels(
-                db_path, division_id, round_id, guild, bot=bot,
-                verdict_state_factory=_amend_verdict_state(db_path, division_id, bot),
-            ),
-            await _repost_attendance_after_amendment(db_path, round_id, division_id, bot, guild),
+        repost_faults = await results_post_service.repost_round_results(
+            db_path, round_id, division_id, guild, bot=bot,
+            label="Provisional Results",
         )
     else:
         # The recomputation still runs, so the championship is right in the database; what

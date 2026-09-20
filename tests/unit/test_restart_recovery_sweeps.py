@@ -622,3 +622,25 @@ async def test_a_restart_with_no_amendments_open_does_nothing(tmp_path):
     await bot_module._recover_orphaned_amend_channels(stub)
 
     stub.output_router.post_log.assert_not_awaited()
+
+
+async def test_the_amendment_notice_warns_that_the_scoring_may_have_moved(tmp_path):
+    """An abandoned amendment is not a no-op, and the notice must not imply it is (#345).
+
+    The amendment is three stages and the **first** commits: the corrected classification is
+    written and the round is scored from it before the reports and appeals are reviewed. A
+    restart between stages therefore leaves a round scored one way and posted another, which
+    re-running the command repairs — but a manager told only "channel deleted, please re-run"
+    would reasonably assume nothing had happened and leave it.
+    """
+    db_path = await _base_db(tmp_path, "amend_notice")
+    await _seed_amend(db_path)
+    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+
+    await bot_module._recover_orphaned_amend_channels(bot)
+
+    logged = "\n".join(
+        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
+    )
+    assert "re-run /round results amend" in logged
+    assert "may not match what is scored" in logged

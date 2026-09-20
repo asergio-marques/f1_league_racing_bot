@@ -154,3 +154,58 @@ def test_the_appeal_stage_is_labelled_for_an_amendment():
 
     assert "Stage 3 of 3" in source
     assert "is_amendment" in source
+
+
+# ── The one rebuild, at the end ───────────────────────────────────────────
+
+
+def test_the_division_is_rebuilt_when_the_appeal_stage_is_approved():
+    """**The amendment's single rebuild, and its last act** (#345).
+
+    Rebuilding at stage one would publish a classification whose reports and appeals are still
+    the old round's, repost every round of the division to do it, and then repeat the whole
+    thing minutes later when the appeals stage is approved. The rebuild belongs here, once,
+    after every decision is in.
+    """
+    node = _function(MODULE, "finalize_appeals_review")
+    source = ast.unparse(node)
+
+    assert "replay_division_channels" in source
+    assert "_repost_attendance_after_amendment" in source
+
+
+def test_stage_one_posts_its_round_and_does_not_rebuild_the_division():
+    """`amend_session_result` writes and posts; it does not cascade the channels."""
+    node = _function(MODULE, "amend_session_result")
+    source = ast.unparse(node)
+
+    assert "repost_round_results" in source
+    assert "replay_division_channels" not in source
+
+
+def test_a_first_pass_reposts_its_round_and_not_the_whole_division():
+    """Sending every round through the division-wide rebuild would repost the entire
+    championship at the end of every ordinary race weekend.
+
+    The two live in different branches of the same `if`: an amendment reorders the division,
+    a first pass replaces its own round's messages and leaves the rest alone.
+    """
+    node = _function(MODULE, "finalize_appeals_review")
+    source = ast.unparse(node)
+
+    assert "delete_and_repost_final_results" in source
+    assert "repost_subsequent_standings" in source
+
+
+def test_the_two_rebuilds_are_alternatives_not_both():
+    """One `if/elif/else`, so a round is rebuilt one way or the other and never twice."""
+    node = _function(MODULE, "finalize_appeals_review")
+
+    branching = [
+        child for child in ast.walk(node)
+        if isinstance(child, ast.If)
+        and "replay_division_channels" in ast.unparse(child)
+        and "delete_and_repost_final_results" in ast.unparse(child)
+    ]
+
+    assert branching, "the two rebuilds are not alternatives of one branch"
