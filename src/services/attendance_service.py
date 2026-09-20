@@ -1849,6 +1849,33 @@ async def _recalculate_forward(
     return [round_id, *subsequent_rounds]
 
 
+async def cascade_attendance_from_round(
+    db_path: str, round_id: int, division_id: int
+) -> list[int]:
+    """Award *round_id*'s attendance points and carry the new totals through every later
+    finalised round, in one transaction. Returns the ids of the rounds it touched.
+
+    What `finalize_penalty_review` calls where it once called `distribute_attendance_points`
+    alone (#238). A driver's total is the sum of their rounds, but a copy of the answer is
+    stored on every round's row as ``total_points_after``, and the sheet and the sanctions
+    read a copy rather than the sum. Amending round 3 of ten and correcting only round 3's
+    copy left rounds 4 to 10 holding a total worked out from the old figure — which the
+    season's **final** sheet then published, that sheet being drawn against the last round
+    with results. Standings already cascade from this same path through
+    ``standings_service.cascade_recompute_from_round``; attendance did not.
+
+    **It deliberately does not rebuild the attended flags.** On this path the recording was
+    done by ``record_attendance_from_results``, which only ever upgrades a driver to present
+    and never revokes it (FR-003): a driver dropped from the results was given no chance to
+    justify themselves, and the record errs in their favour.
+    ``record_attendance_from_results_full_recompute`` can flip present to absent, so it is
+    not reached from here — it is unused on this path by design, not by oversight.
+    """
+    return await _recalculate_forward(
+        db_path, round_id, division_id, recompute="none"
+    )
+
+
 async def sync_attendance(
     bot,
     guild: discord.Guild,
