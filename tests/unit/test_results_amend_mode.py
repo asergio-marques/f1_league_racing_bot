@@ -33,6 +33,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from models.season import SeasonStage  # noqa: E402
+
 from cogs.results_cog import ResultsCog  # noqa: E402
 from services.amendment_service import (  # noqa: E402
     AmendmentModifiedError,
@@ -53,14 +55,16 @@ ACTOR_ID = 77
 def _make_cog(
     *,
     results_enabled: bool = True,
-    season=SimpleNamespace(id=SEASON_ID, status="ACTIVE"),
+    season=SimpleNamespace(
+        id=SEASON_ID, season_number=1, status="ACTIVE", stage=SeasonStage.ONGOING
+    ),
 ) -> ResultsCog:
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
     bot.season_service = MagicMock()
-    bot.season_service.get_season_for_server = AsyncMock(return_value=season)
+    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
@@ -153,7 +157,11 @@ async def test_both_commands_need_a_season(command):
     with _amendment() as svc:
         await command(cog, interaction)
 
-    assert "No active season" in _replied(interaction)
+    # The refusal names the archive rule (issue #224): a server whose only season is
+    # completed or cancelled reaches this same branch, because the command now asks for
+    # the *live* season and an archived one is never returned.
+    assert "there is none" in _replied(interaction)
+    assert "archive" in _replied(interaction)
     svc["enable_amendment_mode"].assert_not_awaited()
 
 
