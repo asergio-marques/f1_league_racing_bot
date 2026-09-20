@@ -372,7 +372,7 @@ The verdict in your verdicts channel is the only thing that tells a driver *why*
 
 **A division with no verdicts channel is reported, not skipped.** Unlike a results or standings channel, a verdicts channel is one of the three every division must have before its placements can be confirmed — so if a verdict cannot find one, something has been removed since.
 
-**Automatic attendance sanctions are the exception.** Those *can* be announced again: repair the cause and run `/attendance sync` for the division and round, and the announcement goes out with it.
+**Automatic attendance sanctions are the same.** It is tempting to think `/attendance sync` will announce one that failed — it re-runs the sanctions, after all — but it will not. A driver already sacked or already moved to Reserve is no longer a candidate on a second run, so they are passed over silently. When the log says a sanction was *applied but not announced*, post that one by hand too.
 
 ### Attendance the approval could not record
 

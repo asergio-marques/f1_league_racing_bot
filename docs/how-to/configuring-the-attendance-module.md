@@ -284,10 +284,18 @@ Pardons are staged with the round's penalties and listed alongside them for revi
 The bot tries every driver over the threshold, and one driver's sanction failing never stops the next. Nothing that did apply is undone. What did not apply is never kept quiet:
 
 1. **Read what you are told.** The reply to your penalty-review or amendment approval lists each driver whose sanction did not apply and why, and the log channel carries the same list as an `ATTENDANCE_SANCTIONS | Incomplete` entry. Both end with the exact `/attendance sync` command to run.
-2. **Put the cause right.** Usually it is a division with no Reserve team, or the bot lacking the permission to change a driver's roles. A line saying *applied, but not announced* means the sanction did take effect and only its announcement failed — there is nothing left to apply for that driver.
+2. **Put the cause right.** Usually it is a division with no Reserve team, or the bot lacking the permission to change a driver's roles. A line saying *applied, but not announced* means the sanction did take effect and only its announcement failed — there is nothing left to apply for that driver, and **the sync will not announce it either**, because a driver already sacked or already in Reserve is no longer a candidate. Post that one in the verdicts channel yourself.
 3. **Run `/attendance sync`** with the division and round it names. It recalculates that round and every later one whose penalties are approved, reposts the latest sheet, and applies whatever is still owed, with its announcement in the verdicts channel as usual. The reply tells you what it applied and anything still outstanding.
 
 Running it twice does no harm: a driver already sacked or already in the Reserve team is not sanctioned again. It is available only while the season is ongoing, and is refused, with nothing changed, if a channel it would post to cannot be reached. You can also use it to put a division's attendance right after anything else went wrong in a round's scoring.
+
+## When the attendance itself was not recorded
+
+Different from the above, and more serious. Approving a penalty review records who attended the round and awards the attendance points. Both write to the league's record, and the thresholds above are read from it — so a failure here can see a driver sanctioned later on a total that was never right.
+
+You get an `ATTENDANCE_RECORD | Incomplete` entry in the log channel and a line in your reply to the approval, ending with the `/attendance sync` to run. It is deliberately a separate entry from `ATTENDANCE_SANCTIONS | Incomplete`: that one means a sanction did not apply while the record itself is sound, and this one means the record is wrong.
+
+Run the sync the same day. Until you do, that round's attendance is wrong and every total after it is short.
 
 ---
 

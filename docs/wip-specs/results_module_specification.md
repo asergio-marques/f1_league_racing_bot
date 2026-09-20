@@ -398,7 +398,7 @@ Every penalty and every appeal correction is announced in the division's verdict
 - A division with no verdicts channel set shall be reported, not skipped. A verdicts channel is one of the three a division shall have before its season's placements are confirmed, so a round reaching a verdict without one is a fault.
 - One verdict that cannot be announced shall not stop the rest. Each is attempted, and each that fails is named with the driver it was owed to.
 - **The bot shall not announce a decided verdict a second time.** There is no command that re-announces one, and the report shall say so, directing the manager to post the decision themselves once the cause is repaired.
-- An automatic attendance sanction is a verdict for this purpose, and is the exception to the rule above: it is announced again by re-running the sanctions, and its report shall say so.
+- An automatic attendance sanction is a verdict for this purpose and is no exception to the rule above. Re-running the sanctions shall not announce one that already applied, the driver no longer being a candidate, so such a sanction shall be reported as applied but not announced.
 - The decisions themselves stand regardless. The penalties are applied, the corrections hold, and only the announcement is outstanding.
 
 #### Attendance that was not recorded shall be reported
