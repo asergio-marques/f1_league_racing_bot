@@ -14,14 +14,12 @@ as `—`, which is the gap this table exists to find.
 - **S03** — The module's channels  ·  #292
 - **S04** — The stewarding team, its roles and its head  ·  #293
 - **S05** — Timings, appeals and justification configuration  ·  #294
-- **S06** — Outcomes  ·  #295
+- **S06** — Adding and modifying an outcome  ·  #295
 - **S07** — Penalty types, expiries and the ban configuration  ·  #296
-- **S08** — Automated penalty rules, as configuration  ·  #297
+- **S08** — Single-round and multi-round auto-rules  ·  #297
 - **S09** — Changing settings during a season  ·  #298
-- **S10** — The ticket framework  ·  #299
-- **S11** — Deliberation and the ballot  ·  #300
-- **S12** — Report submission and defence  ·  #301
-- **S13** — Report deliberation and the round's report verdicts  ·  #302
+- **S12** — Report submission, and the ticket a report opens  ·  #301
+- **S13** — Report deliberation and the ballot  ·  #302
 - **S14** — Appeal submission and the appeal tokens  ·  #303
 - **S15** — Appeal deliberation  ·  #304
 - **S16** — The cycle close  ·  #305
@@ -34,7 +32,7 @@ as `—`, which is the gap this table exists to find.
 - **S23** — Viewing a licence, as text  ·  #312
 - **S24** — Viewing a licence, as a graphic  ·  #313
 - **S25** — What stewarding changes in the attendance module  ·  #314
-- **S26** — Code of Conduct investigations, as configuration  ·  #315
+- **S26** — Code of Conduct investigations: the toggles and the periods  ·  #315
 - **S27** — Backing up a ticket's channel  ·  #316
 - **S28** — The conduct investigation cycle  ·  #317
 - **S29** — Revoking a penalty  ·  #318
@@ -47,6 +45,20 @@ as `—`, which is the gap this table exists to find.
 - **S36** — Surviving a restart  ·  #325
 - **S37** — Test mode  ·  #326
 - **S38** — The LLM justification mode  ·  #327
+- **S39** — Merging licences, and a driver's accounts  ·  #328
+- **S40** — The temporary head steward, and conflicts of interest  ·  #329
+- **S41** — Removing, pausing and listing outcomes  ·  #330
+- **S42** — Accumulation auto-rules  ·  #331
+- **S43** — What an auto-rule counts and hands out, and managing them  ·  #332
+- **S44** — The steward log, and the stewarding team's one voice  ·  #334
+- **S45** — Adding and removing a driver from a ticket  ·  #335
+- **S46** — Excluding a steward, and handing a ticket on  ·  #336
+- **S47** — Muting in a ticket  ·  #337
+- **S48** — Counting the ballots, plurality and the tie-break  ·  #338
+- **S49** — The justification, and a round's report verdicts  ·  #339
+- **S50** — Adding and modifying a conduct outcome  ·  #340
+- **S51** — Defence submission, merging and withdrawing a report  ·  #341
+- **S52** — Removing, pausing and listing conduct outcomes  ·  #342
 
 **902 rules. Rules owned by no issue: 0.**
 
@@ -91,20 +103,20 @@ as `—`, which is the gap this table exists to find.
 | STW-CON-006 | S01 | Likewise, a tally of the total of each penalty type is kept. |
 | STW-CON-007 | S01 | The driver licence is the state of a driver's bans. A driver is banned while their licence hold… |
 | STW-CON-008 | S01 | A driver licence belongs to the driver profile, not to a Discord account. Any of a driver's acc… |
-| STW-CON-009 | S01 | Where two driver profiles are merged, as the core specification allows, their licences shall be… |
-| STW-CON-010 | S01 | Warning points, penalty points and discipline points shall all be carried, each keeping its own… |
-| STW-CON-011 | S01 | The qualifying bans and race bans each has yet to serve shall be added together, and so shall t… |
-| STW-CON-012 | S01 | Season bans shall stack as any season bans do. Where either is league banned, the merged driver… |
-| STW-CON-013 | S01 | The merged driver shall hold the lower of the two numbers of appeal tokens. |
-| STW-CON-014 | S01 | An auto-rule already awarded upon either licence shall be held as awarded upon the merged one,… |
-| STW-CON-075 | S01 | Where rules stand at 20 and at 30 penalty points, a driver whose two licences hold 13 and 19 tr… |
-| STW-CON-076 | S01 | The merged licence shall be checked against the auto-rules at the next cycle close, as any lice… |
-| STW-CON-015 | S01 | A merge shall not be refused because either driver is banned, merging being how a league brings… |
-| STW-CON-016 | S01 | Where another account is made a driver's current one, the season ban and league ban roles shall… |
-| STW-CON-017 | S01 | Where another account is made a driver's current one while they are party to an open ticket, th… |
-| STW-CON-018 | S01 | A steward's vote is a record, and keeps the account it was cast under. |
-| STW-CON-019 | S01 | A past account of a driver cannot be a steward, head steward or temporary head steward, and sha… |
-| STW-CON-020 | S01 | Where the driver is on the stewarding team, their place on it, and any head steward or temporar… |
+| STW-CON-009 | S39 | Where two driver profiles are merged, as the core specification allows, their licences shall be… |
+| STW-CON-010 | S39 | Warning points, penalty points and discipline points shall all be carried, each keeping its own… |
+| STW-CON-011 | S39 | The qualifying bans and race bans each has yet to serve shall be added together, and so shall t… |
+| STW-CON-012 | S39 | Season bans shall stack as any season bans do. Where either is league banned, the merged driver… |
+| STW-CON-013 | S39 | The merged driver shall hold the lower of the two numbers of appeal tokens. |
+| STW-CON-014 | S39 | An auto-rule already awarded upon either licence shall be held as awarded upon the merged one,… |
+| STW-CON-075 | S39 | Where rules stand at 20 and at 30 penalty points, a driver whose two licences hold 13 and 19 tr… |
+| STW-CON-076 | S39 | The merged licence shall be checked against the auto-rules at the next cycle close, as any lice… |
+| STW-CON-015 | S39 | A merge shall not be refused because either driver is banned, merging being how a league brings… |
+| STW-CON-016 | S39 | Where another account is made a driver's current one, the season ban and league ban roles shall… |
+| STW-CON-017 | S39 | Where another account is made a driver's current one while they are party to an open ticket, th… |
+| STW-CON-018 | S39 | A steward's vote is a record, and keeps the account it was cast under. |
+| STW-CON-019 | S39 | A past account of a driver cannot be a steward, head steward or temporary head steward, and sha… |
+| STW-CON-020 | S39 | Where the driver is on the stewarding team, their place on it, and any head steward or temporar… |
 | STW-CON-021 | S04 | Steward - A trusted user with level 4 permission, being a member of the stewarding team the bot… |
 | STW-CON-022 | S04 | Head steward - A privileged user with level 3 permission denoted with a special role that serve… |
 | STW-CON-023 | S04 | Acting head steward - Also referred to as temporary or temp head steward. A privileged user den… |
@@ -116,7 +128,7 @@ as `—`, which is the gap this table exists to find.
 | STW-CON-029 | S04 | Any involved driver, or involved user, who belongs to the stewarding team. |
 | STW-CON-030 | S16 | Stewarding cycle - The full process for stewarding a round of a division. It begins when report… |
 | STW-CON-031 | S12 | Report submission - Active starting at the scheduled round time, and automatically disabled aft… |
-| STW-CON-032 | S12 | Defence submission - Active for each ticket from the moment it is lodged, and disabled for ever… |
+| STW-CON-032 | S51 | Defence submission - Active for each ticket from the moment it is lodged, and disabled for ever… |
 | STW-CON-033 | S13 | Report deliberation - Active from the moment the defence submission stage ends, and automatical… |
 | STW-CON-034 | S14 | Appeal submission - Active for a configured period of time once the report deliberation ends. I… |
 | STW-CON-035 | S15 | Appeal deliberation - Active from the moment the appeal submission ends, and automatically disa… |
@@ -126,15 +138,15 @@ as `—`, which is the gap this table exists to find.
 | STW-CON-039 | S12 | Complainant - The driver who lodged a report, or the stewarding team as a whole for a steward's… |
 | STW-CON-040 | S01 | Principal division - The highest tier division (the lowest tier number) in which a driver holds… |
 | STW-CON-041 | S01 | Feature race and feature qualifying - The Feature Race and Feature Qualifying of a sprint round… |
-| STW-CON-042 | S10 | Involved driver - A driver who is party to a ticket: for a report, its complainant where a driv… |
-| STW-CON-043 | S10 | A ticket shall hold at most 25 involved drivers, or 25 involved users for a CoC investigation,… |
-| STW-CON-044 | S10 | Ticket - A user-submitted incident which may be either a report, an appeal or a Code of Conduct… |
-| STW-CON-045 | S10 | Ticket channel - The channel of a division, set by "division ticket-channel", in which the "Rep… |
-| STW-CON-046 | S10 | A ticket's channel - The channel the bot creates for a single ticket, in which its defence and… |
+| STW-CON-042 | S12 | Involved driver - A driver who is party to a ticket: for a report, its complainant where a driv… |
+| STW-CON-043 | S12 | A ticket shall hold at most 25 involved drivers, or 25 involved users for a CoC investigation,… |
+| STW-CON-044 | S12 | Ticket - A user-submitted incident which may be either a report, an appeal or a Code of Conduct… |
+| STW-CON-045 | S12 | Ticket channel - The channel of a division, set by "division ticket-channel", in which the "Rep… |
+| STW-CON-046 | S12 | A ticket's channel - The channel the bot creates for a single ticket, in which its defence and… |
 | STW-CON-047 | S12 | Report - May also be referred to as stewards' report. This is an incident submitted by either a… |
 | STW-CON-048 | S12 | Unique ID in the "S<x>_D<y>_R<z>_<w>" format, where <x> is the number of the season, <y> the ti… |
 | STW-CON-049 | S14 | Appeal - A special kind of ticket submitted by a driver which aims for a report to be judged on… |
-| STW-CON-050 | S10 | Every ticket records everything its stages set out — its unique ID, the round and session it co… |
+| STW-CON-050 | S12 | Every ticket records everything its stages set out — its unique ID, the round and session it co… |
 | STW-CON-051 | S14 | Appeal token - A special kind of currency that may be required for drivers to be able to submit… |
 | STW-CON-052 | S28 | Code of Conduct investigation - May also be referred to as a CoC investigation. A special kind… |
 | STW-CON-053 | S06 | Outcome - A standardised penalty table item for reports and appeals, which draws a relationship… |
@@ -155,8 +167,8 @@ as `—`, which is the gap this table exists to find.
 | STW-CON-068 | S08 | Automated penalty rule - Also referred to as an auto-rule. A predefined, league-configured auto… |
 | STW-CON-069 | S08 | Single round - Rules that verify only multiples of a specific penalty accrued in a single round… |
 | STW-CON-070 | S08 | Multi round - Rules that verify only multiples of a specific penalty accrued across multiple ro… |
-| STW-CON-071 | S08 | Active accumulation - Rules that verify only the accumulation of a specific active penalty on a… |
-| STW-CON-072 | S08 | Historical accumulation - Rules that verify the total accumulation of a specific penalty across… |
+| STW-CON-071 | S42 | Active accumulation - Rules that verify only the accumulation of a specific active penalty on a… |
+| STW-CON-072 | S42 | Historical accumulation - Rules that verify the total accumulation of a specific penalty across… |
 | STW-CON-073 | S01 | Active penalty - A penalty instance that is still active, and is yet to be served, yet to expir… |
 | STW-CON-074 | S01 | A championship points deduction, a championship disqualification, a constructors' points deduct… |
 
@@ -209,20 +221,20 @@ as `—`, which is the gap this table exists to find.
 | STW-TEM-016 | S04 | Upon a replacement, on every open ticket on which the former head steward was the effective hea… |
 | STW-TEM-017 | S04 | Upon a replacement, a temporary head steward in post shall remain so, and the new head steward… |
 | STW-TEM-018 | S04 | If the stewarding module is enabled, confirming the season's placements shall fail while no hea… |
-| STW-TEM-019 | S04 | <NEW COMMAND> A "steward role temp-head" command will be made available to league managers, whi… |
-| STW-TEM-020 | S04 | This command is only valid if no user has temporary head steward status. |
-| STW-TEM-021 | S04 | If the input role parameter is empty, then temporary head steward functionality is deactivated. |
-| STW-TEM-022 | S04 | <NEW COMMAND> A "steward team temp-head-assign" command will be made available to the head stew… |
-| STW-TEM-023 | S04 | This command is only valid if the temporary head steward role configured by "steward role temp-… |
-| STW-TEM-024 | S04 | This command is only valid if the target user is part of the stewarding team and is not the hea… |
-| STW-TEM-025 | S04 | Where a temporary head steward is already appointed, they shall be replaced: their appointment… |
-| STW-TEM-026 | S04 | While the appointment lasts, the temporary head steward is the effective head steward by defaul… |
-| STW-TEM-027 | S04 | While the appointment lasts, the temporary head steward may use the commands of the head stewar… |
-| STW-TEM-028 | S04 | <NEW COMMAND> A "steward team temp-head-remove" command will be made available to the head stew… |
-| STW-TEM-029 | S04 | This command is only valid if the temporary head steward role configured by "steward role temp-… |
-| STW-TEM-030 | S04 | <NEW COMMAND> A "steward team conflict-toggle" command will be made available to league manager… |
-| STW-TEM-031 | S04 | By default this setting is on, meaning stewards can review reports/appeals pertaining to the di… |
-| STW-TEM-032 | S04 | A CoC investigation pertains to no division; for it, a steward is held to drive in its division… |
+| STW-TEM-019 | S40 | <NEW COMMAND> A "steward role temp-head" command will be made available to league managers, whi… |
+| STW-TEM-020 | S40 | This command is only valid if no user has temporary head steward status. |
+| STW-TEM-021 | S40 | If the input role parameter is empty, then temporary head steward functionality is deactivated. |
+| STW-TEM-022 | S40 | <NEW COMMAND> A "steward team temp-head-assign" command will be made available to the head stew… |
+| STW-TEM-023 | S40 | This command is only valid if the temporary head steward role configured by "steward role temp-… |
+| STW-TEM-024 | S40 | This command is only valid if the target user is part of the stewarding team and is not the hea… |
+| STW-TEM-025 | S40 | Where a temporary head steward is already appointed, they shall be replaced: their appointment… |
+| STW-TEM-026 | S40 | While the appointment lasts, the temporary head steward is the effective head steward by defaul… |
+| STW-TEM-027 | S40 | While the appointment lasts, the temporary head steward may use the commands of the head stewar… |
+| STW-TEM-028 | S40 | <NEW COMMAND> A "steward team temp-head-remove" command will be made available to the head stew… |
+| STW-TEM-029 | S40 | This command is only valid if the temporary head steward role configured by "steward role temp-… |
+| STW-TEM-030 | S40 | <NEW COMMAND> A "steward team conflict-toggle" command will be made available to league manager… |
+| STW-TEM-031 | S40 | By default this setting is on, meaning stewards can review reports/appeals pertaining to the di… |
+| STW-TEM-032 | S40 | A CoC investigation pertains to no division; for it, a steward is held to drive in its division… |
 
 ## TIM — Timings
 
@@ -313,35 +325,35 @@ as `—`, which is the gap this table exists to find.
 | STW-OUT-024 | S06 | The command shall be refused where the change would bring the qualifying list or the race list… |
 | STW-OUT-025 | S06 | This command shall fail if the outcome has any disabled penalty types. |
 | STW-OUT-026 | S06 | At least one of the "Time penalty", "Disqualification", "Championship points deducted", "Champi… |
-| STW-OUT-027 | S06 | <NEW COMMAND> A "steward outcome remove" command will be made available to league managers, whi… |
-| STW-OUT-028 | S06 | <NEW COMMAND> A "steward outcome toggle" command will be made available to league managers, whi… |
-| STW-OUT-029 | S06 | A paused outcome is offered upon no ballot. It stays in the list, "steward outcome list" markin… |
-| STW-OUT-030 | S06 | NFA cannot be paused. |
-| STW-OUT-031 | S06 | A paused outcome does not count towards the 24 a session's list may hold. Resuming one shall be… |
-| STW-OUT-032 | S06 | <NEW COMMAND> A "steward outcome list" command will be made available to league managers and st… |
-| STW-OUT-033 | S06 | The list is shown in full, over several messages where it does not fit in one. |
-| STW-OUT-034 | S06 | <brief> |
-| STW-OUT-035 | S06 | ID: <id> |
-| STW-OUT-036 | S06 | Rule description: <description, if not empty, otherwise this line is skipped> |
-| STW-OUT-037 | S06 | Associated outcome: <all penalties associated with the outcome, comma concatenated> |
-| STW-OUT-038 | S06 | By default, a permanent, unremovable, unmodifiable outcome is added to the list, with the follo… |
-| STW-OUT-039 | S06 | ID - NFA (special reserved ID) |
-| STW-OUT-040 | S06 | Brief - No Further Action |
-| STW-OUT-041 | S06 | Description - Outcome which means there is no actionable offence in the reported incident, and… |
-| STW-OUT-042 | S06 | Applicable to qualifying? - Yes |
-| STW-OUT-043 | S06 | Applicable to race? - Yes |
-| STW-OUT-044 | S06 | Time penalty - 0 |
-| STW-OUT-045 | S06 | Disqualification - No |
-| STW-OUT-046 | S06 | Championship points deducted - 0 |
-| STW-OUT-047 | S06 | Championship disqualification - No |
-| STW-OUT-048 | S06 | Constructors' points deducted - 0 |
-| STW-OUT-049 | S06 | Constructors' championship disqualification - No |
-| STW-OUT-050 | S06 | Warning point - 0 |
-| STW-OUT-051 | S06 | Penalty point - 0 |
-| STW-OUT-052 | S06 | Qualifying ban - 0 |
-| STW-OUT-053 | S06 | Race ban - 0 |
-| STW-OUT-054 | S06 | Season ban - No |
-| STW-OUT-055 | S06 | League ban - No |
+| STW-OUT-027 | S41 | <NEW COMMAND> A "steward outcome remove" command will be made available to league managers, whi… |
+| STW-OUT-028 | S41 | <NEW COMMAND> A "steward outcome toggle" command will be made available to league managers, whi… |
+| STW-OUT-029 | S41 | A paused outcome is offered upon no ballot. It stays in the list, "steward outcome list" markin… |
+| STW-OUT-030 | S41 | NFA cannot be paused. |
+| STW-OUT-031 | S41 | A paused outcome does not count towards the 24 a session's list may hold. Resuming one shall be… |
+| STW-OUT-032 | S41 | <NEW COMMAND> A "steward outcome list" command will be made available to league managers and st… |
+| STW-OUT-033 | S41 | The list is shown in full, over several messages where it does not fit in one. |
+| STW-OUT-034 | S41 | <brief> |
+| STW-OUT-035 | S41 | ID: <id> |
+| STW-OUT-036 | S41 | Rule description: <description, if not empty, otherwise this line is skipped> |
+| STW-OUT-037 | S41 | Associated outcome: <all penalties associated with the outcome, comma concatenated> |
+| STW-OUT-038 | S41 | By default, a permanent, unremovable, unmodifiable outcome is added to the list, with the follo… |
+| STW-OUT-039 | S41 | ID - NFA (special reserved ID) |
+| STW-OUT-040 | S41 | Brief - No Further Action |
+| STW-OUT-041 | S41 | Description - Outcome which means there is no actionable offence in the reported incident, and… |
+| STW-OUT-042 | S41 | Applicable to qualifying? - Yes |
+| STW-OUT-043 | S41 | Applicable to race? - Yes |
+| STW-OUT-044 | S41 | Time penalty - 0 |
+| STW-OUT-045 | S41 | Disqualification - No |
+| STW-OUT-046 | S41 | Championship points deducted - 0 |
+| STW-OUT-047 | S41 | Championship disqualification - No |
+| STW-OUT-048 | S41 | Constructors' points deducted - 0 |
+| STW-OUT-049 | S41 | Constructors' championship disqualification - No |
+| STW-OUT-050 | S41 | Warning point - 0 |
+| STW-OUT-051 | S41 | Penalty point - 0 |
+| STW-OUT-052 | S41 | Qualifying ban - 0 |
+| STW-OUT-053 | S41 | Race ban - 0 |
+| STW-OUT-054 | S41 | Season ban - No |
+| STW-OUT-055 | S41 | League ban - No |
 
 ## PEN — Penalty types and bans
 
@@ -400,48 +412,48 @@ as `—`, which is the gap this table exists to find.
 | STW-ARL-022 | S08 | This value must be greater than 0. |
 | STW-ARL-023 | S08 | Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule… |
 | STW-ARL-024 | S08 | As configured, a multi-round rule will be interpreted as meaning "if a driver receives a certai… |
-| STW-ARL-025 | S08 | <NEW COMMAND> A "steward auto-rule add-active-accumulation" command will be made available to l… |
-| STW-ARL-026 | S08 | ID - Mandatory - String - Unique ID for this rule. Must not overlap with that of other auto rul… |
-| STW-ARL-027 | S08 | Infringement - Optional - String - An optional string for league managers to add a rule number… |
-| STW-ARL-028 | S08 | Type of infractions committed - Mandatory - Dropdown - Type of penalty that must be active in a… |
-| STW-ARL-029 | S08 | Number of infractions committed - Mandatory - Integer - Quantity of penalties of a certain type… |
-| STW-ARL-030 | S08 | This value must be greater than 0. |
-| STW-ARL-031 | S08 | Penalty given - Mandatory - Dropdown - Type of penalty to be bestowed upon a driver when this r… |
-| STW-ARL-032 | S08 | Number of penalties given - Mandatory - Integer - Quantity of penalties of the type defined in… |
-| STW-ARL-033 | S08 | This value must be greater than 0. |
-| STW-ARL-034 | S08 | Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule… |
-| STW-ARL-035 | S08 | As configured, an accumulation of active penalties rule will be interpreted as meaning "if a dr… |
-| STW-ARL-036 | S08 | <NEW COMMAND> A "steward auto-rule add-historical-accumulation" command will be made available… |
-| STW-ARL-037 | S08 | ID - Mandatory - String - Unique ID for this rule. Must not overlap with that of other auto rul… |
-| STW-ARL-038 | S08 | Infringement - Optional - String - An optional string for league managers to add a rule number… |
-| STW-ARL-039 | S08 | Type of infractions committed - Mandatory - Dropdown - Type of penalty conferred to a driver li… |
-| STW-ARL-040 | S08 | Number of infractions committed - Mandatory - Integer - Quantity of penalties of a certain type… |
-| STW-ARL-041 | S08 | This value must be greater than 0. |
-| STW-ARL-042 | S08 | Penalty given - Mandatory - Dropdown - Type of penalty to be bestowed upon a driver when this r… |
-| STW-ARL-043 | S08 | Number of penalties given - Mandatory - Integer - Quantity of penalties of the type defined in… |
-| STW-ARL-044 | S08 | This value must be greater than 0. |
-| STW-ARL-045 | S08 | Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule… |
-| STW-ARL-046 | S08 | As configured, an accumulation of penalties across one's career in the league rule will be inte… |
-| STW-ARL-047 | S08 | The types an auto-rule may count, as its "Type of infractions committed", are warning points, p… |
-| STW-ARL-048 | S08 | The types an auto-rule may hand out, as its "Penalty given", are warning points, penalty points… |
-| STW-ARL-049 | S08 | An auto-rule judges one driver's licence, and neither counts nor hands out a penalty given to a… |
-| STW-ARL-050 | S08 | A time penalty or disqualification an auto-rule hands out shall change the result of a race ses… |
-| STW-ARL-051 | S08 | Where the auto-rule was triggered at the close of a round's cycle, that round's feature race. I… |
-| STW-ARL-052 | S08 | Where it was triggered by a CoC investigation, the feature race of the next round the driver ta… |
-| STW-ARL-053 | S08 | A championship points deduction or a championship disqualification an auto-rule hands out shall… |
-| STW-ARL-054 | S08 | Where the auto-rule was triggered at the close of a round's cycle, in that round's division, ap… |
-| STW-ARL-055 | S08 | Where it was triggered by a CoC investigation, in each division the driver races in, as the ver… |
-| STW-ARL-056 | S08 | The type counted and the type handed out may be the same, each auto-rule being triggered at mos… |
-| STW-ARL-057 | S08 | A penalty type that is disabled shall be offered neither to count nor to hand out. Discipline p… |
-| STW-ARL-058 | S08 | Several auto-rules may be triggered after the same round, and one being triggered may trigger a… |
-| STW-ARL-059 | S08 | <NEW COMMAND> A "steward auto-rule modify" command will be made available to league managers, w… |
-| STW-ARL-060 | S08 | <NEW COMMAND> A "steward auto-rule remove" command will be made available to league managers, w… |
-| STW-ARL-061 | S08 | <NEW COMMAND> A "steward auto-rule toggle" command will be made available to league managers, w… |
-| STW-ARL-062 | S08 | A paused auto-rule is checked at no cycle close, and "steward auto-rule list" shall mark it as… |
-| STW-ARL-063 | S08 | Resuming an auto-rule counts as adding it anew: every driver already over its threshold is held… |
-| STW-ARL-064 | S08 | <NEW COMMAND> A "steward auto-rule list" command will be made available to league managers and… |
-| STW-ARL-065 | S08 | The list is shown in full, over several messages where it does not fit in one. |
-| STW-ARL-066 | S08 | For rules of non-multi-round-type, the "number of rounds" column shall be empty. |
+| STW-ARL-025 | S42 | <NEW COMMAND> A "steward auto-rule add-active-accumulation" command will be made available to l… |
+| STW-ARL-026 | S42 | ID - Mandatory - String - Unique ID for this rule. Must not overlap with that of other auto rul… |
+| STW-ARL-027 | S42 | Infringement - Optional - String - An optional string for league managers to add a rule number… |
+| STW-ARL-028 | S42 | Type of infractions committed - Mandatory - Dropdown - Type of penalty that must be active in a… |
+| STW-ARL-029 | S42 | Number of infractions committed - Mandatory - Integer - Quantity of penalties of a certain type… |
+| STW-ARL-030 | S42 | This value must be greater than 0. |
+| STW-ARL-031 | S42 | Penalty given - Mandatory - Dropdown - Type of penalty to be bestowed upon a driver when this r… |
+| STW-ARL-032 | S42 | Number of penalties given - Mandatory - Integer - Quantity of penalties of the type defined in… |
+| STW-ARL-033 | S42 | This value must be greater than 0. |
+| STW-ARL-034 | S42 | Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule… |
+| STW-ARL-035 | S42 | As configured, an accumulation of active penalties rule will be interpreted as meaning "if a dr… |
+| STW-ARL-036 | S42 | <NEW COMMAND> A "steward auto-rule add-historical-accumulation" command will be made available… |
+| STW-ARL-037 | S42 | ID - Mandatory - String - Unique ID for this rule. Must not overlap with that of other auto rul… |
+| STW-ARL-038 | S42 | Infringement - Optional - String - An optional string for league managers to add a rule number… |
+| STW-ARL-039 | S42 | Type of infractions committed - Mandatory - Dropdown - Type of penalty conferred to a driver li… |
+| STW-ARL-040 | S42 | Number of infractions committed - Mandatory - Integer - Quantity of penalties of a certain type… |
+| STW-ARL-041 | S42 | This value must be greater than 0. |
+| STW-ARL-042 | S42 | Penalty given - Mandatory - Dropdown - Type of penalty to be bestowed upon a driver when this r… |
+| STW-ARL-043 | S42 | Number of penalties given - Mandatory - Integer - Quantity of penalties of the type defined in… |
+| STW-ARL-044 | S42 | This value must be greater than 0. |
+| STW-ARL-045 | S42 | Once the user confirms the auto-rule, the fields will be verified, and if valid, the auto-rule… |
+| STW-ARL-046 | S42 | As configured, an accumulation of penalties across one's career in the league rule will be inte… |
+| STW-ARL-047 | S43 | The types an auto-rule may count, as its "Type of infractions committed", are warning points, p… |
+| STW-ARL-048 | S43 | The types an auto-rule may hand out, as its "Penalty given", are warning points, penalty points… |
+| STW-ARL-049 | S43 | An auto-rule judges one driver's licence, and neither counts nor hands out a penalty given to a… |
+| STW-ARL-050 | S43 | A time penalty or disqualification an auto-rule hands out shall change the result of a race ses… |
+| STW-ARL-051 | S43 | Where the auto-rule was triggered at the close of a round's cycle, that round's feature race. I… |
+| STW-ARL-052 | S43 | Where it was triggered by a CoC investigation, the feature race of the next round the driver ta… |
+| STW-ARL-053 | S43 | A championship points deduction or a championship disqualification an auto-rule hands out shall… |
+| STW-ARL-054 | S43 | Where the auto-rule was triggered at the close of a round's cycle, in that round's division, ap… |
+| STW-ARL-055 | S43 | Where it was triggered by a CoC investigation, in each division the driver races in, as the ver… |
+| STW-ARL-056 | S43 | The type counted and the type handed out may be the same, each auto-rule being triggered at mos… |
+| STW-ARL-057 | S43 | A penalty type that is disabled shall be offered neither to count nor to hand out. Discipline p… |
+| STW-ARL-058 | S43 | Several auto-rules may be triggered after the same round, and one being triggered may trigger a… |
+| STW-ARL-059 | S43 | <NEW COMMAND> A "steward auto-rule modify" command will be made available to league managers, w… |
+| STW-ARL-060 | S43 | <NEW COMMAND> A "steward auto-rule remove" command will be made available to league managers, w… |
+| STW-ARL-061 | S43 | <NEW COMMAND> A "steward auto-rule toggle" command will be made available to league managers, w… |
+| STW-ARL-062 | S43 | A paused auto-rule is checked at no cycle close, and "steward auto-rule list" shall mark it as… |
+| STW-ARL-063 | S43 | Resuming an auto-rule counts as adding it anew: every driver already over its threshold is held… |
+| STW-ARL-064 | S43 | <NEW COMMAND> A "steward auto-rule list" command will be made available to league managers and… |
+| STW-ARL-065 | S43 | The list is shown in full, over several messages where it does not fit in one. |
+| STW-ARL-066 | S43 | For rules of non-multi-round-type, the "number of rounds" column shall be empty. |
 
 ## BKP — Backups
 
@@ -473,57 +485,57 @@ as `—`, which is the gap this table exists to find.
 | STW-COC-010 | S26 | <NEW COMMAND> A "steward conduct deliberation-period" command will be made available to league… |
 | STW-COC-011 | S26 | By default, this value will be set to 24. |
 | STW-COC-012 | S26 | Input value must be equal or greater than 1. |
-| STW-COC-013 | S26 | <NEW COMMAND> A "steward conduct-outcome add" command will be made available to league managers… |
-| STW-COC-014 | S26 | ID - Mandatory - Unique ID for the conduct outcome, among conduct outcomes. It may be the same… |
-| STW-COC-015 | S26 | Brief - Mandatory - Unique short description of the conduct outcome. Maximum of 50 characters. |
-| STW-COC-016 | S26 | Description - Optional - Long form description of the conduct outcome. Maximum of 250 character… |
-| STW-COC-017 | S26 | Discipline points - Optional - Integer input only. Number of discipline points added to the dri… |
-| STW-COC-018 | S26 | Qualifying bans - Optional - Integer input only. Number of qualifying bans added to the driver… |
-| STW-COC-019 | S26 | Race bans - Optional - Integer input only. Number of race bans added to the driver licence of t… |
-| STW-COC-020 | S26 | Season ban - Optional - Checkbox that, if ticked, means that the offending driver's licence wil… |
-| STW-COC-021 | S26 | League ban - Optional - Checkbox that, if ticked, means that the offending driver licence will… |
-| STW-COC-022 | S26 | Championship points deducted - Optional - Integer input only. Number of points taken from the u… |
-| STW-COC-023 | S26 | Championship disqualification - Optional - Checkbox that, if ticked, means that the user is rem… |
-| STW-COC-024 | S26 | Constructors' points deducted - Optional - Integer input only. Number of points taken from a te… |
-| STW-COC-025 | S26 | Constructors' championship disqualification - Optional - Checkbox that, if ticked, means that a… |
-| STW-COC-026 | S26 | Every penalty above is given to a user, save the constructors' points deduction and the constru… |
-| STW-COC-027 | S26 | The list of conduct outcomes shall hold at most 25, NFA among them. The command shall be refuse… |
-| STW-COC-028 | S26 | This command shall fail if the outcome has any disabled penalty types. |
-| STW-COC-029 | S26 | At least one of the "Discipline points", "Championship points deducted", "Championship disquali… |
-| STW-COC-030 | S26 | <NEW COMMAND> A "steward conduct-outcome modify" command will be made available to league manag… |
-| STW-COC-031 | S26 | This command shall fail if the outcome has any disabled penalty types. |
-| STW-COC-032 | S26 | At least one of the "Discipline points", "Championship points deducted", "Championship disquali… |
-| STW-COC-033 | S26 | <NEW COMMAND> A "steward conduct-outcome remove" command will be made available to league manag… |
-| STW-COC-034 | S26 | <NEW COMMAND> A "steward conduct-outcome toggle" command will be made available to league manag… |
-| STW-COC-035 | S26 | A paused conduct outcome is offered upon no ballot. It stays in the list, "steward conduct-outc… |
-| STW-COC-036 | S26 | NFA cannot be paused. |
-| STW-COC-037 | S26 | A paused conduct outcome does not count towards the 24 the list may hold. Resuming one shall be… |
-| STW-COC-038 | S26 | <NEW COMMAND> A "steward conduct-outcome list" command will be made available to league manager… |
-| STW-COC-039 | S26 | The list is shown in full, over several messages where it does not fit in one. |
-| STW-COC-040 | S26 | <brief> |
-| STW-COC-041 | S26 | ID: <id> |
-| STW-COC-042 | S26 | Rule description: <description, if not empty, otherwise this line is skipped> |
-| STW-COC-043 | S26 | Associated outcome: <all penalties associated with the outcome, comma concatenated> |
-| STW-COC-044 | S26 | By default, a permanent, unremovable, unmodifiable conduct outcome is added to the list, with t… |
-| STW-COC-045 | S26 | ID - NFA (special reserved ID) |
-| STW-COC-046 | S26 | Brief - No Further Action |
-| STW-COC-047 | S26 | Description - Outcome which means there is no actionable disciplinary offence in the reported i… |
-| STW-COC-048 | S26 | Discipline point - 0 |
-| STW-COC-049 | S26 | Championship points deducted - 0 |
-| STW-COC-050 | S26 | Championship disqualification - No |
-| STW-COC-051 | S26 | Constructors' points deducted - 0 |
-| STW-COC-052 | S26 | Constructors' championship disqualification - No |
-| STW-COC-053 | S26 | Qualifying ban - 0 |
-| STW-COC-054 | S26 | Race ban - 0 |
-| STW-COC-055 | S26 | Season ban - No |
-| STW-COC-056 | S26 | League ban - No |
-| STW-COC-057 | S26 | <NEW COMMAND> A "steward backup conduct-toggle" command will be made available to league admins… |
-| STW-COC-058 | S26 | This functionality shall be disabled by default. |
-| STW-COC-059 | S26 | It is a league admin's, the backups filling the disk of the machine the bot runs upon, which is… |
-| STW-COC-060 | S26 | The directory shall be "./tickets", the same as used by "steward backup report-toggle". |
-| STW-COC-061 | S26 | Channel content shall be formatted as a JSON file. Each message shall be saved as an individual… |
-| STW-COC-062 | S26 | When saving, a directory shall be created with the unique ID of the investigation, and the chan… |
-| STW-COC-063 | S26 | Any attached videos and images will be downloaded and saved, with their original filenames, to… |
+| STW-COC-013 | S50 | <NEW COMMAND> A "steward conduct-outcome add" command will be made available to league managers… |
+| STW-COC-014 | S50 | ID - Mandatory - Unique ID for the conduct outcome, among conduct outcomes. It may be the same… |
+| STW-COC-015 | S50 | Brief - Mandatory - Unique short description of the conduct outcome. Maximum of 50 characters. |
+| STW-COC-016 | S50 | Description - Optional - Long form description of the conduct outcome. Maximum of 250 character… |
+| STW-COC-017 | S50 | Discipline points - Optional - Integer input only. Number of discipline points added to the dri… |
+| STW-COC-018 | S50 | Qualifying bans - Optional - Integer input only. Number of qualifying bans added to the driver… |
+| STW-COC-019 | S50 | Race bans - Optional - Integer input only. Number of race bans added to the driver licence of t… |
+| STW-COC-020 | S50 | Season ban - Optional - Checkbox that, if ticked, means that the offending driver's licence wil… |
+| STW-COC-021 | S50 | League ban - Optional - Checkbox that, if ticked, means that the offending driver licence will… |
+| STW-COC-022 | S50 | Championship points deducted - Optional - Integer input only. Number of points taken from the u… |
+| STW-COC-023 | S50 | Championship disqualification - Optional - Checkbox that, if ticked, means that the user is rem… |
+| STW-COC-024 | S50 | Constructors' points deducted - Optional - Integer input only. Number of points taken from a te… |
+| STW-COC-025 | S50 | Constructors' championship disqualification - Optional - Checkbox that, if ticked, means that a… |
+| STW-COC-026 | S50 | Every penalty above is given to a user, save the constructors' points deduction and the constru… |
+| STW-COC-027 | S50 | The list of conduct outcomes shall hold at most 25, NFA among them. The command shall be refuse… |
+| STW-COC-028 | S50 | This command shall fail if the outcome has any disabled penalty types. |
+| STW-COC-029 | S50 | At least one of the "Discipline points", "Championship points deducted", "Championship disquali… |
+| STW-COC-030 | S50 | <NEW COMMAND> A "steward conduct-outcome modify" command will be made available to league manag… |
+| STW-COC-031 | S50 | This command shall fail if the outcome has any disabled penalty types. |
+| STW-COC-032 | S50 | At least one of the "Discipline points", "Championship points deducted", "Championship disquali… |
+| STW-COC-033 | S52 | <NEW COMMAND> A "steward conduct-outcome remove" command will be made available to league manag… |
+| STW-COC-034 | S52 | <NEW COMMAND> A "steward conduct-outcome toggle" command will be made available to league manag… |
+| STW-COC-035 | S52 | A paused conduct outcome is offered upon no ballot. It stays in the list, "steward conduct-outc… |
+| STW-COC-036 | S52 | NFA cannot be paused. |
+| STW-COC-037 | S52 | A paused conduct outcome does not count towards the 24 the list may hold. Resuming one shall be… |
+| STW-COC-038 | S52 | <NEW COMMAND> A "steward conduct-outcome list" command will be made available to league manager… |
+| STW-COC-039 | S52 | The list is shown in full, over several messages where it does not fit in one. |
+| STW-COC-040 | S52 | <brief> |
+| STW-COC-041 | S52 | ID: <id> |
+| STW-COC-042 | S52 | Rule description: <description, if not empty, otherwise this line is skipped> |
+| STW-COC-043 | S52 | Associated outcome: <all penalties associated with the outcome, comma concatenated> |
+| STW-COC-044 | S52 | By default, a permanent, unremovable, unmodifiable conduct outcome is added to the list, with t… |
+| STW-COC-045 | S52 | ID - NFA (special reserved ID) |
+| STW-COC-046 | S52 | Brief - No Further Action |
+| STW-COC-047 | S52 | Description - Outcome which means there is no actionable disciplinary offence in the reported i… |
+| STW-COC-048 | S52 | Discipline point - 0 |
+| STW-COC-049 | S52 | Championship points deducted - 0 |
+| STW-COC-050 | S52 | Championship disqualification - No |
+| STW-COC-051 | S52 | Constructors' points deducted - 0 |
+| STW-COC-052 | S52 | Constructors' championship disqualification - No |
+| STW-COC-053 | S52 | Qualifying ban - 0 |
+| STW-COC-054 | S52 | Race ban - 0 |
+| STW-COC-055 | S52 | Season ban - No |
+| STW-COC-056 | S52 | League ban - No |
+| STW-COC-057 | S27 | <NEW COMMAND> A "steward backup conduct-toggle" command will be made available to league admins… |
+| STW-COC-058 | S27 | This functionality shall be disabled by default. |
+| STW-COC-059 | S27 | It is a league admin's, the backups filling the disk of the machine the bot runs upon, which is… |
+| STW-COC-060 | S27 | The directory shall be "./tickets", the same as used by "steward backup report-toggle". |
+| STW-COC-061 | S27 | Channel content shall be formatted as a JSON file. Each message shall be saved as an individual… |
+| STW-COC-062 | S27 | When saving, a directory shall be created with the unique ID of the investigation, and the chan… |
+| STW-COC-063 | S27 | Any attached videos and images will be downloaded and saved, with their original filenames, to… |
 
 ## SET — Changing settings during a season
 
@@ -535,7 +547,7 @@ as `—`, which is the gap this table exists to find.
 | STW-SET-004 | S09 | A change to "steward justification final-mode" or "steward justification fallback-mode" applies… |
 | STW-SET-005 | S09 | A change to a setting of the Code of Conduct investigations applies to the investigations opene… |
 | STW-SET-006 | S09 | Outcomes may be added while report or appeal deliberations are open. An outcome so added shall… |
-| STW-SET-007 | S09 | An outcome may not be modified, removed or paused while any report or appeal deliberation is op… |
+| STW-SET-007 | S09 | An outcome may not be modified, removed or paused while any report deliberation, appeal submiss… |
 | STW-SET-008 | S09 | Conduct outcomes may be added while investigation deliberations are open. A conduct outcome so… |
 | STW-SET-009 | S09 | A conduct outcome may not be modified, removed or paused while any investigation deliberation i… |
 | STW-SET-010 | S09 | A penalty type that any outcome or conduct outcome uses may not be switched off while any delib… |
@@ -546,99 +558,99 @@ as `—`, which is the gap this table exists to find.
 
 | Rule | Issue | The rule |
 |---|---|---|
-| STW-TKT-001 | S10 | What this section sets out holds for every ticket, a report, an appeal and a CoC investigation… |
-| STW-TKT-002 | S10 | Every act in a ticket, and every use of a command of this module, shall be written to the stewa… |
-| STW-TKT-003 | S10 | A command, button or form of this module that fails, as the core specification's rule upon a fa… |
-| STW-TKT-004 | S10 | Ballots are the exception while a deliberation is open: the log records only that a steward cas… |
-| STW-TKT-005 | S10 | It is imperative that the stewarding team is seen as a unified front. |
-| STW-TKT-006 | S10 | The effective head steward of a ticket is the face of the stewarding team to the users of that… |
-| STW-TKT-007 | S10 | No message a driver or other user can see shall attribute a decision, a vote, a request or a ju… |
-| STW-TKT-008 | S10 | No steward other than the effective head steward shall be identified or mentioned in any messag… |
-| STW-TKT-009 | S10 | Every exchange between stewards alone while the users of a ticket can see its channel shall tak… |
-| STW-TKT-010 | S10 | A request made by a driver is no exchange between stewards, and shall be answered in the ticket… |
-| STW-TKT-011 | S10 | Deliberation, from which the users of the ticket are shut out, takes place in the ticket's chan… |
-| STW-TKT-012 | S10 | However, as stated above, steward logs shall identify them when needed. |
-| STW-TKT-013 | S10 | A ticket the stewarding team declines to judge, on procedural grounds or any other, is rejected… |
-| STW-TKT-014 | S10 | If the effective head steward is one of the involved drivers, or has a conflict of interest as… |
-| STW-TKT-015 | S10 | If the effective head steward does not assign anyone else by the time the ticket's deliberation… |
-| STW-TKT-016 | S10 | A ticket is open to its parties during the defence submission of a report or a CoC investigatio… |
-| STW-TKT-017 | S10 | Once this phase is entered, the following buttons will be posted on the channel after the heade… |
-| STW-TKT-018 | S10 | Add driver - Can be used by members of the effective stewarding team for this ticket, by the on… |
-| STW-TKT-019 | S10 | If pressed by the effective head steward, the justification is optional. When confirmed, the dr… |
-| STW-TKT-020 | S10 | If pressed by a regular member of the effective stewarding team, the justification is mandatory… |
-| STW-TKT-021 | S10 | If pressed by the one who initiated the ticket or an involved driver, the justification is mand… |
-| STW-TKT-022 | S10 | When added, the driver will be given the same permissions as other involved drivers. |
-| STW-TKT-023 | S10 | The command is rejected if the ticket already holds 25 involved drivers, if the driver named ho… |
-| STW-TKT-024 | S10 | In a CoC investigation, which pertains to no division, the member named need hold no seat: any… |
-| STW-TKT-025 | S10 | Remove driver - Can be used by members of the effective stewarding team for this ticket, by the… |
-| STW-TKT-026 | S10 | If pressed by the effective head steward, the justification is optional. When confirmed, the dr… |
-| STW-TKT-027 | S10 | If pressed by a regular member of the effective stewarding team, the justification is mandatory… |
-| STW-TKT-028 | S10 | If pressed by the one who initiated the ticket or an involved driver, the justification is mand… |
-| STW-TKT-029 | S10 | The command is rejected if the targeted user is the one who initiated the ticket, or if they ar… |
-| STW-TKT-030 | S10 | Request exclusion - Can be used by any member of the effective stewarding team for this ticket.… |
-| STW-TKT-031 | S10 | If the one requesting this exclusion is a regular member of the effective stewarding team, a fo… |
-| STW-TKT-032 | S10 | If the one requesting this exclusion is the effective head steward, a form is opened so that a… |
-| STW-TKT-033 | S10 | The effective head steward remains so until a member accepts. After a rejection, they may name… |
-| STW-TKT-034 | S10 | Where no member has accepted by the time the deliberation phase is reached, the bot shall choos… |
-| STW-TKT-035 | S10 | Once a member accepts, the former effective head steward is excluded from the ticket and leaves… |
-| STW-TKT-036 | S10 | A member of the effective stewarding team who has cast a ballot shall be refused an exclusion.… |
-| STW-TKT-037 | S10 | Mute - Can be used by any member of the effective stewarding team for this ticket. When pressed… |
-| STW-TKT-038 | S10 | Until the deliberation phase, the command is rejected for any user who is neither the one who i… |
-| STW-TKT-039 | S10 | During the deliberation phase, it applies to members of the effective stewarding team instead,… |
-| STW-TKT-040 | S10 | Unmute - Can be used by any member of the effective stewarding team for this ticket. When press… |
-| STW-TKT-041 | S10 | Until the deliberation phase, the command is rejected for any user who is neither the one who i… |
-| STW-TKT-042 | S10 | During the deliberation phase, it applies to members of the effective stewarding team instead,… |
-| STW-TKT-043 | S10 | The buttons above remain in the channel through the deliberation phase, save "Add driver" and "… |
-| STW-TKT-044 | S10 | When a driver is added to a ticket, they will be considered an involved driver, and given the s… |
-| STW-TKT-045 | S10 | When a driver is removed from a ticket, they will no longer be considered an involved driver, a… |
-| STW-TKT-046 | S10 | When a driver is added to or removed from a ticket, the bot will edit the "header message" (con… |
-| STW-TKT-047 | S10 | If a driver was added to or removed from a ticket as a result of a request, then the message wi… |
-| STW-TKT-048 | S10 | During this phase, regular members of the effective stewarding team only have read permission f… |
-| STW-TKT-049 | S10 | During this phase, the effective head steward shall have read/write and attach media permission… |
-| STW-TKT-050 | S10 | During this phase, the user who initiated the ticket and all users marked as involved drivers s… |
-| STW-TKT-051 | S10 | This phase cannot be terminated early. |
+| STW-TKT-001 | S12 | What this section sets out holds for every ticket, a report, an appeal and a CoC investigation… |
+| STW-TKT-002 | S44 | Every act in a ticket, and every use of a command of this module, shall be written to the stewa… |
+| STW-TKT-003 | S44 | A command, button or form of this module that fails, as the core specification's rule upon a fa… |
+| STW-TKT-004 | S44 | Ballots are the exception while a deliberation is open: the log records only that a steward cas… |
+| STW-TKT-005 | S44 | It is imperative that the stewarding team is seen as a unified front. |
+| STW-TKT-006 | S44 | The effective head steward of a ticket is the face of the stewarding team to the users of that… |
+| STW-TKT-007 | S44 | No message a driver or other user can see shall attribute a decision, a vote, a request or a ju… |
+| STW-TKT-008 | S44 | No steward other than the effective head steward shall be identified or mentioned in any messag… |
+| STW-TKT-009 | S44 | Every exchange between stewards alone while the users of a ticket can see its channel shall tak… |
+| STW-TKT-010 | S44 | A request made by a driver is no exchange between stewards, and shall be answered in the ticket… |
+| STW-TKT-011 | S44 | Deliberation, from which the users of the ticket are shut out, takes place in the ticket's chan… |
+| STW-TKT-012 | S44 | However, as stated above, steward logs shall identify them when needed. |
+| STW-TKT-013 | S44 | A ticket the stewarding team declines to judge, on procedural grounds or any other, is rejected… |
+| STW-TKT-014 | S46 | If the effective head steward is one of the involved drivers, or has a conflict of interest as… |
+| STW-TKT-015 | S46 | If the effective head steward does not assign anyone else by the time the ticket's deliberation… |
+| STW-TKT-016 | S12 | A ticket is open to its parties during the defence submission of a report or a CoC investigatio… |
+| STW-TKT-017 | S12 | Once this phase is entered, the following buttons will be posted on the channel after the heade… |
+| STW-TKT-018 | S45 | Add driver - Can be used by members of the effective stewarding team for this ticket, by the on… |
+| STW-TKT-019 | S45 | If pressed by the effective head steward, the justification is optional. When confirmed, the dr… |
+| STW-TKT-020 | S45 | If pressed by a regular member of the effective stewarding team, the justification is mandatory… |
+| STW-TKT-021 | S45 | If pressed by the one who initiated the ticket or an involved driver, the justification is mand… |
+| STW-TKT-022 | S45 | When added, the driver will be given the same permissions as other involved drivers. |
+| STW-TKT-023 | S45 | The command is rejected if the ticket already holds 25 involved drivers, if the driver named ho… |
+| STW-TKT-024 | S45 | In a CoC investigation, which pertains to no division, the member named need hold no seat: any… |
+| STW-TKT-025 | S45 | Remove driver - Can be used by members of the effective stewarding team for this ticket, by the… |
+| STW-TKT-026 | S45 | If pressed by the effective head steward, the justification is optional. When confirmed, the dr… |
+| STW-TKT-027 | S45 | If pressed by a regular member of the effective stewarding team, the justification is mandatory… |
+| STW-TKT-028 | S45 | If pressed by the one who initiated the ticket or an involved driver, the justification is mand… |
+| STW-TKT-029 | S45 | The command is rejected if the targeted user is the one who initiated the ticket, or if they ar… |
+| STW-TKT-030 | S46 | Request exclusion - Can be used by any member of the effective stewarding team for this ticket.… |
+| STW-TKT-031 | S46 | If the one requesting this exclusion is a regular member of the effective stewarding team, a fo… |
+| STW-TKT-032 | S46 | If the one requesting this exclusion is the effective head steward, a form is opened so that a… |
+| STW-TKT-033 | S46 | The effective head steward remains so until a member accepts. After a rejection, they may name… |
+| STW-TKT-034 | S46 | Where no member has accepted by the time the deliberation phase is reached, the bot shall choos… |
+| STW-TKT-035 | S46 | Once a member accepts, the former effective head steward is excluded from the ticket and leaves… |
+| STW-TKT-036 | S46 | A member of the effective stewarding team who has cast a ballot shall be refused an exclusion.… |
+| STW-TKT-037 | S47 | Mute - Can be used by any member of the effective stewarding team for this ticket. When pressed… |
+| STW-TKT-038 | S47 | Until the deliberation phase, the command is rejected for any user who is neither the one who i… |
+| STW-TKT-039 | S47 | During the deliberation phase, it applies to members of the effective stewarding team instead,… |
+| STW-TKT-040 | S47 | Unmute - Can be used by any member of the effective stewarding team for this ticket. When press… |
+| STW-TKT-041 | S47 | Until the deliberation phase, the command is rejected for any user who is neither the one who i… |
+| STW-TKT-042 | S47 | During the deliberation phase, it applies to members of the effective stewarding team instead,… |
+| STW-TKT-043 | S45 | The buttons above remain in the channel through the deliberation phase, save "Add driver" and "… |
+| STW-TKT-044 | S45 | When a driver is added to a ticket, they will be considered an involved driver, and given the s… |
+| STW-TKT-045 | S45 | When a driver is removed from a ticket, they will no longer be considered an involved driver, a… |
+| STW-TKT-046 | S45 | When a driver is added to or removed from a ticket, the bot will edit the "header message" (con… |
+| STW-TKT-047 | S45 | If a driver was added to or removed from a ticket as a result of a request, then the message wi… |
+| STW-TKT-048 | S12 | During this phase, regular members of the effective stewarding team only have read permission f… |
+| STW-TKT-049 | S12 | During this phase, the effective head steward shall have read/write and attach media permission… |
+| STW-TKT-050 | S12 | During this phase, the user who initiated the ticket and all users marked as involved drivers s… |
+| STW-TKT-051 | S12 | This phase cannot be terminated early. |
 
 ## DEL — Deliberation
 
 | Rule | Issue | The rule |
 |---|---|---|
-| STW-DEL-001 | S11 | A team may be sanctioned upon a ticket only where it holds at least one full-time driver in the… |
-| STW-DEL-002 | S11 | Each line of a ballot applies only its own part of an outcome. A driver's line offers the outco… |
-| STW-DEL-003 | S11 | Once this phase is entered, the involved drivers lose all permission to read, write or attach m… |
-| STW-DEL-004 | S11 | Once this phase is entered, the members of the effective stewarding team will gain the permissi… |
-| STW-DEL-005 | S11 | Once this phase is entered, a single button titled "Vote" is posted by the bot. This button wil… |
-| STW-DEL-006 | S11 | Steward's display name - Shown, and not to be changed. Display name of the steward whose ballot… |
-| STW-DEL-007 | S11 | Ticket ID - Shown, and not to be changed. Unique ID of the report, appeal or investigation whic… |
-| STW-DEL-008 | S11 | Outcome - Dropdown - Mandatory - Dropdown containing the outcomes the cycle offers, and NFA, di… |
-| STW-DEL-009 | S11 | Infringement - String - Optional - String standing for the ID/number which was allegedly violat… |
-| STW-DEL-010 | S11 | Team outcome - Dropdown - Dropdown containing the outcomes the cycle offers that carry a team p… |
-| STW-DEL-011 | S11 | Justification - String - Mandatory - A free form text with a 1000 character limit for the stewa… |
-| STW-DEL-012 | S11 | The ballot as it stands - every involved party's outcome, kept in view in whole while any one o… |
-| STW-DEL-013 | S11 | "Cancel", "Remove vote" where the steward has already voted, and "Confirm". |
-| STW-DEL-014 | S11 | A steward's ballot is only valid via "Confirm" if all mandatory fields are filled. |
-| STW-DEL-015 | S11 | Once a steward's ballot is deemed valid, all data for the ballot will be recorded and persisted. |
-| STW-DEL-016 | S11 | If a steward reopens their ballot after having voted, it will show their ballot as it was cast. |
-| STW-DEL-017 | S11 | A ballot shall be counted whole. Two ballots are the same option only where they give every inv… |
-| STW-DEL-018 | S11 | The bot shall show no steward the ballots of others, nor any count of them, before the delibera… |
-| STW-DEL-019 | S11 | If the steward has chosen "Confirm" upon reopening their ballot, the previously persisted ballo… |
-| STW-DEL-020 | S11 | If the steward has chosen "Cancel" upon reopening their ballot, no change is to occur to their… |
-| STW-DEL-021 | S11 | If the steward has chosen "Remove vote" upon reopening their ballot, the previously persisted b… |
-| STW-DEL-022 | S11 | At the end of the countdown period for this phase, all stewarding team members except for the e… |
-| STW-DEL-023 | S11 | At the end of the countdown period for this phase, the ballots will be counted. For the purpose… |
-| STW-DEL-024 | S11 | If any one option reaches plurality without a tie, the ultimate result of the ticket will be th… |
-| STW-DEL-025 | S11 | If two or more options are tied, and the effective head steward's ballot is one of them, the ul… |
-| STW-DEL-026 | S11 | If two or more options are tied, and the effective head steward's ballot is none of them (also… |
-| STW-DEL-027 | S11 | For a report or an appeal, the bot shall post a message on the verdicts channel saying that the… |
-| STW-DEL-028 | S11 | In the ticket's channel, the bot shall post a button per option tied as the most voted, each sh… |
-| STW-DEL-029 | S11 | A timer counts down 1 hour from the moment the buttons are posted; if the effective head stewar… |
-| STW-DEL-030 | S11 | A ballot's time is the moment it was last confirmed. An option reaches its final count at the l… |
-| STW-DEL-031 | S11 | Once the ultimate result of a ticket is reached through any of the mediums above, the bot will: |
-| STW-DEL-032 | S11 | Post a message informing the effective head steward of the decision reached (the outcome given… |
-| STW-DEL-033 | S11 | Buttons usable only by the effective head steward of the ticket, one for accepting the default… |
-| STW-DEL-034 | S11 | In a message different from the one above, the justifications of all ballots of the winning opt… |
-| STW-DEL-035 | S11 | Start a timer counting down 1 hour from the moment the buttons are posted; if the effective hea… |
-| STW-DEL-036 | S11 | Once the justification message is settled, either via effective head steward confirmation or by… |
-| STW-DEL-037 | S11 | The format of the final output is set out under Verdict output. |
+| STW-DEL-001 | S13 | A team may be sanctioned upon a ticket only where it holds at least one full-time driver in the… |
+| STW-DEL-002 | S13 | Each line of a ballot applies only its own part of an outcome. A driver's line offers the outco… |
+| STW-DEL-003 | S13 | Once this phase is entered, the involved drivers lose all permission to read, write or attach m… |
+| STW-DEL-004 | S13 | Once this phase is entered, the members of the effective stewarding team will gain the permissi… |
+| STW-DEL-005 | S13 | Once this phase is entered, a single button titled "Vote" is posted by the bot. This button wil… |
+| STW-DEL-006 | S13 | Steward's display name - Shown, and not to be changed. Display name of the steward whose ballot… |
+| STW-DEL-007 | S13 | Ticket ID - Shown, and not to be changed. Unique ID of the report, appeal or investigation whic… |
+| STW-DEL-008 | S13 | Outcome - Dropdown - Mandatory - Dropdown containing the outcomes the cycle offers, and NFA, di… |
+| STW-DEL-009 | S13 | Infringement - String - Optional - String standing for the ID/number which was allegedly violat… |
+| STW-DEL-010 | S13 | Team outcome - Dropdown - Dropdown containing the outcomes the cycle offers that carry a team p… |
+| STW-DEL-011 | S13 | Justification - String - Mandatory - A free form text with a 1000 character limit for the stewa… |
+| STW-DEL-012 | S13 | The ballot as it stands - every involved party's outcome, kept in view in whole while any one o… |
+| STW-DEL-013 | S13 | "Cancel", "Remove vote" where the steward has already voted, and "Confirm". |
+| STW-DEL-014 | S13 | A steward's ballot is only valid via "Confirm" if all mandatory fields are filled. |
+| STW-DEL-015 | S13 | Once a steward's ballot is deemed valid, all data for the ballot will be recorded and persisted. |
+| STW-DEL-016 | S13 | If a steward reopens their ballot after having voted, it will show their ballot as it was cast. |
+| STW-DEL-017 | S48 | A ballot shall be counted whole. Two ballots are the same option only where they give every inv… |
+| STW-DEL-018 | S13 | The bot shall show no steward the ballots of others, nor any count of them, before the delibera… |
+| STW-DEL-019 | S13 | If the steward has chosen "Confirm" upon reopening their ballot, the previously persisted ballo… |
+| STW-DEL-020 | S13 | If the steward has chosen "Cancel" upon reopening their ballot, no change is to occur to their… |
+| STW-DEL-021 | S13 | If the steward has chosen "Remove vote" upon reopening their ballot, the previously persisted b… |
+| STW-DEL-022 | S48 | At the end of the countdown period for this phase, all stewarding team members except for the e… |
+| STW-DEL-023 | S48 | At the end of the countdown period for this phase, the ballots will be counted. For the purpose… |
+| STW-DEL-024 | S48 | If any one option reaches plurality without a tie, the ultimate result of the ticket will be th… |
+| STW-DEL-025 | S48 | If two or more options are tied, and the effective head steward's ballot is one of them, the ul… |
+| STW-DEL-026 | S48 | If two or more options are tied, and the effective head steward's ballot is none of them (also… |
+| STW-DEL-027 | S48 | For a report or an appeal, the bot shall post a message on the verdicts channel saying that the… |
+| STW-DEL-028 | S48 | In the ticket's channel, the bot shall post a button per option tied as the most voted, each sh… |
+| STW-DEL-029 | S48 | A timer counts down 1 hour from the moment the buttons are posted; if the effective head stewar… |
+| STW-DEL-030 | S48 | A ballot's time is the moment it was last confirmed. An option reaches its final count at the l… |
+| STW-DEL-031 | S49 | Once the ultimate result of a ticket is reached through any of the mediums above, the bot will: |
+| STW-DEL-032 | S49 | Post a message informing the effective head steward of the decision reached (the outcome given… |
+| STW-DEL-033 | S49 | Buttons usable only by the effective head steward of the ticket, one for accepting the default… |
+| STW-DEL-034 | S49 | In a message different from the one above, the justifications of all ballots of the winning opt… |
+| STW-DEL-035 | S49 | Start a timer counting down 1 hour from the moment the buttons are posted; if the effective hea… |
+| STW-DEL-036 | S49 | Once the justification message is settled, either via effective head steward confirmation or by… |
+| STW-DEL-037 | S49 | The format of the final output is set out under Verdict output. |
 
 ## CYC — Stewarding cycle
 
@@ -687,27 +699,27 @@ as `—`, which is the gap this table exists to find.
 | STW-CYC-041 | S12 | After valid submission, the report will be henceforth identified with a unique ID following the… |
 | STW-CYC-042 | S12 | After valid submission, a channel bearing the report's unique ID as the title will be created,… |
 | STW-CYC-043 | S12 | After valid submission, the ticket's state changes immediately to the defence submission stage,… |
-| STW-CYC-044 | S12 | Defence submission for the ticket stays open until the period configured by "steward report def… |
-| STW-CYC-045 | S12 | There is no limit upon the number of reports a driver may lodge in a round. |
-| STW-CYC-046 | S12 | Where two or more reports of the same round concern one incident, the effective head steward of… |
-| STW-CYC-047 | S12 | The report merged in shall keep its own unique ID, and close with a verdict of its own, posted… |
-| STW-CYC-048 | S12 | Its complainant and involved drivers shall join the surviving ticket as involved drivers, and i… |
-| STW-CYC-049 | S12 | The complainant may ask to withdraw their report during defence submission. The withdrawal shal… |
-| STW-CYC-050 | S12 | A report withdrawn shall close with a verdict of No Further Action, posted with the round's rep… |
-| STW-CYC-051 | S12 | A steward's report may be withdrawn by its effective head steward. |
-| STW-CYC-052 | S12 | If there are no reports submitted until this phase ends, then the stewarding cycle closes then.… |
-| STW-CYC-053 | S12 | A ticket enters this phase the moment it is lodged. Once the period of time configured for the… |
-| STW-CYC-054 | S12 | The rules for a ticket open to its parties, set out under Tickets, hold throughout this phase. |
+| STW-CYC-044 | S51 | Defence submission for the ticket stays open until the period configured by "steward report def… |
+| STW-CYC-045 | S51 | There is no limit upon the number of reports a driver may lodge in a round. |
+| STW-CYC-046 | S51 | Where two or more reports of the same round concern one incident, the effective head steward of… |
+| STW-CYC-047 | S51 | The report merged in shall keep its own unique ID, and close with a verdict of its own, posted… |
+| STW-CYC-048 | S51 | Its complainant and involved drivers shall join the surviving ticket as involved drivers, and i… |
+| STW-CYC-049 | S51 | The complainant may ask to withdraw their report during defence submission. The withdrawal shal… |
+| STW-CYC-050 | S51 | A report withdrawn shall close with a verdict of No Further Action, posted with the round's rep… |
+| STW-CYC-051 | S51 | A steward's report may be withdrawn by its effective head steward. |
+| STW-CYC-052 | S51 | If there are no reports submitted until this phase ends, then the stewarding cycle closes then.… |
+| STW-CYC-053 | S51 | A ticket enters this phase the moment it is lodged. Once the period of time configured for the… |
+| STW-CYC-054 | S51 | The rules for a ticket open to its parties, set out under Tickets, hold throughout this phase. |
 | STW-CYC-055 | S13 | Once this phase is entered, a countdown with the period of time configured by "steward report d… |
 | STW-CYC-056 | S13 | Once this phase is entered, the bot shall post in the ticket's channel, for the effective head… |
 | STW-CYC-057 | S13 | The ballot of a report is as set out under Tickets. Its outcomes are those currently configured… |
 | STW-CYC-058 | S13 | Where a tie is left unbroken, the message on the verdicts channel reads "The report verdicts fo… |
-| STW-CYC-059 | S13 | Only after the final output is determined for all reports pertaining to a given round of a give… |
-| STW-CYC-060 | S13 | The channel will not be deleted upon the publishing of the report verdicts. A ticket's channel… |
-| STW-CYC-061 | S13 | The report deliberation phase is only considered over once all reports pertaining to a given ro… |
-| STW-CYC-062 | S13 | If appeals functionality is enabled, then the stewarding cycle will move on to that phase. |
-| STW-CYC-063 | S13 | Otherwise, then the stewarding cycle is considered closed. |
-| STW-CYC-064 | S13 | Once the report deliberation phase is considered over, the round results and the standings afte… |
+| STW-CYC-059 | S49 | Only after the final output is determined for all reports pertaining to a given round of a give… |
+| STW-CYC-060 | S49 | The channel will not be deleted upon the publishing of the report verdicts. A ticket's channel… |
+| STW-CYC-061 | S49 | The report deliberation phase is only considered over once all reports pertaining to a given ro… |
+| STW-CYC-062 | S49 | If appeals functionality is enabled, then the stewarding cycle will move on to that phase. |
+| STW-CYC-063 | S49 | Otherwise, then the stewarding cycle is considered closed. |
+| STW-CYC-064 | S49 | Once the report deliberation phase is considered over, the round results and the standings afte… |
 | STW-CYC-065 | S14 | A report may be appealed only while its round's appeal submission is open. Once it closes, the… |
 | STW-CYC-066 | S14 | Once this phase is entered, the bot shall delete the "default" message (written again once the… |
 | STW-CYC-067 | S14 | Where more than one round of a division has appeal submission open at once, a separate "Appeal… |
