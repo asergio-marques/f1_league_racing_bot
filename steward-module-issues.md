@@ -7,7 +7,7 @@ issue once you have been through it.
 
 Every issue carries:
 
-- **Labels** — `module-steward` (to be created) and `feature-request` on all of them, plus one
+- **Labels** — `module-stewarding` (to be created) and `feature-request` on all of them, plus one
   priority.
 - **Rules** — the requirement IDs it owns, from `docs/wip-specs/steward_module_specification.md`.
   Every one of the spec's 899 rules is owned by exactly one issue; the coverage table at the end
@@ -52,7 +52,7 @@ each true, rather than left as a list.
 
 ## S01 — The driver licence and the module's vocabulary
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CON-001..020, 040..041, 055..067, 073..074
 **Depends on:** —
 **Blocked by:** #278 (principal division), #280 (the constitution's ban state)
@@ -80,7 +80,7 @@ name the licence's active bans as the bar; constitution Principle VIII.
 
 ## S02 — Enabling and disabling the module, and the four levels of authority
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-MOD-001..010, 015..016, 018..023; STW-CFG-001..002
 **Depends on:** S01
 
@@ -103,7 +103,7 @@ spec's disabling rule.
 
 ## S03 — The module's channels
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CHN-001..015
 **Depends on:** S02
 
@@ -122,7 +122,7 @@ becomes six and ten; the README's two counts of eight.
 
 ## S04 — The stewarding team, its roles and its head
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-TEM-001..032; STW-CON-021..029
 **Depends on:** S02, S03
 
@@ -140,7 +140,7 @@ season that will not start without a head steward.
 
 ## S05 — Timings, appeals and justification configuration
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-TIM-001..018; STW-APL-001..006, 008..009; STW-JUS-001..003, 008..015
 **Depends on:** S02
 
@@ -155,7 +155,7 @@ invalid combination is refused with the sum named.
 
 ## S06 — Outcomes
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-OUT-001..055; STW-CON-053..054
 **Depends on:** S02
 
@@ -170,7 +170,7 @@ offer.
 
 ## S07 — Penalty types, expiries and the ban configuration
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-PEN-001..024
 **Depends on:** S01, S06
 
@@ -185,7 +185,7 @@ refused where turning one off would empty an outcome.
 
 ## S08 — Automated penalty rules, as configuration
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-ARL-001..066; STW-CON-068..072
 **Depends on:** S07
 
@@ -200,7 +200,7 @@ can be listed, though nothing triggers them until S19.
 
 ## S09 — Changing settings during a season
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-SET-001..012
 **Depends on:** S05, S06, S07, S08
 
@@ -215,7 +215,7 @@ stewards are told in the command channel when an outcome appears mid-deliberatio
 
 ## S10 — The ticket framework
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-TKT-001..051; STW-CON-042..046, 050
 **Depends on:** S03, S04
 
@@ -231,7 +231,7 @@ its own issue because all three would otherwise build it three times.
 
 ## S11 — Deliberation and the ballot
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-DEL-001..037
 **Depends on:** S06, S10
 
@@ -251,7 +251,7 @@ its own issue because all three would otherwise build it three times.
 
 ## S12 — Report submission and defence
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CYC-022..054; STW-CON-031..032, 039, 047..048
 **Depends on:** S10, S03, S06
 
@@ -266,7 +266,7 @@ channel with the drivers involved.
 
 ## S13 — Report deliberation and the round's report verdicts
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CYC-055..064; STW-CON-033
 **Depends on:** S11, S12, S30
 
@@ -282,7 +282,7 @@ move with them.
 
 ## S14 — Appeal submission and the appeal tokens
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-CYC-065..091; STW-CON-034, 049, 051; STW-APL-007, 010..011
 **Depends on:** S13, S05
 
@@ -297,7 +297,7 @@ charges, and gets it back if the stewards change the verdict.
 
 ## S15 — Appeal deliberation
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-CYC-092..107; STW-CON-035
 **Depends on:** S14, S11, S30
 **Blocked by:** #280 (the constitution's appeals lifecycle)
@@ -316,7 +316,7 @@ verdict stands.
 
 ## S16 — The cycle close
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CYC-108..115; STW-CON-030
 **Depends on:** S13, S15, S07, S32, S33
 
@@ -331,7 +331,7 @@ or nothing moves and the league is told which channel is at fault.
 
 ## S17 — The cycle moves the round, and cancellation
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-CYC-001..021
 **Depends on:** S12, S13, S15, S16
 
@@ -350,7 +350,7 @@ core's cancellation of a division or season with a cycle open.
 
 ## S18 — Republishing a verdict
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-CYC-116..123
 **Depends on:** S30, S13
 
@@ -364,7 +364,7 @@ verdicts channel losing its order. Subsumes #189.
 
 ## S19 — Auto-rule triggering
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-ART-001..011
 **Depends on:** S08, S16, S30
 
@@ -379,7 +379,7 @@ an Automated Ruling.
 
 ## S20 — Season bans and league bans
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-BAN-001, 007..008, 047..065
 **Depends on:** S01, S07, S16
 
@@ -395,7 +395,7 @@ ban ends.
 
 ## S21 — Serving a qualifying ban or a race ban
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-BAN-002..006, 016..018, 023..035, 040..046
 **Depends on:** S01, S20, S30
 **Blocked by:** #278 (principal division)
@@ -409,7 +409,7 @@ Automated Ruling posted either way, a ban unserved carrying on, and a ban outliv
 
 ## S22 — Bans while the module is disabled
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-BAN-010..015
 **Depends on:** S20, S21, S02
 
@@ -422,7 +422,7 @@ count resuming where it stood when the module is enabled again.
 
 ## S23 — Viewing a licence, as text
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-LIC-001..011
 **Depends on:** S01
 **Blocked by:** #279 (the hub channel)
@@ -438,7 +438,7 @@ it should.
 
 ## S24 — Viewing a licence, as a graphic
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-LIC-012..020
 **Depends on:** S23
 
@@ -452,7 +452,7 @@ by row, which no graphic declares today.
 
 ## S25 — What stewarding changes in the attendance module
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-MOD-011..014; STW-BAN-009, 019..022, 036..039
 **Depends on:** S13, S20, S21
 
@@ -470,7 +470,7 @@ not allowed to enter.
 
 ## S26 — Code of Conduct investigations, as configuration
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-COC-001..063
 **Depends on:** S06, S07
 
@@ -484,7 +484,7 @@ none can be started until S28.
 
 ## S27 — Backing up a ticket's channel
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-BKP-001..009
 **Depends on:** S10
 
@@ -499,7 +499,7 @@ runs on.
 
 ## S28 — The conduct investigation cycle
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-CCY-001..026; STW-CON-036..038, 052
 **Depends on:** S26, S10, S11, S30
 **Blocked by:** #276 (the base role moved to core)
@@ -516,7 +516,7 @@ verdict is public while the investigation was not.
 
 ## S29 — Revoking a penalty
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-REV-001..037
 **Depends on:** S01, S20, S21, S32, S33
 
@@ -532,7 +532,7 @@ it never happened.
 
 ## S30 — Verdict output, as text
 
-**Labels:** `module-steward`, `feature-request`, `Critical`
+**Labels:** `module-stewarding`, `feature-request`, `Critical`
 **Rules:** STW-VER-001..017, 019..041
 **Depends on:** S11
 
@@ -548,7 +548,7 @@ module is doing. Subsumes #246 and #204.
 
 ## S31 — Verdict output, as a graphic
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-VER-018, 042..054
 **Depends on:** S30
 
@@ -561,7 +561,7 @@ section.
 
 ## S32 — Championship penalties in the standings
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-STD-001..005
 **Depends on:** S01
 
@@ -578,7 +578,7 @@ that looks wrong.
 
 ## S33 — The licence sheet, as text
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-SHT-001..015
 **Depends on:** S01, S03
 
@@ -593,7 +593,7 @@ channel.
 
 ## S34 — The licence sheet, as a graphic
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-SHT-016..038
 **Depends on:** S33
 
@@ -606,7 +606,7 @@ per-round column.
 
 ## S35 — Packing the bot
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-PCK-001..003
 **Depends on:** S02, S03, S04
 
@@ -619,7 +619,7 @@ ticket is open.
 
 ## S36 — Surviving a restart
 
-**Labels:** `module-steward`, `feature-request`, `High`
+**Labels:** `module-stewarding`, `feature-request`, `High`
 **Rules:** STW-RST-001..004
 **Depends on:** S12, S13, S15, S16
 
@@ -634,7 +634,7 @@ ballots still working, and downtime lengthening every window in which a user or 
 
 ## S37 — Test mode
 
-**Labels:** `module-steward`, `feature-request`, `Medium`
+**Labels:** `module-stewarding`, `feature-request`, `Medium`
 **Rules:** STW-TST-001..006; STW-MOD-017
 **Depends on:** S12, S13, S15
 
@@ -647,7 +647,7 @@ the stewarding team, and the stages stepped through with core's test-mode comman
 
 ## S38 — The LLM justification mode
 
-**Labels:** `module-steward`, `feature-request`, `Low`
+**Labels:** `module-stewarding`, `feature-request`, `Low`
 **Rules:** STW-JUS-004..007
 **Depends on:** S05, S11
 
@@ -765,7 +765,7 @@ the licence as the ban state and the appeals lifecycle wording as one amendment 
 
 ## Housekeeping when these are filed
 
-- Create the `module-steward` label.
+- Create the `module-stewarding` label.
 - Add it to `CONTRIBUTING.md`'s list of module labels, which names five today.
 - Put every issue on the **Stewarding module** milestone, created 2026-09-20
   (`milestone/1`), which counts what is left of the set.
