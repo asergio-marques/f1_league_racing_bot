@@ -48,7 +48,7 @@ as `—`, which is the gap this table exists to find.
 - **S37** — Test mode  ·  #326
 - **S38** — The LLM justification mode  ·  #327
 
-**899 rules. Rules owned by no issue: 0.**
+**900 rules. Rules owned by no issue: 0.**
 
 
 ## MOD — The module itself
@@ -804,6 +804,7 @@ as `—`, which is the gap this table exists to find.
 | STW-REV-001 | S29 | Revoke commands are a last-ditch measure, and should not be used unless in a pinch. |
 | STW-REV-002 | S29 | Every revoke command shall take, as a mandatory input, whether the sanction is annulled or lift… |
 | STW-REV-003 | S29 | Annulled - the sanction should never have been given. It shall leave the licence entirely, its… |
+| STW-REV-038 | S29 | The bot shall keep the sanction marked annulled, so that a verdict already posted can still be… |
 | STW-REV-004 | S29 | Lifted - the sanction was rightly given, and is ended early. It shall stay upon the licence and… |
 | STW-REV-005 | S29 | Only an active sanction may be annulled or lifted. |
 | STW-REV-006 | S29 | <NEW COMMAND> A "steward revoke warning-point" command will be made available to the head stewa… |

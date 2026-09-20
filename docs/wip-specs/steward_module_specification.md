@@ -724,6 +724,7 @@
 - [STW-REV-001] Revoke commands are a last-ditch measure, and should not be used unless in a pinch.
 - [STW-REV-002] Every revoke command shall take, as a mandatory input, whether the sanction is annulled or lifted:
   - [STW-REV-003] Annulled - the sanction should never have been given. It shall leave the licence entirely, its history included, and count towards no tally and no auto-rule, as though never given. The steward log alone keeps the record of it and of its annulment.
+    - [STW-REV-038] The bot shall keep the sanction marked annulled, so that a verdict already posted can still be traced to what became of what it gave. Nothing shall read it: it appears upon no licence, no sheet, no tally and no auto-rule.
   - [STW-REV-004] Lifted - the sanction was rightly given, and is ended early. It shall stay upon the licence and in its history, marked lifted with its date, and keep counting towards the lifetime tallies, but no longer towards the active ones.
   - [STW-REV-005] Only an active sanction may be annulled or lifted.
 - [STW-REV-006] <NEW COMMAND> A "steward revoke warning-point" command will be made available to the head steward (or acting head steward, if active), which shall have as mandatory inputs a mention for a user, a number of warning points to be revoked from their driver licence, and a justification to be available in the steward log.

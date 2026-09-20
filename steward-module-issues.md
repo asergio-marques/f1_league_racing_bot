@@ -517,7 +517,7 @@ verdict is public while the investigation was not.
 ## S29 — Revoking a penalty  ·  #318
 
 **Labels:** `module-stewarding`, `feature-request`, `High`
-**Rules:** STW-REV-001..037
+**Rules:** STW-REV-001..038
 **Depends on:** S01 (#290), S20 (#309), S21 (#310), S32 (#321), S33 (#322)
 
 The eleven revoke commands, each taking whether the sanction is annulled — as though never given —

@@ -447,13 +447,11 @@ for the unit tests every issue carries.
 
 Five things this design needs and the spec does not settle. Each is noted rather than decided.
 
-**Whether an annulled sanction's row may remain.** [STW-REV-003] says an annulled sanction leaves
-the licence and its history entirely, counting towards no tally and no auto-rule, and that the
-steward log alone keeps the record. It does not say whether the bot may keep the row, invisible to
-every reader. This design keeps it in state `ANNULLED` and excludes it from every query, because a
-deleted row cannot explain itself and because the ordering the revoke commands walk is easier to
-reason about when nothing vanishes from it. If the league means the data to go, the design changes
-and the exclusion predicate goes with it.
+**~~Whether an annulled sanction's row may remain.~~** Settled 2026-09-20: it remains, marked
+`ANNULLED`, read by nothing — [STW-REV-038] now says so. A verdict already posted is never
+corrected, so deleting the row would leave the channel and the licence disagreeing with nothing in
+the database to explain the gap. The exclusion predicate is the cost, and it is worth a named test:
+one query that forgets it resurrects a sanction that should not exist.
 
 **How long a gap may be disregarded.** [STW-RST-002] says a gap of "no more than a few minutes"
 may be disregarded and names no figure. This design proposes five minutes, to agree with the
