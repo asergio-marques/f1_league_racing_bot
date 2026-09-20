@@ -5361,9 +5361,33 @@ class SeasonCog(commands.Cog):
                 f"round {rnd.round_number} session {chosen_session_type.value} "
                 f"config: {config_name}",
             )
-            await _cleanup_channel()
+
+            # **Stages two and three follow in this channel** (#345). The corrected
+            # classification is in and posted; what the round *decided* about it is reviewed
+            # next — its reports, its attendance pardons, then its appeals — and approving the
+            # last of those commits and rebuilds the division's channels.
+            #
+            # The channel therefore stays open, and is not deleted here. It is torn down when
+            # the appeals stage is approved, by the same `close_submission_channel` a first
+            # pass reaches, or by the cancel button, or by restart recovery.
+            from services.result_submission_service import run_amendment_review_stages
+
+            await run_amendment_review_stages(
+                self.bot.db_path,
+                rnd.id,
+                div.id,
+                amend_channel,
+                self.bot,
+                round_number=rnd.round_number,
+                division_name=div.name,
+                session_types_present=[
+                    SessionType(r["session_type"]) for r in sr_rows
+                ],
+            )
             await interaction.followup.send(
-                "✅ Session amended and standings updated.", ephemeral=True
+                f"\u2705 Corrected results posted. Review this round's reports and appeals in "
+                f"{amend_channel.mention} to finish the amendment.",
+                ephemeral=True,
             )
             return
 

@@ -375,7 +375,7 @@ async def test_a_valid_paste_is_written(tmp_path):
     assert args[1] == ROUND_ID
     assert args[3] == SessionType.FEATURE_RACE
     assert args[5] == "Standard"
-    assert "Session amended and standings updated" in _replied(interaction)
+    assert "Corrected results posted" in _replied(interaction)
 
 
 async def test_the_paste_is_deleted_from_the_channel(tmp_path):
@@ -388,15 +388,32 @@ async def test_the_paste_is_deleted_from_the_channel(tmp_path):
     message.delete.assert_awaited_once()
 
 
-async def test_a_success_deletes_the_channel_and_its_row(tmp_path):
+async def test_an_accepted_paste_keeps_the_channel_open_for_the_review_stages(tmp_path):
+    """The paste is stage one of three, not the whole amendment (#345).
+
+    It used to be: the classification was written, the channel deleted and the command done.
+    The replay carries on in the same channel — the round's reports, then its appeals — and
+    approving the last of those is what commits and tears the channel down.
+    """
     db_path = await _make_db(tmp_path, name="amend_cleanup")
     channel = _amend_channel()
     interaction = _interaction(channel, message=_message())
 
     await _amend(_make_cog(db_path), interaction)
 
-    channel.delete.assert_awaited_once()
-    assert await _amend_rows(db_path) == 0
+    channel.delete.assert_not_awaited()
+    assert await _amend_rows(db_path) == 1
+
+
+async def test_an_accepted_paste_sends_the_admin_to_the_review_stages(tmp_path):
+    """Saying "amended" and closing would leave the manager believing they had finished."""
+    db_path = await _make_db(tmp_path, name="amend_reply")
+    interaction = _interaction(_amend_channel(), message=_message())
+
+    await _amend(_make_cog(db_path), interaction)
+
+    replied = _replied(interaction)
+    assert "reports and appeals" in replied
 
 
 async def test_a_success_is_logged_with_its_configuration(tmp_path):
@@ -526,15 +543,31 @@ async def test_cancelling_writes_nothing_and_tidies_up(tmp_path):
     channel.delete.assert_awaited_once()
 
 
-async def test_a_channel_that_will_not_delete_does_not_fail_the_amendment(tmp_path):
+async def test_a_channel_that_will_not_delete_does_not_fail_a_cancellation(tmp_path):
+    """Cancelling still tears the channel down, and a refusal to delete must not raise.
+
+    The success path no longer deletes here at all — it hands over to the review stages — so
+    what this guards is the cancel route, which does.
+    """
     db_path = await _make_db(tmp_path, name="amend_nodelete")
     channel = _amend_channel()
     channel.delete = AsyncMock(side_effect=discord.HTTPException(MagicMock(status=403), "no"))
-    interaction = _interaction(channel, message=_message())
+    interaction = _interaction(channel, wait_forever=True)
+
+    async def _press_cancel(*args, **kwargs):
+        view = kwargs.get("view")
+        if view is not None:
+            press = MagicMock()
+            press.user = SimpleNamespace(id=USER_ID)
+            press.response = MagicMock()
+            press.response.send_message = AsyncMock()
+            await type(view).cancel_btn(view, press, MagicMock())
+        return MagicMock()
+
+    channel.send = AsyncMock(side_effect=_press_cancel)
 
     await _amend(_make_cog(db_path), interaction)
 
-    assert "Session amended" in _replied(interaction)
     assert await _amend_rows(db_path) == 0
 
 

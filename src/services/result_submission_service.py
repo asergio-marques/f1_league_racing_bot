@@ -793,10 +793,19 @@ async def finalize_penalty_review(
 
         # === END Attendance pipeline ===
 
+    # Stage three follows stage two in the same channel, for an amendment exactly as for a
+    # first pass — `submission_channel_id` is the amendment channel in that case (#345). Only
+    # the heading differs, so a manager replaying a settled round can see where they are.
     appeals_view = AppealsReviewView(state=state)
     sub_channel = guild.get_channel(state.submission_channel_id) if guild else None
     if sub_channel is not None:
         content = await _render_appeals_prompt_content(state)
+        if getattr(state, "is_amendment", False):
+            content = (
+                "**Stage 3 of 3 — Appeals.** The appeals this round already carries are "
+                "listed below. Approving keeps them as they stand, and then rebuilds the "
+                "division's channels.\n\n" + content
+            )
         msg = await sub_channel.send(content, view=appeals_view)
         state.appeals_prompt_message_id = msg.id
         bot.add_view(appeals_view, message_id=msg.id)  # type: ignore[attr-defined]
@@ -1558,6 +1567,76 @@ async def _season_id_for_division(db_path: str, division_id: int) -> int | None:
         )
         row = await cursor.fetchone()
     return row["season_id"] if row else None
+
+
+async def run_amendment_review_stages(
+    db_path: str,
+    round_id: int,
+    division_id: int,
+    channel,
+    bot,
+    *,
+    round_number: int,
+    division_name: str,
+    session_types_present: list,
+) -> "PenaltyReviewState | None":
+    """Replay a settled round's report and appeal stages in the amendment channel (#345).
+
+    Stage two of three. The corrected classification has been written and posted as initial
+    results; this shows the league manager what was decided about that round and lets them
+    change it — keep a report, edit it, remove it, add one, and the same for the appeals and
+    for the attendance pardons.
+
+    **The round's decisions are read back out of the database first.** They were written when
+    the round was originally reviewed and nothing has held them in memory since, so
+    :func:`~services.penalty_service.load_staged_from_records` turns the stored rows back into
+    the staged entries the review screens already know how to draw. A manager who changes
+    nothing approves exactly what was there before.
+
+    **The state is marked an amendment**, which is what stops approving either screen moving
+    the round. It is already FINAL: a first pass through these screens sets
+    ``AWAITING_APPEAL_VERDICTS`` then ``FINAL``, finishes the division and may wind the season
+    down, and replaying that against a settled round would send it backwards through states it
+    left long ago.
+
+    Returns the state the manager approved, or ``None`` where the amendment was abandoned.
+    The caller commits and rebuilds the division's channels from it.
+    """
+    from services.penalty_service import load_staged_from_records
+    from services.penalty_wizard import PenaltyReviewState, PenaltyReviewView
+    from services.penalty_wizard import _render_prompt_content  # type: ignore[attr-defined]
+
+    staged, staged_appeals, staged_pardons = await load_staged_from_records(
+        db_path, round_id
+    )
+
+    state = PenaltyReviewState(
+        round_id=round_id,
+        division_id=division_id,
+        submission_channel_id=channel.id,
+        session_types_present=list(session_types_present),
+        db_path=db_path,
+        bot=bot,
+        staged=staged,
+        staged_appeals=staged_appeals,
+        staged_pardons=staged_pardons,
+        round_number=round_number,
+        division_name=division_name,
+        is_amendment=True,
+    )
+
+    view = PenaltyReviewView(state=state)
+    content = await _render_prompt_content(state)
+    message = await channel.send(
+        "**Stage 2 of 3 — Reports.** The decisions this round already carries are listed "
+        "below. Change what the corrected classification changes, and leave the rest; "
+        "approving keeps them exactly as they stand.\n\n" + content,
+        view=view,
+    )
+    state.prompt_message_id = message.id
+    bot.add_view(view, message_id=message.id)
+
+    return state
 
 
 async def amend_session_result(

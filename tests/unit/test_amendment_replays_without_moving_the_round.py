@@ -140,3 +140,17 @@ def test_the_state_carries_the_flag_and_defaults_to_a_first_pass():
     )
 
     assert state.is_amendment is False
+
+
+def test_the_appeal_stage_is_labelled_for_an_amendment():
+    """Stage three reaches the amendment channel by the same code path as a first pass.
+
+    `finalize_penalty_review` posts the appeals screen to `submission_channel_id`, which is the
+    amendment channel in that case — so the stage needs no separate posting, only a heading
+    saying where the manager is.
+    """
+    node = _function(MODULE, "finalize_penalty_review")
+    source = ast.unparse(node)
+
+    assert "Stage 3 of 3" in source
+    assert "is_amendment" in source
