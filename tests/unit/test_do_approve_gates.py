@@ -645,10 +645,10 @@ async def test_the_refusal_names_every_phantom_at_once(db_path):
 # ══════════════════════════════════════════════════════════════════════════
 # Gate 1 — the weather forecast channel (FR-011)
 #
-# Issue #185. This gate had a test that never reached it: a helper in
-# `test_season_approval_gates.py` re-derived the rule from the same two service
-# calls and asserted against its own answer, so the gate could have been deleted
-# from the cog outright and the suite would have stayed green. These drive
+# Issue #185. This gate had a test that never reached it: a helper in the
+# since-deleted `test_season_approval_gates.py` re-derived the rule from the same
+# two service calls and asserted against its own answer, so the gate could have been
+# deleted from the cog outright and the suite would have stayed green. These drive
 # `_do_approve`, which is the only thing that proves the gate is still wired in.
 # ══════════════════════════════════════════════════════════════════════════
 

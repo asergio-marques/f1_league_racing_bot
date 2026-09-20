@@ -470,12 +470,13 @@ async def test_a_season_with_no_points_configuration_attached_is_refused(db_path
 async def test_a_disabled_results_module_is_not_checked(db_path):
     """A league not running results is asked for none of its settings.
 
-    Issue #185. This was the one claim `test_season_approval_gates.py` made that nothing
-    else did — and it made it against a copy of the gate rather than the gate, so the
-    `if results_enabled` guard could have been dropped from the cog entirely without a
-    single test noticing. The division below has no channels of any kind and the season
-    has no points configuration attached: every one of the refusals above would fire if
-    the gate were consulted, so the approval going through is the guard working.
+    Issue #185. This was the one claim the since-deleted `test_season_approval_gates.py`
+    made that nothing else did — and it made it against a copy of the gate rather than
+    the gate itself, so the `if results_enabled` guard could have been dropped from the
+    cog entirely without a single test noticing. The division below has no channels of
+    any kind and the season has no points configuration attached: every one of the
+    refusals above would fire if the gate were consulted, so the approval going through
+    is the guard working.
     """
     cog = _cog(db_path, results_enabled=False)
     cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
