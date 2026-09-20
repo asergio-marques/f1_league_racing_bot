@@ -19,8 +19,8 @@ from services.season_points_service import (
     SeasonNotInSetupError,
 )
 from utils.channel_guard import league_admin_only, league_manager_only
-from utils.season_gate import season_for_command
 from utils.league_server import LeagueModal, LeagueView
+from utils.season_gate import season_for_command
 
 log = logging.getLogger(__name__)
 
