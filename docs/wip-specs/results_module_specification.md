@@ -391,6 +391,22 @@ Approving stage two shall apply any staged corrections, republish the round's re
     - After insertion, the results are validated for format, and the standings of all rounds after the one that was amended (including) shall be output once more.
     - The points configuration recorded for the session shall be kept where it is still attached to the season; otherwise the user shall be asked to choose one.
 
+#### A verdict that was not announced shall be reported
+Every penalty and every appeal correction is announced in the division's verdicts channel. The announcement is the only thing that tells a driver why their classification changed, so a verdict that never reaches the channel shall be reported rather than passed over.
+
+- Each verdict that could not be announced shall be named in the log channel, under an entry marked `Incomplete`, and the league manager who approved the review shall be told the same in their own reply.
+- A division with no verdicts channel set shall be reported, not skipped. A verdicts channel is one of the three a division shall have before its season's placements are confirmed, so a round reaching a verdict without one is a fault.
+- One verdict that cannot be announced shall not stop the rest. Each is attempted, and each that fails is named with the driver it was owed to.
+- **The bot shall not announce a decided verdict a second time.** There is no command that re-announces one, and the report shall say so, directing the manager to post the decision themselves once the cause is repaired.
+- An automatic attendance sanction is a verdict for this purpose and is no exception to the rule above. Re-running the sanctions shall not announce one that already applied, the driver no longer being a candidate, so such a sanction shall be reported as applied but not announced.
+- The decisions themselves stand regardless. The penalties are applied, the corrections hold, and only the announcement is outstanding.
+
+#### Attendance that was not recorded shall be reported
+Approving a penalty review records who attended the round and awards the attendance points. Both write to the league's record, and that record feeds the auto-reserve and auto-sack thresholds.
+
+- Where either fails, the league manager and the log channel shall be told, under an entry marked `Incomplete` and distinct from the one the sanctions raise, ending with the command that recalculates the round.
+- The distinction is between a record that is wrong and a posting that is missing: a failed sheet or announcement leaves the record right, and shall not be reported as though the record were at fault.
+
 #### A republication that does not land shall be reported
 Committing either review stage, and amending a submitted session, republish the round's results and the standings of every later round. Where any of that could not be posted, the league shall be told rather than left to find out from an empty channel.
 

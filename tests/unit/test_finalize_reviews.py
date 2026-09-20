@@ -167,7 +167,7 @@ def _interaction(*, guild=True):
 
 def _patches(
     *, apply_result=None, announce_error=None, attendance_errors=None, sanction_outcome=None,
-    repost_faults=None, subsequent_faults=None,
+    repost_faults=None, subsequent_faults=None, verdict_faults=None,
 ):
     """*repost_faults* are the lines the results cascade could not post (#237).
 
@@ -198,13 +198,20 @@ def _patches(
         "banner": patch(
             "services.verdict_announcement_service.banner_for_round", new=MagicMock()
         ),
+        # Both return the verdicts they could not announce, so the stubs must too (#237):
+        # a bare AsyncMock returns a truthy MagicMock, which would report a fault on every
+        # approval that announced perfectly well.
         "penalty_announce": patch(
             "services.verdict_announcement_service.post_penalty_announcements",
-            new=AsyncMock(side_effect=announce_error),
+            new=AsyncMock(
+                side_effect=announce_error, return_value=list(verdict_faults or [])
+            ),
         ),
         "appeal_announce": patch(
             "services.verdict_announcement_service.post_appeal_announcements",
-            new=AsyncMock(side_effect=announce_error),
+            new=AsyncMock(
+                side_effect=announce_error, return_value=list(verdict_faults or [])
+            ),
         ),
         "record": patch(
             "services.attendance_service.record_attendance_from_results",
@@ -493,7 +500,14 @@ async def test_a_pardon_is_not_granted_twice(tmp_path):
 
 @pytest.mark.parametrize("failing", ["record", "distribute", "sheet", "sanctions"])
 async def test_one_failing_attendance_step_does_not_stop_the_others(tmp_path, failing):
-    """The penalty verdicts are already published by the time this runs."""
+    """The penalty verdicts are already published by the time this runs.
+
+    **The sanctions are the one exception, and only for the two steps that write** (#237).
+    A failed `record` or `distribute` leaves `total_points_after` wrong rather than absent,
+    so the candidate query cannot screen it out, and an autosack applied on it would take a
+    driver's seat on a number the bot already knows is unsound. Those two defer the run to
+    `/attendance sync`; everything else still carries on regardless.
+    """
     db_path = await _make_db(tmp_path, name=f"att_fail_{failing}")
     state = _state(db_path, attendance_enabled=True)
 
@@ -501,8 +515,13 @@ async def test_one_failing_attendance_step_does_not_stop_the_others(tmp_path, fa
         finalize_penalty_review, state, attendance_errors={failing: RuntimeError("boom")}
     )
 
-    for step in ("record", "distribute", "sheet", "sanctions"):
+    defers_the_sanctions = failing in ("record", "distribute")
+    for step in ("record", "distribute", "sheet"):
         stubs[step].assert_awaited_once()
+    if defers_the_sanctions:
+        stubs["sanctions"].assert_not_awaited()
+    else:
+        stubs["sanctions"].assert_awaited_once()
     assert state.appeals_prompt_message_id == 9900
 
 
@@ -820,3 +839,134 @@ async def test_a_reply_that_fails_does_not_stop_the_approval(tmp_path):
 
     assert "RESULTS_REPOST | Incomplete" in _logged(state)
     assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
+
+
+# ---------------------------------------------------------------------------
+# A verdict that was not announced, and attendance that was not recorded (#237)
+# ---------------------------------------------------------------------------
+
+VERDICT_FAULT = "**Alpha** — the verdict for <@99> was not announced: Missing Permissions."
+
+
+async def test_an_unannounced_verdict_reaches_the_manager_and_the_log(tmp_path):
+    db_path = await _make_db(tmp_path, name="verdict_fault")
+    state = _state(db_path, staged=[_penalty()])
+    interaction = _interaction()
+
+    await _run(
+        finalize_penalty_review, state, interaction, verdict_faults=[VERDICT_FAULT]
+    )
+
+    logged = _logged(state)
+    assert "VERDICTS | Incomplete" in logged
+    assert VERDICT_FAULT in logged
+    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
+    assert VERDICT_FAULT in said
+
+
+async def test_the_verdict_report_says_it_cannot_be_announced_again(tmp_path):
+    """Telling a manager to re-run something would leave them believing it finished."""
+    db_path = await _make_db(tmp_path, name="verdict_hint")
+    state = _state(db_path, staged=[_penalty()])
+    interaction = _interaction()
+
+    await _run(
+        finalize_penalty_review, state, interaction, verdict_faults=[VERDICT_FAULT]
+    )
+
+    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
+    assert "cannot announce a verdict a second time" in said
+
+
+async def test_an_approval_that_announced_everything_reports_no_verdict_fault(tmp_path):
+    """The counterpart — the stub returning an empty list must stay silent."""
+    db_path = await _make_db(tmp_path, name="verdict_clean")
+    state = _state(db_path, staged=[_penalty()])
+
+    await _run(finalize_penalty_review, state)
+
+    assert "VERDICTS | Incomplete" not in _logged(state)
+
+
+async def test_an_appeal_verdict_that_was_not_announced_is_reported(tmp_path):
+    db_path = await _make_db(
+        tmp_path, name="appeal_verdict", round_status="AWAITING_APPEAL_VERDICTS"
+    )
+    state = _state(db_path, appeals=[_penalty()])
+
+    await _run(finalize_appeals_review, state, verdict_faults=[VERDICT_FAULT])
+
+    assert "VERDICTS | Incomplete" in _logged(state)
+
+
+@pytest.mark.parametrize("failing", ["record", "distribute"])
+async def test_attendance_that_was_not_recorded_is_reported(tmp_path, failing):
+    """The two steps that write to the database, which leave the record wrong (#237).
+
+    Reported under a heading of their own rather than with the sanctions: that report skips
+    the log channel when the sanctions run has already written its own entry.
+    """
+    db_path = await _make_db(tmp_path, name=f"att_{failing}", attendance_row=True)
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+    interaction = _interaction()
+
+    await _run(
+        finalize_penalty_review, state, interaction,
+        attendance_errors={failing: RuntimeError("disk is full")},
+    )
+
+    logged = _logged(state)
+    assert "ATTENDANCE_RECORD | Incomplete" in logged
+    assert "disk is full" in logged
+    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
+    assert "/attendance sync" in said
+
+
+async def test_a_posting_step_that_fails_is_not_reported_as_a_record_failure(tmp_path):
+    """The sheet is a picture of the record, not the record — its failure is a different kind."""
+    db_path = await _make_db(tmp_path, name="att_sheet", attendance_row=True)
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+
+    await _run(
+        finalize_penalty_review, state,
+        attendance_errors={"sheet": RuntimeError("no attendance channel")},
+    )
+
+    assert "ATTENDANCE_RECORD | Incomplete" not in _logged(state)
+
+
+@pytest.mark.parametrize("failing", ["record", "distribute"])
+async def test_the_sanctions_are_not_run_on_a_record_known_to_be_wrong(tmp_path, failing):
+    """An autosack takes a driver's seat, so it is never applied on unsound totals (#237).
+
+    The thresholds read `total_points_after`, which the two failing steps write. Where
+    recording fails but distribution succeeds the column is populated and *wrong* — and can
+    be wrong upward, a driver who attended having been scored absent — so the candidate
+    query does not screen it out. `/attendance sync` repairs the record and applies whatever
+    is owed, which is where the run belongs.
+    """
+    db_path = await _make_db(tmp_path, name=f"defer_{failing}", attendance_row=True)
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+
+    stubs = await _run(
+        finalize_penalty_review, state,
+        attendance_errors={failing: RuntimeError("disk is full")},
+    )
+
+    stubs["sanctions"].assert_not_awaited()
+    logged = _logged(state)
+    assert "ATTENDANCE_RECORD | Incomplete" in logged
+    assert "no driver was checked" in logged
+
+
+async def test_the_sanctions_still_run_when_the_record_is_sound(tmp_path):
+    """The counterpart — a failed *posting* must not defer them."""
+    db_path = await _make_db(tmp_path, name="defer_none", attendance_row=True)
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+
+    stubs = await _run(
+        finalize_penalty_review, state,
+        attendance_errors={"sheet": RuntimeError("no attendance channel")},
+    )
+
+    stubs["sanctions"].assert_awaited()

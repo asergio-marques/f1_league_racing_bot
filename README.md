@@ -1628,6 +1628,10 @@ Only members holding the configured interaction role may use these buttons.
 >
 > **`/round results amend` is protected the same way, but reports only to the log.** It runs no button and has nobody to reply to, so what it could not post is named in its own `RESULT_AMENDED | Incomplete` entry rather than a separate one — with the same sync commands at the end.
 
+> **A verdict that could not be announced is named too.** The announcement in the verdicts channel is the only thing that tells a driver why their classification changed, so one that does not go out is listed in your reply and in the log channel as a `VERDICTS | Incomplete` entry — naming the driver where the failure was that driver's, and how many verdicts went unannounced where the whole channel was at fault. One failing does not stop the rest. A division with no verdicts channel set is reported rather than skipped — it is one of the three a division must have before its placements can be confirmed. **The bot cannot announce a decided verdict a second time**: no command re-announces one, so repair the cause and post the decision yourself. The penalties and corrections stand either way.
+
+> **So is attendance the approval could not record.** Approving a penalty review records who attended and awards the attendance points, and both feed the auto-reserve and auto-sack thresholds. If either fails you get an `ATTENDANCE_RECORD | Incomplete` entry and a line in your reply, ending with the `/attendance sync` that recalculates the round. This is kept separate from the sanctions report on purpose: a failed sheet leaves the record right, and these leave the record wrong.
+
 The separate **approval message**, carrying **✏️ Make Changes** to return to the penalty prompt with the staged list intact and **✅ Approve** to proceed, belongs to the **No Penalties / Confirm** path — it is what the bot posts when the round is being finalised with nothing applied, either because nothing was staged or because a staged list has just been cleared.
 
 ##### Post-submission appeals review — Correct or overturn a penalty
@@ -1886,6 +1890,8 @@ No parameters. Displays the full attendance configuration for this server as an 
 #### When a sanction does not apply
 
 Every driver over a threshold is attempted, and one driver's sanction failing never stops the next. Nothing already applied is undone. Where any sanction did not apply — the division has no Reserve team, the bot could not change a driver's roles, or the sanction took effect but its announcement could not be posted — the log channel gets one `ATTENDANCE_SANCTIONS | Incomplete` entry naming each driver and the reason. The manager who approved the penalty review or the amendment is told the same in their reply, instead of a plain success. Both end with the `/attendance sync` command to run once the cause is repaired.
+
+> **If the round's attendance could not be recorded, the sanctions do not run at all.** The thresholds are read from the totals that recording writes, so a driver could otherwise be sacked on a number the bot already knows is wrong. You get an `ATTENDANCE_RECORD | Incomplete` entry instead, and `/attendance sync` repairs the record and applies whatever is owed together. A sheet or announcement that failed to post does not hold the sanctions back — the record is sound, only the posting is missing.
 
 ---
 

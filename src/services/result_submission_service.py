@@ -626,17 +626,24 @@ async def finalize_penalty_review(
         # until the first verdict actually goes out.
         _verdict_banner = _vas.banner_for_round(bot, db_path, round_id)
 
-        # Post verdict announcements (non-blocking: skip silently on any error)
+        # Post verdict announcements. Non-blocking, but no longer silent (#237): a penalty
+        # that is applied and never announced leaves the driver with a changed
+        # classification and no explanation of it.
+        verdict_faults: list[str] = []
         if applied_records:
             try:
-                await _vas.post_penalty_announcements(
+                verdict_faults = await _vas.post_penalty_announcements(
                     bot, state, applied_records, head=_verdict_banner
                 )
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 — the approval still stands
                 log.exception(
                     "finalize_penalty_review: error posting penalty announcements for round %s",
                     round_id,
                 )
+                verdict_faults = [f"No penalty verdict could be announced: {exc}"]
+
+        if verdict_faults:
+            await _report_unannounced_verdicts(interaction, bot, verdict_faults)
 
         # Post appeals review prompt and keep submission channel open
         from services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
@@ -660,11 +667,26 @@ async def finalize_penalty_review(
         if _srv_row and await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
             _att_season_id = int(_srv_row["season_id"])
 
+            # The two steps that write to the database are reported, and the two that post
+            # are not (#237). A failed posting leaves the record right and the picture of it
+            # stale; these two leave the *record* wrong, and it feeds the autoreserve and
+            # autosack thresholds — so a driver can later be sanctioned on a number this
+            # failure invalidated. They are collected here and reported under a heading of
+            # their own. They are deliberately *not* folded into the sanctions report below:
+            # that one skips the log channel when the sanctions run has already written its
+            # own entry, so a write failure carried in it could reach the manager and never
+            # the league's record.
+            _attendance_write_failures: list[str] = []
+
             # T004: Record attendance from submitted results.
             try:
                 await record_attendance_from_results(db_path, round_id, division_id)
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 — recorded, and the pipeline goes on
                 log.exception("finalize_penalty_review: record_attendance_from_results failed for round %s", round_id)
+                _attendance_write_failures.append(
+                    f"who attended this round was not recorded, so the totals below it are "
+                    f"wrong: {exc}"
+                )
 
             # T010: Persist staged attendance pardons (INSERT OR IGNORE for idempotency).
             if state.staged_pardons:
@@ -685,8 +707,12 @@ async def finalize_penalty_review(
             # T012: Distribute attendance points.
             try:
                 await distribute_attendance_points(db_path, round_id, division_id)
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 — recorded, and the pipeline goes on
                 log.exception("finalize_penalty_review: distribute_attendance_points failed for round %s", round_id)
+                _attendance_write_failures.append(
+                    f"this round's attendance points were not awarded, so every driver's "
+                    f"total is short: {exc}"
+                )
 
             # T014: Post attendance sheet (non-blocking).
             try:
@@ -699,9 +725,24 @@ async def finalize_penalty_review(
             # left in the host's log alone (#239): the run reports its own failures to the
             # log channel, and the manager who approved is told here, with the command that
             # finishes the job. A run that cannot start at all is told the same way.
+            #
+            # **A sanction is never applied on a record known to be wrong** (#237). The
+            # thresholds are read from `total_points_after`, which the two steps above
+            # write. Where recording failed but the distribution succeeded, that column is
+            # not NULL and so does not exclude the driver from the candidate query — it is
+            # simply wrong, and can be wrong *upward*, because a driver who attended may
+            # have been scored absent. Autosack takes a driver's seat; doing that on a
+            # number the bot already knows is unsound is not a risk worth running for the
+            # sake of finishing the pipeline. The run is deferred instead, and
+            # `/attendance sync` both repairs the record and applies whatever is owed.
             _sanction_failures: list[str] = []
             _run_logged_itself = False
-            if guild is None:
+            if _attendance_write_failures:
+                _sanction_failures = [
+                    "no driver was checked, because this round's attendance record is "
+                    "wrong and the thresholds are read from it"
+                ]
+            elif guild is None:
                 _sanction_failures = ["the league's server could not be reached, so no driver was checked"]
             else:
                 try:
@@ -715,6 +756,12 @@ async def finalize_penalty_review(
                 except Exception as exc:
                     log.exception("finalize_penalty_review: enforce_attendance_sanctions failed for round %s", round_id)
                     _sanction_failures = [f"the sanctions could not be run: {exc}"]
+            if _attendance_write_failures:
+                await _report_attendance_not_recorded(
+                    interaction, bot, db_path, division_id, round_id,
+                    _attendance_write_failures,
+                )
+
             if _sanction_failures:
                 await _report_incomplete_sanctions(
                     interaction, bot, db_path, division_id, round_id, _sanction_failures,
@@ -764,43 +811,124 @@ async def _report_incomplete_sanctions(
         log.exception("finalize_penalty_review: could not tell the manager about the sanctions")
 
 
-async def _report_unpostable_results(
-    interaction, bot, db_path: str, division_id: int, faults: list[str],
+async def _report_faults(
+    interaction, bot, *, heading: str, intro: str, faults: list[str], hint: str,
 ) -> None:
-    """Tell the manager and the log channel what the repost could not post (#237).
+    """Tell the manager and the log channel what an approval could not do (#237).
 
-    The shape ``_report_incomplete_sanctions`` uses for attendance (#239), applied to the
-    results cascade: the log channel carries the record, and the manager who pressed approve
-    reads it in their own reply rather than a plain success. Both end with the commands that
-    finish the job once the cause is repaired.
+    The shape ``_report_incomplete_sanctions`` uses for attendance (#239): the log channel
+    carries the record under *heading*, the manager who pressed approve reads *intro* and
+    the same lines in their own reply rather than a plain success, and both end with *hint*
+    — what to do once the cause is repaired.
 
-    Unlike the sanctions, there is no *logged* flag: the cascade has no route to the log
-    channel of its own, so this is the only place it is written.
+    **Neither message may take the other down with it.** The log is the league's record and
+    the reply is the manager's; a failure to write one must not swallow the other, or the
+    approval goes back to being silent in exactly the way this issue is about.
+
+    Unlike the sanctions there is no *logged* flag, because none of the callers here has a
+    route to the log channel of its own: this is the only place their faults are written.
     """
-    from services.results_post_service import results_sync_hint
-
-    hint = await results_sync_hint(db_path, division_id)
-
     try:
         await bot.output_router.post_log(
-            "RESULTS_REPOST | Incomplete\n"
+            f"{heading}\n"
             + "\n".join(f"  {line}" for line in faults)
             + f"\n  {hint}"
         )
     except Exception:
-        log.exception(
-            "could not log the unpostable results for division %s", division_id
-        )
+        log.exception("could not log the faults under %s", heading)
 
     try:
         await interaction.followup.send(
-            "⚠️ The approval went through, but some results could not be posted:\n"
-            + "\n".join(f"• {line}" for line in faults)
+            f"{intro}\n"
+            + "\n".join(f"\u2022 {line}" for line in faults)
             + f"\n{hint}",
             ephemeral=True,
         )
     except Exception:
-        log.exception("could not tell the manager about the unpostable results")
+        log.exception("could not tell the manager about the faults under %s", heading)
+
+
+async def _report_unpostable_results(
+    interaction, bot, db_path: str, division_id: int, faults: list[str],
+) -> None:
+    """What the results cascade could not post."""
+    from services.results_post_service import results_sync_hint
+
+    await _report_faults(
+        interaction, bot,
+        heading="RESULTS_REPOST | Incomplete",
+        intro="\u26a0\ufe0f The approval went through, but some results could not be posted:",
+        faults=faults,
+        hint=await results_sync_hint(db_path, division_id),
+    )
+
+
+async def _report_attendance_not_recorded(
+    interaction, bot, db_path: str, division_id: int, round_id: int, faults: list[str],
+) -> None:
+    """What the attendance pipeline failed to *write* (#237).
+
+    Kept apart from the sanctions report because the two differ in kind. A sanction that did
+    not apply left the record right; these left the record **wrong**, and the autoreserve and
+    autosack thresholds read it — so a later round can sanction a driver on a total this
+    failure invalidated. ``/attendance sync`` recomputes the round and every later one, which
+    is what repairs it.
+
+    **The hint is read from the database defensively, because the database is what failed.**
+    The only way to reach here is that a write raised, and the likeliest causes — a full
+    disk, a lock, a corrupt file — are exactly the ones that would make ``sync_hint``'s two
+    reads raise as well. Computed as a bare argument it would throw out of this function,
+    out of the caller, and past the point where the appeals prompt is posted: the round
+    would be left mid-lifecycle with nothing said, which is this issue's own shape.
+    """
+    from services.attendance_service import sync_hint
+
+    try:
+        hint = await sync_hint(db_path, division_id, round_id)
+    except Exception:  # noqa: BLE001 — the report matters more than the command in it
+        log.exception("could not build the attendance sync hint for round %s", round_id)
+        hint = "Repair the cause, then run `/attendance sync` for this division and round."
+
+    await _report_faults(
+        interaction, bot,
+        heading="ATTENDANCE_RECORD | Incomplete",
+        intro=(
+            "\u26a0\ufe0f The penalties are approved, but this round's attendance was not "
+            "recorded correctly:"
+        ),
+        faults=faults,
+        hint=hint,
+    )
+
+
+async def _report_unannounced_verdicts(interaction, bot, faults: list[str]) -> None:
+    """What the verdicts channel never received (#237).
+
+    Its hint is not a command. A decided verdict cannot be announced again — no command
+    re-announces one, and the bot stores no message id by which to find one (#189) — so the
+    manager is told to post it themselves rather than to re-run something that would leave
+    them believing the job finished.
+
+    **A verdict fault does not mark the approval's own audit line ``Incomplete``**, where a
+    failed repost does (decided 2026-09-20). Two reasons. The repost *is* the result being
+    published, so an approval that could not publish it did not wholly succeed; an
+    announcement is the explanation alongside it, and the decision stands without it. And
+    #239 already settled the shape for the sibling case: attendance sanctions that did not
+    apply raise their own ``ATTENDANCE_SANCTIONS | Incomplete`` entry and leave
+    ``PENALTY_REVIEW_APPROVED`` alone. The audit line is also written before the verdicts go
+    out, so marking it would mean reordering the approval to no one's benefit.
+    """
+    from services.verdict_announcement_service import verdict_repair_hint
+
+    await _report_faults(
+        interaction, bot,
+        heading="VERDICTS | Incomplete",
+        intro=(
+            "\u26a0\ufe0f The decisions stand, but some verdicts were not announced:"
+        ),
+        faults=faults,
+        hint=verdict_repair_hint(),
+    )
 
 
 async def finalize_appeals_review(
@@ -974,15 +1102,22 @@ async def finalize_appeals_review(
                 interaction, bot, db_path, division_id, repost_faults
             )
 
-        # Post appeal announcements (non-blocking)
+        # Post appeal announcements. Non-blocking, but no longer silent (#237).
+        verdict_faults: list[str] = []
         if applied_correction_records:
             try:
-                await _vas.post_appeal_announcements(bot, state, applied_correction_records)
-            except Exception:
+                verdict_faults = await _vas.post_appeal_announcements(
+                    bot, state, applied_correction_records
+                )
+            except Exception as exc:  # noqa: BLE001 — the corrections still stand
                 log.exception(
                     "finalize_appeals_review: error posting appeal announcements for round %s",
                     round_id,
                 )
+                verdict_faults = [f"No appeal verdict could be announced: {exc}"]
+
+        if verdict_faults:
+            await _report_unannounced_verdicts(interaction, bot, verdict_faults)
 
     # Close the submission channel
     await close_submission_channel(state.submission_channel_id, round_id, guild, db_path)

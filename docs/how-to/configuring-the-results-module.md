@@ -361,6 +361,23 @@ Work it in this order.
 
 **The approval itself went through.** The penalties are applied, the championship is recalculated and the round has moved on. Only the posting is outstanding — do not approve anything a second time to try to fix it.
 
+### A verdict that was not announced
+
+The verdict in your verdicts channel is the only thing that tells a driver *why* their classification changed. When one cannot be posted, it is named in your reply and in the log channel as a `VERDICTS | Incomplete` entry, with the driver it was owed to.
+
+**This one you have to finish by hand.** There is no command that announces a decided verdict again — the bot keeps no record of the message, so it cannot find or replace one. So:
+
+1. **Repair the cause.** Usually the verdicts channel has been deleted or the bot's permission to post in it has been taken away. If the channel is gone, set a new one with `/division verdicts-channel`.
+2. **Post the decision yourself**, in that channel, naming the driver, the sanction and the reasoning. The entry in the log channel has the details you need.
+
+**A division with no verdicts channel is reported, not skipped.** Unlike a results or standings channel, a verdicts channel is one of the three every division must have before its placements can be confirmed — so if a verdict cannot find one, something has been removed since.
+
+**Automatic attendance sanctions are the same.** It is tempting to think `/attendance sync` will announce one that failed — it re-runs the sanctions, after all — but it will not. A driver already sacked or already moved to Reserve is no longer a candidate on a second run, so they are passed over silently. When the log says a sanction was *applied but not announced*, post that one by hand too.
+
+### Attendance the approval could not record
+
+With the attendance module on, approving a penalty review also records who attended the round. Where that fails you get an `ATTENDANCE_RECORD | Incomplete` entry and a line in your reply, and the sanctions for that round are held back rather than applied to a total the bot knows is wrong. [The attendance guide](configuring-the-attendance-module.md) explains what to do about it.
+
 ---
 
 ## What you cannot change

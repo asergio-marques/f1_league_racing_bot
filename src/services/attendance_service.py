@@ -1574,7 +1574,11 @@ async def enforce_attendance_sanctions(
                     f"ATTENDANCE_AUTOSACK | {driver}"
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}",
                 )
-                await _vas.post_autosanction_announcement(
+                # An announcement that never went out is recorded with the run (#237). The
+                # `except` below only ever caught what *raised*, and this returns quietly
+                # instead — so `ATTENDANCE_SANCTIONS | Incomplete` has been promising a
+                # line about unannounced sanctions that it could not produce.
+                outcome.posting_faults += await _vas.post_autosanction_announcement(
                     bot=bot,
                     db_path=db_path,
                     round_id=round_id,
@@ -1651,7 +1655,7 @@ async def enforce_attendance_sanctions(
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autoreserve_threshold}"
                     f" → moved to {reserve_team_name}",
                 )
-                await _vas.post_autosanction_announcement(
+                outcome.posting_faults += await _vas.post_autosanction_announcement(
                     bot=bot,
                     db_path=db_path,
                     round_id=round_id,
