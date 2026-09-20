@@ -124,7 +124,7 @@
 - Whether a round is of the Mystery format shall be determined at the moment a phase fires, so that a round whose format changed after being scheduled behaves according to its current format.
 
 ## How a forecast names itself
-- Each forecast, drawn as a message or as a graphic alike, shall be titled by the description of its phase: "Initial chance of rain" for Phase 1, "Initial session forecast" for Phase 2 and "Final session forecast" for Phase 3. The message and the graphic shall carry the same description.
+- Each phase's forecast, drawn as a message or as a graphic alike, shall be titled by the description of its phase: "Initial chance of rain" for Phase 1, "Initial session forecast" for Phase 2 and "Final session forecast" for Phase 3. The message and the graphic shall carry the same description. The notice of a mystery round carries no such description, standing for no phase's forecast.
 - No forecast shall state the horizon at which it was posted, the horizon of any other phase, or the number of the phase it stands for. A horizon is configurable and a forecast that named one would be wrong for every league that had changed it.
 - The Phase 1 and Phase 2 messages shall each indicate that a further forecast follows nearer to the round, and the Phase 2 message shall indicate that the forecast following it is the more accurate. The Phase 3 message, being the last a round receives, shall indicate no forecast to follow.
 
