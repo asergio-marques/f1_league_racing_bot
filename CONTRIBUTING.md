@@ -19,7 +19,8 @@ A good issue carries:
 
 Label every issue with `bug` (or `feature-request`, `question`, `documentation`), the module it
 belongs to (`module-weather`, `module-signup`, `module-results`, `module-attendance`,
-`module-image`, or `core` where no single module owns it), and one priority from below.
+`module-image`, `module-stewarding`, `module-stats`, or `core` where no single module owns it),
+and one priority from below.
 
 ## Issue priorities
 
