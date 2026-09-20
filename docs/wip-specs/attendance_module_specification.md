@@ -172,6 +172,19 @@
     - It shall be safe to run again: a driver already sacked or already in the reserve team shall not be sanctioned a second time, so a second run applies only what the first did not.
     - The reply shall list the sanctions applied and any still not applied, and the run shall be written to the log channel.
 
+### Posting a check-in call by hand
+- <NEW COMMAND> An "attendance post-check-in" command shall be made available to league managers, which shall have as input a division name and a round number. Decided 2026-09-20 (#123).
+    - It shall post the check-in call of the round given, as the scheduled call would have posted it, opening the round's attendance records with it.
+    - It is a last resort, for a call the bot should have posted and did not. A round whose call never went out opens no attendance records, and is afterwards recorded as perfect attendance for the whole division; this is what allows a league to repair that. A league needing it routinely has a cause that has not been fixed.
+    - It shall be available only while the season is in one of the three ongoing stages, and shall be refused otherwise, with nothing changed.
+    - It shall be refused, with nothing changed, where the round is cancelled, there being no check-in to answer for it.
+    - It shall be refused, with nothing changed, where a check-in call for the round is already standing. The reply shall say that amending the round is what posts a call again, that being the path which carries every answer already given across. A second call standing beside the first would divide a division's answers between two messages.
+    - Where the scheduled call posts while the command is running, the command shall post nothing on top of it and shall say so. A round shall never carry two check-in calls: the second would leave the first answerable by drivers and tracked by nothing, so its answers would be lost and its buttons never closed at the deadline.
+    - It shall be refused, with nothing changed, before the moment the call was due to be posted. The scheduled call is still to come, and posting earlier would override the notice period the league configured.
+    - It shall be refused, with nothing changed, once the check-in deadline of the round has passed, a call posted after it being one nobody can answer. Where the deadline is set to zero, and so disabled, the moment of the round itself shall be the boundary: a call shall not be posted for a round already under way or run.
+    - The reply shall say whether a call is standing once it has run, and not merely that the command was accepted; and the run shall be written to the log channel either way.
+    - Where a check-in call fails to post, the log entry reporting it shall name this command, with the division and round already filled in.
+
 ## Test mode
 - A "test-mode rsvp set-status" command shall be available to league managers, which will take as its parameter the name of a division (mandatory). This will serve to set the RSVP status of fake drivers in test mode.
     - The command shall require the division to belong to a season in one of the three ongoing states and to have a check-in call currently posted; it shall be refused otherwise.

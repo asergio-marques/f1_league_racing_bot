@@ -22,6 +22,19 @@ from utils.channel_guard import league_manager_only
 log = logging.getLogger(__name__)
 
 
+def _as_utc(moment) -> datetime:
+    """A round's ``scheduled_at`` as an aware UTC datetime, however the driver hands it back.
+
+    SQLite stores it as an ISO 8601 string and aiosqlite returns it as one; a naive datetime,
+    from any source, is UTC as everything else here is.
+    """
+    if isinstance(moment, str):
+        moment = datetime.fromisoformat(moment)
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=timezone.utc)
+    return moment
+
+
 class AttendanceCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -479,6 +492,184 @@ class AttendanceCog(commands.Cog):
             f"  division: {div.name}\n"
             f"  from round: {round}\n"
             f"  sanctions applied: {len(outcome.applied)}",
+        )
+
+    # ── /attendance post-check-in ──────────────────────────────────────────
+
+    @attendance.command(
+        name="post-check-in",
+        description="Post a round's check-in call by hand, where the scheduled one never went out.",
+    )
+    @app_commands.describe(
+        division="Division name",
+        round="Round number whose check-in call is missing.",
+    )
+    @league_manager_only
+    async def post_check_in(
+        self, interaction: discord.Interaction, division: str, round: int
+    ) -> None:
+        """Post a check-in call a league never received (decided 2026-09-20, #123).
+
+        **A last resort, not a routine.** A call reaches a division from its scheduled job and
+        from the recovery that re-arms it after a restart; this is the repair for when both
+        have failed, and the advice `_report_call_failure` writes to the log channel — post the
+        call again once the cause is cleared — had no command behind it until now. A league
+        reaching for this regularly has a cause nobody has fixed.
+
+        It is confined to the window in which a call *should* be standing and is not. Before
+        the call is due the scheduled one is still coming, and posting early would override the
+        lead time the league configured; after the deadline the buttons lock on arrival, so the
+        call would be unanswerable. A deadline of zero disables the *closing* of a check-in and
+        not the race, so the round's own moment is the boundary then. A call already standing is **not** replaced — an amendment
+        is the path that takes one down and carries the answers over, and a second call beside
+        the first would split a division's answers across two messages.
+
+        The post itself is `run_rsvp_notice`, unchanged. That returns silently on every fault
+        it handles, so the reply is decided by whether a call *stands* afterwards rather than by
+        it returning — otherwise a failed post would be reported as a success.
+
+        **This is the first path that posts a call without first taking one down.** The
+        scheduler, the restart recovery and `/test-mode advance` all post a call the round is
+        not expected to have; `repost_rsvp_call` withdraws before it posts. So the standing-call
+        check is load-bearing here in a way it is nowhere else, and it is made twice — once to
+        answer the manager, and again immediately before posting, because the scheduled call
+        falls due at the very moment this command's window opens.
+
+        A residual window remains between that second check and the `channel.send` inside
+        `run_rsvp_notice`, which no check on this side can close; shutting it properly means
+        claiming the `rsvp_embed_messages` row before posting and releasing it on failure, which
+        is a change to the shared posting path rather than to this command. It is not closed
+        here because the two posters would have to collide inside a span of a few hundred
+        milliseconds, after a call had already failed to post once. `test_the_scheduled_call_
+        winning_the_race_stops_this_one` pins the check that does the work.
+        """
+        if not await self._guard_module_enabled(interaction):
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
+        if season is None or season.stage not in ONGOING_STAGES:
+            await interaction.followup.send(
+                "⛔ `/attendance post-check-in` is available only while the season is ongoing.",
+                ephemeral=True,
+            )
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+        div = next((d for d in divisions if d.name.lower() == division.lower()), None)
+        if div is None:
+            await interaction.followup.send(
+                f"❌ Division '{division}' not found.", ephemeral=True
+            )
+            return
+
+        db_path = self.bot.db_path  # type: ignore[attr-defined]
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, status, scheduled_at FROM rounds "
+                "WHERE division_id = ? AND round_number = ?",
+                (div.id, round),
+            )
+            round_row = await cursor.fetchone()
+        if round_row is None:
+            await interaction.followup.send(
+                f"❌ **{div.name}** has no round {round}.", ephemeral=True
+            )
+            return
+        if round_row["status"] == RoundStatus.CANCELLED.value:
+            await interaction.followup.send(
+                f"⛔ Round {round} of **{div.name}** is cancelled, so it has no check-in "
+                f"to answer.",
+                ephemeral=True,
+            )
+            return
+
+        round_id: int = round_row["id"]
+        if await _call_stands(self.bot, round_id, div.id):
+            await interaction.followup.send(
+                f"⛔ A check-in call is already standing for round {round} of "
+                f"**{div.name}**, so nothing was posted. Amend the round if it needs to go "
+                f"out again — that carries every answer already given across.",
+                ephemeral=True,
+            )
+            return
+
+        cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
+        if cfg is None:
+            await interaction.followup.send(
+                "\u274c No attendance configuration found. Enable the module first.",
+                ephemeral=True,
+            )
+            return
+
+        scheduled_at = _as_utc(round_row["scheduled_at"])
+        now = datetime.now(timezone.utc)
+
+        due_at = scheduled_at - timedelta(days=cfg.rsvp_notice_days)
+        if now < due_at:
+            await interaction.followup.send(
+                f"⛔ The check-in call for round {round} of **{div.name}** is not due "
+                f"until <t:{int(due_at.timestamp())}:F>, and is still scheduled to post then. "
+                f"Nothing was posted.",
+                ephemeral=True,
+            )
+            return
+
+        # A deadline of zero disables the *closing* of the check-in, not the race itself: the
+        # round's own moment is the boundary then, because a call posted after the race has
+        # started asks a division to say whether it is racing in something already run. Without
+        # this the command would post a call for a race six days past.
+        deadline_at = scheduled_at - timedelta(hours=cfg.rsvp_deadline_hours)
+        if now >= deadline_at:
+            closed = (
+                f"closed at <t:{int(deadline_at.timestamp())}:F>"
+                if cfg.rsvp_deadline_hours > 0
+                else f"started at <t:{int(deadline_at.timestamp())}:F>"
+            )
+            await interaction.followup.send(
+                f"⛔ Round {round} of **{div.name}** {closed}, so a call posted now could "
+                f"not be answered. Nothing was posted.",
+                ephemeral=True,
+            )
+            return
+
+        # The scheduled call becomes due at exactly the moment the window above opens, so a
+        # manager running this around that moment races it. `run_rsvp_notice` does not guard
+        # against a call already standing for its own round — it skips it when clearing a
+        # division's old calls, "shouldn't exist yet" — and `insert_embed_message` upserts, so
+        # the second post to land would overwrite the first's id and orphan a live call in the
+        # channel: still answerable, tracked by nothing, never locked at the deadline. Checking
+        # again here, as late as possible, is what keeps the two apart.
+        if await _call_stands(self.bot, round_id, div.id):
+            await interaction.followup.send(
+                f"\u26d4 The scheduled check-in call for round {round} of **{div.name}** "
+                f"posted while this ran, so nothing was posted on top of it.",
+                ephemeral=True,
+            )
+            return
+
+        from services.rsvp_service import run_rsvp_notice
+
+        await run_rsvp_notice(round_id, self.bot)
+
+        posted = await _call_stands(self.bot, round_id, div.id)
+        if posted:
+            await interaction.followup.send(
+                f"✅ Check-in call posted for round {round} of **{div.name}**.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.followup.send(
+                f"⛔ The check-in call for round {round} of **{div.name}** could not be "
+                f"posted. The log channel says why.",
+                ephemeral=True,
+            )
+
+        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+            f"| /attendance post-check-in | {'Success' if posted else 'Failed'}\n"
+            f"  division: {div.name}\n"
+            f"  round: {round}",
         )
 
 

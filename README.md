@@ -1856,7 +1856,7 @@ Toggles whether reserve drivers appear in the publicly posted standings for the 
 
 All commands below require the attendance module to be enabled (`/module enable attendance`). Where check-in calls and attendance sheets are posted is set per division by [`/division rsvp-channel`](#division-rsvp-channel--set-the-rsvp-notice-channel-for-a-division) and [`/division attendance-channel`](#division-attendance-channel--set-the-attendance-logging-channel-for-a-division).
 
-> **A check-in call that fails to post is reported in the log channel**, naming the season, the division and the round. This matters more than it sounds: when a call cannot be posted, the round's attendance rows are never opened, so nobody is asked to check in and nothing is ever counted against anyone — the round ends up recorded as perfect attendance for the whole division. The report tells you to post it again once the cause is cleared, though no command currently does so — a call that failed is lost with the round. It appears whether or not the images module is enabled, because the fault is in the call and not in any picture.
+> **A check-in call that fails to post is reported in the log channel**, naming the season, the division and the round. This matters more than it sounds: when a call cannot be posted, the round's attendance rows are never opened, so nobody is asked to check in and nothing is ever counted against anyone — the round ends up recorded as perfect attendance for the whole division. The report tells you to post it again once the cause is cleared, and names the [`/attendance post-check-in`](#attendance-post-check-in--post-a-rounds-check-in-call-by-hand) that does it, with the division and round already filled in. It appears whether or not the images module is enabled, because the fault is in the call and not in any picture.
 
 > **A driver who joins a division while a call is standing can still answer it.** A call lists the division as it stood when it was posted, but it is redrawn from the current roster every time anybody presses a button — so a driver you assign, move or confirm into the division before the deadline appears on it and their answer counts, exactly as everyone else's does. They have no attendance record for that round until they answer, and the ordinary locks still apply: a full-time driver placed after the deadline has gone by is told it has passed, and a reserve who has not accepted can still step in until the round is due to start.
 >
@@ -1964,6 +1964,24 @@ Recalculates the attendance of the round you name and of every later round whose
 It is safe to run more than once: a driver already sacked or already in the Reserve team is not sanctioned again, so a second run applies only what the first did not.
 
 > **Limitation:** Available only while the season is ongoing, and only for a round whose penalties have been approved. It is refused, with nothing changed, if a channel it would post to cannot be reached.
+
+#### `/attendance post-check-in` — Post a round's check-in call by hand
+*Access: League manager*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division` | String | ✅ | Division name |
+| `round` | Integer | ✅ | Round number whose check-in call is missing |
+
+Posts the check-in call for the round you name, exactly as the scheduled call would have posted it, and opens the round's attendance records with it. The reply tells you whether a call is now standing — not merely that the command was accepted — and the run is written to the log channel either way.
+
+**This is a last resort.** A round whose check-in call never went out opens no attendance records, so it is afterwards recorded as perfect attendance for the whole division. This is how you repair that. If you find yourself reaching for it routinely, something is failing that has not been fixed — the log channel entry for the failed call says what.
+
+> **Limitation:** Available only while the season is ongoing. It is refused, with nothing changed, if the round is cancelled, if a check-in call for it is **already standing**, if the call is **not yet due**, or if the check-in **deadline has passed**.
+>
+> **If the scheduled call posts while you are running this**, nothing is posted on top of it and the reply says so. A round is never left carrying two calls — the second would leave the first still answerable but tracked by nothing, so those answers would be lost and its buttons never closed at the deadline.
+>
+> The last three are deliberate. Before the call is due the scheduled one is still coming, and posting early would override the notice period you set with `/attendance config rsvp-notice`. After the deadline a call arrives with its buttons already locked, so nobody could answer it — and if you have set the deadline to `0` to disable it, the race itself is the cut-off, so you cannot post a call for a round already under way or run. And a call already standing is never replaced — [amend the round](#round-amend--amend-a-round-in-the-active-season) instead, which posts the call again and carries every answer already given across.
 
 ---
 

@@ -39,6 +39,7 @@ This guide covers the attendance module only. Setting the bot up, creating a sea
 | `/module enable results` and `/module enable attendance` | The **league admin role** |
 | `/attendance config` — all of them | The **interaction role** |
 | `/attendance sync` | The **interaction role** |
+| `/attendance post-check-in` | The **interaction role** |
 | `/division rsvp-channel` and `/division attendance-channel` | The **interaction role** |
 | The check-in buttons | No role. A confirmed placement in that division, full-time or reserve — anybody else is told they are not a member of it |
 | The pardon button on a penalty review | Whoever runs your penalty reviews |
@@ -305,6 +306,27 @@ Run the sync the same day. Until you do, that round's attendance is wrong and ev
 
 ---
 
+## When the check-in call never went out
+
+The most damaging of the three, and the quietest. A round whose check-in call never posted opens no attendance records at all — so nobody is asked whether they are racing, nobody can be marked absent, and the round is scored afterwards as **perfect attendance for the whole division**. Nothing about the finished round looks wrong.
+
+You find out from the log channel, which gets an `ATTENDANCE | check-in call | NOT POSTED` entry at the moment it fails, naming the division, the round and the reason.
+
+**Find the cause before you post anything.** The entry says what went wrong, and it is nearly always one of two things: the division's check-in channel has been deleted, renamed or had the bot's permissions changed, or Discord refused the message. Posting the call again before you have fixed that just fails a second time.
+
+1. **Read the reason** in the log entry.
+2. **Put the cause right** — usually restoring the channel in `/division rsvp-channel`, or giving the bot permission to post and embed links there.
+3. **Post the call** with `/attendance post-check-in`, naming the division and the round. The log entry gives you the command with both already filled in, so you can copy it straight out.
+4. **Check the reply.** It tells you whether a call is now standing, not merely that the command was accepted — so a second failure is not mistaken for a success.
+
+The call goes out exactly as the scheduled one would have, opens the round's attendance records, and the deadline and reminder already scheduled for the round still apply.
+
+> **It will refuse you in three cases, all deliberate.** If a check-in call is **already standing**, use [`/round amend`](../../README.md#round-amend--amend-a-round-in-the-active-season) instead — that takes the old call down and posts a new one carrying every answer already given across, where a second call would split your division's answers between two messages. If the call is **not yet due**, the scheduled one is still coming and posting now would override the notice period you set. And if the **deadline has passed**, a call posted now would arrive with its buttons locked, so nobody could answer it.
+
+**If you are reaching for this often, something is broken that nobody has fixed.** It is a repair, not part of running a season — a league that needs it every few rounds has a channel or permission problem worth chasing down properly.
+
+---
+
 ## What you cannot change
 
 Worth knowing so you do not go looking for the setting.
@@ -317,7 +339,6 @@ Worth knowing so you do not go looking for the setting.
 | How reserves are ordered for a seat | By when they accepted, earliest first. Changing your answer and changing it back puts you at the back of the queue |
 | Which team a reserve lands in | Worked out from who is missing. A team with nobody at all comes first, then one whose driver declined, then one whose driver never answered, then one with an empty seat, and last a team whose only gap is a tentative driver. Every team gets one before any team gets two, and where two are equal the team further down the constructors' table is served first |
 | Marking somebody present by hand | There is no command. Presence comes from the results; correct the results with `/round results amend` |
-| Posting a check-in call yourself | There is no command for it. A call the bot skipped or failed to post cannot be reinstated, and that round goes untracked. Amending the round is not a way round this — it reposts a call that went out, but does not post one that never did |
 | Having both auto-reserve and auto-sack | Mutually exclusive by design |
 | Where the sanction announcements go | The division's verdicts channel, alongside your penalty decisions |
 
@@ -347,9 +368,9 @@ Worth running through before the season is approved.
 |---|---|
 | No check-in call for a division | No check-in channel set for it, or the module is off |
 | A division's calendar names a round and a check-in window, with no Approve button | That round is already inside the window — its call fell due before you ran the review. Only the latest such round is named; put it right and the earlier ones go with it. Move the round, or shorten the notice, and review again |
-| A call that never appeared, and a loud report in the log channel | The bot could not post it. No records were opened, so the round is a free pass for the whole division |
+| A call that never appeared, and a loud report in the log channel | The bot could not post it. No records were opened, so the round is a free pass for the whole division. Fix the cause the entry names, then run `/attendance post-check-in` |
 | No check-in for a round you moved or re-tracked | The round was moved past its own check-in deadline, so the check-in stayed closed. Check the round's time against your deadline setting |
-| A round where nobody was charged anything | The round was cancelled, or its call never posted — check the log channel, which reports a failed call loudly |
+| A round where nobody was charged anything | The round was cancelled, or its call never posted — check the log channel, which reports a failed call loudly. A call still inside its deadline can be posted with `/attendance post-check-in` |
 | `/module enable attendance` refused | Results & standings is off, or a season is already running |
 | Attendance switched off by itself, and the channels gone | Results & standings was turned off and the cascade warning confirmed, which takes attendance with it and deletes every division's channels |
 | Check-in stopped mid-season and will not come back | Attendance was switched off, directly or by turning results & standings off. It stays off until the season ends |
