@@ -9,6 +9,7 @@ from db.database import get_connection
 from services.driver_service import current_account_map_for_division
 from models.classification_occasion import ClassificationOccasion
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
+from models.season import SeasonStage
 from models.session_result import (
     DriverSessionResult,
     OutcomeModifier,
@@ -1293,12 +1294,31 @@ async def results_sync_hint(db_path: str, division_id: int) -> str:
     separately — the round's own results and the division's standings — and each has its
     own command. Modelled on ``attendance_service.sync_hint``, which does the same for a
     run of sanctions that did not all apply (#239).
+
+    **Except once the season is pending completion**, where both sync commands are refused
+    (issue #224) and naming them would send a manager to a door that will not open. The one
+    repost still available there is `/round results amend` itself, which is also the only
+    thing that can have failed: it replaces the round's own results *and* every later
+    round's standings, so re-running it after the channel is repaired recovers the whole of
+    what was lost. The stage is read here rather than passed in, so that none of the three
+    callers has to know the rule.
     """
     async with get_connection(db_path) as db:
         row = await (
-            await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
+            await db.execute(
+                "SELECT d.name AS name, s.stage AS stage FROM divisions d "
+                "JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
+                (division_id,),
+            )
         ).fetchone()
     name = (row["name"] if row is not None else None) or f"division {division_id}"
+    stage = row["stage"] if row is not None else None
+    if stage == SeasonStage.PENDING_COMPLETION.value:
+        return (
+            f"Repair the cause, then amend the round again with `/round results amend "
+            f"division_name:{name}` — every division of this season is done, so the sync "
+            f"commands are closed and the amendment is what reposts."
+        )
     return (
         f"Repair the cause, then run `/results rounds sync division:{name}` and "
         f"`/results standings sync division:{name}`."

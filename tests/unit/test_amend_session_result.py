@@ -491,6 +491,43 @@ async def test_an_amendment_that_could_not_repost_is_logged_as_incomplete(tmp_pa
     assert "/results rounds sync" in logged
 
 
+async def test_the_hint_names_the_amendment_where_the_season_is_pending_completion(tmp_path):
+    """Both sync commands are refused once every division is done (issue #224), so naming
+    them would send a manager to a door that will not open.
+
+    `/round results amend` is the one repost still available there — and, being the only
+    thing permitted that reposts at all, the only thing that can have failed. Re-running it
+    replaces the round's own results *and* every later round's standings, so it recovers the
+    whole of what was lost.
+    """
+    db_path = await _make_db(tmp_path, name="amend_pending_hint")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE seasons SET stage = 'PENDING_COMPLETION' WHERE id = ?", (SEASON_ID,)
+        )
+        await db.commit()
+
+    stubs = await _amend(db_path, [_race_row(101, 1)], repost_faults=[AMEND_FAULT])
+
+    logged = _amend_log(stubs)
+    assert "RESULT_AMENDED | Incomplete" in logged
+    assert "/round results amend division_name:Pro" in logged
+    assert "/results rounds sync" not in logged
+    assert "/results standings sync" not in logged
+
+
+async def test_the_hint_names_the_sync_commands_while_the_season_is_ongoing(tmp_path):
+    """The counterpart, so the Pending-completion branch cannot become the only answer."""
+    db_path = await _make_db(tmp_path, name="amend_ongoing_hint")
+
+    stubs = await _amend(db_path, [_race_row(101, 1)], repost_faults=[AMEND_FAULT])
+
+    logged = _amend_log(stubs)
+    assert "/results rounds sync division:Pro" in logged
+    assert "/results standings sync division:Pro" in logged
+    assert "/round results amend" not in logged
+
+
 async def test_an_amendment_that_posted_everything_is_still_a_success(tmp_path):
     """The counterpart, so `| Incomplete` cannot become the answer to everything."""
     db_path = await _make_db(tmp_path, name="amend_complete")
