@@ -1000,7 +1000,7 @@
 
 ## When the bot restarts
 - [STW-RST-001] All of this module's scheduled work shall survive the bot stopping and starting again. What came due while the bot was stopped shall be carried out when it starts, in the order it would have happened. A ticket's buttons, ballots and pending requests shall keep working.
-- [STW-RST-002] The time the bot was stopped, or cut off from Discord, shall not count against any window in which a user or a steward acts: report submission, defence submission, the deliberations, appeal submission, the conduct cycle's stages, and the hour given the effective head steward to break a tie or to confirm a justification. Each such window open during the gap shall be lengthened by the gap, and every later stage of the same cycle moved on by it alike. A gap of no more than a few minutes may be disregarded.
+- [STW-RST-002] The time the bot was stopped, or cut off from Discord, shall not count against any window in which a user or a steward acts: report submission, defence submission, the deliberations, appeal submission, the conduct cycle's stages, and the hour given the effective head steward to break a tie or to confirm a justification. Each such window open during the gap shall be lengthened by the gap, and every later stage of the same cycle moved on by it alike. A gap of no more than five minutes may be disregarded, five minutes being the interval the bot holds to elsewhere.
   - [STW-RST-003] Clocks in which no one acts run on regardless: the expiry of a timed season ban, and the countdown to the deletion of a closed ticket's channel.
 - [STW-RST-004] A cycle close waiting for a channel to be repaired shall be tried again whenever the bot starts, and whenever the command that sets that channel is run.
 

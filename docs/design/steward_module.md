@@ -453,11 +453,12 @@ corrected, so deleting the row would leave the channel and the licence disagreei
 the database to explain the gap. The exclusion predicate is the cost, and it is worth a named test:
 one query that forgets it resurrects a sanction that should not exist.
 
-**How long a gap may be disregarded.** [STW-RST-002] says a gap of "no more than a few minutes"
-may be disregarded and names no figure. This design proposes five minutes, to agree with the
-scheduler's existing 300-second misfire grace so the two cannot disagree about one boundary. The
-choice is league-visible: below the threshold, everybody's window is quietly shortened by the
-outage.
+**~~How long a gap may be disregarded.~~** Settled 2026-09-20: five minutes, now named in
+[STW-RST-002]. It is the interval the bot already holds to in six places — the scheduler's
+300-second misfire grace, `APPROVAL_WINDOW_SECONDS`, the placements-review button, the retry
+loop, the signup correction timeout and the signup view's own — so the downtime rule and the
+misfire grace cannot disagree about one boundary. Below it, everybody's window is quietly
+shortened by the outage; that is accepted.
 
 **What the flip-flop latch of a historical-accumulation rule becomes on a merge.** [STW-CON-014]
 says a threshold crossed on either licence is held as crossed on the merged one, so the merge
