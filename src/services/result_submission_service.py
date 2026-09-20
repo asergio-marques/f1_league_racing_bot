@@ -710,8 +710,19 @@ async def finalize_penalty_review(
             # figure — which the season's final sheet then published. The cascade is one
             # transaction, so a failure here leaves this round's points unawarded as well,
             # which is what the message below says and what defers the sanctions.
+            #
+            # **The sheet and the sanctions below follow the cascade to its last round**,
+            # not the round being approved. Each round's stored total is that driver's
+            # total as at that round, so amending round 3 of ten leaves the division's
+            # current standing on round 10 — and it is the current standing a sheet must
+            # show and a threshold must be read from. Where the cascade fails there is no
+            # round to follow it to, and the round approved stands in; nothing was written
+            # in that case, and the sanctions are deferred regardless.
+            _latest_scored_round = round_id
             try:
-                await cascade_attendance_from_round(db_path, round_id, division_id)
+                _latest_scored_round = (
+                    await cascade_attendance_from_round(db_path, round_id, division_id)
+                )[-1]
             except Exception as exc:  # noqa: BLE001 — recorded, and the pipeline goes on
                 log.exception("finalize_penalty_review: cascade_attendance_from_round failed for round %s", round_id)
                 _attendance_write_failures.append(
@@ -722,7 +733,9 @@ async def finalize_penalty_review(
             # T014: Post attendance sheet (non-blocking).
             try:
                 if guild:
-                    await post_attendance_sheet(bot, guild, db_path, round_id, division_id)
+                    await post_attendance_sheet(
+                        bot, guild, db_path, _latest_scored_round, division_id
+                    )
             except Exception:
                 log.exception("finalize_penalty_review: post_attendance_sheet failed for round %s", round_id)
 
@@ -752,7 +765,7 @@ async def finalize_penalty_review(
             else:
                 try:
                     _outcome = await enforce_attendance_sanctions(
-                        bot, guild, db_path, round_id, division_id,
+                        bot, guild, db_path, _latest_scored_round, division_id,
                         _att_season_id,
                         head=_verdict_banner,
                     )

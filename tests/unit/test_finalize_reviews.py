@@ -481,6 +481,36 @@ async def test_an_amended_round_redistributes_every_later_round(tmp_path):
     assert [c.args[1] for c in stubs["distribute"].await_args_list] == [ROUND_ID, 104, 105]
 
 
+async def test_the_sheet_and_the_sanctions_follow_the_cascade_to_its_last_round(tmp_path):
+    """Issue #238. Each round's stored total is the driver's total as at that round, so
+    amending round 3 of ten leaves the division's current standing on the last round scored —
+    and it is the current standing the sheet must show and the thresholds must be read
+    from."""
+    db_path = await _make_db(tmp_path, name="att_cascade_latest")
+    await _later_rounds(db_path, {4: "FINAL", 5: "FINAL"})
+
+    stubs = await _run(finalize_penalty_review, _state(db_path, attendance_enabled=True))
+
+    assert stubs["sheet"].await_args.args[3] == 105
+    assert stubs["sanctions"].await_args.args[3] == 105
+
+
+async def test_a_failed_cascade_leaves_the_sheet_on_the_round_approved(tmp_path):
+    """Nothing was written, so there is no later round to follow it to — and the sanctions
+    are deferred in any case."""
+    db_path = await _make_db(tmp_path, name="att_cascade_failed")
+    await _later_rounds(db_path, {4: "FINAL"})
+
+    stubs = await _run(
+        finalize_penalty_review,
+        _state(db_path, attendance_enabled=True),
+        attendance_errors={"distribute": RuntimeError("boom")},
+    )
+
+    assert stubs["sheet"].await_args.args[3] == ROUND_ID
+    stubs["sanctions"].assert_not_awaited()
+
+
 async def test_rounds_before_the_amended_one_keep_their_totals(tmp_path):
     db_path = await _make_db(tmp_path, name="att_cascade_earlier")
     await _later_rounds(db_path, {1: "FINAL", 2: "FINAL"})
