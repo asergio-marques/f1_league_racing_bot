@@ -288,8 +288,10 @@ async def signup_configuration_fixed(db_path: str) -> int | None:
 async def modules_frozen_for_completion(db_path: str) -> bool:
     """True while the server's season stands in Pending completion.
 
-    Nothing but amending a final round's results, approving an amendment of the season's
-    points and completing the season may be done then, so no module may be disabled.
+    Nothing but repairing a division's channels, amending the results of a round already
+    final, and completing the season may be done then (issue #224, decided 2026-09-20 — the
+    season's points amendment was once permitted here too and no longer is), so no module may
+    be disabled.
     """
     found = await live_season_stage(db_path)
     return found is not None and found[1] is SeasonStage.PENDING_COMPLETION
