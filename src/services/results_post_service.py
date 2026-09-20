@@ -797,6 +797,39 @@ async def post_standings(
         )
 
 
+async def _forget_standings_messages(
+    db_path: str, division_id: int, round_id: int
+) -> list[tuple[int, list[int] | None]]:
+    """Forget a round's standings messages and hand them back to be deleted later.
+
+    The reading half of :func:`_clear_standings_messages`, split out for the produce-then-
+    destroy rebuild (#345): the ids have to leave the database *before* the replacement is
+    posted, so :func:`post_standings` inserts rather than editing the message it replaces —
+    but the messages themselves must not be destroyed until every replacement is up.
+
+    Returns ``(anchor id, chunk list)`` per championship that had one, in a stable order.
+    """
+    found: list[tuple[int, list[int] | None]] = []
+    for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS):
+        existing_id = await _get_standings_message_id(
+            db_path, division_id, round_id, championship
+        )
+        if existing_id is None:
+            continue
+        found.append(
+            (
+                existing_id,
+                await _get_standings_message_ids(
+                    db_path, division_id, round_id, championship
+                ),
+            )
+        )
+        await _set_standings_message_id(
+            db_path, division_id, round_id, None, championship
+        )
+    return found
+
+
 async def _clear_standings_messages(
     db_path: str,
     division_id: int,
@@ -1776,8 +1809,16 @@ async def repost_standings_for_division(
     *,
     bot=None,
 ) -> str:
-    """Delete and repost standings messages for *every* round in the division that
-    has had results posted.
+    """Repost every round's standings, in round order, then take the old ones down.
+
+    **The replacement is produced before the original is destroyed** (Constitution XIV.8,
+    #345), as :func:`repost_results_for_division` now does for results — and for the same
+    reason: a rebuild that deleted as it went left a failure part-way through with the rounds
+    it had reached rebuilt and the rest destroyed with nothing put back.
+
+    The stored ids are forgotten before each repost so that :func:`post_standings` inserts a
+    new message rather than editing the one it is replacing, and the ids themselves are held
+    until the deletion pass at the end.
 
     Returns one of three status strings for the caller to surface to the admin:
     - ``"ok"``         — standings reposted successfully
@@ -1817,15 +1858,19 @@ async def repost_standings_for_division(
 
     show_reserves = await _get_show_reserves(db_path, division_id)
 
+    # ── Produce ───────────────────────────────────────────────────────────
+    # Each round's superseded standings, remembered while the replacements go up.
+    superseded: list[tuple[int, list[int] | None]] = []
+
     for row in rows:
         round_id: int = row["round_id"]
         round_number: int = row["round_number"]
         track_name: str = row["track_name"] or "Unknown"
         rsd_label: str = _label_from_status(row["status"] or "")
 
-        # Delete the existing standings message(s) for this round (if any), both
-        # championships, whichever flow posted them.
-        await _clear_standings_messages(db_path, division_id, round_id, sc)
+        superseded.extend(
+            await _forget_standings_messages(db_path, division_id, round_id)
+        )
 
         driver_snaps = await driver_standings_for_display(
             db_path, division_id, round_id, guild, bot
@@ -1837,6 +1882,11 @@ async def repost_standings_for_division(
             db_path, division_id, round_id, round_number, track_name, sc,
             driver_snaps, team_snaps, guild, show_reserves, rsd_label, bot=bot,
         )
+        await throttle()
+
+    # ── Then destroy ──────────────────────────────────────────────────────
+    for anchor, chunk_ids in superseded:
+        await _delete_posting(sc, anchor, chunk_ids, label="standings message")
 
     return "ok"
 

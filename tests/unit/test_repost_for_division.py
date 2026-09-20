@@ -150,7 +150,8 @@ async def _results(db_path, *, guild=None, driver_rows=None):
 
 async def _standings(db_path, *, guild=None):
     with patch(
-        "services.results_post_service._clear_standings_messages", new=AsyncMock()
+        "services.results_post_service._forget_standings_messages",
+        new=AsyncMock(return_value=[]),
     ) as clear, patch(
         "services.results_post_service.driver_standings_for_display",
         new=AsyncMock(return_value=[]),
@@ -439,9 +440,14 @@ async def test_every_round_gets_its_standings_back(tmp_path):
     assert [call.args[3] for call in post.await_args_list] == [1, 2]
 
 
-async def test_both_championships_old_messages_are_cleared(tmp_path):
+async def test_both_championships_old_messages_are_forgotten(tmp_path):
     """Whichever flow posted them — the image path and the text path store their ids
-    separately."""
+    separately.
+
+    Forgotten rather than deleted: the ids leave the database before the replacement is posted,
+    so `post_standings` inserts instead of editing the message it replaces, while the messages
+    themselves stand until every round has been reposted (#345).
+    """
     db_path = await _make_db(tmp_path, name="standings_clear")
 
     _, clear, _ = await _standings(db_path)
@@ -676,5 +682,130 @@ async def test_the_stored_id_is_cleared_before_its_replacement_is_posted(tmp_pat
         new=AsyncMock(side_effect=_post),
     ):
         await repost_results_for_division(db_path, DIVISION_ID, _guild(), bot=MagicMock())
+
+    assert seen == [None]
+
+
+async def _standings_recording_order(db_path, *, fail_on_post: int | None = None):
+    """Repost a division's standings, recording posts and deletions in order."""
+    events: list[tuple[str, object]] = []
+    posts = 0
+
+    async def _post(_db, _division_id, round_id, *_a, **_kw):
+        nonlocal posts
+        posts += 1
+        if fail_on_post is not None and posts == fail_on_post:
+            raise RuntimeError("Discord said no")
+        events.append(("post", round_id))
+
+    async def _delete(_channel, anchor, _ids, **_kw):
+        events.append(("delete", anchor))
+
+    with patch(
+        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+    ), patch(
+        "services.results_post_service.driver_standings_for_display",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.results_post_service.standings_service.compute_team_standings",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.results_post_service.post_standings", new=AsyncMock(side_effect=_post)
+    ):
+        try:
+            status = await repost_standings_for_division(
+                db_path, DIVISION_ID, _guild(), bot=MagicMock()
+            )
+        except RuntimeError:
+            status = "raised"
+    return status, events
+
+
+async def _seed_standings_messages(db_path, rounds, *, anchor_from: int = 7701):
+    """Give each round a driver-standings message, as a posted season would have."""
+    async with get_connection(db_path) as db:
+        for offset, round_number in enumerate(rounds):
+            await db.execute(
+                "INSERT INTO driver_standings_snapshots (round_id, division_id, "
+                "driver_user_id, standing_position, total_points, standings_message_id) "
+                "VALUES (?, ?, 101, 1, 25, ?)",
+                (round_number, DIVISION_ID, anchor_from + offset),
+            )
+        await db.commit()
+
+
+async def test_no_standings_are_deleted_until_all_have_been_posted(tmp_path):
+    """The same rule as results, on the channel a championship is read from."""
+    db_path = await _make_db(
+        tmp_path,
+        name="std_ptd_order",
+        rounds=((1, "FINAL", "NORMAL"), (2, "FINAL", "NORMAL")),
+    )
+    await _seed_standings_messages(db_path, (1, 2))
+
+    status, events = await _standings_recording_order(db_path)
+
+    assert status == "ok"
+    assert [kind for kind, _ in events] == ["post", "post", "delete", "delete"]
+
+
+async def test_a_standings_failure_part_way_leaves_the_originals_standing(tmp_path):
+    """A championship half-deleted is worse than one not yet updated."""
+    db_path = await _make_db(
+        tmp_path,
+        name="std_ptd_failure",
+        rounds=((1, "FINAL", "NORMAL"), (2, "FINAL", "NORMAL")),
+    )
+    await _seed_standings_messages(db_path, (1, 2))
+
+    status, events = await _standings_recording_order(db_path, fail_on_post=2)
+
+    assert status == "raised"
+    assert [kind for kind, _ in events] == ["post"]
+
+
+async def test_the_old_standings_go_in_round_order(tmp_path):
+    """So the channel reads in round order throughout the rebuild."""
+    db_path = await _make_db(
+        tmp_path,
+        name="std_ptd_delete_order",
+        rounds=((1, "FINAL", "NORMAL"), (2, "FINAL", "NORMAL")),
+    )
+    await _seed_standings_messages(db_path, (1, 2))
+
+    _, events = await _standings_recording_order(db_path)
+
+    assert [anchor for kind, anchor in events if kind == "delete"] == [7701, 7702]
+
+
+async def test_the_standings_id_is_cleared_before_its_replacement_is_posted(tmp_path):
+    """Otherwise `post_standings` edits the very message it is replacing."""
+    db_path = await _make_db(tmp_path, name="std_ptd_cleared")
+    await _seed_standings_messages(db_path, (1,))
+    seen: list = []
+
+    async def _post(_db, division_id, round_id, *_a, **_kw):
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT standings_message_id FROM driver_standings_snapshots "
+                "WHERE round_id = ? AND division_id = ?",
+                (round_id, division_id),
+            )
+            seen.append((await cursor.fetchone())["standings_message_id"])
+
+    with patch(
+        "services.results_post_service._delete_posting", new=AsyncMock()
+    ), patch(
+        "services.results_post_service.driver_standings_for_display",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.results_post_service.standings_service.compute_team_standings",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.results_post_service.post_standings", new=AsyncMock(side_effect=_post)
+    ):
+        await repost_standings_for_division(
+            db_path, DIVISION_ID, _guild(), bot=MagicMock()
+        )
 
     assert seen == [None]
