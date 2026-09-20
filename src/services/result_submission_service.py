@@ -651,7 +651,7 @@ async def finalize_penalty_review(
         # === NEW: Attendance pipeline (033-attendance-tracking) ===
         from services.attendance_service import (
             record_attendance_from_results,
-            distribute_attendance_points,
+            cascade_attendance_from_round,
             post_attendance_sheet,
             enforce_attendance_sanctions,
         )
@@ -704,14 +704,19 @@ async def finalize_penalty_review(
                         )
                     await _db.commit()
 
-            # T012: Distribute attendance points.
+            # T012: Distribute attendance points, and carry the new totals through every
+            # later finalised round (#238). Amending round 3 of ten corrected round 3's
+            # stored total and left rounds 4 to 10 holding one worked out from the old
+            # figure — which the season's final sheet then published. The cascade is one
+            # transaction, so a failure here leaves this round's points unawarded as well,
+            # which is what the message below says and what defers the sanctions.
             try:
-                await distribute_attendance_points(db_path, round_id, division_id)
+                await cascade_attendance_from_round(db_path, round_id, division_id)
             except Exception as exc:  # noqa: BLE001 — recorded, and the pipeline goes on
-                log.exception("finalize_penalty_review: distribute_attendance_points failed for round %s", round_id)
+                log.exception("finalize_penalty_review: cascade_attendance_from_round failed for round %s", round_id)
                 _attendance_write_failures.append(
-                    f"this round's attendance points were not awarded, so every driver's "
-                    f"total is short: {exc}"
+                    f"this round's attendance points were not awarded and no later round's "
+                    f"total was corrected, so every driver's total is wrong: {exc}"
                 )
 
             # T014: Post attendance sheet (non-blocking).
