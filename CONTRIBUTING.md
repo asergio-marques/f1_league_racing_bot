@@ -99,6 +99,15 @@ is a real one, so confirm it on a clean tree before writing it off as pre-existi
 
 Every change to production code carries its unit tests with it, in the same change.
 
+**A test must exercise the code it names.** A helper that recomputes production logic in the test
+file is a defect in the test, not a convenience: the copy agrees with itself forever, so it cannot
+fail when the shipped code is wrong and it cannot fail when the shipped code is deleted — while
+still reporting green and counting towards the coverage figure. Call the function. Where it sits
+behind decorators, reach its body with `tests/support/undecorate.py`, which exists for exactly
+that; reimplementing is not the fallback. `tests/unit/test_no_inline_reimplementation.py` refuses
+the least visible form of this, where a test branches on production state and then performs the
+action itself.
+
 No test may require a live Discord bot. Anything needing a running bot, a real gateway connection
 or a real server belongs to full system testing, done by hand outside this repo.
 
