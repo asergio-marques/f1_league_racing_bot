@@ -194,7 +194,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ### Building a season
 - Divisions shall be created and deleted, and rounds added and deleted, only while the season is in Placements. What may be amended once placements are confirmed is set out under Divisions and Rounds below.
-- The channels of each division may be set while the season is in Placements, and at any time after until the season ends, so that a channel lost may be repaired. A division's channels belong to its season: once the season is completed, cancelled or aborted they are no longer set, repaired or read as holding a channel, and a command setting a channel with no season active shall be refused.
+- The channels of each division may be set while the season is in Placements, and at any time after until the season ends, Pending completion included, so that a channel lost may be repaired. Completing the season posts the final classification and the final attendance sheet to those channels, which is why the repair stays open to the last. A division's channels belong to its season: once the season is completed, cancelled or aborted they are no longer set, repaired or read as holding a channel, and a command setting a channel with no season active shall be refused.
 - Drivers shall be placed and removed while the season is in Placements, as set out under Drivers below. No role shall be granted for a placement until placements are confirmed.
 - Once placements are first confirmed, nothing shall be added to a season and nothing deleted from it. Rounds and divisions may only be amended and cancelled.
 
@@ -274,7 +274,12 @@ it only to place it; the rules governing it belong to its own specification.
     - close its signup window, where one is open;
     - discard every placement not yet committed;
     - return to Not Signed Up every driver whose signup is unsettled and every driver whose placements were all uncommitted, as the reject command would: an approved driver loses the signed-up role, and a signup in review has its channel closed.
-- In Pending completion the results of a round already final may still be amended, and an amendment of the season's points may still be approved. The only other thing that may be done with the season is to complete it. No module shall be disabled in Pending completion.
+- Pending completion is the last moment a season's record may change, and nothing is being raced: every division is finished or cancelled, so a grid, a lineup and a calendar no longer describe anything anyone will drive under. Three things may be done with the season and no others:
+    - the results of a round already final may be amended, with everything that follows from it — the round's results and standings reposted, the attendance recalculated, and the attendance sanctions re-checked. The sanctions shall fire: a sanction is part of that round's record, and suppressing it would make the last round different from every other;
+    - the channels of a division may be set and repointed, so that a channel lost before the season ends may be repaired;
+    - the season may be completed.
+- Every other command that would act upon the season shall be refused, and shall say why. Among them: the calendar shall not be resynchronised, a team's role shall not be set, the results and standings of a division shall not be reposted by command, the display of reserves in a division's standings shall not be changed, and an amendment of the season's points shall neither be begun, changed, reverted nor approved. No module shall be disabled in Pending completion.
+- The final classification and the final attendance sheet shall be posted by completing the season and at no earlier moment, so that every correction made in Pending completion reaches them.
 
 ### Ending a season
 
@@ -411,7 +416,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A server shall hold a list of teams. The teams of a division shall be created from that list when the division is created.
 - The list shall ship holding the Reserve team alone. A league shall build its own.
 - The Reserve team shall always exist upon the server and in every division. It shall not be added, renamed or removed, and it shall have no limit of seats. Its role shall be set by a command of its own.
-- The role of any team may be set at any time, whatever the state of the season, so that a role deleted from the server may be repaired.
+- The role of any team may be set at any time, whatever the state of the season, so that a role deleted from the server may be repaired. Pending completion is the one exception: nothing is raced then, and completing the season revokes every team role a few steps later, so the mapping is repaired once the season has ended, for the season that follows.
     - Every driver holding a committed seat in that team shall follow the change: the team's former role shall be revoked from them, save where another team still maps to it, and its new role granted. A driver created by test mode holds no role and shall be left alone.
 - Adding, renaming or removing a team shall change the server's list. It shall be permitted while the server holds no active season, or while the active season is in Configuration, and shall be refused otherwise.
 - A team name shall reduce to a usable filename:
@@ -499,6 +504,7 @@ it only to place it; the rules governing it belong to its own specification.
 ### A driver's accounts
 - A driver shall own every Discord account they have raced under. One of them is their **current** account; the others are their past accounts. Any of them identifies the driver.
 - A league manager shall be able to make another account a driver's current one, so that a person changing account keeps their history. The account it replaces joins the driver's past accounts.
+- Making an account current shall be permitted only while the season is in Placements or in Ongoing, placements, and shall be refused in every other state and where the server holds no live season. Re-keying a profile onto another account is part of settling who sits where; elsewhere moving a driver is the command for changing where a driver sits. A person who changes account between seasons is therefore re-keyed once the next season reaches placements, which is the moment they would be placed anyway.
 - Nothing the league holds of the driver shall be rewritten when their account changes. A signup, a result, a standing, a fastest lap and a history entry each keep the account they were written under, and a completed season stays exactly as it was.
 - A driver's results, standings, points, positions and history shall count them once, whichever of their accounts each result stands under. Everything drawn or posted from then on shall name them by their current account — a completed season's results or standings drawn again included. A message already posted is not rewritten.
 - Any account of the driver's shall name them wherever a driver is named: a result submitted or resubmitted, a penalty, a pardon, an appeal, an amendment, a command, a check-in. It is read at the moment of use, so a submission or a review already open when the account changes accepts both.
