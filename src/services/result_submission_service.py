@@ -562,12 +562,17 @@ async def finalize_penalty_review(
         # because that is the actual rule: a settled round must not be reopened. Pinning the
         # prior state instead would also refuse the recovery path, which rebuilds this review
         # from whatever state the round was left in by a crash.
-        async with get_connection(db_path) as db:
-            await db.execute(
-                f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
-                (RoundStatus.AWAITING_APPEAL_VERDICTS.value, round_id),
-            )
-            await db.commit()
+        # **An amendment replays the stages; it does not move the round** (#345). The round is
+        # already FINAL, and sending it back to `AWAITING_APPEAL_VERDICTS` would reopen a
+        # settled round — the very thing the terminal-state guard below exists to prevent,
+        # done deliberately by the wrong caller.
+        if not getattr(state, "is_amendment", False):
+            async with get_connection(db_path) as db:
+                await db.execute(
+                    f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
+                    (RoundStatus.AWAITING_APPEAL_VERDICTS.value, round_id),
+                )
+                await db.commit()
 
         # Audit log PENALTY_REVIEW_APPROVED
         penalty_log = [
@@ -1063,26 +1068,33 @@ async def finalize_appeals_review(
         # ``finalize_penalty_review``: a stale appeals view pressed after the results module was
         # switched off must not reopen a round that disabling the module already closed, and a
         # cancelled round must not be raised to FINAL by a view that outlived its cancellation.
-        async with get_connection(db_path) as db:
-            await db.execute(
-                f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
-                (RoundStatus.FINAL.value, round_id),
-            )
-            await db.commit()
+        # **An amendment changes what a round says, never where it stands** (#345). The round
+        # is already FINAL, its division already finished if it was the last, and the season
+        # already wound down if that finished it. Replaying the three would raise a settled
+        # round to a state it is in, and could finish a division or wind down a season twice —
+        # `wind_down_ongoing` in particular is not something to run again for no reason.
+        if not getattr(state, "is_amendment", False):
+            async with get_connection(db_path) as db:
+                await db.execute(
+                    f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
+                    (RoundStatus.FINAL.value, round_id),
+                )
+                await db.commit()
 
-        # This is the only place a round becomes finished, and so the only place a division can
-        # become finished by racing. Approving the last round's appeals is what ends a division,
-        # and a division ending is what lets `/season complete` run (issue #154).
-        from services.season_service import SeasonService
+            # This is the only place a round becomes finished, and so the only place a division
+            # can become finished by racing. Approving the last round's appeals is what ends a
+            # division, and a division ending is what lets `/season complete` run (issue #154).
+            from services.season_service import SeasonService
 
-        await SeasonService(db_path).refresh_division_status(division_id)
+            await SeasonService(db_path).refresh_division_status(division_id)
 
-        # The division finishing may have been the season's last: a season with a window open or
-        # placements to confirm is wound down and moves to Pending completion at once (#220).
-        try:
-            await interaction.client.season_service.wind_down_ongoing(interaction.client)
-        except Exception:  # noqa: BLE001 — never fail the approval on the season's next stage
-            log.exception("could not wind the season down")
+            # The division finishing may have been the season's last: a season with a window
+            # open or placements to confirm is wound down and moves to Pending completion at
+            # once (#220).
+            try:
+                await interaction.client.season_service.wind_down_ongoing(interaction.client)
+            except Exception:  # noqa: BLE001 — never fail the approval on the season's next stage
+                log.exception("could not wind the season down")
 
         # Audit log APPEALS_REVIEW_APPROVED
         old_val = _json.dumps({"status": RoundStatus.AWAITING_APPEAL_VERDICTS.value})

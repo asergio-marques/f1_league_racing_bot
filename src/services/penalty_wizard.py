@@ -102,6 +102,18 @@ class PenaltyReviewState:
     appeals_prompt_message_id: int | None = None
     round_number: int = 0
     division_name: str = ""
+    #: True where this review is an **amendment replaying a settled round**, not the round's
+    #: first pass through review (#345).
+    #:
+    #: The stages are the same and the views are the same; what differs is what approving one
+    #: means. A first pass moves the round on — report review sets `AWAITING_APPEAL_VERDICTS`,
+    #: appeal review sets `FINAL`, refreshes the division's status and may wind the season
+    #: down. An amended round is *already* FINAL, so replaying those transitions would move a
+    #: settled round backwards and forwards through states it has long since left, and could
+    #: finish a division or wind down a season a second time.
+    #:
+    #: Read by the finalisers, which share every other step.
+    is_amendment: bool = False
 
 
 # ---------------------------------------------------------------------------
