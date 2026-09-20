@@ -339,7 +339,6 @@ Worth knowing so you do not go looking for the setting.
 | How reserves are ordered for a seat | By when they accepted, earliest first. Changing your answer and changing it back puts you at the back of the queue |
 | Which team a reserve lands in | Worked out from who is missing. A team with nobody at all comes first, then one whose driver declined, then one whose driver never answered, then one with an empty seat, and last a team whose only gap is a tentative driver. Every team gets one before any team gets two, and where two are equal the team further down the constructors' table is served first |
 | Marking somebody present by hand | There is no command. Presence comes from the results; correct the results with `/round results amend` |
-| Posting a check-in call yourself | There is no command for it. A call the bot skipped or failed to post cannot be reinstated, and that round goes untracked. Amending the round is not a way round this — it reposts a call that went out, but does not post one that never did |
 | Having both auto-reserve and auto-sack | Mutually exclusive by design |
 | Where the sanction announcements go | The division's verdicts channel, alongside your penalty decisions |
 
