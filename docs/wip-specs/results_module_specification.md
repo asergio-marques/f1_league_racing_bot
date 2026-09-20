@@ -398,6 +398,11 @@ Approving stage two shall apply any staged corrections, republish the round's re
 - **A verdict shall survive an amendment.** A penalty or appeal verdict shall follow its driver onto the amended classification, keeping its justification, its author and the time it was given. An amendment shall not discard the record of why a driver's result changed.
     - Where a driver carrying a verdict is absent from the corrected classification, the amendment shall be refused, and the refusal shall name the driver.
 
+- **An amendment shall rewrite a round's decisions, not add to them.** Decided 2026-09-20 (#345). Approving a stage shall leave the round carrying exactly the reports, appeals and attendance pardons that stage held — no more and no fewer.
+    - The round's existing records shall be removed before the approved set is written, so that a decision kept is kept once rather than twice, and a decision removed in the stage is removed from the round.
+    - Every decision shall be shown back in its stage before this happens, so that what is written out again carries the justification, the author and the time it was originally given.
+    - It follows that amending a round twice shall leave it as the second amendment settled it, and shall not compound the sanctions of the first.
+
 - **An amendment shall rebuild everything the division's channels show**, in the order a league reads them: the results, the standings, the attendance sheet, the round's report verdicts, then its appeal verdicts.
     - Every round of the division shall be reposted, in round order, and not the amended round alone — a repost being a new message, reposting one round alone would leave the channel out of sequence.
     - All of a round's verdicts shall be announced, in order, and not only those the amendment changed.

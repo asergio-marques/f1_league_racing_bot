@@ -1720,6 +1720,8 @@ Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in
 
 A **❌ Cancel Amendment** button is posted in the channel to abort at any time. If `session` is omitted you will be prompted to choose one before the channel is created.
 
+> **What you approve is what the round carries.** Each stage rewrites the round's decisions rather than adding to them — keep a penalty and it stays as it was, remove one and it is gone, and amending the same round twice leaves it as the second amendment settled it rather than doubling the first.
+
 > **Sanctions keep their justification.** A penalty follows its driver onto the corrected classification with the reason, the author and the time it was given intact — which is why they are reviewed rather than pasted. If the corrected classification leaves out a driver who carries a penalty or an appeal, the amendment is refused and names them: include the driver, or have the verdict withdrawn first.
 
 | Parameter | Type | Required | Description |

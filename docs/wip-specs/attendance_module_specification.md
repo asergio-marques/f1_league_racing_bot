@@ -137,6 +137,7 @@
     - The drivers who had one of their attendance penalties waived by this process shall not receive attendance points for that reason.
 - After the post-race penalties are approved, attendance pardons cannot be applied.
     - **Amending a round reopens them.** Decided 2026-09-20 (#345). An amendment replays the round's report stage, where the pardons it already carries shall be shown back, each able to be kept, changed or removed, and further ones added — on the same terms as the reports beside them, and in that stage alone.
+    - The round shall carry exactly the pardons that stage held when it was approved. A pardon removed in the stage shall be removed from the round.
 
 ### Updating attendance sheets
 - Once the post-race penalties are approved and posted, the updated attendance total shall be posted in the configured attendance channel for the division.
