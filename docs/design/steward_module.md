@@ -473,11 +473,15 @@ The design consequence is that `steward_auto_rule_arming` is merged by taking th
 multiple** of the two rows per rule, rather than by recomputing from the merged tally, and that the
 merge is followed by an ordinary auto-rule check rather than a silent re-arm.
 
-**What happens when a ticket's channel cannot be created.** Every ticket gets a channel
-[STW-CON-046], and a busy league can reach Discord's per-server channel limit or lose the bot's
-Manage Channels permission. The spec says nothing about the failure, and the answer is
-league-visible: a report refused at submission, a report filed and held without a channel, or a
-report filed into a shared channel are three different experiences.
+**~~What happens when a ticket's channel cannot be created.~~** Settled 2026-09-20 and written
+into [STW-CON-046]: the ticket is not filed, the one who lodged it is told, nothing is written, and
+the steward log records who and which round so the stewards can lodge it in their stead. Filing and
+holding it channel-less was rejected for leaving a ticket nobody can defend inside a round's stages;
+a shared fallback channel was rejected outright against [STW-CON-044]'s privacy.
+
+The design consequence is that channel creation comes **before** the first write, not after it: the
+ticket row, its parties and its evidence are written only once the channel exists, so the failure
+path has nothing to undo.
 
 **Whether a paused outcome may still be prefilled on an appeal ballot.** [STW-CYC-097] prefills
 each line of an appeal ballot with the outcome the initial verdict gave; [STW-OUT-029] says a
