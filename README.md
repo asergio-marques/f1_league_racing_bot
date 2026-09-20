@@ -1981,7 +1981,7 @@ Posts the check-in call for the round you name, exactly as the scheduled call wo
 >
 > **If the scheduled call posts while you are running this**, nothing is posted on top of it and the reply says so. A round is never left carrying two calls — the second would leave the first still answerable but tracked by nothing, so those answers would be lost and its buttons never closed at the deadline.
 >
-> The last three are deliberate. Before the call is due the scheduled one is still coming, and posting early would override the notice period you set with `/attendance config rsvp-notice`. After the deadline a call arrives with its buttons already locked, so nobody could answer it. And a call already standing is never replaced — [amend the round](#round-amend--amend-a-round-in-the-active-season) instead, which posts the call again and carries every answer already given across.
+> The last three are deliberate. Before the call is due the scheduled one is still coming, and posting early would override the notice period you set with `/attendance config rsvp-notice`. After the deadline a call arrives with its buttons already locked, so nobody could answer it — and if you have set the deadline to `0` to disable it, the race itself is the cut-off, so you cannot post a call for a round already under way or run. And a call already standing is never replaced — [amend the round](#round-amend--amend-a-round-in-the-active-season) instead, which posts the call again and carries every answer already given across.
 
 ---
 

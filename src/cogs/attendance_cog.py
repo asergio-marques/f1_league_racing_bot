@@ -519,7 +519,8 @@ class AttendanceCog(commands.Cog):
         It is confined to the window in which a call *should* be standing and is not. Before
         the call is due the scheduled one is still coming, and posting early would override the
         lead time the league configured; after the deadline the buttons lock on arrival, so the
-        call would be unanswerable. A call already standing is **not** replaced — an amendment
+        call would be unanswerable. A deadline of zero disables the *closing* of a check-in and
+        not the race, so the round's own moment is the boundary then. A call already standing is **not** replaced — an amendment
         is the path that takes one down and carries the answers over, and a second call beside
         the first would split a division's answers across two messages.
 
@@ -614,16 +615,23 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        if cfg.rsvp_deadline_hours > 0:
-            deadline_at = scheduled_at - timedelta(hours=cfg.rsvp_deadline_hours)
-            if now >= deadline_at:
-                await interaction.followup.send(
-                    f"⛔ The check-in for round {round} of **{div.name}** closed at "
-                    f"<t:{int(deadline_at.timestamp())}:F>, so a call posted now could not be "
-                    f"answered. Nothing was posted.",
-                    ephemeral=True,
-                )
-                return
+        # A deadline of zero disables the *closing* of the check-in, not the race itself: the
+        # round's own moment is the boundary then, because a call posted after the race has
+        # started asks a division to say whether it is racing in something already run. Without
+        # this the command would post a call for a race six days past.
+        deadline_at = scheduled_at - timedelta(hours=cfg.rsvp_deadline_hours)
+        if now >= deadline_at:
+            closed = (
+                f"closed at <t:{int(deadline_at.timestamp())}:F>"
+                if cfg.rsvp_deadline_hours > 0
+                else f"started at <t:{int(deadline_at.timestamp())}:F>"
+            )
+            await interaction.followup.send(
+                f"⛔ Round {round} of **{div.name}** {closed}, so a call posted now could "
+                f"not be answered. Nothing was posted.",
+                ephemeral=True,
+            )
+            return
 
         # The scheduled call becomes due at exactly the moment the window above opens, so a
         # manager running this around that moment races it. `run_rsvp_notice` does not guard

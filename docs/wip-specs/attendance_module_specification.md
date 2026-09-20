@@ -181,7 +181,7 @@
     - It shall be refused, with nothing changed, where a check-in call for the round is already standing. The reply shall say that amending the round is what posts a call again, that being the path which carries every answer already given across. A second call standing beside the first would divide a division's answers between two messages.
     - Where the scheduled call posts while the command is running, the command shall post nothing on top of it and shall say so. A round shall never carry two check-in calls: the second would leave the first answerable by drivers and tracked by nothing, so its answers would be lost and its buttons never closed at the deadline.
     - It shall be refused, with nothing changed, before the moment the call was due to be posted. The scheduled call is still to come, and posting earlier would override the notice period the league configured.
-    - It shall be refused, with nothing changed, once the check-in deadline of the round has passed, a call posted after it being one nobody can answer.
+    - It shall be refused, with nothing changed, once the check-in deadline of the round has passed, a call posted after it being one nobody can answer. Where the deadline is set to zero, and so disabled, the moment of the round itself shall be the boundary: a call shall not be posted for a round already under way or run.
     - The reply shall say whether a call is standing once it has run, and not merely that the command was accepted; and the run shall be written to the log channel either way.
     - Where a check-in call fails to post, the log entry reporting it shall name this command, with the division and round already filled in.
 

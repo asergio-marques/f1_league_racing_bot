@@ -311,6 +311,36 @@ async def test_a_round_past_its_deadline_is_refused(tmp_path):
     assert await _rows(db_path) == 0
 
 
+@pytest.mark.parametrize(
+    "offset, what",
+    [
+        (timedelta(0), "at the moment the race starts"),
+        (timedelta(hours=-3), "three hours after it"),
+        (timedelta(days=-6), "six days after it"),
+    ],
+)
+async def test_a_disabled_deadline_still_stops_at_the_race_itself(tmp_path, offset, what):
+    """A deadline of zero disables the closing of the check-in, not the race (#123).
+
+    `/attendance config rsvp-deadline 0` is a supported setting — only a negative value is
+    refused — and the guard used to skip the whole window check when it was set, so the command
+    would post a check-in call for a race already run, asking a division whether it is racing in
+    something that is already in the results. The round's own moment is the boundary instead.
+    """
+    db_path = await _make_db(tmp_path, scheduled_at=NOW + offset)
+    cog = _cog(db_path)
+    cog.bot.attendance_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(rsvp_notice_days=NOTICE_DAYS, rsvp_deadline_hours=0)
+    )
+    interaction = _interaction()
+
+    notice = await _invoke(cog, interaction)
+
+    notice.assert_not_awaited(), what
+    assert "started at" in _replied(interaction)
+    assert await _rows(db_path) == 0
+
+
 # ---------------------------------------------------------------------------
 # Posting it
 # ---------------------------------------------------------------------------
@@ -411,3 +441,18 @@ async def test_the_scheduled_call_winning_the_race_stops_this_one(tmp_path):
     notice.assert_not_awaited()
     assert "posted while this ran" in _replied(interaction)
     assert calls["n"] == 2, "the second check is what catches the race"
+
+
+
+async def test_a_disabled_deadline_allows_a_call_right_up_to_the_race(tmp_path):
+    """The boundary is the race, not some margin before it — a minute out is still answerable."""
+    db_path = await _make_db(tmp_path, scheduled_at=NOW + timedelta(minutes=1))
+    cog = _cog(db_path)
+    cog.bot.attendance_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(rsvp_notice_days=NOTICE_DAYS, rsvp_deadline_hours=0)
+    )
+    interaction = _interaction()
+
+    notice = await _invoke(cog, interaction, posts=True)
+
+    notice.assert_awaited_once()
