@@ -19,6 +19,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Team: a constructor a driver races for. A team holds seats.
 - Seat: one place in a team, held by at most one driver.
 - Driver: a person who holds a driver profile upon the server.
+- Principal division: the highest tier division in which a driver holds a full-time seat, being the one division a rule names where the driver holds seats in several.
 - Module: an optional part of the bot, switched on by a league admin.
 - League manager: a member holding the interaction role, who commands the bot in the interaction channel.
 - League admin: a member holding the league admin role, who governs the bot upon the server and may undo a league entire.
@@ -475,6 +476,10 @@ it only to place it; the rules governing it belong to its own specification.
 ### Placement into a division and team
 - A placement shall be **committed** once placements have been confirmed with it standing, and uncommitted until then. A driver holding a committed placement is a **committed driver**; a driver placed or awaiting placement who holds none is an **uncommitted driver**.
 - No placement command shall post a lineup, nor grant a role, for a placement that is uncommitted. The lineups are posted and the roles granted when placements are confirmed.
+- A driver's **principal division** shall be the division of the highest tier — the lowest tier number — in which they hold a full-time seat, a **full-time seat** being a seat in any team other than Reserve. A driver full-time in a tier 2 division who is a reserve driver in tier 1 has tier 2 as their principal division.
+    - A driver who holds reserve seats alone, and a driver who holds no seat at all, has no principal division.
+    - It shall be derived from the seats the driver holds as they stand, and shall never be stored nor set by a command. A placement, a move, a release or a sacking changes it as a consequence.
+    - It is a driver's principal division within one season, a seat being held within a season.
 - A command shall place a driver, taking the driver, a division named by its tier or by its name, and a team of that division.
     - The driver shall be Unassigned or Assigned.
     - The season shall stand in Placements, or in Ongoing, placements where the driver is uncommitted.
