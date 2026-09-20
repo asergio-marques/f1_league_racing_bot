@@ -2225,3 +2225,67 @@ def _sr_from_row(sr_row) -> "SessionResult":
     )
 
 
+
+
+async def replay_division_channels(
+    db_path: str,
+    division_id: int,
+    from_round_id: int,
+    guild: discord.Guild,
+    *,
+    bot=None,
+    verdict_state_factory=None,
+) -> list[str]:
+    """Rebuild everything a division's channels show, in the order a league reads them.
+
+    What the amendment replay calls once its corrected round has been computed (#345). The
+    five stages run in the order the specification states — **results, standings, the
+    attendance sheet, the report verdicts, then the appeal verdicts** — and each rebuilds the
+    *whole* division rather than the amended round alone.
+
+    **Why the whole division.** Amending round 1 of five reposts round 1, and a repost is a new
+    message at the bottom of the channel: the results channel would then read 2, 3, 4, 5, 1.
+    Reposting every round in round order is what keeps the sequence a league reads matching the
+    sequence it raced.
+
+    **Every stage produces before it destroys** (Constitution XIV.8). Within each channel the
+    replacements go up first and the superseded messages come down afterwards, so a failure
+    leaves the league the board it had rather than half of two.
+
+    **The attendance sheet is not a sequence.** A division keeps one live sheet in one slot, so
+    it is reposted once, against the round the running totals now stand at — which is the
+    latest round, not the amended one. The caller does that, this function does not touch it;
+    it is named here so the order is readable in one place.
+
+    Returns the faults met across every stage, merged, as lines a league can read.
+    """
+    faults: list[str] = []
+
+    results_status = await repost_results_for_division(
+        db_path, division_id, guild, bot=bot
+    )
+    if results_status == "no_channel":
+        faults.append(
+            "the division's results channel could not be reached, so its results were "
+            "not reposted"
+        )
+
+    standings_status = await repost_standings_for_division(
+        db_path, division_id, guild, bot=bot
+    )
+    if standings_status == "no_channel":
+        faults.append(
+            "the division's standings channel could not be reached, so its standings were "
+            "not reposted"
+        )
+
+    if bot is not None and verdict_state_factory is not None:
+        from services.verdict_announcement_service import republish_verdicts_from_round
+
+        faults.extend(
+            await republish_verdicts_from_round(
+                bot, db_path, division_id, from_round_id, verdict_state_factory
+            )
+        )
+
+    return merge_faults(faults, [])
