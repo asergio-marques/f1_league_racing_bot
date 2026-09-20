@@ -403,6 +403,11 @@ Approving stage two shall apply any staged corrections, republish the round's re
     - Every decision shall be shown back in its stage before this happens, so that what is written out again carries the justification, the author and the time it was originally given.
     - It follows that amending a round twice shall leave it as the second amendment settled it, and shall not compound the sanctions of the first.
 
+- **An amendment not carried through shall be undone.** Decided 2026-09-20 (#345). The first stage commits the corrected classification, so an amendment whose later stages are never approved would otherwise leave a round scored from one classification and published from another.
+    - Where the report and appeal stages are not approved within a set period, the round shall be put back as it stood before the amendment began, its results reposted, and the league told in the log channel that the amendment lapsed and may be run again.
+    - A restart during an amendment shall undo it on the same terms rather than abandon it part-made.
+    - An amendment abandoned before its classification was inserted has nothing to undo, and shall simply end.
+
 - **An amendment shall rebuild everything the division's channels show**, in the order a league reads them: the results, the standings, the attendance sheet, the round's report verdicts, then its appeal verdicts.
     - Every round of the division shall be reposted, in round order, and not the amended round alone — a repost being a new message, reposting one round alone would leave the channel out of sequence.
     - All of a round's verdicts shall be announced, in order, and not only those the amendment changed.
