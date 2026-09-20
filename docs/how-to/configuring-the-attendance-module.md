@@ -247,6 +247,10 @@ The ordinary locks still decide whether they are in time. Move a full-time drive
 
 **Amending the results afterwards puts it right.** Re-run through `/round results amend` and the bot recalculates that round's attendance, every later round's totals, reposts the sheet and re-checks the thresholds. Pardons you granted are kept. Two things to expect: the round has to be **FINAL** before `/round results amend` will touch it, so a round still sitting at post-race penalties is refused; and the recalculation happens when you *approve* the amendment, not when you submit it.
 
+> **The sheet you get back is the division's current one, not the amended round's.** Each round's total is what the driver stood on at that round, so after correcting round 3 of ten the totals you want to see are round 10's. That is the sheet posted, and those are the numbers the auto-reserve and auto-sack limits are checked against.
+
+> **An amendment can clear a charge, but it will not create one.** A driver the bot has already recorded as present stays present, even where the corrected classification no longer lists them — they were given no chance to explain themselves, so the record errs in their favour. Adding somebody who was left out clears what they were charged; taking somebody out who should never have been there does not charge them. Where a recorded attendance genuinely has to be taken back, `/attendance sync` rebuilds the round from its results outright.
+
 > **Amending the round itself is a different thing, and the check-in comes with it.** Changing a round's date, circuit or format with `/round amend` re-arms the check-in against the round as it now stands. What happens to a call that has already gone out depends on how far the round moved. Move it well out and the call standing is taken down and a fresh one posted at the new time. Move it a little, or change only the circuit, and the call is posted again straight away carrying what changed — with every answer already given kept, so your drivers do not have to answer twice. A driver who joined the division since is asked afresh; one who has left drops off it.
 >
 > **Past the deadline, though, the check-in is settled.** If the round's check-in deadline has already gone by, amending the round leaves the check-in exactly as it is: nothing is reposted, nothing taken down, and no answer can be changed. The reserves have been distributed against those answers and reopening the check-in would unsettle a grid already told who is racing. Moving the round far enough out puts it back in play.
@@ -284,10 +288,20 @@ Pardons are staged with the round's penalties and listed alongside them for revi
 The bot tries every driver over the threshold, and one driver's sanction failing never stops the next. Nothing that did apply is undone. What did not apply is never kept quiet:
 
 1. **Read what you are told.** The reply to your penalty-review or amendment approval lists each driver whose sanction did not apply and why, and the log channel carries the same list as an `ATTENDANCE_SANCTIONS | Incomplete` entry. Both end with the exact `/attendance sync` command to run.
-2. **Put the cause right.** Usually it is a division with no Reserve team, or the bot lacking the permission to change a driver's roles. A line saying *applied, but not announced* means the sanction did take effect and only its announcement failed — there is nothing left to apply for that driver.
+2. **Put the cause right.** Usually it is a division with no Reserve team, or the bot lacking the permission to change a driver's roles. A line saying *applied, but not announced* means the sanction did take effect and only its announcement failed — there is nothing left to apply for that driver, and **the sync will not announce it either**, because a driver already sacked or already in Reserve is no longer a candidate. Post that one in the verdicts channel yourself.
 3. **Run `/attendance sync`** with the division and round it names. It recalculates that round and every later one whose penalties are approved, reposts the latest sheet, and applies whatever is still owed, with its announcement in the verdicts channel as usual. The reply tells you what it applied and anything still outstanding.
 
 Running it twice does no harm: a driver already sacked or already in the Reserve team is not sanctioned again. It is available only while the season is ongoing, and is refused, with nothing changed, if a channel it would post to cannot be reached. You can also use it to put a division's attendance right after anything else went wrong in a round's scoring.
+
+## When the attendance itself was not recorded
+
+Different from the above, and more serious. Approving a penalty review records who attended the round and awards the attendance points. Both write to the league's record, and the thresholds above are read from it — so a failure here can see a driver sanctioned later on a total that was never right.
+
+You get an `ATTENDANCE_RECORD | Incomplete` entry in the log channel and a line in your reply to the approval, ending with the `/attendance sync` to run. It is deliberately a separate entry from `ATTENDANCE_SANCTIONS | Incomplete`: that one means a sanction did not apply while the record itself is sound, and this one means the record is wrong.
+
+Run the sync the same day. Until you do, that round's attendance is wrong and every total after it is short.
+
+**The sanctions are held back when this happens**, and the entry says so. The thresholds are read from the totals those two steps write, so a driver could otherwise be sacked on a number the bot already knows is wrong — and wrong in either direction, since a driver who raced may have been scored absent. Running `/attendance sync` repairs the record and then applies whatever is genuinely owed, in one go. A sheet or an announcement that failed to post does *not* hold the sanctions back: the record is sound in that case, only the picture of it is missing.
 
 ---
 

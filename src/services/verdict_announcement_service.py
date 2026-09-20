@@ -12,6 +12,7 @@ from pathlib import Path
 import discord
 
 from db.database import get_connection
+from services.channel_registry_service import missing_channel_fault
 from services.driver_service import current_account_map_for_division
 from models.points_config import SessionType
 from services import image_verdict_post
@@ -29,6 +30,72 @@ NOT_PROVIDED = "(not provided)"
 def _for_message(value: str) -> str:
     """Apply the channel emphasis the placeholder carries in the textual announcement."""
     return f"*{NOT_PROVIDED}*" if value == NOT_PROVIDED else value
+
+
+#: What a manager can do about a verdict that never reached the channel (#237).
+#:
+#: **A decided verdict cannot be announced again by the bot**, and the hint must say so. No
+#: command re-announces one, and #189 records the reason one could not be built: the message
+#: id of an announcement is never stored, so the bot holds nothing by which to find, edit or
+#: replace one. The manager repairs the channel and posts the decision themselves.
+#:
+#: **Attendance sanctions are not an exception to this**, though it is tempting to write that
+#: they are because `/attendance sync` does re-run the sanctions. It will not re-announce one
+#: that already applied: `sack_driver` deletes the driver's `driver_season_assignments` row
+#: and `move_driver` puts them in the Reserve team, so on a second run they are no longer a
+#: candidate and are passed over without a word. ``attendance_service._failure_reason`` says
+#: this in as many words, and ``sync_attendance``'s docstring repeats it. A hint promising
+#: the sync would announce it would hand the manager the very false confidence this issue
+#: exists to prevent — they would run it, read `Success`, and believe the driver was told.
+_VERDICT_NO_RETRY = (
+    "Repair the cause, then post the decision in the verdicts channel yourself — the bot "
+    "cannot announce a verdict a second time."
+)
+
+
+def verdict_repair_hint() -> str:
+    """The line telling a manager how to finish a verdict that was not announced (#237)."""
+    return _VERDICT_NO_RETRY
+
+
+def _n_verdicts(count: int) -> str:
+    """``one verdict`` or ``N verdicts``, so a fault line reads as English either way."""
+    return "one verdict" if count == 1 else f"{count} verdicts"
+
+
+def _round_label(state) -> str:
+    """The round as a league knows it, not as the database numbers it.
+
+    ``round_id`` is a primary key; a manager reading "Round 21" would go looking for round
+    21 when the round is their third. The review state carries both the number and the
+    division, so the one fault line that cannot read the round from the database can still
+    say which round it was.
+    """
+    try:
+        number = int(getattr(state, "round_number", None))
+    except (TypeError, ValueError):
+        return "The round"
+    division = getattr(state, "division_name", None)
+    return f"Round {number}" + (
+        f" ({division})" if isinstance(division, str) and division else ""
+    )
+
+
+def _driver_label(driver_discord_id) -> str:
+    """The driver a verdict was owed to, as a mention where one can be formed.
+
+    A mention rather than a raw id because these lines are read by a league manager in the
+    log channel and in their own reply, where an id is not a person.
+    """
+    try:
+        return f"<@{int(driver_discord_id)}>"
+    except (TypeError, ValueError):
+        return "an unidentified driver"
+
+
+def verdict_repair_hint(*, sanction: bool = False) -> str:
+    """The line telling a manager how to finish a verdict that was not announced (#237)."""
+    return _SANCTION_RETRY if sanction else _VERDICT_NO_RETRY
 
 
 async def _graphic_name(
@@ -400,30 +467,53 @@ async def post_penalty_announcements(
     applied_penalties: list,
     *,
     head=None,
-) -> None:
+) -> list[str]:
     """Post one announcement per applied penalty to the verdicts channel.
 
-    Skips silently if the verdicts channel is not configured or inaccessible.
-    Does not block finalization on any error.
+    Returns the verdicts it could not announce, as lines a league can read, and an empty
+    list where every one of them went out. Does not block finalization on any error.
+
+    **A verdict that is not announced is a fault, not a silence** (#237). The penalty is
+    applied either way: the classification changes, the driver loses the places, and the
+    only thing that told them why was this announcement. Every exit below used to return
+    quietly, so the league had no indication the explanation was missing.
+
+    **An unconfigured verdicts channel is reported here**, which is the opposite of the rule
+    ``repost_round_results`` keeps for results and standings. Those are optional; a verdicts
+    channel is not. The results specification makes it one of the three a division must have
+    before its season's placements can be confirmed, so a round reaching a penalty verdict
+    without one is an anomaly rather than a league that chose not to configure it.
 
     *head* is the approval's shared banner poster where the caller built one, so that the
     attendance sanctions posted later in the same approval fall under this run's banner
     rather than raising a second. Absent one, this run heads itself.
     """
     if not applied_penalties:
-        return
+        return []
 
     db_path: str = state.db_path
     round_id: int = state.round_id
+    faults: list[str] = []
 
     ctx = await _get_announcement_context(db_path, round_id)
     if not ctx:
         log.warning("post_penalty_announcements: could not load context for round %s", round_id)
-        return
+        return [
+            f"{_round_label(state)} could not be read from the database, so "
+            f"{_n_verdicts(len(applied_penalties))} could not be announced."
+        ]
+
+    division_name = ctx["division_name"]
 
     penalty_channel_id_raw = ctx.get("penalty_channel_id")
     if penalty_channel_id_raw is None:
-        return  # no verdicts channel configured — skip silently
+        log.error(
+            "post_penalty_announcements: no verdicts channel for round %s", round_id
+        )
+        return [
+            f"**{division_name}** — no verdicts channel is set, so "
+            f"{_n_verdicts(len(applied_penalties))} could not be announced."
+        ]
 
     target_channel = bot.get_channel(int(penalty_channel_id_raw))
     if target_channel is None:
@@ -432,22 +522,35 @@ async def post_penalty_announcements(
             penalty_channel_id_raw,
             round_id,
         )
-        return
+        return [
+            missing_channel_fault(division_name, "verdicts", int(penalty_channel_id_raw))
+            + f" {_n_verdicts(len(applied_penalties))} could not be announced."
+        ]
 
     season_number = ctx["season_number"]
-    division_name = ctx["division_name"]
     KIND = VerdictKind.PENALTY
     head_the_batch = head or _banner_once(bot, target_channel, ctx)
 
     for record in applied_penalties:
+        # Named before the try so a failure below can still say whose verdict it was, but
+        # *read* inside it: a record that cannot even be asked for its driver must cost one
+        # verdict, not abandon every one still to come.
+        driver_discord_id = None
         try:
+            driver_discord_id = (
+                record.get("driver_user_id") if hasattr(record, "get")
+                else getattr(record, "driver_user_id", 0)
+            )
             race_result_id = record.get("race_result_id") if hasattr(record, "get") else getattr(record, "race_result_id", None)
             qual_result_id = record.get("qual_result_id") if hasattr(record, "get") else getattr(record, "qual_result_id", None)
-            driver_discord_id: int = record.get("driver_user_id") if hasattr(record, "get") else getattr(record, "driver_user_id", 0)
 
             result_ctx = await _get_result_context(db_path, race_result_id, qual_result_id)
             if not result_ctx:
                 log.warning("post_penalty_announcements: no result context for record %r", record)
+                faults.append(
+                    f"**{division_name}** — the penalty verdict for {_driver_label(driver_discord_id)} "
+                    f"could not be built: its result could not be read."
+                )
                 continue
 
             # The verdict names the driver by the account they use now, whichever the
@@ -515,10 +618,16 @@ async def post_penalty_announcements(
                 team_name=team_name,
             )
 
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — recorded, and the next verdict taken
             log.exception(
                 "post_penalty_announcements: error posting announcement for record %r", record
             )
+            faults.append(
+                f"**{division_name}** — the penalty verdict for "
+                f"{_driver_label(driver_discord_id)} was not announced: {exc}"
+            )
+
+    return faults
 
 
 async def post_appeal_announcements(
@@ -527,26 +636,38 @@ async def post_appeal_announcements(
     applied_corrections: list,
     *,
     head=None,
-) -> None:
+) -> list[str]:
     """Post one announcement per applied appeal correction to the verdicts channel.
 
-    Identical contract to :func:`post_penalty_announcements`.
-    Skips silently if the verdicts channel is not configured or inaccessible.
+    Identical contract to :func:`post_penalty_announcements`, including the faults it
+    returns and the reason an unconfigured verdicts channel is one of them (#237). An
+    unannounced appeal verdict is the worse of the two to lose: it is the one that tells a
+    driver a sanction against them was overturned.
     """
     if not applied_corrections:
-        return
+        return []
 
     db_path: str = state.db_path
     round_id: int = state.round_id
+    faults: list[str] = []
 
     ctx = await _get_announcement_context(db_path, round_id)
     if not ctx:
         log.warning("post_appeal_announcements: could not load context for round %s", round_id)
-        return
+        return [
+            f"{_round_label(state)} could not be read from the database, so "
+            f"{_n_verdicts(len(applied_corrections))} could not be announced."
+        ]
+
+    division_name = ctx["division_name"]
 
     penalty_channel_id_raw = ctx.get("penalty_channel_id")
     if penalty_channel_id_raw is None:
-        return  # no verdicts channel configured — skip silently
+        log.error("post_appeal_announcements: no verdicts channel for round %s", round_id)
+        return [
+            f"**{division_name}** — no verdicts channel is set, so "
+            f"{_n_verdicts(len(applied_corrections))} could not be announced."
+        ]
 
     target_channel = bot.get_channel(int(penalty_channel_id_raw))
     if target_channel is None:
@@ -555,22 +676,35 @@ async def post_appeal_announcements(
             penalty_channel_id_raw,
             round_id,
         )
-        return
+        return [
+            missing_channel_fault(division_name, "verdicts", int(penalty_channel_id_raw))
+            + f" {_n_verdicts(len(applied_corrections))} could not be announced."
+        ]
 
     season_number = ctx["season_number"]
-    division_name = ctx["division_name"]
     KIND = VerdictKind.APPEAL
     head_the_batch = head or _banner_once(bot, target_channel, ctx)
 
     for record in applied_corrections:
+        # Named before the try so a failure below can still say whose verdict it was, but
+        # *read* inside it: a record that cannot even be asked for its driver must cost one
+        # verdict, not abandon every one still to come.
+        driver_discord_id = None
         try:
+            driver_discord_id = (
+                record.get("driver_user_id") if hasattr(record, "get")
+                else getattr(record, "driver_user_id", 0)
+            )
             race_result_id = record.get("race_result_id") if hasattr(record, "get") else getattr(record, "race_result_id", None)
             qual_result_id = record.get("qual_result_id") if hasattr(record, "get") else getattr(record, "qual_result_id", None)
-            driver_discord_id: int = record.get("driver_user_id") if hasattr(record, "get") else getattr(record, "driver_user_id", 0)
 
             result_ctx = await _get_result_context(db_path, race_result_id, qual_result_id)
             if not result_ctx:
                 log.warning("post_appeal_announcements: no result context for record %r", record)
+                faults.append(
+                    f"**{division_name}** — the appeal verdict for {_driver_label(driver_discord_id)} "
+                    f"could not be built: its result could not be read."
+                )
                 continue
 
             # The verdict names the driver by the account they use now, whichever the
@@ -637,10 +771,16 @@ async def post_appeal_announcements(
                 team_name=team_name,
             )
 
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — recorded, and the next verdict taken
             log.exception(
                 "post_appeal_announcements: error posting announcement for record %r", record
             )
+            faults.append(
+                f"**{division_name}** — the appeal verdict for "
+                f"{_driver_label(driver_discord_id)} was not announced: {exc}"
+            )
+
+    return faults
 
 
 async def post_autosanction_announcement(
@@ -652,10 +792,14 @@ async def post_autosanction_announcement(
     sanction_type: str,  # "AUTOSACK" or "AUTORESERVE"
     threshold: int,
     head=None,
-) -> None:
+) -> list[str]:
     """Post a verdict-channel announcement for an autosack or autoreserve action.
 
-    Skips silently if the verdicts channel is not configured or inaccessible.
+    Returns what it could not announce, as lines a league can read (#237). Its caller adds
+    them to ``SanctionOutcome.posting_faults``, which is where "the sanction took effect but
+    its announcement could not be posted" already belonged — the `except` around the call
+    site only ever caught what *raised*, and every exit below returned quietly instead, so
+    the report #239 built has been promising a line it could not produce.
 
     **An attendance sanction is a verdict** (decided 2026-09-09) and is headed like one.
     *head* is the run's shared banner poster: the sanctions of one round come from a loop in
@@ -679,13 +823,26 @@ async def post_autosanction_announcement(
         )
         row = await cursor.fetchone()
 
+    sanction_label = "autosack" if sanction_type == "AUTOSACK" else "autoreserve"
+
     if row is None:
         log.warning("post_autosanction_announcement: could not load context for round %s", round_id)
-        return
+        return [
+            f"the {sanction_label} of {_driver_label(driver_discord_id)} was applied, but "
+            f"round {round_id} could not be read, so it was not announced"
+        ]
+
+    division_name_for_fault: str = row["division_name"] or "the division"
 
     penalty_channel_id_raw = row["penalty_channel_id"]
     if penalty_channel_id_raw is None:
-        return  # no verdicts channel configured — skip silently
+        log.error(
+            "post_autosanction_announcement: no verdicts channel for round %s", round_id
+        )
+        return [
+            f"the {sanction_label} of {_driver_label(driver_discord_id)} was applied, but "
+            f"**{division_name_for_fault}** has no verdicts channel set, so it was not announced"
+        ]
 
     target_channel = bot.get_channel(int(penalty_channel_id_raw))
     if target_channel is None:
@@ -693,7 +850,11 @@ async def post_autosanction_announcement(
             "post_autosanction_announcement: verdicts channel %s inaccessible — skipping",
             penalty_channel_id_raw,
         )
-        return
+        return [
+            f"the {sanction_label} of {_driver_label(driver_discord_id)} was applied, but "
+            f"**{division_name_for_fault}**'s verdicts channel (id "
+            f"{int(penalty_channel_id_raw)}) is not in the server, so it was not announced"
+        ]
 
     season_number: int | None = row["season_number"]
     division_name: str = row["division_name"]
@@ -752,8 +913,13 @@ async def post_autosanction_announcement(
             description_text=description_text,
             justification_text=justification_text,
         )
-    except Exception:
+        return []
+    except Exception as exc:  # noqa: BLE001 — recorded with the sanction's outcome
         log.exception(
             "post_autosanction_announcement: error posting announcement for driver %s",
             driver_discord_id,
         )
+        return [
+            f"the {sanction_label} of {_driver_label(driver_discord_id)} was applied, but "
+            f"its announcement failed: {exc}"
+        ]

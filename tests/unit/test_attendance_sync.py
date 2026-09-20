@@ -154,7 +154,10 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
         attendance_service, "post_attendance_sheet", new=AsyncMock(return_value=None)
     ), patch(
         "services.verdict_announcement_service.post_autosanction_announcement",
-        new=AsyncMock(return_value=None),
+        # Returns the sanctions it could not announce (#237). `None` is not merely
+        # inert here: the run does `posting_faults += <return>`, which raises inside
+        # the per-driver try and is recorded as a bogus failed sanction.
+        new=AsyncMock(return_value=[]),
     ) as announce, patch(
         "services.verdict_announcement_service.banner_for_round",
         new=MagicMock(return_value=None),

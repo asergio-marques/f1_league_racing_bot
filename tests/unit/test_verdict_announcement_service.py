@@ -56,10 +56,17 @@ class TestTranslatePenalty:
 # ---------------------------------------------------------------------------
 
 def _make_state(db_path: str, round_id: int = 1) -> MagicMock:
+    """A stand-in for ``PenaltyReviewState``.
+
+    ``round_number`` and ``division_name`` are set because the fault lines read them: left
+    to a bare ``MagicMock`` they would be mock objects, and the message would name one.
+    """
     state = MagicMock()
     state.db_path = db_path
     state.round_id = round_id
     state.division_id = 1
+    state.round_number = 3
+    state.division_name = "Division A"
     return state
 
 
@@ -70,13 +77,19 @@ async def test_post_penalty_announcements_empty_list_noop():
     bot = MagicMock()
     state = _make_state("irrelevant.db")
     # Should complete without raising even though db_path is fake
-    await post_penalty_announcements(bot, state, [])
+    assert await post_penalty_announcements(bot, state, []) == []
     bot.get_channel.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_post_penalty_announcements_skips_when_no_channel_configured(tmp_path):
-    """If penalty_channel_id is NULL in DB, skip silently and don't call bot.get_channel."""
+async def test_post_penalty_announcements_reports_when_no_channel_configured(tmp_path):
+    """A division with no verdicts channel is a fault, not a silence (#237).
+
+    This is the opposite of the rule the results and standings reposts keep, where an
+    unconfigured channel is owed nothing. A verdicts channel is one of the three a division
+    must have before its placements can be confirmed, so a round reaching a penalty verdict
+    without one is an anomaly — and the penalty has already been applied.
+    """
     from db.database import run_migrations, get_connection
 
     db_path = str(tmp_path / "test.db")
@@ -115,14 +128,17 @@ async def test_post_penalty_announcements_skips_when_no_channel_configured(tmp_p
 
     fake_record = {"driver_session_result_id": 99, "penalty_type": "TIME",
                    "time_seconds": 5, "description": "test", "justification": "j"}
-    await post_penalty_announcements(bot, state, [fake_record])
-    # Should skip without calling bot.get_channel
+    faults = await post_penalty_announcements(bot, state, [fake_record])
+
     bot.get_channel.assert_not_called()
+    assert len(faults) == 1
+    assert "no verdicts channel" in faults[0]
+    assert "Division A" in faults[0]
 
 
 @pytest.mark.asyncio
-async def test_post_penalty_announcements_skips_when_channel_inaccessible(tmp_path):
-    """If bot.get_channel returns None (inaccessible), skip silently."""
+async def test_post_penalty_announcements_reports_when_channel_inaccessible(tmp_path):
+    """A verdicts channel that has been deleted is named, with what went unannounced (#237)."""
     from db.database import run_migrations, get_connection
 
     db_path = str(tmp_path / "test.db")
@@ -162,9 +178,12 @@ async def test_post_penalty_announcements_skips_when_channel_inaccessible(tmp_pa
     fake_record = {"driver_session_result_id": 99, "penalty_type": "TIME",
                    "time_seconds": 5, "description": "test", "justification": "j"}
 
-    # Should not raise
-    await post_penalty_announcements(bot, state, [fake_record])
+    faults = await post_penalty_announcements(bot, state, [fake_record])
+
     bot.get_channel.assert_called_once_with(55555)
+    assert len(faults) == 1
+    assert "55555" in faults[0]
+    assert "one verdict" in faults[0]
 
 
 @pytest.mark.asyncio
@@ -617,3 +636,154 @@ async def test_a_verdict_on_a_result_under_a_past_account_names_the_current_one(
     )
 
     assert [content for content, _file in channel.sent] == ["<@31337>"]
+
+
+# ---------------------------------------------------------------------------
+# A verdict that was not announced reaches the league (#237)
+#
+# The penalty is applied either way: the classification changes and the driver loses the
+# places. The announcement is the only thing that tells them why, and every failure to post
+# one used to end in the host's log file.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_round_that_cannot_be_read_reports_every_verdict_owed(tmp_path):
+    """No context means no channel, no division and no verdicts — all of them named."""
+    db_path = str(tmp_path / "unreadable.db")
+    await _seed_round(db_path)
+
+    bot = MagicMock()
+    state = _make_state(db_path, round_id=999_999)
+
+    faults = await post_penalty_announcements(
+        bot, state, [_penalty_record(1), _penalty_record(2)]
+    )
+
+    assert len(faults) == 1
+    # The round a league knows, not the primary key, and a count that reads as English.
+    assert "Round 3 (Division A)" in faults[0]
+    assert "999999" not in faults[0].replace(",", "")
+    assert "2 verdicts" in faults[0]
+
+
+@pytest.mark.asyncio
+async def test_a_record_with_no_result_is_named_and_the_next_still_posts(tmp_path):
+    """One unbuildable verdict must not cost the others theirs."""
+    db_path = str(tmp_path / "partial.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path, signup_display_name="Ada")
+
+    sent: list = []
+
+    channel = MagicMock()
+
+    async def _send(content=None, **kwargs):
+        sent.append(content)
+        message = MagicMock()
+        message.id = 1
+        return message
+
+    channel.send = _send
+    bot = MagicMock()
+    bot.db_path = db_path  # the image path reads it; a mock here writes a file named after itself
+    bot.get_channel.return_value = channel
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    good = _penalty_record(seeded["race_result_id"])
+    orphan = _penalty_record(999_999)
+
+    faults = await post_penalty_announcements(bot, state, [orphan, good])
+
+    assert len(faults) == 1
+    assert f"<@{DRIVER_ID}>" in faults[0]
+    assert "could not be read" in faults[0]
+    assert sent, "the second verdict should still have been announced"
+
+
+@pytest.mark.asyncio
+async def test_a_verdict_whose_posting_raises_is_named(tmp_path):
+    db_path = str(tmp_path / "raises.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path, signup_display_name="Ada")
+
+    channel = MagicMock()
+    channel.send = AsyncMock(side_effect=RuntimeError("Missing Permissions"))
+    bot = MagicMock()
+    bot.db_path = db_path  # as above — a mock db_path becomes a file in the repo root
+    bot.get_channel.return_value = channel
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    faults = await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"])]
+    )
+
+    assert len(faults) == 1
+    assert f"<@{DRIVER_ID}>" in faults[0]
+    assert "Missing Permissions" in faults[0]
+
+
+@pytest.mark.asyncio
+async def test_an_appeal_verdict_that_cannot_be_announced_is_reported(tmp_path):
+    """The worse of the two to lose: it tells a driver a sanction was overturned."""
+    db_path = str(tmp_path / "appeal.db")
+    seeded = await _seed_round(db_path)
+
+    bot = MagicMock()
+    bot.get_channel.return_value = None
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    faults = await post_appeal_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"])]
+    )
+
+    assert len(faults) == 1
+    assert "55555" in faults[0]
+
+
+@pytest.mark.asyncio
+async def test_an_unannounced_autosanction_says_it_was_still_applied(tmp_path):
+    """The sanction took effect; only its announcement did not.
+
+    The distinction matters to the manager reading it: re-running the sanctions will not
+    announce it, because the driver is no longer a candidate.
+    """
+    from services.verdict_announcement_service import post_autosanction_announcement
+
+    db_path = str(tmp_path / "autosanction.db")
+    seeded = await _seed_round(db_path)
+
+    bot = MagicMock()
+    bot.get_channel.return_value = None
+
+    faults = await post_autosanction_announcement(
+        bot=bot,
+        db_path=db_path,
+        round_id=seeded["round_id"],
+        driver_discord_id=DRIVER_ID,
+        driver_display_name="Ada",
+        sanction_type="AUTOSACK",
+        threshold=12,
+    )
+
+    assert len(faults) == 1
+    assert "was applied" in faults[0]
+    assert "not announced" in faults[0]
+    assert f"<@{DRIVER_ID}>" in faults[0]
+
+
+def test_the_repair_hint_says_a_verdict_cannot_be_announced_twice():
+    """There is no re-announce command, and #189 records why one could not be built.
+
+    **Attendance sanctions are no exception**, though `/attendance sync` re-runs them: a
+    driver already sacked or already moved to Reserve is no longer a candidate, so a second
+    run passes over them without a word. ``attendance_service._failure_reason`` states this,
+    and an earlier draft of this hint promised the opposite — which would have had a manager
+    run the sync, read `Success`, and believe the driver had been told.
+    """
+    from services.verdict_announcement_service import verdict_repair_hint
+
+    hint = verdict_repair_hint()
+    assert "cannot announce a verdict a second time" in hint
+    assert "yourself" in hint
+    assert "/attendance sync" not in hint
