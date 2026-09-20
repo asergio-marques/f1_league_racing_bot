@@ -182,6 +182,38 @@ Clears any guild-scoped command overrides and pushes the latest global slash com
 
 ---
 
+## Words this README uses
+
+A handful of terms turn up throughout the commands below without being explained where they
+appear. For the order to do things in, and a fuller treatment of a season's stages, follow
+[Configuring the core bot](docs/how-to/configuring-the-core-bot.md).
+
+**Division** — one championship within your league, with its own drivers, its own calendar
+and its own Discord role. A one-division league is perfectly normal; the bot simply has one
+of them.
+
+**Tier** — where a division sits in the pecking order. Tier 1 is your top division. Every
+division needs one, they must all be different, and across the season they must run
+**1, 2, 3…** with no gaps. Tier is not the same as the division's name: you might call
+tier 1 "Pro" and tier 2 "Academy".
+
+**Seat** — one place in a team, held by at most one driver. Every team but Reserve holds
+two; Reserve holds as many as you put in it.
+
+**Full-time seat** — a seat in any team other than Reserve. A driver in one is a full-time
+driver of that division; a driver in a Reserve seat is a **reserve driver**, called up to
+races as they are needed.
+
+**Principal division** — the highest tier division in which a driver holds a full-time
+seat. A driver may race in several divisions at once — full-time in one, reserve in
+others — and this is the one the rules name when exactly one is needed. A driver who is
+full-time in tier 2 and a reserve in tier 1 has tier 2 as their principal division; a
+driver who only reserves, or who holds no seat, has none. You never set it: the bot works
+it out from the seats the driver holds, so placing, moving or releasing them changes it.
+No command shows it today — it is the term later rules are written against.
+
+---
+
 ## Slash Commands
 
 Every command below carries an `*Access:*` line naming the level of permission it asks for.
