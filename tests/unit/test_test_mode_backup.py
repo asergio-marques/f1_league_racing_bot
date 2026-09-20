@@ -254,7 +254,7 @@ async def test_status_reports_an_unreadable_backup(live):
 
 
 async def test_restore_asks_before_it_does_anything(live):
-    """One word from `/backup save`, and it replaces everything the bot holds."""
+    """One word from `/test-mode backup save`, and it replaces everything the bot holds."""
     cog = _cog(live)
     await _body(Cog.backup_save)(cog, _interaction())
     interaction = _interaction()

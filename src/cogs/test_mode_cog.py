@@ -696,7 +696,7 @@ class TestModeCog(commands.Cog):
         await interaction.followup.send(
             f"✅ Saved. The backup holds {state.size_bytes // 1024} KB and replaces "
             f"whatever was there before.\n"
-            f"Lock it with `/backup lock` if you want to keep this one.",
+            f"Lock it with `/test-mode backup lock` if you want to keep this one.",
             ephemeral=True,
         )
         log.info(
@@ -718,17 +718,18 @@ class TestModeCog(commands.Cog):
         db_path = self.bot.db_path  # type: ignore[attr-defined]
         if not backup_service.state(db_path).exists:
             await interaction.followup.send(
-                "⛔ There is no saved backup to lock. Take one with `/backup save`.",
+                "⛔ There is no saved backup to lock. Take one with "
+                "`/test-mode backup save`.",
                 ephemeral=True,
             )
             return
 
         locked = backup_service.set_lock(db_path, who=interaction.user.display_name)
         await interaction.followup.send(
-            "🔒 Locked. `/backup save` will refuse to overwrite it until you run this "
-            "again."
+            "🔒 Locked. `/test-mode backup save` will refuse to overwrite it until you "
+            "run this again."
             if locked
-            else "🔓 Unlocked. `/backup save` will overwrite it from now on.",
+            else "🔓 Unlocked. `/test-mode backup save` will overwrite it from now on.",
             ephemeral=True,
         )
 
@@ -747,7 +748,7 @@ class TestModeCog(commands.Cog):
         state = backup_service.state(self.bot.db_path)  # type: ignore[attr-defined]
         if not state.exists:
             await interaction.followup.send(
-                "📭 There is no saved backup. Take one with `/backup save`.",
+                "📭 There is no saved backup. Take one with `/test-mode backup save`.",
                 ephemeral=True,
             )
             return
@@ -776,21 +777,22 @@ class TestModeCog(commands.Cog):
         state = backup_service.state(self.bot.db_path)  # type: ignore[attr-defined]
         if not state.exists:
             await interaction.followup.send(
-                "⛔ There is no saved backup to restore. Take one with `/backup save`.",
+                "⛔ There is no saved backup to restore. Take one with "
+                "`/test-mode backup save`.",
                 ephemeral=True,
             )
             return
         if not state.readable:
             await interaction.followup.send(
                 "⛔ The saved backup is not a readable database, so it will not be "
-                "restored. Take a fresh one with `/backup save`.",
+                "restored. Take a fresh one with `/test-mode backup save`.",
                 ephemeral=True,
             )
             return
 
         # Confirmed rather than done: everything the bot currently holds is about to be
         # replaced by a snapshot of some earlier moment, and the command that does it is
-        # one word from `/backup save`.
+        # one word from `/test-mode backup save`.
         view = _ConfirmRestoreView(self, interaction.user.id)
         await interaction.followup.send(
             f"⚠️ **Restore the backup taken "
