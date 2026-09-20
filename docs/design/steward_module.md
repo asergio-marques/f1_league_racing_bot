@@ -483,8 +483,13 @@ The design consequence is that channel creation comes **before** the first write
 ticket row, its parties and its evidence are written only once the channel exists, so the failure
 path has nothing to undo.
 
-**Whether a paused outcome may still be prefilled on an appeal ballot.** [STW-CYC-097] prefills
-each line of an appeal ballot with the outcome the initial verdict gave; [STW-OUT-029] says a
-paused outcome is offered upon no ballot. [STW-SET-007] forbids pausing while a report or appeal
-deliberation is open, but appeal *submission* is neither, so an outcome can be paused in that gap
-and the prefill would then offer something the ballot may not.
+**~~Whether a paused outcome may still be prefilled on an appeal ballot.~~** Settled 2026-09-20 by
+closing the gap rather than reconciling the two rules: [STW-SET-007] now forbids modifying,
+removing or pausing an outcome while an appeal *submission* is open as well as a deliberation, and
+[STW-SET-010] does the same for switching off a penalty type, which empties the outcomes carrying
+it. A paused outcome therefore cannot be one an open appeal must prefill.
+
+The design consequence is that the refusal these two rules describe is one check over the module's
+open stages, not a check per command: the stages are rows with a due moment (decision 3), so "is
+any report deliberation, appeal submission or appeal deliberation open" is a single query, and both
+rules call it.
