@@ -245,33 +245,35 @@ def _phase3() -> str:
     )
 
 
+#: Phase → the builder that composes it. Parametrised over the *number* rather than over an
+#: already-built message, so that a builder which raises fails the test that exercises it
+#: instead of erroring the whole module at collection.
+BUILDERS = {1: _phase1, 2: _phase2, 3: _phase3}
+
+
 class TestAForecastNamesNoHorizon:
     """No forecast describes when it was posted or when the next one arrives (#112)."""
 
-    @pytest.mark.parametrize(
-        "message", [_phase1(), _phase2(), _phase3()], ids=["phase1", "phase2", "phase3"]
-    )
-    def test_no_message_names_a_horizon(self, message):
+    @pytest.mark.parametrize("phase", [1, 2, 3])
+    def test_no_message_names_a_horizon(self, phase):
         """The wording the issue reported, in every form it took."""
+        message = BUILDERS[phase]()
         for horizon in ("days out", "hours out", "T−2", "T-2", "T−5", "T-5"):
             assert horizon not in message
 
-    @pytest.mark.parametrize(
-        "message", [_phase1(), _phase2(), _phase3()], ids=["phase1", "phase2", "phase3"]
-    )
-    def test_no_message_counts_days_or_hours_at_all(self, message):
+    @pytest.mark.parametrize("phase", [1, 2, 3])
+    def test_no_message_counts_days_or_hours_at_all(self, phase):
         """A number of days or hours in any phrasing, not just the three literals replaced.
 
         The fix is that a forecast says nothing about its own timing — a rewording that
         reintroduced "in 5 days" or "2 hours before" would pass the test above and still be
         the defect.
         """
-        assert not re.search(r"\d+\s*(day|hour)", message, re.IGNORECASE)
+        assert not re.search(r"\d+\s*(day|hour)", BUILDERS[phase](), re.IGNORECASE)
 
     @pytest.mark.parametrize("phase", [1, 2, 3])
     def test_each_message_is_titled_by_its_phase_description(self, phase):
-        message = {1: _phase1, 2: _phase2, 3: _phase3}[phase]()
-        heading = message.splitlines()[0]
+        heading = BUILDERS[phase]().splitlines()[0]
         assert PHASE_DESCRIPTIONS[phase] in heading
 
     def test_no_message_names_a_phase_number(self):
