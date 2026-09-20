@@ -188,7 +188,7 @@ The rules for a team's **name** are checked the moment you set it, and are liste
 
 This is easy to forget and the bot warns you about it at every season review, because a driver sitting in Reserve without it will be rejected when results are submitted.
 
-Every division you create later is built from this list, each team with **two seats**. Build the list before you confirm a season's configuration: from that moment until the season ends, `/team add`, `/team remove` and `/team rename` are refused. A team's role is the exception — if a role is deleted from the server, point the team at its replacement with `/team role`, in any state. Every driver already seated in the team moves to the new role with it. Use `/team list` to see the whole list with its roles, and `/team lineup` once drivers are placed.
+Every division you create later is built from this list, each team with **two seats**. Build the list before you confirm a season's configuration: from that moment until the season ends, `/team add`, `/team remove` and `/team rename` are refused. A team's role is the exception — if a role is deleted from the server, point the team at its replacement with `/team role`, in any state but pending completion. (By then nothing is being raced and completing the season revokes every team role anyway, so the repair waits for the next season.) Every driver already seated in the team moves to the new role with it. Use `/team list` to see the whole list with its roles, and `/team lineup` once drivers are placed.
 
 ---
 
@@ -504,7 +504,7 @@ Things change. While the season is ongoing:
 | `/round amend` | Change a round's track, time or format — any combination of them, judged and applied as one change. Changing the time renumbers the division's rounds, and the new time must still be ahead — a round is never moved into the past. Forecasts are thrown away only where the round has moved far enough that they would not have been drawn yet; the confirmation tells you which before you commit |
 | `/round cancel` | Call off one round. Needs `CONFIRM`. The bot announces nothing itself — tell your drivers — but the check-in channel carries a notice where attendance is on, and the calendar is reposted with the round struck through. Refused once the round's results have been entered — the drivers' reports and appeals depend on them |
 | `/division cancel` | Call off a whole division. Needs `CONFIRM`. Every round of it you have not yet raced is cancelled with it; rounds you have raced keep their results. Told as `/round cancel` tells it |
-| `/division calendar-sync` | Repost a division's calendar with your changes on it |
+| `/division calendar-sync` | Repost a division's calendar with your changes on it. Refused once every division is done — there is no round left for the calendar to describe |
 | `/clean-bot` | Delete the bot's own most recent messages in the command channel. You say how many, up to ten, and nobody else's messages are touched. An approved or expired review clears itself, so this is for whatever else the bot has left behind |
 
 > **The posted calendar does not update itself — except for a cancellation.** It is the calendar the season was approved with, and it stays that way until you cancel a round, a division or the season, which reposts it with the cancelled rounds marked. `/round amend` changes what the bot *does*, but the picture or the message your drivers scroll back to is untouched until you run `/division calendar-sync`. This trips up nearly everyone once.
@@ -539,6 +539,12 @@ or a check-in pressed under the old account still counts as theirs.
 
 Things to know before you run it:
 
+- **You can only run it while you are placing drivers** — while the season is in placements,
+  or mid-season while the drivers of a closed signup window are being placed. Everywhere else
+  it is refused, including between seasons. Once the season is being raced, `/driver move` is
+  the command for changing where a driver sits. So a driver who changes account in the close
+  season is re-keyed when the next season reaches placements, which is when you would be
+  placing them anyway — do it then, before you seat them.
 - **Finish any signup in progress first.** The command is refused while the driver, or the new
   account, is collecting answers, in review or in correction. Approve it, reject it or have it
   withdrawn, then run the command.
@@ -579,7 +585,7 @@ Where the window closes with nobody left to settle, the season goes straight bac
 /season complete
 ```
 
-**Nothing ends a season by itself.** Once every division is finished or cancelled, the season moves to **pending completion** on its own, and `/season complete` is what ends it. Before then the bot refuses, listing the outstanding rounds. A mid-season signup window does not hold it up: with every division done there is no round left to place anyone into, so the window is closed and every pending placement turned down — each unplaced or unconfirmed driver returns to Not Signed Up, as `/driver reject` would. From pending completion no module can be turned off, and the last round's results can still be amended. Completing then ends the season: each division's **final classification** is posted, a history entry is written for every division each driver took part in (one they were moved or released from included), the season's roles are revoked, an open signup window is closed, and every driver returns to **Not Signed Up** — ready to sign up for the next season. Drivers who never raced are deleted at this point, their signups kept with the season; former drivers are kept. Test mode is switched off, and the season is archived and announced in the log channel.
+**Nothing ends a season by itself.** Once every division is finished or cancelled, the season moves to **pending completion** on its own, and `/season complete` is what ends it. Before then the bot refuses, listing the outstanding rounds. A mid-season signup window does not hold it up: with every division done there is no round left to place anyone into, so the window is closed and every pending placement turned down — each unplaced or unconfirmed driver returns to Not Signed Up, as `/driver reject` would. From pending completion there are three things left and no others: **amending the results of a round already final**, **repairing a division's channels** — the final classification and the final attendance sheet are posted to them, so one deleted has to be repointed — and completing the season. `/division calendar-sync`, `/team role`, `/team reserve-role`, the `/results` syncs, the reserves toggle and every `/results amend` command are refused, and no module can be turned off. Completing then ends the season: each division's **final classification** is posted, a history entry is written for every division each driver took part in (one they were moved or released from included), the season's roles are revoked, an open signup window is closed, and every driver returns to **Not Signed Up** — ready to sign up for the next season. Drivers who never raced are deleted at this point, their signups kept with the season; former drivers are kept. Test mode is switched off, and the season is archived and announced in the log channel.
 
 > **What "finalised" means here.** A round is finished once its **appeals review is approved** —
 > not when you submit its results, and not when you approve its penalties. Each stage in between

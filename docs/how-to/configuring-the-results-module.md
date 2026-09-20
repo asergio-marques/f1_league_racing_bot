@@ -147,6 +147,8 @@ Reserves are **shown by default**, and this is set per division. Hiding them is 
 
 Every driver seated in a **team** appears in the drivers' table from the start of the season, on nothing, whether or not they have raced yet, and every team appears in the constructors' table on the same terms. A driver sitting in Reserve appears only once they have driven, which is the other half of why this toggle exists.
 
+> **Decide before the last round.** The toggle is refused once every division of the season is done — with the racing over, the display is settled and the final classification is drawn next. It is refused on a completed or cancelled season too.
+
 ---
 
 ## Step 6 — Decide between text and pictures
@@ -325,6 +327,8 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 
 `/results amend revert` throws the working copy away and starts it again from the season's real tables. You cannot switch amendment mode off while changes are staged — revert or review them first, and the refusal says so.
 
+> **Mid-season means mid-season.** Every command of the group is refused once the season is **pending completion** — with every division done the points are settled and the final classification is drawn next — and on a completed or cancelled season, which is an archive. One consequence to know before you start: amendment mode left switched **on** when the last division finishes cannot be switched off, because `toggle` is refused too. That stops nothing — the season still completes and the staged changes are simply never applied — but revert or approve before the last round if you would rather not leave it that way.
+
 > **An amendment that would leave the points out of order cannot be approved.** The same rule approval holds at the start of a season holds here, and for the same reason: an approved amendment rescores every round of every division against the new table at once. `review` shows the problem alongside the diff, and pressing Approve refuses and changes nothing — the working copy is left as it is, so you can repair it and review again. Each `amend session` or `amend bulk-session` that breaks the ordering warns you at the moment you stage it.
 
 > **Approving reposts every round that has been raced, and only those.** A round still to come is left alone, and a round that has been raced comes back under the label it already stood at — amending the points does not push a round at Final Results back to provisional. Expect a burst of posting across every division's channels: one round at a time, from the first round of the season, which on a long calendar takes a moment to work through.
@@ -344,6 +348,8 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 
 Both delete what the bot posted and post it again from what it holds: the first for the standings, the second for every session of every round. Reach for them when somebody deleted a channel's history, or after a correction made outside the normal flow.
 
+> **Both are refused once every division is done,** and on a season already completed or cancelled. While a season is pending completion the one thing that still reposts is `/round results amend` — see the next section.
+
 ### A repost the bot told you it could not make
 
 Approving either review stage, and `/round results amend`, republish the round's results and every later round's standings. When any of that cannot be posted, you are told about it rather than left to find an empty channel.
@@ -353,9 +359,9 @@ Approving either review stage, and `/round results amend`, republish the round's
 
 Work it in this order.
 
-1. **Read what you are told.** Most lines name the division and the channel at fault; a few say instead that the server itself could not be reached, or list the later rounds whose standings were left alone. Every report ends with the exact `/results rounds sync` and `/results standings sync` commands to run.
+1. **Read what you are told.** Most lines name the division and the channel at fault; a few say instead that the server itself could not be reached, or list the later rounds whose standings were left alone. Every report ends with the exact commands to run — the two syncs while the season is being raced, or, where every division is already done and the syncs are closed, the `/round results amend` to run again.
 2. **Repair the cause.** Usually the channel has been deleted, or the bot's **View Channel**, **Send Messages** or **Read Message History** has been taken away on it. Where the channel is gone for good, point the division at a new one with `/division results-channel` or `/division standings-channel` first.
-3. **Run the two sync commands.** Only then — running them before the cause is repaired fails the same way.
+3. **Run whatever the report named.** Only then — running it before the cause is repaired fails the same way. With the season still being raced that is the two sync commands. With every division done it is `/round results amend` for the round, which replaces the round's own results *and* every later round's standings, so it recovers the same ground.
 
 **What is already posted is left alone when this happens.** The bot checks the channel before it deletes anything, so a failure leaves the league reading the version from before the approval rather than an empty channel. That version is out of date until you run the syncs, which is why the entry is worth acting on the same day.
 
@@ -442,6 +448,6 @@ Worth knowing so you do not go looking for the setting.
 | An amendment that vanished | Known: it is one attempt. A rejection, a failure or five minutes of silence deletes the channel; the log channel holds the reason |
 | A round left unchanged by an approved amendment | It has not been raced, so there was nothing to repost. Only rounds with results are reposted |
 | `/results amend review` refuses, naming a division and a channel | That channel has been deleted, or the bot can no longer post in it. Nothing was changed — set it again with `/division results-channel` or `/division standings-channel` and review again |
-| `/results amend toggle` refused | Changes are staged. Revert or review them first |
+| `/results amend toggle` refused | Changes are staged — revert or review them first. Or every division of the season is done, in which case the whole group is closed and the season is completed as it stands |
 | Text where you expected a picture | The table worked and the drawing did not — often a drawing file with fewer rows than the division needs. The log channel names the reason |
 | `/test-mode advance` refused | A round is submitted but not settled. Finish its penalty and appeals stages |
