@@ -610,3 +610,24 @@ async def test_completing_waits_while_a_round_is_being_amended(_open_amendment):
     assert "round 2 of **Division 1** is being amended in <#8200>" in replied
     assert "Finish or cancel it first" in replied
     _open_amendment.assert_awaited_once_with(cog.bot.db_path, SEASON_ID)
+
+
+async def test_cancelling_waits_while_a_round_is_being_amended(_open_amendment):
+    """#345, decided 2026-09-21. Cancelling writes every driver's history from the standings,
+    which hold the amendment's corrections before they are approved, and the history is never
+    rewritten. Refused before anything else runs."""
+    _open_amendment.return_value = {
+        "round_number": 2, "division_name": "Division 1", "channel_id": 8200,
+    }
+    cog = _make_cog()
+    interaction = _interaction()
+
+    announce = await _cancel(cog, interaction)
+
+    announce.assert_not_awaited()
+    cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
+    cog.bot.season_service.discard_uncommitted_placements.assert_not_awaited()
+    cog.bot.scheduler_service.cancel_round.assert_not_called()
+    replied = _replied(interaction)
+    assert "Cannot cancel the season" in replied
+    assert "round 2 of **Division 1** is being amended in <#8200>" in replied

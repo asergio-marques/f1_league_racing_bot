@@ -2866,6 +2866,23 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        # **Not while a round is being amended** (#345, decided 2026-09-21). Cancelling writes
+        # every driver's history from the standings, which hold an open amendment's corrections
+        # before they are approved — and the history is never rewritten. Refused before anything
+        # else runs, so that a refusal leaves the season exactly as it was.
+        from services.result_submission_service import open_amendment_in_season
+
+        held = await open_amendment_in_season(self.bot.db_path, season.id)
+        if held is not None:
+            await interaction.response.send_message(
+                f"\u274c Cannot cancel the season — round {held['round_number']} of "
+                f"**{held['division_name']}** is being amended in <#{held['channel_id']}>. "
+                "Finish or cancel it first: cancelling writes every driver's history from the "
+                "standings, which would carry its corrections before they are approved.",
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
 
         divisions = await self.bot.season_service.get_divisions(season.id)
