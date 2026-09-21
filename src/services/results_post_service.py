@@ -139,7 +139,7 @@ async def _delete_posting(
     anchor_msg_id: int,
     message_ids: list[int] | None,
     label: str = "message",
-) -> None:
+) -> list[int]:
     """Delete a posting: exactly the messages it recorded, and nothing else.
 
     **The recorded list is the truth** (#345). It is written at send time, so it names this
@@ -152,6 +152,11 @@ async def _delete_posting(
     #345 set out to fix, and the reason rule 11 asks for every chunk's id to be stored at send
     time. Nothing falls back to it: a posting whose list was never recorded is deleted by its
     anchor alone, which is one message too few rather than four too many.
+
+    **Returns the ids it could not remove**, so a caller that must tell a league what is still
+    standing can (decided 2026-09-21, #189). A message already gone — ``NotFound`` on either
+    call, most often one a manager deleted by hand — is not returned: nothing of it is left to
+    remove. Any other failure is logged and the id returned, and the rest are still attempted.
     """
     ids = list(message_ids or [anchor_msg_id])
     # The anchor is included whether or not the stored list names it. Every list this module
@@ -160,16 +165,22 @@ async def _delete_posting(
     # certain about the anchor is that it belongs to this posting.
     if anchor_msg_id not in ids:
         ids = [anchor_msg_id, *ids]
+    left_standing: list[int] = []
     for message_id in ids:
         try:
             message = await channel.fetch_message(message_id)
         except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
             log.warning("_delete_posting: could not fetch %s %s: %s", label, message_id, exc)
+            if not isinstance(exc, discord.NotFound):
+                left_standing.append(message_id)
             continue
         try:
             await message.delete()
         except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
             log.warning("_delete_posting: could not delete %s %s: %s", label, message_id, exc)
+            if not isinstance(exc, discord.NotFound):
+                left_standing.append(message_id)
+    return left_standing
 
 
 # ---------------------------------------------------------------------------
@@ -829,7 +840,7 @@ async def _clear_standings_messages(
     division_id: int,
     round_id: int,
     channel: discord.TextChannel | None,
-) -> None:
+) -> tuple[int, list[int]]:
     """Delete both championships' standings messages and forget their ids.
 
     The textual flow posts one message and leaves the constructor column null; the image
@@ -837,7 +848,12 @@ async def _clear_standings_messages(
     whatever the constructors column still names — the next posting would neither replace
     it nor delete it, and the league would read a stale constructors table beside a current
     one indefinitely.
+
+    Returns how many postings went whole and the ids of any message left standing, for a
+    caller that reports them (#189). With no channel nothing is deleted, and nothing counted.
     """
+    removed = 0
+    left_standing: list[int] = []
     for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS):
         existing_id = await _get_standings_message_id(
             db_path, division_id, round_id, championship
@@ -848,12 +864,17 @@ async def _clear_standings_messages(
             existing_ids = await _get_standings_message_ids(
                 db_path, division_id, round_id, championship
             )
-            await _delete_posting(
+            left = await _delete_posting(
                 channel, existing_id, existing_ids, label="standings message"
             )
+            if left:
+                left_standing.extend(left)
+            else:
+                removed += 1
         await _set_standings_message_id(
             db_path, division_id, round_id, None, championship
         )
+    return removed, left_standing
 
 
 async def _round_is_cancelled(db_path: str, round_id: int) -> bool:

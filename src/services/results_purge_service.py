@@ -15,10 +15,12 @@ What survives is the module's *configuration*: the points configurations, the se
 copy of them, and each division's results, standings and verdicts channels. Those are settings
 rather than output, and the bot has always promised they survive a disable.
 
-One thing is not undone. Penalty and appeal verdicts already announced stay where they were
-posted. Their message ids are recorded now (#189, #345) and could be deleted by, but whether
-disabling the module should erase a league's decisions as well as its results is a rule nobody
-has stated; the confirmation says they stay rather than pretending otherwise.
+The verdicts go with the results (decided 2026-09-21, issue #189). Every penalty and appeal
+verdict already announced is taken down from the verdicts channel, by the message ids recorded
+when it was posted. They were once left standing, and the league told so, only because no id was
+recorded and nothing could find them — a limitation, never a rule. An attendance sanction card
+in the same channel stays: it is the attendance module's, and recorded nowhere. The stewarding
+module will meet the same question for verdicts of its own; see :func:`_delete_posted_verdicts`.
 """
 from __future__ import annotations
 
@@ -38,17 +40,23 @@ async def purge_season_results(db_path: str, bot) -> dict:
     Discord first, while the message ids are still stored: once the rows are gone there is
     nothing left to find the messages by.
 
-    Returns a report — ``rounds``, ``sessions``, ``standings``, ``messages`` and
+    Returns a report — ``rounds``, ``sessions``, ``standings``, ``messages``, ``verdicts`` and
     ``submission_channels`` — for the reply to the league and the line in the log channel.
     Where no season is active every count is zero and nothing is touched.
+
+    A message counts as removed only where every part of it went. ``left_standing`` links each
+    message the bot tried and failed to remove, so the league can delete it by hand — its record
+    is gone once this returns, and nothing else could find it again (decided 2026-09-21, #189).
     """
     report = {
         "rounds": 0,
         "sessions": 0,
         "standings": 0,
         "messages": 0,
+        "verdicts": 0,
         "submission_channels": 0,
         "amend_channels": 0,
+        "left_standing": [],
     }
 
     async with get_connection(db_path) as db:
@@ -81,7 +89,10 @@ async def purge_season_results(db_path: str, bot) -> dict:
         )
 
     if guild is not None:
-        report["messages"] = await _delete_posted_results(db_path, rounds, guild)
+        report["messages"], left = await _delete_posted_results(db_path, rounds, guild)
+        report["left_standing"].extend(left)
+        report["verdicts"], left = await _delete_posted_verdicts(db_path, rounds, guild)
+        report["left_standing"].extend(left)
         report["submission_channels"] = await _close_open_submissions(db_path, rounds, guild)
 
     # **Not under the guild** (#345). Deleting the channel needs one; forgetting the amendment
@@ -94,18 +105,24 @@ async def purge_season_results(db_path: str, bot) -> dict:
     )
     log.info(
         "purge_season_results: %s rounds, %s sessions, %s standings rows, "
-        "%s messages, %s submission channels",
+        "%s messages, %s verdicts, %s submission channels",
         report["rounds"],
         report["sessions"],
         report["standings"],
         report["messages"],
+        report["verdicts"],
         report["submission_channels"],
     )
     return report
 
 
-async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int:
-    """Unpost every results and standings message of the season, and count them.
+async def _delete_posted_results(
+    db_path: str, rounds: list[dict], guild
+) -> tuple[int, list[str]]:
+    """Unpost every results and standings message of the season.
+
+    Returns how many went, and a link to each message the bot could not remove — a posting
+    counts only where every part of it went.
 
     The deletion helpers come from ``results_post_service`` rather than being written again
     here. A posted table longer than Discord's limit is split across several messages and every
@@ -120,6 +137,7 @@ async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int
     )
 
     deleted = 0
+    left_standing: list[str] = []
     for row in rounds:
         round_id = row["round_id"]
 
@@ -140,39 +158,152 @@ async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int
                 # By what the posting recorded, not by what follows it (#345). The adjacency walk
                 # cannot tell this posting's continuation from the next posting down, so purging a
                 # season could destroy a message it was not asked to touch.
-                await _delete_posting(
+                left = await _delete_posting(
                     results_channel, message_id, _parse_ids(chunk_ids),
                     label="results message",
                 )
-                deleted += 1
+                if left:
+                    left_standing.extend(
+                        _message_link(guild, results_channel, m) for m in left
+                    )
+                else:
+                    deleted += 1
 
         standings_channel = (
             guild.get_channel(row["standings_channel_id"])
             if row["standings_channel_id"]
             else None
         )
-        # Counted before the call, which clears the ids as it goes.
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT COUNT(*) FROM ("
-                "  SELECT DISTINCT standings_message_id FROM driver_standings_snapshots"
-                "   WHERE round_id = ? AND standings_message_id IS NOT NULL"
-                "  UNION"
-                "  SELECT DISTINCT constructor_standings_message_id"
-                "    FROM driver_standings_snapshots"
-                "   WHERE round_id = ? AND constructor_standings_message_id IS NOT NULL"
-                ")",
-                (round_id, round_id),
-            )
-            standings_messages = (await cursor.fetchone())[0]
-        if standings_messages:
-            await _clear_standings_messages(
-                db_path, row["division_id"], round_id, standings_channel
-            )
-            if standings_channel is not None:
-                deleted += standings_messages
+        removed, left = await _clear_standings_messages(
+            db_path, row["division_id"], round_id, standings_channel
+        )
+        deleted += removed
+        left_standing.extend(_message_link(guild, standings_channel, m) for m in left)
 
-    return deleted
+    return deleted, left_standing
+
+
+def _message_link(guild, channel, message_id: int) -> str:
+    """A link that opens *message_id* where it stands, for a manager to delete it by hand."""
+    return f"https://discord.com/channels/{guild.id}/{channel.id}/{message_id}"
+
+
+async def _delete_posted_verdicts(
+    db_path: str, rounds: list[dict], guild
+) -> tuple[int, list[str]]:
+    """Take down every penalty and appeal verdict the season announced.
+
+    Returns how many went, and a link to each message the bot could not remove — a verdict
+    counts only where every part of it went.
+
+    Each is found by the channel and message ids recorded when it was posted (#189), and
+    deleted through ``_delete_posting`` by every chunk it recorded — the same route an
+    amendment's replay takes, so the two cannot disagree about what a verdict's messages are.
+    A verdict whose channel is gone is logged and passed over: its record goes with the rest of
+    the season all the same, and a channel the bot cannot reach holds nothing it could remove.
+
+    The banner heading each round's run goes with it, and its record with it — unless the banner
+    also heads an attendance sanction card. That card is the attendance module's, recorded
+    nowhere and left where it is, so its header stays over it: the rule an amendment's replay
+    keeps (decided 2026-09-21). Banners are not counted, the league being told of its verdicts;
+    one the bot could not remove is linked all the same, and keeps its record.
+
+    **One case is left standing, knowingly** (accepted 2026-09-21). An amendment still open past
+    its report stage has rewritten the amended sessions' verdict records without ids, and holds
+    the originals' ids only in ``round_amend_channels.superseded_announcements`` until its final
+    stage. Nothing here reads that column, and ``_close_open_amendments`` then forgets it, so
+    those announcements stay in the channel for the league's managers to delete by hand. It
+    takes a disable inside an amendment's half-hour window to reach.
+
+    **The stewarding module will have to face this too.** It is to announce and record verdicts
+    of its own — reports, appeals and investigations alike
+    (``docs/wip-specs/steward_module_specification.md``) — and disabling this module disables
+    that one along with it (STW-MOD-009). What is taken down here is only what
+    ``penalty_records`` and ``appeal_records`` hold, so a verdict stewarding records anywhere
+    else would be left on display by this function, exactly as every verdict was before #189.
+    Whether its verdicts go with the season's results, and what becomes of the announcement of
+    a ban that itself survives the module being disabled (STW-MOD-006), are that module's to
+    settle when it is built; neither is decided here.
+    """
+    from services.results_post_service import _delete_posting
+    from services.verdict_announcement_service import (
+        _banners_heading_sanctions,
+        _banners_of,
+        _forget_banners,
+        _parse_chunk_ids,
+    )
+    from services.verdict_records import VERDICT_TABLES, select_verdicts
+
+    deleted = 0
+    left_standing: list[str] = []
+    banners_taken_down: list[int] = []
+    for row in rounds:
+        round_id = row["round_id"]
+        async with get_connection(db_path) as db:
+            verdicts = [
+                verdict
+                for table in VERDICT_TABLES
+                for verdict in await select_verdicts(
+                    db, table,
+                    "v.announcement_message_id AS anchor, "
+                    "v.announcement_message_ids AS chunks, "
+                    "v.announcement_channel_id AS channel_id",
+                    round_id=round_id,
+                    where=" AND v.announcement_message_id IS NOT NULL",
+                )
+            ]
+
+        taken: set[int] = set()
+        for verdict in verdicts:
+            try:
+                anchor = int(verdict["anchor"])
+            except (TypeError, ValueError):
+                continue
+            # One announcement per anchor. No two records share one today, but deleting a
+            # message twice would count it twice and log a failure for the second attempt.
+            if anchor in taken:
+                continue
+            taken.add(anchor)
+            channel = (
+                guild.get_channel(int(verdict["channel_id"]))
+                if verdict["channel_id"]
+                else None
+            )
+            if channel is None:
+                log.warning(
+                    "_delete_posted_verdicts: verdict %s of round %s is in a channel no longer "
+                    "reachable (%s); leaving it",
+                    anchor, round_id, verdict["channel_id"],
+                )
+                continue
+            left = await _delete_posting(
+                channel, anchor, _parse_chunk_ids(verdict["chunks"]), label="verdict"
+            )
+            if left:
+                left_standing.extend(_message_link(guild, channel, m) for m in left)
+            else:
+                deleted += 1
+
+        banners = await _banners_of(db_path, round_id)
+        kept = await _banners_heading_sanctions(
+            db_path, [message_id for _, message_id in banners]
+        )
+        for channel_id, message_id in banners:
+            if message_id in kept:
+                continue
+            channel = guild.get_channel(int(channel_id)) if channel_id else None
+            if channel is None:
+                continue
+            left = await _delete_posting(
+                channel, message_id, [message_id], label="verdict banner"
+            )
+            if left:
+                left_standing.extend(_message_link(guild, channel, m) for m in left)
+            else:
+                banners_taken_down.append(message_id)
+
+    await _forget_banners(db_path, banners_taken_down)
+    return deleted, left_standing
 
 
 async def _close_open_submissions(db_path: str, rounds: list[dict], guild) -> int:

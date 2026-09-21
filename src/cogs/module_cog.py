@@ -16,6 +16,7 @@ from db.database import get_connection
 from models.driver_profile import DriverState
 from utils.channel_guard import league_admin_only
 from utils.league_server import LeagueView, league_guild
+from utils.output_router import _chunk_message
 
 log = logging.getLogger(__name__)
 
@@ -168,14 +169,16 @@ def _results_disable_warning(*, season_active: bool, attendance: bool) -> str:
             "computed from them;\n"
             "• every results and standings message already posted is removed from its "
             "channel;\n"
+            "• every penalty and appeal verdict already announced is removed from the "
+            "verdicts channel, with the banner heading it;\n"
             "• every round still waiting on results, report verdicts or appeal verdicts is "
             "closed as final with no results;\n"
             "• no further results are collected for the rest of the season.\n"
             "**None of this can be undone**, and the module cannot be switched back on until "
             "the season ends.\n"
-            "Penalty and appeal verdicts already announced stay in the verdicts channel — "
-            "the bot cannot take those back. Your points configurations, the season's copy of "
-            "them, and every division's channels are kept."
+            "Your points configurations, the season's copy of them, and every division's "
+            "channels are kept, and so are any auto-sack and auto-reserve announcements in "
+            "the verdicts channel."
         )
 
     if attendance:
@@ -555,6 +558,15 @@ class ModuleCog(commands.Cog):
         rounds still awaiting results closed, because closing the last of them finishes its
         division and a division finishing is what lets `/season complete` run. Between seasons
         all three steps are still taken and the last two simply find nothing to do.
+
+        **The flag stays first even though the erasure can fail** (decided 2026-09-21). Written
+        last, it would read "on" for as long as the erasure runs — minutes, on a large season,
+        every message being a call to Discord — and a round reaching its start in that time
+        would open a submission channel nothing then closes, or, starting after the rounds were
+        closed, wait on results for ever. Instead the rounds are closed **whether or not the
+        erasure finished**: a failure part-way leaves some of the season's messages posted,
+        which the league is told to delete by hand, but never a season that cannot complete —
+        issue #167 over again.
         """
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
@@ -572,7 +584,11 @@ class ModuleCog(commands.Cog):
 
         from services.results_purge_service import purge_season_results
 
-        purged = await purge_season_results(self.bot.db_path, self.bot)
+        try:
+            purged = await purge_season_results(self.bot.db_path, self.bot)
+        except Exception:  # noqa: BLE001 — the rounds below must be closed whatever happened
+            log.exception("could not erase this season's results")
+            purged = None
         closed = await self.bot.season_service.end_rounds_awaiting_results(
             interaction.user.id, str(interaction.user)
         )
@@ -584,7 +600,12 @@ class ModuleCog(commands.Cog):
         except Exception:  # noqa: BLE001 — never fail the disabling on the season's next stage
             log.exception("could not wind the season down")
 
-        if purged["rounds"]:
+        if purged is None or purged["rounds"]:
+            outcome = (
+                {"incomplete": True, "rounds_closed": len(closed)}
+                if purged is None
+                else {**purged, "rounds_closed": len(closed)}
+            )
             async with get_connection(self.bot.db_path) as db:
                 await db.execute(
                     "INSERT INTO audit_entries "
@@ -594,32 +615,64 @@ class ModuleCog(commands.Cog):
                     (
                         interaction.user.id,
                         str(interaction.user),
-                        json.dumps({**purged, "rounds_closed": len(closed)}),
+                        json.dumps(outcome),
                         now,
                     ),
                 )
                 await db.commit()
 
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results | Success"
-            + (
-                f"\n  season results deleted: {purged['sessions']} session results, "
-                f"{purged['standings']} standings rows, {purged['messages']} messages\n"
+        # **Every message the bot could not remove is named, with a link** (decided 2026-09-21,
+        # #189). Its record went with the season, so this reply and the log are the only places
+        # left that can say where it is.
+        left_standing = purged["left_standing"] if purged is not None else []
+        if purged is None:
+            summary = (
+                " | Incomplete\n  the erase of this season's results stopped part-way: some "
+                "results, standings and verdicts may still be posted\n"
                 f"  rounds closed with no results: {len(closed)}"
-                if purged["rounds"]
+            )
+        elif purged["rounds"]:
+            summary = (
+                " | Success"
+                f"\n  season results deleted: {purged['sessions']} session results, "
+                f"{purged['standings']} standings rows, {purged['messages']} messages, "
+                f"{purged['verdicts']} verdicts\n"
+                f"  rounds closed with no results: {len(closed)}"
+            )
+        else:
+            summary = " | Success"
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results"
+            + summary
+            + (
+                f"\n  left standing, to delete by hand: {len(left_standing)}\n"
+                + "\n".join(f"  {link}" for link in left_standing)
+                if left_standing
                 else ""
             ),
         )
 
         season_note = ""
-        if purged["rounds"]:
+        if purged is None:
+            season_note = (
+                "\n⚠️ The erase of this season's results stopped part-way, so some of its "
+                "results, standings and verdicts may still be posted — delete them by hand. "
+                "Every round still waiting on results was closed all the same "
+                f"({len(closed)} round(s)), so the season can still be completed."
+            )
+        elif purged["rounds"]:
             tail = f", {len(closed)} round(s) closed with no results." if closed else "."
             season_note = (
                 f"\n🗑️ This season's results are gone: {purged['sessions']} session "
                 f"result(s) and {purged['standings']} standings row(s) deleted, "
-                f"{purged['messages']} posted message(s) removed" + tail
-                + "\nVerdicts already announced remain in the verdicts channel. Points "
-                "configurations and division channels are kept."
+                f"{purged['messages']} results and standings message(s) and "
+                f"{purged['verdicts']} verdict(s) removed" + tail
+                + "\nPoints configurations and division channels are kept."
+            )
+        if left_standing:
+            season_note += (
+                f"\n⚠️ {len(left_standing)} message(s) could not be removed — delete them "
+                "by hand:\n" + "\n".join(left_standing)
             )
 
         # Cascade: disable attendance if it is currently enabled
@@ -629,17 +682,17 @@ class ModuleCog(commands.Cog):
         )
         if cascaded:
             await self._disable_attendance(interaction, cascade=True)
-            await interaction.followup.send(
+            reply = (
                 "✅ Results & Standings module disabled.\n"
                 "✅ Attendance module disabled with it. Its per-division check-in and "
                 "attendance channels have been cleared; its timings, penalties and "
-                "thresholds are kept." + season_note,
-                ephemeral=True,
+                "thresholds are kept." + season_note
             )
         else:
-            await interaction.followup.send(
-                "✅ Results & Standings module disabled." + season_note, ephemeral=True
-            )
+            reply = "✅ Results & Standings module disabled." + season_note
+        # Split, because a season's worth of links can outrun Discord's limit on one message.
+        for chunk in _chunk_message(reply):
+            await interaction.followup.send(chunk, ephemeral=True)
 
     # ── Attendance enable ──────────────────────────────────────────────
 

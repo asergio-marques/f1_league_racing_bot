@@ -14,8 +14,9 @@ Two things now happen instead, decided 2026-09-14:
   standings messages already posted — because a disabled module holds and shows nothing.
 
 What survives is deliberate and pinned below: the points configurations, the season's own copy
-of them, the division channel bindings, and the verdicts already announced, which carry no
-message id and so cannot be taken back.
+of them, and the division channel bindings. The verdicts already announced go with the results
+(decided 2026-09-21, issue #189): they were left standing until then only because no message id
+was recorded to find them by.
 
 Every test that constructs the confirmation view is `async def`: apt's discord.py 2.5.0 calls
 `asyncio.get_running_loop()` in `View.__init__` where the pinned 2.7.1 defers it.
@@ -26,6 +27,8 @@ import json
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
+
+import discord
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
@@ -40,6 +43,7 @@ ACTOR_NAME = "Admin"
 BOT_USER_ID = 77
 RESULTS_CHANNEL_ID = 9001
 STANDINGS_CHANNEL_ID = 9002
+VERDICTS_CHANNEL_ID = 9003
 
 
 # ---------------------------------------------------------------------------
@@ -52,19 +56,28 @@ class _FakeChannel:
 
     `_delete_posting` fetches each message the posting recorded and deletes it. One id is
     recorded here, which is the single-message case every posting under 2000 characters takes.
+
+    An id in `refuse` will not delete, as for a bot that has lost its permissions there; one in
+    `gone` cannot be fetched, as for a message a manager has already deleted by hand.
     """
 
     def __init__(self, channel_id: int) -> None:
         self.id = channel_id
         self.deleted_messages: list[int] = []
         self.deleted = False
+        self.refuse: set[int] = set()
+        self.gone: set[int] = set()
 
     async def fetch_message(self, message_id: int):
+        if message_id in self.gone:
+            raise discord.NotFound(MagicMock(status=404), "Unknown Message")
         message = MagicMock()
         message.id = message_id
         message.author.id = BOT_USER_ID
 
         async def _delete() -> None:
+            if message_id in self.refuse:
+                raise discord.Forbidden(MagicMock(status=403), "Missing Permissions")
             self.deleted_messages.append(message_id)
 
         message.delete = _delete
@@ -93,10 +106,12 @@ def _make_bot(db_path: str, *, guild: bool = True) -> MagicMock:
     channels = {
         RESULTS_CHANNEL_ID: _FakeChannel(RESULTS_CHANNEL_ID),
         STANDINGS_CHANNEL_ID: _FakeChannel(STANDINGS_CHANNEL_ID),
+        VERDICTS_CHANNEL_ID: _FakeChannel(VERDICTS_CHANNEL_ID),
     }
     bot.channels = channels
     if guild:
         fake_guild = MagicMock()
+        fake_guild.id = SERVER_ID
         fake_guild.get_channel = lambda cid: channels.get(cid)
         bot.get_guild = MagicMock(return_value=fake_guild)
     else:
@@ -253,6 +268,38 @@ async def _seed_results_for_round(
             "(round_id, channel_id, created_at, closed) "
             "VALUES (?, ?, '2026-01-01T00:00:00', 0)",
             (round_id, 8000 + index),
+        )
+        await db.commit()
+
+
+async def _announce(
+    db_path: str,
+    table: str,
+    message_id: int,
+    *,
+    chunks: list[int] | None = None,
+    channel_id: int = VERDICTS_CHANNEL_ID,
+) -> None:
+    """Record the seeded verdict of *table* as announced, as `_record_announcement` does."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            f"UPDATE {table} SET announcement_message_id = ?, "  # noqa: S608
+            "announcement_message_ids = ?, announcement_channel_id = ?",
+            (str(message_id), json.dumps(chunks or [message_id]), str(channel_id)),
+        )
+        await db.commit()
+
+
+async def _banner(
+    db_path: str, round_id: int, message_id: int, *, heads_sanctions: bool = False
+) -> None:
+    """Record a verdict banner over *round_id*, as `_record_banner` does."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO verdict_banner_messages "
+            "(round_id, channel_id, message_id, posted_at, heads_sanctions) "
+            "VALUES (?, ?, ?, '2026-01-02T00:00:00', ?)",
+            (round_id, str(VERDICTS_CHANNEL_ID), str(message_id), int(heads_sanctions)),
         )
         await db.commit()
 
@@ -444,6 +491,173 @@ async def test_the_posted_results_and_standings_are_unposted(tmp_path) -> None:
     assert sorted(standings_channel.deleted_messages) == [2000, 3000]
 
 
+async def test_announced_verdicts_are_taken_down(tmp_path) -> None:
+    """**The verdicts go with the results** (decided 2026-09-21, issue #189).
+
+    They were left in the verdicts channel only because no message id was recorded to find them
+    by. Now that one is, a season whose results are destroyed does not keep its decisions on
+    display over a classification that no longer exists.
+    """
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    await _announce(db_path, "appeal_records", 6001)
+    cog = _make_cog(db_path)
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert sorted(cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages) == [5001, 6001]
+    assert report["verdicts"] == 2
+    assert await _count(db_path, "penalty_records") == 0
+    assert await _count(db_path, "appeal_records") == 0
+
+
+async def test_a_verdict_goes_by_every_chunk_it_recorded(tmp_path) -> None:
+    """By the list written when it was posted, as every other posting is (#345)."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001, chunks=[5001, 5002])
+    cog = _make_cog(db_path)
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert sorted(cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages) == [5001, 5002]
+    assert report["verdicts"] == 1
+
+
+async def test_an_unreachable_verdicts_channel_still_erases_the_rows(tmp_path) -> None:
+    """A channel deleted since a verdict went out holds nothing the bot could remove. That one
+    is passed over and not counted, the next verdict is still taken down, and every record goes
+    with the rest of the season all the same."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001, channel_id=9999)
+    await _announce(db_path, "appeal_records", 6001)
+    cog = _make_cog(db_path)
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["verdicts"] == 1
+    assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
+    assert await _count(db_path, "penalty_records") == 0
+    assert await _count(db_path, "appeal_records") == 0
+
+
+def _link(channel_id: int, message_id: int) -> str:
+    return f"https://discord.com/channels/{SERVER_ID}/{channel_id}/{message_id}"
+
+
+async def test_a_verdict_left_standing_is_linked_not_counted(tmp_path) -> None:
+    """**What the bot could not remove is named, with a link** (decided 2026-09-21, #189).
+
+    Its record is deleted with the rest of the season, so once the purge returns nothing could
+    find the message again. Counting it as removed told the league it was gone when it was not.
+    """
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    await _announce(db_path, "appeal_records", 6001)
+    cog = _make_cog(db_path)
+    cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {5001}
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["verdicts"] == 1
+    assert report["left_standing"] == [_link(VERDICTS_CHANNEL_ID, 5001)]
+    assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
+
+
+async def test_a_results_message_left_standing_is_linked(tmp_path) -> None:
+    """The results and standings messages go by the same rule as the verdicts: counted only
+    where they went, and linked where they did not."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    cog = _make_cog(db_path)
+    cog.bot.channels[RESULTS_CHANNEL_ID].refuse = {1000}
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["left_standing"] == [_link(RESULTS_CHANNEL_ID, 1000)]
+    assert report["messages"] == 2  # the two standings messages, and not the results one
+
+
+async def test_a_standings_message_left_standing_is_linked(tmp_path) -> None:
+    """The image flow posts the constructors' table as a message of its own, and it is named
+    on its own where it stays."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    cog = _make_cog(db_path)
+    cog.bot.channels[STANDINGS_CHANNEL_ID].refuse = {3000}
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["left_standing"] == [_link(STANDINGS_CHANNEL_ID, 3000)]
+    assert report["messages"] == 2
+    assert cog.bot.channels[STANDINGS_CHANNEL_ID].deleted_messages == [2000]
+
+
+async def test_the_reply_links_a_verdict_left_standing(tmp_path) -> None:
+    """End to end: the verdict the bot could not remove is the one the reply links."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    cog = _make_cog(db_path)
+    cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {5001}
+
+    interaction = await _disable(cog)
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert "1 message(s) could not be removed" in reply
+    assert _link(VERDICTS_CHANNEL_ID, 5001) in reply
+
+
+async def test_a_message_deleted_by_hand_counts_as_removed(tmp_path) -> None:
+    """A manager got there first. Nothing is left to remove, so nothing is named."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    cog = _make_cog(db_path)
+    cog.bot.channels[VERDICTS_CHANNEL_ID].gone = {5001}
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["verdicts"] == 1
+    assert report["left_standing"] == []
+
+
+async def test_a_banner_left_standing_keeps_its_record(tmp_path) -> None:
+    """Linked like any other message, and not forgotten: forgetting a banner still standing
+    would leave nothing to say it was ever there."""
+    db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _banner(db_path, round_id, 7001)
+    cog = _make_cog(db_path)
+    cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {7001}
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["left_standing"] == [_link(VERDICTS_CHANNEL_ID, 7001)]
+    assert await _count(db_path, "verdict_banner_messages") == 1
+
+
+async def test_the_verdict_banner_is_taken_down_and_forgotten(tmp_path) -> None:
+    """A banner is a message of its own above the cards, and left behind it would head an empty
+    run. Its record goes with it, or it would name a message that no longer exists."""
+    db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    await _banner(db_path, round_id, 7001)
+    cog = _make_cog(db_path)
+
+    await purge_season_results(db_path, cog.bot)
+
+    assert sorted(cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages) == [5001, 7001]
+    assert await _count(db_path, "verdict_banner_messages") == 0
+
+
+async def test_a_banner_over_a_sanction_card_stays(tmp_path) -> None:
+    """An auto-sack or auto-reserve card is the attendance module's, recorded nowhere, and stays
+    where it is — so the banner over it stays too, as an amendment keeps it (2026-09-21)."""
+    db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _banner(db_path, round_id, 7001, heads_sanctions=True)
+    cog = _make_cog(db_path)
+
+    await purge_season_results(db_path, cog.bot)
+
+    assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == []
+    assert await _count(db_path, "verdict_banner_messages") == 1
+
+
 async def test_an_open_submission_channel_is_closed(tmp_path) -> None:
     """A wizard left running would go on collecting results into a module that is off."""
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
@@ -521,14 +735,18 @@ async def test_a_running_season_is_confirmed_even_with_attendance_off(tmp_path) 
     assert await _count(db_path, "session_results") == 1
 
 
-async def test_the_warning_says_verdicts_cannot_be_taken_back(tmp_path) -> None:
-    """They record the channel they went to but never a message id, so nothing can delete them."""
+async def test_the_warning_says_verdicts_are_taken_down(tmp_path) -> None:
+    """They go with the results (decided 2026-09-21, #189), and the manager is told before
+    confirming. The warning once said the bot could not take them back, which stopped being
+    true the moment each verdict's message id was recorded."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     interaction = _make_interaction()
 
     await _make_cog(db_path)._disable_results(interaction)
 
-    assert "verdicts channel" in interaction.response.send_message.await_args.args[0]
+    warning = interaction.response.send_message.await_args.args[0]
+    assert "verdict already announced is removed from the verdicts channel" in warning
+    assert "cannot take those back" not in warning
 
 
 async def test_confirming_erases_the_season(tmp_path) -> None:
@@ -566,6 +784,79 @@ async def test_the_reply_names_what_was_destroyed(tmp_path) -> None:
     reply = interaction.followup.send.await_args.args[0]
     assert "This season's results are gone" in reply
     assert "1 round(s) closed with no results" in reply
+
+
+async def test_the_reply_names_the_verdicts_removed(tmp_path) -> None:
+    """End to end: the verdict the purge takes down is the one the reply counts."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    interaction = await _disable(_make_cog(db_path))
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert "1 verdict(s) removed" in reply
+
+
+def _purge_that_raises(monkeypatch) -> None:
+    async def _raise(db_path, bot):
+        raise RuntimeError("the erase stopped part-way")
+
+    monkeypatch.setattr(
+        "services.results_purge_service.purge_season_results", _raise
+    )
+
+
+async def test_a_purge_that_raises_still_closes_the_rounds(tmp_path, monkeypatch) -> None:
+    """**A failed erase never strands the season** (decided 2026-09-21).
+
+    The flag is already down when the erase runs, and closing the waiting rounds is the only
+    thing that lets the season complete. Left unclosed behind an exception, they wait on a
+    module that is off for ever — issue #167 reached by another road.
+    """
+    db_path, division_id, (round_id,) = await _seed(
+        tmp_path, round_statuses=("AWAITING_RESULTS",)
+    )
+    _purge_that_raises(monkeypatch)
+
+    await _disable(_make_cog(db_path))
+
+    assert await _round_status(db_path, round_id) == "FINAL"
+    assert await _division_status(db_path, division_id) == "FINISHED"
+
+
+async def test_the_flag_stays_down_when_the_purge_raises(tmp_path, monkeypatch) -> None:
+    """Flag first, and it stays down: putting it back would leave a round that started during
+    the erase closed with no results while the module claims to be on."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
+    _purge_that_raises(monkeypatch)
+
+    await _disable(_make_cog(db_path))
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT module_enabled FROM results_module_config")
+        assert (await cursor.fetchone())[0] == 0
+
+
+async def test_a_purge_that_raises_says_so(tmp_path, monkeypatch) -> None:
+    """The league is told the erase did not finish, so it knows to look for what is left —
+    in the reply, in the log channel as Incomplete, and in the audit."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
+    _purge_that_raises(monkeypatch)
+    cog = _make_cog(db_path)
+
+    interaction = await _disable(cog)
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert "stopped part-way" in reply
+    assert "delete them by hand" in reply
+    assert "closed all the same (1 round(s))" in reply
+    log_line = cog.bot.output_router.post_log.await_args.args[0]
+    assert "/module disable results | Incomplete" in log_line
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT new_value FROM audit_entries WHERE change_type = 'RESULTS_SEASON_PURGED'"
+        )
+        audited = json.loads((await cursor.fetchone())[0])
+    assert audited == {"incomplete": True, "rounds_closed": 1}
 
 
 async def test_an_open_amendment_is_closed_with_the_season(tmp_path) -> None:
