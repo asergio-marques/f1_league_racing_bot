@@ -4080,7 +4080,6 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                    r.format       AS round_format,
                    r.status       AS round_status,
                    d.name         AS division_name,
-                   d.mention_role_id,
                    drc.results_channel_id,
                    s.id           AS season_id,
                    s.season_number
@@ -4113,7 +4112,6 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     season_number: int = ctx["season_number"]
     round_format = RoundFormat(ctx["round_format"])
     results_channel_id: int | None = ctx["results_channel_id"]
-    mention_role_id: int = ctx["mention_role_id"]
 
     # ------------------------------------------------------------------
     # 2. The round's date has arrived — move it off NOT_RUN, and the module guard
@@ -4243,7 +4241,9 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     session_list_str = ", ".join(
         results_formatter.format_session_label(s, is_sprint=is_sprint) for s in sessions
     )
-    mention_str = f" <@&{mention_role_id}>" if mention_role_id else ""
+    # The league managers enter the results, so they are the ones pinged. The division's role
+    # cannot see this channel, and a mention there notified nobody (#136).
+    mention_str = f" <@&{interaction_role.id}>" if interaction_role is not None else ""
     await sub_channel.send(
         f"✅ Results submission open for **Round {round_number}** ({division_name}) - {round_format}."
         f" Sessions: {session_list_str}.{mention_str}\n\n"
