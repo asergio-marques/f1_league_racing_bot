@@ -415,3 +415,50 @@ async def test_no_pardons_adds_no_pardon_section(tmp_path):
     content = await _render_prompt_content(_state_for(db_path))
 
     assert "Attendance Pardons" not in content
+
+
+# ---------------------------------------------------------------------------
+# An amendment's stages say where the manager is, and that nothing is posted yet (#345)
+# ---------------------------------------------------------------------------
+
+
+async def test_an_amendments_report_stage_is_headed_as_its_second_stage(tmp_path):
+    """Drawn by the prompt itself, so a refresh after each Remove keeps it — a heading the caller
+    prefixed was lost the first time the list changed."""
+    db_path = await _make_db(tmp_path)
+    state = _state_for(db_path)
+    state.is_amendment = True
+
+    content = await _render_prompt_content(state)
+
+    assert "Stage 2 of 3" in content
+    assert "have been posted" not in content
+
+
+async def test_a_pardon_is_numbered_for_removal_in_an_amendment(tmp_path):
+    db_path = await _make_db(tmp_path, attendees=(DRIVER_A,))
+    pardon = StagedPardon(
+        driver_user_id=DRIVER_A, driver_profile_id=1, attendance_id=1,
+        pardon_type="ABSENT", justification="Ill", grantor_id=77,
+    )
+    state = _state_for(db_path, pardons=[pardon])
+    state.is_amendment = True
+
+    assert "Remove Pardon #1" in await _render_prompt_content(state)
+    state.is_amendment = False
+    assert "Remove Pardon" not in await _render_prompt_content(state)
+
+
+async def test_an_amendments_appeal_stage_does_not_claim_anything_was_posted(tmp_path):
+    """The first pass's line — "Post-Race Penalty Results have been posted" — is false during an
+    amendment, which publishes nothing until this stage is approved."""
+    from services.penalty_wizard import _render_appeals_prompt_content
+
+    db_path = await _make_db(tmp_path)
+    state = _state_for(db_path)
+    state.is_amendment = True
+
+    content = await _render_appeals_prompt_content(state)
+
+    assert "Stage 3 of 3" in content
+    assert "have been posted" not in content

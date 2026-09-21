@@ -375,6 +375,15 @@ async def test_the_pardon_button_opens_the_pardon_modal():
 # ---------------------------------------------------------------------------
 
 
+def _pardon(idx: int = 0):
+    from services.penalty_wizard import StagedPardon
+
+    return StagedPardon(
+        driver_user_id=DRIVER + idx, driver_profile_id=31 + idx, attendance_id=41 + idx,
+        pardon_type="ABSENT", justification="Ill", grantor_id=77,
+    )
+
+
 def _custom_ids(view) -> list[str]:
     return [item.custom_id for item in view.children]
 
@@ -400,6 +409,52 @@ async def test_more_penalties_than_there_is_room_for_still_draw_the_review():
     view = PenaltyReviewView(_state(staged=[_penalty(s) for s in range(1, 31)]))
 
     assert len(view.children) <= 25
+
+
+async def test_an_amendment_offers_no_resubmission():
+    """Resubmitting replaces every session of the round and sends it through a first-pass review —
+    against a round already FINAL. An amendment corrects its classification in stage one."""
+    state = _state(staged=[_penalty()])
+    state.is_amendment = True
+
+    assert pw._CID_RESUBMIT not in _custom_ids(PenaltyReviewView(state))
+    assert pw._CID_RESUBMIT in _custom_ids(PenaltyReviewView(_state(staged=[_penalty()])))
+
+
+async def test_an_amendment_offers_a_remove_button_for_each_pardon():
+    """The amendment is the one place a round's pardons are reopened, and a pardon the manager
+    could not remove would make the stage's promise — kept, changed or removed — untrue."""
+    state = _state(staged=[_penalty()])
+    state.staged_pardons = [_pardon(0), _pardon(1)]
+    state.is_amendment = True
+
+    ids = _custom_ids(PenaltyReviewView(state))
+
+    assert "pw_pardon_remove_0" in ids and "pw_pardon_remove_1" in ids
+
+
+async def test_a_first_pass_offers_no_pardon_removal():
+    state = _state(staged=[_penalty()])
+    state.staged_pardons = [_pardon(0)]
+
+    assert not [c for c in _custom_ids(PenaltyReviewView(state)) if "pardon_remove" in c]
+
+
+async def test_removing_a_pardon_takes_it_off_the_staged_list():
+    state = _state(staged=[_penalty()])
+    state.staged_pardons = [_pardon(0), _pardon(1)]
+    state.is_amendment = True
+    view = PenaltyReviewView(state)
+    button = next(c for c in view.children if c.custom_id == "pw_pardon_remove_0")
+    interaction = _interaction()
+
+    with patch("services.penalty_wizard._refresh_prompt", new=AsyncMock()), patch(
+        "services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+    ):
+        await button.callback(interaction)
+
+    assert [p.attendance_id for p in state.staged_pardons] == [42]
+    assert "Removed pardon" in _replied(interaction)
 
 
 async def test_the_appeals_review_draws_with_more_corrections_than_there_is_room_for():
