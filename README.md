@@ -1322,6 +1322,8 @@ No parameters.
 
 **A window belongs to a season.** It can be opened only while the season is **waiting** for its signup window (its configuration confirmed) or **ongoing** with no placements left to confirm; opening it moves the season to signups, or to ongoing with signups open. Refused in every other state, and with no season at all.
 
+**What drivers type is checked.** Each lap time is written `1:23.456` — a dot and exactly three digits after it (`58.123` and `1:02:03.456` are read too). `1:23:456` or `1:23.4` is refused and the time asked for again; the bot does not guess. A platform ID, preferred teammate or note holding a role mention, `@everyone` or `@here` is refused and asked again, because the review panel quoting it would otherwise notify everybody who can see the channel. Emoji and formatting in those answers are kept.
+
 Also refused unless the signup channel, base role and completion role are all set and at least one availability time slot exists. Also refused while test mode is active — no real driver may sign up under test mode, so the window would be one nobody could use. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
 
 #### `/signup close` — Close the signup window
@@ -1560,6 +1562,8 @@ Each line of a race submission block represents one driver. The number of fields
 | `total time / gap` | `H:MM:SS.mmm` for P1; `+M:SS.mmm` or `+SS.mmm` delta for others; `+N Lap(s)` for lapped drivers; `DNF`, `DNS`, or `DSQ` for non-classified entries |
 | `fastest lap` | Lap time string (e.g. `1:24.000`) or `N/A` |
 | `time penalties` | `N/A`, or an in-game time penalty in `M:SS.mmm` or `SS.mmm` format (e.g. `0:05.000`) |
+
+**Every time is written the one way the bot reads times everywhere:** a dot and exactly three digits after it, with seconds and minutes written after a colon as two digits under sixty. `1:75.000` is refused as a typo. It is the same form a driver's signup lap times are held to.
 
 **Results amend (8 fields):**
 ```

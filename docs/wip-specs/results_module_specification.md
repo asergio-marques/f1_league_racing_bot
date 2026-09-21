@@ -314,6 +314,7 @@
         - "x laps" (also Laps);
         - "+x laps" (also Laps).
     - The Time Penalties column follows the "seconds.milisseconds", "minutes:seconds.milisseconds" or "hours:minutes:seconds.milisseconds" format.
+- Every time in either submission format shall be written with a dot and exactly three digits of milliseconds after it, and seconds and minutes written after a colon shall be two digits under sixty. It is the one form every time the bot reads is written in, a driver's signup lap times included. Decided 2026-09-21 (#362).
 - This is not a hard requirement, but it is presumed that the Time Penalties input have already been added to the Total Time, so no further calculations are required.
 - In preparation of further functionality, the data tables on which race results are saved shall possess two extra columns for Post-Stewarding Total Time and Post-Race Time Penalties.
 - It is always presumed that the Total Time column already includes the time noted in the Race Time Penalties

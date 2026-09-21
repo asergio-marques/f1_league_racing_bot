@@ -195,6 +195,10 @@ You do not have to do anything to keep the window running. Drivers press the but
 
 Question 6 offers your team list, so **add your teams before you confirm the season's configuration** — the list is fixed from then until the season ends, and drivers would otherwise be given nothing to choose from. Teams are core setup — see [Team Commands](../../README.md#team-commands).
 
+**Lap times are written exactly.** A driver types each one as `1:23.456` — a dot and exactly three digits after it. `1:23:456` or `1:23.4` is refused and the time asked for again, so a seed is never built on a guess. It is the form your results pastes use too.
+
+**Typed answers cannot ping anybody.** A platform ID, preferred teammate or note holding a role mention, `@everyone` or `@here` is refused and asked again, since the review panel would otherwise notify everyone who can see the channel. Emoji and formatting in those answers are kept.
+
 When a driver finishes, the bot posts a **Signup Review** panel in their channel summarising every answer, tells them to wait for an admin, and gives you three buttons.
 
 **Approve** grants the complete role, adds up their lap times, and moves them to Unassigned. They are now in the queue for step 9.
