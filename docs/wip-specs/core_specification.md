@@ -286,6 +286,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 #### Completing a season
 - Completing a season shall be a league admin's, and shall be refused in any state but Pending completion.
+- Completing a season shall be refused while any of its divisions has an amendment of a round's results open, and the refusal shall name the round being amended and its channel. The final classification would otherwise carry that amendment's corrections before they are approved. Decided 2026-09-21.
 - Completing a season shall, in this order:
     1. post each division's final classification;
     2. record a history entry for every division each driver took part in;

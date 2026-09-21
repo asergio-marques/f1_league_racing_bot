@@ -329,7 +329,7 @@ There is a third parameter, `session`, offering Sprint Qualifying, Sprint Race, 
 
 > **One amendment open in a division at a time.** While any round of the division has one open, running the command for the division again is refused and names the round and the channel the open one is in. Finish or cancel that first. To correct several sessions of one round, choose them all in one amendment.
 
-> **An amendment holds up the rest of its division.** Until it is finished, the submission channels of the division's other rounds refuse results and approvals, and the division's two sync commands are refused. Race day in the same division waits for you, so do not start one just before a round's results are due.
+> **An amendment holds up the rest of its division.** Until it is finished, the submission channels of the division's other rounds refuse results and approvals, and the division's two sync commands are refused — and in any division, a points change cannot be approved with `/results amend review`. Race day in the same division waits for you, so do not start one just before a round's results are due.
 
 > **You get one attempt at the paste.** A block the bot rejects, an internal failure, or five minutes of silence deletes the channel, and you re-run the command to try again. Amending several sessions, that means the whole amendment: a refused paste throws away the ones already accepted, so have every session's classification checked and ready before you start. The reason for a rejection goes to the log channel rather than to the channel you are looking at, so have that open. A restart deletes an amend channel and undoes the amendment at whatever step it had reached. There is a **❌ Cancel Amendment** button if you want out deliberately, and the channel only listens to the person who ran the command — nobody else can paste into it.
 
@@ -362,6 +362,8 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 > This is the one place in the bot that behaves the *opposite* way to the opening and final classifications described above, which carry on and report what they could not post. An amendment overwrites the whole season's scoring, so it is all-or-nothing by design: you never end up with half your divisions showing the new points and half the old.
 >
 > The attendance sanctions an approval can set off are the exception. With attendance on and a threshold set, a sanction that fails to apply does not undo the approval — the reply lists it with the `/attendance sync` command that finishes it. The attendance guide explains what to do.
+
+> **Not while a round's results are being amended.** Approving reposts every division, so while any of them has a `/round results amend` open, `review` names that round and its channel alongside the diff, and pressing Approve refuses and changes nothing. Review again once the amendment has finished.
 
 ### Posts that went missing
 
@@ -475,6 +477,7 @@ Worth knowing so you do not go looking for the setting.
 | An amendment that vanished | Known: it is one attempt. A rejection, a failure or five minutes of silence deletes the channel; the log channel holds the reason. Past the paste, half an hour without approval undoes it (`AMEND_REVERTED`) |
 | A round left unchanged by an approved amendment | It has not been raced, so there was nothing to repost. Only rounds with results are reposted |
 | `/results amend review` refuses, naming a division and a channel | That channel has been deleted, or the bot can no longer post in it. Nothing was changed — set it again with `/division results-channel` or `/division standings-channel` and review again |
+| `/results amend review` refuses, naming a round being amended | A `/round results amend` is open. Nothing was changed — review again once it has finished |
 | `/results amend toggle` refused | Changes are staged — revert or review them first. Or every division of the season is done, in which case the whole group is closed and the season is completed as it stands |
 | Text where you expected a picture | The table worked and the drawing did not — often a drawing file with fewer rows than the division needs. The log channel names the reason |
 | `/test-mode advance` refused | A round is submitted but not settled. Finish its penalty and appeals stages |

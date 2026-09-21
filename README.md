@@ -602,7 +602,10 @@ and one whose placements have never been confirmed is abandoned with `/season ab
 *Access: League admin*
 
 No parameters. Triggers the season-end flow manually. The bot refuses while any division of the
-season is neither finished nor cancelled, and lists the rounds still to be finalised.
+season is neither finished nor cancelled, and lists the rounds still to be finalised. It also
+refuses while a round's results are being amended, naming the round and its amend channel: the
+final classification would carry corrections nobody has approved yet. Finish or cancel the
+amendment first.
 
 > **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then there are three things left, and no others: **amending the results of a round already final**, **repairing a division's channels** — completing posts the final classification and the final attendance sheet to them, so one deleted has to be repointed — and **completing the season**. Everything else that would act on the season is refused and says so: `/division calendar-sync`, `/team role`, `/team reserve-role`, `/results standings sync`, `/results rounds sync`, `/results reserves toggle` and every `/results amend` command. No module can be disabled either. Nothing is being raced by then, so a grid, a lineup and a calendar no longer describe anything anyone will drive under. A season with a signup window open, or mid-season placements still to confirm, moves there too: there is no round left to place anyone into, so the window is closed, every placement not yet confirmed is discarded, and every driver still unplaced, unconfirmed, awaiting approval or mid-correction returns to Not Signed Up as `/driver reject` would. Once every
 division is done it ends the season, in this order: each division's final classification is posted;
@@ -1723,7 +1726,7 @@ A **❌ Cancel Amendment** button is posted in the channel to abort at any time.
 
 **One amendment open in a division at a time.** While any round of a division has an amendment open, running the command for that division again — any round, any session — is refused, naming the round and the channel the open one is in. Finish or cancel that first. The last step reposts the whole division, so an amendment finished beside another would publish the other's unapproved classification.
 
-**Nothing else in the division is committed meanwhile.** While an amendment is open, the submission channels of the division's other rounds stay open but refuse anything that would commit: a session's results or `CANCELLED`, and the approval of the reports or the appeals. `/results standings sync` and `/results rounds sync` are refused for the division too. The refusal names the round being amended and its channel; try again once it has finished — at most half an hour after its corrections were pasted. Each of these posts standings, which would carry the amendment's corrections before anybody had approved them.
+**Nothing else in the division is committed meanwhile.** While an amendment is open, the submission channels of the division's other rounds stay open but refuse anything that would commit: a session's results or `CANCELLED`, and the approval of the reports or the appeals. `/results standings sync` and `/results rounds sync` are refused for the division too, and across the season so are approving a points change with `/results amend review` and `/season complete`. The refusal names the round being amended and its channel; try again once it has finished — at most half an hour after its corrections were pasted. Each of these posts standings, which would carry the amendment's corrections before anybody had approved them.
 
 > **Nothing is published until the last step.** The corrected classification is recorded when you paste it, but the round your drivers see is unchanged until you approve the appeals — it is never published half-amended. The sessions you did not choose are left alone; their penalties and appeals are not reopened. To review a session's decisions, include that session in the amendment.
 
@@ -1833,6 +1836,8 @@ No parameters. Displays a diff of the staged changes against the current season 
 > **An amendment it could not publish is refused, not half-made.** Before overwriting a single value the bot checks that every division's results and standings channels are still there and that it can post to them — and, with the attendance module on, its attendance channel too. If any of them has been deleted or the bot's permission has been taken away, the panel names the division and the channel, pressing Approve refuses, and **nothing is changed**: the season keeps its points, the staged changes stay staged, and amendment mode stays on. Repair the channel and review again. Either the whole approval happens or none of it does.
 
 > **The attendance sanctions are the one exception.** With the attendance module on, approving re-checks the sanction thresholds. A sanction that then fails to apply does not undo the approval; the reply lists it, with the `/attendance sync` command that finishes it. See [When a sanction does not apply](#when-a-sanction-does-not-apply).
+
+> **Not while a round's results are being amended.** While any division has a `/round results amend` open, the panel names the round and its amend channel, and pressing Approve refuses and changes nothing: approving reposts every division, and would publish that amendment's corrections before they are approved. Review again once it has finished.
 
 ---
 
