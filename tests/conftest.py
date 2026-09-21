@@ -136,3 +136,29 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "rasteriser" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def _no_posting_throttle(monkeypatch):
+    """Stand down the division-replay posting throttle for the whole suite.
+
+    `results_post_service.POSTING_THROTTLE_SECONDS` paces a whole-division rebuild so it does
+    not spend its time in Discord's rate-limit backoff (#345). Against a stubbed channel there
+    is no rate limit to respect and the wait buys nothing — it is simply a second of wall clock
+    per posting, and a division-wide repost posts tens of them. Left in, `test_repost_for_division`
+    alone took eighteen seconds where it takes well under one.
+
+    Autouse rather than opt-in: a test that reposts a division does not otherwise have to know
+    the throttle exists, and the one that does know — `test_replay_throttle.py` — patches the
+    constant itself and is unaffected by this.
+
+    **Imported and patched without a fallback, deliberately.** An earlier version swallowed any
+    import error and returned, and set the attribute with ``raising=False``. Between them those
+    two turned a broken import or a renamed constant into a suite that silently paid a real
+    second per posting again — a slow CI run nobody attributes to the commit that caused it,
+    rather than a failure anyone can see. `results_post_service` imports cleanly wherever the
+    suite runs; if it ever does not, that is worth a loud error.
+    """
+    from services import results_post_service
+
+    monkeypatch.setattr(results_post_service, "POSTING_THROTTLE_SECONDS", 0)

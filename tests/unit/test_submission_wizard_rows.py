@@ -309,17 +309,16 @@ def test_the_acceptable_penalty_forms(penalties):
 # ---------------------------------------------------------------------------
 
 
-def test_a_wizard_row_leaves_the_later_penalty_fields_empty():
-    """The six-field form is typed before any penalty is reviewed. Post-race and appeal
-    penalties are filled in by the penalty wizard, so they default to absent rather than
-    to zero — zero would read as a penalty of none having been decided."""
+def test_a_parsed_row_carries_no_later_penalty_at_all():
+    """The six-field form is typed before any penalty is reviewed, and post-race and appeal
+    penalties are applied by the review stages as records with a justification and an author.
+    A parsed row has no field for them, so nothing typed can reach them (#345)."""
     qualifying = _validate_qualifying_row_wizard(_qualifying())
     race = _validate_race_row_wizard(_race(), is_first=True)
 
-    assert qualifying.postrace_penalty == "N/A"
-    assert qualifying.appeal_penalty == "N/A"
-    assert race.postrace_penalty == "N/A"
-    assert race.appeal_penalty == "N/A"
+    for row in (qualifying, race):
+        assert not hasattr(row, "postrace_penalty")
+        assert not hasattr(row, "appeal_penalty")
 
 
 @pytest.mark.parametrize("outcome", ["DNS", "DNF", "DSQ"])

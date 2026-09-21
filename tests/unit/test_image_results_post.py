@@ -750,3 +750,108 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
 
     assert not png.exists(), "a failed upload must not strand the picture"
     assert sent, "the textual table still posts"
+
+
+# ---------------------------------------------------------------------------
+# Which posting the graphic replaces, and when (#345)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_cleared_stored_id_means_the_graphic_replaces_nothing(tmp_path):
+    """**The database is what says whether there is a posting to replace.**
+
+    A caller doing produce-then-destroy — the amendment's division-wide rebuild — clears the
+    stored id before it reposts, precisely so that nothing is taken down until every round is
+    back up. Reading the id off the in-memory `session_result` instead, which still carries the
+    one it was loaded with, destroyed the originals during the produce pass: a failure part-way
+    then left the earlier rounds missing from the channel with nothing to put back.
+    """
+    from db.database import get_connection
+    from services import image_results_post
+    from services.results_post_service import post_session_results
+
+    db_path, session_result = await _seeded(tmp_path, message_id=111)
+    # As the rebuild does: the id leaves the database, and the object keeps its stale copy.
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE session_results SET results_message_id = NULL, results_message_ids = NULL "
+            "WHERE id = ?",
+            (session_result.id,),
+        )
+        await db.commit()
+
+    png = tmp_path / "results.png"
+    png.write_bytes(b"\x89PNG")
+    deleted: list = []
+    previous = AsyncMock()
+    previous.delete = AsyncMock(side_effect=lambda: deleted.append(111))
+    channel = _channel([], previous=previous)
+
+    with patch.object(
+        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+    ), patch.object(
+        image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
+    ):
+        await post_session_results(
+            db_path=db_path,
+            session_result=session_result,
+            driver_rows=[],
+            points_map={},
+            results_channel=channel,
+            guild=_guild(),
+            round_number=5,
+            track_name="Monaco",
+            label="Final Results",
+            bot=_bot(db_path),
+        )
+
+    assert deleted == [], "the posting the caller meant to keep was destroyed"
+
+
+async def test_a_superseded_textual_posting_is_taken_down_whole(tmp_path):
+    """A table past Discord's limit occupies several messages, and a graphic replacing it must
+    remove all of them — with the adjacency walk retired, its continuations could not be reached
+    again (#345)."""
+    from db.database import get_connection
+    from services import image_results_post
+    from services.results_post_service import post_session_results
+
+    db_path, session_result = await _seeded(tmp_path, message_id=111)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE session_results SET results_message_ids = '[111, 112, 113]' WHERE id = ?",
+            (session_result.id,),
+        )
+        await db.commit()
+
+    png = tmp_path / "results.png"
+    png.write_bytes(b"\x89PNG")
+    deleted: list = []
+
+    async def _fetch(message_id):
+        message = AsyncMock()
+        message.delete = AsyncMock(side_effect=lambda mid=message_id: deleted.append(mid))
+        return message
+
+    channel = _channel([])
+    channel.fetch_message = AsyncMock(side_effect=_fetch)
+
+    with patch.object(
+        image_results_post, "build_drawing", AsyncMock(return_value=_drawing())
+    ), patch.object(
+        image_results_post, "render_png", AsyncMock(return_value=_decision(png=png))
+    ):
+        await post_session_results(
+            db_path=db_path,
+            session_result=session_result,
+            driver_rows=[],
+            points_map={},
+            results_channel=channel,
+            guild=_guild(),
+            round_number=5,
+            track_name="Monaco",
+            label="Final Results",
+            bot=_bot(db_path),
+        )
+
+    assert deleted == [111, 112, 113]

@@ -1,7 +1,10 @@
 """Tests for verdict_announcement_service — translate_penalty and post helpers."""
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
+
+import discord
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
@@ -242,12 +245,20 @@ class _Guild:
 
 
 class _Channel:
-    def __init__(self, member: "_Member | None" = None) -> None:
+    #: What a sent message's id counts up from, so a test can assert on a known value.
+    FIRST_MESSAGE_ID = 770001
+
+    def __init__(self, member: "_Member | None" = None, *, channel_id: int = 4242) -> None:
         self.sent: list[tuple] = []
         self.guild = _Guild(member)
+        self.id = channel_id
 
     async def send(self, content=None, *, file=None, **_kwargs):
         self.sent.append((content, file))
+        # Discord hands back the message it created, and the bot now keeps it: a verdict that
+        # cannot be found again cannot be replaced when the round is amended (#189).
+        message = SimpleNamespace(id=self.FIRST_MESSAGE_ID + len(self.sent) - 1)
+        return message
 
 
 class _Bot:
@@ -787,3 +798,269 @@ def test_the_repair_hint_says_a_verdict_cannot_be_announced_twice():
     assert "cannot announce a verdict a second time" in hint
     assert "yourself" in hint
     assert "/attendance sync" not in hint
+
+
+async def test_the_repair_hint_is_defined_exactly_once(tmp_path):
+    """A second definition shadowed the first and would have raised `NameError` (#345).
+
+    `verdict_repair_hint` was defined twice in this module. The later one took a `sanction`
+    keyword and returned `_SANCTION_RETRY` for it — a name defined nowhere in the repository — so
+    any caller passing `sanction=True` would have raised rather than returning a hint. No caller
+    did, which is exactly why it sat there: the failure was latent, reachable only by the next
+    person to use the parameter the signature advertised.
+
+    Pinned by counting the definitions rather than by calling it, because calling the surviving
+    one proves nothing about a shadow that would silently replace it.
+    """
+    import inspect
+
+    from services import verdict_announcement_service as module
+
+    source = inspect.getsource(module)
+    assert source.count("def verdict_repair_hint") == 1
+    assert "_SANCTION_RETRY" not in source
+
+
+# ---------------------------------------------------------------------------
+# Recording which message carries a verdict (#189)
+# ---------------------------------------------------------------------------
+#
+# The two tables stored the channel an announcement went to and nothing more, so the bot could
+# not find, edit, delete or replace a verdict it had posted. Amending a round therefore rescored
+# the classification a verdict was applied to and left the verdict standing beside it, saying
+# something the results no longer said, with no command able to put it right.
+#
+# The message is recorded as it is sent. The chunk list is written alongside the anchor because
+# that is the pair every other posting uses, and a verdict batch that outgrew Discord's limit
+# would otherwise bring back exactly the guesswork it was removed to prevent (#345).
+
+
+async def _announcement_row(db_path: str, table: str) -> dict:
+    from db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT announcement_message_id, announcement_message_ids, "
+            f"announcement_channel_id FROM {table}"
+        )
+        return dict(await cursor.fetchone())
+
+
+async def _insert_penalty(db_path: str, race_result_id: int, table: str = "penalty_records") -> int:
+    from db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        if table == "penalty_records":
+            cursor = await db.execute(
+                "INSERT INTO penalty_records (race_result_id, penalty_type, time_seconds, "
+                "description, justification, applied_by, applied_at) "
+                "VALUES (?, 'TIME', 5, 'Contact', 'At fault', '77', '2026-02-02T00:00:00+00:00')",
+                (race_result_id,),
+            )
+        else:
+            cursor = await db.execute(
+                "INSERT INTO appeal_records (race_result_id, status, penalty_type, "
+                "time_seconds, description, justification, submitted_by, submitted_at) "
+                "VALUES (?, 'UPHELD', 'TIME', 3, 'Appeal', 'Upheld', '78', "
+                "'2026-02-03T00:00:00+00:00')",
+                (race_result_id,),
+            )
+        await db.commit()
+        return cursor.lastrowid
+
+
+@pytest.mark.asyncio
+async def test_a_penalty_verdict_records_the_message_it_was_announced_in(tmp_path):
+    """The id is stored against the record, which is the whole of what #189 asked for."""
+    db_path = str(tmp_path / "record_penalty.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+    record_id = await _insert_penalty(db_path, seeded["race_result_id"])
+
+    channel = _Channel(_Member("Ada"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    record = _penalty_record(seeded["race_result_id"]) | {"id": record_id}
+    assert await post_penalty_announcements(bot, state, [record]) == []
+
+    row = await _announcement_row(db_path, "penalty_records")
+    assert row["announcement_message_id"] == str(_Channel.FIRST_MESSAGE_ID)
+
+
+@pytest.mark.asyncio
+async def test_a_penalty_verdict_records_the_channel_it_went_to(tmp_path):
+    """The channel is written from the one actually posted to, not left to an earlier guess."""
+    db_path = str(tmp_path / "record_channel.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+    record_id = await _insert_penalty(db_path, seeded["race_result_id"])
+
+    channel = _Channel(_Member("Ada"), channel_id=5150)
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"]) | {"id": record_id}]
+    )
+
+    assert (await _announcement_row(db_path, "penalty_records"))[
+        "announcement_channel_id"
+    ] == "5150"
+
+
+@pytest.mark.asyncio
+async def test_a_verdict_records_its_chunk_list_too(tmp_path):
+    """One message today, recorded in the form every other posting uses.
+
+    Deleting a posting reads the list; a verdict that recorded only an anchor would fall back to
+    the adjacency walk, which is wrong precisely where the amendment replay puts it (#345).
+    """
+    db_path = str(tmp_path / "record_chunks.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+    record_id = await _insert_penalty(db_path, seeded["race_result_id"])
+
+    channel = _Channel(_Member("Ada"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"]) | {"id": record_id}]
+    )
+
+    row = await _announcement_row(db_path, "penalty_records")
+    assert json.loads(row["announcement_message_ids"]) == [_Channel.FIRST_MESSAGE_ID]
+
+
+@pytest.mark.asyncio
+async def test_an_appeal_verdict_records_its_message(tmp_path):
+    """`appeal_records` carries the same columns and was equally unfindable."""
+    db_path = str(tmp_path / "record_appeal.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+    record_id = await _insert_penalty(
+        db_path, seeded["race_result_id"], table="appeal_records"
+    )
+
+    channel = _Channel(_Member("Ada"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    record = _penalty_record(seeded["race_result_id"]) | {"id": record_id}
+    assert await post_appeal_announcements(bot, state, [record]) == []
+
+    row = await _announcement_row(db_path, "appeal_records")
+    assert row["announcement_message_id"] == str(_Channel.FIRST_MESSAGE_ID)
+
+
+@pytest.mark.asyncio
+async def test_a_record_with_no_id_is_announced_all_the_same(tmp_path):
+    """The announcement is the point; the record of it is not worth failing one over.
+
+    `post_autosanction_announcement` posts a verdict with no row behind it at all, and a caller
+    assembling records by hand may omit the id. Neither may lose the driver their explanation.
+    """
+    db_path = str(tmp_path / "no_id.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+
+    channel = _Channel(_Member("Ada"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    faults = await post_penalty_announcements(
+        bot, state, [_penalty_record(seeded["race_result_id"])]
+    )
+
+    assert faults == []
+    assert len(channel.sent) == 1
+
+
+async def test_the_banner_records_the_message_it_was_posted_as(tmp_path):
+    """**So an amendment can take it down with the run it heads** (#345). A banner belongs to no
+    verdict record, so without this the replay removed a round's announcements and left the
+    header standing over the empty space, then posted a fresh one below it."""
+    import os
+
+    from db.database import get_connection, run_migrations
+    from services import image_verdict_banner_post, verdict_announcement_service as vas
+
+    db_path = os.path.join(str(tmp_path), "banner_record.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 3, '2026-01-01', 'ACTIVE')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (1, 1, 'Pro', 1, 555)"
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
+            "VALUES (7, 1, 2, '2026-02-01T18:00:00+00:00', 'NORMAL', 'FINAL')"
+        )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, penalty_channel_id) "
+            "VALUES (1, 4242)"
+        )
+        await db.commit()
+
+    bot = MagicMock()
+    bot.get_channel = MagicMock(return_value=MagicMock())
+    with patch.object(
+        image_verdict_banner_post, "try_post", new=AsyncMock(return_value=MagicMock(id=9911))
+    ), patch.object(
+        image_verdict_banner_post, "build_drawing", new=MagicMock()
+    ):
+        await vas.banner_for_round(bot, db_path, 7)()
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT round_id, channel_id, message_id FROM verdict_banner_messages"
+        )
+        assert [tuple(r) for r in await cursor.fetchall()] == [(7, "4242", "9911")]
+
+
+async def test_a_batch_that_heads_itself_records_its_banner(tmp_path):
+    """**The fallback banner was invisible to the replay** (#345).
+
+    A poster handed no banner posts one of its own — the appeals stage of a first pass, an
+    attendance sanction firing alone. Unrecorded, an amendment took that run's cards down and
+    left the header standing over the empty space, then posted a fresh one below it.
+    """
+    import os
+
+    from db.database import get_connection, run_migrations
+    from services import image_verdict_banner_post, verdict_announcement_service as vas
+
+    db_path = os.path.join(str(tmp_path), "banner_fallback.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 3, '2026-01-01', 'ACTIVE')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (1, 1, 'Pro', 1, 555)"
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
+            "VALUES (7, 1, 2, '2026-02-01T18:00:00+00:00', 'NORMAL', 'FINAL')"
+        )
+        await db.commit()
+
+    channel = MagicMock()
+    channel.id = 4242
+    with patch.object(
+        image_verdict_banner_post, "try_post", new=AsyncMock(return_value=MagicMock(id=9912))
+    ), patch.object(image_verdict_banner_post, "build_drawing", new=MagicMock()):
+        await vas._banner_once_recorded(
+            MagicMock(), channel, {"division_name": "Pro"}, db_path, 7
+        )()
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT message_id FROM verdict_banner_messages")
+        assert [r[0] for r in await cursor.fetchall()] == ["9912"]

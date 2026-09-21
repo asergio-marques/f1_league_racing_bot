@@ -526,6 +526,111 @@ async def test_a_failed_swap_says_the_earlier_results_still_stand(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Nothing is entered while another round of the division is being amended (#345)
+# ---------------------------------------------------------------------------
+#
+# Decided 2026-09-21, as for the first submission: a resubmission posts its provisional standings
+# from a database holding the amendment's unapproved corrections. Its pastes are refused while
+# one is open — the last of them being what swaps the results in — and each session asked again.
+
+AMENDED_ROUND = 20
+AMEND_CHANNEL = 8200
+
+
+async def _open_amendment(db_path):
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "status) VALUES (?, ?, 2, '2026-01-25T18:00:00+00:00', 'NORMAL', 'FINAL')",
+            (AMENDED_ROUND, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at) "
+            "VALUES (?, ?, '[\"FEATURE_RACE\"]', '2026-02-01T00:00:00+00:00')",
+            (AMENDED_ROUND, AMEND_CHANNEL),
+        )
+        await db.commit()
+
+
+def _pastes_around_an_amendment(db_path, pastes, *, opens=None, ends: int, seen: list):
+    """Each paste in turn; the amendment opens before paste *opens* and ends before *ends*.
+
+    What the round held when it ended is put in *seen*.
+    """
+    messages = iter([_message(p) for p in pastes])
+    calls = 0
+
+    async def wait_for(*_a, **_k):
+        nonlocal calls
+        calls += 1
+        if calls == opens:
+            await _open_amendment(db_path)
+        if calls == ends:
+            seen.extend(await _sessions(db_path))
+            async with get_connection(db_path) as db:
+                await db.execute("DELETE FROM round_amend_channels")
+                await db.commit()
+        return next(messages)
+
+    return AsyncMock(side_effect=wait_for)
+
+
+async def test_a_resubmitted_paste_is_refused_while_another_round_is_amended(tmp_path):
+    db_path = await _make_db(tmp_path, name="resubmit_held")
+    await _seed_old_results(db_path)
+    await _open_amendment(db_path)
+    bot = _bot(db_path, [])
+    bot.wait_for = _pastes_around_an_amendment(
+        db_path, [QUALI_PASTE, QUALI_PASTE, RACE_PASTE], ends=2, seen=[]
+    )
+
+    stubs = await _run(bot)
+
+    said = _said(stubs["channel"])
+    assert f"Round 2 of this division is being amended in <#{AMEND_CHANNEL}>" in said
+    assert "Paste **" in said and "again then." in said
+    assert bot.wait_for.await_count == 3
+    assert [s[0] for s in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
+    stubs["penalty"].assert_awaited_once()
+
+
+async def test_the_last_paste_refused_leaves_the_earlier_results_standing(tmp_path):
+    """The last session's paste is the one that swaps the results in, so it is the commit held.
+
+    Opened after the first session was taken, the amendment refuses the second; the round still
+    holds the results it had until the race is pasted again after the amendment has ended.
+    """
+    db_path = await _make_db(tmp_path, name="resubmit_held_swap")
+    await _seed_old_results(db_path)
+    bot = _bot(db_path, [])
+    seen: list = []
+    bot.wait_for = _pastes_around_an_amendment(
+        db_path, [QUALI_PASTE, RACE_PASTE, RACE_PASTE], opens=2, ends=3, seen=seen
+    )
+
+    stubs = await _run(bot)
+
+    assert seen == [("FEATURE_RACE", "ACTIVE", None)]
+    assert "is being amended" in _said(stubs["channel"])
+    assert [s[0] for s in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
+
+
+async def test_cancelling_a_resubmitted_session_is_refused_while_amended(tmp_path):
+    db_path = await _make_db(tmp_path, name="resubmit_held_cancel")
+    await _seed_old_results(db_path)
+    await _open_amendment(db_path)
+    bot = _bot(db_path, [])
+    bot.wait_for = _pastes_around_an_amendment(
+        db_path, ["CANCELLED", "CANCELLED", RACE_PASTE], ends=2, seen=[]
+    )
+
+    stubs = await _run(bot)
+
+    assert "Type `CANCELLED` for **" in _said(stubs["channel"])
+    assert (await _sessions(db_path))[0][:2] == ("FEATURE_QUALIFYING", "CANCELLED")
+
+
+# ---------------------------------------------------------------------------
 # Cancelling the resubmission
 # ---------------------------------------------------------------------------
 

@@ -38,6 +38,13 @@ class StagedPenalty:
     penalty_seconds: int | None
     description: str = ""
     justification: str = ""
+    #: Who decided this and when, where it was read back from a decided round rather than typed
+    #: now (#345). An amendment writes a round's decisions out again, and a verdict it keeps
+    #: must keep its author and its time — otherwise every kept verdict would name the admin who
+    #: amended the round, at the moment they did. None for a decision staged now, which takes
+    #: the approving manager and the time of approval as it always has.
+    decided_by: str | None = None
+    decided_at: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +383,8 @@ async def apply_penalties(
                 continue
             race_result_id = new_result_id if not sp.session_type.is_qualifying else None
             qual_result_id = new_result_id if sp.session_type.is_qualifying else None
+            # A decision read back from the round keeps its own author and time (#345).
+            record_by = sp.decided_by or str(applied_by)
             cursor = await db.execute(
                 """
                 INSERT INTO penalty_records (
@@ -392,8 +401,8 @@ async def apply_penalties(
                     sp.penalty_seconds,
                     sp.description,
                     sp.justification,
-                    str(applied_by),
-                    now_str,
+                    record_by,
+                    sp.decided_at or now_str,
                 ),
             )
             inserted_records.append(
@@ -406,7 +415,7 @@ async def apply_penalties(
                     "time_seconds": sp.penalty_seconds,
                     "description": sp.description,
                     "justification": sp.justification,
-                    "applied_by": str(applied_by),
+                    "applied_by": record_by,
                     "announcement_channel_id": None,
                 }
             )
@@ -482,3 +491,166 @@ async def apply_penalties(
 
     return inserted_records
 
+
+# ---------------------------------------------------------------------------
+# Reading a decided round back into staged form (#345)
+# ---------------------------------------------------------------------------
+
+
+async def load_staged_from_records(
+    db_path: str, round_id: int, *, session_types: list[SessionType] | None = None
+) -> tuple[list[StagedPenalty], list[StagedPenalty], list["StagedPardon"]]:
+    """Rebuild a round's decided reports, appeals and pardons as staged entries.
+
+    The amendment replay shows a manager what was decided and lets them change it, which means
+    reading the decisions back out of the tables they were written to. Nothing did that before:
+    :class:`StagedPenalty` was only ever built from a steward's typed input, and the review
+    wizard's own restart recovery deliberately reopens with an **empty** staged list rather than
+    re-hydrating one.
+
+    **The driver and the session have to be recovered by join.** ``penalty_records`` and
+    ``appeal_records`` store neither ``driver_user_id`` nor ``session_type`` — only a reference
+    to one driver's row in ``race_session_results`` or ``qualifying_session_results``, from which
+    the driver reads directly and the session through ``session_results``.
+
+    **Which list a penalty record belongs to is not recorded either.** ``apply_penalties``
+    inserts into ``penalty_records`` on both phases, so the appeal phase writes a row there *and*
+    a row in ``appeal_records``. The appeals are therefore taken from ``appeal_records`` alone,
+    and a ``penalty_records`` row is a report unless an appeal record of the same driver, session
+    and sanction accounts for it — matched once each, so two identical penalties are not both
+    swallowed by one appeal.
+
+    *session_types* narrows the read to those sessions, which is what an amendment wants: it
+    replays the sessions it re-entered, and re-applying a report belonging to another would add
+    to penalty columns that already hold it — the rows of an unamended session were never
+    re-inserted at zero.
+
+    Returned in the order the records were written, so a manager reads them as they were decided.
+    """
+    from services.penalty_wizard import StagedPardon
+
+    reports: list[StagedPenalty] = []
+    appeals: list[StagedPenalty] = []
+    pardons: list[StagedPardon] = []
+
+    from services.verdict_records import VERDICT_TABLES, select_verdicts
+
+    async with get_connection(db_path) as db:
+        rows_of: dict[str, list[dict]] = {}
+        # The two tables name their author and time differently.
+        provenance = {
+            "penalty_records": ("applied_by", "applied_at"),
+            "appeal_records": ("submitted_by", "submitted_at"),
+        }
+        for table in VERDICT_TABLES:
+            by_col, at_col = provenance[table]
+            rows_of[table] = await select_verdicts(
+                db, table,
+                "v.id AS record_id, v.penalty_type, v.time_seconds, v.description, "
+                f"v.justification, v.{by_col} AS decided_by, v.{at_col} AS decided_at, "
+                "r.driver_user_id AS driver_user_id, sr.session_type AS session_type",
+                round_id=round_id, session_types=session_types,
+            )
+
+        for row in sorted(rows_of["appeal_records"], key=lambda r: r["record_id"]):
+            appeals.append(_staged_from_record(row))
+
+        for row in reports_only(
+            sorted(rows_of["penalty_records"], key=lambda r: r["record_id"]),
+            rows_of["appeal_records"],
+        ):
+            reports.append(_staged_from_record(row))
+
+        cursor = await db.execute(
+            """
+            SELECT p.attendance_id, p.pardon_type, p.justification, p.granted_by,
+                   p.granted_at,
+                   a.driver_profile_id AS driver_profile_id,
+                   d.discord_user_id AS discord_user_id
+            FROM attendance_pardons p
+            JOIN driver_round_attendance a ON a.id = p.attendance_id
+            JOIN driver_profiles d ON d.id = a.driver_profile_id
+            WHERE a.round_id = ?
+            ORDER BY p.id
+            """,
+            (round_id,),
+        )
+        for row in await cursor.fetchall():
+            try:
+                driver_user_id = int(row["discord_user_id"])
+            except (TypeError, ValueError):
+                driver_user_id = 0
+            pardons.append(
+                StagedPardon(
+                    driver_user_id=driver_user_id,
+                    driver_profile_id=row["driver_profile_id"],
+                    attendance_id=row["attendance_id"],
+                    pardon_type=row["pardon_type"],
+                    justification=row["justification"] or "",
+                    grantor_id=int(row["granted_by"]) if row["granted_by"] else 0,
+                    granted_at=row["granted_at"],
+                )
+            )
+
+    return reports, appeals, pardons
+
+
+def reports_only(penalty_rows: list, appeal_rows: list) -> list:
+    """The penalty records that are reports, leaving out the ones an appeal wrote.
+
+    ``apply_penalties`` inserts into ``penalty_records`` on both phases, so upholding an appeal
+    writes a row there *and* a row in ``appeal_records``, and nothing records which phase a
+    penalty row came from. A penalty row is therefore a report unless an appeal record of the
+    same shape accounts for it — matched once each, so two identical penalties are not both
+    swallowed by one appeal.
+
+    Both the amendment's hydration and its republish need the split (#345): the one to show a
+    report once rather than as a report *and* an appeal, the other to announce an upheld appeal
+    once rather than as a penalty verdict as well. *penalty_rows* keep their order.
+    """
+    unclaimed = [_record_shape(row) for row in appeal_rows]
+    kept = []
+    for row in penalty_rows:
+        shape = _record_shape(row)
+        if shape in unclaimed:
+            unclaimed.remove(shape)
+            continue
+        kept.append(row)
+    return kept
+
+
+def _record_shape(row) -> tuple:
+    """What makes two verdict records the same sanction, for pairing an appeal to its penalty.
+
+    **The text is part of it.** ``finalize_appeals_review`` writes the ``appeal_records`` row and
+    the ``penalty_records`` row from the *same* ``StagedPenalty``, copying the description and
+    the justification into both, so a genuine pair always agrees on all six fields.
+
+    Matching on the driver, session, type and seconds alone was enough to stop an appeal being
+    counted twice, but it also claimed a *different* report of the same shape: a driver given a
+    5 s report for one incident and a separate 5 s appeal for another, in one session, lost the
+    report from the review stage entirely — the manager could neither see nor edit it. Including
+    the text distinguishes the two, and costs nothing, because a real pair shares it.
+    """
+    return (
+        row["driver_user_id"],
+        row["session_type"],
+        row["penalty_type"],
+        row["time_seconds"],
+        row["description"] or "",
+        row["justification"] or "",
+    )
+
+
+def _staged_from_record(row) -> StagedPenalty:
+    """One verdict record as the staged entry a steward would have typed to produce it."""
+    return StagedPenalty(
+        driver_user_id=row["driver_user_id"],
+        session_type=SessionType(row["session_type"]),
+        penalty_type=row["penalty_type"],
+        penalty_seconds=row["time_seconds"],
+        description=row["description"] or "",
+        justification=row["justification"] or "",
+        decided_by=row["decided_by"],
+        decided_at=row["decided_at"],
+    )

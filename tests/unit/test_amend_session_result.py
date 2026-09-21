@@ -1,7 +1,8 @@
 """Writing an amended classification over a round that has already reached FINAL.
 
-Issue #208. `amend_session_result` was uncovered. It is what `/round results amend` calls once
-the corrected paste has been validated, and it is destructive by design.
+Issue #208. `amend_round_results` (once `amend_session_result`) was uncovered. It is what
+`/round results amend` calls once the corrected pastes have been validated, and it is
+destructive by design.
 
 **Nothing is superseded; the classification being replaced is gone.** The session header is
 updated in place and the driver rows are deleted outright, then re-inserted from the amendment.
@@ -42,7 +43,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
-from services.result_submission_service import amend_session_result  # noqa: E402
+from services.result_submission_service import (  # noqa: E402
+    AmendmentWouldOrphanVerdictError,
+    AmendedSession,
+    amend_round_results,
+)
 from services.season_service import SeasonImmutableError  # noqa: E402
 
 SERVER_ID = 12908
@@ -125,12 +130,25 @@ def _race_row(driver: int, position: int, *, total_time: str = "1:30:00.000", **
     return row
 
 
-def _bot(*, guild=True):
+@pytest.fixture(autouse=True)
+def _no_standings_names():
+    """The names a full tie is settled by are resolved through Discord, which these stub bots
+    only pretend to reach; ordering by user id keeps the tests about the classification."""
+    with patch(
+        "services.results_post_service.standings_display_names", new=AsyncMock(return_value=None)
+    ):
+        yield
+
+
+def _bot(*, guild=True, attendance=False):
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.get_guild = MagicMock(return_value=MagicMock() if guild else None)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
+    # The amendment reposts the attendance sheet where the module is on (#345); off by
+    # default here so these tests stay about the results.
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
     return bot
 
 
@@ -143,6 +161,7 @@ async def _amend(
     config_name="Standard",
     fl_override=None,
     repost_faults=None,
+    sessions=None,
 ):
     """*repost_faults* are the lines the cascade could not post (#237).
 
@@ -153,29 +172,30 @@ async def _amend(
     with patch(
         "services.result_submission_service._apply_points_from_config", new=AsyncMock()
     ) as apply_points, patch(
-        "services.results_post_service.delete_and_repost_final_results",
+        "services.results_post_service.repost_round_results",
         new=AsyncMock(return_value=list(repost_faults or [])),
     ) as repost, patch(
-        "services.results_post_service.repost_subsequent_standings",
+        "services.results_post_service.replay_division_channels",
+        new=AsyncMock(return_value=[]),
+    ) as replay, patch(
+        "services.result_submission_service._repost_attendance_after_amendment",
         new=AsyncMock(return_value=[]),
     ) as subsequent, patch(
         "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
     ) as cascade:
-        await amend_session_result(
+        await amend_round_results(
             db_path,
             ROUND_ID,
             DIVISION_ID,
-            session_type,
-            rows,
-            config_name,
+            sessions or [AmendedSession(session_type, rows, config_name, fl_override)],
             AMENDER,
             bot,
-            fl_driver_override=fl_override,
         )
     return {
         "bot": bot,
         "apply_points": apply_points,
         "repost": repost,
+        "replay": replay,
         "subsequent": subsequent,
         "cascade": cascade,
     }
@@ -297,8 +317,6 @@ async def test_a_parsed_row_object_is_read_like_a_dict(tmp_path):
         total_time="1:30:00.000",
         fastest_lap=None,
         ingame_penalties=None,
-        postrace_penalty="N/A",
-        appeal_penalty="N/A",
     )
 
     await _amend(db_path, [row])
@@ -332,6 +350,21 @@ async def test_an_archived_season_is_refused_before_anything_is_written(tmp_path
 # ---------------------------------------------------------------------------
 
 
+async def test_stage_one_settles_a_full_tie_by_name(tmp_path):
+    """The standings stage one stores are ordered as the posting orders them (decided
+    2026-09-15): recomputed by user id, a full tie would disagree with what is later drawn."""
+    db_path = await _make_db(tmp_path, name="amend_names")
+    names = {101: "Alice"}
+
+    with patch(
+        "services.results_post_service.standings_display_names",
+        new=AsyncMock(return_value=names),
+    ):
+        stubs = await _amend(db_path, [_race_row(101, 1)])
+
+    assert stubs["cascade"].await_args.args[3] == names
+
+
 async def test_a_driver_in_the_amended_result_becomes_a_former_driver(tmp_path):
     """Their name is now on a result, so a later sack must keep their profile."""
     db_path = await _make_db(tmp_path, name="amend_former")
@@ -341,6 +374,67 @@ async def test_a_driver_in_the_amended_result_becomes_a_former_driver(tmp_path):
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT former_driver FROM driver_profiles WHERE id = 33")
         assert (await cursor.fetchone())[0] == 1
+
+
+async def _open_amendment_record(db_path) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at) "
+            "VALUES (?, 7777, '[\"FEATURE_RACE\"]', '2026-02-02T00:00:00+00:00')",
+            (ROUND_ID,),
+        )
+        await db.commit()
+
+
+async def _former(db_path, profile_id: int) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT former_driver FROM driver_profiles WHERE id = ?", (profile_id,)
+        )
+        return (await cursor.fetchone())[0]
+
+
+async def test_reverting_unmarks_a_driver_the_amendment_made_a_former_driver(tmp_path):
+    """#345: a driver pasted in by mistake, the amendment then cancelled or lapsed. The round
+    is put back as it was, and so is whether they have ever raced."""
+    from services.result_submission_service import revert_abandoned_amendment
+
+    db_path = await _make_db(tmp_path, name="amend_former_reverted")
+    await _open_amendment_record(db_path)
+    await _amend(db_path, [_race_row(103, 1)])
+    assert await _former(db_path, 33) == 1
+
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        await revert_abandoned_amendment(db_path, ROUND_ID)
+
+    assert await _former(db_path, 33) == 0
+
+
+async def test_a_driver_with_a_result_elsewhere_stays_a_former_driver(tmp_path):
+    """The mark stage one raised is taken back only where nothing else would raise it — here a
+    race the driver ran in another division while the amendment stood open."""
+    from services.result_submission_service import revert_abandoned_amendment
+
+    db_path = await _make_db(tmp_path, name="amend_former_kept")
+    await _open_amendment_record(db_path)
+    await _amend(db_path, [_race_row(103, 1)])
+    async with get_connection(db_path) as db:
+        other = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'SPRINT_RACE', 'ACTIVE')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position, driver_profile_id) VALUES (?, 103, 3001, 1, 33)",
+            (other.lastrowid,),
+        )
+        await db.commit()
+
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        await revert_abandoned_amendment(db_path, ROUND_ID)
+
+    assert await _former(db_path, 33) == 1
 
 
 async def test_the_result_row_is_linked_to_the_drivers_profile(tmp_path):
@@ -430,15 +524,53 @@ async def test_the_points_are_re_applied_from_the_configuration(tmp_path):
     assert args[3] == "Standard"
 
 
-async def test_the_round_and_every_later_standing_are_reposted(tmp_path):
+async def test_stage_one_publishes_nothing(tmp_path):
+    """**It records; it does not post** (#345).
+
+    Posting between the stages was wrong three ways. The reports and appeals were not yet
+    reviewed, so the table carried the sanctions — and the post-race DSQ marks — of the round
+    being replaced. `repost_round_results` has no deletion of its own, so the posting *added* a
+    message and orphaned the original Final Results above it, with its id overwritten and no
+    path left that could remove it. And an amendment reverted before it completed left that
+    provisional posting standing.
+
+    So the league keeps reading the round it raced until the amendment is actually finished.
+    """
     db_path = await _make_db(tmp_path, name="amend_repost")
 
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
-    stubs["repost"].assert_awaited_once()
-    assert stubs["repost"].await_args.kwargs["label"] == "Final Results"
-    stubs["subsequent"].assert_awaited_once()
-    stubs["cascade"].assert_not_awaited()
+    stubs["repost"].assert_not_awaited()
+    stubs["replay"].assert_not_awaited()
+
+
+async def test_stage_one_does_not_rebuild_the_division(tmp_path):
+    """**The rebuild belongs to the final approval, and happens once.**
+
+    Rebuilding here would publish a classification whose sanctions are still the old round's,
+    reposting every round of the division to do it — and then throw all of it away and do it
+    again when the appeals stage is approved minutes later.
+    """
+    db_path = await _make_db(tmp_path, name="amend_no_early_replay")
+
+    stubs = await _amend(db_path, [_race_row(101, 1)])
+
+    stubs["replay"].assert_not_awaited()
+    stubs["subsequent"].assert_not_awaited()
+
+
+async def test_the_standings_are_recomputed_before_the_channels_are_rebuilt(tmp_path):
+    """Or the rebuild reposts the championship the amendment has just corrected.
+
+    The cascade used to be the *fallback* for having no guild; with the whole division being
+    reposted it has to run first on the ordinary path too, so the messages drawn carry the new
+    figures rather than the old ones.
+    """
+    db_path = await _make_db(tmp_path, name="amend_recompute_first")
+
+    stubs = await _amend(db_path, [_race_row(101, 1)])
+
+    stubs["cascade"].assert_awaited_once()
 
 
 async def test_without_a_guild_the_standings_are_still_recomputed(tmp_path):
@@ -457,10 +589,14 @@ async def test_the_amendment_is_logged(tmp_path):
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
     logged = str(stubs["bot"].output_router.post_log.await_args.args[0])
-    assert "RESULT_AMENDED" in logged
+    assert "AMEND_STAGE_1 | Recorded" in logged
     assert f"<@{AMENDER}>" in logged
     assert "round: 3" in logged
-    assert "FEATURE_RACE" in logged
+    # Each session named with the configuration it was scored under — the one entry that
+    # records it, now that the cog's `AMEND_SUCCESS` is gone.
+    assert "FEATURE_RACE=Standard" in logged
+    # Says where it has reached, not that it succeeded — nothing is published yet (#345).
+    assert "Nothing is published until" in logged
 
 
 # ---------------------------------------------------------------------------
@@ -480,76 +616,321 @@ def _amend_log(stubs) -> str:
     )
 
 
-async def test_an_amendment_that_could_not_repost_is_logged_as_incomplete(tmp_path):
-    db_path = await _make_db(tmp_path, name="amend_incomplete")
+async def test_stage_one_does_not_claim_the_amendment_succeeded(tmp_path):
+    """`RESULT_AMENDED` belongs to the final stage.
 
-    stubs = await _amend(db_path, [_race_row(101, 1)], repost_faults=[AMEND_FAULT])
-
-    logged = _amend_log(stubs)
-    assert "RESULT_AMENDED | Incomplete" in logged
-    assert AMEND_FAULT in logged
-    assert "/results rounds sync" in logged
-
-
-async def test_the_hint_names_the_amendment_where_the_season_is_pending_completion(tmp_path):
-    """Both sync commands are refused once every division is done (issue #224), so naming
-    them would send a manager to a door that will not open.
-
-    `/round results amend` is the one repost still available there — and, being the only
-    thing permitted that reposts at all, the only thing that can have failed. Re-running it
-    replaces the round's own results *and* every later round's standings, so it recovers the
-    whole of what was lost.
+    Reporting success here would tell a manager the round was amended when its reports and
+    appeals are still unreviewed and nothing has been published.
     """
-    db_path = await _make_db(tmp_path, name="amend_pending_hint")
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE seasons SET stage = 'PENDING_COMPLETION' WHERE id = ?", (SEASON_ID,)
-        )
-        await db.commit()
-
-    stubs = await _amend(db_path, [_race_row(101, 1)], repost_faults=[AMEND_FAULT])
-
-    logged = _amend_log(stubs)
-    assert "RESULT_AMENDED | Incomplete" in logged
-    assert "/round results amend division_name:Pro" in logged
-    assert "/results rounds sync" not in logged
-    assert "/results standings sync" not in logged
-
-
-async def test_the_hint_names_the_sync_commands_while_the_season_is_ongoing(tmp_path):
-    """The counterpart, so the Pending-completion branch cannot become the only answer."""
-    db_path = await _make_db(tmp_path, name="amend_ongoing_hint")
-
-    stubs = await _amend(db_path, [_race_row(101, 1)], repost_faults=[AMEND_FAULT])
-
-    logged = _amend_log(stubs)
-    assert "/results rounds sync division:Pro" in logged
-    assert "/results standings sync division:Pro" in logged
-    assert "/round results amend" not in logged
-
-
-async def test_an_amendment_that_posted_everything_is_still_a_success(tmp_path):
-    """The counterpart, so `| Incomplete` cannot become the answer to everything."""
     db_path = await _make_db(tmp_path, name="amend_complete")
 
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
     logged = _amend_log(stubs)
-    assert "RESULT_AMENDED | Success" in logged
-    assert "sync" not in logged
+    assert "RESULT_AMENDED" not in logged
+    assert "AMEND_STAGE_1" in logged
 
 
-async def test_an_amendment_with_no_guild_says_it_was_not_reposted(tmp_path):
-    """The fallback recomputes the championship but posts none of it.
+async def test_the_championship_is_recalculated_even_with_no_guild(tmp_path):
+    """The database has to be right whether or not Discord can be reached.
 
-    Not the silent branch #237 describes \u2014 it is a deliberate fallback \u2014 but it reported
-    an unqualified success all the same, while everything a league can see went stale.
+    Stage one publishes nothing either way now, so the two branches differ only in the line the
+    league is left with — and the recalculation happens on both.
     """
     db_path = await _make_db(tmp_path, name="amend_no_guild")
 
     stubs = await _amend(db_path, [_race_row(101, 1)], bot=_bot(guild=False))
 
-    logged = _amend_log(stubs)
-    assert "RESULT_AMENDED | Incomplete" in logged
-    assert "not reposted" in logged
     stubs["cascade"].assert_awaited()
+    assert "RESULT_AMENDED" not in _amend_log(stubs)
+async def _verdict_rows(db_path, table: str, column: str = "race_result_id"):
+    """Every row of *table*, as (id, the result row it points at), oldest first."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(f"SELECT id, {column} FROM {table} ORDER BY id")
+        return [(r[0], r[1]) for r in await cursor.fetchall()]
+
+
+async def _add_penalty(db_path, result_id: int, *, table: str = "penalty_records",
+                       column: str = "race_result_id") -> int:
+    """Record one verdict against *result_id*, as the penalty wizard would have."""
+    async with get_connection(db_path) as db:
+        if table == "penalty_records":
+            cursor = await db.execute(
+                f"INSERT INTO {table} ({column}, penalty_type, time_seconds, description, "
+                "justification, applied_by, applied_at) "
+                "VALUES (?, 'TIME', 5, 'Contact at turn 1', 'Wholly at fault', '9001', "
+                "'2026-02-02T00:00:00+00:00')",
+                (result_id,),
+            )
+        else:
+            cursor = await db.execute(
+                f"INSERT INTO {table} ({column}, status, penalty_type, time_seconds, "
+                "description, justification, submitted_by, submitted_at) "
+                "VALUES (?, 'UPHELD', 'TIME', 3, 'Appeal upheld', 'Evidence accepted', '9002', "
+                "'2026-02-03T00:00:00+00:00')",
+                (result_id,),
+            )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def _race_result_id(db_path, driver: int) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM race_session_results WHERE driver_user_id = ?", (driver,)
+        )
+        return (await cursor.fetchone())[0]
+
+
+async def test_a_round_carrying_a_penalty_can_be_amended_at_all(tmp_path):
+    """The defect itself: the delete was refused and nothing could be amended.
+
+    Before the fix this raised `IntegrityError: FOREIGN KEY constraint failed` and the admin was
+    told the amendment had failed for an internal reason, with no route by which they could ever
+    succeed.
+    """
+    db_path = await _make_db(tmp_path, name="amend_with_penalty")
+    await _add_penalty(db_path, await _race_result_id(db_path, 101))
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
+
+
+async def test_the_verdict_follows_its_driver_to_the_new_row(tmp_path):
+    """The audit is kept, and kept against the right driver.
+
+    The row id changes — the old one is deleted — so the test asserts the verdict points at the
+    row the *same driver* now holds, which is the whole of what re-pointing means.
+    """
+    db_path = await _make_db(tmp_path, name="amend_verdict_follows")
+    verdict_id = await _add_penalty(db_path, await _race_result_id(db_path, 101))
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    rows = await _verdict_rows(db_path, "penalty_records")
+    assert rows == [(verdict_id, await _race_result_id(db_path, 101))]
+
+
+async def test_the_justification_survives_the_amendment(tmp_path):
+    """Re-pointing keeps the record, not merely a row of the right shape.
+
+    The justification and the applier are the only account a league has of why a driver lost
+    places; an amendment correcting a lap time has no business discarding them.
+    """
+    db_path = await _make_db(tmp_path, name="amend_verdict_audit")
+    await _add_penalty(db_path, await _race_result_id(db_path, 101))
+
+    await _amend(db_path, [_race_row(101, 1), _race_row(102, 2)])
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT justification, applied_by, time_seconds FROM penalty_records"
+        )
+        row = await cursor.fetchone()
+    assert row["justification"] == "Wholly at fault"
+    assert row["applied_by"] == "9001"
+    assert row["time_seconds"] == 5
+
+
+async def test_an_appeal_verdict_is_re_pointed_too(tmp_path):
+    """`appeal_records` carries the same reference and was refused by the same constraint."""
+    db_path = await _make_db(tmp_path, name="amend_appeal_verdict")
+    verdict_id = await _add_penalty(
+        db_path, await _race_result_id(db_path, 102), table="appeal_records"
+    )
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    rows = await _verdict_rows(db_path, "appeal_records")
+    assert rows == [(verdict_id, await _race_result_id(db_path, 102))]
+
+
+async def test_several_verdicts_on_one_driver_are_all_re_pointed(tmp_path):
+    """A driver may collect more than one verdict in a session.
+
+    The wizard stages one record per incident, not per driver, so a mapping that kept a single id
+    per driver would silently drop all but the last.
+    """
+    db_path = await _make_db(tmp_path, name="amend_two_verdicts")
+    first = await _add_penalty(db_path, await _race_result_id(db_path, 101))
+    second = await _add_penalty(db_path, await _race_result_id(db_path, 101))
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    new_id = await _race_result_id(db_path, 101)
+    assert await _verdict_rows(db_path, "penalty_records") == [(first, new_id), (second, new_id)]
+
+
+async def test_a_qualifying_verdict_is_re_pointed_on_its_own_column(tmp_path):
+    """Qualifying verdicts use `qual_result_id`, and the qualifying branch had the same defect."""
+    db_path = await _make_db(tmp_path, name="amend_qual_verdict")
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM qualifying_session_results WHERE driver_user_id = 101"
+        )
+        qual_row_id = (await cursor.fetchone())[0]
+    verdict_id = await _add_penalty(db_path, qual_row_id, column="qual_result_id")
+
+    await _amend(
+        db_path,
+        [{"driver_user_id": 101, "team_role_id": 3001, "position": 1,
+          "outcome": "CLASSIFIED", "best_lap": "1:20.000"}],
+        session_type=SessionType.FEATURE_QUALIFYING,
+    )
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM qualifying_session_results WHERE driver_user_id = 101"
+        )
+        new_qual_id = (await cursor.fetchone())[0]
+    assert await _verdict_rows(db_path, "penalty_records", "qual_result_id") == [
+        (verdict_id, new_qual_id)
+    ]
+
+
+async def test_amending_one_session_leaves_the_other_sessions_verdicts_alone(tmp_path):
+    """The scope is the session, as the delete's is.
+
+    A round has up to four sessions; amending the feature race must not disturb a verdict
+    recorded against the feature qualifying.
+    """
+    db_path = await _make_db(tmp_path, name="amend_scoped_verdict")
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM qualifying_session_results WHERE driver_user_id = 101"
+        )
+        qual_row_id = (await cursor.fetchone())[0]
+    qual_verdict = await _add_penalty(db_path, qual_row_id, column="qual_result_id")
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    assert await _verdict_rows(db_path, "penalty_records", "qual_result_id") == [
+        (qual_verdict, qual_row_id)
+    ]
+
+
+async def test_an_amendment_dropping_a_driver_who_carries_a_verdict_is_refused(tmp_path):
+    """Refused by name, rather than failing on a constraint the admin cannot read.
+
+    Deleting the verdict would discard the audit and orphaning it would leave a row nothing can
+    ever find, every read of these tables being by the foreign key. Refusing is the conservative
+    answer until the specification states one, and the message names the driver so the admin can
+    act on it.
+    """
+    db_path = await _make_db(tmp_path, name="amend_orphan_refused")
+    await _add_penalty(db_path, await _race_result_id(db_path, 102))
+
+    with pytest.raises(AmendmentWouldOrphanVerdictError) as excinfo:
+        await _amend(db_path, [_race_row(101, 1)])
+
+    assert "<@102>" in str(excinfo.value)
+
+
+async def test_a_refused_amendment_changes_nothing_at_all(tmp_path):
+    """The whole transaction is abandoned, so the league keeps the round it raced.
+
+    A refusal that had already deleted the driver rows would be far worse than the defect it
+    replaces.
+    """
+    db_path = await _make_db(tmp_path, name="amend_orphan_intact")
+    verdict_id = await _add_penalty(db_path, await _race_result_id(db_path, 102))
+    before = await _race_result_id(db_path, 102)
+
+    with pytest.raises(AmendmentWouldOrphanVerdictError):
+        await _amend(db_path, [_race_row(101, 1)])
+
+    assert await _race_drivers(db_path) == [(101, 1), (102, 2)]
+    assert await _verdict_rows(db_path, "penalty_records") == [(verdict_id, before)]
+
+
+async def test_an_amendment_with_no_verdicts_is_unaffected(tmp_path):
+    """The ordinary case keeps working, so the fix cannot be read as a special path."""
+    db_path = await _make_db(tmp_path, name="amend_no_verdicts")
+
+    await _amend(db_path, [_race_row(102, 1), _race_row(101, 2)])
+
+    assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
+    assert await _verdict_rows(db_path, "penalty_records") == []
+
+
+async def test_a_verdict_follows_a_driver_who_has_changed_account(tmp_path):
+    """**Both sides are read under the driver's current account** (#243, #345).
+
+    A pasted classification is normalised onto the current account before anything is stored,
+    while the row a verdict points at holds whichever account the driver raced under. Comparing
+    them raw made the session permanently un-amendable the moment somebody changed account: the
+    amendment was refused, and the refusal named a driver the classification already carried.
+    """
+    db_path = await _make_db(tmp_path, name="amend_account_change")
+    # Driver 101 races on under a new account, 201. The schema's own triggers keep
+    # `driver_accounts`, so the change of account is the one write needed.
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE driver_profiles SET discord_user_id = '201' WHERE id = 31")
+        await db.commit()
+    verdict_id = await _add_penalty(db_path, await _race_result_id(db_path, 101))
+
+    # The paste names them by the account they use now, as the validator leaves it.
+    await _amend(db_path, [_race_row(201, 1), _race_row(102, 2)])
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM race_session_results WHERE driver_user_id = 201"
+        )
+        new_row_id = (await cursor.fetchone())[0]
+    assert await _verdict_rows(db_path, "penalty_records") == [(verdict_id, new_row_id)]
+
+
+
+# ---------------------------------------------------------------------------
+# Several sessions in one amendment (#345, decided 2026-09-21)
+# ---------------------------------------------------------------------------
+
+
+def _quali_row(driver: int, position: int, best_lap: str = "1:19.000") -> dict:
+    return {"driver_user_id": driver, "team_role_id": 3001, "position": position,
+            "best_lap": best_lap}
+
+
+async def _quali_drivers(db_path) -> list[tuple[int, str]]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id, best_lap FROM qualifying_session_results "
+            "ORDER BY finishing_position"
+        )
+        return [tuple(r) for r in await cursor.fetchall()]
+
+
+async def test_several_sessions_are_written_in_one_amendment(tmp_path):
+    db_path = await _make_db(tmp_path, name="amend_two_sessions")
+
+    stubs = await _amend(db_path, None, sessions=[
+        AmendedSession(SessionType.FEATURE_QUALIFYING,
+                       [_quali_row(102, 1), _quali_row(101, 2, "1:19.500")], "Standard"),
+        AmendedSession(SessionType.FEATURE_RACE,
+                       [_race_row(102, 1), _race_row(101, 2)], "Standard"),
+    ])
+
+    assert await _quali_drivers(db_path) == [(102, "1:19.000"), (101, "1:19.500")]
+    assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
+    # Points once per session, the standings once for the lot.
+    assert stubs["apply_points"].await_count == 2
+    stubs["cascade"].assert_awaited_once()
+    assert "sessions: FEATURE_QUALIFYING=Standard, FEATURE_RACE=Standard" in _amend_log(stubs)
+
+
+async def test_a_refusal_in_one_session_writes_none_of_them(tmp_path):
+    """**One transaction for every session.** The round is never left holding some sessions
+    corrected and others not — which a refusal part-way through would otherwise do."""
+    db_path = await _make_db(tmp_path, name="amend_two_refused")
+    await _add_penalty(db_path, await _race_result_id(db_path, 102))
+
+    with pytest.raises(AmendmentWouldOrphanVerdictError):
+        await _amend(db_path, None, sessions=[
+            AmendedSession(SessionType.FEATURE_QUALIFYING, [_quali_row(102, 1)], "Standard"),
+            # Driver 102 carries a verdict in the race and is left out of it.
+            AmendedSession(SessionType.FEATURE_RACE, [_race_row(101, 1)], "Standard"),
+        ])
+
+    assert await _quali_drivers(db_path) == [(101, None)]
+    assert await _race_drivers(db_path) == [(101, 1), (102, 2)]

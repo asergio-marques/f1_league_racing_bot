@@ -23,6 +23,11 @@ work that is still there.
 amendment": the store and the mode both stand, and `/results amend revert` is the command that
 discards them. Conflating the two would throw away an evening's staging on a misread button.
 
+**Nor is it approved while a round is being amended** (#345, decided 2026-09-21). Approving
+reposts every round of every division from the database, which holds an open amendment's
+corrections before they are approved. Named in the panel and read again at the press, like the
+other two refusals.
+
 **A refusal is logged; a rejection is not.** The refusal is the bot declining to do what an
 admin asked and is worth a record; a rejection is the admin's own decision, taken in a panel
 only they can see, and nothing happened to the season.
@@ -119,6 +124,7 @@ async def _review(
     approve_error=None,
     panel_faults=None,
     approve_result=None,
+    held=(None, None),
 ):
     """Run the command, answering the panel with *press* ("approve", "reject" or None).
 
@@ -126,6 +132,8 @@ async def _review(
     channels the approval would have to post to (#187). It is separate from
     *approve_error*, so a test can drive the panel's warning and the press's refusal
     independently, exactly as the ordering's two halves already are.
+
+    *held* is the open round amendment the panel and then the press find, if any (#345).
     """
     original = discord.ui.View.wait
 
@@ -155,7 +163,10 @@ async def _review(
         ) as faults, patch(
             "services.amendment_service.approve_amendment",
             new=AsyncMock(side_effect=approve_error, return_value=approve_result or []),
-        ) as approve:
+        ) as approve, patch(
+            "services.result_submission_service.open_amendment_in_season",
+            new=AsyncMock(side_effect=list(held)),
+        ):
             await undecorate(ResultsCog.amend_review)(cog, interaction)
     finally:
         discord.ui.View.wait = original  # type: ignore[assignment]
@@ -703,3 +714,44 @@ async def test_the_two_refusals_are_told_apart():
     logged = _logged(cog)
     assert "Refused (points out of order)" in logged
     assert "channels not reachable" not in logged
+
+
+# ---------------------------------------------------------------------------
+# Not while a round is being amended (#345)
+# ---------------------------------------------------------------------------
+
+AMENDING = {"round_number": 2, "division_name": "Pro", "channel_id": 8200}
+
+
+async def test_the_panel_names_a_round_being_amended():
+    cog = _make_cog()
+    interaction = _interaction()
+
+    await _review(cog, interaction, press="reject", held=(AMENDING,))
+
+    panel = _panel(interaction)
+    assert "cannot be approved yet" in panel
+    assert "Round 2 of **Pro** is being amended in <#8200>" in panel
+
+
+async def test_a_round_being_amended_is_checked_again_at_the_press():
+    """The panel has no timeout: an amendment can open between drawing it and the press."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    stubs = await _review(cog, interaction, press="approve", held=(None, AMENDING))
+
+    stubs["approve"].assert_not_awaited()
+    replied = _replied(interaction)
+    assert "Not approved yet." in replied
+    assert "Nothing has been changed" in replied
+    assert "Refused (a round is being amended)" in _logged(cog)
+    assert "| Success" not in _logged(cog)
+
+
+async def test_an_amendment_finished_after_the_panel_was_drawn_does_not_refuse():
+    cog = _make_cog()
+
+    stubs = await _review(cog, _interaction(), press="approve", held=(AMENDING, None))
+
+    stubs["approve"].assert_awaited_once()

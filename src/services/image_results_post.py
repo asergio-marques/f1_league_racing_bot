@@ -20,6 +20,7 @@ alternative output beside the text, never a replacement for it (Constitution XIV
 """
 from __future__ import annotations
 
+import json as _json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -461,17 +462,39 @@ async def try_post(
 
     # Only now is the previous message removed. The channel never holds nothing, and a
     # failed rebuild leaves the league the results it had.
-    if session_result.results_message_id is not None:
-        try:
-            previous = await channel.fetch_message(session_result.results_message_id)
-            await previous.delete()
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            pass
+    #
+    # **Read from the database, and taken down whole** (#345). Two things follow from that.
+    # A superseded *textual* posting may occupy several messages, and deleting its anchor alone
+    # stranded the rest for good once the adjacency walk was retired. And a caller doing
+    # produce-then-destroy — the amendment's division-wide rebuild — clears the stored id
+    # before it reposts, precisely to say "do not delete this yet, I am replacing every round
+    # before I take any of them down". The in-memory `session_result` still carries the id it
+    # was loaded with, so reading that instead destroyed the originals during the produce pass
+    # and left a failure part-way with nothing to put back.
+    from services.results_post_service import _delete_posting, _parse_ids
+
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT results_message_id, results_message_ids FROM session_results WHERE id = ?",
+            (session_result.id,),
+        )
+        previous_row = await cursor.fetchone()
+    if previous_row is not None and previous_row["results_message_id"] is not None:
+        await _delete_posting(
+            channel,
+            previous_row["results_message_id"],
+            _parse_ids(previous_row["results_message_ids"]),
+            label="results message",
+        )
 
     async with get_connection(bot.db_path) as db:
         await db.execute(
-            "UPDATE session_results SET results_message_id = ? WHERE id = ?",
-            (message.id, session_result.id),
+            # The chunk list is written with the id, not left behind (#345). A graphic is one
+            # message; a stale list from a previous *textual* posting would otherwise claim this
+            # one occupies messages belonging to a posting already destroyed.
+            "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
+            "WHERE id = ?",
+            (message.id, _json.dumps([message.id]), session_result.id),
         )
         await db.commit()
 

@@ -117,7 +117,7 @@ def _guild(*, missing: bool = False):
 async def _repost(db_path, *, guild=None, driver_rows=None):
     driver_rows = driver_rows if driver_rows is not None else []
     with patch(
-        "services.results_post_service._delete_with_continuations", new=AsyncMock()
+        "services.results_post_service._delete_posting", new=AsyncMock()
     ) as delete, patch(
         "services.results_post_service._load_driver_rows",
         new=AsyncMock(return_value=driver_rows),
@@ -197,7 +197,7 @@ async def test_the_stale_message_id_is_cleared_before_reposting(tmp_path):
         seen["ids"] = await _message_ids(db_path)
 
     with patch(
-        "services.results_post_service._delete_with_continuations", new=AsyncMock()
+        "services.results_post_service._delete_posting", new=AsyncMock()
     ), patch(
         "services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
     ), patch(

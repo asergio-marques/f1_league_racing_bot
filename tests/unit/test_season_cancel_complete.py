@@ -64,6 +64,16 @@ def _end_of_season_pass():
         yield mocked
 
 
+@pytest.fixture(autouse=True)
+def _open_amendment():
+    """No round is being amended unless a test says so; the database path here is a placeholder."""
+    with patch(
+        "services.result_submission_service.open_amendment_in_season",
+        new=AsyncMock(return_value=None),
+    ) as mocked:
+        yield mocked
+
+
 def _ongoing():
     from models.season import SeasonStage
 
@@ -576,3 +586,48 @@ async def test_a_season_with_everything_finished_is_completed():
     execute.assert_awaited_once()
     assert "complete" in _replied(interaction)
     cog.bot.output_router.post_log.assert_awaited_once()
+
+
+async def test_completing_waits_while_a_round_is_being_amended(_open_amendment):
+    """#345, decided 2026-09-21. Completing posts every division's final classification from
+    the database, which holds the amendment's corrections before they are approved. Refused
+    before anything else runs, so the season is left exactly as it was."""
+    _open_amendment.return_value = {
+        "round_number": 2, "division_name": "Division 1", "channel_id": 8200,
+    }
+    cog = _make_cog(all_finished=True)
+    interaction = _interaction()
+
+    with patch(
+        "services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
+    ) as execute:
+        await _complete(cog, interaction)
+
+    execute.assert_not_awaited()
+    cog.bot.season_service.wind_down_ongoing.assert_not_awaited()
+    cog.bot.season_service.refresh_division_status.assert_not_awaited()
+    replied = _replied(interaction)
+    assert "round 2 of **Division 1** is being amended in <#8200>" in replied
+    assert "Finish or cancel it first" in replied
+    _open_amendment.assert_awaited_once_with(cog.bot.db_path, SEASON_ID)
+
+
+async def test_cancelling_waits_while_a_round_is_being_amended(_open_amendment):
+    """#345, decided 2026-09-21. Cancelling writes every driver's history from the standings,
+    which hold the amendment's corrections before they are approved, and the history is never
+    rewritten. Refused before anything else runs."""
+    _open_amendment.return_value = {
+        "round_number": 2, "division_name": "Division 1", "channel_id": 8200,
+    }
+    cog = _make_cog()
+    interaction = _interaction()
+
+    announce = await _cancel(cog, interaction)
+
+    announce.assert_not_awaited()
+    cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
+    cog.bot.season_service.discard_uncommitted_placements.assert_not_awaited()
+    cog.bot.scheduler_service.cancel_round.assert_not_called()
+    replied = _replied(interaction)
+    assert "Cannot cancel the season" in replied
+    assert "round 2 of **Division 1** is being amended in <#8200>" in replied

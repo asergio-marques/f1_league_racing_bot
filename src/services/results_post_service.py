@@ -1,7 +1,10 @@
 """results_post_service.py — Post and edit results/standings in Discord channels."""
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+from typing import NamedTuple
 
 import discord
 
@@ -51,65 +54,122 @@ def _split_content(text: str) -> list[str]:
     return chunks or [text[:_MSG_MAX]]
 
 
-async def _send_chunked(channel: discord.TextChannel, content: str) -> discord.Message:
+#: Seconds to wait between one posting and the next when rebuilding a division's channels.
+#:
+#: Discord's practical limit is around five messages to a channel in five seconds, and a
+#: whole-division replay posts every round of every channel in one go — some tens of messages
+#: where the ordinary path posts two or three. discord.py waits out a 429 by itself, so this is
+#: not what makes the replay correct; it is what stops it spending its time in rate-limit
+#: backoff, which is slower and far less predictable than simply going at a walking pace.
+#:
+#: A second is comfortably inside the limit and keeps a forty-message rebuild under a minute.
+#: Tests patch it to zero — see ``tests/unit/test_replay_throttle.py``.
+POSTING_THROTTLE_SECONDS: float = 1.0
+
+
+async def throttle() -> None:
+    """Wait ``POSTING_THROTTLE_SECONDS`` before the next posting of a division-wide replay.
+
+    A function rather than a bare ``sleep`` at each call site so the pacing is named, is read
+    from one place, and can be stood down in a test without patching :mod:`asyncio`.
+    """
+    if POSTING_THROTTLE_SECONDS > 0:
+        await asyncio.sleep(POSTING_THROTTLE_SECONDS)
+
+
+async def _send_chunked(
+    channel: discord.TextChannel, content: str
+) -> list[discord.Message]:
     """Send *content* to *channel*, splitting into multiple messages if needed.
 
-    Returns the first (header) message so its ID can be persisted.
+    Returns **every** message sent, the anchor first, so that all of them can be recorded.
+
+    It used to return the anchor alone, and only the anchor was persisted; the rest were found
+    again by walking forward from it over bot-authored messages. That walk cannot tell this
+    posting's continuation from the next posting down, so it was wrong wherever two of the
+    bot's own postings sit together — which the amendment replay makes ordinary, posting a
+    replacement before destroying the original (#345). Recording what was sent removes the
+    guess entirely.
     """
     chunks = _split_content(content)
-    first_msg = await channel.send(chunks[0])
-    for chunk in chunks[1:]:
-        await channel.send(chunk)
-    return first_msg
+    sent: list[discord.Message] = []
+    try:
+        for chunk in chunks:
+            sent.append(await channel.send(chunk))
+    except Exception:
+        # **A posting is whole or absent** (#345). The chunks already sent are recorded nowhere
+        # until the whole posting is, so leaving them would strand the start of a table in the
+        # channel with no route by which the bot could ever take it down.
+        for message in sent:
+            try:
+                await message.delete()
+            except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
+                log.warning("_send_chunked: could not take down chunk %s: %s", message.id, exc)
+        raise
+    return sent
 
 
-async def _delete_with_continuations(
+def _ids_json(messages: list[discord.Message]) -> str:
+    """The chunk list as it is stored: a JSON array of message ids, the anchor first."""
+    return json.dumps([m.id for m in messages])
+
+
+def _parse_ids(raw: str | None) -> list[int] | None:
+    """The stored chunk list as message ids, or None where nothing usable was recorded.
+
+    A malformed value is treated as nothing recorded rather than raising: the column is written
+    by this module alone, so a bad one means a bug elsewhere, and refusing to delete anything is
+    a great deal safer than deleting whatever a half-parsed list happened to yield.
+    """
+    if not raw:
+        return None
+    try:
+        ids = json.loads(raw)
+    except (TypeError, ValueError):
+        log.warning("_parse_ids: could not read a stored chunk list: %r", raw)
+        return None
+    if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+        log.warning("_parse_ids: stored chunk list was not a list of ids: %r", raw)
+        return None
+    return ids or None
+
+
+async def _delete_posting(
     channel: discord.TextChannel,
     anchor_msg_id: int,
+    message_ids: list[int] | None,
     label: str = "message",
 ) -> None:
-    """Delete the anchor message and any immediately-following bot continuation messages.
+    """Delete a posting: exactly the messages it recorded, and nothing else.
 
-    When a result/standings post exceeds 2000 chars it is split into multiple
-    consecutive messages via :func:`_send_chunked`.  Only the first message ID is
-    persisted; this helper deletes it *and* any subsequent messages in the same
-    channel that were authored by the same user (the bot), stopping as soon as it
-    encounters a message from someone else.
+    **The recorded list is the truth** (#345). It is written at send time, so it names this
+    posting's own messages and cannot reach a neighbour's — which matters because a division
+    rebuild posts every replacement before it destroys any original, and both are the bot's.
 
-    Args:
-        channel:       The Discord text channel to operate on.
-        anchor_msg_id: The stored message ID of the first (anchor) chunk.
-        label:         Log context string for warning messages.
+    This replaced an adjacency walk that took every bot-authored message following the anchor.
+    That walk could not tell this posting's continuation from the next posting down, so under
+    produce-then-destroy it deleted the replacements as it went — one of the two defects issue
+    #345 set out to fix, and the reason rule 11 asks for every chunk's id to be stored at send
+    time. Nothing falls back to it: a posting whose list was never recorded is deleted by its
+    anchor alone, which is one message too few rather than four too many.
     """
-    try:
-        anchor = await channel.fetch_message(anchor_msg_id)
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-        log.warning("_delete_with_continuations: could not fetch %s %s: %s", label, anchor_msg_id, exc)
-        return
-
-    bot_user_id: int = anchor.author.id
-
-    # Collect continuation messages (up to 5; we realistically only need 1-2)
-    continuations: list[discord.Message] = []
-    try:
-        async for msg in channel.history(after=anchor, limit=5, oldest_first=True):
-            if msg.author.id != bot_user_id:
-                break  # Non-bot message — stop; don't delete anything beyond here
-            continuations.append(msg)
-    except discord.HTTPException as exc:
-        log.warning("_delete_with_continuations: history fetch failed for %s: %s", label, exc)
-
-    # Delete continuations first (oldest → newest), then the anchor
-    for msg in continuations:
+    ids = list(message_ids or [anchor_msg_id])
+    # The anchor is included whether or not the stored list names it. Every list this module
+    # writes puts it first, but the anchor and the list are cleared and written through separate
+    # paths — so a list that ever omitted it would leak that message for good, and the one thing
+    # certain about the anchor is that it belongs to this posting.
+    if anchor_msg_id not in ids:
+        ids = [anchor_msg_id, *ids]
+    for message_id in ids:
         try:
-            await msg.delete()
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-            log.warning("_delete_with_continuations: could not delete continuation %s: %s", msg.id, exc)
-
-    try:
-        await anchor.delete()
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-        log.warning("_delete_with_continuations: could not delete %s %s: %s", label, anchor_msg_id, exc)
+            message = await channel.fetch_message(message_id)
+        except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
+            log.warning("_delete_posting: could not fetch %s %s: %s", label, message_id, exc)
+            continue
+        try:
+            await message.delete()
+        except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
+            log.warning("_delete_posting: could not delete %s %s: %s", label, message_id, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +482,9 @@ async def post_session_results(
     user_ids = [r.driver_user_id for r in driver_rows]
     test_display = await _build_test_driver_display(db_path, user_ids)
 
+    # Which rows were disqualified, and in which phase, is read from the verdict tables rather
+    # than taken from the caller: every posting happens after the decisions are committed, the
+    # amendment's rebuild included, so the tables are the one place that knows (#345).
     result_ids = [r.id for r in driver_rows]
     dsq_phase_map = await _load_dsq_phase_map(
         db_path, result_ids, is_qualifying=session_type.is_qualifying
@@ -471,16 +534,17 @@ async def post_session_results(
         except Exception as exc:  # noqa: BLE001 — never block a posting on the image path
             log.error("results: image path failed for session %s: %s", session_result.id, exc)
 
-    msg = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
+    sent = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
 
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE session_results SET results_message_id = ? WHERE id = ?",
-            (msg.id, session_result.id),
+            "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
+            "WHERE id = ?",
+            (sent[0].id, _ids_json(sent), session_result.id),
         )
         await db.commit()
 
-    return msg.id
+    return sent[0].id
 
 
 # ---------------------------------------------------------------------------
@@ -672,21 +736,92 @@ async def post_standings(
             if len(content) <= _MSG_MAX:
                 await existing_msg.edit(content=content)
                 sent_msg = existing_msg
+                # **A shorter table leaves the chunks it no longer fills** (#345). Editing the
+                # anchor in place is the cheap path, but a posting that was three messages and
+                # is now one has to lose the other two — and once the id is rewritten as a
+                # single-message list, nothing could ever reach them again.
+                stale = [
+                    message_id
+                    for message_id in (
+                        await _get_standings_message_ids(
+                            db_path, division_id, round_id, STANDINGS_DRIVERS
+                        )
+                        or []
+                    )
+                    if message_id != existing_msg_id
+                ]
+                for message_id in stale:
+                    await _delete_posting(
+                        standings_channel, message_id, [message_id],
+                        label="standings continuation",
+                    )
             else:
-                await existing_msg.delete()
+                # The whole posting, not its anchor alone (#345): a three-chunk table deleted by
+                # its first message left two-thirds of a superseded standings table below the
+                # current one, and the row was then overwritten so nothing could reach them.
+                await _delete_posting(
+                    standings_channel,
+                    existing_msg_id,
+                    await _get_standings_message_ids(
+                        db_path, division_id, round_id, STANDINGS_DRIVERS
+                    ),
+                    label="standings message",
+                )
         except (discord.NotFound, discord.HTTPException):
             sent_msg = None
 
+    sent_ids: str | None = None
     if sent_msg is None:
-        sent_msg = await _send_chunked(standings_channel, content)
+        sent = await _send_chunked(standings_channel, content)
+        sent_msg = sent[0]
+        sent_ids = _ids_json(sent)
+    else:
+        # Edited in place, so it is the one message it always was and occupies no others.
+        sent_ids = _ids_json([sent_msg])
 
     # Persist the message ID on the top-ranked driver snapshot. One message carries both
     # championships here, so the constructor column is left null — which is exactly what
     # distinguishes a textual posting from an image one when the next posting reads them.
     if driver_snapshots:
         await _set_standings_message_id(
-            db_path, division_id, round_id, sent_msg.id, STANDINGS_DRIVERS
+            db_path, division_id, round_id, sent_msg.id, STANDINGS_DRIVERS,
+            message_ids=sent_ids,
         )
+
+
+async def _forget_standings_messages(
+    db_path: str, division_id: int, round_id: int
+) -> list[tuple[str, int, list[int] | None]]:
+    """Forget a round's standings messages and hand them back to be deleted later.
+
+    The reading half of :func:`_clear_standings_messages`, split out for the produce-then-
+    destroy rebuild (#345): the ids have to leave the database *before* the replacement is
+    posted, so :func:`post_standings` inserts rather than editing the message it replaces —
+    but the messages themselves must not be destroyed until every replacement is up.
+
+    Returns ``(championship, anchor id, chunk list)`` per championship that had one, in a
+    stable order — the championship so that a rebuild which fails can put each id back.
+    """
+    found: list[tuple[str, int, list[int] | None]] = []
+    for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS):
+        existing_id = await _get_standings_message_id(
+            db_path, division_id, round_id, championship
+        )
+        if existing_id is None:
+            continue
+        found.append(
+            (
+                championship,
+                existing_id,
+                await _get_standings_message_ids(
+                    db_path, division_id, round_id, championship
+                ),
+            )
+        )
+        await _set_standings_message_id(
+            db_path, division_id, round_id, None, championship
+        )
+    return found
 
 
 async def _clear_standings_messages(
@@ -710,8 +845,11 @@ async def _clear_standings_messages(
         if existing_id is None:
             continue
         if channel is not None:
-            await _delete_with_continuations(
-                channel, existing_id, label="standings message"
+            existing_ids = await _get_standings_message_ids(
+                db_path, division_id, round_id, championship
+            )
+            await _delete_posting(
+                channel, existing_id, existing_ids, label="standings message"
             )
         await _set_standings_message_id(
             db_path, division_id, round_id, None, championship
@@ -769,16 +907,21 @@ async def _post_standings_sections(
             db_path, division_id, round_id, championship
         )
 
-        sent_msg = await _send_chunked(standings_channel, content)
+        previous_ids = await _get_standings_message_ids(
+            db_path, division_id, round_id, championship
+        )
+
+        sent = await _send_chunked(standings_channel, content)
 
         if previous_id is not None:
-            await _delete_with_continuations(
-                standings_channel, previous_id, label="standings message"
+            await _delete_posting(
+                standings_channel, previous_id, previous_ids, label="standings message"
             )
 
         if driver_snapshots:
             await _set_standings_message_id(
-                db_path, division_id, round_id, sent_msg.id, championship
+                db_path, division_id, round_id, sent[0].id, championship,
+                message_ids=_ids_json(sent),
             )
 
 
@@ -787,6 +930,12 @@ async def _post_standings_sections(
 _STANDINGS_ID_COLUMNS = {
     STANDINGS_DRIVERS: "standings_message_id",
     STANDINGS_CONSTRUCTORS: "constructor_standings_message_id",
+}
+
+#: The same two, for the chunk list each posting occupies (#345).
+_STANDINGS_IDS_COLUMNS = {
+    STANDINGS_DRIVERS: "standings_message_ids",
+    STANDINGS_CONSTRUCTORS: "constructor_standings_message_ids",
 }
 
 
@@ -801,6 +950,12 @@ async def _get_standings_message_id(
     Defaults to the driver standings, which is the message the textual flow posts for both
     championships together — so every caller written before the image flow keeps its meaning
     unchanged.
+
+    **Read from whichever row holds it, not from the top-ranked one.** The id is *written* to
+    the row of the driver leading that round, but a recomputation reorders the snapshots without
+    moving the id — so the moment a penalty or an amendment changed a round's leader, a read of
+    the top row returned nothing, the posting became unreachable, and the next repost left it
+    standing beside its replacement for good (#345).
     """
     column = _STANDINGS_ID_COLUMNS[championship]
     async with get_connection(db_path) as db:
@@ -808,7 +963,7 @@ async def _get_standings_message_id(
             f"""
             SELECT {column} AS message_id
             FROM driver_standings_snapshots
-            WHERE division_id = ? AND round_id = ?
+            WHERE division_id = ? AND round_id = ? AND {column} IS NOT NULL
             ORDER BY standing_position ASC
             LIMIT 1
             """,
@@ -818,24 +973,71 @@ async def _get_standings_message_id(
     return row["message_id"] if row and row["message_id"] else None
 
 
+async def _get_standings_message_ids(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    championship: str = STANDINGS_DRIVERS,
+) -> list[int] | None:
+    """Return every message id *championship*'s posting occupies, or None where none was recorded.
+
+    None is not an empty list. A posting written before the chunk list existed recorded only its
+    anchor, and is deleted by that alone; a posting that recorded ``[]`` would be claiming to
+    occupy no messages at all.
+    """
+    column = _STANDINGS_IDS_COLUMNS[championship]
+    anchor_column = _STANDINGS_ID_COLUMNS[championship]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"""
+            SELECT {column} AS message_ids
+            FROM driver_standings_snapshots
+            WHERE division_id = ? AND round_id = ? AND {anchor_column} IS NOT NULL
+            ORDER BY standing_position ASC
+            LIMIT 1
+            """,  # noqa: S608 — columns come from the constant maps above
+            (division_id, round_id),
+        )
+        row = await cursor.fetchone()
+    return _parse_ids(row["message_ids"] if row else None)
+
+
 async def _set_standings_message_id(
     db_path: str,
     division_id: int,
     round_id: int,
     message_id: int | None,
     championship: str = STANDINGS_DRIVERS,
+    *,
+    message_ids: str | None = None,
 ) -> None:
     """Persist *message_id* for *championship* on the top-ranked driver's row.
 
     Written on every posting, textual or graphic, so the two flows never disagree about
     which message is which. The textual flow leaves the constructor column null.
+
+    *message_ids* is the JSON chunk list of the same posting where the caller has one, so that
+    deleting it later removes every message it occupies rather than guessing at the rest
+    (#345). Clearing an id clears the list with it: a stale list outliving the message it
+    described would send a delete at somebody else's posting.
+
+    **The round's other rows are cleared first**, so exactly one row of it names the posting. A
+    recomputation that changes the leader reorders the rows without moving the id, and one left
+    behind on a row that is no longer top would be read as the round's current posting by
+    :func:`_get_standings_message_id` long after it had been replaced (#345).
     """
     column = _STANDINGS_ID_COLUMNS[championship]
+    list_column = _STANDINGS_IDS_COLUMNS[championship]
     async with get_connection(db_path) as db:
+        await db.execute(
+            f"UPDATE driver_standings_snapshots SET {column} = NULL, {list_column} = NULL "  # noqa: S608
+            "WHERE round_id = ? AND division_id = ?",
+            (round_id, division_id),
+        )
         await db.execute(
             f"""
             UPDATE driver_standings_snapshots
-            SET {column} = ?
+            SET {column} = ?, {list_column} = ?
             WHERE round_id = ? AND division_id = ?
               AND driver_user_id = (
                   SELECT driver_user_id FROM driver_standings_snapshots
@@ -843,7 +1045,7 @@ async def _set_standings_message_id(
                   ORDER BY standing_position ASC LIMIT 1
               )
             """,
-            (message_id, round_id, division_id, round_id, division_id),
+            (message_id, message_ids, round_id, division_id, round_id, division_id),
         )
         await db.commit()
 
@@ -1478,11 +1680,19 @@ async def repost_results_for_division(
     *,
     bot=None,
 ) -> str:
-    """Delete and repost all session results messages for every round in the division.
+    """Repost every round's session results, in round order, then take the old ones down.
 
-    For each round that has at least one ACTIVE session result:
-    - Deletes the existing Discord results message for each session (if any).
-    - Reposts a fresh results table and saves the new ``results_message_id``.
+    **The replacement is produced before the original is destroyed** (Constitution XIV.8, and
+    #345). Every round's new messages are posted first, in round order, and only once all of
+    them are up are the messages they replace deleted. It used to go the other way, one session
+    at a time, which meant a failure part-way left the division's channel holding the rounds it
+    had reached and nothing for the rest — with the originals already gone.
+
+    Two things follow. The channel briefly carries **both** copies, the new set beneath the old,
+    for as long as the rebuild takes; that is accepted, and it resolves itself. And a failure
+    before the deletions takes down every replacement already posted, puts back the ids of the
+    postings they were to replace — still standing, nothing having been deleted — and raises,
+    so the league is left exactly the channel it had.
 
     Returns one of three status strings:
     - ``"ok"``         — results reposted successfully
@@ -1534,6 +1744,39 @@ async def repost_results_for_division(
     if not round_rows:
         return "no_rounds"
 
+    # ── Produce ───────────────────────────────────────────────────────────
+    # Each session's superseded posting, remembered while the replacement goes up. Nothing is
+    # deleted until every round has been reposted, so a failure part-way leaves the league the
+    # results it already had rather than a channel half rebuilt.
+    superseded: list[tuple[int, int, list[int] | None]] = []
+    # Each session whose stored id now names its replacement, or nothing — the ones a failure
+    # has to take down again.
+    touched: list[int] = []
+
+    try:
+        await _repost_results_rounds(
+            db_path, round_rows, rc, guild, bot, superseded, touched
+        )
+    except Exception:
+        await _undo_results_repost(db_path, rc, superseded, touched)
+        raise
+
+    # ── Then destroy ──────────────────────────────────────────────────────
+    # Every replacement is up. The originals go now, oldest first, so the channel reads in
+    # round order throughout rather than shuffling as it empties.
+    for _session_id, old_msg_id, old_ids in superseded:
+        await _delete_posting(rc, old_msg_id, old_ids, label="results message")
+
+    return "ok"
+
+
+async def _repost_results_rounds(
+    db_path: str, round_rows, rc, guild, bot,
+    superseded: list[tuple[int, int, list[int] | None]],
+    touched: list[int],
+) -> None:
+    """The produce half of :func:`repost_results_for_division`, filling in *superseded* and
+    *touched* as it goes so that a failure part-way can be undone from what they hold."""
     for rnd in round_rows:
         round_id: int = rnd["round_id"]
         round_number: int = rnd["round_number"]
@@ -1545,7 +1788,8 @@ async def repost_results_for_division(
             cursor = await db.execute(
                 """
                 SELECT id, round_id, division_id, session_type, status, config_name,
-                       submitted_by, submitted_at, results_message_id
+                       submitted_by, submitted_at, results_message_id,
+                       results_message_ids
                 FROM session_results
                 WHERE round_id = ? AND status = 'ACTIVE'
                 ORDER BY id
@@ -1557,20 +1801,27 @@ async def repost_results_for_division(
         for sr_row in session_rows:
             session_result = _sr_from_row(sr_row)
 
-            # Delete the existing Discord message(s) for this session (if any)
             old_msg_id: int | None = sr_row["results_message_id"]
             if old_msg_id is not None:
-                await _delete_with_continuations(
-                    rc, old_msg_id, label="results message"
+                superseded.append(
+                    (sr_row["id"], old_msg_id, _parse_ids(sr_row["results_message_ids"]))
                 )
+
+            # The stored id is cleared **before** the repost, so `post_session_results` writes
+            # a new one rather than believing it is editing the message it is replacing. The
+            # id itself is already held in `superseded`, so clearing it loses nothing.
+            if old_msg_id is not None:
                 async with get_connection(db_path) as db:
                     await db.execute(
-                        "UPDATE session_results SET results_message_id = NULL WHERE id = ?",
+                        "UPDATE session_results SET results_message_id = NULL, "
+                        "results_message_ids = NULL WHERE id = ?",
                         (sr_row["id"],),
                     )
                     await db.commit()
+            # Only once the id is cleared: whatever this session records from here on is the
+            # replacement's, and so safe for an undo to take down.
+            touched.append(sr_row["id"])
 
-            # Load driver rows and repost
             driver_rows = await _load_driver_rows(db_path, sr_row["id"], SessionType(sr_row["session_type"]))
             points_map = {
                 r.driver_user_id: r.points_awarded + getattr(r, "fastest_lap_bonus", 0)
@@ -1581,8 +1832,53 @@ async def repost_results_for_division(
                 db_path, session_result, driver_rows, points_map, rc, guild,
                 round_number, track_name, rnd_label, is_sprint, bot=bot,
             )
+            await throttle()
 
-    return "ok"
+
+async def _undo_results_repost(
+    db_path: str,
+    channel,
+    superseded: list[tuple[int, int, list[int] | None]],
+    touched: list[int],
+) -> None:
+    """Take down the replacements a failed division repost had posted, and give each session
+    back the posting it had (Constitution XIV.8, #345).
+
+    Nothing was deleted before the failure, so every superseded posting is still in the channel;
+    only its id had been cleared, to make room for the replacement's. Without this the failure
+    left the originals recorded nowhere — standing beside the half-built replacement for good,
+    with no route by which the bot could ever take them down.
+    """
+    replacements: list[tuple[int, list[int] | None]] = []
+    async with get_connection(db_path) as db:
+        for session_id in touched:
+            cursor = await db.execute(
+                "SELECT results_message_id, results_message_ids FROM session_results "
+                "WHERE id = ?",
+                (session_id,),
+            )
+            row = await cursor.fetchone()
+            if row and row["results_message_id"] is not None:
+                replacements.append(
+                    (row["results_message_id"], _parse_ids(row["results_message_ids"]))
+                )
+    for anchor, chunk_ids in replacements:
+        await _delete_posting(channel, anchor, chunk_ids, label="replacement results message")
+
+    async with get_connection(db_path) as db:
+        for session_id in touched:
+            await db.execute(
+                "UPDATE session_results SET results_message_id = NULL, "
+                "results_message_ids = NULL WHERE id = ?",
+                (session_id,),
+            )
+        for session_id, old_msg_id, old_ids in superseded:
+            await db.execute(
+                "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
+                "WHERE id = ?",
+                (old_msg_id, json.dumps(old_ids) if old_ids else None, session_id),
+            )
+        await db.commit()
 
 
 async def repost_standings_for_division(
@@ -1592,8 +1888,17 @@ async def repost_standings_for_division(
     *,
     bot=None,
 ) -> str:
-    """Delete and repost standings messages for *every* round in the division that
-    has had results posted.
+    """Repost every round's standings, in round order, then take the old ones down.
+
+    **The replacement is produced before the original is destroyed** (Constitution XIV.8,
+    #345), as :func:`repost_results_for_division` now does for results — and for the same
+    reason: a rebuild that deleted as it went left a failure part-way through with the rounds
+    it had reached rebuilt and the rest destroyed with nothing put back.
+
+    The stored ids are forgotten before each repost so that :func:`post_standings` inserts a
+    new message rather than editing the one it is replacing, and the ids themselves are held
+    until the deletion pass at the end. A failure before that pass takes the replacements down
+    again and puts the ids back, as the results rebuild does, and raises.
 
     Returns one of three status strings for the caller to surface to the admin:
     - ``"ok"``         — standings reposted successfully
@@ -1633,28 +1938,63 @@ async def repost_standings_for_division(
 
     show_reserves = await _get_show_reserves(db_path, division_id)
 
-    for row in rows:
-        round_id: int = row["round_id"]
-        round_number: int = row["round_number"]
-        track_name: str = row["track_name"] or "Unknown"
-        rsd_label: str = _label_from_status(row["status"] or "")
+    # ── Produce ───────────────────────────────────────────────────────────
+    # Each round's superseded standings, remembered while the replacements go up, and each
+    # round whose stored ids now name its replacements — the ones a failure takes down again.
+    superseded: list[tuple[int, str, int, list[int] | None]] = []
+    touched: list[int] = []
 
-        # Delete the existing standings message(s) for this round (if any), both
-        # championships, whichever flow posted them.
-        await _clear_standings_messages(db_path, division_id, round_id, sc)
+    try:
+        for row in rows:
+            round_id: int = row["round_id"]
+            round_number: int = row["round_number"]
+            track_name: str = row["track_name"] or "Unknown"
+            rsd_label: str = _label_from_status(row["status"] or "")
 
-        driver_snaps = await driver_standings_for_display(
-            db_path, division_id, round_id, guild, bot
-        )
-        team_snaps = await standings_service.compute_team_standings(
-            db_path, division_id, round_id
-        )
-        await post_standings(
-            db_path, division_id, round_id, round_number, track_name, sc,
-            driver_snaps, team_snaps, guild, show_reserves, rsd_label, bot=bot,
-        )
+            superseded.extend(
+                (round_id, *entry)
+                for entry in await _forget_standings_messages(db_path, division_id, round_id)
+            )
+            touched.append(round_id)
+
+            driver_snaps = await driver_standings_for_display(
+                db_path, division_id, round_id, guild, bot
+            )
+            team_snaps = await standings_service.compute_team_standings(
+                db_path, division_id, round_id
+            )
+            await post_standings(
+                db_path, division_id, round_id, round_number, track_name, sc,
+                driver_snaps, team_snaps, guild, show_reserves, rsd_label, bot=bot,
+            )
+            await throttle()
+    except Exception:
+        await _undo_standings_repost(db_path, division_id, sc, superseded, touched)
+        raise
+
+    # ── Then destroy ──────────────────────────────────────────────────────
+    for _round_id, _championship, anchor, chunk_ids in superseded:
+        await _delete_posting(sc, anchor, chunk_ids, label="standings message")
 
     return "ok"
+
+
+async def _undo_standings_repost(
+    db_path: str,
+    division_id: int,
+    channel,
+    superseded: list[tuple[int, str, int, list[int] | None]],
+    touched: list[int],
+) -> None:
+    """Take down the replacements a failed standings rebuild had posted, and give each round
+    back the standings it had — as :func:`_undo_results_repost` does for results (#345)."""
+    for round_id in touched:
+        await _clear_standings_messages(db_path, division_id, round_id, channel)
+    for round_id, championship, anchor, chunk_ids in superseded:
+        await _set_standings_message_id(
+            db_path, division_id, round_id, anchor, championship,
+            message_ids=json.dumps(chunk_ids) if chunk_ids else None,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1765,7 +2105,8 @@ async def delete_and_repost_final_results(
                 cursor = await db.execute(
                     """
                     SELECT id, round_id, division_id, session_type, status,
-                           config_name, submitted_by, submitted_at, results_message_id
+                           config_name, submitted_by, submitted_at, results_message_id,
+                           results_message_ids
                     FROM session_results
                     WHERE round_id = ? AND status = 'ACTIVE'
                     ORDER BY id
@@ -1782,14 +2123,16 @@ async def delete_and_repost_final_results(
                 # Delete old interim Discord message
                 old_msg_id: int | None = sr_row["results_message_id"]
                 if old_msg_id is not None:
-                    await _delete_with_continuations(
-                        rc, old_msg_id, label="interim results message"
+                    await _delete_posting(
+                        rc, old_msg_id, _parse_ids(sr_row["results_message_ids"]),
+                        label="interim results message",
                     )
 
                     # Clear stale message_id so post_session_results inserts a fresh one
                     async with get_connection(db_path) as db:
                         await db.execute(
-                            "UPDATE session_results SET results_message_id = NULL WHERE id = ?",
+                            "UPDATE session_results SET results_message_id = NULL, "
+                            "results_message_ids = NULL WHERE id = ?",
                             (sr_row["id"],),
                         )
                         await db.commit()
@@ -1988,3 +2331,145 @@ def _sr_from_row(sr_row) -> "SessionResult":
     )
 
 
+
+
+class ReplayOutcome(NamedTuple):
+    """What a division rebuild achieved: the faults met, and the rounds whose verdicts are back.
+
+    The second is not derivable from the first. A verdict that could not be announced is a fault
+    line like any other, and the caller has one decision that turns on *which round* it was: the
+    amendment takes its superseded announcements down only where the amended round's replacements
+    all went up, a verdict deleted from a channel being in no channel at all (#345).
+    """
+
+    faults: list[str]
+    rebuilt_rounds: frozenset[int]
+
+
+async def replay_division_channels(
+    db_path: str,
+    division_id: int,
+    from_round_id: int,
+    guild: discord.Guild,
+    *,
+    bot=None,
+    verdict_state_factory=None,
+    attendance_step=None,
+) -> ReplayOutcome:
+    """Rebuild everything a division's channels show, in the order a league reads them.
+
+    What the amendment replay calls once its corrected round has been computed (#345). The
+    five stages run in the order the specification states — **results, standings, the
+    attendance sheet, the report verdicts, then the appeal verdicts** — and each rebuilds the
+    *whole* division rather than the amended round alone.
+
+    **Why the whole division.** Amending round 1 of five reposts round 1, and a repost is a new
+    message at the bottom of the channel: the results channel would then read 2, 3, 4, 5, 1.
+    Reposting every round in round order is what keeps the sequence a league reads matching the
+    sequence it raced.
+
+    **Every stage produces before it destroys** (Constitution XIV.8). Within each channel the
+    replacements go up first and the superseded messages come down afterwards, so a failure
+    leaves the league the board it had rather than half of two.
+
+    **The attendance sheet is not a sequence.** A division keeps one live sheet in one slot, so
+    it is reposted once, against the round the running totals now stand at — which is the
+    latest round, not the amended one. The caller supplies it as *attendance_step*, an awaitable
+    returning its faults, and it runs here — between the standings and the verdicts — so that the
+    five stages actually happen in the order the specification states rather than merely being
+    named in it.
+
+    Returns the faults met across every stage, merged, as lines a league can read, and the
+    rounds whose verdicts were all re-announced.
+    """
+    faults: list[str] = []
+    rebuilt_rounds: list[int] = []
+
+    # **The banners standing now, before any stage has posted one of its own** (#345). The
+    # attendance step enforces the division's sanctions, and those head themselves; a capture
+    # taken after it would hand the verdict republish a banner posted moments earlier and have
+    # it deleted, leaving those sanctions headerless.
+    superseded_banners: list | None = None
+    if bot is not None and verdict_state_factory is not None:
+        from services.verdict_announcement_service import banners_from_round
+
+        try:
+            superseded_banners = await banners_from_round(
+                db_path, division_id, from_round_id
+            )
+        except Exception:  # noqa: BLE001 — the rebuild matters more than tidying its headers
+            log.exception("replay_division_channels: could not read the standing banners")
+            # An empty list, not None: None would have the republish capture them *after* the
+            # attendance step and delete the banner that step had just posted, which is the
+            # very thing reading them here prevents (#345).
+            superseded_banners = []
+
+    # **A stage that raises is a fault, not the end of the rebuild** (#345). Each channel is
+    # its own: a results channel that refused a post has already been put back as it was, and
+    # there is no reason that should cost the league its standings or its verdicts.
+    try:
+        results_status = await repost_results_for_division(
+            db_path, division_id, guild, bot=bot
+        )
+    except Exception as exc:  # noqa: BLE001 — reported, and the next channel taken
+        log.exception("replay_division_channels: the results repost failed")
+        results_status = "failed"
+        faults.append(
+            f"the division's results could not be reposted, so the ones already posted were "
+            f"left as they were: {exc}"
+        )
+    if results_status == "no_channel":
+        faults.append(
+            "the division's results channel could not be reached, so its results were "
+            "not reposted"
+        )
+    elif results_status not in ("ok", "no_rounds", "failed"):
+        # Neither reposted nor an empty division: say so, rather than let an unrecognised
+        # status read as success (#345).
+        faults.append(f"the division's results were not reposted ({results_status})")
+
+    try:
+        standings_status = await repost_standings_for_division(
+            db_path, division_id, guild, bot=bot
+        )
+    except Exception as exc:  # noqa: BLE001 — reported, and the next channel taken
+        log.exception("replay_division_channels: the standings repost failed")
+        standings_status = "failed"
+        faults.append(
+            f"the division's standings could not be reposted, so the ones already posted were "
+            f"left as they were: {exc}"
+        )
+    if standings_status == "no_channel":
+        faults.append(
+            "the division's standings channel could not be reached, so its standings were "
+            "not reposted"
+        )
+    elif standings_status not in ("ok", "no_rounds", "failed"):
+        faults.append(f"the division's standings were not reposted ({standings_status})")
+
+    # **The attendance sheet goes between the standings and the verdicts**, which is the order
+    # the specification states and the order a league reads them: a sanction's own verdict has to
+    # follow the sheet that warranted it, not precede the report verdicts of later rounds (#345).
+    if attendance_step is not None:
+        try:
+            faults.extend(await attendance_step())
+        except Exception as exc:  # noqa: BLE001 — reported, and the verdicts still announced
+            log.exception("replay_division_channels: the attendance step failed")
+            faults.append(f"the attendance sheet could not be reposted: {exc}")
+
+    if bot is not None and verdict_state_factory is not None:
+        from services.verdict_announcement_service import republish_verdicts_from_round
+
+        try:
+            faults.extend(
+                await republish_verdicts_from_round(
+                    bot, db_path, division_id, from_round_id, verdict_state_factory,
+                    superseded_banners=superseded_banners,
+                    rebuilt=rebuilt_rounds,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — reported rather than lost
+            log.exception("replay_division_channels: the verdict republish failed")
+            faults.append(f"the division's verdicts could not be re-announced: {exc}")
+
+    return ReplayOutcome(merge_faults(faults, []), frozenset(rebuilt_rounds))

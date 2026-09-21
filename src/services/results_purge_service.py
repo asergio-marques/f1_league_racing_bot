@@ -15,10 +15,10 @@ What survives is the module's *configuration*: the points configurations, the se
 copy of them, and each division's results, standings and verdicts channels. Those are settings
 rather than output, and the bot has always promised they survive a disable.
 
-One thing cannot be undone. Penalty and appeal verdicts already announced stay where they were
-posted: ``penalty_records`` and ``appeal_records`` record the channel they went to but never
-the message id, so there is nothing to delete them by. The confirmation says so rather than
-pretending otherwise.
+One thing is not undone. Penalty and appeal verdicts already announced stay where they were
+posted. Their message ids are recorded now (#189, #345) and could be deleted by, but whether
+disabling the module should erase a league's decisions as well as its results is a rule nobody
+has stated; the confirmation says they stay rather than pretending otherwise.
 """
 from __future__ import annotations
 
@@ -48,6 +48,7 @@ async def purge_season_results(db_path: str, bot) -> dict:
         "standings": 0,
         "messages": 0,
         "submission_channels": 0,
+        "amend_channels": 0,
     }
 
     async with get_connection(db_path) as db:
@@ -83,6 +84,11 @@ async def purge_season_results(db_path: str, bot) -> dict:
         report["messages"] = await _delete_posted_results(db_path, rounds, guild)
         report["submission_channels"] = await _close_open_submissions(db_path, rounds, guild)
 
+    # **Not under the guild** (#345). Deleting the channel needs one; forgetting the amendment
+    # does not, and a row that survived the purge would name a `session_results` row deleted
+    # below — which the sweep then fails to revert, and retries every five minutes for ever.
+    report["amend_channels"] = await _close_open_amendments(db_path, rounds, guild)
+
     report["sessions"], report["standings"] = await _delete_rows(
         db_path, [row["round_id"] for row in rounds]
     )
@@ -102,14 +108,15 @@ async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int
     """Unpost every results and standings message of the season, and count them.
 
     The deletion helpers come from ``results_post_service`` rather than being written again
-    here. A posted table longer than Discord's limit is split across several messages and only
-    the first id is stored, so deleting by the stored id alone would leave the continuations
-    behind — ``_delete_with_continuations`` is what knows that, and ``_clear_standings_messages``
-    is what knows that the image flow posts two championships where the textual flow posts one.
+    here. A posted table longer than Discord's limit is split across several messages and every
+    one of their ids is stored — ``_delete_posting`` is what knows that, and
+    ``_clear_standings_messages`` is what knows that the image flow posts two championships
+    where the textual flow posts one.
     """
     from services.results_post_service import (
         _clear_standings_messages,
-        _delete_with_continuations,
+        _delete_posting,
+        _parse_ids,
     )
 
     deleted = 0
@@ -124,14 +131,18 @@ async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int
         if results_channel is not None:
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
-                    "SELECT results_message_id FROM session_results "
+                    "SELECT results_message_id, results_message_ids FROM session_results "
                     "WHERE round_id = ? AND results_message_id IS NOT NULL ORDER BY id",
                     (round_id,),
                 )
-                message_ids = [r[0] for r in await cursor.fetchall()]
-            for message_id in message_ids:
-                await _delete_with_continuations(
-                    results_channel, message_id, label="results message"
+                postings = [(r[0], r[1]) for r in await cursor.fetchall()]
+            for message_id, chunk_ids in postings:
+                # By what the posting recorded, not by what follows it (#345). The adjacency walk
+                # cannot tell this posting's continuation from the next posting down, so purging a
+                # season could destroy a message it was not asked to touch.
+                await _delete_posting(
+                    results_channel, message_id, _parse_ids(chunk_ids),
+                    label="results message",
                 )
                 deleted += 1
 
@@ -192,6 +203,47 @@ async def _close_open_submissions(db_path: str, rounds: list[dict], guild) -> in
                 open_row[0], round_id, exc,
             )
         closed += 1
+    return closed
+
+
+async def _close_open_amendments(db_path: str, rounds: list[dict], guild) -> int:
+    """Delete any amendment channel still open, and forget the round it was putting back.
+
+    An amendment holds a snapshot of the round as it stood, and a deadline by which the sweep
+    reverts it. Both outlive a purge that took no notice of them: the snapshot then names a
+    ``session_results`` row the purge has deleted, so every sweep from then on fails the foreign
+    key and retries five minutes later, for ever — and the channel it would have deleted stays
+    open on a module that is off (#345).
+
+    Nothing is reverted first. The classification the snapshot holds is being destroyed with the
+    rest of the season, so putting it back would be work undone a moment later.
+    """
+    closed = 0
+    for row in rounds:
+        round_id = row["round_id"]
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT channel_id FROM round_amend_channels WHERE round_id = ?",
+                (round_id,),
+            )
+            open_rows = [r[0] for r in await cursor.fetchall()]
+            if not open_rows:
+                continue
+            await db.execute(
+                "DELETE FROM round_amend_channels WHERE round_id = ?", (round_id,)
+            )
+            await db.commit()
+        for channel_id in open_rows:
+            channel = guild.get_channel(channel_id) if guild is not None else None
+            if channel is not None:
+                try:
+                    await channel.delete(reason="Results module disabled")
+                except discord.HTTPException as exc:
+                    log.warning(
+                        "_close_open_amendments: could not delete channel %s for round %s: %s",
+                        channel_id, round_id, exc,
+                    )
+            closed += 1
     return closed
 
 

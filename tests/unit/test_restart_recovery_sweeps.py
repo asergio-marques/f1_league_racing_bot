@@ -467,7 +467,7 @@ async def _seed_amend(db_path):
         )
         await db.execute(
             "INSERT INTO round_amend_channels (round_id, channel_id, "
-            "session_type, created_at) VALUES (?, ?, 'FEATURE_RACE', "
+            "session_types, created_at) VALUES (?, ?, '[\"FEATURE_RACE\"]', "
             "'2026-02-01T00:00:00+00:00')",
             (ROUND_ID, CHANNEL_ID),
         )
@@ -484,6 +484,38 @@ def _amend_guild(*, channel=None):
     guild = MagicMock()
     guild.get_channel = MagicMock(return_value=channel)
     return guild
+
+
+def test_amendments_are_reverted_before_submission_channels_resume():
+    """**The amend sweep runs before the submission-channel one** (#345, decided 2026-09-21).
+
+    An amendment open at the restart has its unapproved corrections in the database, and a
+    submission channel whose results were saved but never posted posts its standings from it on
+    recovery. Swept the other way round, those standings would publish the corrections the
+    amendment's revert then takes back. Read from the source, because the two run inside
+    `on_ready` among a dozen start-up steps no test drives whole.
+    """
+    import inspect
+
+    source = inspect.getsource(bot_module.main)
+    amend = source.index("await _recover_orphaned_amend_channels(bot)")
+    submission = source.index("await _recover_orphaned_submission_channels(bot)")
+    assert amend < submission
+
+
+async def test_recovery_hands_the_bot_to_the_revert(tmp_path):
+    """So the standings put back settle a full tie by name (#345)."""
+    db_path = await _base_db(tmp_path, "amend_hands_bot")
+    await _seed_amend(db_path)
+    stub = _stub_bot(db_path, guild=_amend_guild())
+
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=False),
+    ) as revert:
+        await bot_module._recover_orphaned_amend_channels(stub)
+
+    revert.assert_awaited_once_with(db_path, ROUND_ID, stub)
 
 
 async def test_an_orphaned_amend_channel_is_deleted(tmp_path):
@@ -622,3 +654,168 @@ async def test_a_restart_with_no_amendments_open_does_nothing(tmp_path):
     await bot_module._recover_orphaned_amend_channels(stub)
 
     stub.output_router.post_log.assert_not_awaited()
+
+
+async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
+    """Stage one commits, so abandoning an amendment is not a no-op (#345).
+
+    The corrected classification is written and the round scored from it before the reports and
+    appeals are reviewed. A restart between stages therefore has to *undo* it, or the round is
+    left scored one way and posted another with nothing that would later notice.
+    """
+    db_path = await _base_db(tmp_path, "amend_revert")
+    await _seed_amend(db_path)
+    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ) as revert:
+        await bot_module._recover_orphaned_amend_channels(bot)
+
+    revert.assert_awaited_once()
+    logged = "\n".join(
+        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
+    )
+    assert "put back as it was" in logged
+    assert "re-run /round results amend" in logged
+
+
+async def test_a_revert_that_fails_hands_the_round_to_the_sweep(tmp_path):
+    """**The snapshot is the only way back, so a failed revert keeps it** (#345).
+
+    Deleting the row with the channel threw the snapshot away, leaving the round half-amended
+    with nothing that could ever restore it. The row is kept instead, with a deadline of now, so
+    the sweep retries within minutes — and deletes the channel once it has put the round back.
+    """
+    db_path = await _base_db(tmp_path, "amend_revert_fails")
+    await _seed_amend(db_path)
+    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(side_effect=RuntimeError("locked")),
+    ):
+        await bot_module._recover_orphaned_amend_channels(bot)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT expires_at FROM round_amend_channels")
+        row = await cursor.fetchone()
+    assert row is not None, "the row, and the snapshot with it, was thrown away"
+    assert row["expires_at"] is not None
+
+
+async def test_nothing_to_put_back_is_not_reported_as_a_revert(tmp_path):
+    """The log must not claim a round was put back when nothing was reverted.
+
+    Nothing to revert means the corrected results were never entered, or the amendment had been
+    approved and was rebuilding the channels when the bot stopped — in which case the manager
+    needs the sync commands, not a reassurance.
+    """
+    db_path = await _base_db(tmp_path, "amend_nothing_to_revert")
+    await _seed_amend(db_path)
+    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=False),
+    ):
+        await bot_module._recover_orphaned_amend_channels(bot)
+
+    logged = "\n".join(
+        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
+    )
+    assert "put back as it was" not in logged
+    assert "/results rounds sync" in logged
+    assert await _amend_rows(db_path) == 0
+
+
+async def test_an_amendment_row_outlives_a_channel_that_could_not_be_deleted(tmp_path):
+    """**The row is the one thing that names the channel** (#345).
+
+    Restart recovery finds an orphaned amend channel by that table and no other route, so
+    forgetting the row while the guild is out of cache leaks a private channel with the
+    amendment's stage prompts still live in it. The snapshot was released before the rebuild
+    began, so the row left standing carries nothing a sweep could act on.
+    """
+    from services.result_submission_service import close_submission_channel
+
+    db_path = await _base_db(tmp_path, "close_unreachable")
+    await _seed_amend(db_path)
+
+    await close_submission_channel(CHANNEL_ID, ROUND_ID, None, db_path)
+
+    assert await _amend_rows(db_path) == 1
+
+
+async def _closed_rows(db_path) -> list[tuple[int, bool]]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT channel_id, closed_at IS NOT NULL FROM round_amend_channels ORDER BY id"
+        )
+        return [(row[0], bool(row[1])) for row in await cursor.fetchall()]
+
+
+async def test_a_channel_the_bot_may_not_delete_keeps_its_row_closed(tmp_path):
+    """The approval of an amendment's last stage reaches here, the commonest way one ends. The
+    row went before the delete was tried, so a channel the bot had lost the right to delete
+    stood with nothing naming it; kept, closed, it holds nothing and recovery finds it."""
+    from services.result_submission_service import close_submission_channel
+
+    db_path = await _base_db(tmp_path, "close_forbidden")
+    await _seed_amend(db_path)
+    channel = MagicMock()
+    channel.delete = AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Access")
+    )
+
+    await close_submission_channel(
+        CHANNEL_ID, ROUND_ID, _amend_guild(channel=channel), db_path
+    )
+
+    assert await _closed_rows(db_path) == [(CHANNEL_ID, True)]
+
+
+async def test_closing_one_channel_leaves_a_later_amendment_of_the_round_alone(tmp_path):
+    """Closed, the old row no longer holds the round, so a fresh amendment may replace it while
+    the old channel's delete is still awaited. Matched on the round alone, finishing that close
+    forgot the fresh amendment — snapshot, deadline and all."""
+    from services.result_submission_service import _close_amend_channel_record
+
+    db_path = await _base_db(tmp_path, "close_scoped")
+    await _seed_amend(db_path)
+    fresh_channel = CHANNEL_ID + 1
+    old_channel = MagicMock()
+
+    async def _slow_delete(**_kwargs):
+        # While the delete is awaited, a fresh amendment takes the round's place.
+        async with get_connection(db_path) as db:
+            await db.execute("DELETE FROM round_amend_channels WHERE closed_at IS NOT NULL")
+            await db.execute(
+                "INSERT INTO round_amend_channels (round_id, channel_id, session_types, "
+                "created_at) VALUES (?, ?, '[\"FEATURE_RACE\"]', '2026-02-01T01:00:00+00:00')",
+                (ROUND_ID, fresh_channel),
+            )
+            await db.commit()
+
+    old_channel.delete = AsyncMock(side_effect=_slow_delete)
+
+    await _close_amend_channel_record(db_path, ROUND_ID, CHANNEL_ID, old_channel, reason="done")
+
+    assert await _closed_rows(db_path) == [(fresh_channel, False)]
+
+
+async def test_the_amendment_row_goes_with_the_channel_it_names(tmp_path):
+    from services.result_submission_service import close_submission_channel
+
+    db_path = await _base_db(tmp_path, "close_reachable")
+    await _seed_amend(db_path)
+    channel = MagicMock()
+    channel.delete = AsyncMock()
+
+    await close_submission_channel(
+        CHANNEL_ID, ROUND_ID, _amend_guild(channel=channel), db_path
+    )
+
+    channel.delete.assert_awaited_once()
+    assert await _amend_rows(db_path) == 0

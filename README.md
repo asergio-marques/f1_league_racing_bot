@@ -596,13 +596,19 @@ does, the season's roles are revoked, an open signup window is closed, every dri
 Signed Up, drivers who never raced are deleted (their signups kept) and test mode is switched off.
 
 Available only while the season is **ongoing**. A season pending completion is completed instead,
-and one whose placements have never been confirmed is abandoned with `/season abort`.
+and one whose placements have never been confirmed is abandoned with `/season abort`. It is also
+refused while a round's results are being amended, naming the round and its amend channel: the
+history it writes would carry corrections nobody has approved yet. Finish or cancel the amendment
+first.
 
 #### `/season complete` — Mark the active season as complete
 *Access: League admin*
 
 No parameters. Triggers the season-end flow manually. The bot refuses while any division of the
-season is neither finished nor cancelled, and lists the rounds still to be finalised.
+season is neither finished nor cancelled, and lists the rounds still to be finalised. It also
+refuses while a round's results are being amended, naming the round and its amend channel: the
+final classification would carry corrections nobody has approved yet. Finish or cancel the
+amendment first.
 
 > **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then there are three things left, and no others: **amending the results of a round already final**, **repairing a division's channels** — completing posts the final classification and the final attendance sheet to them, so one deleted has to be repointed — and **completing the season**. Everything else that would act on the season is refused and says so: `/division calendar-sync`, `/team role`, `/team reserve-role`, `/results standings sync`, `/results rounds sync`, `/results reserves toggle` and every `/results amend` command. No module can be disabled either. Nothing is being raced by then, so a grid, a lineup and a calendar no longer describe anything anyone will drive under. A season with a signup window open, or mid-season placements still to confirm, moves there too: there is no round left to place anyone into, so the window is closed, every placement not yet confirmed is discarded, and every driver still unplaced, unconfirmed, awaiting approval or mid-correction returns to Not Signed Up as `/driver reject` would. Once every
 division is done it ends the season, in this order: each division's final classification is posted;
@@ -1668,7 +1674,7 @@ Only members holding the configured interaction role may use these buttons.
 >
 > **`/round results amend` is protected the same way, but reports only to the log.** It runs no button and has nobody to reply to, so what it could not post is named in its own `RESULT_AMENDED | Incomplete` entry rather than a separate one — with the same sync commands at the end.
 
-> **A verdict that could not be announced is named too.** The announcement in the verdicts channel is the only thing that tells a driver why their classification changed, so one that does not go out is listed in your reply and in the log channel as a `VERDICTS | Incomplete` entry — naming the driver where the failure was that driver's, and how many verdicts went unannounced where the whole channel was at fault. One failing does not stop the rest. A division with no verdicts channel set is reported rather than skipped — it is one of the three a division must have before its placements can be confirmed. **The bot cannot announce a decided verdict a second time**: no command re-announces one, so repair the cause and post the decision yourself. The penalties and corrections stand either way.
+> **A verdict that could not be announced is named too.** The announcement in the verdicts channel is the only thing that tells a driver why their classification changed, so one that does not go out is listed in your reply and in the log channel as a `VERDICTS | Incomplete` entry — naming the driver where the failure was that driver's, and how many verdicts went unannounced where the whole channel was at fault. One failing does not stop the rest. A division with no verdicts channel set is reported rather than skipped — it is one of the three a division must have before its placements can be confirmed. No command re-announces a verdict that failed to go out, so repair the cause and post that decision yourself. The penalties and corrections stand either way. (An **amendment** is the one thing that does re-announce a round's verdicts — see [`/round results amend`](#round-results-amend--re-submit-results-for-a-completed-session) — but it announces all of them, as part of rebuilding the round, and is not a way to deliver one that was missed.)
 
 > **So is attendance the approval could not record.** Approving a penalty review records who attended and awards the attendance points, and both feed the auto-reserve and auto-sack thresholds. If either fails you get an `ATTENDANCE_RECORD | Incomplete` entry and a line in your reply, ending with the `/attendance sync` that recalculates the round. This is kept separate from the sanctions report on purpose: a failed sheet leaves the record right, and these leave the record wrong.
 
@@ -1690,6 +1696,7 @@ Approving here — or **No Changes / Confirm** with nothing staged — deletes a
 - A restart during a **resubmission** loses the sessions pasted so far but not the round's results: the earlier results stand, the penalty prompt comes back, and the channel says what happened. Press **🔄 Resubmit Initial Results** again to start over.
 - A resubmission that fails before the new results are saved also leaves the earlier results in place and brings the penalty prompt back, saying so in the channel.
 - A round in which every session is submitted as `CANCELLED` skips both review stages entirely — the channel closes and no standings are computed for it.
+- While another round of the division is being amended, the submission channel refuses a session's results, `CANCELLED` and both approvals, naming the round and the amend channel. The channel stays open: try again once the amendment has finished — it ends when approved, or is undone once half an hour has passed since its corrections were pasted. See [`/round results amend`](#round-results-amend--re-submit-results-for-a-completed-session).
 
 ##### Fastest-lap tie-breaking — FL override header
 
@@ -1710,19 +1717,41 @@ Rules:
 - The header is ignored for qualifying submissions.
 
 ##### `/round results amend` — Re-submit results for a completed session
-*Access: League manager · Results module required*
+*Access: League admin · Results module required*
 
-Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in the same category as the bot commands channel. Paste the corrected results in that channel; the bot validates and applies them, recalculates standings, then deletes the channel automatically. The optional `FL: @Driver` fastest-lap override header (see above) is supported here as well. A **❌ Cancel Amendment** button is posted in the channel to abort at any time. If `session` is omitted you will be prompted to choose one before the channel is created.
+Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in the same category as the bot commands channel, and **replays the round in three stages** — the way it was raced in the first place. One amendment covers as many of the round's sessions as need correcting.
+
+1. **The classification.** Paste the corrected results in the channel — for several sessions, one after another as the bot asks for each, in running order. Nothing is written until the last paste is in, and a paste the bot refuses ends the whole amendment, the pastes already accepted included: have every session's classification ready before you start. The format is exactly the same as a first submission; the two extra sanction columns the amendment used to take have been withdrawn, and a paste that still carries them is refused with a note saying so. The optional `FL: @Driver` fastest-lap override header (see above) is supported here as well.
+2. **The reports.** The bot lists the penalties the chosen sessions already carry, all together. Keep them, change them, remove them, or add new ones — and the same for the round's attendance pardons, each of which has its own **Remove Pardon** button here. Approving without touching anything leaves every decision exactly as it stood. The first pass's **🔄 Resubmit Initial Results** button is not offered: to redo the classification, cancel and run the command again.
+3. **The appeals.** The same again for their appeals. Approving this last stage is what commits the amendment.
+
+A **❌ Cancel Amendment** button is posted in the channel to abort at any time. Once the corrected classification has been recorded, cancelling puts the round back exactly as it was and says so in the log channel as `AMEND_CANCELLED`; from the moment you approve the appeals it is too late, and the button says so. If `session` is omitted you are asked to choose — one session or several — before the channel is created.
+
+**One amendment open in a division at a time.** While any round of a division has an amendment open, running the command for that division again — any round, any session — is refused, naming the round and the channel the open one is in. Finish or cancel that first. The last step reposts the whole division, so an amendment finished beside another would publish the other's unapproved classification.
+
+**Nothing else in the division is committed meanwhile.** While an amendment is open, the submission channels of the division's other rounds stay open but refuse anything that would commit: a session's results or `CANCELLED`, and the approval of the reports or the appeals. `/results standings sync`, `/results rounds sync` and `/attendance sync` are refused for the division too, and across the season so are approving a points change with `/results amend review`, `/season complete` and `/season cancel`. The refusal names the round being amended and its channel; try again once it has finished. It ends when approved, or is undone once half an hour has passed since its corrections were pasted — the bot checks every few minutes, so allow a little over. Each of these posts or records something from the results, which would carry the amendment's corrections before anybody had approved them.
+
+> **Nothing is published until the last step.** The corrected classification is recorded when you paste it, but the round your drivers see is unchanged until you approve the appeals — it is never published half-amended. The sessions you did not choose are left alone; their penalties and appeals are not reopened. To review a session's decisions, include that session in the amendment.
+
+> **An amendment not carried through is undone.** Step one commits, so the bot does not leave a half-amended round standing: if the report and appeal steps go unapproved for half an hour, the round is put back exactly as it was and the log channel records an `AMEND_REVERTED` notice telling you it lapsed and can be run again. The half hour runs from when the corrected results are recorded and covers both steps — approving the reports does not restart it — so have your decisions worked out before you start. The same happens if the bot restarts mid-amendment, or if a step fails part-way (`AMEND_FAILED`). Nothing is reposted, because nothing was posted: the channels were still showing the round as it was raced.
+
+> **What you approve is what the round carries.** Each stage rewrites the round's decisions rather than adding to them — keep a penalty and it stays as it was, remove one and it is gone, and amending the same round twice leaves it as the second amendment settled it rather than doubling the first.
+
+> **Sanctions keep their justification.** A penalty follows its driver onto the corrected classification with the reason, the author and the time it was given intact — which is why they are reviewed rather than pasted. If the corrected classification leaves out a driver who carries a penalty or an appeal, the amendment is refused and names them: include the driver, or have the verdict withdrawn first.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `division_name` | String | ✅ | Name of the division |
 | `round_number` | Integer | ✅ | Round number to amend |
-| `session` | Choice | — | Session to amend. If omitted the bot will prompt for one |
+| `session` | Choice | — | The one session to amend. If omitted the bot asks which to amend, and you may choose several |
 
-> **Attendance is recalculated with it.** With the attendance module on, approving the amendment charges that round's attendance points again and carries the corrected totals through every later round whose penalties have been approved, then reposts the sheet and re-checks the auto-reserve and auto-sack thresholds. Each round's total is the driver's total **as at that round**, so the sheet posted and the thresholds checked are those of the division's **latest** approved round — where the totals now stand — and not those of the round you amended. Pardons already granted are kept. A driver the bot had recorded as present stays present, even where the corrected classification no longer lists them — use [`/attendance sync`](#attendance-sync--recalculate-a-divisions-attendance-and-apply-any-sanction-still-owed) where a recorded attendance genuinely has to be taken back.
+> **Attendance is recalculated with it.** With the attendance module on, approving the amendment charges that round's attendance points again and carries the corrected totals through every later round whose penalties have been approved, then reposts the sheet and re-checks the auto-reserve and auto-sack thresholds. Each round's total is the driver's total **as at that round**, so the sheet posted and the thresholds checked are those of the division's **latest** approved round — where the totals now stand — and not those of the round you amended. Pardons already granted are kept unless you remove them in the report step. The amended round's attendance is **rebuilt from the corrected classification in both directions**: a driver added is marked present, and a driver taken out is marked absent and charged. Any auto-reserve or auto-sack the corrected totals warrant is applied **now**, against the latest round — never back-dated to the round where the limit would first have been crossed, and never undone where one already applied.
 
-> **What it could not repost is named in the log.** Applying the amendment replaces the round's posted results and every later round's standings. Any of that the bot could not post — a channel deleted, or a permission taken away — leaves what is already posted standing, and is named in the log channel under `RESULT_AMENDED | Incomplete` instead of `Success`, ending with the `/results rounds sync` and `/results standings sync` commands to run once the cause is repaired — or, where every division is already done and both of those are closed, with the `/round results amend` to run again instead, which replaces the round's results and every later round's standings just the same. The amendment itself is applied either way.
+> **The whole division is reposted, in order.** A repost is a new message at the bottom of a channel, so replacing only the amended round would leave a five-round division reading 2, 3, 4, 5, 1. Every round goes up again in round order across the results, standings and verdicts channels, and the attendance sheet is reposted beside them. In each channel the new messages are posted **before** the old ones come down, so both are briefly visible and a failure part-way leaves you the board you already had rather than half of two. Posting is paced to stay inside Discord's rate limits, so a large division takes up to a minute.
+
+> **Verdicts are re-announced, and the superseded ones removed.** The bot records which message each verdict was posted in — and which banner heads each round's run of them — so an amendment can replace them. All of a round's verdicts are announced again, in order, not only the ones that changed. A round's old announcements come down only once every one of its replacements is up: where one could not be posted, the originals are left standing rather than leaving a decision in no channel at all, and `RESULT_AMENDED | Incomplete` names them with a link to each so you can remove them once the verdict is posted. A round whose last verdict the amendment removed loses its old cards and their banner. The one banner that always stays is one heading an attendance sanction card: the amendment does not touch those cards, so their header stays with them.
+
+> **What it could not repost is named in the log.** Any of it the bot could not post — a channel deleted, or a permission taken away — is named in the log channel under `RESULT_AMENDED | Incomplete` instead of `Success`, ending with the `/results rounds sync` and `/results standings sync` commands to run once the cause is repaired — or, where every division is already done and both of those are closed, with the `/round results amend` to run again instead. The amendment itself is applied either way.
 
 ---
 
@@ -1811,6 +1840,8 @@ No parameters. Displays a diff of the staged changes against the current season 
 
 > **The attendance sanctions are the one exception.** With the attendance module on, approving re-checks the sanction thresholds. A sanction that then fails to apply does not undo the approval; the reply lists it, with the `/attendance sync` command that finishes it. See [When a sanction does not apply](#when-a-sanction-does-not-apply).
 
+> **Not while a round's results are being amended.** While any division has a `/round results amend` open, the panel names the round and its amend channel, and pressing Approve refuses and changes nothing: approving reposts every division, and would publish that amendment's corrections before they are approved. Review again once it has finished.
+
 ---
 
 #### Reserve Driver Visibility
@@ -1825,6 +1856,8 @@ Deletes every existing standings Discord message for the division and reposts fr
 
 > **Only while the season is being raced.** Refused once every division is done, and on a completed or cancelled season. If an amendment's repost failed in pending completion, the log tells you to run `/round results amend` again instead — that replaces the round's results *and* every later round's standings, so it recovers the same ground.
 
+> **Not while the division has an amendment open.** The amendment's corrections are recorded but not yet approved, and a sync would publish them. The refusal names the round and its amend channel; run the sync again once the amendment has finished.
+
 ---
 
 ##### `/results rounds sync` — Force a full results repost for a division
@@ -1836,7 +1869,7 @@ Deletes every existing standings Discord message for the division and reposts fr
 
 Deletes every existing session results Discord message for the division and reposts fresh results for each session of each round, in round order. Useful after manual data corrections or if results messages were accidentally deleted.
 
-> **Only while the season is being raced,** on the same terms as `/results standings sync` above.
+> **Only while the season is being raced, and not while the division has an amendment open,** on the same terms as `/results standings sync` above.
 
 ---
 ##### `/results reserves toggle` — Toggle reserve driver visibility in standings
@@ -1965,7 +1998,7 @@ Recalculates the attendance of the round you name and of every later round whose
 
 It is safe to run more than once: a driver already sacked or already in the Reserve team is not sanctioned again, so a second run applies only what the first did not.
 
-> **Limitation:** Available only while the season is ongoing, and only for a round whose penalties have been approved. It is refused, with nothing changed, if a channel it would post to cannot be reached.
+> **Limitation:** Available only while the season is ongoing, and only for a round whose penalties have been approved. It is refused, with nothing changed, if a channel it would post to cannot be reached, and while a round of the division has a `/round results amend` open — it would recalculate from corrections nobody has approved yet.
 
 #### `/attendance post-check-in` — Post a round's check-in call by hand
 *Access: League manager*

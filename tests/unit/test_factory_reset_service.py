@@ -142,8 +142,8 @@ async def _seed_channels(db_path: str) -> None:
                 posted_at) VALUES (1, 2, '1', '28', '2026-01-03');
             INSERT INTO round_submission_channels (round_id, channel_id, created_at)
             VALUES (1, 40, '2026-01-08');
-            INSERT INTO round_amend_channels (round_id, channel_id, session_type, created_at)
-            VALUES (1, 41, 'RACE', '2026-01-09');
+            INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at)
+            VALUES (1, 41, '[\"RACE\"]', '2026-01-09');
             INSERT INTO signup_module_config (id, signup_channel_id) VALUES (1, 30);
             INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id)
             VALUES ('900', 42), ('901', NULL);

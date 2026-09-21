@@ -33,6 +33,7 @@ caller's body runs exactly as it did before 040 (Constitution XIV.7).
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -492,7 +493,9 @@ async def _post_one(
     the standings it had, and the caller's text fallback replaces nothing prematurely.
     """
     from services.results_post_service import (
+        _delete_posting,
         _get_standings_message_id,
+        _get_standings_message_ids,
         _set_standings_message_id,
     )
 
@@ -550,14 +553,21 @@ async def _post_one(
             db_path, division_id, round_id, championship
         )
         if previous_id is not None:
-            try:
-                previous = await channel.fetch_message(previous_id)
-                await previous.delete()
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                pass
+            # The whole posting it replaces, which may be a chunked textual one (#345).
+            await _delete_posting(
+                channel,
+                previous_id,
+                await _get_standings_message_ids(db_path, division_id, round_id, championship),
+                label="standings message",
+            )
 
+        # **The chunk list is written with the id** (#345). A graphic is one message, but with
+        # no list recorded, deleting it later fell back to walking forward over the bot's own
+        # messages — which, once a division rebuild posts every replacement before deleting any
+        # original, walks from each old graphic straight into the new ones and deletes them.
         await _set_standings_message_id(
-            db_path, division_id, round_id, message.id, championship
+            db_path, division_id, round_id, message.id, championship,
+            message_ids=json.dumps([message.id]),
         )
 
     if decision.notices:

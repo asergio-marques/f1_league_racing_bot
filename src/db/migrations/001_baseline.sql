@@ -203,6 +203,13 @@ CREATE TABLE session_results (
     submitted_by       INTEGER,
     submitted_at       TEXT,
     results_message_id INTEGER, fl_driver_override INTEGER,
+    -- results_message_ids: JSON array of *every* message the posting occupies, the
+    -- anchor first. A table past 2000 characters is split across consecutive messages
+    -- and only the anchor was ever recorded, leaving deletion to guess the rest by
+    -- walking forward over bot-authored messages -- which mistakes an unrelated posting
+    -- below it for a continuation of this one (#345). NULL on a row written before this
+    -- column existed; such a row falls back to the walk.
+    results_message_ids TEXT,
     UNIQUE (round_id, session_type)
 );
 
@@ -220,6 +227,9 @@ CREATE TABLE driver_standings_snapshots (
     finish_counts       TEXT    NOT NULL DEFAULT '{}',
     first_finish_rounds TEXT    NOT NULL DEFAULT '{}',
     standings_message_id INTEGER, driver_profile_id INTEGER REFERENCES driver_profiles(id), constructor_standings_message_id INTEGER,
+    -- The chunk lists of the two standings postings, as session_results' above.
+    standings_message_ids TEXT,
+    constructor_standings_message_ids TEXT,
     UNIQUE (round_id, division_id, driver_user_id)
 );
 CREATE INDEX idx_dss_driver_profile
@@ -387,7 +397,14 @@ CREATE TABLE "penalty_records" (
     justification           TEXT    NOT NULL,
     applied_by              TEXT    NOT NULL,
     applied_at              TEXT    NOT NULL,
-    announcement_channel_id TEXT
+    announcement_channel_id TEXT,
+    -- announcement_message_id: the verdict announcement itself, so an amendment can
+    -- replace it rather than leaving a decision that contradicts the classification it
+    -- was applied to (#189). NULL for a verdict announced before this column existed;
+    -- those cannot be replaced and are re-announced fresh, which the log says (#345).
+    announcement_message_id TEXT,
+    -- The chunk list of that announcement, as elsewhere.
+    announcement_message_ids TEXT
 );
 
 -- appeal_records
@@ -402,8 +419,33 @@ CREATE TABLE "appeal_records" (
     justification           TEXT    NOT NULL,
     submitted_by            TEXT    NOT NULL,
     submitted_at            TEXT    NOT NULL,
-    announcement_channel_id TEXT
+    announcement_channel_id TEXT,
+    -- announcement_message_id: the verdict announcement itself, so an amendment can
+    -- replace it rather than leaving a decision that contradicts the classification it
+    -- was applied to (#189). NULL for a verdict announced before this column existed;
+    -- those cannot be replaced and are re-announced fresh, which the log says (#345).
+    announcement_message_id TEXT,
+    -- The chunk list of that announcement, as elsewhere.
+    announcement_message_ids TEXT
 );
+
+-- verdict_banner_messages: the banner that heads a round's run of verdict announcements.
+-- A banner is a message of its own, above the cards, and belongs to no verdict record — so
+-- an amendment re-announcing a round could take its verdicts down and not the banner over
+-- them, leaving a header above empty space and posting a fresh one below (#345). One row per
+-- banner posted; the replay deletes the round's and records what it posts in their place.
+-- heads_sanctions: set once an attendance sanction card is posted beneath the banner. Those
+-- cards are recorded nowhere else and no replay takes them down, so a banner heading one is
+-- never taken down either (decided 2026-09-21).
+CREATE TABLE verdict_banner_messages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    round_id        INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    channel_id      TEXT    NOT NULL,
+    message_id      TEXT    NOT NULL,
+    posted_at       TEXT    NOT NULL,
+    heads_sanctions INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_verdict_banner_round ON verdict_banner_messages(round_id);
 
 -- attendance_pardons
 CREATE TABLE "attendance_pardons" (
@@ -591,9 +633,34 @@ CREATE TABLE "round_amend_channels" (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id     INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
     channel_id   INTEGER NOT NULL,
-    session_type TEXT    NOT NULL,
+    -- session_types: the sessions this amendment re-enters, as a JSON array of session-type
+    -- values in running order (#345). One amendment covers any number of a round's sessions,
+    -- its reports and appeals being reviewed for them together, as a round's are.
+    session_types TEXT   NOT NULL,
     created_at   TEXT    NOT NULL,
-    UNIQUE (round_id, session_type)
+    -- pre_amendment_state: the round as it stood before stage one overwrote it, as JSON
+    -- (#345). The amendment's first stage commits the corrected classification, so an
+    -- amendment abandoned before its last stage is approved leaves the round scored one way
+    -- and posted another. This is what the revert puts back: for each amended session, its
+    -- header, its driver rows, and its verdict records whole. NULL until stage one has
+    -- written, and cleared when the amendment completes.
+    pre_amendment_state TEXT,
+    -- expires_at: when an unapproved amendment is reverted. The stages have no timeout of
+    -- their own, so without this a manager who walks away leaves the round on "Provisional
+    -- Results" for ever.
+    expires_at   TEXT,
+    -- closed_at: set where the amendment has finished but its channel could not be deleted,
+    -- the guild or the channel being out of cache (#345). The row is the only thing that names
+    -- the channel, so restart recovery finds an orphan by no other route and it is kept for
+    -- that — but it no longer describes an amendment in progress, and nothing treats it as one.
+    closed_at   TEXT,
+    -- superseded_announcements: the verdict announcements standing in the channel when the
+    -- amendment's report stage was approved, as JSON (#345). That stage deletes the round's
+    -- verdict records and writes the approved set back, so the message ids of the announcements
+    -- to be taken down are gone by the time the final stage re-announces — noted here first.
+    superseded_announcements TEXT,
+    -- One amendment of a round at a time; the command allows one per division besides.
+    UNIQUE (round_id)
 );
 
 -- signup_module_settings

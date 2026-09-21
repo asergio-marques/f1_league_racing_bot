@@ -5,7 +5,9 @@ configured verdicts (penalty) channel after the respective review is approved.
 """
 from __future__ import annotations
 
+import json as _json
 import logging
+from datetime import datetime, timezone
 import re
 from pathlib import Path
 
@@ -91,11 +93,6 @@ def _driver_label(driver_discord_id) -> str:
         return f"<@{int(driver_discord_id)}>"
     except (TypeError, ValueError):
         return "an unidentified driver"
-
-
-def verdict_repair_hint(*, sanction: bool = False) -> str:
-    """The line telling a manager how to finish a verdict that was not announced (#237)."""
-    return _SANCTION_RETRY if sanction else _VERDICT_NO_RETRY
 
 
 async def _graphic_name(
@@ -237,10 +234,11 @@ def _banner_once(bot, channel, ctx: dict):
     """
     posted = False
 
-    async def post() -> None:
+    async def post():
+        """Returns the message the banner was posted as, or None."""
         nonlocal posted
         if posted:
-            return
+            return None
         posted = True  # set before the attempt: one try per batch, whatever it returns
         try:
             from services import image_verdict_banner_post
@@ -253,10 +251,31 @@ def _banner_once(bot, channel, ctx: dict):
                 race_name=ctx.get("race_name"),
                 country_name=ctx.get("country_name"),
             )
-            await image_verdict_banner_post.try_post(bot, channel, drawing)
+            return await image_verdict_banner_post.try_post(bot, channel, drawing)
         except Exception:
             log.exception("verdict banner: could not head the batch")
+        return None
 
+    return post
+
+
+def _banner_once_recorded(bot, channel, ctx, db_path: str, round_id: int):
+    """`_banner_once`, recording the message it posts (#345).
+
+    What a poster falls back to when no shared banner was handed to it. The banner is recorded
+    however it was posted, or an amendment would take a run's cards down and leave the header
+    that was put up by this path standing over the empty space.
+    """
+    once = _banner_once(bot, channel, ctx)
+
+    async def post() -> None:
+        message = await once()
+        if message is not None:
+            post.message = message
+        await _record_banner(db_path, round_id, getattr(channel, "id", None), message)
+
+    #: The banner this poster put up, once it has; read by a sanction card beneath it.
+    post.message = None
     return post
 
 
@@ -288,11 +307,110 @@ def banner_for_round(bot, db_path: str, round_id: int):
             channel = bot.get_channel(int(channel_id_raw))
             if channel is None:
                 return
-            await _banner_once(bot, channel, ctx)()
+            message = await _banner_once(bot, channel, ctx)()
+            post.message = message
+            await _record_banner(db_path, round_id, channel_id_raw, message)
         except Exception:
             log.exception("verdict banner: could not head round %s", round_id)
 
+    #: The banner this poster put up, once it has; read by a sanction card beneath it, which
+    #: may come from a later path of the same approval.
+    post.message = None
     return post
+
+
+async def _record_banner(db_path: str, round_id: int, channel_id, message) -> None:
+    """Note which message heads a round's run of verdicts, so it can be taken down with them.
+
+    A banner belongs to no verdict record — it is a message of its own above the cards — so
+    without this an amendment removed a round's announcements and left the header standing over
+    the empty space, then posted a fresh one below it, once per amendment (#345).
+    """
+    message_id = getattr(message, "id", None)
+    if message_id is None:
+        return
+    try:
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO verdict_banner_messages "
+                "(round_id, channel_id, message_id, posted_at) VALUES (?, ?, ?, ?)",
+                (round_id, str(channel_id), str(message_id),
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001 — the banner went out; only the record of it failed
+        log.exception("could not record the banner of round %s", round_id)
+
+
+async def _banners_of(db_path: str, round_id: int) -> list[tuple[str, int]]:
+    """Every banner recorded for *round_id*, as (channel id, message id), oldest first."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT channel_id, message_id FROM verdict_banner_messages "
+            "WHERE round_id = ? ORDER BY id",
+            (round_id,),
+        )
+        rows = await cursor.fetchall()
+    found: list[tuple[str, int]] = []
+    for row in rows:
+        try:
+            found.append((row["channel_id"], int(row["message_id"])))
+        except (TypeError, ValueError):
+            continue
+    return found
+
+
+async def _mark_banner_over_sanction(db_path: str, banner) -> None:
+    """Note that *banner* heads an attendance sanction card (decided 2026-09-21).
+
+    A sanction card is no verdict record: no replay re-announces it or takes it down. So a
+    banner over one is kept by every replay, or the card would be left without its header.
+
+    *banner* is the message the card's own poster put up — spent earlier by the approval the
+    card belongs to, or posted for it just now. A card whose poster put up none, the banner
+    switch being off or the post failing, marks nothing: the banner that merely came before it
+    in the channel heads another run, and marked it would never come down. Never raises: the
+    card went out, and only this note of it failed.
+    """
+    banner_id = getattr(banner, "id", None)
+    if banner_id is None:
+        return
+    try:
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE verdict_banner_messages SET heads_sanctions = 1 WHERE message_id = ?",
+                (str(banner_id),),
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        log.exception("could not note banner %s as heading a sanction card", banner_id)
+
+
+async def _banners_heading_sanctions(db_path: str, message_ids: list[int]) -> set[int]:
+    """Which of *message_ids* are banners with an attendance sanction card beneath them."""
+    if not message_ids:
+        return set()
+    placeholders = ", ".join("?" for _ in message_ids)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT message_id FROM verdict_banner_messages "  # noqa: S608
+            f"WHERE heads_sanctions = 1 AND message_id IN ({placeholders})",
+            [str(message_id) for message_id in message_ids],
+        )
+        return {int(row["message_id"]) for row in await cursor.fetchall()}
+
+
+async def _forget_banners(db_path: str, message_ids: list[int]) -> None:
+    """Drop the records of banners that have been taken down."""
+    if not message_ids:
+        return
+    placeholders = ", ".join("?" for _ in message_ids)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            f"DELETE FROM verdict_banner_messages WHERE message_id IN ({placeholders})",  # noqa: S608
+            [str(message_id) for message_id in message_ids],
+        )
+        await db.commit()
 
 
 async def _get_result_context(db_path: str, race_result_id: int | None, qual_result_id: int | None) -> dict:
@@ -364,6 +482,54 @@ def _build_announcement_message(
     )
 
 
+def _record_id(record) -> int | None:
+    """The row id of a verdict record, whether it arrived as a dict or a dataclass.
+
+    Every other field in these two functions is read through the same pair of accessors; the
+    id was simply never needed until there was something to write back against it.
+    """
+    value = record.get("id") if hasattr(record, "get") else getattr(record, "id", None)
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+async def _record_announcement(
+    db_path: str, table: str, record_id: int | None, message, channel_id: int | None
+) -> None:
+    """Record which message carries a verdict, so it can be found again (#189).
+
+    ``penalty_records`` and ``appeal_records`` stored the channel an announcement went to and
+    nothing more, so the bot could not edit, delete or replace one by any route. An amendment
+    therefore rescored the classification a verdict was applied to and left the verdict itself
+    standing, contradicting it, with no command to put it right.
+
+    Both the anchor id and the chunk list are written. A verdict is one message today, but the
+    column pair is the one every other posting uses and a batch that grows past Discord's limit
+    would otherwise reintroduce the guesswork `_delete_posting` exists to remove (#345).
+
+    A failure here is logged, never raised: the verdict *was* announced, and losing the record
+    of where is a smaller harm than turning a delivered announcement into a reported fault.
+    """
+    if record_id is None or message is None:
+        return
+    message_id = getattr(message, "id", None)
+    if message_id is None:
+        return
+    try:
+        async with get_connection(db_path) as db:
+            await db.execute(
+                f"UPDATE {table} SET announcement_message_id = ?, "  # noqa: S608 — literal table
+                "announcement_message_ids = ?, announcement_channel_id = ? WHERE id = ?",
+                (str(message_id), _json.dumps([message_id]), 
+                 str(channel_id) if channel_id is not None else None, record_id),
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001 — the announcement went out; only the record of it failed
+        log.exception("could not record the announcement of %s row %s", table, record_id)
+
+
 async def _send_verdict(
     bot,
     target_channel,
@@ -382,8 +548,12 @@ async def _send_verdict(
     description_text: str,
     justification_text: str,
     team_name: str | None = None,
-) -> None:
+) -> "object | None":
     """Post one verdict: as a graphic where the toggle allows, as text otherwise.
+
+    Returns the message it sent, so the caller can record which message carries this verdict
+    (#189). Without that the bot held nothing by which to find an announcement again, and an
+    amendment left a decision standing that contradicted the classification it was applied to.
 
     The graphic **displaces the whole announcement but the mention** (Constitution XIV.7): its
     heading, driver line, sanction, description and justification all move onto the canvas and
@@ -442,10 +612,9 @@ async def _send_verdict(
         # verdict belongs to, and leaking the raw template key was never intended.
         attachment = _discord.File(str(render.png), filename=Path(render.png).name)
         try:
-            await target_channel.send(f"<@{driver_discord_id}>", file=attachment)
+            return await target_channel.send(f"<@{driver_discord_id}>", file=attachment)
         finally:
             image_verdict_post.discard(render, attachment)
-        return
 
     content = _build_announcement_message(
         season_number,
@@ -458,7 +627,7 @@ async def _send_verdict(
         justification_text,
         driver_display_name=driver_display_name,
     )
-    await target_channel.send(content)
+    return await target_channel.send(content)
 
 
 async def post_penalty_announcements(
@@ -529,7 +698,9 @@ async def post_penalty_announcements(
 
     season_number = ctx["season_number"]
     KIND = VerdictKind.PENALTY
-    head_the_batch = head or _banner_once(bot, target_channel, ctx)
+    head_the_batch = head or _banner_once_recorded(
+        bot, target_channel, ctx, db_path, round_id
+    )
 
     for record in applied_penalties:
         # Named before the try so a failure below can still say whose verdict it was, but
@@ -594,7 +765,7 @@ async def post_penalty_announcements(
 
             await head_the_batch()
 
-            await _send_verdict(
+            _sent = await _send_verdict(
                 bot,
                 target_channel,
                 db_path=db_path,
@@ -616,6 +787,10 @@ async def post_penalty_announcements(
                 description_text=description_text or NOT_PROVIDED,
                 justification_text=justification_text or NOT_PROVIDED,
                 team_name=team_name,
+            )
+            await _record_announcement(
+                db_path, "penalty_records", _record_id(record), _sent,
+                getattr(target_channel, "id", None),
             )
 
         except Exception as exc:  # noqa: BLE001 — recorded, and the next verdict taken
@@ -683,7 +858,9 @@ async def post_appeal_announcements(
 
     season_number = ctx["season_number"]
     KIND = VerdictKind.APPEAL
-    head_the_batch = head or _banner_once(bot, target_channel, ctx)
+    head_the_batch = head or _banner_once_recorded(
+        bot, target_channel, ctx, db_path, round_id
+    )
 
     for record in applied_corrections:
         # Named before the try so a failure below can still say whose verdict it was, but
@@ -747,7 +924,7 @@ async def post_appeal_announcements(
 
             await head_the_batch()
 
-            await _send_verdict(
+            _sent = await _send_verdict(
                 bot,
                 target_channel,
                 db_path=db_path,
@@ -769,6 +946,10 @@ async def post_appeal_announcements(
                 description_text=description_text or NOT_PROVIDED,
                 justification_text=justification_text or NOT_PROVIDED,
                 team_name=team_name,
+            )
+            await _record_announcement(
+                db_path, "appeal_records", _record_id(record), _sent,
+                getattr(target_channel, "id", None),
             )
 
         except Exception as exc:  # noqa: BLE001 — recorded, and the next verdict taken
@@ -886,12 +1067,10 @@ async def post_autosanction_announcement(
     try:
         #  After every check that could still make this a no-op, so a banner is never
         #  posted over a sanction that is not announced.
-        if head is not None:
-            await head()
-        else:
-            await banner_for_round(bot, db_path, round_id)()
+        poster = head if head is not None else banner_for_round(bot, db_path, round_id)
+        await poster()
 
-        await _send_verdict(
+        card = await _send_verdict(
             bot,
             target_channel,
             db_path=db_path,
@@ -913,6 +1092,8 @@ async def post_autosanction_announcement(
             description_text=description_text,
             justification_text=justification_text,
         )
+        if card is not None:
+            await _mark_banner_over_sanction(db_path, getattr(poster, "message", None))
         return []
     except Exception as exc:  # noqa: BLE001 — recorded with the sanction's outcome
         log.exception(
@@ -923,3 +1104,258 @@ async def post_autosanction_announcement(
             f"the {sanction_label} of {_driver_label(driver_discord_id)} was applied, but "
             f"its announcement failed: {exc}"
         ]
+
+
+def _parse_chunk_ids(raw):
+    """The stored chunk list of an announcement, via the one parser that reads them."""
+    from services.results_post_service import _parse_ids
+
+    return _parse_ids(raw)
+
+
+async def _rounds_from(db_path: str, division_id: int, from_round_id: int) -> list[dict]:
+    """The division's rounds from *from_round_id* forward, in round order.
+
+    Inclusive of the round named. Cancelled rounds are left out: they have no classification
+    for a verdict to describe, and their messages are not part of the sequence a league reads.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT r.id AS round_id, r.round_number
+            FROM rounds r
+            WHERE r.division_id = ?
+              AND r.status != 'CANCELLED'
+              AND r.round_number >= (SELECT round_number FROM rounds WHERE id = ?)
+            ORDER BY r.round_number
+            """,
+            (division_id, from_round_id),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+
+async def _records_for_round(db_path: str, round_id: int, table: str) -> list[dict]:
+    """A round's verdict records of one table, oldest first, shaped as the posters expect.
+
+    The announcement functions read ``driver_user_id`` and the two result-id columns off each
+    record, none of which ``penalty_records`` and ``appeal_records`` carry together — the
+    driver comes from the result row the verdict points at.
+    """
+    from services.verdict_records import select_verdicts
+
+    async with get_connection(db_path) as db:
+        rows = await select_verdicts(
+            db, table,
+            "v.id AS id, v.race_result_id, v.qual_result_id, v.penalty_type, v.time_seconds, "
+            "v.description, v.justification, r.driver_user_id AS driver_user_id, "
+            "r.team_role_id AS team_role_id, sr.session_type AS session_type",
+            round_id=round_id,
+        )
+    return sorted(rows, key=lambda r: r["id"])
+
+
+async def banners_from_round(
+    db_path: str, division_id: int, from_round_id: int
+) -> list[tuple[int, str, int]]:
+    """Every verdict banner standing over the rounds from *from_round_id* forward.
+
+    Returned as ``(round id, channel id, message id)``: the round, because only the rounds a
+    replay actually re-announces lose their banner.
+
+    Read by a rebuild **before** it starts, because the rebuild posts banners of its own on the
+    way: the attendance sanctions it enforces head themselves, and a capture taken afterwards
+    would delete the banner the sanctions had just been posted under (#345).
+    """
+    found: list[tuple[int, str, int]] = []
+    for rnd in await _rounds_from(db_path, division_id, from_round_id):
+        found.extend(
+            (rnd["round_id"], channel_id, message_id)
+            for channel_id, message_id in await _banners_of(db_path, rnd["round_id"])
+        )
+    return found
+
+
+async def republish_verdicts_from_round(
+    bot, db_path: str, division_id: int, from_round_id: int, state_factory,
+    superseded_banners: list[tuple[int, str, int]] | None = None,
+    rebuilt: list[int] | None = None,
+) -> list[str]:
+    """Announce every verdict of every round from *from_round_id* forward, in order.
+
+    **The whole of a round's verdicts, not only those that changed** — a decision taken with
+    the replay (#345). A round's verdicts are a contiguous run in the channel, and re-announcing
+    a subset would interleave new decisions with old ones, leaving the run in an order that
+    matches neither the classification nor the sequence it was decided in.
+
+    **Produced before the originals are destroyed** (Constitution XIV.8). Every replacement for
+    every round goes up first; only then are the announcements they replace taken down. A
+    failure part-way therefore leaves the league the verdicts it already had.
+
+    *state_factory* builds the ``PenaltyReviewState`` each round's announcement needs, the
+    posters reading the round and division from it.
+
+    Returns the faults met, as lines a league can read. *rebuilt*, where given, receives the id
+    of every round whose verdicts are now all in the channel — the one thing a fault line cannot
+    say, and the thing the amendment's own take-down turns on.
+
+    **A record with no announcement id is passed over rather than reported.** It has no message
+    standing anywhere to contradict the replacement: either the amendment's report stage has
+    just rewritten it, or its announcement never went out and was reported when it failed. The
+    case the specification had in mind — a verdict announced before the bot began recording ids
+    — cannot arise, the columns having been in the schema since before any league ran the bot,
+    and nothing distinguishes it from the two above; a line saying "this one may still be
+    standing" would therefore be guesswork on every verdict it named.
+    """
+    faults: list[str] = []
+    rounds = await _rounds_from(db_path, division_id, from_round_id)
+
+    # **Captured before a single replacement is posted.** Announcing overwrites
+    # `announcement_message_id` on the very rows the superseded messages are identified by, so
+    # reading them afterwards would return the new announcements and delete what had just been
+    # put up. The old ones are noted here and taken down at the end.
+    # The banners heading each round's run go with it: they are messages of their own, above
+    # the cards, so re-announcing without removing them left a header over empty space and a
+    # second header below (#345). A caller that posts verdicts of its own before reaching here
+    # — the division rebuild, whose attendance sanctions head themselves — reads them before it
+    # starts and hands them in, or this capture would take down a banner posted minutes ago.
+    banners_by_round: dict[int, list[tuple[str, int]]] = {}
+    if superseded_banners is None:
+        for rnd in rounds:
+            banners_by_round[rnd["round_id"]] = await _banners_of(db_path, rnd["round_id"])
+    else:
+        for round_id, channel_id, message_id in superseded_banners:
+            banners_by_round.setdefault(round_id, []).append((channel_id, message_id))
+
+    # **A banner over an attendance sanction card stays** (decided 2026-09-21). The card is no
+    # verdict record and nothing takes it down, so its header must not be taken down either.
+    # Every other banner of a round goes once the round's replacements are up — including where
+    # there are none, the amendment having removed the round's last verdict.
+    kept_banners = await _banners_heading_sanctions(
+        db_path, [message_id for found in banners_by_round.values() for _, message_id in found]
+    )
+
+    # Kept by round, because a round's old announcements come down only where that round's
+    # replacements actually went up (#345).
+    superseded: dict[int, list[tuple[object, int, list[int] | None, int]]] = {}
+    from services.verdict_records import VERDICT_TABLES, select_verdicts
+
+    async with get_connection(db_path) as db:
+        for rnd in rounds:
+            for table in VERDICT_TABLES:
+                for row in await select_verdicts(
+                    db, table,
+                    "v.announcement_message_id AS anchor, "
+                    "v.announcement_message_ids AS chunks, "
+                    "v.announcement_channel_id AS channel_id, "
+                    "r.driver_user_id AS driver_user_id",
+                    round_id=rnd["round_id"],
+                ):
+                    if not row["anchor"]:
+                        # No fault, and nothing to take down. A record with no id here is
+                        # one the amendment's report stage has just rewritten — its
+                        # predecessor's id was noted before that happened, and is taken
+                        # down separately — or one whose announcement never went out, which
+                        # was reported at the time (#345).
+                        continue
+                    superseded.setdefault(rnd["round_id"], []).append(
+                        (
+                            row["channel_id"],
+                            int(row["anchor"]),
+                            _parse_chunk_ids(row["chunks"]),
+                            row["driver_user_id"],
+                        )
+                    )
+
+    # ── Produce ───────────────────────────────────────────────────────────
+    from services.penalty_service import reports_only
+
+    #: The banners of the rounds this replay actually re-announced.
+    replaced: list[tuple[str, int]] = []
+    #: The rounds whose replacements are all up, and whose old announcements may therefore go.
+    #: Filled into the caller's list where one is given, as each round completes, so a caller
+    #: can act on the round it cares about even where a later one raised (#345).
+    if rebuilt is None:
+        rebuilt = []
+
+    for rnd in rounds:
+        round_id = rnd["round_id"]
+        appeals = await _records_for_round(db_path, round_id, "appeal_records")
+        # **An upheld appeal is announced once, as an appeal.** Upholding one writes a
+        # `penalty_records` row beside its appeal record, and announcing every penalty row would
+        # give the driver the same decision twice — once as a penalty verdict the first pass
+        # never announced. Only the reports are announced as penalties.
+        penalties = reports_only(
+            await _records_for_round(db_path, round_id, "penalty_records"), appeals
+        )
+        # The round's old banners that come down with its old cards.
+        replaced_banners = [
+            banner for banner in banners_by_round.get(round_id, [])
+            if banner[1] not in kept_banners
+        ]
+
+        if not penalties and not appeals:
+            # Nothing to re-announce is a round rebuilt: every decision it carries is in the
+            # channel, there being none. An amendment that removed a round's last verdict has
+            # its old announcement taken down on exactly this footing — and its banner with it,
+            # unless a sanction card stands beneath.
+            rebuilt.append(round_id)
+            replaced.extend(replaced_banners)
+            continue
+
+        state = state_factory(round_id)
+        if not getattr(state, "round_number", 0):
+            # Read by the fault line naming a round whose context could not be loaded, which
+            # would otherwise say "Round 0".
+            state.round_number = rnd["round_number"]
+        head = banner_for_round(bot, db_path, round_id)
+
+        round_faults: list[str] = []
+        if penalties:
+            round_faults.extend(
+                await post_penalty_announcements(bot, state, penalties, head=head)
+            )
+        if appeals:
+            # The same banner heads the appeals: one round, one run, one header — and a second
+            # banner posted here would be recorded and then never taken down by anything.
+            round_faults.extend(
+                await post_appeal_announcements(bot, state, appeals, head=head)
+            )
+        faults.extend(round_faults)
+
+        # **A round keeps its old announcements unless every replacement went up.** A whole
+        # batch can fail without raising — an unreadable context, a verdicts channel taken
+        # away — and taking the originals down then would leave those decisions in no channel
+        # at all. Doubled announcements a league can read and reconcile; missing ones it cannot.
+        if not round_faults:
+            rebuilt.append(round_id)
+            replaced.extend(replaced_banners)
+        elif superseded.get(round_id):
+            faults.append(
+                f"the superseded verdicts of round {rnd['round_number']} were left standing, "
+                f"the replacements for that round not having all gone out"
+            )
+
+    # ── Then destroy ──────────────────────────────────────────────────────
+    from services.results_post_service import _delete_posting
+
+    for round_id in rebuilt:
+        for channel_id, anchor, chunk_ids, driver_user_id in superseded.get(round_id, []):
+            channel = bot.get_channel(int(channel_id)) if channel_id else None
+            if channel is None:
+                faults.append(
+                    f"the superseded verdict for {_driver_label(driver_user_id)} could not be "
+                    f"taken down: its channel is no longer reachable"
+                )
+                continue
+            await _delete_posting(channel, anchor, chunk_ids, label="verdict")
+
+    taken_down: list[int] = []
+    for channel_id, message_id in replaced:
+        channel = bot.get_channel(int(channel_id)) if channel_id else None
+        if channel is None:
+            continue
+        await _delete_posting(channel, message_id, [message_id], label="verdict banner")
+        taken_down.append(message_id)
+    await _forget_banners(db_path, taken_down)
+
+    return faults

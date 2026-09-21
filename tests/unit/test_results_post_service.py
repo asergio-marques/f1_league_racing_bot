@@ -1353,7 +1353,7 @@ async def test_delete_and_repost_final_results_keeps_the_message_when_posting_is
     # The posting itself is stubbed so that the unfixed code gets all the way through and
     # this test fails on the message it destroyed, rather than on a mock it tripped over
     # on the way.
-    with patch.object(rps, "_delete_with_continuations", new=AsyncMock()) as deleted, \
+    with patch.object(rps, "_delete_posting", new=AsyncMock()) as deleted, \
             patch.object(rps, "post_session_results", new=AsyncMock()), \
             patch.object(rps, "post_standings", new=AsyncMock()), \
             patch.object(rps, "_clear_standings_messages", new=AsyncMock()), \

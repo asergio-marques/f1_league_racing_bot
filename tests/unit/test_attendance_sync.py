@@ -296,6 +296,32 @@ async def test_a_round_not_yet_finalised_is_refused(tmp_path):
     assert "has not had its penalties approved" in _replied(interaction)
 
 
+async def _amendment_open(db_path) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at) "
+            "VALUES (?, 8200, '[\"FEATURE_RACE\"]', '2026-02-02T00:00:00+00:00')",
+            (ROUND_ID,),
+        )
+        await db.commit()
+
+
+async def test_it_waits_while_a_round_of_the_division_is_amended(tmp_path):
+    """#345, decided 2026-09-21. The recalculation reads the amendment's corrections before
+    they are approved; the sheet it posts and the sanctions it applies would stand even if the
+    amendment were then cancelled."""
+    db_path = await _make_db(tmp_path, autosack=20)
+    await _amendment_open(db_path)
+    interaction = _interaction()
+
+    synced = await _invoke(_cog(db_path), interaction)
+
+    synced.assert_not_awaited()
+    replied = _replied(interaction)
+    assert "of **Division 1** is being amended in <#8200>" in replied
+    assert "Run this again then." in replied
+
+
 async def test_a_channel_fault_refuses_it_with_nothing_changed(tmp_path):
     db_path = await _make_db(tmp_path, autosack=20)
     await _add_rounds(db_path, {})

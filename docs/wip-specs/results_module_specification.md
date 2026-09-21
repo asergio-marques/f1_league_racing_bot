@@ -13,7 +13,7 @@
     - The confirmation shall also fail if a points configuration attached to the season no longer exists in the league points schema store, naming each such configuration and saying how to put it right. A season shall never be left unconfirmable without being told why.
 - It shall not be possible to enable the results & standings module once the season's placements have been confirmed.
 - Disabling the results & standings module shall remain possible once the season's placements have been confirmed. A league that finds its results unworkable part-way through a championship shall be able to stop running them, and shall not be held to the module until the season ends.
-- Disabling the results & standings module once the season's placements have been confirmed shall destroy that season's results entire: every classification recorded, every standing computed from them, and every results and standings message already posted shall be deleted. The module's configuration shall be kept — the points configurations, the season's own copy of them, and each division's results, standings and verdicts channels — those being settings rather than output. Penalty and appeal verdicts already announced shall remain where they were posted, the bot holding no record by which to delete them.
+- Disabling the results & standings module once the season's placements have been confirmed shall destroy that season's results entire: every classification recorded, every standing computed from them, and every results and standings message already posted shall be deleted. The module's configuration shall be kept — the points configurations, the season's own copy of them, and each division's results, standings and verdicts channels — those being settings rather than output. Penalty and appeal verdicts already announced shall remain where they were posted. An amendment still open shall be ended and its channel deleted, the round it was amending being destroyed with the rest.
 - Disabling the results & standings module once the season's placements have been confirmed shall end every round of that season still awaiting results, report verdicts or appeal verdicts, each round being closed as having run without results. Nothing else could ever move such a round once the module is gone, and a round left waiting would hold its division open and its season uncompletable for ever. A round whose moment has not yet come shall be left alone, being closed in its own time by the passage of that moment.
 - Disabling the results & standings module shall first tell the league what the disable will destroy and what it will keep, and shall write nothing until the league confirms. This shall be so whether or not the attendance module is enabled.
 - Disabling the results & standings module shall disable the attendance module with it.
@@ -213,6 +213,7 @@
     - Before the season's points are overwritten, the bot shall establish that every division's configured results and standings channels exist and can be posted to, and — where the attendance module is enabled — that the same holds of its attendance channel, and of its verdicts channel where an autosack or autoreserve threshold is set. A channel a division has not configured is not a fault.
     - Where any of it cannot be done, the approval shall be refused and shall change nothing at all: not the season's points, not the modification store, not the amending mode.
     - "results amend review" shall name the division and the channel at fault alongside the staged changes, so the fault is visible while the decision is being taken, and shall say which command repairs it.
+    - The approval shall be refused, and change nothing, while any division of the season has an amendment of a round's results open, whose corrections the reposts would otherwise publish before they are approved. "results amend review" shall name the round being amended and its channel alongside the staged changes. Decided 2026-09-21.
     - The attendance recalculation an approval performs shall be applied entire or not at all, the running totals of every later round included.
     - The attendance sanctions the recalculation sets off are the one exception: a sanction that does not apply shall not undo the approval. The reply to the approval shall list each such sanction and the "attendance sync" command that finishes it, as the attendance module specification describes.
 - An approval shall not be recorded as a success before the reposting it claims has been done.
@@ -242,12 +243,10 @@
 - <MODIFIED COMMAND> There is a "round cancel" command initially implemented in the scope of the weather module. Its functionality shall be enhanced to also cancel the request for round results specified by the first bullet point. If this request for round results has already been triggered, the "round cancel" command will fail. It shall equally fail once any results exist for the round.
 - Where a round, a division or a season is cancelled, the bot shall post to the division's results channel a note that no results shall be posted for that round, or no further results for that division or season. The note shall be posted silently, mentioning nobody and notifying nobody, the notification being the attendance module's to carry, and only while the module is enabled. Decided 2026-09-19 (#175).
 
-#### The two sanction columns of an amendment
-- The formats below describe a first submission. A re-insertion through "round results amend" shall carry two further columns after them, holding the post-race penalty and the appeal penalty, so that an amendment preserves sanctions already applied rather than discarding them.
-    - For a race session, each is either "N/A", a number of seconds, or "DSQ".
-    - For a qualifying session, each is either "N/A" or "DSQ".
-    - Setting both to "DSQ" on one line shall be rejected.
-    - An entry either of whose sanction columns is "DSQ" shall be recorded as disqualified whatever its time column says.
+#### The format of an amendment
+- A re-insertion through "round results amend" shall take the same format as a first submission, without further columns. Decided 2026-09-20 (#345), withdrawing the two sanction columns that carried the post-race and appeal penalties.
+    - An amendment replays the round's report and appeal stages, where each sanction is kept, changed or removed with its justification and its author intact. A sanction shall not be re-entered as a column of the classification.
+    - A paste carrying the withdrawn columns shall be refused, and the refusal shall say that sanctions are now reviewed rather than pasted.
 
 #### Sprint Quali and Feature 
 - The expected format for Race results is "Position, Driver, Team, Tyre, Best Lap, Gap", with each line representing a different player's result.
@@ -385,11 +384,50 @@ Approving stage one shall present the staged list again with a choice of returni
 Approving stage two shall apply any staged corrections, republish the round's results and standings under the final state, post a verdict for each correction, recompute the standings of every later round, mark the round final, and delete the submission channel. There shall be no second confirmation on this stage.
 
 #### Amending a submitted session
-- <NEW COMMAND> A "round results amend" command shall be a league admin's, amending a round already final overwriting the classification the league raced with nothing to put it back. It shall intake a division name and round number mandatorily, and optionally, a session name as well. Where the session is omitted, the bot shall ask which one. The user will then be requested to re-insert session results in the same format as when first submitting round results, extended by the two sanction columns described under "Submitting round results".
+- <NEW COMMAND> A "round results amend" command shall be a league admin's, amending a round already final overwriting the classification the league raced with nothing to put it back. It shall intake a division name and round number mandatorily, and optionally, a session name as well. Where the session is omitted, the bot shall ask which sessions to amend, and any number of the round's sessions may be chosen.
     - The command shall be refused for a round that has not been marked final by both review stages.
-    - The results shall be re-inserted in a channel created for the purpose, private to the server's admin role, carrying a button to abandon the amendment.
-    - After insertion, the results are validated for format, and the standings of all rounds after the one that was amended (including) shall be output once more.
-    - The points configuration recorded for the session shall be kept where it is still attached to the season; otherwise the user shall be asked to choose one.
+    - The amendment shall be carried out in a channel created for the purpose, private to the server's admin role, carrying a button to abandon it.
+    - The points configuration recorded for each amended session shall be kept where it is still attached to the season; otherwise the user shall be asked to choose one for it.
+- **An amendment shall cover as many of a round's sessions as the user chooses.** Decided 2026-09-21. A round's reports and appeals are reviewed together, so the amended sessions shall share one amendment: each shall be entered in turn, in running order, and nothing written until the last is in; their reports and appeals shall be reviewed together; and the division rebuilt once.
+    - A paste that is refused shall end the whole amendment, the pastes already accepted included, and nothing shall be written. The sessions are not asked for again one by one: the user prepares every classification before starting. Decided 2026-09-21.
+
+- **An amendment shall replay the round's lifecycle in three stages.** Decided 2026-09-20 (#345). A round is amended the way it was raced, so that a corrected round is indistinguishable from one submitted correctly the first time.
+    - **Stage one — the classification.** The corrected results shall be re-inserted. Nothing shall be posted.
+    - **Stage two — the reports.** The reports the round already carries shall be shown back, each able to be kept, changed or removed, and further ones added. The round's attendance pardons shall be amendable in this stage, and in this stage alone. The first pass's resubmission of the whole round shall not be offered; a classification is redone by abandoning the amendment and starting another.
+    - **Stage three — the appeals.** The appeals the round already carries shall be shown back on the same terms.
+    - Approving a stage of an amendment shall not move the round. The round is already final: it shall not be returned to either review state, its division shall not be finished a second time, and its season shall not be wound down again.
+    - A stage approved without change shall leave the round's decisions exactly as they stood.
+    - A stage shall be approved once. A second approval of the same stage shall change nothing.
+- **A division shall have one amendment open at a time.** Decided 2026-09-21. An amendment of any round of a division in which another amendment is still open shall be refused, and the refusal shall name the round, the sessions and the channel of the open one. The last stage of an amendment reposts the whole division, and would otherwise publish the other's unapproved classification.
+- **A division with an amendment open shall commit nothing else.** Decided 2026-09-21. While an amendment of one of its rounds is open, the submission of any other round of the division, first or resubmitted, shall refuse every commit: a session's results, a session entered as cancelled, and the approval of either review stage. The "results standings sync" and "results rounds sync" commands shall be refused for the division likewise. The refusal shall name the round being amended and its channel, and the submission shall remain open for the user to try again once the amendment has ended. An amendment's first stage recalculates the division from its unapproved classification, which the other round's postings would otherwise publish.
+
+- **A verdict shall survive an amendment.** A penalty or appeal verdict shall follow its driver onto the amended classification, keeping its justification, its author and the time it was given. An amendment shall not discard the record of why a driver's result changed.
+    - Where a driver carrying a verdict is absent from the corrected classification, the amendment shall be refused, and the refusal shall name the driver.
+
+- **An amendment shall touch the sessions it amends and no other.** Decided 2026-09-20 (#345). A round's other sessions keep the decisions they already carry: their reports and appeals are not reopened, not rewritten and not re-applied. A session's decisions are reviewed by including that session in the amendment.
+
+- **An amendment shall publish nothing until its last stage is approved.** The classification is recorded as it is entered, but the league continues to read the round it raced until the reports and appeals have been settled — a round part-way through an amendment shall not be published as provisional.
+
+- **An amendment shall rewrite a round's decisions, not add to them.** Decided 2026-09-20 (#345). Approving a stage shall leave the round carrying exactly the reports, appeals and attendance pardons that stage held — no more and no fewer.
+    - The round's existing records shall be removed before the approved set is written, so that a decision kept is kept once rather than twice, and a decision removed in the stage is removed from the round.
+    - Every decision shall be shown back in its stage before this happens, so that what is written out again carries the justification, the author and the time it was originally given.
+    - It follows that amending a round twice shall leave it as the second amendment settled it, and shall not compound the sanctions of the first.
+
+- **An amendment not carried through shall be undone.** Decided 2026-09-20 (#345). The first stage commits the corrected classification, so an amendment whose later stages are never approved would otherwise leave a round scored from one classification and published from another.
+    - Where the report and appeal stages are not approved within a set period, the round shall be put back as it stood before the amendment began, and the league told in the log channel that the amendment lapsed and may be run again. Nothing shall be reposted, nothing having been posted.
+    - The period shall run from the moment the corrected classification is written and cover both stages together. Approving the report stage shall not extend it: the user prepares the review beforehand. Decided 2026-09-21.
+    - Abandoning an amendment with its button, a restart during it, or a failure part-way through a stage shall undo it on the same terms rather than leave it part-made.
+    - Once its last stage has been approved, an amendment can no longer be abandoned.
+    - An amendment abandoned before its classification was inserted has nothing to undo, and shall simply end.
+
+- **An amendment shall rebuild everything the division's channels show**, in the order a league reads them: the results, the standings, the attendance sheet, the round's report verdicts, then its appeal verdicts.
+    - Every round of the division shall be reposted, in round order, and not the amended round alone — a repost being a new message, reposting one round alone would leave the channel out of sequence.
+    - All of a round's verdicts shall be announced, in order, and not only those the amendment changed.
+    - In every channel the replacement shall be posted before what it replaces is removed, so that a failure part-way leaves the league what it already had.
+    - A round's superseded verdict announcements, and the banner heading them, shall be removed only once every one of that round's replacements has been posted. Where one could not be, the originals shall be left standing, and the league told which, with a way to find each.
+    - A round left with no verdict at all shall have its superseded announcements and their banner removed likewise. A banner that also heads an attendance sanction card shall be kept, the card being no verdict and staying where it is. Decided 2026-09-21.
+    - The attendance sheet shall be reposted once, against the round the running totals stand at, there being one live sheet rather than one per round.
+    - Where any of it could not be posted, the league shall be told rather than left to find out from a channel out of order.
 
 #### A verdict that was not announced shall be reported
 Every penalty and every appeal correction is announced in the division's verdicts channel. The announcement is the only thing that tells a driver why their classification changed, so a verdict that never reaches the channel shall be reported rather than passed over.
@@ -397,7 +435,10 @@ Every penalty and every appeal correction is announced in the division's verdict
 - Each verdict that could not be announced shall be named in the log channel, under an entry marked `Incomplete`, and the league manager who approved the review shall be told the same in their own reply.
 - A division with no verdicts channel set shall be reported, not skipped. A verdicts channel is one of the three a division shall have before its season's placements are confirmed, so a round reaching a verdict without one is a fault.
 - One verdict that cannot be announced shall not stop the rest. Each is attempted, and each that fails is named with the driver it was owed to.
-- **The bot shall not announce a decided verdict a second time.** There is no command that re-announces one, and the report shall say so, directing the manager to post the decision themselves once the cause is repaired.
+- **A verdict announcement shall record the message it was posted in**, so that it can be replaced. Decided 2026-09-20 (#345, #189), withdrawing the rule that the bot shall not announce a decided verdict a second time.
+    - An amendment replaying a round shall remove the announcements of the classification it replaces and announce the round's verdicts afresh.
+    - A superseded announcement that is left standing shall be named, and the league told that it is still standing, rather than a clean replacement being claimed.
+    - Where a verdict could not be announced at all, the report shall still direct the manager to post the decision themselves once the cause is repaired.
 - An automatic attendance sanction is a verdict for this purpose and is no exception to the rule above. Re-running the sanctions shall not announce one that already applied, the driver no longer being a candidate, so such a sanction shall be reported as applied but not announced.
 - The decisions themselves stand regardless. The penalties are applied, the corrections hold, and only the announcement is outstanding.
 

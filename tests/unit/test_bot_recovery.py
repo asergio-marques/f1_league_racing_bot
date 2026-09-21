@@ -27,6 +27,7 @@ missing and nobody would know to redo it.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -71,24 +72,27 @@ async def _make_db(tmp_path, *, channels: int = 1) -> str:
             "VALUES (?, ?, 'Division 1', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
-        await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
-            "scheduled_at) VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01')",
-            (ROUND_ID, DIVISION_ID),
+        # One amendment per round, which is the real shape: the table is unique on the round,
+        # an amendment covering whichever of its sessions were chosen (#345). Several orphans
+        # therefore stand on several rounds.
+        session_lists = (
+            ["FEATURE_RACE"], ["FEATURE_QUALIFYING", "FEATURE_RACE"], ["SPRINT_RACE"],
         )
-        # One row per session type: the table is unique on (round, session type), which is
-        # the real shape — a round can have an amendment open per session, not two for one.
-        session_types = ("FULL_RACE", "FULL_QUALIFYING", "LONG_SPRINT_RACE")
         for index in range(channels):
             await db.execute(
+                "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+                "scheduled_at) VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01')",
+                (ROUND_ID + index, DIVISION_ID),
+            )
+            await db.execute(
                 "INSERT INTO round_amend_channels "
-                "(id, round_id, channel_id, session_type, created_at) "
+                "(id, round_id, channel_id, session_types, created_at) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (
                     index + 1,
-                    ROUND_ID,
+                    ROUND_ID + index,
                     CHANNEL_ID + index,
-                    session_types[index],
+                    json.dumps(session_lists[index]),
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )

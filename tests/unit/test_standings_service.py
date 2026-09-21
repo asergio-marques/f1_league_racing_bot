@@ -1441,6 +1441,39 @@ async def test_a_recompute_leaves_no_row_under_the_past_account(db_path):
 
 
 @pytest.mark.asyncio
+async def test_the_postings_message_lists_move_with_the_top_row(db_path):
+    """#345: a repost deletes a posting by the list of every message it occupies. Carrying only
+    the anchor lost the list, and the messages after the anchor were then never deleted."""
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db)
+        r1 = await _round(db, div_id, 1)
+        await _result(db, await _session(db, r1, div_id), PAST, pos=1, pts=25)
+        await db.commit()
+    await compute_and_persist_round(db_path, r1, div_id)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_standings_snapshots SET standings_message_id = 4444, "
+            "constructor_standings_message_id = 5555, "
+            "standings_message_ids = '[4444, 4445, 4446]', "
+            "constructor_standings_message_ids = '[5555, 5556]' WHERE round_id = ?",
+            (r1,),
+        )
+        await _driver_moved(db)
+        await db.commit()
+
+    await compute_and_persist_round(db_path, r1, div_id)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT standings_message_ids, constructor_standings_message_ids "
+            "FROM driver_standings_snapshots WHERE round_id = ?",
+            (r1,),
+        )
+        rows = [tuple(r) for r in await cursor.fetchall()]
+    assert rows == [("[4444, 4445, 4446]", "[5555, 5556]")]
+
+
+@pytest.mark.asyncio
 async def test_a_recompute_leaves_a_row_it_no_longer_names_for_another_reason(db_path):
     """Only a row superseded by an account change is dropped. A driver the recomputation
     leaves out for any other reason — here one whose only result was removed — keeps the row

@@ -1,6 +1,7 @@
 """Entry point for the F1 League Weather Randomizer Bot."""
 
 import asyncio
+import json
 import logging
 import os
 
@@ -199,6 +200,17 @@ async def main() -> None:
 
         bot.scheduler_service.register_portrait_refresh_callback(_portrait_refresh_cb)
 
+        # The standing sweep that undoes an amendment nobody carried through (#345). Armed
+        # unconditionally rather than behind a setting: the amendment's first stage commits, so
+        # a league running the results module at all can leave a round half-amended, and the
+        # sweep is what makes that recoverable without anybody noticing it happened.
+        async def _amendment_sweep_cb() -> None:
+            from services.result_submission_service import sweep_expired_amendments
+            await sweep_expired_amendments(bot)
+
+        bot.scheduler_service.register_amendment_sweep_callback(_amendment_sweep_cb)
+        bot.scheduler_service.schedule_amendment_sweep()
+
         try:
             await _recover_portrait_refresh_job(bot)
         except Exception:
@@ -244,13 +256,19 @@ async def main() -> None:
 
         await _recover_signup_close_timers()
 
+        # Close any results-amend channels left open by a previous run.
+        #
+        # **Before the submission channels, not after** (#345). An amendment open at the restart
+        # has its corrections in the database, unapproved; recovering a submission channel whose
+        # results were saved but never posted posts its standings from that database. Reverting
+        # the amendments first means those standings are built from the round as it raced,
+        # wherever the revert succeeds.
+        await _recover_orphaned_amend_channels(bot)
+
         # Close any submission channels that were left open by a previous run.
         # Their wait_for loops died with the process, so we reset them here
         # so /test-mode advance can re-trigger submission.
         await _recover_orphaned_submission_channels(bot)
-
-        # Close any results-amend channels left open by a previous run.
-        await _recover_orphaned_amend_channels(bot)
 
         # Clear any season-review approve button left standing by a previous run.
         await _recover_expired_review_prompts(bot)
@@ -716,6 +734,16 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
 
         guild = await league_guild(bot)  # type: ignore[attr-defined]
 
+        # **A FINAL round is never restored to a review** (#345). This branch rebuilds the
+        # appeals prompt from a crash, and `_build_penalty_review_state` cannot know the review
+        # it rebuilds was an amendment's — `is_amendment` lives on the in-memory state alone.
+        # Approving such a prompt would run the first-pass path against a settled round:
+        # `refresh_division_status` and `wind_down_ongoing` are not guarded by the round's
+        # status, so a division could be finished and a season wound down a second time.
+        #
+        # Only a round actually awaiting appeals is restored, which an amended round never is.
+        # An amendment interrupted by a restart is abandoned instead, by
+        # `_recover_orphaned_amend_channels`, and the manager told to run it again.
         if in_penalty_review and round_status == "AWAITING_APPEAL_VERDICTS":
             # The bot restarted while a round was awaiting appeals review.
             # Re-post the AppealsReviewView prompt to the submission channel.
@@ -985,7 +1013,7 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
 
     async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
         cursor = await db.execute(
-            "SELECT id, round_id, channel_id, session_type FROM round_amend_channels"
+            "SELECT id, round_id, channel_id, session_types, closed_at FROM round_amend_channels"
         )
         orphans = await cursor.fetchall()
 
@@ -995,7 +1023,44 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
         row_id: int = row["id"]
         round_id: int = row["round_id"]
         channel_id: int = row["channel_id"]
-        session_type: str = row["session_type"]
+        try:
+            _sessions = ", ".join(
+                str(st).replace("_", " ").title() for st in json.loads(row["session_types"])
+            )
+        except (TypeError, ValueError):
+            _sessions = str(row["session_types"])
+        # A row kept only because its channel could not be deleted when the amendment finished
+        # (#345). There is nothing to revert and nothing to tell the league; the channel is the
+        # whole of what is outstanding.
+        already_closed: bool = bool(row["closed_at"])
+
+        # **The round goes back as it was, where stage one had already written** (#345). The
+        # amendment's first stage commits the corrected classification, so abandoning one
+        # without undoing it leaves the round scored from the new results and posted from the
+        # old. Where nothing was written yet — or the amendment had already been approved and
+        # released its snapshot — the revert finds nothing to do, which is correct.
+        from datetime import datetime as _dt, timezone as _tz
+
+        from services.result_submission_service import revert_abandoned_amendment
+
+        try:
+            reverted = (
+                False if already_closed
+                else await revert_abandoned_amendment(bot.db_path, round_id, bot)
+            )
+        except Exception:
+            # The row keeps the snapshot, and a deadline of now hands it to the sweep, which
+            # retries within minutes and deletes the channel once it has put the round back.
+            log.exception(
+                "Recovery: could not put round %s back after an abandoned amendment", round_id
+            )
+            async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+                await db.execute(
+                    "UPDATE round_amend_channels SET expires_at = ? WHERE id = ?",
+                    (_dt.now(_tz.utc).isoformat(), row_id),
+                )
+                await db.commit()
+            continue
 
         # Remove the DB row first so a further crash doesn't re-process it.
         async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
@@ -1015,25 +1080,42 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
                     pass
 
         log.info(
-            "Recovery: deleted orphaned amend channel %s for round %s session %s",
-            channel_id, round_id, session_type,
+            "Recovery: deleted orphaned amend channel %s for round %s sessions %s",
+            channel_id, round_id, _sessions,
         )
 
         # Notify the log channel so the LM knows to re-run the command.
+        if already_closed:
+            continue
         try:
             async with get_connection(bot.db_path) as _rdb:  # type: ignore[attr-defined]
                 _rcur = await _rdb.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
                 _rrow = await _rcur.fetchone()
             _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
+            if reverted:
+                _what = (
+                    "  Amendment channel deleted, and the round put back as it was. Please "
+                    "re-run /round results amend."
+                )
+            else:
+                # Nothing to put back means one of two things, and the row cannot say which:
+                # the corrected results were never entered, or the amendment had been approved
+                # and its channels were being rebuilt when the bot stopped (#345).
+                _what = (
+                    "  Amendment channel deleted; nothing needed putting back. If the "
+                    "amendment had not been approved, re-run /round results amend. If it had, "
+                    "its channels may be part-rebuilt: run /results rounds sync and "
+                    "/results standings sync."
+                )
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 f"System | Bot restarted mid-amendment | Notice\n"
-                f"  round: {_round_label}, session: {session_type.replace('_', ' ').title()}\n"
-                "  Amendment channel deleted. Please re-run /round results amend.",
+                f"  round: {_round_label}, sessions: {_sessions}\n"
+                + _what,
             )
         except Exception:
             log.exception(
-                "Recovery: failed to post log for orphaned amend channel round %s session %s",
-                round_id, session_type,
+                "Recovery: failed to post log for orphaned amend channel round %s sessions %s",
+                round_id, _sessions,
             )
 
 

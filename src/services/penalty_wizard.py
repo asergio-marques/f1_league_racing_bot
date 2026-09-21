@@ -80,6 +80,9 @@ class StagedPardon:
     pardon_type: str          # 'NO_RSVP' | 'ABSENT' | 'NO_SHOW'
     justification: str
     grantor_id: int           # Discord user ID of staging admin
+    #: When a pardon read back from the round was granted, so that an amendment writing it out
+    #: again keeps the time as well as the grantor (#345). None for one staged now.
+    granted_at: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +105,22 @@ class PenaltyReviewState:
     appeals_prompt_message_id: int | None = None
     round_number: int = 0
     division_name: str = ""
+    #: True where this review is an **amendment replaying a settled round**, not the round's
+    #: first pass through review (#345).
+    #:
+    #: The stages are the same and the views are the same; what differs is what approving one
+    #: means. A first pass moves the round on — report review sets `AWAITING_APPEAL_VERDICTS`,
+    #: appeal review sets `FINAL`, refreshes the division's status and may wind the season
+    #: down. An amended round is *already* FINAL, so replaying those transitions would move a
+    #: settled round backwards and forwards through states it has long since left, and could
+    #: finish a division or wind down a season a second time.
+    #:
+    #: Read by the finalisers, which hand an amendment's stages to functions of their own.
+    is_amendment: bool = False
+    #: Set once an amendment's report stage has been approved (#345). ``apply_penalties`` adds
+    #: to the penalty columns, so approving the stage a second time would add every report
+    #: again; a first pass is guarded by ``staged_penalties``, which an amendment does not own.
+    reports_approved: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +200,14 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
         "Review them and apply any penalties below before approving.",
         "",
     ]
+    if state.is_amendment:
+        # Drawn here rather than prefixed by the caller, so that every refresh keeps it (#345).
+        lines[2] = (
+            "**Stage 2 of 3 — Reports.** The decisions the amended sessions already carry are "
+            "listed below. Change what the corrected classification changes and leave the "
+            "rest: approving keeps them exactly as they stand. Nothing is published until the "
+            "appeals are approved."
+        )
 
 
     async with get_connection(state.db_path) as db:
@@ -273,9 +300,12 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
     if state.staged_pardons:
         lines.append("")
         lines.append(f"**Staged Attendance Pardons ({len(state.staged_pardons)}):**")
-        for sp in state.staged_pardons:
+        for i, sp in enumerate(state.staged_pardons, 1):
+            # Removable only in an amendment, which is where the round's pardons are reopened.
+            remove = f"  ← Remove Pardon #{i} below" if state.is_amendment else ""
             lines.append(
-                f"  • {_mention(sp.driver_user_id)} — **{sp.pardon_type}** *(justification logged)*"
+                f"  • {_mention(sp.driver_user_id)} — **{sp.pardon_type}** "
+                f"*(justification logged)*{remove}"
             )
 
     return "\n".join(lines)
@@ -311,6 +341,13 @@ async def _render_appeals_prompt_content(state: PenaltyReviewState) -> str:
         "Review and add any appeal corrections before approving to finalise.",
         "",
     ]
+    if state.is_amendment:
+        # Nothing has been posted during an amendment, so the first pass's line would be false.
+        lines[2] = (
+            "**Stage 3 of 3 — Appeals.** The appeals the amended sessions already carry are "
+            "listed below. Approving commits the amendment and rebuilds the division's "
+            "channels in round order."
+        )
     if state.staged_appeals:
         async with get_connection(state.db_path) as db:
             current_of = await current_account_map_for_division(db, state.division_id)
@@ -861,6 +898,37 @@ async def _show_approval_step(
 # Main persistent view (T010, T011, T018)
 # ---------------------------------------------------------------------------
 
+def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
+    """Add a view's Remove buttons in rows 1 to 4, into whatever room those rows have left.
+
+    Each is ``(label, custom_id, callback)``. Placing them by arithmetic alone — five to a row
+    from row 1 — ignored the static buttons already sitting there: the penalty review keeps its
+    Attendance Pardon button on row 1, so a fifth staged penalty overflowed the row and the
+    view raised ``ValueError`` as it was built. A first pass needed five penalties to reach it;
+    an amendment reaches it by showing back five reports the round already carries (#345).
+
+    Discord allows twenty-five components to a message, so a list longer than the room left is
+    cut short with a warning rather than failing the whole prompt: the entries beyond it are
+    still listed and still applied, and removing an earlier one brings theirs into view.
+    """
+    used = [0] * 5
+    for item in view.children:
+        if item.row is not None:
+            used[item.row] += item.width
+    slots = [row for row in range(1, 5) for _ in range(5 - used[row])]
+    if len(buttons) > len(slots):
+        log.warning(
+            "_add_remove_buttons: %d Remove buttons, room for %d; the rest are not shown",
+            len(buttons), len(slots),
+        )
+    for (label, custom_id, callback), row in zip(buttons, slots):
+        btn = discord.ui.Button(
+            label=label, style=discord.ButtonStyle.danger, custom_id=custom_id, row=row
+        )
+        btn.callback = callback
+        view.add_item(btn)
+
+
 class PenaltyReviewView(LeagueView):
     """Persistent penalty review prompt view.
 
@@ -892,18 +960,29 @@ class PenaltyReviewView(LeagueView):
             elif item.custom_id == _CID_APPROVE:
                 item.disabled = _no_state or len(state.staged) == 0  # type: ignore[union-attr]
 
-        # Dynamic Remove buttons — one per staged entry (T018)
+        if state is not None and state.is_amendment:
+            # **No resubmission in an amendment** (#345). It replaces every session of the round
+            # and sends it back through a first-pass review — against a round already FINAL. An
+            # amendment's classification is corrected in its first stage; to start again, the
+            # manager cancels and runs `/round results amend` afresh.
+            for item in list(self.children):
+                if getattr(item, "custom_id", None) == _CID_RESUBMIT:
+                    self.remove_item(item)
+
+        # Dynamic Remove buttons — one per staged entry (T018), then, in an amendment, one per
+        # staged pardon, which is the one place a round's pardons are reopened (#345).
         if state is not None:
-            for idx, sp in enumerate(state.staged):
-                row_num = min(1 + idx // 5, 4)
-                btn = discord.ui.Button(
-                    label=f"Remove #{idx + 1}",
-                    style=discord.ButtonStyle.danger,
-                    custom_id=f"pw_remove_{idx}",
-                    row=row_num,
-                )
-                btn.callback = self._make_remove_cb(idx)
-                self.add_item(btn)
+            buttons = [
+                (f"Remove #{idx + 1}", f"pw_remove_{idx}", self._make_remove_cb(idx))
+                for idx in range(len(state.staged))
+            ]
+            if state.is_amendment:
+                buttons += [
+                    (f"Remove Pardon #{idx + 1}", f"pw_pardon_remove_{idx}",
+                     self._make_pardon_remove_cb(idx))
+                    for idx in range(len(state.staged_pardons))
+                ]
+            _add_remove_buttons(self, buttons)
 
     def _make_remove_cb(self, idx: int):
         async def cb(interaction: discord.Interaction) -> None:
@@ -927,6 +1006,32 @@ class PenaltyReviewView(LeagueView):
             else:
                 await interaction.response.send_message(
                     "⚠️ That entry no longer exists (the list may have changed).",
+                    ephemeral=True,
+                )
+        return cb
+
+    def _make_pardon_remove_cb(self, idx: int):
+        async def cb(interaction: discord.Interaction) -> None:
+            if self.state is None:
+                await interaction.response.send_message(
+                    "⚠️ The bot was restarted. Please wait for the penalty prompt to refresh.",
+                    ephemeral=True,
+                )
+                return
+            if not await _require_lm(interaction, self.state):
+                return
+            if idx < len(self.state.staged_pardons):
+                removed = self.state.staged_pardons.pop(idx)
+                await interaction.response.defer(ephemeral=True)
+                await _refresh_prompt(self.state)
+                await interaction.followup.send(
+                    f"🗑️ Removed pardon: <@{await _shown(self.state, removed.driver_user_id)}> "
+                    f"| {removed.pardon_type}",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "⚠️ That pardon no longer exists (the list may have changed).",
                     ephemeral=True,
                 )
         return cb
@@ -1163,16 +1268,13 @@ class AppealsReviewView(LeagueView):
 
         # Dynamic Remove buttons — one per staged correction
         if state is not None:
-            for idx, sp in enumerate(state.staged_appeals):
-                row_num = min(1 + idx // 5, 4)
-                btn = discord.ui.Button(
-                    label=f"Remove #{idx + 1}",
-                    style=discord.ButtonStyle.danger,
-                    custom_id=f"ar_remove_{idx}",
-                    row=row_num,
-                )
-                btn.callback = self._make_remove_cb(idx)
-                self.add_item(btn)
+            _add_remove_buttons(
+                self,
+                [
+                    (f"Remove #{idx + 1}", f"ar_remove_{idx}", self._make_remove_cb(idx))
+                    for idx in range(len(state.staged_appeals))
+                ],
+            )
 
     def _make_remove_cb(self, idx: int):
         async def cb(interaction: discord.Interaction) -> None:

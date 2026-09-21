@@ -420,7 +420,10 @@ async def _run_season_complete(divisions, outstanding, all_done=False):
 
     # The archival itself belongs to season_end_service and has its own tests; stub it so this
     # exercises the gate and nothing beyond it.
-    with patch("services.season_end_service.execute_season_end", new=AsyncMock()) as archived:
+    with patch("services.season_end_service.execute_season_end", new=AsyncMock()) as archived, patch(
+        "services.result_submission_service.open_amendment_in_season",
+        new=AsyncMock(return_value=None),
+    ):
         await raw(cog, interaction)
     return sent, svc, archived
 

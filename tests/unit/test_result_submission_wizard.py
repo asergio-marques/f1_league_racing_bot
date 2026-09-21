@@ -166,7 +166,10 @@ def _bot(
     return bot
 
 
-async def _run(bot, *, configs=("Standard",), selected="Half", create_error=None):
+async def _run(
+    bot, *, configs=("Standard",), selected="Half", create_error=None, on_select=None
+):
+    """*on_select* is awaited while the points configuration is being chosen."""
     sub = _channel(SUB_CHANNEL)
 
     class _FakeSelect:
@@ -175,6 +178,8 @@ async def _run(bot, *, configs=("Standard",), selected="Half", create_error=None
             self.selected = selected
 
         async def wait(self):
+            if on_select is not None:
+                await on_select()
             return None
 
     patches = {
@@ -585,3 +590,140 @@ async def test_no_configuration_saves_without_one_and_warns(tmp_path):
     assert "No points configuration attached" in _said(stubs["sub"])
     assert {s[2] for s in await _sessions(db_path)} == {None}
     stubs["points"].assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Nothing is entered while another round of the division is being amended (#345)
+# ---------------------------------------------------------------------------
+#
+# Decided 2026-09-21. An amendment's first stage writes its corrections and recalculates the
+# championship, publishing nothing; a first pass posts standings from the same database, so it
+# would publish them. While one is open, a paste — `CANCELLED` included — is refused and the
+# session asked again, the channel staying open.
+
+AMENDED_ROUND = 20
+AMEND_CHANNEL = 8200
+
+
+async def _open_amendment(db_path, *, division_id=DIVISION_ID):
+    async with get_connection(db_path) as db:
+        if division_id != DIVISION_ID:
+            await db.execute(
+                "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+                "VALUES (?, ?, 'Am', 2, 556)",
+                (division_id, SEASON_ID),
+            )
+        await db.execute(
+            "INSERT OR IGNORE INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "status) VALUES (?, ?, 2, '2026-01-25T18:00:00+00:00', 'NORMAL', 'FINAL')",
+            (AMENDED_ROUND, division_id),
+        )
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at) "
+            "VALUES (?, ?, '[\"FEATURE_RACE\"]', '2026-02-01T00:00:00+00:00')",
+            (AMENDED_ROUND, AMEND_CHANNEL),
+        )
+        await db.commit()
+
+
+async def _end_amendment(db_path):
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM round_amend_channels")
+        await db.commit()
+
+
+def _pastes_ending_the_amendment(db_path, pastes, *, before: int, seen: list):
+    """Each paste in turn, the amendment ending just before paste number *before* arrives.
+
+    What the round held at that moment is put in *seen*: nothing entered while the amendment
+    was open.
+    """
+    messages = iter([_message(p) for p in pastes])
+    calls = 0
+
+    async def wait_for(*_a, **_k):
+        nonlocal calls
+        calls += 1
+        if calls == before:
+            seen.extend(await _sessions(db_path))
+            await _end_amendment(db_path)
+        return next(messages)
+
+    return AsyncMock(side_effect=wait_for)
+
+
+async def test_a_paste_is_refused_while_another_round_is_amended(tmp_path):
+    db_path = await _make_db(tmp_path, name="held_paste")
+    await _open_amendment(db_path)
+    bot = _bot(db_path, [])
+    seen: list = []
+    bot.wait_for = _pastes_ending_the_amendment(
+        db_path, [QUALI_PASTE, QUALI_PASTE, RACE_PASTE], before=2, seen=seen
+    )
+
+    stubs = await _run(bot)
+
+    assert seen == []
+    said = _said(stubs["sub"])
+    assert f"Round 2 of this division is being amended in <#{AMEND_CHANNEL}>" in said
+    assert "Paste **" in said and "again then." in said
+    # Asked again, and entered once the amendment had ended.
+    assert [s[0] for s in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
+    stubs["penalty"].assert_awaited_once()
+    # A refused paste was never accepted, and the log does not say it was.
+    assert _logged(bot).count("RESULT_SUBMISSION_ACCEPTED") == 2
+
+
+async def test_cancelling_a_session_is_refused_while_another_round_is_amended(tmp_path):
+    """`CANCELLED` is entered too: it records the session, and tells the results channel."""
+    db_path = await _make_db(tmp_path, name="held_cancel")
+    await _open_amendment(db_path)
+    bot = _bot(db_path, [])
+    seen: list = []
+    bot.wait_for = _pastes_ending_the_amendment(
+        db_path, ["CANCELLED", "CANCELLED", RACE_PASTE], before=2, seen=seen
+    )
+
+    stubs = await _run(bot)
+
+    assert seen == []
+    assert "Type `CANCELLED` for **" in _said(stubs["sub"])
+    assert _said(bot._results).count("was cancelled") == 1
+    assert (await _sessions(db_path))[0][:2] == ("FEATURE_QUALIFYING", "CANCELLED")
+
+
+async def test_an_amendment_opened_while_the_configuration_is_chosen_still_holds(tmp_path):
+    """The hold is read when the session is written, not when the paste arrives.
+
+    Choosing a configuration waits on the manager, and an amendment can open meanwhile; read
+    only on arrival, that paste would be entered — and, the round's last, post its standings
+    from the amendment's corrections.
+    """
+    db_path = await _make_db(tmp_path, name="held_at_commit")
+    bot = _bot(db_path, [])
+    seen: list = []
+    bot.wait_for = _pastes_ending_the_amendment(
+        db_path, [QUALI_PASTE, QUALI_PASTE, RACE_PASTE], before=2, seen=seen
+    )
+    opened: list = []
+
+    async def _open_once():
+        if not opened:
+            opened.append(True)
+            await _open_amendment(db_path)
+
+    stubs = await _run(bot, configs=("Standard", "Half"), on_select=_open_once)
+
+    assert seen == []
+    assert "is being amended" in _said(stubs["sub"])
+    assert len(await _sessions(db_path)) == 2
+
+
+async def test_an_amendment_in_another_division_holds_nothing(tmp_path):
+    db_path = await _make_db(tmp_path, name="held_elsewhere")
+    await _open_amendment(db_path, division_id=12)
+
+    stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
+
+    assert len(await _sessions(db_path)) == 2
+    assert "is being amended" not in _said(stubs["sub"])
