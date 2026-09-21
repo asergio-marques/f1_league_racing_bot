@@ -206,9 +206,7 @@ See [Test mode](test-mode.md) for the whole picture.
 
 ## What race day looks like
 
-**The submission channel appears at the round's scheduled start time**, named for the season, the division and the round, and visible only to holders of the bot's usual role.
-
-> **Nobody is usefully told about it.** The opening message pings the **division's** role — your drivers — in a channel your drivers cannot see, so the mention reaches nobody and your league managers get no notification at all. Watch for the channel appearing, or check after each race; do not wait to be told.
+**The submission channel appears at the round's scheduled start time**, named for the season, the division and the round, and visible only to holders of the interaction role and the league admin role. **Its opening message pings the interaction role**, the one that enters results, and no other: your drivers cannot see the channel, and a league admin who does not also hold the interaction role is not pinged.
 
 **The bot asks for one session at a time, in order** — Sprint Qualifying, Sprint Race, Feature Qualifying, Feature Race, skipping the two sprint sessions for a weekend that has none. You cannot skip ahead or go back; each session is asked for, taken, and then the next one is asked for. The exact format for each is in [Submission format — Race session](../../README.md#submission-format--race-session) and [Submission format — Qualifying session](../../README.md#submission-format--qualifying-session), and the bot repeats it above every prompt.
 
@@ -464,6 +462,7 @@ Worth knowing so you do not go looking for the setting.
 | Season refused for having no points configuration | Nothing is attached. `/results config append` first |
 | Season refused for a points configuration that does not exist | A name is attached that the server no longer holds — a typo from an older season, or a configuration since removed. The refusal names it; build it with `/results config add` or drop it with `/results config detach` |
 | No submission channel when a round started | The module is off, the division has no results channel, or the round was cancelled. The log channel says which |
+| A submission channel opened but nobody was pinged | The interaction role cannot be mentioned by the bot. Give the bot **Mention @everyone, @here, and All Roles** — see [Required Permissions](../../README.md#required-permissions) — or let anyone mention the role |
 | No submission channel for a round you moved | `/round amend` re-arms the round's submission whatever your modules. If one still does not open, check the round actually reached its scheduled time |
 | A submission rejected over a team role | The Reserve role in a team column, three lines under one team, or a driver under a different team from the one another session of the round already records |
 | A submission rejected over a driver | Not mentioned, or not seated in that division — a driver placed mid-season whose placement is not yet confirmed counts as not seated. A reserve also needs `/team reserve-role` set |
