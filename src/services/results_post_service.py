@@ -459,15 +459,8 @@ async def post_session_results(
     *,
     bot=None,
     result_status: str | None = None,
-    dsq_phase_map: dict[int, str] | None = None,
 ) -> int:
     """Format and send a single session result. Returns the Discord message ID.
-
-    *dsq_phase_map* lets a caller state which rows were disqualified, and in which phase,
-    instead of having it read from the verdict tables. The amendment replay posts what it has
-    computed **before** committing any of it (#345), so the tables still hold the round it is
-    replacing; reading them there would draw the old classification's marks onto the new one.
-    Omitted — every caller but that one — it is loaded from the database exactly as before.
 
     **The image path is a guard clause in front of an untouched body** (039). Where the
     images module is enabled, the `results` aspect is on and this session's template is
@@ -488,11 +481,13 @@ async def post_session_results(
     user_ids = [r.driver_user_id for r in driver_rows]
     test_display = await _build_test_driver_display(db_path, user_ids)
 
-    if dsq_phase_map is None:
-        result_ids = [r.id for r in driver_rows]
-        dsq_phase_map = await _load_dsq_phase_map(
-            db_path, result_ids, is_qualifying=session_type.is_qualifying
-        )
+    # Which rows were disqualified, and in which phase, is read from the verdict tables rather
+    # than taken from the caller: every posting happens after the decisions are committed, the
+    # amendment's rebuild included, so the tables are the one place that knows (#345).
+    result_ids = [r.id for r in driver_rows]
+    dsq_phase_map = await _load_dsq_phase_map(
+        db_path, result_ids, is_qualifying=session_type.is_qualifying
+    )
 
     if session_type.is_qualifying:
         table = results_formatter.format_qualifying_table(
