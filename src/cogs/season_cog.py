@@ -5125,14 +5125,10 @@ class SeasonCog(commands.Cog):
         # first — and left published if it were then cancelled or lapsed, its revert posting
         # nothing. Two amendments of one round would also rewrite the round's pardons over each
         # other, and the second would take the first one's snapshot with it.
+        from services.result_submission_service import open_amendment_in_division
+
+        _open = await open_amendment_in_division(self.bot.db_path, div.id)
         async with get_connection(self.bot.db_path) as _odb:
-            _cur = await _odb.execute(
-                "SELECT rac.channel_id, r.round_number, rac.session_types "
-                "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
-                "WHERE r.division_id = ? AND rac.closed_at IS NULL",
-                (div.id,),
-            )
-            _open = await _cur.fetchone()
             _cur = await _odb.execute(
                 "SELECT channel_id FROM round_amend_channels "
                 "WHERE round_id = ? AND closed_at IS NOT NULL",

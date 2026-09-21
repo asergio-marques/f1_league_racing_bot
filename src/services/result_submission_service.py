@@ -503,6 +503,14 @@ async def finalize_penalty_review(
         await _approve_amendment_reports(interaction, state)
         return
 
+    held = await held_by_amendment(
+        state.db_path, state.round_id, state.division_id,
+        then="Approve the reports again then.",
+    )
+    if held:
+        await interaction.response.send_message(held, ephemeral=True)
+        return
+
     await interaction.response.defer(ephemeral=True)
 
     db_path: str = state.db_path
@@ -1047,6 +1055,14 @@ async def finalize_appeals_review(
 
     if getattr(state, "is_amendment", False):
         await _approve_amendment_appeals(interaction, state)
+        return
+
+    held = await held_by_amendment(
+        state.db_path, state.round_id, state.division_id,
+        then="Approve the appeals again then.",
+    )
+    if held:
+        await interaction.response.send_message(held, ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=True)
@@ -2178,6 +2194,51 @@ async def _amendment_sessions_of(db_path: str, round_id: int) -> list[str]:
         return list(_json.loads(row["session_types"]))
     except (TypeError, ValueError):
         return []
+
+
+async def open_amendment_in_division(db_path: str, division_id: int):
+    """The amendment open in a division — its round, round number, channel and sessions — or None.
+
+    One is open from the moment its channel is recorded until it is approved, cancelled or
+    reverted. A row carrying ``closed_at`` is one that has ended and could not delete its
+    channel; it is kept for restart recovery to find, and holds nothing open.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT rac.round_id, r.round_number, rac.channel_id, rac.session_types "
+            "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
+            "WHERE r.division_id = ? AND rac.closed_at IS NULL",
+            (division_id,),
+        )
+        return await cursor.fetchone()
+
+
+async def held_by_amendment(
+    db_path: str, round_id: int, division_id: int, *, then: str
+) -> str | None:
+    """Why nothing of *round_id* may be committed now, or None when it may.
+
+    **A division with an amendment open commits nothing else** (#345, decided 2026-09-21).
+    Stage one writes the amended round's corrected classification and recalculates the
+    championship from it, publishing nothing. A first pass of another round in the division
+    posts standings as its results go in and at each approval, and would publish those
+    unapproved corrections — and leave them published if the amendment were then cancelled or
+    lapsed, its revert posting nothing. So while one is open, a first pass's results paste and
+    its report and appeal approvals are refused, and the channel stays open for the manager to
+    try again. The wait is short: an amendment lapses 30 minutes after its first stage.
+
+    Called at the point of the commit itself — after the points configuration is chosen, not
+    when the paste arrives — so an amendment opened while the manager is choosing still holds.
+    *then* ends the refusal, saying what to do once the amendment has ended.
+    """
+    row = await open_amendment_in_division(db_path, division_id)
+    if row is None or row["round_id"] == round_id:
+        return None
+    return (
+        f"⏸️ Round {row['round_number']} of this division is being amended in "
+        f"<#{row['channel_id']}>, so nothing can be committed for another of its rounds until "
+        "that ends — at most 30 minutes after its corrections are entered. " + then
+    )
 
 
 async def _rewrite_round_pardons(db_path: str, round_id: int, staged_pardons: list) -> None:
@@ -4136,6 +4197,13 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             content = msg.content.strip()
 
             if content.upper() == "CANCELLED":
+                held = await held_by_amendment(
+                    db_path, round_id, division_id,
+                    then=f"Type `CANCELLED` for **{label}** again then.",
+                )
+                if held:
+                    await sub_channel.send(held)
+                    continue
                 await save_session_result(
                     db_path=db_path,
                     round_id=round_id,
@@ -4200,14 +4268,6 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                     )
                     continue
 
-            # Log accepted input (with raw content for auditability)
-            await bot.output_router.post_log(  # type: ignore[attr-defined]
-                f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_ACCEPTED | Success\n"
-                f"  season: {season_number}, division: {division_name!r}\n"
-                f"  round: {round_number}, session: {session_type.value}\n"
-                f"  input:\n```\n{content[:500]}\n```",
-            )
-
             # Config selection
             selected_config: str | None = None
             if len(config_names) == 1:
@@ -4238,6 +4298,21 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                     "⚠️ No points configuration attached to this season. "
                     "Results will be saved without a config."
                 )
+
+            held = await held_by_amendment(
+                db_path, round_id, division_id, then=f"Paste **{label}** again then."
+            )
+            if held:
+                await sub_channel.send(held)
+                continue
+
+            # Log accepted input (with raw content for auditability)
+            await bot.output_router.post_log(  # type: ignore[attr-defined]
+                f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_ACCEPTED | Success\n"
+                f"  season: {season_number}, division: {division_name!r}\n"
+                f"  round: {round_number}, session: {session_type.value}\n"
+                f"  input:\n```\n{content[:500]}\n```",
+            )
 
             # Convert parsed rows to dicts for DB insertion
             if session_type.is_qualifying:
@@ -4728,6 +4803,13 @@ async def _resubmit_collection_task(
             content = msg.content.strip()
 
             if content.upper() == "CANCELLED":
+                held = await held_by_amendment(
+                    db_path, round_id, division_id,
+                    then=f"Type `CANCELLED` for **{label}** again then.",
+                )
+                if held:
+                    await sub_channel.send(held)
+                    continue
                 collected.append(
                     CollectedSession(session_type, "CANCELLED", None, msg.author.id)
                 )
@@ -4776,6 +4858,13 @@ async def _resubmit_collection_task(
                     await config_msg.edit(content=f"🔧 Config selected: **{selected_config}**", view=None)
                 except discord.HTTPException:
                     pass
+
+            held = await held_by_amendment(
+                db_path, round_id, division_id, then=f"Paste **{label}** again then."
+            )
+            if held:
+                await sub_channel.send(held)
+                continue
 
             if session_type.is_qualifying:
                 driver_rows_data = [_row_dict_from_qualifying(r) for r in parsed_rows]  # type: ignore[arg-type]

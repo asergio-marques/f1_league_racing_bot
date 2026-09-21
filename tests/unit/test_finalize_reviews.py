@@ -1055,6 +1055,135 @@ async def test_the_sanctions_still_run_when_the_record_is_sound(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Nothing is approved while another round of the division is being amended (#345)
+# ---------------------------------------------------------------------------
+#
+# Decided 2026-09-21. An amendment's first stage writes the corrected classification and
+# recalculates the championship, publishing nothing; approving another round of the division
+# posts standings, and would publish those corrections before they are approved — and leave them
+# published if the amendment were then cancelled or lapsed. Both approvals are refused while one
+# is open, and the review is left as it was for the manager to press again.
+
+AMENDED_ROUND = 20
+AMEND_CHANNEL = 8200
+
+
+async def _amend_round_two(db_path, *, division_id=DIVISION_ID, ended=False):
+    """An amendment of round 2, open in *division_id* — or *ended*, its channel left behind."""
+    async with get_connection(db_path) as db:
+        if division_id != DIVISION_ID:
+            await db.execute(
+                "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+                "VALUES (?, ?, 'Am', 2, 556)",
+                (division_id, SEASON_ID),
+            )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
+            "VALUES (?, ?, 2, '2026-01-25T18:00:00+00:00', 'NORMAL', 'FINAL')",
+            (AMENDED_ROUND, division_id),
+        )
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "closed_at) VALUES (?, ?, '[\"FEATURE_RACE\"]', '2026-02-01T00:00:00+00:00', ?)",
+            (AMENDED_ROUND, AMEND_CHANNEL, "2026-02-01T00:20:00+00:00" if ended else None),
+        )
+        await db.commit()
+
+
+def _held_interaction():
+    interaction = _interaction()
+    interaction.response.send_message = AsyncMock()
+    return interaction
+
+
+def _refusal(interaction) -> str:
+    interaction.response.send_message.assert_awaited_once()
+    assert interaction.response.send_message.await_args.kwargs.get("ephemeral") is True
+    return str(interaction.response.send_message.await_args.args[0])
+
+
+async def test_the_reports_are_not_approved_while_another_round_is_amended(tmp_path):
+    db_path = await _make_db(tmp_path, name="held_reports")
+    await _amend_round_two(db_path)
+    state = _state(db_path, staged=[_penalty()])
+    interaction = _held_interaction()
+
+    stubs = await _run(finalize_penalty_review, state, interaction)
+
+    stubs["apply"].assert_not_awaited()
+    stubs["repost"].assert_not_awaited()
+    interaction.response.defer.assert_not_awaited()
+    assert await _round_status(db_path) == "AWAITING_REPORT_VERDICTS"
+    assert await _staged_column(db_path) is None
+    # The review is kept, for the manager to press again once the amendment has ended.
+    assert len(state.staged) == 1
+    refusal = _refusal(interaction)
+    assert f"Round 2 of this division is being amended in <#{AMEND_CHANNEL}>" in refusal
+    assert "Approve the reports again then." in refusal
+
+
+async def test_the_appeals_are_not_approved_while_another_round_is_amended(tmp_path):
+    db_path = await _make_db(
+        tmp_path, name="held_appeals", round_status="AWAITING_APPEAL_VERDICTS"
+    )
+    await _amend_round_two(db_path)
+    interaction = _held_interaction()
+
+    stubs = await _run(finalize_appeals_review, _state(db_path), interaction)
+
+    stubs["repost"].assert_not_awaited()
+    stubs["close"].assert_not_awaited()
+    stubs["refresh"].assert_not_awaited()
+    assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
+    assert "Approve the appeals again then." in _refusal(interaction)
+
+
+async def test_the_reports_are_approved_once_the_amendment_has_ended(tmp_path):
+    """Refused, the review stands; pressed again after the amendment, it goes through."""
+    db_path = await _make_db(tmp_path, name="held_then_approved")
+    await _amend_round_two(db_path)
+    state = _state(db_path, staged=[_penalty()])
+    await _run(finalize_penalty_review, state, _held_interaction())
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM round_amend_channels")
+        await db.commit()
+
+    stubs = await _run(finalize_penalty_review, state)
+
+    stubs["apply"].assert_awaited_once()
+    assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
+
+
+@pytest.mark.parametrize("where", ["another division", "ended"])
+async def test_an_amendment_elsewhere_or_ended_holds_nothing(tmp_path, where):
+    """Only an amendment open in the round's own division holds it.
+
+    One that has ended but could not delete its channel keeps its row, for restart recovery to
+    find the channel by; it is not open, and holding approvals on it would hold them for ever.
+    """
+    db_path = await _make_db(tmp_path, name=f"not_held_{where.replace(' ', '_')}")
+    if where == "ended":
+        await _amend_round_two(db_path, ended=True)
+    else:
+        await _amend_round_two(db_path, division_id=12)
+
+    stubs = await _run(finalize_penalty_review, _state(db_path, staged=[_penalty()]))
+
+    stubs["apply"].assert_awaited_once()
+
+
+async def test_an_amendment_is_not_held_by_itself(tmp_path):
+    """Its own report and appeal stages are the ones that end it."""
+    from services.result_submission_service import held_by_amendment
+
+    db_path = await _make_db(tmp_path, name="not_held_by_itself")
+    await _amend_round_two(db_path)
+
+    assert await held_by_amendment(db_path, AMENDED_ROUND, DIVISION_ID, then="") is None
+    assert await held_by_amendment(db_path, ROUND_ID, DIVISION_ID, then="") is not None
+
+
+# ---------------------------------------------------------------------------
 # An amendment rewrites the round's decisions rather than adding to them (#345)
 # ---------------------------------------------------------------------------
 #
