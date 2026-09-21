@@ -139,90 +139,36 @@ async def _delete_posting(
     message_ids: list[int] | None,
     label: str = "message",
 ) -> None:
-    """Delete a posting: exactly the messages it recorded, or the walk where it recorded none.
+    """Delete a posting: exactly the messages it recorded, and nothing else.
 
-    **The recorded list is the truth where there is one** (#345). It is written at send time, so
-    it names this posting's own messages and cannot reach a neighbour's — which matters because
-    the amendment replay posts a replacement directly beneath the original before destroying it,
-    and the two are both the bot's.
+    **The recorded list is the truth** (#345). It is written at send time, so it names this
+    posting's own messages and cannot reach a neighbour's — which matters because a division
+    rebuild posts every replacement before it destroys any original, and both are the bot's.
 
-    Where no list was recorded the posting predates the column, and
-    :func:`_delete_with_continuations` guesses the rest by adjacency, as it always did. That
-    path is wrong in exactly the case above; it survives only for rows nothing else can serve.
+    This replaced an adjacency walk that took every bot-authored message following the anchor.
+    That walk could not tell this posting's continuation from the next posting down, so under
+    produce-then-destroy it deleted the replacements as it went — one of the two defects issue
+    #345 set out to fix, and the reason rule 11 asks for every chunk's id to be stored at send
+    time. Nothing falls back to it: a posting whose list was never recorded is deleted by its
+    anchor alone, which is one message too few rather than four too many.
     """
-    if message_ids:
-        # The anchor is included whether or not the stored list happens to name it. Every list
-        # this module writes puts it first (`_ids_json` is handed the messages `_send_chunked`
-        # returned, anchor included), but the anchor and the list are cleared and written through
-        # separate paths — so a list that ever omitted it would leak that message for good, and
-        # the one thing certain about the anchor is that it belongs to this posting (#345).
-        if anchor_msg_id not in message_ids:
-            message_ids = [anchor_msg_id, *message_ids]
-        for message_id in message_ids:
-            try:
-                message = await channel.fetch_message(message_id)
-            except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
-                log.warning("_delete_posting: could not fetch %s %s: %s", label, message_id, exc)
-                continue
-            try:
-                await message.delete()
-            except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
-                log.warning("_delete_posting: could not delete %s %s: %s", label, message_id, exc)
-        return
-    await _delete_with_continuations(channel, anchor_msg_id, label=label)
-
-
-async def _delete_with_continuations(
-    channel: discord.TextChannel,
-    anchor_msg_id: int,
-    label: str = "message",
-) -> None:
-    """Delete the anchor message and any immediately-following bot continuation messages.
-
-    **The fallback, not the route.** Prefer :func:`_delete_posting`, which deletes the messages
-    a posting actually recorded. This one guesses them: it takes every message following the
-    anchor that the bot authored, stopping at someone else's. That cannot distinguish this
-    posting's continuation from the *next posting down*, so it is wrong wherever two of the
-    bot's own postings sit together — which the amendment replay makes ordinary, posting a
-    replacement before destroying the original (#345).
-
-    It survives for rows written before `results_message_ids` and its siblings existed, which
-    recorded an anchor and nothing else. Do not reach for it in new code.
-
-    Args:
-        channel:       The Discord text channel to operate on.
-        anchor_msg_id: The stored message ID of the first (anchor) chunk.
-        label:         Log context string for warning messages.
-    """
-    try:
-        anchor = await channel.fetch_message(anchor_msg_id)
-    except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
-        log.warning("_delete_with_continuations: could not fetch %s %s: %s", label, anchor_msg_id, exc)
-        return
-
-    bot_user_id: int = anchor.author.id
-
-    # Collect continuation messages (up to 5; we realistically only need 1-2)
-    continuations: list[discord.Message] = []
-    try:
-        async for msg in channel.history(after=anchor, limit=5, oldest_first=True):
-            if msg.author.id != bot_user_id:
-                break  # Non-bot message — stop; don't delete anything beyond here
-            continuations.append(msg)
-    except discord.HTTPException as exc:
-        log.warning("_delete_with_continuations: history fetch failed for %s: %s", label, exc)
-
-    # Delete continuations first (oldest → newest), then the anchor
-    for msg in continuations:
+    ids = list(message_ids or [anchor_msg_id])
+    # The anchor is included whether or not the stored list names it. Every list this module
+    # writes puts it first, but the anchor and the list are cleared and written through separate
+    # paths — so a list that ever omitted it would leak that message for good, and the one thing
+    # certain about the anchor is that it belongs to this posting.
+    if anchor_msg_id not in ids:
+        ids = [anchor_msg_id, *ids]
+    for message_id in ids:
         try:
-            await msg.delete()
+            message = await channel.fetch_message(message_id)
         except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
-            log.warning("_delete_with_continuations: could not delete continuation %s: %s", msg.id, exc)
-
-    try:
-        await anchor.delete()
-    except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
-        log.warning("_delete_with_continuations: could not delete %s %s: %s", label, anchor_msg_id, exc)
+            log.warning("_delete_posting: could not fetch %s %s: %s", label, message_id, exc)
+            continue
+        try:
+            await message.delete()
+        except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
+            log.warning("_delete_posting: could not delete %s %s: %s", label, message_id, exc)
 
 
 # ---------------------------------------------------------------------------

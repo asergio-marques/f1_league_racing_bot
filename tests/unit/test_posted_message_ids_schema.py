@@ -2,13 +2,14 @@
 
 A results table, a standings table or a batch of verdicts past Discord's 2000-character limit is
 split across consecutive messages. Only the **anchor** was ever stored, so deleting such a posting
-had to guess at the rest: `_delete_with_continuations` walks forward from the anchor and takes
-every message the bot authored, stopping at someone else's.
+had to guess at the rest: the deletion walked forward from the anchor taking every message the
+bot authored, stopping at someone else's.
 
-That heuristic is wrong as soon as two of the bot's own postings sit next to each other — which is
+That heuristic was wrong as soon as two of the bot's own postings sat next to each other — which is
 exactly what the amendment replay produces, because it posts the replacement **before** destroying
-the original (Constitution XIV.8). Deleting the old anchor would walk straight into the new
-posting and delete it.
+the original (Constitution XIV.8). Deleting the old anchor walked straight into the new posting and
+deleted it. The columns here are what retired the walk (rule 11 of #345); `_delete_posting` now
+removes what was recorded and nothing else.
 
 The columns pinned here are the fix's foundation: the ids are captured at send time, so deletion
 removes what posting actually created rather than what adjacency suggests. They are nullable

@@ -2,7 +2,7 @@
 
 Issue #208. `results_post_service.py` was at 56.1%. This file takes the pair of helpers that
 make a long post work: `_split_content` / `_send_chunked`, which break it up, and
-`_delete_with_continuations`, which puts it back together well enough to delete.
+`_delete_posting`, which takes down exactly the messages a posting recorded.
 
 **A division of twenty with team names and gaps overruns Discord's 2,000 characters**, and a
 message over the limit is rejected outright — the league would get no results at all, on
@@ -10,19 +10,14 @@ exactly the rounds with the most to report. The split therefore has to happen, a
 break on newlines: a standings table cut mid-row is unreadable, and the row it cut is the one
 somebody is looking for.
 
-**Every chunk's id is now stored** (#345). It was once only the first, and the rest were found
-again by walking forward from it over bot-authored messages — which is what
-`_delete_with_continuations` does and why it exists. That walk cannot tell this posting's
-continuation from the *next posting down*, so it is wrong wherever two of the bot's own postings
-sit together, and the amendment replay makes that ordinary: it posts the replacement directly
-beneath the original before destroying it. `_delete_posting` deletes what was recorded instead,
-and falls back to the walk only for rows written before the columns existed.
-
-**The delete stops at the first message that is not the bot's.** A driver who replied under the
-standings must not have their message deleted when the standings are refreshed, and the loop
-breaks rather than skipping — skipping would delete a bot message *past* somebody's reply,
-which is the same fault with an extra step. `test_the_deletion_stops_at_someone_else_s_message`
-is the one that holds it. It binds the fallback; the recorded path never walks at all.
+**Every chunk's id is now stored, and the walk that guessed them is gone** (#345). Only the
+first id was once recorded, and the rest were found again by walking forward over bot-authored
+messages. That walk could not tell this posting's continuation from the *next posting down*, so
+it was wrong wherever two of the bot's own postings sat together — which the amendment replay
+makes ordinary, posting every replacement before destroying any original. It deleted the
+replacements as it went. `_delete_posting` removes exactly the messages the posting recorded,
+and a posting whose list was never recorded loses its anchor alone: one message too few rather
+than four too many, and never a message belonging to somebody else.
 
 **Every Discord failure along the way is logged and swallowed.** These helpers run inside the
 results posting path, and a message that cannot be deleted must not stop the new one being
@@ -42,7 +37,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from services.results_post_service import (  # noqa: E402
     _MSG_MAX,
     _delete_posting,
-    _delete_with_continuations,
     _ids_json,
     _parse_ids,
     _send_chunked,
@@ -232,52 +226,41 @@ async def test_a_single_message_post_is_deleted():
     anchor = _message(ANCHOR_ID)
     channel = _delete_channel(anchor, [])
 
-    await _delete_with_continuations(channel, ANCHOR_ID, "standings")
+    await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
 
     anchor.delete.assert_awaited_once()
 
 
-async def test_the_continuations_go_with_the_anchor():
-    """Only the first id is stored. Deleting by it alone leaves the league reading half a
-    standings table with no heading."""
+async def test_the_recorded_continuations_go_with_the_anchor():
+    """Deleting by the anchor alone left the league reading half a standings table with no
+    heading, which is why every chunk's id is recorded."""
+    messages = [_message(ANCHOR_ID), _message(ANCHOR_ID + 1), _message(ANCHOR_ID + 2)]
+    channel = _deletable_channel(messages)
+
+    await _delete_posting(
+        channel, ANCHOR_ID, [ANCHOR_ID, ANCHOR_ID + 1, ANCHOR_ID + 2], "standings"
+    )
+
+    assert channel._deleted == [ANCHOR_ID, ANCHOR_ID + 1, ANCHOR_ID + 2]
+
+
+async def test_nothing_that_merely_follows_the_posting_is_deleted():
+    """**The regression the whole change exists to prevent** (#345).
+
+    The walk this replaced took every bot-authored message after the anchor, so a driver's reply
+    stopped it — but the bot's own next posting did not, and under produce-then-destroy that is
+    the replacement it has just put up. Deleting only what was recorded cannot reach either.
+    """
     anchor = _message(ANCHOR_ID)
-    second = _message(ANCHOR_ID + 1)
-    third = _message(ANCHOR_ID + 2)
-    channel = _delete_channel(anchor, [second, third])
+    someone_elses = _message(ANCHOR_ID + 1, author_id=SOMEBODY_ELSE)
+    the_replacement = _message(ANCHOR_ID + 2)
+    channel = _delete_channel(anchor, [someone_elses, the_replacement])
 
-    await _delete_with_continuations(channel, ANCHOR_ID, "standings")
+    await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
 
-    anchor.delete.assert_awaited_once()
-    second.delete.assert_awaited_once()
-    third.delete.assert_awaited_once()
-
-
-async def test_the_deletion_stops_at_someone_else_s_message():
-    """A driver who replied under the standings must not lose their message when the
-    standings are refreshed."""
-    anchor = _message(ANCHOR_ID)
-    mine = _message(ANCHOR_ID + 1)
-    theirs = _message(ANCHOR_ID + 2, author_id=SOMEBODY_ELSE)
-    channel = _delete_channel(anchor, [mine, theirs])
-
-    await _delete_with_continuations(channel, ANCHOR_ID, "standings")
-
-    mine.delete.assert_awaited_once()
-    theirs.delete.assert_not_awaited()
-
-
-async def test_the_deletion_does_not_reach_past_someone_else_s_message():
-    """It breaks rather than skips. Skipping would delete a bot message *past* somebody's
-    reply — the same fault with an extra step, and harder to notice."""
-    anchor = _message(ANCHOR_ID)
-    theirs = _message(ANCHOR_ID + 1, author_id=SOMEBODY_ELSE)
-    mine_after = _message(ANCHOR_ID + 2)
-    channel = _delete_channel(anchor, [theirs, mine_after])
-
-    await _delete_with_continuations(channel, ANCHOR_ID, "standings")
-
-    theirs.delete.assert_not_awaited()
-    mine_after.delete.assert_not_awaited()
+    someone_elses.delete.assert_not_awaited()
+    the_replacement.delete.assert_not_awaited()
+    channel.history.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -296,37 +279,21 @@ async def test_an_anchor_that_cannot_be_fetched_is_survived(error, caplog):
     channel.fetch_message = AsyncMock(side_effect=error)
 
     with caplog.at_level("WARNING"):
-        await _delete_with_continuations(channel, ANCHOR_ID, "standings")
+        await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
 
     assert "could not fetch" in caplog.text
 
 
-async def test_a_failing_history_still_deletes_the_anchor(caplog):
-    """The anchor is the heading, and is the one message that must go — without it the
-    channel carries two headings for one round."""
-    anchor = _message(ANCHOR_ID)
-    channel = MagicMock(spec=discord.TextChannel)
-    channel.fetch_message = AsyncMock(return_value=anchor)
-    channel.history = MagicMock(
-        side_effect=discord.HTTPException(MagicMock(), "rate limited")
-    )
-
-    with caplog.at_level("WARNING"):
-        await _delete_with_continuations(channel, ANCHOR_ID, "standings")
-
-    anchor.delete.assert_awaited_once()
-
-
-async def test_a_continuation_that_will_not_delete_does_not_stop_the_anchor(caplog):
+async def test_a_chunk_that_will_not_delete_does_not_stop_the_rest(caplog):
     anchor = _message(ANCHOR_ID)
     stubborn = _message(ANCHOR_ID + 1)
+    channel = _deletable_channel([anchor, stubborn])
     stubborn.delete = AsyncMock(side_effect=discord.Forbidden(MagicMock(), "no perms"))
-    channel = _delete_channel(anchor, [stubborn])
 
     with caplog.at_level("WARNING"):
-        await _delete_with_continuations(channel, ANCHOR_ID, "standings")
+        await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID + 1, ANCHOR_ID], "standings")
 
-    anchor.delete.assert_awaited_once()
+    assert channel._deleted == [ANCHOR_ID]
 
 
 async def test_an_anchor_that_will_not_delete_is_logged_not_raised(caplog):
@@ -336,21 +303,21 @@ async def test_an_anchor_that_will_not_delete_is_logged_not_raised(caplog):
     channel = _delete_channel(anchor, [])
 
     with caplog.at_level("WARNING"):
-        await _delete_with_continuations(channel, ANCHOR_ID, "standings")
+        await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "standings")
 
     assert "could not delete" in caplog.text
 
 
 async def test_the_label_names_what_failed_in_the_log(caplog):
-    """The same helper takes down results and standings alike, so the log has to say which
-    — otherwise a maintainer reading it cannot tell what is missing from the channel."""
+    """The same helper takes down results, standings and verdicts alike, so the log has to say
+    which — otherwise a maintainer reading it cannot tell what is missing from the channel."""
     channel = MagicMock(spec=discord.TextChannel)
     channel.fetch_message = AsyncMock(
         side_effect=discord.NotFound(MagicMock(), "gone")
     )
 
     with caplog.at_level("WARNING"):
-        await _delete_with_continuations(channel, ANCHOR_ID, "results")
+        await _delete_posting(channel, ANCHOR_ID, [ANCHOR_ID], "results")
 
     assert "results" in caplog.text
 
@@ -443,25 +410,22 @@ async def test_a_message_already_gone_does_not_stop_the_rest():
     assert channel._deleted == [11, 13]
 
 
-async def test_a_posting_with_nothing_recorded_falls_back_to_the_walk():
-    """Rows written before the chunk columns existed still have to be deletable.
+async def test_a_posting_with_nothing_recorded_loses_its_anchor_and_nothing_else():
+    """**No guessing where nothing was recorded** (#345).
 
-    They recorded an anchor and nothing else, so adjacency is all there is — wrong in the case
-    above, and better than leaving them undeleteable.
+    A row with no chunk list once fell back to adjacency, which is the very walk that deletes a
+    posting's replacement. One message too few is a stale continuation somebody can delete by
+    hand; four too many is a board the bot destroyed itself.
     """
     anchor = _message(ANCHOR_ID)
-    continuation = _message(ANCHOR_ID + 1)
-    channel = _deletable_channel([anchor, continuation])
-
-    async def _history(*args, **kwargs):
-        for message in [continuation]:
-            yield message
-
-    channel.history = MagicMock(side_effect=_history)
+    below = _message(ANCHOR_ID + 1)
+    channel = _deletable_channel([anchor, below])
+    channel.history = MagicMock()
 
     await _delete_posting(channel, ANCHOR_ID, None, label="results message")
 
-    assert ANCHOR_ID in channel._deleted
+    assert channel._deleted == [ANCHOR_ID]
+    channel.history.assert_not_called()
 
 
 async def test_the_anchor_is_deleted_even_if_the_stored_list_omits_it():

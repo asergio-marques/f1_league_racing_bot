@@ -50,9 +50,8 @@ STANDINGS_CHANNEL_ID = 9002
 class _FakeChannel:
     """A channel that records what was deleted from it.
 
-    `_delete_with_continuations` fetches the anchor, walks `history` for bot-authored
-    continuation chunks, then deletes. The history here is empty, which is the single-message
-    case every posting under 2000 characters takes.
+    `_delete_posting` fetches each message the posting recorded and deletes it. One id is
+    recorded here, which is the single-message case every posting under 2000 characters takes.
     """
 
     def __init__(self, channel_id: int) -> None:

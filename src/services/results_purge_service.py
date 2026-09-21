@@ -102,15 +102,14 @@ async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int
     """Unpost every results and standings message of the season, and count them.
 
     The deletion helpers come from ``results_post_service`` rather than being written again
-    here. A posted table longer than Discord's limit is split across several messages and only
-    the first id is stored, so deleting by the stored id alone would leave the continuations
-    behind — ``_delete_with_continuations`` is what knows that, and ``_clear_standings_messages``
-    is what knows that the image flow posts two championships where the textual flow posts one.
+    here. A posted table longer than Discord's limit is split across several messages and every
+    one of their ids is stored — ``_delete_posting`` is what knows that, and
+    ``_clear_standings_messages`` is what knows that the image flow posts two championships
+    where the textual flow posts one.
     """
     from services.results_post_service import (
         _clear_standings_messages,
         _delete_posting,
-        _delete_with_continuations,
         _parse_ids,
     )
 

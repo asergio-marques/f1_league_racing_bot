@@ -268,7 +268,7 @@ async def test_the_stale_message_id_is_cleared_before_reposting(tmp_path):
         seen["ids"] = await _message_ids(db_path)
 
     with patch(
-        "services.results_post_service._delete_with_continuations", new=AsyncMock()
+        "services.results_post_service._delete_posting", new=AsyncMock()
     ), patch(
         "services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
     ), patch(
