@@ -121,7 +121,7 @@ def _guild(*, category=..., has_me: bool = True):
     return guild
 
 
-async def _create(db_path: str, guild, *, admin_role=None, league_admin_role=None):
+async def _create(db_path: str, guild, *, interaction_role=None, league_admin_role=None):
     return await create_submission_channel(
         guild,
         "Division 1",
@@ -130,7 +130,7 @@ async def _create(db_path: str, guild, *, admin_role=None, league_admin_role=Non
         ROUND_ID,
         db_path,
         bot_cmd_channel_id=CMD_CHANNEL_ID,
-        admin_role=admin_role,
+        interaction_role=interaction_role,
         league_admin_role=league_admin_role,
     )
 
@@ -196,13 +196,13 @@ async def test_both_league_tiers_are_admitted(tmp_path):
     db_path = await _make_db(tmp_path)
     guild = _guild()
     manager_role = MagicMock(name="manager")
-    admin_role = MagicMock(name="admin")
+    league_admin_role = MagicMock(name="admin")
 
-    await _create(db_path, guild, admin_role=manager_role, league_admin_role=admin_role)
+    await _create(db_path, guild, interaction_role=manager_role, league_admin_role=league_admin_role)
 
     overwrites = guild.create_text_channel.await_args.kwargs["overwrites"]
     assert overwrites[manager_role].read_messages is True
-    assert overwrites[admin_role].read_messages is True
+    assert overwrites[league_admin_role].read_messages is True
 
 
 async def test_the_bot_may_manage_its_own_messages(tmp_path):
@@ -223,7 +223,7 @@ async def test_a_league_with_only_one_role_configured_still_gets_a_channel(tmp_p
     guild = _guild()
     manager_role = MagicMock(name="manager")
 
-    await _create(db_path, guild, admin_role=manager_role, league_admin_role=None)
+    await _create(db_path, guild, interaction_role=manager_role, league_admin_role=None)
 
     overwrites = guild.create_text_channel.await_args.kwargs["overwrites"]
     assert manager_role in overwrites

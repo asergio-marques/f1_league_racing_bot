@@ -101,7 +101,7 @@ async def _create_submission_channel(db_path, *, league_admin_role):
     guild.create_text_channel = _create
     await rss.create_submission_channel(
         guild, "Pro", 1, 1, 1, db_path,
-        admin_role=_role(MANAGER_ROLE),
+        interaction_role=_role(MANAGER_ROLE),
         league_admin_role=league_admin_role,
     )
     return created["overwrites"]

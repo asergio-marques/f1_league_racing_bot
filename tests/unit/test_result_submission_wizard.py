@@ -360,7 +360,7 @@ async def test_the_channel_is_opened_to_both_league_roles(tmp_path):
     stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
 
     kwargs = stubs["create"].await_args.kwargs
-    assert kwargs["admin_role"].id == 900
+    assert kwargs["interaction_role"].id == 900
     assert kwargs["league_admin_role"].id == 901
     assert kwargs["bot_cmd_channel_id"] == 100
 
@@ -379,7 +379,32 @@ async def test_the_opening_message_names_the_round_and_its_sessions(tmp_path):
     assert "Round 3" in opening
     assert "Pro" in opening
     assert "Qualifying" in opening and "Race" in opening
-    assert "<@&555>" in opening
+
+
+async def test_the_opening_message_pings_the_interaction_role_and_not_the_division(tmp_path):
+    """Issue #136. The channel is closed to the division's role, so a ping for it reached
+    nobody and the league managers who enter the results were never told."""
+    db_path = await _make_db(tmp_path, name="wizard_ping")
+
+    stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
+
+    opening = str(stubs["sub"].send.await_args_list[0].args[0])
+    assert "<@&900>" in opening
+    assert "<@&555>" not in opening
+    assert "<@&901>" not in opening
+
+
+async def test_the_opening_message_pings_nobody_when_the_interaction_role_is_gone(tmp_path):
+    db_path = await _make_db(tmp_path, name="wizard_ping_gone")
+    bot = _bot(db_path, [QUALI_PASTE, RACE_PASTE])
+    bot._guild.get_role = MagicMock(
+        side_effect=lambda rid: None if rid == 900 else SimpleNamespace(id=rid)
+    )
+
+    stubs = await _run(bot)
+
+    opening = str(stubs["sub"].send.await_args_list[0].args[0])
+    assert "<@&" not in opening
 
 
 async def test_a_normal_round_is_saved_session_by_session(tmp_path):

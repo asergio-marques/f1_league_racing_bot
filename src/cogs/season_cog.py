@@ -5287,9 +5287,9 @@ class SeasonCog(commands.Cog):
 
         server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
         bot_cmd_channel_id: int | None = server_cfg.interaction_channel_id if server_cfg else None
-        admin_role: discord.Role | None = None
+        interaction_role: discord.Role | None = None
         if server_cfg and server_cfg.interaction_role_id:
-            admin_role = interaction.guild.get_role(server_cfg.interaction_role_id)
+            interaction_role = interaction.guild.get_role(server_cfg.interaction_role_id)
         # The league admin role is opened to the amendment channel on the same terms. A
         # league admin holds the league manager tier within their own, so a channel opened to
         # one role and not the other would leave them able to cancel an amendment they cannot
@@ -5314,7 +5314,7 @@ class SeasonCog(commands.Cog):
             overwrites[interaction.guild.me] = discord.PermissionOverwrite(
                 read_messages=True, send_messages=True, manage_messages=True
             )
-        for role in (admin_role, league_admin_role):
+        for role in (interaction_role, league_admin_role):
             if role is not None:
                 overwrites[role] = discord.PermissionOverwrite(
                     read_messages=True, send_messages=True
@@ -5399,8 +5399,8 @@ class SeasonCog(commands.Cog):
             @discord.ui.button(label="❌ Cancel Amendment", style=discord.ButtonStyle.danger)
             async def cancel_btn(self_v, bi: discord.Interaction, btn: discord.ui.Button) -> None:
                 # The member who opened the amendment, or anyone holding the league manager
-                # tier. Reading `admin_role` by hand tested the interaction role alone, so a
-                # league admin without it was refused a button they are entitled to press.
+                # tier. Reading `interaction_role` by hand tested that role alone, so a league
+                # admin without it was refused a button they are entitled to press.
                 if bi.user.id != interaction.user.id and not (
                     server_cfg is not None
                     and isinstance(bi.user, discord.Member)

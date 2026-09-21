@@ -78,7 +78,7 @@ async def create_submission_channel(
     db_path: str,
     *,
     bot_cmd_channel_id: int | None = None,
-    admin_role: discord.Role | None = None,
+    interaction_role: discord.Role | None = None,
     league_admin_role: discord.Role | None = None,
 ) -> discord.TextChannel:
     """Create a transient text channel for result submission.
@@ -108,7 +108,7 @@ async def create_submission_channel(
         overwrites[bot_member] = discord.PermissionOverwrite(
             read_messages=True, send_messages=True, manage_messages=True
         )
-    for role in (admin_role, league_admin_role):
+    for role in (interaction_role, league_admin_role):
         if role is not None:
             overwrites[role] = discord.PermissionOverwrite(
                 read_messages=True, send_messages=True
@@ -4080,7 +4080,6 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                    r.format       AS round_format,
                    r.status       AS round_status,
                    d.name         AS division_name,
-                   d.mention_role_id,
                    drc.results_channel_id,
                    s.id           AS season_id,
                    s.season_number
@@ -4113,7 +4112,6 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     season_number: int = ctx["season_number"]
     round_format = RoundFormat(ctx["round_format"])
     results_channel_id: int | None = ctx["results_channel_id"]
-    mention_role_id: int = ctx["mention_role_id"]
 
     # ------------------------------------------------------------------
     # 2. The round's date has arrived — move it off NOT_RUN, and the module guard
@@ -4206,13 +4204,13 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # Look up both of the league's roles and the bot-command channel for channel setup
     server_cfg = await bot.config_service.get_server_config()  # type: ignore[attr-defined]
-    admin_role: discord.Role | None = None
+    interaction_role: discord.Role | None = None
     league_admin_role: discord.Role | None = None
     bot_cmd_channel_id: int | None = None
     if server_cfg is not None:
         bot_cmd_channel_id = server_cfg.interaction_channel_id
         if server_cfg.interaction_role_id:
-            admin_role = guild.get_role(server_cfg.interaction_role_id)
+            interaction_role = guild.get_role(server_cfg.interaction_role_id)
         if server_cfg.league_admin_role_id:
             league_admin_role = guild.get_role(server_cfg.league_admin_role_id)
 
@@ -4225,7 +4223,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             round_id,
             db_path,
             bot_cmd_channel_id=bot_cmd_channel_id,
-            admin_role=admin_role,
+            interaction_role=interaction_role,
             league_admin_role=league_admin_role,
         )
     except discord.HTTPException:
@@ -4243,7 +4241,9 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     session_list_str = ", ".join(
         results_formatter.format_session_label(s, is_sprint=is_sprint) for s in sessions
     )
-    mention_str = f" <@&{mention_role_id}>" if mention_role_id else ""
+    # The league managers enter the results, so they are the ones pinged. The division's role
+    # cannot see this channel, and a mention there notified nobody (#136).
+    mention_str = f" <@&{interaction_role.id}>" if interaction_role is not None else ""
     await sub_channel.send(
         f"✅ Results submission open for **Round {round_number}** ({division_name}) - {round_format}."
         f" Sessions: {session_list_str}.{mention_str}\n\n"

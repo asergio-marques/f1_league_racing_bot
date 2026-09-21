@@ -119,7 +119,7 @@ When inviting the bot, grant it the following OAuth2 bot permissions. All are us
 | **Manage Messages** | Deletes the old forecast message when a newer phase supersedes it (`forecast_cleanup_service`); deletes its own messages for `/clean-bot` and `/bot factory-reset` |
 | **Read Message History** | Reads back through a channel to find its own messages, for `/clean-bot` and `/bot factory-reset` |
 | **Manage Roles** | Grants the signed-up role on signup approval; grants/revokes division and team roles on driver placement, unassignment, and sacking |
-| **Mention @everyone, @here, and All Roles** | Pings the division role in weather forecast messages (phase 1–3) and round amendment notices. Required when division roles are not set to "Allow anyone to @mention this role" (the typical default for private league roles) |
+| **Mention @everyone, @here, and All Roles** | Pings the division role in weather forecast messages (phase 1–3) and round amendment notices, and the interaction role when a round's results submission channel opens. Required when those roles are not set to "Allow anyone to @mention this role" (the typical default for private league roles) |
 
 ### Privileged Gateway Intents
 
