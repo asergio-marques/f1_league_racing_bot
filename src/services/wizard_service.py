@@ -33,6 +33,12 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+#: Who the review panel may notify: the people it mentions, and never a group (#362). It
+#: quotes a driver's free-text answers, which refuse a group mention where they are typed;
+#: this withholds the notification as well, the bot holding the permission to mention
+#: everybody where the driver does not.
+_REVIEW_PANEL_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
+
 # Module-level sentinel so APScheduler picklable jobs can reach the service.
 _GLOBAL_WIZARD_SERVICE: "WizardService | None" = None
 
@@ -588,6 +594,7 @@ class WizardService:
                 await channel.send(
                     panel_text,
                     view=AdminReviewView(discord_user_id, self._bot),  # type: ignore[arg-type]
+                    allowed_mentions=_REVIEW_PANEL_MENTIONS,
                 )
 
         member = guild.get_member(int(discord_user_id))
@@ -1837,6 +1844,7 @@ class WizardService:
                     await channel.send(
                         self._format_review_panel(record, slot_labels, track_name_map=track_map),
                         view=AdminReviewView(discord_user_id, self._bot),  # type: ignore[arg-type]
+                        allowed_mentions=_REVIEW_PANEL_MENTIONS,
                     )
 
     async def _commit_correction(
@@ -1897,4 +1905,5 @@ class WizardService:
                 await channel.send(
                     self._format_review_panel(record, slot_labels, track_name_map=track_map),
                     view=AdminReviewView(discord_user_id, self._bot),  # type: ignore[arg-type]
+                    allowed_mentions=_REVIEW_PANEL_MENTIONS,
                 )
