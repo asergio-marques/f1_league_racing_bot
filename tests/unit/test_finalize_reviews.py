@@ -1183,6 +1183,30 @@ async def test_an_amendment_is_not_held_by_itself(tmp_path):
     assert await held_by_amendment(db_path, ROUND_ID, DIVISION_ID, then="") is not None
 
 
+async def test_the_season_names_an_amendment_open_in_any_of_its_divisions(tmp_path):
+    """What completing the season and approving a change to its points ask (#345)."""
+    from services.result_submission_service import open_amendment_in_season
+
+    db_path = await _make_db(tmp_path, name="season_held")
+    await _amend_round_two(db_path, division_id=12)
+
+    row = await open_amendment_in_season(db_path, SEASON_ID)
+
+    assert (row["division_name"], row["round_number"], row["channel_id"]) == (
+        "Am", 2, AMEND_CHANNEL,
+    )
+
+
+async def test_an_ended_amendment_or_another_season_leaves_the_season_free(tmp_path):
+    from services.result_submission_service import open_amendment_in_season
+
+    db_path = await _make_db(tmp_path, name="season_not_held")
+    await _amend_round_two(db_path, ended=True)
+
+    assert await open_amendment_in_season(db_path, SEASON_ID) is None
+    assert await open_amendment_in_season(db_path, SEASON_ID + 1) is None
+
+
 # ---------------------------------------------------------------------------
 # An amendment rewrites the round's decisions rather than adding to them (#345)
 # ---------------------------------------------------------------------------

@@ -1319,6 +1319,27 @@ class ResultsCog(commands.Cog):
                 f"`/division standings-channel`, then run `/results amend review` again."
             )
 
+        # **Not while a round is being amended** (#345, decided 2026-09-21). An amendment's
+        # first stage writes its corrections and recalculates its division, publishing nothing
+        # until its last stage is approved; approving here reposts every round of every
+        # division from the same database, and would publish them unapproved. Shown in the
+        # panel and read again at the press, as the two refusals above are.
+        from services.result_submission_service import open_amendment_in_season
+
+        def _held_text(row) -> str:
+            return (
+                f"Round {row['round_number']} of **{row['division_name']}** is being amended in "
+                f"<#{row['channel_id']}>. Its corrections are not approved yet, and approving "
+                "here reposts every round of every division, so it waits until that amendment "
+                "has finished — at most 30 minutes after its corrections are entered."
+            )
+
+        held = await open_amendment_in_season(self.bot.db_path, season.id)
+        if held is not None:
+            diff += (
+                "\n\n\u23f8\ufe0f **These changes cannot be approved yet.** " + _held_text(held)
+            )
+
         class _ReviewView(LeagueView):
             def __init__(self_v) -> None:
                 super().__init__(timeout=None)
@@ -1358,6 +1379,19 @@ class ResultsCog(commands.Cog):
             # Asked again at the press rather than trusted from above: the panel has no
             # timeout, so a staged table can change between the diff being drawn and the
             # button being pressed — in either direction.
+            held = await open_amendment_in_season(self.bot.db_path, season.id)
+            if held is not None:
+                await interaction.followup.send(
+                    "\u23f8\ufe0f Not approved yet. " + _held_text(held)
+                    + " **Nothing has been changed**; run `/results amend review` again then.",
+                    ephemeral=True,
+                )
+                await self.bot.output_router.post_log(
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+                    f"| /results amend review | Refused (a round is being amended)\n"
+                    f"  round {held['round_number']} of {held['division_name']!r}",
+                )
+                return
             try:
                 sanction_failures = await approve_amendment(
                     self.bot.db_path, season.id, interaction.user.id, interaction.client

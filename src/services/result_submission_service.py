@@ -2213,6 +2213,25 @@ async def open_amendment_in_division(db_path: str, division_id: int):
         return await cursor.fetchone()
 
 
+async def open_amendment_in_season(db_path: str, season_id: int):
+    """An amendment open in any division of a season — its division, round and channel — or None.
+
+    For what reposts or closes every division at once: completing the season, and approving a
+    change to its points (#345, decided 2026-09-21). Where several are open, the one in the
+    highest division is named; each is refused until none is left.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT d.name AS division_name, r.round_number, rac.channel_id "
+            "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
+            "JOIN divisions d ON d.id = r.division_id "
+            "WHERE d.season_id = ? AND rac.closed_at IS NULL "
+            "ORDER BY d.tier, r.round_number LIMIT 1",
+            (season_id,),
+        )
+        return await cursor.fetchone()
+
+
 async def held_by_amendment(
     db_path: str, round_id: int, division_id: int, *, then: str
 ) -> str | None:
