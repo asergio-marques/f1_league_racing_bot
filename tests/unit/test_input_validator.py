@@ -22,6 +22,7 @@ from utils.input_validator import (  # noqa: E402
     Mode,
     Rule,
     is_disqualification,
+    parse_datetime,
     parse_gap,
     parse_lap_gap,
     parse_penalty_seconds,
@@ -440,4 +441,31 @@ def test_parse_lap_gap_reads_the_laps(typed, laps):
 @pytest.mark.parametrize("typed", ["+1Lap", "Lap", "+1.234"])
 def test_parse_lap_gap_refuses_anything_else(typed):
     assert parse_lap_gap(typed) is None
+
+
+# ── Formats: moments ──────────────────────────────────────────────────────
+
+
+def test_parse_datetime_takes_a_zoneless_value_as_utc():
+    from datetime import datetime
+
+    assert parse_datetime("2026-06-14T18:00") == datetime(2026, 6, 14, 18, 0)
+
+
+@pytest.mark.parametrize(
+    "typed", ["2026-06-14T20:00+02:00", "2026-06-14T18:00Z", "2026-06-14T13:00:00-05:00"]
+)
+def test_parse_datetime_converts_a_zone_to_utc(typed):
+    """Stored naive as UTC, as the XML import already did."""
+    from datetime import datetime
+
+    parsed = parse_datetime(typed)
+
+    assert parsed == datetime(2026, 6, 14, 18, 0)
+    assert parsed.tzinfo is None
+
+
+@pytest.mark.parametrize("typed", ["", None, "tomorrow", "14/06/2026 18:00", "2026-13-01T00:00"])
+def test_parse_datetime_refuses_anything_else(typed):
+    assert parse_datetime(typed) is None
 

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -387,4 +388,24 @@ def parse_lap_gap(text: str | None) -> int | None:
     """The laps a lapped driver is down, ``+2 Laps`` or ``1 Lap``, or None."""
     match = _LAP_GAP_RE.match((text or "").strip())
     return int(match.group(1)) if match else None
+
+
+# ── Formats: moments ──────────────────────────────────────────────────────
+
+
+def parse_datetime(text: str | None) -> datetime | None:
+    """An ISO 8601 moment as naive UTC, the form a round's time is stored in, or None.
+
+    A value given with a zone is converted to UTC; one without is taken to be UTC already, as
+    every command taking one has always said. `/round add` once stored a typed zone as it
+    stood, where the XML import converted it, and the two now agree (#362). Whether the moment
+    must lie ahead is each command's own rule, not the format's.
+    """
+    try:
+        moment = datetime.fromisoformat((text or "").strip())
+    except ValueError:
+        return None
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
+    return moment
 
