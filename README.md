@@ -393,6 +393,8 @@ Divisions are built once the season is in **placements** — after its configura
 
 Tiers must additionally be **sequential from 1 with no gaps** across the whole season. That is checked at approval, not here, so a half-built season may hold a gap while you are still adding divisions.
 
+**Naming.** A division's name heads every posting and every graphic of the division, so it cannot hold a role mention, `@everyone` or `@here`, an emoji, or Discord formatting such as `**bold**`. The command refuses such a name and says what it found. The same holds wherever a division is named: `/division duplicate`, `/division rename` and `/division amend`.
+
 Division channels are not set here. Assign them afterwards with the `/division *-channel` commands.
 
 #### `/division duplicate` — Copy a division with a datetime offset
@@ -837,7 +839,7 @@ Creates a synthetic driver profile occupying a real seat, so a division can be f
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `driver_name` | String | ✅ | Display name for the fake driver |
+| `driver_name` | String | ✅ | Display name for the fake driver. Held to the rules a division's name is: no role mention, `@everyone`, `@here`, emoji or formatting |
 | `team_name` | String | ✅ | Team to seat them in (must exist in the division) |
 | `division` | String | ✅ | Division name |
 | `nationality` | String | ❌ | A nationality (`British`), a country name (`United Kingdom`), or `other` — the same forms the signup wizard accepts |
@@ -1144,6 +1146,8 @@ Adds the team to the server's default team list and saves its role mapping (gran
 - matches another team in the same scope (`Red Bull` and `Red  Bull!` collide — both would draw the same badge);
 - is `reserve`, which belongs to the Reserve team of every division.
 
+Before any of that, a team name cannot hold a role mention, `@everyone` or `@here`, an emoji, or Discord formatting, being posted as text and drawn on graphics, the same as a division's name.
+
 > **A name may begin with a digit.** `2 Fast` is accepted and draws `2_fast.svg`. Earlier versions refused it, because the name had to serve as an identifier inside the lineup template; it names a file now, and a filename may start with anything.
 
 > These checks apply whether or not the image module is enabled. A name is only cheap to fix at the moment you set it, and a league that turns the module on later would otherwise be stuck with names it cannot correct without losing that team's history.
@@ -1402,7 +1406,7 @@ An edit warns rather than refuses because building a table in passes through sta
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Unique config name (e.g. `100%`) |
 
-All positions default to 0 points after creation.
+All positions default to 0 points after creation. The name cannot hold a role mention, `@everyone` or `@here`, an emoji, or Discord formatting.
 
 ##### `/results config remove` — Delete a named points configuration
 *Access: League admin*

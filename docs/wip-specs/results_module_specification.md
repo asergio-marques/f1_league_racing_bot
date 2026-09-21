@@ -157,6 +157,7 @@
 
 #### Adding, removing, modifying point configurations
 - <NEW COMMAND> A "results config add" command will intake a string which shall be the name of the points configuration to be saved in the league points schema store. The string will serve as the ID of the configuration.
+    - The name shall hold no role mention, "@everyone" or "@here", in any case, no emoji and no Discord markup, as a division's name shall not. Decided 2026-09-21 (#362).
     - Adding a points config to the league points schema store does not automatically append it to a season whose placements are yet to be confirmed.
 - <NEW COMMAND> A "results config remove" command will intake a string which is the ID of the points configuration to be removed from the league points schema store. It is a league admin's: the configuration is deleted outright and nothing puts one back.
     - Removing a points config shall also detach it from any season **whose placements are yet to be first confirmed**, so that no season is left attached to a configuration that does not exist. A season whose placements have been confirmed shall keep its attachment: it holds its own copy of the points, taken at that confirmation, and that copy is what its results are scored and chosen from.
