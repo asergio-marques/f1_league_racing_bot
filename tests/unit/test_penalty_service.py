@@ -880,8 +880,8 @@ def test_a_server_s_own_emoji_is_refused(typed):
         "\U0001F4A5",              # collision — beyond the BMP
         "\u274C",                  # cross mark — an emoji by default below U+10000
         "\u2B50",                  # star
-        "⚠\uFE0F",            # warning, asked to be shown as an emoji
-        "❤\uFE0F",            # heart, likewise
+        "\u26A0\uFE0F",            # warning, asked to be shown as an emoji
+        "\u2764\uFE0F",            # heart, likewise
         "\U0001F3CE\uFE0F",        # racing car
         "\U0001F44D\U0001F3FD",    # thumbs up with a skin tone
         "\U0001F1EC\U0001F1E7",    # a flag
@@ -895,7 +895,9 @@ def test_a_standard_emoji_is_refused(typed):
     assert emoji_refusal("description", f"Contact at turn 3 {typed}") is not None
 
 
-@pytest.mark.parametrize("typed", ["✓", "★", "©", "→", "90°", "T1–T3"])
+@pytest.mark.parametrize(
+    "typed", ["\u2713", "\u2605", "\u00A9", "\u2192", "90\u00B0", "T1\u2013T3"]
+)
 def test_a_symbol_that_is_text_by_default_is_not_an_emoji(typed):
     """A tick, a star, an arrow or a degree sign is ordinary text a steward may write."""
     from services.penalty_service import emoji_refusal
