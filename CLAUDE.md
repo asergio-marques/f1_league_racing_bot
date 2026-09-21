@@ -92,6 +92,11 @@ later polish phase.
   nobody else can reach. Run `git status --porcelain` and stage from what it shows. The rule
   binds hardest when several agents work in parallel, where a blanket stage cannot tell one
   agent's change from another's; see the `fix-issues` skill.
+- **Every pull request tracks an issue and carries its labels; every release is cut by the
+  Release workflow** (decided 2026-09-21, #259). The rules — label groups, the `internal` file
+  test, the version scheme, when each bump is due — are in `CONTRIBUTING.md`, under "Pull
+  requests" and "Releases", and the required check `pr-label-check` refuses a pull request
+  that breaks them. Label a pull request as you open it, not afterwards. Go-live is `v1.0.0`.
 - `poc/` is **gitignored scratch** — the proof of concept, plus the sample assets and the
   earlier template copies. Not a design input, and never something to port code from. The
   one exception is a *rule* it already encodes: `normalize()` in `poc/build_poc.py` calls
@@ -138,8 +143,10 @@ repo. Tests here stub Discord and exercise the code beneath it.
 
 **Scripts in `tools/` are not unit-tested** (decided 2026-09-16). They are developer tools run
 by hand, verified by running them, and a broken one costs a maintainer a rerun rather than a
-league anything. Do not add tests for them. The one exception is `tools/coverage_by_module.py`:
-CI runs it as the per-module coverage gate, so it is part of the build and keeps its tests. Bot
+league anything. Do not add tests for them. The exceptions are the tools a workflow runs, which
+are part of the build and keep their tests: `tools/coverage_by_module.py`, CI's per-module
+coverage gate; `tools/check_pr_labels.py`, the required pull-request label check; and
+`tools/next_version.py`, which names every release (the last two decided 2026-09-21, #259). Bot
 code a tool happens to use is in `src/` and is tested like any other — the LCH colour maths
 `tools/tier_palette.py` relies on is tested in `tests/unit/test_colour_lch.py`.
 
