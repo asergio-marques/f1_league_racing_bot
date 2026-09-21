@@ -547,3 +547,13 @@ async def test_an_emoji_in_the_justification_is_refused(tmp_path):
     assert state.staged_pardons == []
     assert "emoji" in _replied(interaction)
     state.bot.output_router.post_log.assert_not_awaited()
+
+
+async def test_a_channel_mention_in_the_justification_is_refused(tmp_path):
+    db_path = await _make_db(tmp_path, name="channel_mention")
+    state = _state(db_path)
+
+    interaction, _ = await _submit(state, justification="Reported in <#123456789012345678>")
+
+    assert state.staged_pardons == []
+    assert "channel mention" in _replied(interaction)

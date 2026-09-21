@@ -920,11 +920,12 @@ def test_the_emoji_refusal_names_the_field_and_the_emoji():
     [
         ("@here look", "notify"),
         ("Contact \U0001F4A5", "emoji"),
+        ("Contact at **turn 3**", "formatting"),
         ("Contact with <@4002>", None),
     ],
 )
-def test_a_steward_s_text_is_held_to_both_rules(typed, expected):
-    """The one check the forms call, so no text a steward types escapes either rule."""
+def test_a_steward_s_text_is_held_to_every_rule(typed, expected):
+    """The one check the forms call, so no text a steward types escapes any of the rules."""
     from services.penalty_service import steward_text_refusal
 
     refusal = steward_text_refusal("description", typed)
@@ -933,3 +934,80 @@ def test_a_steward_s_text_is_held_to_both_rules(typed, expected):
         assert refusal is None
     else:
         assert refusal is not None and expected in refusal
+
+
+# ---------------------------------------------------------------------------
+# Discord markup in a steward's text is refused (#204)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "typed, kind",
+    [
+        ("**Contact** at turn 3", "formatting"),
+        ("Contact at *turn 3*", "formatting"),
+        ("Contact at _turn 3_", "formatting"),
+        ("Contact with __Ada__", "formatting"),
+        ("~~Contact~~ at turn 3", "formatting"),
+        ("Contact at `T3`", "formatting"),
+        ("||Contact|| at turn 3", "formatting"),
+        ("Contact.\n# Ruling", "a heading, quote or subtext line"),
+        ("Contact.\n-# small print", "a heading, quote or subtext line"),
+        ("> Contact at turn 3", "a heading, quote or subtext line"),
+        ("See [rule 4](https://example.com/rules)", "a link"),
+        ("See <#123456789012345678>", "a channel mention"),
+        ("At <t:1790000000:F>", "a timestamp"),
+        ("At <t:1790000000>", "a timestamp"),
+        ("Per </penalty add:123456789012345678>", "a command mention"),
+        ("See <id:customize>", "a server link"),
+    ],
+)
+def test_markup_is_refused(typed, kind):
+    """The text verdict formats it and the graphic draws it raw, so the two would differ."""
+    from services.penalty_service import markup_refusal
+
+    refusal = markup_refusal("description", typed)
+
+    assert refusal is not None
+    assert kind in refusal
+
+
+@pytest.mark.parametrize(
+    "typed",
+    [
+        "- contact at turn 3\n- unsafe rejoin",
+        "1. contact\n2. rejoin",
+        "Lap 3*",
+        "5 * 2 seconds",
+        "Car snake_case_name moved",
+        "#3 car",
+        "Gap > 1s at turn 3",
+        "See https://example.com/a_b_c*d*",
+        "T1-T3 contact",
+    ],
+)
+def test_plain_text_that_looks_like_markup_is_not_refused(typed):
+    """A list and a bare URL read alike as text and as a picture; the rest is ordinary prose
+    Discord does not format."""
+    from services.penalty_service import markup_refusal
+
+    assert markup_refusal("description", typed) is None
+
+
+def test_the_markup_refusal_names_the_field():
+    from services.penalty_service import markup_refusal
+
+    refusal = markup_refusal("justification", "**Contact**")
+
+    assert refusal is not None
+    assert refusal.startswith("The justification ")
+
+
+def test_the_markup_refusal_quotes_what_it_found_as_typed():
+    """In a code span, so the reply shows the markup rather than applying it."""
+    from services.penalty_service import markup_refusal
+
+    refusal = markup_refusal("description", "**Contact** at turn 3")
+
+    assert refusal is not None
+    assert "`` **Contact** ``" in refusal

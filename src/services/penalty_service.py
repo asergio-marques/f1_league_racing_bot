@@ -176,13 +176,67 @@ def emoji_refusal(field_label: str, text: str) -> str | None:
     )
 
 
+#: Discord markup in a steward's text (#204), in the order it is looked for, each with the words a
+#: refusal names it by. The text verdict formats every one of these and the graphic draws each
+#: raw, so a steward's text is plain and both show exactly what was typed. A list (``- item``,
+#: ``1. item``) and a bare URL read alike either way and are not here. The formatting follows
+#: Discord's own rules: a star opens only before a non-space and closes only after one, and an
+#: underscore italicises only with a non-word character either side, so ``snake_case``, a lone
+#: ``*`` and ``5 * 2`` all pass.
+_MARKUP: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("a channel mention", re.compile(r"<#\d+>")),
+    ("a timestamp", re.compile(r"<t:-?\d+(?::[tTdDfFR])?>")),
+    ("a command mention", re.compile(r"</[^<>\n]+:\d+>")),
+    ("a server link", re.compile(r"<id:[a-z-]+>")),
+    ("a link", re.compile(r"\[[^\]\n]+\]\(\s*<?https?://")),
+    (
+        "a heading, quote or subtext line",
+        re.compile(r"^[ \t]*(?:#{1,3}|-#|>{1,3})[ \t].*", re.MULTILINE),
+    ),
+    (
+        "formatting",
+        re.compile(
+            r"\*\*[\s\S]+?\*\*|__[\s\S]+?__|~~[\s\S]+?~~|\|\|[\s\S]+?\|\||`[^`]+`"
+            r"|\*[^\s*](?:[^*]*?[^\s*])?\*"
+            r"|(?<!\w)_[^\s_](?:[^_]*?[^\s_])?_(?!\w)"
+        ),
+    ),
+)
+
+#: A bare URL, which Discord formats nothing inside. It is replaced by its scheme before the
+#: markup is looked for, so its underscores and stars pass while a masked link keeps its shape.
+_BARE_URL_RE = re.compile(r"https?://\S+")
+
+
+def markup_refusal(field_label: str, text: str) -> str | None:
+    """Why *text* cannot stand as a steward's *field_label* for its markup, or None (#204).
+
+    A steward's text is plain. The fragment found is quoted in a code span, which Discord shows
+    exactly as typed — the reply names the markup rather than applying it. A double backtick, so
+    that a fragment holding one of its own still closes where it should.
+    """
+    scanned = _BARE_URL_RE.sub("https://", text or "")
+    for kind, pattern in _MARKUP:
+        match = pattern.search(scanned)
+        if match is not None:
+            return (
+                f"The {field_label} contains {kind} (`` {match.group(0).strip()} ``). "
+                "A steward's text is plain: remove it, then submit the form again."
+            )
+    return None
+
+
 def steward_text_refusal(field_label: str, text: str) -> str | None:
     """Why *text* cannot stand as a steward's *field_label*, or None where it can.
 
     The one check every text a steward types into a review passes through, so the penalty's
     two texts and a pardon's justification are held to the same rules.
     """
-    return group_mention_refusal(field_label, text) or emoji_refusal(field_label, text)
+    return (
+        group_mention_refusal(field_label, text)
+        or emoji_refusal(field_label, text)
+        or markup_refusal(field_label, text)
+    )
 
 
 # ---------------------------------------------------------------------------
