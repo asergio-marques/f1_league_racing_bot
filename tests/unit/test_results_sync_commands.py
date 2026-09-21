@@ -308,6 +308,54 @@ async def test_a_sync_defers_before_working(tmp_path, label, run):
     interaction.response.defer.assert_awaited_once()
 
 
+async def _open_amendment(db_path, *, ended=False):
+    """An amendment of round 2 of the division, open — or *ended*, its channel left behind."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
+            "VALUES (20, ?, 2, '2026-01-25T18:00:00+00:00', 'NORMAL', 'FINAL')",
+            (DIVISION_ID,),
+        )
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "closed_at) VALUES (20, 8200, '[\"FEATURE_RACE\"]', '2026-02-01T00:00:00+00:00', ?)",
+            ("2026-02-01T00:20:00+00:00" if ended else None,),
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize("label,run", SYNCS)
+async def test_a_sync_waits_while_a_round_of_the_division_is_amended(tmp_path, label, run):
+    """#345, decided 2026-09-21. The amendment's corrections are in the database, unapproved;
+    a sync reposts from it, so it would publish them, and leave them published if the amendment
+    were then cancelled or lapsed."""
+    db_path = await _make_db(tmp_path, name=f"sync_held_{label}")
+    await _open_amendment(db_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    repost = await run(cog, interaction)
+
+    repost.assert_not_awaited()
+    replied = _replied(interaction)
+    assert "Round 2 of **Pro** is being amended in <#8200>" in replied
+    assert "Run this again then." in replied
+    cog.bot.output_router.post_log.assert_not_awaited()
+
+
+@pytest.mark.parametrize("label,run", SYNCS)
+async def test_an_ended_amendment_does_not_hold_a_sync(tmp_path, label, run):
+    """One that ended but could not delete its channel keeps its row; it is not open. The
+    `RESULT_AMENDED | Incomplete` entry sends a manager to exactly these commands."""
+    db_path = await _make_db(tmp_path, name=f"sync_not_held_{label}")
+    await _open_amendment(db_path, ended=True)
+    cog = _make_cog(db_path)
+
+    repost = await run(cog, _interaction())
+
+    repost.assert_awaited_once()
+
+
 async def test_the_two_syncs_call_different_services(tmp_path):
     """They sit beside each other and read almost identically; one calling the other's
     service would repost standings where a manager asked for results."""

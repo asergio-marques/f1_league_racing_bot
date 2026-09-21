@@ -485,6 +485,29 @@ class ResultsCog(commands.Cog):
             return False
         return True
 
+    async def _sync_gate(self, interaction: discord.Interaction, div) -> bool:
+        """Refuse a sync of a division with an amendment open (#345, decided 2026-09-21).
+
+        An amendment's first stage writes its corrections and recalculates the division,
+        publishing nothing until its last stage is approved. A sync reposts the division from
+        the same database, so it would publish them unapproved — and leave them published if
+        the amendment were then cancelled or lapsed, its revert posting nothing. It waits, as a
+        submission of another of the division's rounds does.
+        """
+        from services.result_submission_service import open_amendment_in_division
+
+        row = await open_amendment_in_division(self.bot.db_path, div.id)
+        if row is None:
+            return True
+        await interaction.followup.send(
+            f"\u23f8\ufe0f Round {row['round_number']} of **{div.name}** is being amended in "
+            f"<#{row['channel_id']}>, and its corrections are not approved yet, so the "
+            "division cannot be synced until that ends — at most 30 minutes after they are "
+            "entered. Run this again then.",
+            ephemeral=True,
+        )
+        return False
+
     # ------------------------------------------------------------------
     # /results config group
     # ------------------------------------------------------------------
@@ -1476,6 +1499,8 @@ class ResultsCog(commands.Cog):
         if div is None:
             await interaction.followup.send(f"\u274c Division '{division}' not found.", ephemeral=True)
             return
+        if not await self._sync_gate(interaction, div):
+            return
 
         from services.results_post_service import repost_standings_for_division
         status = await repost_standings_for_division(
@@ -1528,6 +1553,8 @@ class ResultsCog(commands.Cog):
         div = next((d for d in divisions if d.name.lower() == division.lower()), None)
         if div is None:
             await interaction.followup.send(f"\u274c Division '{division}' not found.", ephemeral=True)
+            return
+        if not await self._sync_gate(interaction, div):
             return
 
         from services.results_post_service import repost_results_for_division
