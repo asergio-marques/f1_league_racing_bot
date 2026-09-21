@@ -594,7 +594,12 @@ async def test_a_channel_that_will_not_delete_does_not_fail_a_cancellation(tmp_p
 
     await _amend(_make_cog(db_path), interaction)
 
-    assert await _amend_rows(db_path) == 0
+    # Kept, closed, rather than forgotten (#345): it holds nothing, and restart recovery
+    # deletes the channel it names.
+    from services.result_submission_service import open_amendment_in_division
+
+    assert await _amend_rows(db_path) == 1
+    assert await open_amendment_in_division(db_path, DIVISION_ID) is None
 
 
 async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path):
@@ -1023,7 +1028,6 @@ async def test_of_two_commands_racing_in_one_division_the_first_recorded_keeps_i
         assert [r[0] for r in await cursor.fetchall()] == [5151]
 
 
-
 # ---------------------------------------------------------------------------
 # Several sessions in one amendment (#345, decided 2026-09-21)
 # ---------------------------------------------------------------------------
@@ -1199,3 +1203,27 @@ async def test_a_fault_once_stage_one_has_begun_is_left_to_its_own_handling(tmp_
         await undecorate(SeasonCog.round_results_amend)(cog, interaction, "Pro Division", 3, None)
 
     cog.bot.output_router.post_log.assert_not_awaited()
+
+
+async def test_a_rejected_paste_whose_channel_cannot_be_deleted_keeps_its_row_closed(tmp_path):
+    """Every ending before stage one goes through the same close as the others: the row was
+    forgotten before the delete was tried, and a channel the bot could not delete stood with
+    nothing naming it."""
+    from services.result_submission_service import open_amendment_in_division
+
+    db_path = await _make_db(tmp_path, name="amend_reject_undeletable")
+    channel = _amend_channel()
+    channel.delete = AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Access")
+    )
+
+    await _amend(
+        _make_cog(db_path), _interaction(channel, message=_message()),
+        parsed=["Line 1: driver not in division"],
+    )
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT closed_at FROM round_amend_channels")
+        row = await cursor.fetchone()
+    assert row is not None and row["closed_at"] is not None
+    assert await open_amendment_in_division(db_path, DIVISION_ID) is None

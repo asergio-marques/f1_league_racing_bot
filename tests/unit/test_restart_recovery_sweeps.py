@@ -733,6 +733,63 @@ async def test_an_amendment_row_outlives_a_channel_that_could_not_be_deleted(tmp
     assert await _amend_rows(db_path) == 1
 
 
+async def _closed_rows(db_path) -> list[tuple[int, bool]]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT channel_id, closed_at IS NOT NULL FROM round_amend_channels ORDER BY id"
+        )
+        return [(row[0], bool(row[1])) for row in await cursor.fetchall()]
+
+
+async def test_a_channel_the_bot_may_not_delete_keeps_its_row_closed(tmp_path):
+    """The approval of an amendment's last stage reaches here, the commonest way one ends. The
+    row went before the delete was tried, so a channel the bot had lost the right to delete
+    stood with nothing naming it; kept, closed, it holds nothing and recovery finds it."""
+    from services.result_submission_service import close_submission_channel
+
+    db_path = await _base_db(tmp_path, "close_forbidden")
+    await _seed_amend(db_path)
+    channel = MagicMock()
+    channel.delete = AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Access")
+    )
+
+    await close_submission_channel(
+        CHANNEL_ID, ROUND_ID, _amend_guild(channel=channel), db_path
+    )
+
+    assert await _closed_rows(db_path) == [(CHANNEL_ID, True)]
+
+
+async def test_closing_one_channel_leaves_a_later_amendment_of_the_round_alone(tmp_path):
+    """Closed, the old row no longer holds the round, so a fresh amendment may replace it while
+    the old channel's delete is still awaited. Matched on the round alone, finishing that close
+    forgot the fresh amendment — snapshot, deadline and all."""
+    from services.result_submission_service import _close_amend_channel_record
+
+    db_path = await _base_db(tmp_path, "close_scoped")
+    await _seed_amend(db_path)
+    fresh_channel = CHANNEL_ID + 1
+    old_channel = MagicMock()
+
+    async def _slow_delete(**_kwargs):
+        # While the delete is awaited, a fresh amendment takes the round's place.
+        async with get_connection(db_path) as db:
+            await db.execute("DELETE FROM round_amend_channels WHERE closed_at IS NOT NULL")
+            await db.execute(
+                "INSERT INTO round_amend_channels (round_id, channel_id, session_types, "
+                "created_at) VALUES (?, ?, '[\"FEATURE_RACE\"]', '2026-02-01T01:00:00+00:00')",
+                (ROUND_ID, fresh_channel),
+            )
+            await db.commit()
+
+    old_channel.delete = AsyncMock(side_effect=_slow_delete)
+
+    await _close_amend_channel_record(db_path, ROUND_ID, CHANNEL_ID, old_channel, reason="done")
+
+    assert await _closed_rows(db_path) == [(fresh_channel, False)]
+
+
 async def test_the_amendment_row_goes_with_the_channel_it_names(tmp_path):
     from services.result_submission_service import close_submission_channel
 

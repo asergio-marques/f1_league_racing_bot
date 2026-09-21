@@ -159,43 +159,58 @@ async def close_submission_channel(
         )
         await db.commit()
 
-    # **The amendment's row goes only once its channel has** (#345). The row is the one thing
-    # that names the channel, and restart recovery finds an orphan by no other route — so
-    # forgetting it while the channel is out of cache leaks a private channel with the
-    # amendment's stage prompts still live in it. The snapshot it held was released before the
-    # rebuild began, so the row left standing carries nothing a sweep could act on.
+    # **The amendment's record goes only once its channel has** (#345); see
+    # `_close_amend_channel_record`. A first pass has no such record, and its channel is simply
+    # deleted.
     channel = guild.get_channel(channel_id) if guild is not None else None
+    await _close_amend_channel_record(
+        db_path, round_id, channel_id, channel, reason="Results submission complete"
+    )
+
+
+async def _close_amend_channel_record(
+    db_path: str, round_id: int, channel_id: int, channel, *, reason: str
+) -> None:
+    """Close an amendment's record, delete its channel, and forget the record once it is gone.
+
+    **Marked closed first, forgotten only once the channel is gone** (#345). Closed, the record
+    holds nothing — no division, no deadline — and restart recovery still finds the channel by
+    it. Forgotten first, a channel out of cache, one the bot may no longer delete, or a crash
+    between the two left a private channel with its stage prompts standing and nothing anywhere
+    naming it.
+
+    **Scoped by the channel as well as the round.** A closed record no longer holds the round,
+    so a fresh amendment of it may take its place while this channel's delete is still awaited;
+    matching on the round alone would then forget the fresh one.
+
+    *channel* is None where it could not be reached; the record is then kept, closed. A channel
+    with no amendment record — a first pass's — is deleted just the same.
+    """
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE round_amend_channels SET closed_at = ? WHERE round_id = ? AND channel_id = ?",
+            (datetime.now(timezone.utc).isoformat(), round_id, channel_id),
+        )
+        await db.commit()
     if channel is None:
         log.warning(
-            "close_submission_channel: channel %s is unreachable; its amendment row is kept "
-            "for restart recovery",
-            channel_id,
+            "channel %s of round %s is unreachable; any amendment record naming it is kept, "
+            "closed, for restart recovery", channel_id, round_id,
         )
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "UPDATE round_amend_channels SET closed_at = ? "
-                "WHERE round_id = ? AND channel_id = ?",
-                (datetime.now(timezone.utc).isoformat(), round_id, channel_id),
-            )
-            await db.commit()
-    else:
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "DELETE FROM round_amend_channels WHERE round_id = ? AND channel_id = ?",
-                (round_id, channel_id),
-            )
-            await db.commit()
-    if channel is not None:
-        try:
-            await channel.delete(reason="Results submission complete")
-        except discord.NotFound:
-            pass
-        except discord.HTTPException as exc:
-            log.warning(
-                "close_submission_channel: failed to delete channel %s: %s",
-                channel_id,
-                exc,
-            )
+        return
+    try:
+        await channel.delete(reason=reason)
+    except discord.NotFound:
+        pass
+    except discord.HTTPException:
+        log.exception("could not delete channel %s of round %s", channel_id, round_id)
+        return
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "DELETE FROM round_amend_channels WHERE round_id = ? AND channel_id = ?",
+            (round_id, channel_id),
+        )
+        await db.commit()
 
 
 async def is_submission_open(db_path: str, round_id: int) -> bool:
@@ -2193,43 +2208,18 @@ async def _release_amendment(db_path: str, round_id: int) -> None:
 
 
 async def _close_amendment_channel(db_path: str, guild, round_id: int, *, reason: str) -> None:
-    """End an amendment's record and delete its channel.
-
-    **The record is marked closed first, and forgotten only once the channel is gone** (#345),
-    as `close_submission_channel` does. Closed, it holds nothing — no division, no deadline — and
-    restart recovery still finds the channel by it. Forgotten first, a channel out of cache, one
-    the bot may no longer delete, or a crash between the two left a private channel with its
-    stage prompts standing and nothing anywhere naming it.
-    """
+    """End an amendment's record and delete its channel, as `_close_amend_channel_record` does."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT channel_id FROM round_amend_channels WHERE round_id = ?", (round_id,)
         )
         row = await cursor.fetchone()
-        if row is None:
-            return
-        await db.execute(
-            "UPDATE round_amend_channels SET closed_at = ? WHERE round_id = ?",
-            (datetime.now(timezone.utc).isoformat(), round_id),
-        )
-        await db.commit()
+    if row is None:
+        return
     channel = guild.get_channel(row["channel_id"]) if guild is not None else None
-    if channel is None:
-        log.warning(
-            "amendment: channel %s of round %s is unreachable; its record is kept, closed, for "
-            "restart recovery", row["channel_id"], round_id,
-        )
-        return
-    try:
-        await channel.delete(reason=reason)
-    except discord.NotFound:
-        pass
-    except discord.HTTPException:
-        log.exception("amendment: could not delete channel %s", row["channel_id"])
-        return
-    async with get_connection(db_path) as db:
-        await db.execute("DELETE FROM round_amend_channels WHERE round_id = ?", (round_id,))
-        await db.commit()
+    await _close_amend_channel_record(
+        db_path, round_id, row["channel_id"], channel, reason=reason
+    )
 
 
 async def _amendment_sessions_of(db_path: str, round_id: int) -> list[str]:

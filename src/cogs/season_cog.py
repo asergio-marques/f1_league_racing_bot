@@ -5079,38 +5079,19 @@ class SeasonCog(commands.Cog):
     ) -> None:
         """Forget an amendment that failed before stage one, and delete its channel.
 
-        The channel goes first. Where it cannot be deleted the record is kept, marked closed —
-        so it holds nothing, and restart recovery still finds the channel — as
-        `close_submission_channel` does; where it can, or is already gone, the record goes.
+        As every amendment's channel goes: see `_close_amend_channel_record`.
         """
+        from services.result_submission_service import _close_amend_channel_record
+
         if opened.cancel_view is not None:
             opened.cancel_view.stop()
-        channel_gone = True
         try:
-            await opened.channel.delete(reason="Amendment failed before anything was written")
-        except discord.NotFound:
-            pass
-        except discord.HTTPException:
-            log.exception("amend: could not delete channel %s", opened.channel.id)
-            channel_gone = False
-        try:
-            async with get_connection(self.bot.db_path) as db:
-                if channel_gone:
-                    await db.execute(
-                        "DELETE FROM round_amend_channels WHERE round_id = ? AND channel_id = ? "
-                        "AND pre_amendment_state IS NULL",
-                        (opened.round_id, opened.channel.id),
-                    )
-                else:
-                    await db.execute(
-                        "UPDATE round_amend_channels SET closed_at = ? "
-                        "WHERE round_id = ? AND channel_id = ? AND pre_amendment_state IS NULL",
-                        (datetime.now(timezone.utc).isoformat(), opened.round_id,
-                         opened.channel.id),
-                    )
-                await db.commit()
+            await _close_amend_channel_record(
+                self.bot.db_path, opened.round_id, opened.channel.id, opened.channel,
+                reason="Amendment failed before anything was written",
+            )
         except Exception:  # noqa: BLE001 — restart recovery clears what is left
-            log.exception("amend: could not forget the record of round %s", opened.round_id)
+            log.exception("amend: could not close the record of round %s", opened.round_id)
         try:
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
@@ -5504,15 +5485,12 @@ class SeasonCog(commands.Cog):
             # The button goes with the channel: nothing is left listening for a press that
             # could only answer for an amendment that has ended.
             cancel_view.stop()
-            async with get_connection(self.bot.db_path) as _cdb:
-                await _cdb.execute(
-                    "DELETE FROM round_amend_channels WHERE round_id = ?", (rnd.id,)
-                )
-                await _cdb.commit()
-            try:
-                await amend_channel.delete(reason="Results amend complete")
-            except discord.HTTPException:
-                pass
+            from services.result_submission_service import _close_amend_channel_record
+
+            await _close_amend_channel_record(
+                self.bot.db_path, rnd.id, amend_channel.id, amend_channel,
+                reason="Results amend complete",
+            )
 
         async def _end(event: str, *, session_type: SessionType | None = None,
                        detail: str = "", reply: str | None = None) -> None:

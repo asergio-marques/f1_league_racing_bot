@@ -369,7 +369,7 @@ async def test_a_channel_that_will_not_delete_is_logged_not_raised(tmp_path, cap
     with caplog.at_level("WARNING"):
         await close_submission_channel(CHANNEL_ID, ROUND_ID, guild, db_path)
 
-    assert "failed to delete channel" in caplog.text
+    assert "could not delete channel" in caplog.text
 
 
 async def test_a_channel_the_bot_cannot_see_still_closes_the_round(tmp_path):
