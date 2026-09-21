@@ -5,7 +5,8 @@ Commands:
   /season placements-review   — view pending config with Approve/Amend actions
   (placements are confirmed from the button `/season placements-review` posts, and by no command)
   /season status   — read-only summary of active season
-  /season cancel   — delete the active season (admin only, destructive)
+  /season abort    — delete a season whose placements were never confirmed (league admin only)
+  /season cancel   — cancel the season being raced, archiving it (league admin only, irreversible)
 
   /division add       — add a division to pending setup
   /division duplicate — copy a division with datetime offset (setup only)
