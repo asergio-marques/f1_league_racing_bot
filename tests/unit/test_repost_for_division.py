@@ -809,3 +809,76 @@ async def test_the_standings_id_is_cleared_before_its_replacement_is_posted(tmp_
         )
 
     assert seen == [None]
+
+
+# ---------------------------------------------------------------------------
+# The stored standings id survives a change of leader (#345)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_rounds_standings_message_is_found_after_its_leader_changes(tmp_path):
+    """**The id is written to the leading driver's row, and a recomputation reorders the rows.**
+
+    Reading the top row therefore returned nothing the moment a penalty or an amendment changed
+    who led that round: the posting became unreachable, so the next repost neither replaced nor
+    deleted it and the league was left reading two standings for one round. Which row carries
+    the id is an implementation detail — the round has one posting either way.
+    """
+    from services.results_post_service import (
+        _get_standings_message_id,
+        _get_standings_message_ids,
+        _set_standings_message_id,
+    )
+
+    db_path = await _make_db(tmp_path, name="std_leader_change")
+    async with get_connection(db_path) as db:
+        for driver, position in ((101, 1), (102, 2)):
+            await db.execute(
+                "INSERT INTO driver_standings_snapshots (round_id, division_id, "
+                "driver_user_id, standing_position, total_points) VALUES (1, ?, ?, ?, 25)",
+                (DIVISION_ID, driver, position),
+            )
+        await db.commit()
+    await _set_standings_message_id(db_path, DIVISION_ID, 1, 5555, message_ids="[5555]")
+
+    # The amendment rescores the round and driver 102 now leads it.
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_standings_snapshots SET standing_position = "
+            "CASE driver_user_id WHEN 101 THEN 2 ELSE 1 END WHERE round_id = 1"
+        )
+        await db.commit()
+
+    assert await _get_standings_message_id(db_path, DIVISION_ID, 1) == 5555
+    assert await _get_standings_message_ids(db_path, DIVISION_ID, 1) == [5555]
+
+
+async def test_only_one_row_of_a_round_names_its_standings_posting(tmp_path):
+    """Or a superseded id left on a row that is no longer top would be read as the current one."""
+    from services.results_post_service import _set_standings_message_id
+
+    db_path = await _make_db(tmp_path, name="std_one_row")
+    async with get_connection(db_path) as db:
+        for driver, position in ((101, 1), (102, 2)):
+            await db.execute(
+                "INSERT INTO driver_standings_snapshots (round_id, division_id, "
+                "driver_user_id, standing_position, total_points) VALUES (1, ?, ?, ?, 25)",
+                (DIVISION_ID, driver, position),
+            )
+        await db.commit()
+    await _set_standings_message_id(db_path, DIVISION_ID, 1, 5555, message_ids="[5555]")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_standings_snapshots SET standing_position = "
+            "CASE driver_user_id WHEN 101 THEN 2 ELSE 1 END WHERE round_id = 1"
+        )
+        await db.commit()
+
+    await _set_standings_message_id(db_path, DIVISION_ID, 1, 6666, message_ids="[6666]")
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT standings_message_id FROM driver_standings_snapshots "
+            "WHERE round_id = 1 AND standings_message_id IS NOT NULL"
+        )
+        assert [r[0] for r in await cursor.fetchall()] == [6666]

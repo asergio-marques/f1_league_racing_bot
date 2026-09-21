@@ -933,6 +933,12 @@ async def _get_standings_message_id(
     Defaults to the driver standings, which is the message the textual flow posts for both
     championships together — so every caller written before the image flow keeps its meaning
     unchanged.
+
+    **Read from whichever row holds it, not from the top-ranked one.** The id is *written* to
+    the row of the driver leading that round, but a recomputation reorders the snapshots without
+    moving the id — so the moment a penalty or an amendment changed a round's leader, a read of
+    the top row returned nothing, the posting became unreachable, and the next repost left it
+    standing beside its replacement for good (#345).
     """
     column = _STANDINGS_ID_COLUMNS[championship]
     async with get_connection(db_path) as db:
@@ -940,7 +946,7 @@ async def _get_standings_message_id(
             f"""
             SELECT {column} AS message_id
             FROM driver_standings_snapshots
-            WHERE division_id = ? AND round_id = ?
+            WHERE division_id = ? AND round_id = ? AND {column} IS NOT NULL
             ORDER BY standing_position ASC
             LIMIT 1
             """,
@@ -964,15 +970,16 @@ async def _get_standings_message_ids(
     being reached by accident.
     """
     column = _STANDINGS_IDS_COLUMNS[championship]
+    anchor_column = _STANDINGS_ID_COLUMNS[championship]
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"""
             SELECT {column} AS message_ids
             FROM driver_standings_snapshots
-            WHERE division_id = ? AND round_id = ?
+            WHERE division_id = ? AND round_id = ? AND {anchor_column} IS NOT NULL
             ORDER BY standing_position ASC
             LIMIT 1
-            """,  # noqa: S608 — column comes from the constant map above
+            """,  # noqa: S608 — columns come from the constant maps above
             (division_id, round_id),
         )
         row = await cursor.fetchone()
@@ -997,10 +1004,20 @@ async def _set_standings_message_id(
     deleting it later removes every message it occupies rather than guessing at the rest
     (#345). Clearing an id clears the list with it: a stale list outliving the message it
     described would send a delete at somebody else's posting.
+
+    **The round's other rows are cleared first**, so exactly one row of it names the posting. A
+    recomputation that changes the leader reorders the rows without moving the id, and one left
+    behind on a row that is no longer top would be read as the round's current posting by
+    :func:`_get_standings_message_id` long after it had been replaced (#345).
     """
     column = _STANDINGS_ID_COLUMNS[championship]
     list_column = _STANDINGS_IDS_COLUMNS[championship]
     async with get_connection(db_path) as db:
+        await db.execute(
+            f"UPDATE driver_standings_snapshots SET {column} = NULL, {list_column} = NULL "  # noqa: S608
+            "WHERE round_id = ? AND division_id = ?",
+            (round_id, division_id),
+        )
         await db.execute(
             f"""
             UPDATE driver_standings_snapshots
