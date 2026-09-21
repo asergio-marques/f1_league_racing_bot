@@ -130,6 +130,16 @@ def _race_row(driver: int, position: int, *, total_time: str = "1:30:00.000", **
     return row
 
 
+@pytest.fixture(autouse=True)
+def _no_standings_names():
+    """The names a full tie is settled by are resolved through Discord, which these stub bots
+    only pretend to reach; ordering by user id keeps the tests about the classification."""
+    with patch(
+        "services.results_post_service.standings_display_names", new=AsyncMock(return_value=None)
+    ):
+        yield
+
+
 def _bot(*, guild=True, attendance=False):
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
