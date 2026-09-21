@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -421,6 +422,27 @@ async def test_a_sanction_standing_alone_heads_itself(sanction):
 
     assert channel.sent[0][1] is not None, "the banner is the first thing posted"
     assert channel.sent[1][0] == "<@501>"
+
+
+async def test_a_sanction_card_notes_the_banner_above_it(sanction, monkeypatch):
+    """So that no replay takes that banner down and leaves the card bare (decided 2026-09-21)."""
+    card = SimpleNamespace(id=7001)
+    marked: list = []
+
+    async def _send(_bot, channel, **kwargs):
+        await channel.send(f"<@{kwargs['driver_discord_id']}>")
+        return card
+
+    async def _mark(db_path, round_id, channel_id, sent):
+        marked.append((round_id, sent))
+
+    monkeypatch.setattr(vas, "_send_verdict", _send)
+    monkeypatch.setattr(vas, "_mark_banner_over_sanction", _mark)
+    channel = _Channel()
+
+    await _autosanction(_Bot(channel), channel)
+
+    assert marked == [(1, card)]
 
 
 async def test_a_round_sanctioning_three_drivers_raises_one_banner(sanction):

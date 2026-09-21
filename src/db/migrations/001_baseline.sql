@@ -434,12 +434,16 @@ CREATE TABLE "appeal_records" (
 -- an amendment re-announcing a round could take its verdicts down and not the banner over
 -- them, leaving a header above empty space and posting a fresh one below (#345). One row per
 -- banner posted; the replay deletes the round's and records what it posts in their place.
+-- heads_sanctions: set once an attendance sanction card is posted beneath the banner. Those
+-- cards are recorded nowhere else and no replay takes them down, so a banner heading one is
+-- never taken down either (decided 2026-09-21).
 CREATE TABLE verdict_banner_messages (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    round_id   INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
-    channel_id TEXT    NOT NULL,
-    message_id TEXT    NOT NULL,
-    posted_at  TEXT    NOT NULL
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    round_id        INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    channel_id      TEXT    NOT NULL,
+    message_id      TEXT    NOT NULL,
+    posted_at       TEXT    NOT NULL,
+    heads_sanctions INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_verdict_banner_round ON verdict_banner_messages(round_id);
 

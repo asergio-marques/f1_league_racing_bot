@@ -352,6 +352,51 @@ async def _banners_of(db_path: str, round_id: int) -> list[tuple[str, int]]:
     return found
 
 
+async def _mark_banner_over_sanction(db_path: str, round_id: int, channel_id, card) -> None:
+    """Note that a round's banner heads an attendance sanction card (decided 2026-09-21).
+
+    A sanction card is no verdict record: no replay re-announces it or takes it down. So a
+    banner over one is kept by every replay, or the card would be left without its header. The
+    banner above *card* is the round's latest in the channel posted before it, message ids
+    rising with time. Never raises: the card went out, and only this note of it failed.
+    """
+    card_id = getattr(card, "id", None)
+    if card_id is None:
+        return
+    try:
+        async with get_connection(db_path) as db:
+            await db.execute(
+                """
+                UPDATE verdict_banner_messages SET heads_sanctions = 1
+                WHERE id = (
+                    SELECT id FROM verdict_banner_messages
+                    WHERE round_id = ? AND channel_id = ?
+                      AND CAST(message_id AS INTEGER) < ?
+                    ORDER BY CAST(message_id AS INTEGER) DESC
+                    LIMIT 1
+                )
+                """,
+                (round_id, str(channel_id), int(card_id)),
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        log.exception("could not note the banner over a sanction card of round %s", round_id)
+
+
+async def _banners_heading_sanctions(db_path: str, message_ids: list[int]) -> set[int]:
+    """Which of *message_ids* are banners with an attendance sanction card beneath them."""
+    if not message_ids:
+        return set()
+    placeholders = ", ".join("?" for _ in message_ids)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT message_id FROM verdict_banner_messages "  # noqa: S608
+            f"WHERE heads_sanctions = 1 AND message_id IN ({placeholders})",
+            [str(message_id) for message_id in message_ids],
+        )
+        return {int(row["message_id"]) for row in await cursor.fetchall()}
+
+
 async def _forget_banners(db_path: str, message_ids: list[int]) -> None:
     """Drop the records of banners that have been taken down."""
     if not message_ids:
@@ -1024,7 +1069,7 @@ async def post_autosanction_announcement(
         else:
             await banner_for_round(bot, db_path, round_id)()
 
-        await _send_verdict(
+        card = await _send_verdict(
             bot,
             target_channel,
             db_path=db_path,
@@ -1045,6 +1090,9 @@ async def post_autosanction_announcement(
             penalty_description=penalty_label,
             description_text=description_text,
             justification_text=justification_text,
+        )
+        await _mark_banner_over_sanction(
+            db_path, round_id, getattr(target_channel, "id", penalty_channel_id_raw), card
         )
         return []
     except Exception as exc:  # noqa: BLE001 — recorded with the sanction's outcome
@@ -1189,6 +1237,14 @@ async def republish_verdicts_from_round(
         for round_id, channel_id, message_id in superseded_banners:
             banners_by_round.setdefault(round_id, []).append((channel_id, message_id))
 
+    # **A banner over an attendance sanction card stays** (decided 2026-09-21). The card is no
+    # verdict record and nothing takes it down, so its header must not be taken down either.
+    # Every other banner of a round goes once the round's replacements are up — including where
+    # there are none, the amendment having removed the round's last verdict.
+    kept_banners = await _banners_heading_sanctions(
+        db_path, [message_id for found in banners_by_round.values() for _, message_id in found]
+    )
+
     # Kept by round, because a round's old announcements come down only where that round's
     # replacements actually went up (#345).
     superseded: dict[int, list[tuple[object, int, list[int] | None, int]]] = {}
@@ -1251,11 +1307,19 @@ async def republish_verdicts_from_round(
         penalties = reports_only(
             await _records_for_round(db_path, round_id, "penalty_records"), appeals
         )
+        # The round's old banners that come down with its old cards.
+        replaced_banners = [
+            banner for banner in banners_by_round.get(round_id, [])
+            if banner[1] not in kept_banners
+        ]
+
         if not penalties and not appeals:
             # Nothing to re-announce is a round rebuilt: every decision it carries is in the
             # channel, there being none. An amendment that removed a round's last verdict has
-            # its old announcement taken down on exactly this footing.
+            # its old announcement taken down on exactly this footing — and its banner with it,
+            # unless a sanction card stands beneath.
             rebuilt.append(round_id)
+            replaced.extend(replaced_banners)
             continue
 
         state = state_factory(round_id)
@@ -1264,12 +1328,6 @@ async def republish_verdicts_from_round(
             # would otherwise say "Round 0".
             state.round_number = rnd["round_number"]
         head = banner_for_round(bot, db_path, round_id)
-
-        # Only a round that re-announces loses its banner. A round whose verdicts channel holds
-        # nothing but attendance sanction cards — which share the banner and are recorded
-        # nowhere — would otherwise have its header deleted and no replacement posted, leaving
-        # those cards bare (#345).
-        replaced_banners = banners_by_round.get(round_id, [])
 
         round_faults: list[str] = []
         if penalties:

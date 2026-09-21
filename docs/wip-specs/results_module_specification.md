@@ -425,6 +425,7 @@ Approving stage two shall apply any staged corrections, republish the round's re
     - All of a round's verdicts shall be announced, in order, and not only those the amendment changed.
     - In every channel the replacement shall be posted before what it replaces is removed, so that a failure part-way leaves the league what it already had.
     - A round's superseded verdict announcements, and the banner heading them, shall be removed only once every one of that round's replacements has been posted. Where one could not be, the originals shall be left standing, and the league told which, with a way to find each.
+    - A round left with no verdict at all shall have its superseded announcements and their banner removed likewise. A banner that also heads an attendance sanction card shall be kept, the card being no verdict and staying where it is. Decided 2026-09-21.
     - The attendance sheet shall be reposted once, against the round the running totals stand at, there being one live sheet rather than one per round.
     - Where any of it could not be posted, the league shall be told rather than left to find out from a channel out of order.
 

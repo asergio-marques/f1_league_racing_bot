@@ -415,23 +415,87 @@ async def test_the_banner_over_a_replaced_run_is_taken_down_with_it(tmp_path):
         assert (await cursor.fetchone())[0] == 0
 
 
-async def test_a_round_with_nothing_to_re_announce_keeps_its_banner(tmp_path):
-    """**Attendance sanction cards share that banner and are recorded nowhere** (#345), so a
-    round whose verdicts channel holds only those would lose its header to a replay that then
-    posts nothing in its place — leaving the cards bare."""
-    db_path, ids = await _seed(tmp_path, "banner_kept", rounds=(1, 2))
+async def _heads_sanctions(db_path, message_id: int) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE verdict_banner_messages SET heads_sanctions = 1 WHERE message_id = ?",
+            (str(message_id),),
+        )
+        await db.commit()
+
+
+async def _banners_left(db_path) -> list[str]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT message_id FROM verdict_banner_messages ORDER BY id")
+        return [row[0] for row in await cursor.fetchall()]
+
+
+async def test_a_round_left_with_no_verdicts_loses_its_banner(tmp_path):
+    """An amendment that removed a round's last verdict took its cards down and left their
+    banner heading empty space (decided 2026-09-21)."""
+    db_path, ids = await _seed(tmp_path, "banner_emptied", rounds=(1, 2))
     await _verdict(db_path, ids[1], anchor=5001)
     await _banner(db_path, 1, 6001)
-    await _banner(db_path, 2, 6002)  # round 2 has only sanction cards under it
+    await _banner(db_path, 2, 6002)  # round 2's verdicts were all removed
 
     _, events = await _republish(db_path, _bot(), 1)
 
     deleted = [anchor for kind, anchor in events if kind == "delete"]
-    assert 6001 in deleted
-    assert 6002 not in deleted
+    assert 6001 in deleted and 6002 in deleted
+    assert await _banners_left(db_path) == []
+
+
+async def test_a_banner_over_sanction_cards_is_kept(tmp_path):
+    """**Attendance sanction cards share the banner and nothing takes them down**, so a banner
+    over one stays, whether or not its round has a verdict left (decided 2026-09-21)."""
+    db_path, ids = await _seed(tmp_path, "banner_sanctions", rounds=(1, 2))
+    await _verdict(db_path, ids[1], anchor=5001)
+    await _banner(db_path, 1, 6001)
+    await _banner(db_path, 2, 6002)
+    await _heads_sanctions(db_path, 6001)  # round 1 re-announces; its old banner heads a sacking
+    await _heads_sanctions(db_path, 6002)  # round 2 has no verdict left, only its sanctions
+
+    _, events = await _republish(db_path, _bot(), 1)
+
+    deleted = [anchor for kind, anchor in events if kind == "delete"]
+    assert 6001 not in deleted and 6002 not in deleted
+    assert 5001 in deleted, "the old verdict card still goes"
+    assert await _banners_left(db_path) == ["6001", "6002"]
+
+
+async def test_a_sanction_card_marks_the_banner_it_falls_under(tmp_path):
+    """The round's latest banner in the channel posted before the card; not a later one, and
+    not another round's."""
+    from services.verdict_announcement_service import _mark_banner_over_sanction
+
+    db_path, _ = await _seed(tmp_path, "banner_marked", rounds=(1, 2))
+    await _banner(db_path, 1, 6001)
+    await _banner(db_path, 1, 6003)
+    await _banner(db_path, 2, 6004)
+    await _banner(db_path, 1, 6009)
+
+    await _mark_banner_over_sanction(db_path, 1, VERDICTS_CHANNEL, SimpleNamespace(id=6005))
+
     async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT message_id FROM verdict_banner_messages")
-        assert [r[0] for r in await cursor.fetchall()] == ["6002"]
+        cursor = await db.execute(
+            "SELECT message_id FROM verdict_banner_messages WHERE heads_sanctions = 1"
+        )
+        assert [row[0] for row in await cursor.fetchall()] == ["6003"]
+
+
+async def test_a_sanction_card_that_never_went_out_marks_nothing(tmp_path):
+    from services.verdict_announcement_service import _mark_banner_over_sanction
+
+    db_path, _ = await _seed(tmp_path, "banner_unmarked", rounds=(1,))
+    await _banner(db_path, 1, 6001)
+
+    await _mark_banner_over_sanction(db_path, 1, VERDICTS_CHANNEL, None)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM verdict_banner_messages WHERE heads_sanctions = 1"
+        )
+        assert (await cursor.fetchone())[0] == 0
 
 
 async def test_the_banners_go_after_the_replacements_are_up(tmp_path):
