@@ -65,8 +65,12 @@ def _server_config() -> ServerConfig:
 
 def _cog(db_path):
     cog = ResultsCog.__new__(ResultsCog)
-    cog.bot = AsyncMock()
+    # ``MagicMock`` with each awaited member named (issue #240). Under a whole-bot
+    # ``AsyncMock`` every reader these callbacks reach answers truthily whether or not a
+    # test asked it to, so a command could take a branch on the stub alone.
+    cog.bot = MagicMock()
     cog.bot.db_path = db_path
+    cog.bot.output_router.post_log = AsyncMock()
     cog.bot.season_service.get_season_for_server = AsyncMock(
         return_value=SimpleNamespace(id=SEASON_ID, status="SETUP")
     )
