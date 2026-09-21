@@ -261,7 +261,7 @@ Each staged penalty also gets its own **Remove** button, so you can take one bac
 
 **Both the description and the justification are published.** They go into the verdict your whole league reads, so write them as though the driver will quote them back at you — because they will. This is the opposite of an attendance pardon, whose justification is never shown to the league.
 
-**Name drivers, never a group.** Either text may mention the other driver in an incident. One that mentions a role, `@everyone` or `@here` is refused, with a reply saying which text holds it, and you fill the form in again. A verdict tells the drivers it names and nobody else.
+**Name drivers, never a group, and leave out emoji.** Either text may mention the other driver in an incident. One that mentions a role, `@everyone` or `@here` is refused, with a reply saying which text holds it, and you fill the form in again. A verdict tells the drivers it names and nobody else. An emoji is refused the same way, your server's own or a standard one: a verdict drawn as a picture cannot show it. A tick, a star or an arrow typed as plain text is fine.
 
 **Approving is one click.** **✅ Approve** commits there and then, with no second confirmation: it applies every penalty, recomputes positions, times and points for the sessions affected, republishes the round as **Post-Race Penalty Results**, brings every later round's standings up to date, and posts one verdict per decision to the verdicts channel. Check the staged list before you press it, because nothing will ask you again.
 

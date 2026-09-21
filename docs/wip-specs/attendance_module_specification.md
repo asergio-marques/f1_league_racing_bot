@@ -133,7 +133,7 @@
 - A new button will be made available in the penalty wizard (NOT available in the appeal stage) for "attendance pardons". When pressed, a form shall open, requesting a discord user ID, the type of attendance penalty excused (no RSVP, absent, no show), and the justification.
     - The pardons attributed shall be validated against the check-in status (did check-in or not) and against the real attendance of the driver (current provisional round results).
     - The justification is merely for logging purposes, it shall not be displayed anywhere else but the logging channel. Privacy reasons.
-    - A justification holding a role mention, "@everyone" or "@here", in any case, shall be refused, saying why, as a penalty's texts are. A mention of a driver shall stand. Decided 2026-09-21 (#204).
+    - A justification holding a role mention, "@everyone" or "@here", in any case, or an emoji, shall be refused, saying why, as a penalty's texts are. A mention of a driver shall stand. Decided 2026-09-21 (#204).
     - Multiple pardons may be attributed to the same driver (so that a "failure to check-in, did not attend" may be fully waived).
     - The attendance pardons shall be displayed together with the list of staged penalties.
     - The drivers who had one of their attendance penalties waived by this process shall not receive attendance points for that reason.

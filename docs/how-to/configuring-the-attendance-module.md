@@ -278,7 +278,7 @@ The ordinary locks still decide whether they are in time. Move a full-time drive
 
 Sometimes there is a reason, and the bot has no way of knowing it. Pardons are granted from the **🏳️ Attendance Pardon** button on the penalty review — the same review where you settle the round's on-track penalties — and only there.
 
-It asks for three things: the driver's Discord user ID, which of the three charges you are lifting (`NO_RSVP`, `ABSENT` or `NO_SHOW`), and a justification. **The justification is for your records only.** It is never shown to the league, which is the point — a driver's reason for missing a race is their own business. As with a penalty's texts, it may mention a driver, but one that mentions a role, `@everyone` or `@here` is refused.
+It asks for three things: the driver's Discord user ID, which of the three charges you are lifting (`NO_RSVP`, `ABSENT` or `NO_SHOW`), and a justification. **The justification is for your records only.** It is never shown to the league, which is the point — a driver's reason for missing a race is their own business. As with a penalty's texts, it may mention a driver, but one that mentions a role, `@everyone` or `@here`, or holds an emoji, is refused.
 
 Each pardon lifts one charge, so a driver who never answered *and* did not show can be pardoned once or twice depending on how generous you feel. The bot checks the pardon matches what actually happened and refuses one that does not — you cannot pardon a no-show for someone who declined.
 

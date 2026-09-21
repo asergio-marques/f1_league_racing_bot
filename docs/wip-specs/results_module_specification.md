@@ -360,6 +360,7 @@ Penalties are not applied by a command. Once every session of a round has been s
 **Stage one — post-race penalties.** The prompt shall carry:
 - **Add Penalty** — asks which session, then takes the driver as a mention or user ID, the sanction, a description and a justification. Both texts are mandatory and both are published in the verdict.
     - A description or justification holding a role mention, "@everyone" or "@here", in any case, shall be refused, saying which text holds it. A mention of a driver shall stand. Decided 2026-09-21 (#204).
+    - A description or justification holding an emoji, whether one of the server's own or a standard one, shall be refused likewise, saying which text holds it and naming the emoji. A symbol that is text by default, such as a tick, a star or an arrow, is no emoji. Decided 2026-09-21 (#204).
     - A verdict shall notify nobody but the people it mentions, whatever its texts hold. A role mention posted in one shall notify none of the role's holders, and "@everyone" or "@here" nobody.
     - The sanction shall be either "DSQ" or a whole number of seconds, positive or negative. Fractions of a second shall be rejected.
     - "DSQ" invalidates the entry, which is ranked last in that session.
