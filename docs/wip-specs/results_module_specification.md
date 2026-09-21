@@ -220,9 +220,11 @@
 - An approval shall not be recorded as a success before the reposting it claims has been done.
 - If rejected, nothing happens. The modification store will remain as it is, and the amending mode will remain active.
 
-#### Viewing configs after placements are confirmed
-- <NEW COMMAND> A "results config view" will view the many points configurations applied to the current season. There is one mandatory input, the name/ID of the points configuration, and one optional input, the session type whose points configuration is to be posted; if this optional parameter is omitted, then the configuration for all sessions pertaining to the input name/ID shall be posted.
-- Until the season's placements are first confirmed, the command reads the league points schema store; once they are, it reads the season's own store.
+#### Listing and viewing configs
+- <NEW COMMAND> A "results config list" command shall list the points configurations a store holds. There is one mandatory input, the store to read. For each configuration it shall name the session types that carry at least one points entry, so that a configuration which has been created but never filled in is distinguishable from a complete one; such a configuration shall be reported as holding no entries rather than omitted.
+- <NEW COMMAND> A "results config view" will view a points configuration. There are two mandatory inputs, the store to read and the name/ID of the points configuration, and one optional input, the session type whose points configuration is to be posted; if this optional parameter is omitted, then the configuration for all sessions pertaining to the input name/ID shall be posted.
+- **Both commands take the store as a mandatory input with no default**, that store being either the league points schema store or the current season's own. A season takes its copy of each attached configuration when its placements are first confirmed, and the two stores diverge from that moment; a command that inferred the store would therefore report figures the league does not race for, so the choice is the caller's.
+- Reading the league points schema store requires no season to exist. Reading the season's store when there is no season shall be refused, and the refusal shall name the league points schema store as the alternative.
 - When listing points configuration for any session, if all positions beyond a certain point yield 0 points, then they shall all be listed as "xth+" to prevent repetition.
 
 ### Submitting round results

@@ -53,10 +53,14 @@ async def db_path(tmp_path):
 
 
 def _cog(db_path):
-    from unittest.mock import AsyncMock
+    from unittest.mock import MagicMock
 
     cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = AsyncMock()
+    # ``MagicMock``, not ``AsyncMock`` (issue #240). The helper below reads nothing but
+    # ``db_path``, and this keeps it that way: on a whole-bot ``AsyncMock`` a reader that
+    # grew a second dependency would be answered with a truthy mock and go on passing,
+    # where here the unpinned ``await`` raises and says so.
+    cog.bot = MagicMock()
     cog.bot.db_path = db_path
     return cog
 

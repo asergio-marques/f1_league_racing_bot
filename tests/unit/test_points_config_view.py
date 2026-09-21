@@ -3,21 +3,27 @@
 Issue #208. `/results config view` was uncovered, and it is the one command that answers "what
 will this round actually be worth?" — which is what a league argues about.
 
-**It reads from two different places, and which one depends on the season's status.** A season
-in SETUP is still attached to server-level configurations that can be edited; once it is ACTIVE
-the points are snapshotted onto the season, and the server-level store may since have been
-changed for *next* season. Reading the wrong one would show a manager points their league is not
-racing for. `test_an_active_season_reads_its_own_snapshot` and
-`test_a_setup_season_reads_the_server_store` are the pair that holds it, and the two paths do
-not otherwise resemble each other — they even report "not found" differently, because in one
-case the configuration is missing from the *season* and in the other from the *server*.
+**It reads from two different places, and the caller names which** (decided 2026-09-21, #200).
+A season takes its own copy of every attached configuration at approval, and the server-level
+store may since have been changed for *next* season. Reading the wrong one would show a manager
+points their league is not racing for.
 
-**Trailing zeros are collapsed into a sentinel on the setup path.** A configuration stores a
+The status used to choose: the server's store while in SETUP, the season's own once ACTIVE.
+That was right often enough to be trusted and wrong silently, and it could not express a
+manager reading the server's copy *during* a running season — which is exactly what building
+next season's table means. So `scope` is now a mandatory parameter with no default.
+`test_season_scope_reads_the_seasons_own_snapshot` and `test_server_scope_reads_the_server_store`
+are the pair that holds it, both parametrised across all four statuses to pin that the status no
+longer decides. The two paths do not otherwise resemble each other — they even report "not
+found" differently, because in one case the configuration is missing from the *season* and in
+the other from the *server*.
+
+**Trailing zeros are collapsed into a sentinel on the server path.** A configuration stores a
 row for every scoring position, and a table listing "P11: 0, P12: 0 …" down to P20 buries the
 positions that score — so they become one `"11+"` row worth nothing. Collapsed rather than
 dropped, because "everything from P11 down scores nothing" is a statement a league wants and
 an absence is not. Positions come back as *strings* for that reason, since `"11+"` is not a
-number. The active path gets the same treatment from the season view; the setup path does it
+number. The season path gets the same treatment from the season view; the server path does it
 here.
 
 **The session filter is applied after the read, not inside it.** A manager asking about the
@@ -97,6 +103,10 @@ def _replied(interaction) -> str:
     )
 
 
+def _scope(value: str):
+    return SimpleNamespace(name=value, value=value)
+
+
 def _choice(session_type: SessionType | None):
     if session_type is None:
         return None
@@ -128,6 +138,7 @@ async def _view(
     season_view=None,
     store=None,
     store_error=None,
+    scope="SEASON",
 ):
     """Run the command with both read paths stubbed, returning what was formatted."""
     captured: dict = {}
@@ -148,7 +159,9 @@ async def _view(
             side_effect=store_error,
         ),
     ), patch("utils.results_formatter.format_config_view", new=_format):
-        await undecorate(ResultsCog.config_view)(cog, interaction, name, _choice(session))
+        await undecorate(ResultsCog.config_view)(
+            cog, interaction, _scope(scope), name, _choice(session)
+        )
     return captured
 
 
@@ -157,10 +170,14 @@ async def _view(
 # ---------------------------------------------------------------------------
 
 
-async def test_an_active_season_reads_its_own_snapshot():
-    """Once a season is ACTIVE the points are snapshotted onto it, and the server-level
-    store may since have been edited for *next* season."""
-    cog = _make_cog(season_status="ACTIVE")
+@pytest.mark.parametrize("status", ["ACTIVE", "SETUP", "COMPLETED", "CANCELLED"])
+async def test_season_scope_reads_the_seasons_own_snapshot(status):
+    """`scope: Season` reads the season's copy — whatever status the season is in.
+
+    The status no longer chooses (decided 2026-09-21, #200); the caller does. Parametrised
+    across all four statuses precisely to pin that the old status-driven branch is gone.
+    """
+    cog = _make_cog(season_status=status)
     interaction = _interaction()
 
     with patch(
@@ -171,16 +188,22 @@ async def test_an_active_season_reads_its_own_snapshot():
     ) as store, patch(
         "utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
     ):
-        await undecorate(ResultsCog.config_view)(cog, interaction, CONFIG, None)
+        await undecorate(ResultsCog.config_view)(
+            cog, interaction, _scope("SEASON"), CONFIG, None
+        )
 
     season_view.assert_awaited_once()
     store.assert_not_awaited()
 
 
-@pytest.mark.parametrize("status", ["SETUP", "COMPLETED", "CANCELLED"])
-async def test_a_season_not_yet_active_reads_the_server_store(status):
-    """A season in setup is still attached to configurations that can be edited, and the
-    snapshot does not exist yet."""
+@pytest.mark.parametrize("status", ["ACTIVE", "SETUP", "COMPLETED", "CANCELLED"])
+async def test_server_scope_reads_the_server_store(status):
+    """`scope: Server` reads the server's store, including while a season is ACTIVE.
+
+    That last case is the one the old rule could not express: after approval the two stores
+    diverge, and a manager building next season's table has to be able to read the server's
+    copy without the running season's snapshot being substituted for it.
+    """
     cog = _make_cog(season_status=status)
     interaction = _interaction()
 
@@ -192,10 +215,45 @@ async def test_a_season_not_yet_active_reads_the_server_store(status):
     ) as store, patch(
         "utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
     ):
-        await undecorate(ResultsCog.config_view)(cog, interaction, CONFIG, None)
+        await undecorate(ResultsCog.config_view)(
+            cog, interaction, _scope("SERVER"), CONFIG, None
+        )
 
     store.assert_awaited_once()
     season_view.assert_not_awaited()
+
+
+async def test_server_scope_needs_no_season():
+    """Between seasons the server's store is still readable (#200)."""
+    cog = _make_cog(season_status=None)
+    interaction = _interaction()
+
+    with patch(
+        "services.points_config_service.get_config_entries",
+        new=AsyncMock(return_value=([_entry(SessionType.FEATURE_RACE, 1, 25)], [])),
+    ) as store, patch(
+        "utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
+    ):
+        await undecorate(ResultsCog.config_view)(
+            cog, interaction, _scope("SERVER"), CONFIG, None
+        )
+
+    store.assert_awaited_once()
+    assert "No active or setup season" not in _replied(interaction)
+
+
+async def test_season_scope_without_a_season_points_at_server_scope():
+    """The refusal names the way out rather than dead-ending (#200)."""
+    cog = _make_cog(season_status=None)
+    interaction = _interaction()
+
+    await undecorate(ResultsCog.config_view)(
+        cog, interaction, _scope("SEASON"), CONFIG, None
+    )
+
+    reply = _replied(interaction)
+    assert "No active or setup season found" in reply
+    assert "scope: Server" in reply
 
 
 async def test_a_server_with_no_season_is_refused():
@@ -210,7 +268,7 @@ async def test_a_server_with_no_season_is_refused():
 
 
 # ---------------------------------------------------------------------------
-# The active path
+# The season path
 # ---------------------------------------------------------------------------
 
 
@@ -281,7 +339,7 @@ async def test_an_unrecognised_session_key_is_shown_rather_than_dropped():
 
 
 # ---------------------------------------------------------------------------
-# The setup path
+# The server path
 # ---------------------------------------------------------------------------
 
 
@@ -298,8 +356,7 @@ async def test_the_server_stores_points_are_shown_by_session():
                 _entry(SessionType.SPRINT_RACE, 1, 8),
             ],
             [],
-        ),
-    )
+        ), scope="SERVER")
 
     assert captured["entries"]["Feature Race"] == [("1", 25), ("2", 18)]
     assert captured["entries"]["Sprint Race"] == [("1", 8)]
@@ -320,8 +377,7 @@ async def test_the_positions_are_ordered(tmp_path):
                 _entry(SessionType.FEATURE_RACE, 2, 18),
             ],
             [],
-        ),
-    )
+        ), scope="SERVER")
 
     assert [p for p, _ in captured["entries"]["Feature Race"]] == ["1", "2", "3"]
 
@@ -344,8 +400,7 @@ async def test_trailing_zeros_are_collapsed_into_a_sentinel():
                 _entry(SessionType.FEATURE_RACE, 4, 0),
             ],
             [],
-        ),
-    )
+        ), scope="SERVER")
 
     assert captured["entries"]["Feature Race"] == [("1", 25), ("2", 18), ("3+", 0)]
 
@@ -356,8 +411,7 @@ async def test_a_session_with_no_entries_is_omitted():
     cog = _make_cog(season_status="SETUP")
 
     captured = await _view(
-        cog, _interaction(), store=([_entry(SessionType.FEATURE_RACE, 1, 25)], [])
-    )
+        cog, _interaction(), store=([_entry(SessionType.FEATURE_RACE, 1, 25)], []), scope="SERVER")
 
     assert list(captured["entries"]) == ["Feature Race"]
 
@@ -371,8 +425,7 @@ async def test_a_fastest_lap_row_is_shown_with_its_limit():
         store=(
             [_entry(SessionType.FEATURE_RACE, 1, 25)],
             [_fl(SessionType.FEATURE_RACE, 1, 10)],
-        ),
-    )
+        ), scope="SERVER")
 
     assert captured["fl"]["Feature Race"] == (1, 10)
 
@@ -383,7 +436,7 @@ async def test_a_config_that_does_not_exist_says_so():
     cog = _make_cog(season_status="SETUP")
     interaction = _interaction()
 
-    await _view(cog, interaction, store_error=ConfigNotFoundError("nope"))
+    await _view(cog, interaction, store_error=ConfigNotFoundError("nope"), scope="SERVER")
 
     replied = _replied(interaction)
     assert CONFIG in replied
@@ -397,7 +450,7 @@ async def test_a_config_that_does_not_exist_says_so():
 
 
 async def test_a_session_filter_reaches_the_season_read():
-    """Applied inside the read on the active path, so the season view returns only what was
+    """Applied inside the read on the season path, so the season view returns only what was
     asked for."""
     cog = _make_cog()
     interaction = _interaction()
@@ -409,13 +462,13 @@ async def test_a_session_filter_reaches_the_season_read():
         "utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
     ):
         await undecorate(ResultsCog.config_view)(
-            cog, interaction, CONFIG, _choice(SessionType.FEATURE_RACE)
+            cog, interaction, _scope("SEASON"), CONFIG, _choice(SessionType.FEATURE_RACE)
         )
 
     assert season_view.await_args.args[3] == SessionType.FEATURE_RACE
 
 
-async def test_a_session_filter_narrows_the_setup_read():
+async def test_a_session_filter_narrows_the_server_read():
     """Applied after the read here, because the server store returns everything — a table
     of all four sessions when one was asked for is the information a manager was trying to
     narrow down."""
@@ -431,8 +484,7 @@ async def test_a_session_filter_narrows_the_setup_read():
                 _entry(SessionType.SPRINT_RACE, 1, 8),
             ],
             [],
-        ),
-    )
+        ), scope="SERVER")
 
     assert list(captured["entries"]) == ["Feature Race"]
 
@@ -448,8 +500,7 @@ async def test_a_session_filter_narrows_the_fastest_lap_rows_too():
         store=(
             [_entry(SessionType.FEATURE_RACE, 1, 25)],
             [_fl(SessionType.FEATURE_RACE, 1), _fl(SessionType.SPRINT_RACE, 1)],
-        ),
-    )
+        ), scope="SERVER")
 
     assert list(captured["fl"]) == ["Feature Race"]
 
@@ -466,8 +517,7 @@ async def test_no_filter_shows_every_session():
                 _entry(SessionType.SPRINT_RACE, 1, 8),
             ],
             [],
-        ),
-    )
+        ), scope="SERVER")
 
     assert set(captured["entries"]) == {"Feature Race", "Sprint Race"}
 
