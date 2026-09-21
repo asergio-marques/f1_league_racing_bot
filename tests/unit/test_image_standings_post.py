@@ -12,6 +12,7 @@ that had just drawn it (FR-052, Constitution XIV.4 and XIV.7).
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -115,18 +116,30 @@ def _drawings():
     )
 
 
-def _patched(render, *, previous_ids=None, stored=None):
-    """Patch the module's collaborators: the drawings, the render, and the id columns."""
+def _patched(render, *, previous_ids=None, stored=None, stored_lists=None):
+    """Patch the module's collaborators: the drawings, the render, and the id columns.
+
+    Each previous posting is given a chunk list naming itself alone, as every posting written
+    since #345 records one — so replacing it deletes exactly that message.
+    """
     from services import image_standings_post as m
 
     previous_ids = previous_ids or {}
     stored = stored if stored is not None else {}
+    stored_lists = stored_lists if stored_lists is not None else {}
 
     async def _get(db_path, division_id, round_id, championship="drivers"):
         return previous_ids.get(championship)
 
-    async def _set(db_path, division_id, round_id, message_id, championship="drivers"):
+    async def _get_list(db_path, division_id, round_id, championship="drivers"):
+        previous = previous_ids.get(championship)
+        return [previous] if previous is not None else None
+
+    async def _set(
+        db_path, division_id, round_id, message_id, championship="drivers", *, message_ids=None
+    ):
         stored[championship] = message_id
+        stored_lists[championship] = message_ids
 
     return [
         patch.object(m, "build_drawings", AsyncMock(return_value=_drawings())),
@@ -136,6 +149,10 @@ def _patched(render, *, previous_ids=None, stored=None):
             AsyncMock(side_effect=_get),
         ),
         patch(
+            "services.results_post_service._get_standings_message_ids",
+            AsyncMock(side_effect=_get_list),
+        ),
+        patch(
             "services.results_post_service._set_standings_message_id",
             AsyncMock(side_effect=_set),
         ),
@@ -143,7 +160,7 @@ def _patched(render, *, previous_ids=None, stored=None):
 
 
 async def _try_post(bot, channel, render, *, origin=None, previous_ids=None,
-                    stored=None, occasion=None):
+                    stored=None, occasion=None, stored_lists=None):
     from models.image_module import PostingOrigin
     from services.image_standings_post import try_post
 
@@ -168,7 +185,9 @@ async def _try_post(bot, channel, render, *, origin=None, previous_ids=None,
     if occasion is not None:
         kwargs["occasion"] = occasion
 
-    patches = _patched(render, previous_ids=previous_ids, stored=stored)
+    patches = _patched(
+        render, previous_ids=previous_ids, stored=stored, stored_lists=stored_lists
+    )
     for p in patches:
         p.start()
     try:
@@ -385,6 +404,26 @@ async def test_each_replacement_is_produced_before_its_old_message_is_deleted(tm
     assert len(posts) == 2 and len(deletes) == 2
     assert posts[0] < deletes[0], "the drivers replacement precedes its deletion"
     assert posts[1] < deletes[1], "and so does the constructors one"
+
+
+async def test_each_graphic_records_the_one_message_it_occupies(tmp_path):
+    """**Without a list, deleting a graphic walked forward over the bot's own messages** (#345).
+
+    That fallback cannot tell one posting from the next, and a division rebuild posts every
+    replacement before it deletes any original — so the walk from each old graphic ran straight
+    into the new ones and deleted them. A graphic is one message; recording that says so.
+    """
+    png = tmp_path / "s.png"
+    png.write_bytes(b"x")
+    sent, stored, lists = [], {}, {}
+
+    await _try_post(
+        _bot(), _channel(sent), AsyncMock(return_value=_decision(png=png)),
+        stored=stored, stored_lists=lists,
+    )
+
+    for championship in ("drivers", "constructors"):
+        assert json.loads(lists[championship]) == [stored[championship]]
 
 
 async def test_the_two_message_ids_are_persisted_to_their_own_columns(tmp_path):
