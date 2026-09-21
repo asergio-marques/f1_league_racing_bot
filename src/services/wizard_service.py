@@ -22,6 +22,7 @@ from apscheduler.triggers.date import DateTrigger
 from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupRecord, SignupWizardRecord, WizardState
+from utils.input_validator import SIGNUP_ANSWER
 from utils.nationality_data import NATIONALITY_LOOKUP
 
 if TYPE_CHECKING:
@@ -1434,6 +1435,8 @@ class WizardService:
         if not raw:
             await message.channel.send("❌ Platform ID cannot be empty.")
             return
+        if not await self._answer_stands(message, "platform ID", raw):
+            return
         wizard.draft_answers["platform_id"] = raw
         await self._advance_wizard(wizard, message)
 
@@ -1520,10 +1523,27 @@ class WizardService:
         wizard.draft_answers["preferred_teams"] = parts
         await self._advance_wizard(wizard, message)
 
+    @staticmethod
+    async def _answer_stands(message: discord.Message, field_label: str, raw: str) -> bool:
+        """Whether a driver's free-text answer may be kept, telling them why where not (#362).
+
+        The review panel quotes the answer to the channel, and a role mention, ``@everyone`` or
+        ``@here`` in it would notify everybody who can see it — through the bot's own permission
+        to mention them, which the driver does not normally hold. An emoji or markup reads as
+        the driver meant it there, and is kept.
+        """
+        refusal = SIGNUP_ANSWER.check(field_label, raw).refusal
+        if refusal is None:
+            return True
+        await message.channel.send(f"❌ {refusal}")
+        return False
+
     async def _handle_preferred_teammate(
         self, wizard: SignupWizardRecord, message: discord.Message
     ) -> None:
         raw = message.content.strip()
+        if not await self._answer_stands(message, "preferred teammate", raw):
+            return
         wizard.draft_answers["preferred_teammate"] = (
             None if raw.lower() == "no preference" else raw
         )
@@ -1575,6 +1595,8 @@ class WizardService:
             await message.channel.send(
                 "❌ Notes must be 50 characters or fewer."
             )
+            return
+        elif not await self._answer_stands(message, "notes", raw):
             return
         else:
             wizard.draft_answers["notes"] = raw

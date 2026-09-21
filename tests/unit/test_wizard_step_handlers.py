@@ -492,3 +492,52 @@ async def test_a_note_of_exactly_fifty_characters_is_accepted(wizard_and_service
 
     assert wizard.draft_answers["notes"] == "x" * 50
     assert advanced == [True]
+
+
+# ---------------------------------------------------------------------------
+# A group mention in a free-text answer (#362)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_signup_note_mentioning_everyone_is_refused(wizard_and_service):
+    """The review panel quotes the note to the channel, where the bot's own permission to
+    mention everybody would carry the ping."""
+    svc, wizard, advanced = wizard_and_service
+    message = _Message("@everyone please check")
+
+    await svc._handle_notes(wizard, message)
+
+    assert "notes" not in wizard.draft_answers
+    assert advanced == []
+    assert "notes" in message.channel.sent[0]
+
+
+async def test_a_preferred_teammate_given_as_a_role_mention_is_refused(wizard_and_service):
+    svc, wizard, advanced = wizard_and_service
+    message = _Message("<@&987654321098765432>")
+
+    await svc._handle_preferred_teammate(wizard, message)
+
+    assert "preferred_teammate" not in wizard.draft_answers
+    assert advanced == []
+
+
+async def test_a_platform_id_holding_here_is_refused(wizard_and_service):
+    svc, wizard, advanced = wizard_and_service
+    message = _Message("@here")
+
+    await svc._handle_platform_id(wizard, message)
+
+    assert "platform_id" not in wizard.draft_answers
+    assert advanced == []
+
+
+async def test_a_signup_note_with_an_emoji_is_kept(wizard_and_service):
+    """Shown only as text, where an emoji reads as the driver meant it."""
+    svc, wizard, advanced = wizard_and_service
+
+    await svc._handle_notes(wizard, _Message("Happy to race \U0001F600"))
+
+    assert wizard.draft_answers["notes"] == "Happy to race \U0001F600"
+    assert advanced
+
