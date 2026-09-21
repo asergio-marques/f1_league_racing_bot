@@ -24,7 +24,7 @@ import csv
 import io
 from dataclasses import dataclass
 
-from utils.input_validator import NAME
+from utils.input_validator import NAME, parse_user_id
 
 #: The floor for a synthetic driver ID, mirroring `_SYNTHETIC_ID_BASE` in
 #: `services/test_roster_service.py`. An ID below it is a real Discord snowflake — or a
@@ -82,10 +82,10 @@ def parse_roster_csv(text: str) -> tuple[list[ParsedDriver], list[str]]:
 
         raw_id, name, team, division, nationality = (field.strip() for field in row)
 
-        if not raw_id.isdigit():
+        driver_id = parse_user_id(raw_id)
+        if driver_id is None:
             errors.append(f"Line {number}: `{raw_id}` is not a driver ID.")
             continue
-        driver_id = int(raw_id)
         if driver_id < SYNTHETIC_ID_BASE:
             errors.append(
                 f"Line {number}: {driver_id} is below the range test drivers use. "

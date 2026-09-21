@@ -20,7 +20,7 @@ from models.points_config import SessionType
 from services.driver_service import accounts_of_in_division, current_account_map_for_division
 from services.penalty_service import StagedPenalty, validate_penalty_input, _time_to_ms
 from utils.channel_guard import is_league_manager
-from utils.input_validator import STEWARD_TEXT
+from utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
 from utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
@@ -496,18 +496,7 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
 
         # Resolve driver user ID from @mention or raw integer
         raw = self.driver_input.value.strip()
-        driver_user_id: int | None = None
-        if raw.startswith("<@") and raw.endswith(">"):
-            try:
-                driver_user_id = int(raw.strip("<@!>"))
-            except ValueError:
-                pass
-        else:
-            try:
-                driver_user_id = int(raw)
-            except ValueError:
-                pass
-
+        driver_user_id = parse_user(raw)
         if driver_user_id is None:
             await interaction.followup.send(
                 "❌ Could not parse driver. Use a @mention or a Discord user ID.",
@@ -670,13 +659,13 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
 
         # --- Parse driver user ID ---
         raw_id = self.driver_id_input.value.strip()
-        try:
-            driver_user_id = int(raw_id)
-        except ValueError:
+        parsed_id = parse_user_id(raw_id)
+        if parsed_id is None:
             await interaction.followup.send(
                 "❌ Invalid Discord User ID — must be a numeric ID.", ephemeral=True
             )
             return
+        driver_user_id = parsed_id
 
         # --- Validate pardon type ---
         pardon_type = self.pardon_type_input.value.strip().upper()

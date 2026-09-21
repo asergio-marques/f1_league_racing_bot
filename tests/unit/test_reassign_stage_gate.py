@@ -176,3 +176,26 @@ async def test_the_parameter_check_still_fires_in_a_stage_that_allows_it():
     await _run(_bot(SeasonStage.PLACEMENTS), interaction, old_user_id=None)
 
     assert "old_user" in _said(interaction)
+
+
+@pytest.mark.parametrize("typed", ["abc", "<@111>", "-111", "111x"])
+async def test_reassign_refuses_a_non_numeric_old_user_id(typed):
+    """Checked where it is typed, by the one rule every typed id follows (#362). It used to be
+    handed on unchecked and fail further in, as no account."""
+    bot = _bot(SeasonStage.PLACEMENTS)
+    interaction = _interaction()
+
+    await _run(bot, interaction, old_user_id=typed)
+
+    bot.driver_service.reassign_user_id.assert_not_awaited()
+    assert "numeric Discord user ID" in _said(interaction)
+
+
+async def test_reassign_still_takes_a_numeric_old_user_id_with_space_around_it():
+    bot = _bot(SeasonStage.PLACEMENTS)
+    interaction = _interaction()
+
+    await _run(bot, interaction, old_user_id=" 111 ")
+
+    bot.driver_service.reassign_user_id.assert_awaited_once()
+

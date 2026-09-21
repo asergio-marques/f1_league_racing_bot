@@ -550,3 +550,16 @@ async def test_formatting_in_the_justification_is_refused(tmp_path):
 
     assert state.staged == []
     assert "formatting" in _replied(interaction)
+
+
+@pytest.mark.parametrize("typed", ["-4001", "+4001", "<@&4001>"])
+async def test_a_signed_id_or_a_role_is_not_a_driver(tmp_path, typed):
+    """Read by the shared parser (#362), which takes digits alone: `int()` took `-4001` and
+    `+4001` as ids. A role mention was refused before and is refused still."""
+    state = _state(await _make_db(tmp_path))
+
+    interaction = await _submit(state, driver=typed)
+
+    assert state.staged == []
+    assert "Could not parse driver" in _replied(interaction)
+

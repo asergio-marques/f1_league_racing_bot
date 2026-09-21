@@ -38,6 +38,7 @@ from services.test_mode_service import (
 from models.season import SeasonStage
 from services import backup_service
 from utils.channel_guard import league_admin_only
+from utils.input_validator import parse_user_id
 from utils.message_builder import paginate_fenced
 from utils.league_server import LeagueModal, LeagueView
 
@@ -952,9 +953,8 @@ class TestModeCog(commands.Cog):
         if await self._refuse_roster_change_outside_placements(interaction):
             return
 
-        try:
-            discord_uid = int(user_id)
-        except ValueError:
+        discord_uid = parse_user_id(user_id)
+        if discord_uid is None:
             await interaction.response.send_message(
                 "❌ `user_id` must be a numeric Discord user ID.", ephemeral=True
             )
@@ -1254,9 +1254,8 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
                 errors.append(f"Line {line_no}: expected `ID, status` — got `{line}`")
                 continue
             id_str, status_str = parts
-            try:
-                discord_uid = int(id_str)
-            except ValueError:
+            discord_uid = parse_user_id(id_str)
+            if discord_uid is None:
                 errors.append(f"Line {line_no}: `{id_str}` is not a valid numeric ID")
                 continue
             new_status = _STATUS_MAP.get(status_str.lower())
