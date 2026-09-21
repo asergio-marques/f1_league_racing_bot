@@ -136,6 +136,24 @@ def problems(
     return found
 
 
+def expected_labels(issue_labels: dict[int, set[str]], paths: Iterable[str]) -> set[str]:
+    """Return every label the rule allows a PR, which the backfill adds to one that lacks it.
+
+    That is each group label any tracked issue carries, and `internal` where the files say so.
+    A PR carrying all of them passes the check, which is what keeps the backfill and the check
+    from disagreeing; a PR tracking no issue can be given `internal` at most.
+    """
+    expected = {
+        label
+        for each in issue_labels.values()
+        for label in each
+        if any(belongs(label) for belongs in GROUPS.values())
+    }
+    if not league_facing(paths):
+        expected.add(INTERNAL)
+    return expected
+
+
 # ---------------------------------------------------------------------------
 # Reading GitHub. `gh` fills `{owner}` and `{repo}` from GH_REPO or the checkout's remote.
 # ---------------------------------------------------------------------------
@@ -196,10 +214,64 @@ def fetch(number: int) -> tuple[set[str], dict[int, set[str]], list[str]]:
     return labels, issue_labels, paths
 
 
+def backfill(apply: bool) -> int:
+    """Give every closed PR the labels it lacks, or with *apply* false say what it would give.
+
+    A one-off for the PRs closed before the check existed (#259), merged or not. It only ever adds, so a
+    second run changes nothing, and a label someone chose by hand is never taken away.
+    """
+    numbers = sorted(
+        int(number)
+        for number in _gh(
+            "pr", "list", "--state", "closed", "--limit", "10000",
+            "--json", "number", "--jq", ".[].number",
+        ).split()
+    )
+    counts = {"labelled": 0, "untracked": 0, "unchanged": 0}
+    for number in numbers:
+        labels, issue_labels, paths = fetch(number)
+        adding = sorted(expected_labels(issue_labels, paths) - labels)
+        untracked = "" if issue_labels else "tracks no issue; "
+        if adding:
+            print(f"#{number}: {untracked}+ {', '.join(adding)}")
+        else:
+            print(f"#{number}: {untracked}nothing to add")
+        if not issue_labels:
+            counts["untracked"] += 1
+        counts["labelled" if adding else "unchanged"] += 1
+        if apply and adding:
+            _gh(
+                "api", "-X", "POST", f"repos/{{owner}}/{{repo}}/issues/{number}/labels",
+                *(arg for label in adding for arg in ("-f", f"labels[]={label}")),
+            )
+    verb = "Labelled" if apply else "Would label"
+    print(
+        f"{verb} {counts['labelled']} of {len(numbers)} closed PRs; "
+        f"{counts['unchanged']} had nothing to add; {counts['untracked']} track no issue."
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("pr", type=int, help="the pull request's number")
+    parser.add_argument("pr", type=int, nargs="?", help="the pull request's number")
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="print the labels every closed PR lacks, instead of checking one PR",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="with --backfill, add those labels on GitHub",
+    )
     args = parser.parse_args(argv)
+    if args.backfill == (args.pr is not None):
+        parser.error("give either a PR number or --backfill")
+    if args.apply and not args.backfill:
+        parser.error("--apply goes with --backfill")
+    if args.backfill:
+        return backfill(apply=args.apply)
 
     labels, issue_labels, paths = fetch(args.pr)
     found = problems(labels, issue_labels, paths)

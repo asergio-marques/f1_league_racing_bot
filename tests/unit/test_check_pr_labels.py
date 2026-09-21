@@ -145,3 +145,39 @@ def test_a_rename_out_of_src_counts_as_league_facing():
     paths = cpl.changed_paths(files)
     assert paths == ["src/utils/old_helper.py", "tests/unit/test_x.py", "tools/old_helper.py"]
     assert cpl.league_facing(paths) == ["src/utils/old_helper.py"]
+
+
+# ---------------------------------------------------------------------------
+# The backfill: the labels a merged PR lacks
+# ---------------------------------------------------------------------------
+
+
+def test_expected_labels_gather_every_group_label_the_tracked_issues_carry():
+    issues = {157: {"core", "Low", "tech-debt"},
+              214: {"core", "bug", "documentation", "Medium", "tech-debt", "good first issue"}}
+    assert cpl.expected_labels(issues, SRC) == {
+        "core", "Low", "Medium", "tech-debt", "bug", "documentation",
+    }
+
+
+def test_expected_labels_add_internal_only_by_the_file_test():
+    assert "internal" in cpl.expected_labels({259: BUG}, TESTS_ONLY)
+    assert "internal" not in cpl.expected_labels({259: BUG}, SRC)
+
+
+def test_an_untracked_pr_expects_only_internal_or_nothing():
+    assert cpl.expected_labels({}, TESTS_ONLY) == {"internal"}
+    assert cpl.expected_labels({}, SRC) == set()
+
+
+@pytest.mark.parametrize(
+    "issues",
+    [
+        {259: BUG},
+        {137: {"bug", "Low", "module-results"}, 200: FEATURE},
+        {344: {"module-attendance", "module-results", "bug", "High"}},
+    ],
+)
+@pytest.mark.parametrize("paths", [SRC, TESTS_ONLY])
+def test_a_pr_given_its_expected_labels_passes_the_check(issues, paths):
+    assert cpl.problems(cpl.expected_labels(issues, paths), issues, paths) == []
