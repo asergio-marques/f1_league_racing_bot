@@ -194,6 +194,13 @@ async def _delete_posted_verdicts(db_path: str, rounds: list[dict], guild) -> in
     nowhere and left where it is, so its header stays over it: the rule an amendment's replay
     keeps (decided 2026-09-21). Banners are not counted; the league is told of its verdicts.
 
+    **One case is left standing, knowingly** (accepted 2026-09-21). An amendment still open past
+    its report stage has rewritten the amended sessions' verdict records without ids, and holds
+    the originals' ids only in ``round_amend_channels.superseded_announcements`` until its final
+    stage. Nothing here reads that column, and ``_close_open_amendments`` then forgets it, so
+    those announcements stay in the channel for the league's managers to delete by hand. It
+    takes a disable inside an amendment's half-hour window to reach.
+
     **The stewarding module will have to face this too.** It is to announce and record verdicts
     of its own — reports, appeals and investigations alike
     (``docs/wip-specs/steward_module_specification.md``) — and disabling this module disables
