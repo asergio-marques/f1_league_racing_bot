@@ -227,6 +227,8 @@ See [Test mode](test-mode.md) for the whole picture.
 
 **Then you choose the points configuration for that session**, from a button for each one attached to the season — or, when only one is attached, the bot picks it for you and says which it chose.
 
+> **Nothing is taken while another round of the division is being amended.** A paste, a `CANCELLED` and both review approvals are refused, naming the round and the amend channel — the channel stays open, and nothing you staged is lost. Try again once the amendment has finished: it cannot run past half an hour after its corrections were pasted. Your submission posts standings, and they would otherwise publish corrections nobody has approved yet.
+
 **When the last session is in, the round is published as Provisional Results.** The classifications go to the results channel and both championship tables to the standings channel, and the submission channel turns into the penalty review described next.
 
 > **A restart mid-submission costs you everything you had already pasted for that round.** The bot deletes the part-finished channel, discards the sessions already submitted, and opens a fresh submission from the first session, telling the log channel it has done so. Sessions from other rounds are untouched.
@@ -326,6 +328,8 @@ There is a third parameter, `session`, offering Sprint Qualifying, Sprint Race, 
 > **Finish what you start, or it is undone.** The first step commits — the corrected classification is written and the round scored from it before you review the reports and appeals. So an amendment left unapproved does not simply sit there: half an hour after the corrected results are recorded, the bot puts the round back exactly as it was and says so in the log channel. That half hour covers the reports *and* the appeals — approving the reports does not restart it — so work out your decisions before you run the command. **❌ Cancel Amendment** does the same at any point before you approve the appeals, as does a restart or a step that fails part-way. Nothing needs reposting, because nothing was posted; you can run the command again, but do not paste the classification and come back tomorrow expecting to carry on.
 
 > **One amendment open in a division at a time.** While any round of the division has one open, running the command for the division again is refused and names the round and the channel the open one is in. Finish or cancel that first. To correct several sessions of one round, choose them all in one amendment.
+
+> **An amendment holds up the rest of its division.** Until it is finished, the submission channels of the division's other rounds refuse results and approvals. Race day in the same division waits for you, so do not start one just before a round's results are due.
 
 > **You get one attempt at the paste.** A block the bot rejects, an internal failure, or five minutes of silence deletes the channel, and you re-run the command to try again. Amending several sessions, that means the whole amendment: a refused paste throws away the ones already accepted, so have every session's classification checked and ready before you start. The reason for a rejection goes to the log channel rather than to the channel you are looking at, so have that open. A restart deletes an amend channel and undoes the amendment at whatever step it had reached. There is a **❌ Cancel Amendment** button if you want out deliberately, and the channel only listens to the person who ran the command — nobody else can paste into it.
 
@@ -465,6 +469,7 @@ Worth knowing so you do not go looking for the setting.
 | Standings still showing provisional numbers | The round has not been through both review stages. The label on the post says which stage it is at |
 | Attendance charged later than expected | It is charged when the penalty stage is approved, never at provisional results |
 | `/round results amend` refused | The round has not reached Final Results yet — or the division already has an amendment open, whose round and channel the refusal names |
+| A paste or an approval refused, naming a round being amended | Another round of the division has an amendment open. Try again once it has finished — at most half an hour after its corrections were pasted |
 | An amendment that vanished | Known: it is one attempt. A rejection, a failure or five minutes of silence deletes the channel; the log channel holds the reason. Past the paste, half an hour without approval undoes it (`AMEND_REVERTED`) |
 | A round left unchanged by an approved amendment | It has not been raced, so there was nothing to repost. Only rounds with results are reposted |
 | `/results amend review` refuses, naming a division and a channel | That channel has been deleted, or the bot can no longer post in it. Nothing was changed — set it again with `/division results-channel` or `/division standings-channel` and review again |

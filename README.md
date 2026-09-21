@@ -1690,6 +1690,7 @@ Approving here — or **No Changes / Confirm** with nothing staged — deletes a
 - A restart during a **resubmission** loses the sessions pasted so far but not the round's results: the earlier results stand, the penalty prompt comes back, and the channel says what happened. Press **🔄 Resubmit Initial Results** again to start over.
 - A resubmission that fails before the new results are saved also leaves the earlier results in place and brings the penalty prompt back, saying so in the channel.
 - A round in which every session is submitted as `CANCELLED` skips both review stages entirely — the channel closes and no standings are computed for it.
+- While another round of the division is being amended, the submission channel refuses a session's results, `CANCELLED` and both approvals, naming the round and the amend channel. The channel stays open: try again once the amendment has finished, at most half an hour after its corrections were pasted. See [`/round results amend`](#round-results-amend--re-submit-results-for-a-completed-session).
 
 ##### Fastest-lap tie-breaking — FL override header
 
@@ -1721,6 +1722,8 @@ Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in
 A **❌ Cancel Amendment** button is posted in the channel to abort at any time. Once the corrected classification has been recorded, cancelling puts the round back exactly as it was and says so in the log channel as `AMEND_CANCELLED`; from the moment you approve the appeals it is too late, and the button says so. If `session` is omitted you are asked to choose — one session or several — before the channel is created.
 
 **One amendment open in a division at a time.** While any round of a division has an amendment open, running the command for that division again — any round, any session — is refused, naming the round and the channel the open one is in. Finish or cancel that first. The last step reposts the whole division, so an amendment finished beside another would publish the other's unapproved classification.
+
+**Nothing else in the division is committed meanwhile.** While an amendment is open, the submission channels of the division's other rounds stay open but refuse anything that would commit: a session's results or `CANCELLED`, and the approval of the reports or the appeals. The refusal names the round being amended and its channel; try again once it has finished — at most half an hour after its corrections were pasted. Those channels post standings, which would carry the amendment's corrections before anybody had approved them.
 
 > **Nothing is published until the last step.** The corrected classification is recorded when you paste it, but the round your drivers see is unchanged until you approve the appeals — it is never published half-amended. The sessions you did not choose are left alone; their penalties and appeals are not reopened. To review a session's decisions, include that session in the amendment.
 
