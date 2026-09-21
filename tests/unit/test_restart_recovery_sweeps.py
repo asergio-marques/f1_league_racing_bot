@@ -503,6 +503,21 @@ def test_amendments_are_reverted_before_submission_channels_resume():
     assert amend < submission
 
 
+async def test_recovery_hands_the_bot_to_the_revert(tmp_path):
+    """So the standings put back settle a full tie by name (#345)."""
+    db_path = await _base_db(tmp_path, "amend_hands_bot")
+    await _seed_amend(db_path)
+    stub = _stub_bot(db_path, guild=_amend_guild())
+
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=False),
+    ) as revert:
+        await bot_module._recover_orphaned_amend_channels(stub)
+
+    revert.assert_awaited_once_with(db_path, ROUND_ID, stub)
+
+
 async def test_an_orphaned_amend_channel_is_deleted(tmp_path):
     """Its `wait_for` loop died with the process, so it is a private channel nothing is
     listening to and a manager could paste results into for ever."""

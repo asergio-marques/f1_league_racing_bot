@@ -350,6 +350,21 @@ async def test_an_archived_season_is_refused_before_anything_is_written(tmp_path
 # ---------------------------------------------------------------------------
 
 
+async def test_stage_one_settles_a_full_tie_by_name(tmp_path):
+    """The standings stage one stores are ordered as the posting orders them (decided
+    2026-09-15): recomputed by user id, a full tie would disagree with what is later drawn."""
+    db_path = await _make_db(tmp_path, name="amend_names")
+    names = {101: "Alice"}
+
+    with patch(
+        "services.results_post_service.standings_display_names",
+        new=AsyncMock(return_value=names),
+    ):
+        stubs = await _amend(db_path, [_race_row(101, 1)])
+
+    assert stubs["cascade"].await_args.args[3] == names
+
+
 async def test_a_driver_in_the_amended_result_becomes_a_former_driver(tmp_path):
     """Their name is now on a result, so a later sack must keep their profile."""
     db_path = await _make_db(tmp_path, name="amend_former")

@@ -668,3 +668,39 @@ async def test_every_amended_session_is_snapshotted_and_put_back(tmp_path):
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT best_lap FROM qualifying_session_results")
         assert [r[0] for r in await cursor.fetchall()] == ["1:20.000"]
+
+
+# ── Every revert is handed the bot (#345) ─────────────────────────────────
+#
+# It reaches the league's names through the bot, so that the standings it puts back settle a
+# full tie by name as the posting does. Dropped at any caller, the revert still runs — ordering
+# ties by user id — so only these show it.
+
+
+async def test_the_sweep_hands_the_bot_to_the_revert(tmp_path):
+    db_path = await _db(tmp_path, "sweep_hands_bot")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    bot = _bot(db_path)
+    later = datetime.now(timezone.utc) + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
+
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ) as revert:
+        await sweep_expired_amendments(bot, now=later)
+
+    revert.assert_awaited_once_with(db_path, ROUND_ID, bot)
+
+
+async def test_cancel_hands_the_bot_to_the_revert(tmp_path):
+    db_path = await _db(tmp_path, "cancel_hands_bot")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    bot = _bot(db_path)
+
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ) as revert:
+        await _cancel(db_path, bot, _guild_holding(_deletable_channel()))
+
+    revert.assert_awaited_once_with(db_path, ROUND_ID, bot)

@@ -1733,7 +1733,8 @@ async def test_a_report_stage_that_fails_part_way_is_undone(tmp_path):
     ):
         await _run_real_apply(finalize_penalty_review, state, interaction)
 
-    revert.assert_awaited_once()
+    # With the bot, so the standings put back settle a full tie by name.
+    revert.assert_awaited_once_with(db_path, ROUND_ID, state.bot)
     close.assert_awaited_once()
     assert "AMEND_FAILED" in _logged(state)
     assert "put back as it was" in str(interaction.followup.send.await_args.args[0])
