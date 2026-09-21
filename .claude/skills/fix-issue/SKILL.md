@@ -9,7 +9,8 @@ disable-model-invocation: false
 # Fix a tracked issue
 
 The user has named an issue to fix. Work it in phases, in order: **read it, verify it against
-the code, plan the fix and have the plan approved, claim it on GitHub, then build.**
+the code, plan the fix and have the plan approved, claim it on GitHub, build, close out, and
+open the pull request — labelled — once the user says so.**
 
 The issue number is `$ARGUMENTS`. Strip a leading `#`. If no number was given, ask for one
 before doing anything else — do not guess from the tracker.
@@ -125,3 +126,23 @@ whatever the issue said.
 
 Reference the issue by number in the closing report, and say plainly whether it is fixed,
 partly fixed, or turned out not to reproduce.
+
+## Phase 7 — Open the pull request
+
+**Only on the user's explicit yes.** Push the branch and open the pull request against `main`,
+and **label it as you open it** — a pull request here is refused by the required check
+`pr-label-check` until its labels come from the issues it tracks. The rule is in
+`CONTRIBUTING.md`, under "Pull requests"; in short:
+
+- **Name the issue in the body.** `Closes #<N>` for a full fix, `Part of #<N>` for a partial one.
+- **Copy one label from each group on the issue** — its work type, its severity and its module.
+- **Add `internal`** when the change touches nothing a league sees, and never otherwise. The
+  file test is in `CONTRIBUTING.md`, and the check applies it.
+
+```bash
+gh pr create --base main --label <work-type> --label <severity> --label <module> [--label internal] ...
+python3 tools/check_pr_labels.py <PR>
+```
+
+The second command runs the check by hand, so a missing label is found before the workflow
+reports it. Correct one with `gh pr edit <PR> --add-label` or `--remove-label`.
