@@ -20,6 +20,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -548,20 +549,78 @@ async def _snapshot_row_or_none(db_path):
 # ── Cancel, after stage one ────────────────────────────────────────────────
 
 
+def _guild_holding(channel):
+    guild = MagicMock()
+    guild.get_channel = MagicMock(return_value=channel)
+    return guild
+
+
+def _deletable_channel(error=None):
+    channel = MagicMock()
+    channel.delete = AsyncMock(side_effect=error)
+    return channel
+
+
+async def _cancel(db_path, bot, guild):
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()), \
+            patch(
+                "services.result_submission_service.league_guild",
+                new=AsyncMock(return_value=guild),
+            ):
+        return await cancel_amendment(bot, ROUND_ID, cancelled_by=77)
+
+
 async def test_cancelling_puts_the_round_back_and_closes_the_channel(tmp_path):
     db_path = await _db(tmp_path, "cancel_reverts")
     await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     bot = _bot(db_path)
+    channel = _deletable_channel()
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        assert await cancel_amendment(bot, ROUND_ID, cancelled_by=77) is True
+    assert await _cancel(db_path, bot, _guild_holding(channel)) is True
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
+    channel.delete.assert_awaited_once()
     assert (await _snapshot_row_or_none(db_path)) is None
     logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
     assert "AMEND_CANCELLED" in logged
     assert "<@77>" in logged
+
+
+@pytest.mark.parametrize("reach", ["out of reach", "undeletable"])
+async def test_a_channel_not_deleted_keeps_its_record_closed(tmp_path, reach):
+    """#345: the record used to go first, so a channel out of cache — or one the bot may no
+    longer delete — stood for good with nothing naming it. Kept, closed, it holds nothing, and
+    restart recovery deletes the channel by it."""
+    from services.result_submission_service import open_amendment_in_division
+
+    db_path = await _db(tmp_path, f"cancel_kept_{reach.split()[0]}")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    if reach == "out of reach":
+        guild = _guild_holding(None)
+    else:
+        guild = _guild_holding(_deletable_channel(
+            discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Access")
+        ))
+
+    assert await _cancel(db_path, _bot(db_path), guild) is True
+
+    row = await _snapshot_row_or_none(db_path)
+    assert row is not None and row["closed_at"] is not None
+    assert row["pre_amendment_state"] is None
+    assert await open_amendment_in_division(db_path, DIVISION_ID) is None
+
+
+async def test_a_channel_already_gone_lets_the_record_go(tmp_path):
+    db_path = await _db(tmp_path, "cancel_gone")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    guild = _guild_holding(_deletable_channel(
+        discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
+    ))
+
+    assert await _cancel(db_path, _bot(db_path), guild) is True
+
+    assert (await _snapshot_row_or_none(db_path)) is None
 
 
 async def test_cancelling_an_amendment_already_being_committed_does_nothing(tmp_path):

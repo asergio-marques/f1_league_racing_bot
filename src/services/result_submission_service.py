@@ -2224,22 +2224,43 @@ async def _release_amendment(db_path: str, round_id: int) -> None:
 
 
 async def _close_amendment_channel(db_path: str, guild, round_id: int, *, reason: str) -> None:
-    """Forget an amendment and delete its channel — the row first, so that a crash between the
-    two leaves a channel restart recovery cannot find rather than a row naming one that is gone.
+    """End an amendment's record and delete its channel.
+
+    **The record is marked closed first, and forgotten only once the channel is gone** (#345),
+    as `close_submission_channel` does. Closed, it holds nothing — no division, no deadline — and
+    restart recovery still finds the channel by it. Forgotten first, a channel out of cache, one
+    the bot may no longer delete, or a crash between the two left a private channel with its
+    stage prompts standing and nothing anywhere naming it.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT channel_id FROM round_amend_channels WHERE round_id = ?", (round_id,)
         )
         row = await cursor.fetchone()
+        if row is None:
+            return
+        await db.execute(
+            "UPDATE round_amend_channels SET closed_at = ? WHERE round_id = ?",
+            (datetime.now(timezone.utc).isoformat(), round_id),
+        )
+        await db.commit()
+    channel = guild.get_channel(row["channel_id"]) if guild is not None else None
+    if channel is None:
+        log.warning(
+            "amendment: channel %s of round %s is unreachable; its record is kept, closed, for "
+            "restart recovery", row["channel_id"], round_id,
+        )
+        return
+    try:
+        await channel.delete(reason=reason)
+    except discord.NotFound:
+        pass
+    except discord.HTTPException:
+        log.exception("amendment: could not delete channel %s", row["channel_id"])
+        return
+    async with get_connection(db_path) as db:
         await db.execute("DELETE FROM round_amend_channels WHERE round_id = ?", (round_id,))
         await db.commit()
-    channel = guild.get_channel(row["channel_id"]) if (guild is not None and row) else None
-    if channel is not None:
-        try:
-            await channel.delete(reason=reason)
-        except discord.HTTPException:
-            pass
 
 
 async def _amendment_sessions_of(db_path: str, round_id: int) -> list[str]:
