@@ -193,6 +193,8 @@ Driving a check-in through the buttons requires as many Discord accounts as ther
 
 It decides what becomes of a profile once the driver has returned to Not Signed Up, by `/driver sack` or any other route: nothing is deleted at that moment, but when the season ends its driver pass keeps a former driver's profile and deletes anyone else's — every signup is kept either way. This sets it directly so both branches can be reached without submitting results first.
 
+> **What you set by hand does not survive a round being finalised.** The flag is derived from results, so finalising a round the driver appears in recomputes it and overwrites whatever you set — back to 0 if their only entry there is a did-not-start. Set it after the rounds you need are final, or on a driver with no results at all.
+
 The pass reads **real** drivers only. A fake driver is never deleted by it, flag or no flag: fake drivers go when test mode is switched off, which the same end-of-season pass does once the driver pass is through. To exercise the pass itself, reach it with a real account at Not Signed Up.
 
 ---

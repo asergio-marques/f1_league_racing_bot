@@ -941,9 +941,15 @@ async def recompute_former_drivers_for_round(
 
     **The recompute is scoped to this round's drivers**, never the whole roster. A driver is
     considered only where the named round's live results mention them, so a flag raised by a
-    round this one knows nothing about is never disturbed — including one set by hand through
-    test mode for a driver who has no result at all. That scoping is
+    round this one knows nothing about is never disturbed. That scoping is
     ``test_a_driver_of_another_round_is_left_alone``.
+
+    The scoping is by *this round's drivers*, though, not by how the flag came to be set: a
+    value put there by hand through ``/test-mode set-former-driver`` is overwritten like any
+    other where the driver does appear in this round. A maintainer who sets the flag and then
+    finalises a round the driver is in — DNS, say — will find it back at 0. The flag is
+    derived from results; the command sets it directly so both branches of the driver pass can
+    be reached without racing, not to pin a value against them.
 
     **A driver struck out entirely must be named by the caller**, through ``also_consider``.
     The scoping above reads the round as it stands *now*, and a driver an amendment removed is
@@ -970,11 +976,22 @@ async def recompute_former_drivers_for_round(
     )
     raced_here = {r["profile_id"] for r in await cursor.fetchall()}
 
-    cursor = await db.execute(
-        f"SELECT DISTINCT profile_id FROM ({_RACED_A_ROUND_SQL}) WHERE round_id != ?",
-        (round_id,),
-    )
-    raced_elsewhere = {r["profile_id"] for r in await cursor.fetchall()}
+    # Only those this round does not already mark need asking about, and only where there are
+    # any: a finalisation where every candidate raced — the common case by far — asks nothing.
+    # The question is bounded by the candidates too, because the rest of the query cannot be:
+    # `round_id != ?` is not a predicate an index can serve, so this scans `session_results`
+    # (one row per session, four to a round) across every season the league has ever run.
+    # `profile_id IN (...)` keeps that scan proportional to the round rather than the history.
+    to_ask = sorted(candidates - raced_here)
+    raced_elsewhere: set[int] = set()
+    if to_ask:
+        marks = ", ".join("?" for _ in to_ask)
+        cursor = await db.execute(
+            f"SELECT DISTINCT profile_id FROM ({_RACED_A_ROUND_SQL}) "  # noqa: S608
+            f"WHERE round_id != ? AND profile_id IN ({marks})",
+            (round_id, *to_ask),
+        )
+        raced_elsewhere = {r["profile_id"] for r in await cursor.fetchall()}
 
     for profile_id in sorted(candidates):
         should_be_former = profile_id in raced_here or profile_id in raced_elsewhere

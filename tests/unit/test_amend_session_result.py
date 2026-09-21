@@ -438,11 +438,13 @@ async def test_reverting_restores_the_flag_of_a_driver_the_amendment_struck_out(
     assert await _former(db_path, 31) == 1
 
 
-async def test_a_driver_with_a_result_in_another_final_round_stays_a_former_driver(tmp_path):
-    """The flag is cleared only where nothing else would raise it (#216).
+async def test_another_session_of_the_same_round_marks_a_driver(tmp_path):
+    """Every live session of the round counts, not only the amended one (#216).
 
-    Here a sprint race the driver ran in the same final round. The recompute the revert runs
-    finds it and leaves them a former driver.
+    The sprint race here is in the **same** round as the amendment, so it is the `raced_here`
+    half of the recompute this pins, not the `raced_elsewhere` half — the test named for that
+    lives in `test_former_driver_marking.py`. Driver 33 is not in the reverted round's feature
+    race, and is a former driver on the sprint alone.
     """
     from services.result_submission_service import revert_abandoned_amendment
 
