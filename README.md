@@ -2042,6 +2042,8 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 
 **A batch of pictures announces itself.** Drawing takes a few seconds per picture, and some jobs draw a run of them — `/season placements-review` draws a lineup and a calendar per division, and closing a penalty review redraws every session's results, both championships, one verdict per penalty and the attendance sheet. A short message saying the pictures are being drawn is posted before the batch starts and deleted once it has finished. It goes to the channel you gave the command in — the bot interaction channel for a command you type, the round's results channel for the button presses that drive the results flow — and never to the channels the pictures themselves land in. Nothing is lost when it disappears: a fault is reported to you and to the log channel in its own right.
 
+**A driver is drawn under their display name, cleaned.** A picture cannot mention anybody, so each driver is drawn under the display name of their Discord account on the server. Any emoji, Discord formatting, role mention, `@everyone` or `@here` in it is left out, because a picture cannot show them the way a message does: `Max 🏎️ Racer` is drawn `Max Racer`, and `_Max_` is drawn `Max`. A display name that is nothing but those falls back to the name they signed up under, then their username, then their user ID. Names you type yourself, a division's or a team's, are refused instead when they hold any of these, since you can pick another.
+
 #### `/images config toggle` — Choose image or text, per kind of output
 *Access: League manager*
 
