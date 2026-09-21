@@ -34,6 +34,15 @@ between a header and none.
 every failure on that path is swallowed: the cards follow whether the header arrived or not.
 That holds for the words as much as for the picture — a channel that refuses the heading
 still gets its verdicts.
+
+That swallowing is safe because **a header is an aid to reading a channel and is no record
+of a decision** (decided 2026-09-21): it exists so a reader can tell at a glance which round
+the verdicts beneath it pertain to. Two things follow, and a later reader is apt to reach for
+either. It carries no repost or amendment marking, though a text heading now *could* carry
+one where a drawn banner could not — a re-headed batch reads identically to the one it
+replaced, and that is intended. And a batch that slips through unheaded is a want of
+organisation, not a correctness defect, so this path is not worth hardening beyond the
+posters that already route through it.
 """
 from __future__ import annotations
 
