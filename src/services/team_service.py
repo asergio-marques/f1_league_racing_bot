@@ -6,6 +6,7 @@ import logging
 from db.database import get_connection
 from models.team import DefaultTeam, TeamInstance
 from utils.asset_resolver import normalise
+from utils.input_validator import NAME
 
 log = logging.getLogger(__name__)
 
@@ -41,11 +42,18 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
     the scope being checked — the server for the server's team list, the division for the
     teams of a season. Omit it to check only the properties of the name itself.
 
+    Before any of them, the name is held to the rules every name a league types is held to
+    (#362): no group mention, no emoji and no markup, being posted as text and drawn on graphics.
+
     Returns a message ready to show a user, or None.
     """
     trimmed = (name or "").strip()
     if not trimmed:
         return "A team name cannot be empty."
+
+    refusal = NAME.check("team name", trimmed).refusal
+    if refusal is not None:
+        return refusal
 
     key = normalise(trimmed)
     if not key:
