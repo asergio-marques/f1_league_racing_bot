@@ -1,4 +1,4 @@
-"""`/backup` and `/test-mode roster` — the commands that only exist while testing.
+"""`/test-mode backup` and `/test-mode roster` — the commands that only exist while testing.
 
 Issue #208. `test_mode_cog.py` was at 50.3%. These two groups are the ones a maintainer drives
 while rehearsing a season, and neither the backup guard nor the roster commands were executed.
@@ -110,7 +110,7 @@ def _backup_state(
     )
 
 
-#: Every command in the `/backup` group, by the name a maintainer types.
+#: Every command in the `/test-mode backup` group, by the name a maintainer types.
 BACKUP_COMMANDS = [
     ("save", _Cog.backup_save),
     ("lock", _Cog.backup_lock),
@@ -174,7 +174,7 @@ async def test_the_guard_passes_in_test_mode(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# /backup status
+# /test-mode backup status
 # ---------------------------------------------------------------------------
 
 
@@ -189,7 +189,7 @@ async def test_no_backup_says_so_and_names_the_command_that_takes_one():
 
     replied = _replied(interaction)
     assert "no saved backup" in replied
-    assert "/backup save" in replied
+    assert "/test-mode backup save" in replied
 
 
 async def test_a_saved_backup_reports_when_it_was_taken_and_how_big():
@@ -255,7 +255,7 @@ async def test_an_unlocked_backup_reports_no_lock():
 
 
 # ---------------------------------------------------------------------------
-# /backup restore
+# /test-mode backup restore
 # ---------------------------------------------------------------------------
 
 
@@ -270,7 +270,7 @@ async def test_restoring_with_no_backup_is_refused():
 
     replied = _replied(interaction)
     assert "no saved backup to restore" in replied
-    assert "/backup save" in replied
+    assert "/test-mode backup save" in replied
 
 
 # ---------------------------------------------------------------------------

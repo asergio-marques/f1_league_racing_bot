@@ -71,7 +71,7 @@ def lock_path(live_path: str | Path) -> Path:
 
 @dataclass(frozen=True)
 class BackupState:
-    """What `/backup status` reports."""
+    """What `/test-mode backup status` reports."""
 
     exists: bool
     taken_at: datetime | None
@@ -221,7 +221,7 @@ def save(db_path: str | Path, jobstore_path: str | Path) -> None:
     if is_locked(db_path):
         raise BackupError(
             "the saved backup is locked, so it will not be overwritten. "
-            "Unlock it with `/backup lock` first."
+            "Unlock it with `/test-mode backup lock` first."
         )
     snapshot_database(db_path, backup_path(db_path))
     copy_jobstore(jobstore_path, backup_path(jobstore_path))
@@ -263,12 +263,13 @@ def stage_restore(db_path: str | Path, jobstore_path: str | Path) -> None:
     league_backup = backup_path(db_path)
     if not league_backup.is_file():
         raise BackupError(
-            "there is no saved backup to restore. Take one with `/backup save`."
+            "there is no saved backup to restore. Take one with "
+            "`/test-mode backup save`."
         )
     if not is_readable_database(league_backup):
         raise BackupError(
             f"the saved backup ({league_backup.name}) is not a readable database, so it "
-            "will not be restored. Take a fresh one with `/backup save`."
+            "will not be restored. Take a fresh one with `/test-mode backup save`."
         )
 
     jobstore_backup = backup_path(jobstore_path)
@@ -323,7 +324,7 @@ def apply_staged_restore(db_path: str | Path, jobstore_path: str | Path) -> bool
 
 
 def state(db_path: str | Path) -> BackupState:
-    """What the backup of the league database is, for `/backup status`."""
+    """What the backup of the league database is, for `/test-mode backup status`."""
     path = backup_path(db_path)
     if not path.is_file():
         return BackupState(
