@@ -1,7 +1,7 @@
 # Contributing
 
 A Discord bot for F1 game league racing. This guide covers reporting an issue, how issues are
-prioritised, and running the tests.
+prioritised, running the tests, labelling a pull request, and cutting a release.
 
 British English is used throughout, in prose and in identifiers alike (`colour`, `normalise`).
 
@@ -134,3 +134,76 @@ COVERAGE_CORE=sysmon python3 -m coverage run -m pytest tests/ -q -m "not rasteri
 python3 -m coverage json -q -o coverage.json
 python3 tools/coverage_by_module.py coverage.json --fail-under 75
 ```
+
+## Pull requests
+
+Every pull request tracks at least one issue and carries that issue's labels. A release's notes
+are grouped by those labels, and the required check `pr-label-check` refuses a pull request that
+breaks any of the rules below.
+
+- **Name the issue in the description.** `Closes #N` closes it on merge; `Part of #N` names an
+  issue the pull request fixes only in part, and leaves it open. An issue linked in the sidebar
+  counts as well. A pull request tracking no issue is refused, so a change that has none — a
+  document, a tool — gets an issue first.
+- **Carry a label from each of three groups**, each taken from an issue the pull request tracks:
+  - **work type** — `bug`, `feature-request`, `tech-debt`, `documentation` or `question`;
+  - **severity** — `Critical`, `High`, `Medium` or `Low`;
+  - **module** — `core` or a `module-*` label.
+
+  A pull request tracking several issues may carry any of their labels, but none that no tracked
+  issue has. An issue missing a group has to be labelled before its pull request can pass.
+- **`internal` follows the files.** A pull request that changes nothing a league sees must carry
+  `internal`, which leaves it out of the release notes; one that changes anything a league sees
+  must not. A league sees `src/`, `resources/defaults/`, `docs/how-to/` other than
+  `test-mode.md`, `README.md` and `requirements.txt`. A renamed file counts under its old path
+  too.
+
+The check runs again whenever the labels, the description or the commits change. To see what it
+will say, run it against the open pull request:
+
+```
+python3 tools/check_pr_labels.py <number>
+```
+
+Every pull request closed before 2026-09-22 was labelled in one pass (#259). Those tracking an
+issue carry its labels; those tracking none were labelled by judgement, their severity estimated
+after the fact rather than recorded at the time.
+
+## Releases
+
+A release is cut from `main` when there is something worth delivering, and its number says what
+kind of thing that is.
+
+**Versions are `vMAJOR.MINOR.PATCH`**, and a release's tag and its name are the same. Only a tag
+of exactly that form names a version.
+
+| Bump | When |
+|---|---|
+| **minor** | A module lands, or a feature a league would notice |
+| **patch** | Fixes that should reach a host between minor releases. A Critical fix is released on its own, without waiting for anything else |
+| **major** | Before go-live, go-live itself and nothing else. After it, a release that takes away or changes a command, a setting or a file convention a league relies on, or one a host cannot install without doing something by hand |
+
+**Go-live is `v1.0.0`.** Every release before it is marked a pre-release. From `v1.0.0` on the
+migration baseline is frozen, and every schema change is a new migration (see `run_migrations`
+in `src/db/database.py`).
+
+**To cut one:**
+
+1. In **Actions → Release → Run workflow**, choose `main` and the bump.
+2. The workflow refuses unless CI passed on that commit, works out the version from the highest
+   tag, and leaves a **draft** release carrying GitHub's notes: every pull request merged since
+   the last release, grouped under New features, Fixes and Other changes, with `internal` ones
+   left out.
+3. Open the draft, write a short summary by module above the generated list, and press
+   **Publish**.
+
+**A published release cannot be changed.** Releases here are immutable: once one is published,
+its tag can be neither moved nor deleted. A draft creates no tag, so put anything right there —
+and delete a mistaken draft rather than publishing it.
+
+**An upgrade a host has to act on** is written in the README, beside the behaviour it concerns,
+and names the version it applies from.
+
+The four releases before this rule were tagged `*_prototype` and named `v0.1-alpha` to
+`v0.4-alpha`. On 2026-09-21 they became `v0.1.0` to `v0.4.0`, the last three republished on the
+new tags. A clone still holding the old tags drops them with `git fetch --prune --prune-tags`.
