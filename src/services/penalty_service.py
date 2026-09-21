@@ -11,19 +11,14 @@ import discord
 
 from db.database import get_connection
 from models.points_config import SessionType
-from utils.input_validator import is_disqualification, parse_penalty_seconds
+from utils.input_validator import (
+    is_disqualification,
+    parse_gap,
+    parse_penalty_seconds,
+    parse_time,
+)
 
 log = logging.getLogger(__name__)
-
-# HH:MM:SS.mmm or MM:SS.mmm or SS.mmm
-_LAP_TIME_RE = re.compile(
-    r"^(?:(?P<h>\d+):)?(?P<m>\d+):(?P<s>\d+)(?:\.(?P<ms>\d+))?$"
-)
-
-# Delta gap: +SS.mmm  |  +M:SS.mmm  |  +H:MM:SS.mmm  (leading + required)
-_DELTA_GAP_RE = re.compile(
-    r"^\+(?:(?:(?P<h>\d+):)?(?P<m>\d+):)?(?P<s>\d+)(?:\.(?P<ms>\d+))?$"
-)
 
 # Lap gap: "+N Lap(s)" or "N Lap(s)"
 _LAP_GAP_RE = re.compile(r"^\+?(\d+) Laps?$", re.IGNORECASE)
@@ -116,18 +111,15 @@ def validate_penalty_input(
 # ---------------------------------------------------------------------------
 
 def _time_to_ms(time_str: str) -> int | None:
-    """Parse HH:MM:SS.mmm or MM:SS.mmm into total milliseconds."""
+    """A stored time in milliseconds, or None where there is none (``-``, ``N/A``, empty).
+
+    Read by the shared strict parser (#362). Every stored time was written in its form, by
+    the results paste or by `_ms_to_time`, so a value outside it is refused rather than
+    guessed.
+    """
     if not time_str or time_str.strip() in ("-", "N/A", ""):
         return None
-    m = _LAP_TIME_RE.match(time_str.strip())
-    if not m:
-        return None
-    h = int(m.group("h") or 0)
-    mins = int(m.group("m") or 0)
-    secs = int(m.group("s") or 0)
-    ms_raw = m.group("ms") or "0"
-    ms = int(ms_raw.ljust(3, "0")[:3])
-    return (h * 3600 + mins * 60 + secs) * 1000 + ms
+    return parse_time(time_str)
 
 
 def _ms_to_time(ms: int) -> str:
@@ -141,19 +133,8 @@ def _ms_to_time(ms: int) -> str:
 
 
 def _delta_to_ms(delta_str: str) -> int | None:
-    """Parse a delta gap string (+SS.mmm, +M:SS.mmm, +H:MM:SS.mmm) into ms.
-
-    Returns None if the string does not match the expected format.
-    """
-    m = _DELTA_GAP_RE.match((delta_str or "").strip())
-    if not m:
-        return None
-    h = int(m.group("h") or 0)
-    mins = int(m.group("m") or 0)
-    secs = int(m.group("s") or 0)
-    ms_raw = m.group("ms") or "0"
-    ms = int(ms_raw.ljust(3, "0")[:3])
-    return (h * 3600 + mins * 60 + secs) * 1000 + ms
+    """A stored gap to the leader in milliseconds, or None — read by the shared parser."""
+    return parse_gap(delta_str)
 
 
 def _ms_to_delta(gap_ms: int) -> str:

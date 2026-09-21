@@ -22,7 +22,6 @@ See specs/039-results-image-generation/contracts/shared-rendering.md.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from models.points_config import SessionType
@@ -33,6 +32,7 @@ from models.session_result import (
     RaceSessionResult,
 )
 from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+from utils.input_validator import parse_time
 
 _SESSION_LABELS: dict[SessionType, str] = {
     SessionType.SPRINT_QUALIFYING: "Sprint Qualifying",
@@ -41,26 +41,14 @@ _SESSION_LABELS: dict[SessionType, str] = {
     SessionType.FEATURE_RACE: "Feature Race",
 }
 
-_LAP_TIME_RE = re.compile(
-    r"^(?:(?P<h>\d+):)?(?P<m>\d+):(?P<s>\d+)(?:\.(?P<ms>\d+))?$"
-)
-
 #: What a presenter draws where a cell is ``None``. The textual table writes it; the graphic
 #: empties the field instead and never draws it (FR-013).
 NOT_APPLICABLE = "—"
 
 
 def parse_lap_time(s: str) -> int | None:
-    """Parse an absolute lap-time string to ms. Returns None on failure."""
-    m = _LAP_TIME_RE.match((s or "").strip())
-    if not m:
-        return None
-    h = int(m.group("h") or 0)
-    mins = int(m.group("m") or 0)
-    secs = int(m.group("s") or 0)
-    ms_raw = m.group("ms") or "0"
-    ms = int(ms_raw.ljust(3, "0")[:3])
-    return (h * 3600 + mins * 60 + secs) * 1000 + ms
+    """A stored lap time in milliseconds, or None — read by the shared strict parser (#362)."""
+    return parse_time(s)
 
 
 def render_lap_time(ms: int) -> str:

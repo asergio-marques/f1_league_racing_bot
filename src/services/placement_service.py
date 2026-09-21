@@ -13,6 +13,7 @@ from models.driver_profile import DriverProfile, DriverState
 from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
 from models.signup_module import AvailabilitySlot
 from models.team import TeamRoleConfig
+from utils.input_validator import parse_time
 
 log = logging.getLogger(__name__)
 
@@ -41,17 +42,9 @@ def _fmt_ms(total_ms: int) -> str:
 
 
 def _parse_lap_time_ms(time_str: str) -> int | None:
-    """Parse 'M:ss.mmm' or 'M:ss.ms' into milliseconds. Returns None on failure."""
-    try:
-        minutes_part, rest = time_str.strip().split(":", 1)
-        if "." in rest:
-            secs_part, ms_part = rest.split(".", 1)
-        else:
-            secs_part, ms_part = rest, "0"
-        ms_part = ms_part.ljust(3, "0")[:3]
-        return int(minutes_part) * 60_000 + int(secs_part) * 1000 + int(ms_part)
-    except (ValueError, AttributeError):
-        return None
+    """A driver's signup lap time in milliseconds, or None — read by the shared strict parser
+    (#362), the one the signup wizard accepted it by."""
+    return parse_time(time_str)
 
 
 def _compute_total_lap_ms(lap_times: dict[str, str]) -> int | None:

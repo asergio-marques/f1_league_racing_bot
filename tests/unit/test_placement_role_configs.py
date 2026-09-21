@@ -13,9 +13,9 @@ rather than seeding the driver on a partial sum, which would flatter them agains
 times all parsed. `test_one_unparseable_time_discards_the_whole_total` is what holds that, and
 it is the test most likely to be broken by someone making the parser more forgiving.
 
-The millisecond field is padded and truncated to three digits, so `1:23.4` is 400 ms and not
-4 ms. A driver typing one decimal place means four hundred milliseconds, and reading it as four
-would make them a minute and a half faster than they are.
+A lap time is read in the one strict form the whole bot reads times in (#362): exactly three
+digits after the dot, which is the form signup accepts it in. Anything else is refused rather
+than padded into a seed.
 
 **The role mapping's three writers all audit, and each records a different shape of change.**
 Setting records the old role and the new; deleting records the old role and `None`; renaming
@@ -114,32 +114,24 @@ def test_an_hour_long_total_keeps_counting_in_minutes(tmp_path):
     "raw,expected",
     [
         ("1:23.456", 83_456),
-        ("1:23", 83_000),
         ("0:59.999", 59_999),
         ("  1:23.456  ", 83_456),
         ("10:00.000", 600_000),
+        ("58.123", 58_123),
     ],
 )
 def test_a_lap_time_is_parsed_to_milliseconds(raw, expected):
     assert _parse_lap_time_ms(raw) == expected
 
 
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
-        ("1:23.4", 83_400),
-        ("1:23.45", 83_450),
-        ("1:23.456", 83_456),
-        ("1:23.4567", 83_456),
-    ],
-)
-def test_the_millisecond_field_is_padded_and_truncated_to_three(raw, expected):
-    """A driver typing one decimal place means four hundred milliseconds. Reading it as
-    four would make them a minute and a half faster than they are."""
-    assert _parse_lap_time_ms(raw) == expected
+@pytest.mark.parametrize("raw", ["1:23.4", "1:23.45", "1:23.4567", "1:23"])
+def test_a_lap_time_outside_the_strict_form_is_refused(raw):
+    """Signup accepts a lap time in one form only, three digits after the dot (#362), so a
+    stored one outside it is refused rather than padded into a seed."""
+    assert _parse_lap_time_ms(raw) is None
 
 
-@pytest.mark.parametrize("raw", ["", "nonsense", "83.456", "a:bc.def", None])
+@pytest.mark.parametrize("raw", ["", "nonsense", "a:bc.def", None])
 def test_an_unparseable_time_is_refused_rather_than_guessed(raw):
     """The seed is a number a whole season's divisions are built from, so a wrong one is
     worse than no number at all."""
