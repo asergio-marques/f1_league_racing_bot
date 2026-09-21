@@ -329,7 +329,7 @@ There is a third parameter, `session`, offering Sprint Qualifying, Sprint Race, 
 
 > **One amendment open in a division at a time.** While any round of the division has one open, running the command for the division again is refused and names the round and the channel the open one is in. Finish or cancel that first. To correct several sessions of one round, choose them all in one amendment.
 
-> **An amendment holds up the rest of its division.** Until it is finished, the submission channels of the division's other rounds refuse results and approvals. Race day in the same division waits for you, so do not start one just before a round's results are due.
+> **An amendment holds up the rest of its division.** Until it is finished, the submission channels of the division's other rounds refuse results and approvals, and the division's two sync commands are refused. Race day in the same division waits for you, so do not start one just before a round's results are due.
 
 > **You get one attempt at the paste.** A block the bot rejects, an internal failure, or five minutes of silence deletes the channel, and you re-run the command to try again. Amending several sessions, that means the whole amendment: a refused paste throws away the ones already accepted, so have every session's classification checked and ready before you start. The reason for a rejection goes to the log channel rather than to the channel you are looking at, so have that open. A restart deletes an amend channel and undoes the amendment at whatever step it had reached. There is a **❌ Cancel Amendment** button if you want out deliberately, and the channel only listens to the person who ran the command — nobody else can paste into it.
 
@@ -373,6 +373,8 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 Both delete what the bot posted and post it again from what it holds: the first for the standings, the second for every session of every round. Reach for them when somebody deleted a channel's history, or after a correction made outside the normal flow.
 
 > **Both are refused once every division is done,** and on a season already completed or cancelled. While a season is pending completion the one thing that still reposts is `/round results amend` — see the next section.
+
+> **Both wait while the division has an amendment open.** They repost from what the bot holds, and that includes the amendment's corrections before you have approved them. The refusal names the round and its amend channel; run them again once it has finished.
 
 ### A repost the bot told you it could not make
 
@@ -469,7 +471,7 @@ Worth knowing so you do not go looking for the setting.
 | Standings still showing provisional numbers | The round has not been through both review stages. The label on the post says which stage it is at |
 | Attendance charged later than expected | It is charged when the penalty stage is approved, never at provisional results |
 | `/round results amend` refused | The round has not reached Final Results yet — or the division already has an amendment open, whose round and channel the refusal names |
-| A paste or an approval refused, naming a round being amended | Another round of the division has an amendment open. Try again once it has finished — at most half an hour after its corrections were pasted |
+| A paste, an approval or a sync refused, naming a round being amended | A round of the division has an amendment open. Try again once it has finished — at most half an hour after its corrections were pasted |
 | An amendment that vanished | Known: it is one attempt. A rejection, a failure or five minutes of silence deletes the channel; the log channel holds the reason. Past the paste, half an hour without approval undoes it (`AMEND_REVERTED`) |
 | A round left unchanged by an approved amendment | It has not been raced, so there was nothing to repost. Only rounds with results are reposted |
 | `/results amend review` refuses, naming a division and a channel | That channel has been deleted, or the bot can no longer post in it. Nothing was changed — set it again with `/division results-channel` or `/division standings-channel` and review again |

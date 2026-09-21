@@ -1723,7 +1723,7 @@ A **❌ Cancel Amendment** button is posted in the channel to abort at any time.
 
 **One amendment open in a division at a time.** While any round of a division has an amendment open, running the command for that division again — any round, any session — is refused, naming the round and the channel the open one is in. Finish or cancel that first. The last step reposts the whole division, so an amendment finished beside another would publish the other's unapproved classification.
 
-**Nothing else in the division is committed meanwhile.** While an amendment is open, the submission channels of the division's other rounds stay open but refuse anything that would commit: a session's results or `CANCELLED`, and the approval of the reports or the appeals. The refusal names the round being amended and its channel; try again once it has finished — at most half an hour after its corrections were pasted. Those channels post standings, which would carry the amendment's corrections before anybody had approved them.
+**Nothing else in the division is committed meanwhile.** While an amendment is open, the submission channels of the division's other rounds stay open but refuse anything that would commit: a session's results or `CANCELLED`, and the approval of the reports or the appeals. `/results standings sync` and `/results rounds sync` are refused for the division too. The refusal names the round being amended and its channel; try again once it has finished — at most half an hour after its corrections were pasted. Each of these posts standings, which would carry the amendment's corrections before anybody had approved them.
 
 > **Nothing is published until the last step.** The corrected classification is recorded when you paste it, but the round your drivers see is unchanged until you approve the appeals — it is never published half-amended. The sessions you did not choose are left alone; their penalties and appeals are not reopened. To review a session's decisions, include that session in the amendment.
 
@@ -1848,6 +1848,8 @@ Deletes every existing standings Discord message for the division and reposts fr
 
 > **Only while the season is being raced.** Refused once every division is done, and on a completed or cancelled season. If an amendment's repost failed in pending completion, the log tells you to run `/round results amend` again instead — that replaces the round's results *and* every later round's standings, so it recovers the same ground.
 
+> **Not while the division has an amendment open.** The amendment's corrections are recorded but not yet approved, and a sync would publish them. The refusal names the round and its amend channel; run the sync again once the amendment has finished.
+
 ---
 
 ##### `/results rounds sync` — Force a full results repost for a division
@@ -1859,7 +1861,7 @@ Deletes every existing standings Discord message for the division and reposts fr
 
 Deletes every existing session results Discord message for the division and reposts fresh results for each session of each round, in round order. Useful after manual data corrections or if results messages were accidentally deleted.
 
-> **Only while the season is being raced,** on the same terms as `/results standings sync` above.
+> **Only while the season is being raced, and not while the division has an amendment open,** on the same terms as `/results standings sync` above.
 
 ---
 ##### `/results reserves toggle` — Toggle reserve driver visibility in standings
