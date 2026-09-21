@@ -10,11 +10,13 @@ round alone.
 every round in round order is the only thing that keeps the sequence a league reads matching the
 sequence it raced.
 
-**The attendance sheet is deliberately not here.** A division keeps one live sheet in one slot,
-so there is no sequence to preserve and nothing to reorder: it is reposted once, against the
-round the running totals now stand at. The caller does that. It is named in the docstring so the
-whole order is readable in one place, and its absence from this function is intentional rather
-than an omission.
+**The attendance sheet is not a sequence.** A division keeps one live sheet in one slot, so
+there is nothing to reorder: it is reposted once, against the round the running totals now stand
+at. The caller supplies that as a step, which runs between the standings and the verdicts so the
+stages happen in the order the specification states.
+
+**A stage that raises is a fault, not the end of the rebuild.** Each channel is its own, and a
+results channel that refused a post has already been put back as it was by the time it raises.
 """
 from __future__ import annotations
 
@@ -32,6 +34,22 @@ DIVISION_ID = 91
 FROM_ROUND = 3
 
 
+@pytest.fixture(autouse=True)
+def _no_standing_banners():
+    """The rebuild reads the division's standing banners before any stage runs (#345).
+
+    These tests drive the orchestrator against a placeholder path and stub every stage; left
+    unstubbed, that one read would open a real database at the placeholder — creating an empty
+    `db.sqlite` in whatever directory the suite ran from. A test about the banners patches it
+    itself, inside this.
+    """
+    with patch(
+        "services.verdict_announcement_service.banners_from_round",
+        new=AsyncMock(return_value=[]),
+    ):
+        yield
+
+
 async def _replay(
     *,
     results="ok",
@@ -45,10 +63,14 @@ async def _replay(
 
     async def _results(*_a, **_kw):
         order.append("results")
+        if isinstance(results, Exception):
+            raise results
         return results
 
     async def _standings(*_a, **_kw):
         order.append("standings")
+        if isinstance(standings, Exception):
+            raise standings
         return standings
 
     async def _verdicts(*_a, **_kw):
@@ -192,3 +214,67 @@ async def test_an_unrecognised_repost_status_is_reported():
     faults, _ = await _replay(results="something_went_wrong")
 
     assert any("were not reposted" in line for line in faults)
+
+
+async def test_a_stage_that_raises_is_reported_and_the_rest_still_run():
+    """A results channel that refused a post must not cost the league its standings and its
+    verdicts as well — and it used to raise straight out of the amendment's last stage, leaving
+    the round committed, its channel open and nothing logged."""
+    faults, order = await _replay(results=RuntimeError("Missing Permissions"))
+
+    assert order == ["results", "standings", "verdicts"]
+    assert any("Missing Permissions" in fault for fault in faults)
+    assert any("left as they were" in fault for fault in faults)
+
+
+async def test_a_standings_stage_that_raises_is_reported_too():
+    faults, order = await _replay(standings=RuntimeError("Missing Access"))
+
+    assert order == ["results", "standings", "verdicts"]
+    assert any("Missing Access" in fault for fault in faults)
+
+
+async def test_a_banner_posted_by_the_attendance_step_is_not_taken_down(tmp_path):
+    """**The banners to remove are the ones standing before the rebuild began** (#345).
+
+    The attendance step enforces the division's sanctions, and those head themselves. A capture
+    taken inside the verdict republish — which runs after it — handed that fresh banner in as a
+    superseded one and deleted it, leaving the sanctions it headed bare.
+    """
+    seen: dict = {}
+
+    async def _banners(*_a, **_kw):
+        seen["captured_before_attendance"] = "attendance" not in order_so_far
+        return [(FROM_ROUND, "77", 4242)]
+
+    order_so_far: list[str] = []
+
+    async def _attendance() -> list[str]:
+        order_so_far.append("attendance")
+        return []
+
+    async def _verdicts(*_a, **kwargs):
+        seen["handed_in"] = kwargs.get("superseded_banners")
+        return []
+
+    with patch(
+        "services.results_post_service.repost_results_for_division",
+        new=AsyncMock(return_value="ok"),
+    ), patch(
+        "services.results_post_service.repost_standings_for_division",
+        new=AsyncMock(return_value="ok"),
+    ), patch(
+        "services.verdict_announcement_service.banners_from_round",
+        new=AsyncMock(side_effect=_banners),
+    ), patch(
+        "services.verdict_announcement_service.republish_verdicts_from_round",
+        new=AsyncMock(side_effect=_verdicts),
+    ):
+        await replay_division_channels(
+            "db.sqlite", DIVISION_ID, FROM_ROUND, MagicMock(),
+            bot=MagicMock(), verdict_state_factory=lambda round_id: MagicMock(),
+            attendance_step=_attendance,
+        )
+
+    assert seen["captured_before_attendance"] is True
+    assert seen["handed_in"] == [(FROM_ROUND, "77", 4242)]

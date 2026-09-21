@@ -2370,43 +2370,90 @@ async def replay_division_channels(
     """
     faults: list[str] = []
 
-    results_status = await repost_results_for_division(
-        db_path, division_id, guild, bot=bot
-    )
+    # **The banners standing now, before any stage has posted one of its own** (#345). The
+    # attendance step enforces the division's sanctions, and those head themselves; a capture
+    # taken after it would hand the verdict republish a banner posted moments earlier and have
+    # it deleted, leaving those sanctions headerless.
+    superseded_banners: list | None = None
+    if bot is not None and verdict_state_factory is not None:
+        from services.verdict_announcement_service import banners_from_round
+
+        try:
+            superseded_banners = await banners_from_round(
+                db_path, division_id, from_round_id
+            )
+        except Exception:  # noqa: BLE001 — the rebuild matters more than tidying its headers
+            log.exception("replay_division_channels: could not read the standing banners")
+            # An empty list, not None: None would have the republish capture them *after* the
+            # attendance step and delete the banner that step had just posted, which is the
+            # very thing reading them here prevents (#345).
+            superseded_banners = []
+
+    # **A stage that raises is a fault, not the end of the rebuild** (#345). Each channel is
+    # its own: a results channel that refused a post has already been put back as it was, and
+    # there is no reason that should cost the league its standings or its verdicts.
+    try:
+        results_status = await repost_results_for_division(
+            db_path, division_id, guild, bot=bot
+        )
+    except Exception as exc:  # noqa: BLE001 — reported, and the next channel taken
+        log.exception("replay_division_channels: the results repost failed")
+        results_status = "failed"
+        faults.append(
+            f"the division's results could not be reposted, so the ones already posted were "
+            f"left as they were: {exc}"
+        )
     if results_status == "no_channel":
         faults.append(
             "the division's results channel could not be reached, so its results were "
             "not reposted"
         )
-    elif results_status not in ("ok", "no_rounds"):
+    elif results_status not in ("ok", "no_rounds", "failed"):
         # Neither reposted nor an empty division: say so, rather than let an unrecognised
         # status read as success (#345).
         faults.append(f"the division's results were not reposted ({results_status})")
 
-    standings_status = await repost_standings_for_division(
-        db_path, division_id, guild, bot=bot
-    )
+    try:
+        standings_status = await repost_standings_for_division(
+            db_path, division_id, guild, bot=bot
+        )
+    except Exception as exc:  # noqa: BLE001 — reported, and the next channel taken
+        log.exception("replay_division_channels: the standings repost failed")
+        standings_status = "failed"
+        faults.append(
+            f"the division's standings could not be reposted, so the ones already posted were "
+            f"left as they were: {exc}"
+        )
     if standings_status == "no_channel":
         faults.append(
             "the division's standings channel could not be reached, so its standings were "
             "not reposted"
         )
-    elif standings_status not in ("ok", "no_rounds"):
+    elif standings_status not in ("ok", "no_rounds", "failed"):
         faults.append(f"the division's standings were not reposted ({standings_status})")
 
     # **The attendance sheet goes between the standings and the verdicts**, which is the order
     # the specification states and the order a league reads them: a sanction's own verdict has to
     # follow the sheet that warranted it, not precede the report verdicts of later rounds (#345).
     if attendance_step is not None:
-        faults.extend(await attendance_step())
+        try:
+            faults.extend(await attendance_step())
+        except Exception as exc:  # noqa: BLE001 — reported, and the verdicts still announced
+            log.exception("replay_division_channels: the attendance step failed")
+            faults.append(f"the attendance sheet could not be reposted: {exc}")
 
     if bot is not None and verdict_state_factory is not None:
         from services.verdict_announcement_service import republish_verdicts_from_round
 
-        faults.extend(
-            await republish_verdicts_from_round(
-                bot, db_path, division_id, from_round_id, verdict_state_factory
+        try:
+            faults.extend(
+                await republish_verdicts_from_round(
+                    bot, db_path, division_id, from_round_id, verdict_state_factory,
+                    superseded_banners=superseded_banners,
+                )
             )
-        )
+        except Exception as exc:  # noqa: BLE001 — reported rather than lost
+            log.exception("replay_division_channels: the verdict republish failed")
+            faults.append(f"the division's verdicts could not be re-announced: {exc}")
 
     return merge_faults(faults, [])
