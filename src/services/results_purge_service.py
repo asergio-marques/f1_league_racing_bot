@@ -197,9 +197,10 @@ async def _delete_posted_verdicts(db_path: str, rounds: list[dict], guild) -> in
     **The stewarding module will have to face this too.** It is to announce and record verdicts
     of its own — reports, appeals and investigations alike
     (``docs/wip-specs/steward_module_specification.md``) — and disabling this module disables
-    it with them (STW-MOD-009). What is taken down here is only what ``penalty_records`` and
-    ``appeal_records`` hold, so a verdict stewarding records anywhere else would be left on
-    display by this function, exactly as every verdict was before #189. Whether its verdicts go
+    that one along with it (STW-MOD-009). What is taken down here is only what
+    ``penalty_records`` and ``appeal_records`` hold, so a verdict stewarding records anywhere
+    else would be left on display by this function, exactly as every verdict was before #189.
+    Whether its verdicts go
     with the season's results, and what becomes of the announcement of a ban that itself
     survives the module being disabled (STW-MOD-006), are that module's to settle when it is
     built; neither is decided here.
