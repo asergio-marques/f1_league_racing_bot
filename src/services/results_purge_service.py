@@ -189,6 +189,11 @@ async def _delete_posted_verdicts(db_path: str, rounds: list[dict], guild) -> in
     A verdict whose channel is gone is logged and passed over: its record goes with the rest of
     the season all the same, and a channel the bot cannot reach holds nothing it could remove.
 
+    The banner heading each round's run goes with it, and its record with it — unless the banner
+    also heads an attendance sanction card. That card is the attendance module's, recorded
+    nowhere and left where it is, so its header stays over it: the rule an amendment's replay
+    keeps (decided 2026-09-21). Banners are not counted; the league is told of its verdicts.
+
     **The stewarding module will have to face this too.** It is to announce and record verdicts
     of its own — reports, appeals and investigations alike
     (``docs/wip-specs/steward_module_specification.md``) — and disabling this module disables
@@ -200,10 +205,16 @@ async def _delete_posted_verdicts(db_path: str, rounds: list[dict], guild) -> in
     built; neither is decided here.
     """
     from services.results_post_service import _delete_posting
-    from services.verdict_announcement_service import _parse_chunk_ids
+    from services.verdict_announcement_service import (
+        _banners_heading_sanctions,
+        _banners_of,
+        _forget_banners,
+        _parse_chunk_ids,
+    )
     from services.verdict_records import VERDICT_TABLES, select_verdicts
 
     deleted = 0
+    banners_taken_down: list[int] = []
     for row in rounds:
         round_id = row["round_id"]
         async with get_connection(db_path) as db:
@@ -248,6 +259,20 @@ async def _delete_posted_verdicts(db_path: str, rounds: list[dict], guild) -> in
             )
             deleted += 1
 
+        banners = await _banners_of(db_path, round_id)
+        kept = await _banners_heading_sanctions(
+            db_path, [message_id for _, message_id in banners]
+        )
+        for channel_id, message_id in banners:
+            if message_id in kept:
+                continue
+            channel = guild.get_channel(int(channel_id)) if channel_id else None
+            if channel is None:
+                continue
+            await _delete_posting(channel, message_id, [message_id], label="verdict banner")
+            banners_taken_down.append(message_id)
+
+    await _forget_banners(db_path, banners_taken_down)
     return deleted
 
 

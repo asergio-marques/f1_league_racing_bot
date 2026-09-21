@@ -278,6 +278,20 @@ async def _announce(
         await db.commit()
 
 
+async def _banner(
+    db_path: str, round_id: int, message_id: int, *, heads_sanctions: bool = False
+) -> None:
+    """Record a verdict banner over *round_id*, as `_record_banner` does."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO verdict_banner_messages "
+            "(round_id, channel_id, message_id, posted_at, heads_sanctions) "
+            "VALUES (?, ?, ?, '2026-01-02T00:00:00', ?)",
+            (round_id, str(VERDICTS_CHANNEL_ID), str(message_id), int(heads_sanctions)),
+        )
+        await db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Readers
 # ---------------------------------------------------------------------------
@@ -512,6 +526,33 @@ async def test_an_unreachable_verdicts_channel_still_erases_the_rows(tmp_path) -
     assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
     assert await _count(db_path, "penalty_records") == 0
     assert await _count(db_path, "appeal_records") == 0
+
+
+async def test_the_verdict_banner_is_taken_down_and_forgotten(tmp_path) -> None:
+    """A banner is a message of its own above the cards, and left behind it would head an empty
+    run. Its record goes with it, or it would name a message that no longer exists."""
+    db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    await _banner(db_path, round_id, 7001)
+    cog = _make_cog(db_path)
+
+    await purge_season_results(db_path, cog.bot)
+
+    assert sorted(cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages) == [5001, 7001]
+    assert await _count(db_path, "verdict_banner_messages") == 0
+
+
+async def test_a_banner_over_a_sanction_card_stays(tmp_path) -> None:
+    """An auto-sack or auto-reserve card is the attendance module's, recorded nowhere, and stays
+    where it is — so the banner over it stays too, as an amendment keeps it (2026-09-21)."""
+    db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _banner(db_path, round_id, 7001, heads_sanctions=True)
+    cog = _make_cog(db_path)
+
+    await purge_season_results(db_path, cog.bot)
+
+    assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == []
+    assert await _count(db_path, "verdict_banner_messages") == 1
 
 
 async def test_an_open_submission_channel_is_closed(tmp_path) -> None:
