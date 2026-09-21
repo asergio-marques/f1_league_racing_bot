@@ -343,3 +343,48 @@ def parse_penalty_seconds(text: str | None) -> int | None:
     match = _PENALTY_SECONDS_RE.match((text or "").strip())
     return int(match.group(1)) if match else None
 
+
+# ── Formats: times ────────────────────────────────────────────────────────
+
+#: A time, in the one form the bot reads everywhere (decided 2026-09-21, #362): minutes and
+#: seconds ``1:23.456``, seconds alone ``58.123``, or hours ``1:02:03.456`` — always a dot, and
+#: always exactly three digits after it. Seconds and minutes written after a colon are two
+#: digits and under sixty. Signup read ``1:23:456`` and ``1:23.4`` and guessed; the results
+#: paste read neither, and the two now agree.
+_TIME_RE = re.compile(
+    r"^(?:(?P<h>\d+):(?P<hm>\d{2}):(?P<hs>\d{2})|(?P<m>\d+):(?P<s>\d{2})|(?P<bare>\d+))"
+    r"\.(?P<ms>\d{3})$",
+    re.ASCII,
+)
+_LAP_GAP_RE = re.compile(r"^\+?(\d+) Laps?$", re.IGNORECASE | re.ASCII)
+
+
+def parse_time(text: str | None) -> int | None:
+    """The milliseconds a time stands for, or None where *text* is not one."""
+    match = _TIME_RE.match((text or "").strip())
+    if match is None:
+        return None
+    if match.group("h") is not None:
+        hours, minutes, seconds = (int(match.group(k)) for k in ("h", "hm", "hs"))
+        if minutes >= 60 or seconds >= 60:
+            return None
+    elif match.group("m") is not None:
+        hours, minutes, seconds = 0, int(match.group("m")), int(match.group("s"))
+        if seconds >= 60:
+            return None
+    else:
+        hours, minutes, seconds = 0, 0, int(match.group("bare"))
+    return ((hours * 60 + minutes) * 60 + seconds) * 1000 + int(match.group("ms"))
+
+
+def parse_gap(text: str | None) -> int | None:
+    """The milliseconds a gap to the leader stands for: ``+`` and a time, or None."""
+    raw = (text or "").strip()
+    return parse_time(raw[1:]) if raw.startswith("+") else None
+
+
+def parse_lap_gap(text: str | None) -> int | None:
+    """The laps a lapped driver is down, ``+2 Laps`` or ``1 Lap``, or None."""
+    match = _LAP_GAP_RE.match((text or "").strip())
+    return int(match.group(1)) if match else None
+

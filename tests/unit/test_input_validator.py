@@ -22,8 +22,11 @@ from utils.input_validator import (  # noqa: E402
     Mode,
     Rule,
     is_disqualification,
+    parse_gap,
+    parse_lap_gap,
     parse_penalty_seconds,
     parse_role_mention,
+    parse_time,
     parse_user,
     parse_user_id,
     parse_user_mention,
@@ -367,4 +370,74 @@ def test_parse_penalty_seconds_refuses_anything_else(typed):
     """A fraction is refused: the review gives whole seconds only. So is a digit of another
     script, which `int()` would read."""
     assert parse_penalty_seconds(typed) is None
+
+
+# ── Formats: times ────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "typed, ms",
+    [
+        ("1:23.456", 83_456),
+        ("0:59.999", 59_999),
+        ("58.123", 58_123),
+        ("1:02:03.456", 3_723_456),
+        (" 1:23.456 ", 83_456),
+        ("75.000", 75_000),
+    ],
+)
+def test_parse_time_reads_the_three_forms(typed, ms):
+    assert parse_time(typed) == ms
+
+
+@pytest.mark.parametrize(
+    "typed",
+    [
+        "1:23:456",      # a colon before the thousandths — signup used to read it
+        "1:23.4",        # one digit after the dot — signup used to pad it
+        "1:23.4567",     # four — signup used to round it
+        "1:23",          # none
+        "1:75.000",      # seconds of sixty or more after a colon
+        "1:60:00.000",   # minutes likewise
+        "1:5.000",       # one-digit seconds after a colon
+        "+1:23.456",     # a gap, not a time
+        "DNF",
+        "",
+        None,
+    ],
+)
+def test_parse_time_is_strict(typed):
+    """One form, everywhere (decided 2026-09-21)."""
+    assert parse_time(typed) is None
+
+
+@pytest.mark.parametrize("ms", [0, 999, 58_123, 83_456, 599_999, 3_723_456, 7_200_000])
+def test_parse_time_reads_every_stored_shape(ms):
+    """Stored times are written by these, so the strict reader must read all they write."""
+    from services.penalty_service import _ms_to_delta, _ms_to_time
+    from utils.results_formatter import render_lap_time
+
+    assert parse_time(_ms_to_time(ms)) == ms
+    assert parse_time(render_lap_time(ms)) == ms
+    assert parse_gap(_ms_to_delta(ms)) == ms
+
+
+@pytest.mark.parametrize("typed, ms", [("+1.234", 1_234), ("+1:02.345", 62_345), ("+1:00:00.000", 3_600_000)])
+def test_parse_gap_reads_a_signed_time(typed, ms):
+    assert parse_gap(typed) == ms
+
+
+@pytest.mark.parametrize("typed", ["1.234", "-1.234", "+1 Lap", "+"])
+def test_parse_gap_refuses_anything_else(typed):
+    assert parse_gap(typed) is None
+
+
+@pytest.mark.parametrize("typed, laps", [("+1 Lap", 1), ("2 Laps", 2), ("+3 laps", 3)])
+def test_parse_lap_gap_reads_the_laps(typed, laps):
+    assert parse_lap_gap(typed) == laps
+
+
+@pytest.mark.parametrize("typed", ["+1Lap", "Lap", "+1.234"])
+def test_parse_lap_gap_refuses_anything_else(typed):
+    assert parse_lap_gap(typed) is None
 
