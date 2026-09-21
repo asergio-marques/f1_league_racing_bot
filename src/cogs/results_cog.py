@@ -32,6 +32,21 @@ _SESSION_CHOICES = [
     app_commands.Choice(name="Feature Race", value="FEATURE_RACE"),
 ]
 
+# The two points stores a league can read, and the reason the choice is made explicit.
+#
+# A season takes its own copy of every attached configuration at approval
+# (`snapshot_configs_to_season`), and the two diverge from that moment: editing the server's
+# configuration afterwards does not change what a running season scores by. So a command that
+# guessed a store would answer a question the manager did not ask, and quietly show figures
+# from the wrong one (#200). Both `/results config list` and `/results config view` require it.
+_SCOPE_SEASON = "SEASON"
+_SCOPE_SERVER = "SERVER"
+
+_SCOPE_CHOICES = [
+    app_commands.Choice(name="Season (what this season scores by)", value=_SCOPE_SEASON),
+    app_commands.Choice(name="Server (what this server holds)", value=_SCOPE_SERVER),
+]
+
 _RACE_SESSION_CHOICES = [
     app_commands.Choice(name="Sprint Race", value="SPRINT_RACE"),
     app_commands.Choice(name="Feature Race", value="FEATURE_RACE"),
@@ -823,6 +838,62 @@ class ResultsCog(commands.Cog):
     # ------------------------------------------------------------------
     # /results config view
     # ------------------------------------------------------------------
+
+    @config_group.command(
+        name="list", description="List the points configurations a store holds."
+    )
+    @app_commands.describe(scope="Which store to read — the season's, or this server's")
+    @app_commands.choices(scope=_SCOPE_CHOICES)
+    @league_manager_only
+    async def config_list(
+        self,
+        interaction: discord.Interaction,
+        scope: app_commands.Choice[str],
+    ) -> None:
+        """Name the points configurations a store holds, and what each one carries.
+
+        Every other `/results config` subcommand takes a configuration's name as input, and
+        before this nothing returned the names — so a manager who mistyped one was told it
+        did not exist with no way to look up the spelling (#200).
+
+        Reports the session types each configuration actually carries entries for, because a
+        configuration created and never filled looks identical to a complete one from the
+        outside and snapshots into a season as empty points.
+
+        ``scope: Server`` reads the server's store directly and **needs no season**: that is
+        the case the issue was raised for, a league between seasons wanting to know what it
+        already holds before building the next one.
+        """
+        if not await self._module_gate(interaction):
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        if scope.value == _SCOPE_SERVER:
+            rows = await points_config_service.list_configs_with_sessions(self.bot.db_path)
+            scope_label = "this server"
+        else:
+            season = await self.bot.season_service.get_season_for_server()
+            if season is None:
+                await interaction.followup.send(
+                    "❌ No active or setup season found, so there is no season store to "
+                    "read. Use `scope: Server` to see the configurations this server holds.",
+                    ephemeral=True,
+                )
+                return
+            rows = await season_points_service.list_season_configs_with_sessions(
+                self.bot.db_path, season.id
+            )
+            scope_label = f"season {season.season_number}"
+
+        from utils import results_formatter
+
+        await interaction.followup.send(
+            results_formatter.format_config_list(scope_label, rows), ephemeral=True
+        )
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config list | Success\n"
+            f"  scope: {scope_label}",
+        )
 
     @config_group.command(name="view", description="View a points config for the current season.")
     @app_commands.describe(
