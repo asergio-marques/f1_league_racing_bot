@@ -1,0 +1,45 @@
+name: Check PR labels
+
+# Refuses a pull request not labelled from the issues it tracks. The rule is in
+# CONTRIBUTING.md, "Pull requests" (#259); `tools/check_pr_labels.py` applies it. The job's
+# name, `pr-label-check`, is what the ruleset on `main` requires, so neither is renamed
+# without the other.
+#
+# `pull_request` rather than `pull_request_target`: the check only reads, so the read-only
+# token a fork's PR is given is enough, and nothing from a PR ever runs with write access.
+# It runs again whenever the labels, the description (where `Part of #N` lives) or the
+# commits change, and a newer run replaces one still going — labels often arrive one by one
+# just after a PR is opened.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: pr-labels-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-label-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.13
+
+    - name: Check the labels
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+      run: python tools/check_pr_labels.py "$PR"
