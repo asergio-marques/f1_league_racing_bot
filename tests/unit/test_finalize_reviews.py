@@ -69,7 +69,10 @@ async def _make_db(
     round_status: str = "AWAITING_REPORT_VERDICTS",
     staged_json: str | None = None,
     attendance_row: bool = False,
+    results: list[tuple[int, int, str]] | None = None,
 ):
+    """*results* is (profile_id, driver_user_id, outcome), given a profile and a race row
+    apiece, for the tests that watch the former-driver flag (#216)."""
     db_path = os.path.join(str(tmp_path), f"{name}.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -108,8 +111,34 @@ async def _make_db(
                 "driver_profile_id, rsvp_status) VALUES (41, ?, ?, 31, 'NO_RSVP')",
                 (ROUND_ID, DIVISION_ID),
             )
+        if results:
+            session = await db.execute(
+                "INSERT INTO session_results (round_id, division_id, session_type, status, "
+                "config_name) VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE', 'Standard')",
+                (ROUND_ID, DIVISION_ID),
+            )
+            for position, (profile_id, driver, outcome) in enumerate(results, start=1):
+                await db.execute(
+                    "INSERT OR IGNORE INTO driver_profiles (id, discord_user_id, "
+                    "current_state, former_driver) VALUES (?, ?, 'ASSIGNED', 0)",
+                    (profile_id, str(driver)),
+                )
+                await db.execute(
+                    "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+                    "team_role_id, finishing_position, outcome, driver_profile_id) "
+                    "VALUES (?, ?, 3001, ?, ?, ?)",
+                    (session.lastrowid, driver, position, outcome, profile_id),
+                )
         await db.commit()
     return db_path
+
+
+async def _former(db_path, profile_id: int) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT former_driver FROM driver_profiles WHERE id = ?", (profile_id,)
+        )
+        return (await cursor.fetchone())["former_driver"]
 
 
 def _penalty(driver: int = 101) -> StagedPenalty:
@@ -675,6 +704,39 @@ async def test_approving_appeals_finishes_the_round(tmp_path):
     await _run(finalize_appeals_review, _state(db_path))
 
     assert await _round_status(db_path) == "FINAL"
+
+
+async def test_approving_appeals_marks_the_drivers_who_raced(tmp_path):
+    """Where the former-driver flag is set, and the only place the first pass sets it (#216).
+
+    The round becomes FINAL here, so this is the moment its results stop being provisional.
+    Driver 32's only entry is a did-not-start, so they did not race it.
+    """
+    db_path = await _make_db(
+        tmp_path,
+        name="appeals_former",
+        round_status="AWAITING_APPEAL_VERDICTS",
+        results=[(31, 101, "CLASSIFIED"), (32, 102, "DNS")],
+    )
+
+    await _run(finalize_appeals_review, _state(db_path))
+
+    assert await _former(db_path, 31) == 1
+    assert await _former(db_path, 32) == 0
+
+
+async def test_a_cancelled_round_marks_nobody(tmp_path):
+    """A round that never became final has no final results to mark by."""
+    db_path = await _make_db(
+        tmp_path,
+        name="appeals_cancelled_former",
+        round_status="CANCELLED",
+        results=[(31, 101, "CLASSIFIED")],
+    )
+
+    await _run(finalize_appeals_review, _state(db_path))
+
+    assert await _former(db_path, 31) == 0
 
 
 async def test_a_cancelled_round_is_not_raised_to_final(tmp_path):
@@ -1279,21 +1341,25 @@ async def _seed_driver_row(db_path, driver: int = 101) -> None:
 _OPEN_DEADLINE = "2099-01-01T00:00:00+00:00"
 
 
-async def _open_amendment(state) -> None:
+async def _open_amendment(state, *, snapshot: str = "{}") -> None:
     """Mark *state* an amendment, and give it the open amendment it would have in life.
 
     Every stage of an amendment first claims the amendment's deadline (#345); with no
     `round_amend_channels` row there is nothing to claim, and the stage refuses to run — which
     would let a test asserting that something did *not* happen pass without the stage having
     run at all.
+
+    *snapshot* is the ``pre_amendment_state`` stage one wrote. It carries ``profiles_before``
+    for the former-driver recompute (#216), which is how a driver the amendment struck out is
+    still reconsidered when they are in no result to be found by.
     """
     state.is_amendment = True
     async with get_connection(state.db_path) as db:
         await db.execute(
             "INSERT OR IGNORE INTO round_amend_channels (round_id, channel_id, session_types, "
             "created_at, pre_amendment_state, expires_at) VALUES (?, 700, '[\"FEATURE_RACE\"]', "
-            "'2026-02-02T00:00:00+00:00', '{}', ?)",
-            (state.round_id, _OPEN_DEADLINE),
+            "'2026-02-02T00:00:00+00:00', ?, ?)",
+            (state.round_id, snapshot, _OPEN_DEADLINE),
         )
         await db.commit()
 
@@ -1804,6 +1870,51 @@ async def test_a_committed_amendment_settles_a_full_tie_by_name(tmp_path):
         stubs = await _run(finalize_appeals_review, state)
 
     assert stubs["cascade_standings"].await_args.args[3] == names
+
+
+async def test_a_committed_amendment_marks_the_drivers_who_raced(tmp_path):
+    """Stage three settles the flag, and the round was already FINAL (#216)."""
+    db_path = await _make_db(
+        tmp_path,
+        name="amend_former_marks",
+        round_status="FINAL",
+        results=[(31, 101, "CLASSIFIED"), (32, 102, "DNS")],
+    )
+    state = _state(db_path, appeals=[_penalty()])
+    await _open_amendment(state)
+
+    await _run(finalize_appeals_review, state)
+
+    assert await _former(db_path, 31) == 1
+    assert await _former(db_path, 32) == 0
+
+
+async def test_a_committed_amendment_clears_a_driver_it_struck_out(tmp_path):
+    """The half of #216 nothing could do before: taking a flag back down.
+
+    Driver 32 was a former driver by this round, and the amendment left them out of it. With
+    no other final round marking them their profile is deletable again — which is the whole
+    reason the spec makes the flag two-way.
+    """
+    db_path = await _make_db(
+        tmp_path,
+        name="amend_former_clears",
+        round_status="FINAL",
+        results=[(31, 101, "CLASSIFIED")],
+    )
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, former_driver) "
+            "VALUES (32, '102', 'ASSIGNED', 1)"
+        )
+        await db.commit()
+    state = _state(db_path, appeals=[_penalty()])
+    await _open_amendment(state, snapshot='{"profiles_before": [31, 32]}')
+
+    await _run(finalize_appeals_review, state)
+
+    assert await _former(db_path, 31) == 1
+    assert await _former(db_path, 32) == 0, "a driver struck out kept their flag"
 
 
 async def test_a_committed_amendment_is_logged_as_result_amended(tmp_path):

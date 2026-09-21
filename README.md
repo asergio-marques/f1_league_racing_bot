@@ -586,8 +586,11 @@ Abandons a season in configuration, waiting for its signup window, in signups, o
 
 Tells each division that is not already cancelled — see **Who is told about a cancellation** below —
 then cascades: every division of the season is cancelled, and with each one every round of it **not yet raced**. A round
-that has been raced and scored keeps its results and its status — cancelling a season never
-discards a result. The season row is marked `CANCELLED` last.
+that has been raced and scored keeps its results — cancelling a season never
+discards a result. A round whose results are in but whose reports or appeals were still open is
+**closed as final**, since the verdict commands are refused from then on and it would otherwise
+wait for ever; its drivers count as having raced it, and their profiles are kept. The season row
+is marked `CANCELLED` last.
 
 **The season is archived, not deleted.** Its divisions, rounds, results and standings stay in the
 database and remain readable by the stats commands; they become immutable and stop counting as

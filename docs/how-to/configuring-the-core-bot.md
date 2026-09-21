@@ -625,7 +625,10 @@ If you need to stop a season rather than finish it, which command depends on whe
 > ⚠️ **`/season cancel` is irreversible, and it is not `/season complete` with a different name.**
 > It cascades: every division is cancelled, and with each one every round you have not yet raced.
 > Rounds you *have* raced keep their results — cancelling never throws a result away — and the
-> season is archived rather than deleted. Every driver still gets a history entry for each division
+> season is archived rather than deleted. A round whose results were in but whose reports or
+> appeals were still open is closed as final on the way, because those verdict commands are
+> refused once the season is cancelled and the round would otherwise wait for ever; the drivers
+> in it count as having raced, so their profiles are kept. Every driver still gets a history entry for each division
 > they took part in — a cancelled season is league history, marked as cancelled so it can be told apart
 > from one that ran to its end — and then, as on completion, every driver returns to Not Signed Up
 > and those who never raced are deleted. What you lose is the ending: no final classification is

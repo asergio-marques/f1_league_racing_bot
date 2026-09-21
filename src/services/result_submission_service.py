@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 import discord
 
@@ -876,6 +876,131 @@ async def _round_is_final(db_path: str, round_id: int) -> bool:
     return bool(row and row["status"] == RoundStatus.FINAL.value)
 
 
+# The one query behind both halves of ``recompute_former_drivers_for_round``: every (profile,
+# round) pair a *final* round's live results show as having raced. Qualifying and race rows live
+# in separate tables with only these columns in common, so the two are unioned rather than
+# joined. `UNION` and not `UNION ALL`: a driver appearing in both sessions of a round raced it
+# once.
+_RACED_A_ROUND_SQL = """
+    SELECT rsr.driver_profile_id AS profile_id, sr.round_id AS round_id
+    FROM race_session_results rsr
+    JOIN session_results sr ON sr.id = rsr.session_result_id
+    JOIN rounds r ON r.id = sr.round_id
+    WHERE rsr.driver_profile_id IS NOT NULL
+      AND rsr.outcome != 'DNS'
+      AND sr.status = 'ACTIVE'
+      AND r.status = 'FINAL'
+    UNION
+    SELECT qsr.driver_profile_id AS profile_id, sr.round_id AS round_id
+    FROM qualifying_session_results qsr
+    JOIN session_results sr ON sr.id = qsr.session_result_id
+    JOIN rounds r ON r.id = sr.round_id
+    WHERE qsr.driver_profile_id IS NOT NULL
+      AND qsr.outcome != 'DNS'
+      AND sr.status = 'ACTIVE'
+      AND r.status = 'FINAL'
+"""
+
+# Every profile named anywhere in one round's live results, whatever the outcome and whatever
+# the round's status. The recompute's candidate set, and the amendment path's record of who the
+# round held before it was rewritten. A driver struck out of the round entirely is in neither
+# table afterwards, which is what `also_consider` is for.
+_PROFILES_IN_ROUND_SQL = """
+    SELECT rsr.driver_profile_id AS profile_id
+    FROM race_session_results rsr
+    JOIN session_results sr ON sr.id = rsr.session_result_id
+    WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND rsr.driver_profile_id IS NOT NULL
+    UNION
+    SELECT qsr.driver_profile_id AS profile_id
+    FROM qualifying_session_results qsr
+    JOIN session_results sr ON sr.id = qsr.session_result_id
+    WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND qsr.driver_profile_id IS NOT NULL
+"""
+
+
+async def recompute_former_drivers_for_round(
+    db, round_id: int, *, also_consider: Iterable[int] | None = None
+) -> None:
+    """Set the former-driver flag from one round's final results, both ways (#216).
+
+    Runs on the caller's connection and commits nothing, so the flag moves in the same
+    transaction as whatever made the round final.
+
+    The core specification's **Leaving the league** section is the rule: a driver has raced a
+    round only once that round is FINAL and only by its final results, an entry recording that
+    they did not start does not count, and an amendment leaving them no longer having raced
+    clears the flag unless another final round marks them. Before this the flag was raised the
+    moment a classification was pasted in, for every driver in it whatever the outcome, and
+    lowered by nothing.
+
+    Three decisions sit behind the SQL, none of them derivable from the spec's wording alone:
+
+    **Only ``DNS`` excludes** (decided 2026-09-21). A driver who retired or was disqualified
+    started the race, so they raced it; the spec excludes the did-not-start entry alone. Pinned
+    by ``test_a_driver_who_retired_or_was_disqualified_is_marked``.
+
+    **The recompute is scoped to this round's drivers**, never the whole roster. A driver is
+    considered only where the named round's live results mention them, so a flag raised by a
+    round this one knows nothing about is never disturbed. That scoping is
+    ``test_a_driver_of_another_round_is_left_alone``.
+
+    The scoping is by *this round's drivers*, though, not by how the flag came to be set: a
+    value put there by hand through ``/test-mode set-former-driver`` is overwritten like any
+    other where the driver does appear in this round. A maintainer who sets the flag and then
+    finalises a round the driver is in — DNS, say — will find it back at 0. The flag is
+    derived from results; the command sets it directly so both branches of the driver pass can
+    be reached without racing, not to pin a value against them.
+
+    **A driver struck out entirely must be named by the caller**, through ``also_consider``.
+    The scoping above reads the round as it stands *now*, and a driver an amendment removed is
+    by then in no result at all — so nothing would ever reconsider the flag the old
+    classification gave them, which is exactly the "never cleared" half of #216. The amendment
+    path collects the profiles the round held beforehand and passes them here;
+    ``test_a_driver_struck_from_the_round_is_cleared`` fails without it.
+
+    Clearing asks whether any *other* final round still marks the driver, so a driver struck
+    from this round but racing elsewhere keeps the flag. That is
+    ``test_a_driver_marked_by_another_final_round_keeps_the_flag``.
+
+    Idempotent: calling it twice for the same round changes nothing the first call did not.
+    """
+    cursor = await db.execute(_PROFILES_IN_ROUND_SQL, (round_id, round_id))
+    candidates = {r["profile_id"] for r in await cursor.fetchall()}
+    candidates.update(p for p in (also_consider or ()) if p is not None)
+    if not candidates:
+        return
+
+    cursor = await db.execute(
+        f"SELECT DISTINCT profile_id FROM ({_RACED_A_ROUND_SQL}) WHERE round_id = ?",
+        (round_id,),
+    )
+    raced_here = {r["profile_id"] for r in await cursor.fetchall()}
+
+    # Only those this round does not already mark need asking about, and only where there are
+    # any: a finalisation where every candidate raced — the common case by far — asks nothing.
+    # The question is bounded by the candidates too, because the rest of the query cannot be:
+    # `round_id != ?` is not a predicate an index can serve, so this scans `session_results`
+    # (one row per session, four to a round) across every season the league has ever run.
+    # `profile_id IN (...)` keeps that scan proportional to the round rather than the history.
+    to_ask = sorted(candidates - raced_here)
+    raced_elsewhere: set[int] = set()
+    if to_ask:
+        marks = ", ".join("?" for _ in to_ask)
+        cursor = await db.execute(
+            f"SELECT DISTINCT profile_id FROM ({_RACED_A_ROUND_SQL}) "  # noqa: S608
+            f"WHERE round_id != ? AND profile_id IN ({marks})",
+            (round_id, *to_ask),
+        )
+        raced_elsewhere = {r["profile_id"] for r in await cursor.fetchall()}
+
+    for profile_id in sorted(candidates):
+        should_be_former = profile_id in raced_here or profile_id in raced_elsewhere
+        await db.execute(
+            "UPDATE driver_profiles SET former_driver = ? WHERE id = ? AND former_driver != ?",
+            (int(should_be_former), profile_id, int(should_be_former)),
+        )
+
+
 async def _post_appeals_prompt(state, guild, bot, db_path: str) -> bool:
     """Open the appeals stage in the channel the report stage ran in.
 
@@ -1149,6 +1274,11 @@ async def finalize_appeals_review(
                     f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
                     (RoundStatus.FINAL.value, round_id),
                 )
+                # The round's results are final as of the line above, so this is the moment its
+                # drivers become former drivers (#216) — in the same transaction, because a
+                # round that is FINAL with nobody marked is a season-end deletion of a profile
+                # its results point at.
+                await recompute_former_drivers_for_round(db, round_id)
                 await db.commit()
 
             # This is the only place a round becomes finished, and so the only place a division
@@ -1471,11 +1601,10 @@ async def _save_session_result_in_tx(
                 row["driver_user_id"], db
             )
         _profile_id_map[row["driver_user_id"]] = driver_profile_id
-        if driver_profile_id is not None:
-            await db.execute(
-                "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
-                (driver_profile_id,),
-            )
+    # **Submitting a result marks nobody a former driver** (#216). The round is still awaiting
+    # its verdicts, so this classification is provisional: a driver in it may yet be taken out
+    # by a resubmission or an appeal. The flag is set from the round's *final* results, by
+    # `recompute_former_drivers_for_round`, at the moment the round becomes FINAL.
     await _insert_new_tables_in_tx(db, session_result_id, session_type, driver_rows, _profile_id_map)
     return session_result_id
 
@@ -2049,16 +2178,14 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot=None) -> b
                     session_result_id,
                 ),
             )
-        # A driver stage one made a former driver is one no longer — unless a result of theirs
-        # stands anywhere once the round is back, another division's included.
-        for profile_id in snapshot.get("marked_former", []):
-            await db.execute(
-                "UPDATE driver_profiles SET former_driver = 0 WHERE id = ? "
-                "AND NOT EXISTS (SELECT 1 FROM race_session_results WHERE driver_profile_id = ?) "
-                "AND NOT EXISTS "
-                "(SELECT 1 FROM qualifying_session_results WHERE driver_profile_id = ?)",
-                (profile_id, profile_id, profile_id),
-            )
+        # The flag follows the results back (#216). Stage one marks nobody now, so in the
+        # ordinary case this finds nothing to do; it runs all the same, because the round's
+        # rows have just been restored and the flag is defined by them. `profiles_before`
+        # names anyone the abandoned amendment had struck out, who is in no result to be
+        # found by until the restore above puts them back.
+        await recompute_former_drivers_for_round(
+            db, round_id, also_consider=snapshot.get("profiles_before", [])
+        )
         if "pardons" in snapshot:
             await db.execute(
                 "DELETE FROM attendance_pardons WHERE attendance_id IN "
@@ -2185,6 +2312,34 @@ async def _claim_amendment(db_path: str, round_id: int) -> str | None:
         )
         await db.commit()
     return row["expires_at"] if cursor.rowcount == 1 else None
+
+
+async def _recompute_former_drivers_after_amendment(db_path: str, round_id: int) -> None:
+    """Settle the former-driver flag once an amendment commits (#216).
+
+    Reads ``profiles_before`` from the snapshot — the profiles the round held before stage one
+    rewrote it — and hands them to :func:`recompute_former_drivers_for_round` as candidates to
+    reconsider alongside the drivers the round now holds. Without them a driver the amendment
+    struck out is in no result to be found by, and their flag would stand for ever on a round
+    they are no longer in.
+
+    Must run before :func:`_release_amendment`, which drops the snapshot this reads.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT pre_amendment_state FROM round_amend_channels WHERE round_id = ?",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+        profiles_before: list[int] = []
+        if row is not None and row["pre_amendment_state"]:
+            profiles_before = _json.loads(row["pre_amendment_state"]).get(
+                "profiles_before", []
+            )
+        await recompute_former_drivers_for_round(
+            db, round_id, also_consider=profiles_before
+        )
+        await db.commit()
 
 
 async def _rearm_amendment(db_path: str, round_id: int, deadline: str) -> None:
@@ -2478,6 +2633,12 @@ async def _approve_amendment_appeals(interaction, state) -> None:
         )
         if await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
             await _rewrite_round_pardons(db_path, round_id, state.staged_pardons)
+        # **The amendment's own settling of the former-driver flag** (#216), and the one path
+        # that can take a flag *down*: an amendment may strike a driver from the round, or
+        # correct them to a did-not-start, leaving them no longer having raced it. Run before
+        # the release, because the snapshot it reads is what the release destroys, and inside
+        # the `try`, so a failure reverts with everything else.
+        await _recompute_former_drivers_after_amendment(db_path, round_id)
     except Exception as exc:  # noqa: BLE001 — undone, and the manager told
         log.exception("amendment: the appeal stage of round %s failed", round_id)
         await _abandon_failed_amendment(
@@ -2809,21 +2970,25 @@ async def amend_round_results(
             )
         season_id: int | None = season_row["season_id"] if season_row else None
 
-        marked_former: list[int] = []
+        # **Who the round held before the rewrite goes into the snapshot** (#216), read here
+        # because the next lines delete those rows. A driver an amendment strikes out entirely
+        # is afterwards in no result at all, so nothing would find them to reconsider their
+        # former-driver flag — which was the "never cleared" half of #216. Stage three passes
+        # this list to `recompute_former_drivers_for_round` as `also_consider`.
+        cursor = await db.execute(_PROFILES_IN_ROUND_SQL, (round_id, round_id))
+        profiles_before = sorted({r["profile_id"] for r in await cursor.fetchall()})
+
         for session in sessions:
             written.append(
                 (
                     await _write_amended_session_in_tx(
                         db, round_id, division_id, session, amended_by, submitted_at,
-                        has_season=season_row is not None, marked_former=marked_former,
+                        has_season=season_row is not None,
                     ),
                     session,
                 )
             )
-        # **Who this made a former driver goes into the snapshot** (#345), in the same
-        # transaction, so that a revert can unmark a driver pasted in by mistake. The flag is
-        # otherwise only ever raised, and the snapshot was taken before anyone was pasted.
-        if marked_former:
+        if profiles_before:
             cursor = await db.execute(
                 "SELECT pre_amendment_state FROM round_amend_channels WHERE round_id = ?",
                 (round_id,),
@@ -2831,7 +2996,7 @@ async def amend_round_results(
             snapshot_row = await cursor.fetchone()
             if snapshot_row is not None and snapshot_row["pre_amendment_state"]:
                 snapshot = _json.loads(snapshot_row["pre_amendment_state"])
-                snapshot["marked_former"] = marked_former
+                snapshot["profiles_before"] = profiles_before
                 await db.execute(
                     "UPDATE round_amend_channels SET pre_amendment_state = ? WHERE round_id = ?",
                     (_json.dumps(snapshot), round_id),
@@ -2886,13 +3051,9 @@ async def _write_amended_session_in_tx(
     submitted_at: str,
     *,
     has_season: bool,
-    marked_former: list[int] | None = None,
 ) -> int:
     """Replace one session's driver rows with its corrected classification, inside the caller's
     transaction, and return the session's ``session_results`` id.
-
-    *marked_former* collects the profiles this write made former drivers, for a revert to
-    unmark (#345).
 
     **Nothing is superseded here, and nothing keeps the classification being replaced.** The
     header is updated in place and the driver rows deleted outright, then re-inserted from the
@@ -2969,13 +3130,11 @@ async def _write_amended_session_in_tx(
             "fastest_lap": _get(dr, "fastest_lap"),
             "ingame_penalties": _get(dr, "ingame_penalties"),
         })
-        if drv_profile_id is not None:
-            marking = await db.execute(
-                "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
-                (drv_profile_id,),
-            )
-            if marked_former is not None and marking.rowcount == 1:
-                marked_former.append(drv_profile_id)
+    # **The former-driver flag is not touched here** (#216). Stage one writes the corrected
+    # classification but publishes nothing and may yet be reverted, and an amendment can take a
+    # driver *out* of a round as readily as put one in — so the flag is recomputed from the
+    # round's results as a whole, by `recompute_former_drivers_for_round`, once stage three
+    # commits the amendment. Marking row by row could only ever raise it.
     await _insert_new_tables_in_tx(
         db, session_result_id, session_type, rows_normalised, profile_map
     )

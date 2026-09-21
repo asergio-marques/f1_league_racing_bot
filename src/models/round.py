@@ -54,6 +54,17 @@ ROUND_AWAITING_RESULTS_MODULE = frozenset({
     RoundStatus.AWAITING_APPEAL_VERDICTS.value,
 })
 
+#: The states a round was *raced* in but whose verdicts are still open. These are exactly the
+#: states ``ROUND_CANCELLABLE`` excludes and ``ROUND_TERMINAL`` has not yet reached: a round here
+#: has results entered, so cancelling a season may not call it off — "a cancellation shall never
+#: discard a result", and "a round further along shall keep its place and its results"
+#: (``core_specification.md``, Cancelling a season). Cancellation closes them as FINAL instead,
+#: which is what makes their results final and their drivers former drivers (#216).
+ROUND_RACED_AWAITING_VERDICTS = frozenset({
+    RoundStatus.AWAITING_REPORT_VERDICTS.value,
+    RoundStatus.AWAITING_APPEAL_VERDICTS.value,
+})
+
 
 @dataclass
 class Round:
