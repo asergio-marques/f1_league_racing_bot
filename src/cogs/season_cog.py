@@ -3011,6 +3011,23 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        # **Not while a round is being amended** (#345, decided 2026-09-21). Completing posts
+        # each division's final classification from the database, which holds an open
+        # amendment's corrections before they are approved. Refused before anything else runs,
+        # so that a refusal leaves the season exactly as it was.
+        from services.result_submission_service import open_amendment_in_season
+
+        held = await open_amendment_in_season(self.bot.db_path, season.id)
+        if held is not None:
+            await interaction.response.send_message(
+                f"\u274c Cannot complete season — round {held['round_number']} of "
+                f"**{held['division_name']}** is being amended in <#{held['channel_id']}>. "
+                "Finish or cancel it first: completing posts every division's final "
+                "classification, which would carry its corrections before they are approved.",
+                ephemeral=True,
+            )
+            return
+
         # Bring each division's stored status back in step with its rounds before reading it.
         # The status is written when a round is finalised or cancelled, but this gate is the one
         # place a stale row would strand a league with no way forward, so it is worth the reread.
