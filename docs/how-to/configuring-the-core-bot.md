@@ -56,7 +56,7 @@ Three things have to be done on that computer, by hand, before any command in th
 
 **Invite it to your league's server, and to no other.** `/bot init` claims the server it runs in. On any other server the bot refuses every command, and the computer running it logs a warning for as long as it sits in more than one — see [One bot, one server](../../README.md#one-bot-one-server).
 
-**Invite it with the right permissions.** All of them listed under [Required Permissions](../../README.md#required-permissions) are genuinely used, and the two worth checking twice are **Manage Roles** — the bot cannot place a driver without it — and **Mention @everyone, @here, and All Roles**, which it needs to ping a division role even though it never pings everyone.
+**Invite it with the right permissions.** All of them listed under [Required Permissions](../../README.md#required-permissions) are genuinely used, and the two worth checking twice are **Manage Roles** — the bot cannot place a driver without it — and **Mention @everyone, @here, and All Roles**, which it needs to ping a division role, and the interaction role when a round's results are due, even though it never pings everyone.
 
 > **The bot's own role must sit above the roles it hands out.** Discord will not let it grant a role positioned above its own, whatever permissions it has. Drag the bot's role up your server's role list before you start assigning drivers.
 
