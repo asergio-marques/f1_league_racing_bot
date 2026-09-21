@@ -46,6 +46,7 @@ import services.track_service as track_service
 from services.season_service import SeasonImmutableError, validate_division_name
 from utils.autocomplete import bounded_autocomplete
 from utils.batch_notice import batch_notice
+from utils.input_validator import parse_datetime
 from utils.channel_guard import (
     is_league_admin,
     is_league_manager,
@@ -4430,9 +4431,8 @@ class SeasonCog(commands.Cog):
                 return
             track_name = _resolved
 
-        try:
-            sched = datetime.fromisoformat(scheduled_at)
-        except ValueError:
+        sched = parse_datetime(scheduled_at)
+        if sched is None:
             await interaction.followup.send(
                 "\u274c Invalid datetime. Use ISO format: `YYYY-MM-DDTHH:MM:SS`",
                 ephemeral=True,
@@ -4649,9 +4649,8 @@ class SeasonCog(commands.Cog):
 
             new_dt = ...
             if scheduled_at:
-                try:
-                    new_dt = datetime.fromisoformat(scheduled_at)
-                except ValueError:
+                new_dt = parse_datetime(scheduled_at)
+                if new_dt is None:
                     await interaction.followup.send(
                         "\u274c Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
                         ephemeral=True,
@@ -4758,9 +4757,8 @@ class SeasonCog(commands.Cog):
             amendments.append(("track_name", _resolved))
 
         if scheduled_at:
-            try:
-                new_dt = datetime.fromisoformat(scheduled_at)
-            except ValueError:
+            new_dt = parse_datetime(scheduled_at)
+            if new_dt is None:
                 await interaction.followup.send(
                     "\u274c Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
                     ephemeral=True,

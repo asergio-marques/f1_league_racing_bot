@@ -361,3 +361,12 @@ def test_an_external_entity_is_not_resolved():
 
     rendered = repr(divisions) + repr(errors)
     assert "root:" not in rendered
+
+
+def test_a_pasted_time_given_with_a_zone_is_stored_as_utc():
+    """By the shared rule (#362), as the XML import already converted one."""
+    rounds, errors = parse_bulk_round_lines("2026-06-14T20:00+02:00, Normal, 14")
+
+    assert errors == []
+    assert rounds[0].scheduled_at == datetime(2026, 6, 14, 18, 0)
+    assert rounds[0].scheduled_at.tzinfo is None

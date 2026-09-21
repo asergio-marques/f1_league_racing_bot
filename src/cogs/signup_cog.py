@@ -35,6 +35,7 @@ from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from services import track_service
+from utils.input_validator import parse_datetime
 from utils.time_parsing import parse_time_of_day
 from utils.channel_guard import league_manager_only
 from utils.league_server import LeagueView, is_foreign_guild
@@ -92,18 +93,16 @@ def _parse_close_time(
     `/signup open` deliberately when the close-time group was added, on the condition that
     the two share this function (decided 2026-09-15, issue #125).
     """
-    try:
-        parsed = datetime.fromisoformat(raw.strip())
-    except ValueError:
+    moment = parse_datetime(raw)
+    if moment is None:
         return None, (
             "❌ `close_time` is not a valid ISO 8601 datetime "
             "(e.g. `2025-06-15T20:00:00`)."
         )
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+    parsed = moment.replace(tzinfo=timezone.utc)
     if parsed <= (now if now is not None else datetime.now(timezone.utc)):
         return None, "❌ `close_time` must be a future datetime."
-    return parsed.astimezone(timezone.utc).isoformat(), None
+    return parsed.isoformat(), None
 
 
 def _format_slots(slots: list) -> str:
