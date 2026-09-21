@@ -542,7 +542,7 @@ async def test_an_emoji_in_the_justification_is_refused(tmp_path):
     db_path = await _make_db(tmp_path, name="emoji")
     state = _state(db_path)
 
-    interaction, _ = await _submit(state, justification="Power cut ⚡")
+    interaction, _ = await _submit(state, justification="Power cut \u26A1")
 
     assert state.staged_pardons == []
     assert "emoji" in _replied(interaction)

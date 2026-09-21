@@ -878,14 +878,14 @@ def test_a_server_s_own_emoji_is_refused(typed):
     "typed",
     [
         "\U0001F4A5",              # collision — beyond the BMP
-        "❌",                  # cross mark — an emoji by default below U+10000
-        "⭐",                  # star
-        "⚠️",            # warning, asked to be shown as an emoji
-        "❤️",            # heart, likewise
-        "\U0001F3CE️",        # racing car
+        "\u274C",                  # cross mark — an emoji by default below U+10000
+        "\u2B50",                  # star
+        "⚠\uFE0F",            # warning, asked to be shown as an emoji
+        "❤\uFE0F",            # heart, likewise
+        "\U0001F3CE\uFE0F",        # racing car
         "\U0001F44D\U0001F3FD",    # thumbs up with a skin tone
         "\U0001F1EC\U0001F1E7",    # a flag
-        "1️⃣",           # a keycap
+        "1\uFE0F\u20E3",           # a keycap
     ],
 )
 def test_a_standard_emoji_is_refused(typed):
