@@ -5698,7 +5698,7 @@ class SeasonCog(commands.Cog):
             from services.result_submission_service import revert_abandoned_amendment
 
             try:
-                await revert_abandoned_amendment(self.bot.db_path, rnd.id)
+                await revert_abandoned_amendment(self.bot.db_path, rnd.id, self.bot)
             except Exception:
                 stage_one_writing[0] = False
                 log.exception("amend: could not revert round %s after a failure", rnd.id)

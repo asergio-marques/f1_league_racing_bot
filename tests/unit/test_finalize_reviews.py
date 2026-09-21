@@ -1772,6 +1772,24 @@ async def test_the_appeal_stage_of_an_amendment_no_longer_open_changes_nothing(t
     stubs["close"].assert_not_awaited()
 
 
+async def test_a_committed_amendment_settles_a_full_tie_by_name(tmp_path):
+    """The standings the rebuild stores are ordered as it posts them, full ties by name
+    (decided 2026-09-15). The path this replaced recomputed with the names; stored by user id
+    instead, the next round's movement arrows show a driver moving who did not."""
+    db_path = await _make_db(tmp_path, name="amend_names")
+    state = _state(db_path, appeals=[_penalty()])
+    await _open_amendment(state)
+    names = {101: "Alice"}
+
+    with patch(
+        "services.results_post_service.standings_display_names",
+        new=AsyncMock(return_value=names),
+    ):
+        stubs = await _run(finalize_appeals_review, state)
+
+    assert stubs["cascade_standings"].await_args.args[3] == names
+
+
 async def test_a_committed_amendment_is_logged_as_result_amended(tmp_path):
     """The README tells a league to look for `RESULT_AMENDED`; the three-stage rebuild had
     stopped writing it anywhere, so a completed amendment left no record of itself."""

@@ -1955,7 +1955,7 @@ async def snapshot_before_amendment(
         await db.commit()
 
 
-async def revert_abandoned_amendment(db_path: str, round_id: int) -> bool:
+async def revert_abandoned_amendment(db_path: str, round_id: int, bot=None) -> bool:
     """Put a round back as it was before an amendment nobody approved.
 
     The round keeps the classification it raced rather than a half-amended one: for every
@@ -1976,6 +1976,9 @@ async def revert_abandoned_amendment(db_path: str, round_id: int) -> bool:
     recovery, and safe to call where no snapshot was taken — an amendment abandoned before stage
     one wrote has nothing to undo. The caller holds the claim on the amendment, where there is
     anybody else who could act on it; see :func:`_claim_amendment`.
+
+    *bot*, where given, is how the league's names are reached, so that the standings put back
+    settle a full tie as the posting does; see :func:`_standings_names`.
 
     Returns True where the round was put back, and False where there was nothing to revert.
     """
@@ -2060,13 +2063,34 @@ async def revert_abandoned_amendment(db_path: str, round_id: int) -> bool:
     if division_id is not None:
         try:
             await standings_service.cascade_recompute_from_round(
-                db_path, division_id, round_id
+                db_path, division_id, round_id,
+                await _standings_names(db_path, division_id, bot),
             )
         except Exception:  # noqa: BLE001 — the round is back; its standings are downstream
             log.exception(
                 "revert: round %s was put back but its standings were not recomputed", round_id
             )
     return True
+
+
+async def _standings_names(db_path: str, division_id: int, bot, guild=None):
+    """The names the division's standings are drawn under, or None — never raising.
+
+    A standings snapshot stores the order the league is shown, and a full tie is settled by name
+    there (decided 2026-09-15). Recomputed without the names, the tie is settled by user id, and
+    the next round's movement arrows — worked out from the stored order — then show a driver
+    moving who did not. Where the names cannot be had, the cascade runs on ids rather than not
+    at all.
+    """
+    from services.results_post_service import standings_display_names
+
+    try:
+        if guild is None and bot is not None:
+            guild = await league_guild(bot)
+        return await standings_display_names(db_path, division_id, guild, bot)
+    except Exception:  # noqa: BLE001 — ordering a tie by id is the lesser fault
+        log.exception("could not resolve the standings names of division %s", division_id)
+        return None
 
 
 async def _division_of_round(db_path: str, round_id: int) -> int | None:
@@ -2449,7 +2473,10 @@ async def _approve_amendment_appeals(interaction, state) -> None:
             _notice_channel,
             "\U0001f3a8 Rebuilding the division's results, standings and verdicts — one moment.",
         ):
-            await _ss.cascade_recompute_from_round(db_path, division_id, round_id)
+            await _ss.cascade_recompute_from_round(
+                db_path, division_id, round_id,
+                await _standings_names(db_path, division_id, bot, guild),
+            )
             if guild is None:
                 faults.append(
                     "The league's server could not be reached, so nothing was reposted."
@@ -2555,7 +2582,7 @@ async def _abandon_failed_amendment(interaction, state, *, stage: str, reason: s
     session_types = _amended_sessions(state)
 
     try:
-        reverted = await revert_abandoned_amendment(db_path, round_id)
+        reverted = await revert_abandoned_amendment(db_path, round_id, state.bot)
     except Exception:  # noqa: BLE001 — left for the sweep, with the snapshot intact
         log.exception("amendment: could not revert round %s after a failed stage", round_id)
         await _rearm_amendment(db_path, round_id, datetime.now(timezone.utc).isoformat())
@@ -2602,7 +2629,7 @@ async def cancel_amendment(bot, round_id: int, *, cancelled_by) -> bool:
     if deadline is None:
         return False
     try:
-        await revert_abandoned_amendment(db_path, round_id)
+        await revert_abandoned_amendment(db_path, round_id, bot)
     except Exception:
         await _rearm_amendment(db_path, round_id, datetime.now(timezone.utc).isoformat())
         raise
@@ -2784,7 +2811,9 @@ async def amend_round_results(
     # amendment reverted before it completed left that provisional posting standing.
     from services import standings_service  # lazy import
 
-    await standings_service.cascade_recompute_from_round(db_path, division_id, round_id)
+    await standings_service.cascade_recompute_from_round(
+        db_path, division_id, round_id, await _standings_names(db_path, division_id, bot)
+    )
 
     # **A stage, not an outcome.** The `RESULT_AMENDED` entry belongs to the final stage.
     rctx = await _get_round_context(db_path, round_id)
@@ -4973,7 +5002,7 @@ async def sweep_expired_amendments(bot, *, now: datetime | None = None) -> int:
         if taken is None:
             continue
         try:
-            await revert_abandoned_amendment(bot.db_path, round_id)
+            await revert_abandoned_amendment(bot.db_path, round_id, bot)
         except Exception:  # noqa: BLE001 — one stuck round must not stop the rest
             log.exception("sweep_expired_amendments: could not revert round %s", round_id)
             await _rearm_amendment(bot.db_path, round_id, taken)

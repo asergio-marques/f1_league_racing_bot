@@ -190,6 +190,44 @@ async def test_the_standings_are_recomputed_rather_than_restored(tmp_path):
     cascade.assert_awaited_once()
 
 
+async def test_the_standings_put_back_settle_a_full_tie_by_name(tmp_path):
+    """As the posting does (decided 2026-09-15). Recomputed by user id instead, the stored order
+    disagrees with the posted one, and the next round's movement arrows show a driver moving
+    who did not. The names are resolved through the bot, where the revert is handed one."""
+    db_path = await _db(tmp_path, "revert_names")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await _overwrite_the_classification(db_path)
+    names = {101: "Alice", 102: "Bob"}
+
+    with patch(
+        "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
+    ) as cascade, patch(
+        "services.results_post_service.standings_display_names",
+        new=AsyncMock(return_value=names),
+    ):
+        await revert_abandoned_amendment(db_path, ROUND_ID, _bot(db_path))
+
+    assert cascade.await_args.args[3] == names
+
+
+async def test_standings_names_that_cannot_be_had_still_leave_the_cascade_running(tmp_path):
+    """Ordering a full tie by id is the lesser fault; not recomputing at all is the greater."""
+    db_path = await _db(tmp_path, "revert_names_fail")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await _overwrite_the_classification(db_path)
+
+    with patch(
+        "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
+    ) as cascade, patch(
+        "services.results_post_service.standings_display_names",
+        new=AsyncMock(side_effect=RuntimeError("gateway")),
+    ):
+        await revert_abandoned_amendment(db_path, ROUND_ID, _bot(db_path))
+
+    cascade.assert_awaited_once()
+    assert cascade.await_args.args[3] is None
+
+
 async def test_the_snapshot_is_cleared_once_it_has_been_used(tmp_path):
     """A snapshot left behind would let a later sweep undo the round a second time."""
     db_path = await _db(tmp_path, "revert_clears")

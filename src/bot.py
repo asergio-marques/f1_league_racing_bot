@@ -1046,7 +1046,7 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
         try:
             reverted = (
                 False if already_closed
-                else await revert_abandoned_amendment(bot.db_path, round_id)
+                else await revert_abandoned_amendment(bot.db_path, round_id, bot)
             )
         except Exception:
             # The row keeps the snapshot, and a deadline of now hands it to the sweep, which

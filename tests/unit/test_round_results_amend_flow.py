@@ -703,14 +703,15 @@ async def test_a_failed_write_puts_back_what_it_had_written_before_tidying_up(tm
     there left the round half-amended with nothing able to undo it."""
     db_path = await _make_db(tmp_path, name="amend_fail_reverts")
     interaction = _interaction(_amend_channel(), message=_message())
+    cog = _make_cog(db_path)
 
     with patch(
         "services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(return_value=True),
     ) as revert:
-        await _amend(_make_cog(db_path), interaction, amend_error=RuntimeError("locked"))
+        await _amend(cog, interaction, amend_error=RuntimeError("locked"))
 
-    revert.assert_awaited_once_with(db_path, ROUND_ID)
+    revert.assert_awaited_once_with(db_path, ROUND_ID, cog.bot)
     assert await _amend_rows(db_path) == 0
 
 
