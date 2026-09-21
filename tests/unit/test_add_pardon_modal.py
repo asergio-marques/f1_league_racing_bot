@@ -506,3 +506,54 @@ async def test_the_same_pardon_for_another_driver_is_allowed(tmp_path):
     await _submit(state, pardon_type="NO_RSVP")
 
     assert len(state.staged_pardons) == 2
+
+
+# ---------------------------------------------------------------------------
+# A group mention in the justification (#204)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("typed", ["<@&987654321098765432> agreed", "@everyone agreed"])
+async def test_a_group_mention_in_the_justification_is_refused(tmp_path, typed):
+    """Refused as a penalty's texts are. The log channel it goes to notifies nobody, so this
+    is one rule for every text a steward types rather than a ping prevented."""
+    db_path = await _make_db(tmp_path, name="group_mention")
+    state = _state(db_path)
+
+    interaction, refresh = await _submit(state, justification=typed)
+
+    assert state.staged_pardons == []
+    assert "justification" in _replied(interaction)
+    state.bot.output_router.post_log.assert_not_awaited()
+    refresh.assert_not_awaited()
+
+
+async def test_a_driver_mention_in_the_justification_is_staged(tmp_path):
+    db_path = await _make_db(tmp_path, name="driver_mention")
+    state = _state(db_path)
+
+    await _submit(state, justification="Agreed with <@900000002> beforehand")
+
+    assert len(state.staged_pardons) == 1
+
+
+async def test_an_emoji_in_the_justification_is_refused(tmp_path):
+    """One rule for every text a steward types, though this one is only ever logged."""
+    db_path = await _make_db(tmp_path, name="emoji")
+    state = _state(db_path)
+
+    interaction, _ = await _submit(state, justification="Power cut \u26A1")
+
+    assert state.staged_pardons == []
+    assert "emoji" in _replied(interaction)
+    state.bot.output_router.post_log.assert_not_awaited()
+
+
+async def test_a_channel_mention_in_the_justification_is_refused(tmp_path):
+    db_path = await _make_db(tmp_path, name="channel_mention")
+    state = _state(db_path)
+
+    interaction, _ = await _submit(state, justification="Reported in <#123456789012345678>")
+
+    assert state.staged_pardons == []
+    assert "channel mention" in _replied(interaction)
