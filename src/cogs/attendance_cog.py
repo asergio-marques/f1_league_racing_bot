@@ -440,6 +440,27 @@ class AttendanceCog(commands.Cog):
             return
 
         db_path = self.bot.db_path  # type: ignore[attr-defined]
+
+        # **Not while a round of the division is being amended** (#345, decided 2026-09-21). The
+        # recalculation reads the results, which hold an open amendment's corrections before
+        # they are approved, and publishes the sheet and applies the sanctions it finds —
+        # neither of which a cancelled or lapsed amendment then takes back.
+        from services.result_submission_service import (
+            amendment_wait_text,
+            open_amendment_in_division,
+        )
+
+        held = await open_amendment_in_division(db_path, div.id)
+        if held is not None:
+            await interaction.followup.send(
+                f"\u23f8\ufe0f Round {held['round_number']} of **{div.name}** is being amended "
+                f"in <#{held['channel_id']}>, and its corrections are not approved yet, so its "
+                f"attendance cannot be recalculated until that ends — {amendment_wait_text()}. "
+                "Run this again then.",
+                ephemeral=True,
+            )
+            return
+
         async with get_connection(db_path) as db:
             cursor = await db.execute(
                 "SELECT id, status FROM rounds WHERE division_id = ? AND round_number = ?",
