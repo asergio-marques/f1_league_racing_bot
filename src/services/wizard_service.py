@@ -22,8 +22,7 @@ from apscheduler.triggers.date import DateTrigger
 from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupRecord, SignupWizardRecord, WizardState
-from utils.input_validator import SIGNUP_ANSWER, parse_time
-from utils.nationality_data import NATIONALITY_LOOKUP
+from utils.input_validator import SIGNUP_ANSWER, parse_nationality, parse_time
 from utils.results_formatter import render_lap_time
 
 if TYPE_CHECKING:
@@ -1128,7 +1127,7 @@ class WizardService:
     @staticmethod
     def _validate_nationality(raw: str) -> str | None:
         """Accept nationality adjective, country name, or 'other'; return canonical Title-Case string."""
-        return NATIONALITY_LOOKUP.get(raw.strip().lower())
+        return parse_nationality(raw)
 
     _PLATFORMS = ["Steam", "EA", "Xbox", "PlayStation"]
     _DRIVER_TYPES = ["Full-Time Driver", "Reserve Driver"]

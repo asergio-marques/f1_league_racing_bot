@@ -34,6 +34,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 
+from utils.nationality_data import NATIONALITY_LOOKUP
+
 
 class Rule(Enum):
     """What a free text may not hold."""
@@ -408,4 +410,17 @@ def parse_datetime(text: str | None) -> datetime | None:
     if moment.tzinfo is not None:
         moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
     return moment
+
+
+# ── Formats: a nationality ────────────────────────────────────────────────
+
+
+def parse_nationality(text: str | None) -> str | None:
+    """The canonical nationality *text* names, or None where it names none.
+
+    An adjective (``british``) or a country (``United Kingdom``), in any case, or ``other``,
+    looked up in ``NATIONALITY_LOOKUP``. The signup wizard and a test driver read it alike, so
+    a mock driver's flag is resolved exactly as a real one's is.
+    """
+    return NATIONALITY_LOOKUP.get((text or "").strip().lower())
 

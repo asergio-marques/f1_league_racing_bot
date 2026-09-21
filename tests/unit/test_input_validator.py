@@ -25,6 +25,7 @@ from utils.input_validator import (  # noqa: E402
     parse_datetime,
     parse_gap,
     parse_lap_gap,
+    parse_nationality,
     parse_penalty_seconds,
     parse_role_mention,
     parse_time,
@@ -468,4 +469,20 @@ def test_parse_datetime_converts_a_zone_to_utc(typed):
 @pytest.mark.parametrize("typed", ["", None, "tomorrow", "14/06/2026 18:00", "2026-13-01T00:00"])
 def test_parse_datetime_refuses_anything_else(typed):
     assert parse_datetime(typed) is None
+
+
+# ── Formats: a nationality ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "typed, canonical",
+    [("british", "British"), ("  United Kingdom ", "British"), ("OTHER", "Other")],
+)
+def test_parse_nationality_reads_an_adjective_a_country_or_other(typed, canonical):
+    assert parse_nationality(typed) == canonical
+
+
+@pytest.mark.parametrize("typed", ["GB", "Narnian", "", None])
+def test_parse_nationality_refuses_anything_else(typed):
+    assert parse_nationality(typed) is None
 
