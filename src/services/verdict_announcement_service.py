@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
+from datetime import datetime, timezone
 import re
 from pathlib import Path
 
@@ -233,10 +234,11 @@ def _banner_once(bot, channel, ctx: dict):
     """
     posted = False
 
-    async def post() -> None:
+    async def post():
+        """Returns the message the banner was posted as, or None."""
         nonlocal posted
         if posted:
-            return
+            return None
         posted = True  # set before the attempt: one try per batch, whatever it returns
         try:
             from services import image_verdict_banner_post
@@ -249,9 +251,26 @@ def _banner_once(bot, channel, ctx: dict):
                 race_name=ctx.get("race_name"),
                 country_name=ctx.get("country_name"),
             )
-            await image_verdict_banner_post.try_post(bot, channel, drawing)
+            return await image_verdict_banner_post.try_post(bot, channel, drawing)
         except Exception:
             log.exception("verdict banner: could not head the batch")
+        return None
+
+    return post
+
+
+def _banner_once_recorded(bot, channel, ctx, db_path: str, round_id: int):
+    """`_banner_once`, recording the message it posts (#345).
+
+    What a poster falls back to when no shared banner was handed to it. The banner is recorded
+    however it was posted, or an amendment would take a run's cards down and leave the header
+    that was put up by this path standing over the empty space.
+    """
+    once = _banner_once(bot, channel, ctx)
+
+    async def post() -> None:
+        message = await once()
+        await _record_banner(db_path, round_id, getattr(channel, "id", None), message)
 
     return post
 
@@ -284,11 +303,66 @@ def banner_for_round(bot, db_path: str, round_id: int):
             channel = bot.get_channel(int(channel_id_raw))
             if channel is None:
                 return
-            await _banner_once(bot, channel, ctx)()
+            message = await _banner_once(bot, channel, ctx)()
+            await _record_banner(db_path, round_id, channel_id_raw, message)
         except Exception:
             log.exception("verdict banner: could not head round %s", round_id)
 
     return post
+
+
+async def _record_banner(db_path: str, round_id: int, channel_id, message) -> None:
+    """Note which message heads a round's run of verdicts, so it can be taken down with them.
+
+    A banner belongs to no verdict record — it is a message of its own above the cards — so
+    without this an amendment removed a round's announcements and left the header standing over
+    the empty space, then posted a fresh one below it, once per amendment (#345).
+    """
+    message_id = getattr(message, "id", None)
+    if message_id is None:
+        return
+    try:
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO verdict_banner_messages "
+                "(round_id, channel_id, message_id, posted_at) VALUES (?, ?, ?, ?)",
+                (round_id, str(channel_id), str(message_id),
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001 — the banner went out; only the record of it failed
+        log.exception("could not record the banner of round %s", round_id)
+
+
+async def _banners_of(db_path: str, round_id: int) -> list[tuple[str, int]]:
+    """Every banner recorded for *round_id*, as (channel id, message id), oldest first."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT channel_id, message_id FROM verdict_banner_messages "
+            "WHERE round_id = ? ORDER BY id",
+            (round_id,),
+        )
+        rows = await cursor.fetchall()
+    found: list[tuple[str, int]] = []
+    for row in rows:
+        try:
+            found.append((row["channel_id"], int(row["message_id"])))
+        except (TypeError, ValueError):
+            continue
+    return found
+
+
+async def _forget_banners(db_path: str, message_ids: list[int]) -> None:
+    """Drop the records of banners that have been taken down."""
+    if not message_ids:
+        return
+    placeholders = ", ".join("?" for _ in message_ids)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            f"DELETE FROM verdict_banner_messages WHERE message_id IN ({placeholders})",  # noqa: S608
+            [str(message_id) for message_id in message_ids],
+        )
+        await db.commit()
 
 
 async def _get_result_context(db_path: str, race_result_id: int | None, qual_result_id: int | None) -> dict:
@@ -576,7 +650,9 @@ async def post_penalty_announcements(
 
     season_number = ctx["season_number"]
     KIND = VerdictKind.PENALTY
-    head_the_batch = head or _banner_once(bot, target_channel, ctx)
+    head_the_batch = head or _banner_once_recorded(
+        bot, target_channel, ctx, db_path, round_id
+    )
 
     for record in applied_penalties:
         # Named before the try so a failure below can still say whose verdict it was, but
@@ -734,7 +810,9 @@ async def post_appeal_announcements(
 
     season_number = ctx["season_number"]
     KIND = VerdictKind.APPEAL
-    head_the_batch = head or _banner_once(bot, target_channel, ctx)
+    head_the_batch = head or _banner_once_recorded(
+        bot, target_channel, ctx, db_path, round_id
+    )
 
     for record in applied_corrections:
         # Named before the try so a failure below can still say whose verdict it was, but
@@ -1038,8 +1116,31 @@ async def _records_for_round(db_path: str, round_id: int, table: str) -> list[di
     return sorted(rows, key=lambda r: r["id"])
 
 
+async def banners_from_round(
+    db_path: str, division_id: int, from_round_id: int
+) -> list[tuple[int, str, int]]:
+    """Every verdict banner standing over the rounds from *from_round_id* forward.
+
+    Returned as ``(round id, channel id, message id)``: the round, because only the rounds a
+    replay actually re-announces lose their banner.
+
+    Read by a rebuild **before** it starts, because the rebuild posts banners of its own on the
+    way: the attendance sanctions it enforces head themselves, and a capture taken afterwards
+    would delete the banner the sanctions had just been posted under (#345).
+    """
+    found: list[tuple[int, str, int]] = []
+    for rnd in await _rounds_from(db_path, division_id, from_round_id):
+        found.extend(
+            (rnd["round_id"], channel_id, message_id)
+            for channel_id, message_id in await _banners_of(db_path, rnd["round_id"])
+        )
+    return found
+
+
 async def republish_verdicts_from_round(
-    bot, db_path: str, division_id: int, from_round_id: int, state_factory
+    bot, db_path: str, division_id: int, from_round_id: int, state_factory,
+    superseded_banners: list[tuple[int, str, int]] | None = None,
+    rebuilt: list[int] | None = None,
 ) -> list[str]:
     """Announce every verdict of every round from *from_round_id* forward, in order.
 

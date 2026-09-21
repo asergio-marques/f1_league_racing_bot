@@ -429,6 +429,20 @@ CREATE TABLE "appeal_records" (
     announcement_message_ids TEXT
 );
 
+-- verdict_banner_messages: the banner that heads a round's run of verdict announcements.
+-- A banner is a message of its own, above the cards, and belongs to no verdict record — so
+-- an amendment re-announcing a round could take its verdicts down and not the banner over
+-- them, leaving a header above empty space and posting a fresh one below (#345). One row per
+-- banner posted; the replay deletes the round's and records what it posts in their place.
+CREATE TABLE verdict_banner_messages (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    round_id   INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    channel_id TEXT    NOT NULL,
+    message_id TEXT    NOT NULL,
+    posted_at  TEXT    NOT NULL
+);
+CREATE INDEX idx_verdict_banner_round ON verdict_banner_messages(round_id);
+
 -- attendance_pardons
 CREATE TABLE "attendance_pardons" (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,

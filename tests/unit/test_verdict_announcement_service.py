@@ -975,3 +975,92 @@ async def test_a_record_with_no_id_is_announced_all_the_same(tmp_path):
 
     assert faults == []
     assert len(channel.sent) == 1
+
+
+async def test_the_banner_records_the_message_it_was_posted_as(tmp_path):
+    """**So an amendment can take it down with the run it heads** (#345). A banner belongs to no
+    verdict record, so without this the replay removed a round's announcements and left the
+    header standing over the empty space, then posted a fresh one below it."""
+    import os
+
+    from db.database import get_connection, run_migrations
+    from services import image_verdict_banner_post, verdict_announcement_service as vas
+
+    db_path = os.path.join(str(tmp_path), "banner_record.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 3, '2026-01-01', 'ACTIVE')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (1, 1, 'Pro', 1, 555)"
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
+            "VALUES (7, 1, 2, '2026-02-01T18:00:00+00:00', 'NORMAL', 'FINAL')"
+        )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, penalty_channel_id) "
+            "VALUES (1, 4242)"
+        )
+        await db.commit()
+
+    bot = MagicMock()
+    bot.get_channel = MagicMock(return_value=MagicMock())
+    with patch.object(
+        image_verdict_banner_post, "try_post", new=AsyncMock(return_value=MagicMock(id=9911))
+    ), patch.object(
+        image_verdict_banner_post, "build_drawing", new=MagicMock()
+    ):
+        await vas.banner_for_round(bot, db_path, 7)()
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT round_id, channel_id, message_id FROM verdict_banner_messages"
+        )
+        assert [tuple(r) for r in await cursor.fetchall()] == [(7, "4242", "9911")]
+
+
+async def test_a_batch_that_heads_itself_records_its_banner(tmp_path):
+    """**The fallback banner was invisible to the replay** (#345).
+
+    A poster handed no banner posts one of its own — the appeals stage of a first pass, an
+    attendance sanction firing alone. Unrecorded, an amendment took that run's cards down and
+    left the header standing over the empty space, then posted a fresh one below it.
+    """
+    import os
+
+    from db.database import get_connection, run_migrations
+    from services import image_verdict_banner_post, verdict_announcement_service as vas
+
+    db_path = os.path.join(str(tmp_path), "banner_fallback.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 3, '2026-01-01', 'ACTIVE')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (1, 1, 'Pro', 1, 555)"
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
+            "VALUES (7, 1, 2, '2026-02-01T18:00:00+00:00', 'NORMAL', 'FINAL')"
+        )
+        await db.commit()
+
+    channel = MagicMock()
+    channel.id = 4242
+    with patch.object(
+        image_verdict_banner_post, "try_post", new=AsyncMock(return_value=MagicMock(id=9912))
+    ), patch.object(image_verdict_banner_post, "build_drawing", new=MagicMock()):
+        await vas._banner_once_recorded(
+            MagicMock(), channel, {"division_name": "Pro"}, db_path, 7
+        )()
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT message_id FROM verdict_banner_messages")
+        assert [r[0] for r in await cursor.fetchall()] == ["9912"]

@@ -199,8 +199,12 @@ async def report_notices(bot, what: str, notices) -> None:
     await _report_notices(bot, what, notices)
 
 
-async def try_post(bot, channel, drawing: VerdictBannerDrawing) -> bool:
-    """Post the banner above a batch of verdicts. Returns whether anything was posted.
+async def try_post(bot, channel, drawing: VerdictBannerDrawing):
+    """Post the banner above a batch of verdicts. Returns the message sent, or None.
+
+    The message rather than a flag, so the caller can record which message carries the banner
+    and take it down when the run beneath it is replaced (#345). A banner belongs to no verdict
+    record, so nothing else knows where it is.
 
     Never raises. A banner is a header, and a header failing must not cost a league the
     decisions it heads, so every fault on this path is logged and swallowed.
@@ -208,7 +212,7 @@ async def try_post(bot, channel, drawing: VerdictBannerDrawing) -> bool:
     import discord
 
     if not await banner_enabled(bot):
-        return False
+        return None
 
     subject = describe(
         division_name=drawing.division_name,
@@ -229,15 +233,13 @@ async def try_post(bot, channel, drawing: VerdictBannerDrawing) -> bool:
                 await report(bot, subject, render.problem)
             #  The aspect is on and the picture could not be drawn, so the batch is headed
             #  in words rather than not at all.
-            await channel.send(heading_text(drawing))
-            return True
+            return await channel.send(heading_text(drawing))
 
         attachment = discord.File(str(render.png), filename=render.png.name)
-        await channel.send(file=attachment)
-        return True
+        return await channel.send(file=attachment)
     except Exception:
         log.exception("verdict banner: could not post")
-        return False
+        return None
     finally:
         if render is not None:
             discard(render, attachment)
