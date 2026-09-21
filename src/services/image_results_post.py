@@ -29,6 +29,7 @@ import discord
 
 from db.database import get_connection
 from models.image_module import PostingOrigin
+from services.image_lineup_service import resolve_driver_name
 
 log = logging.getLogger(__name__)
 
@@ -187,11 +188,17 @@ async def _driver_names(
             except (discord.NotFound, discord.HTTPException):
                 member = None
 
-        candidates = [member.display_name if member is not None else None]
-        candidates.extend(recorded.get(user_id, (None, None, None)))
-        candidates.append(str(user_id))
-        names[user_id] = next(
-            (value for value in candidates if value and str(value).strip()), str(user_id)
+        signup_display_name, signup_username, test_display_name = recorded.get(
+            user_id, (None, None, None)
+        )
+        # One chain, the lineup's, rather than a copy of it: what a name is cleaned of before it
+        # is drawn is decided there, once, for every graphic.
+        names[user_id] = resolve_driver_name(
+            discord_user_id=user_id,
+            display_name=member.display_name if member is not None else None,
+            signup_display_name=signup_display_name,
+            signup_username=signup_username,
+            test_display_name=test_display_name,
         )
     return names
 
