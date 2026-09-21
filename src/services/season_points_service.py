@@ -297,6 +297,40 @@ def _collapse_trailing_zeros(rows: list[tuple[int, int]]) -> list[tuple[str, int
     return result
 
 
+async def list_season_configs_with_sessions(
+    db_path: str,
+    season_id: int,
+) -> list[tuple[str, list[SessionType]]]:
+    """Every configuration this season holds, with the session types that carry entries.
+
+    The season's own store, not the server's. The two diverge the moment
+    ``snapshot_configs_to_season`` copies the server's tables across: editing a server
+    configuration afterwards does not change what the season scores by. That divergence is
+    why ``/results config list`` makes the manager name the store rather than guessing one
+    (#200), and it is pinned by
+    ``test_list_configs_reads_the_season_store_after_snapshot_diverges``.
+
+    Reads ``season_points_links`` rather than ``season_points_entries`` alone, so a
+    configuration attached but never filled is reported as attached-and-empty rather than
+    vanishing — the same trap the server-side listing exists to expose. Shares
+    ``group_sessions_by_config`` with the server store so both scopes render identically.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT l.config_name AS config_name, e.session_type AS session_type "
+            "FROM season_points_links l "
+            "LEFT JOIN season_points_entries e "
+            "  ON e.config_name = l.config_name AND e.season_id = l.season_id "
+            "WHERE l.season_id = ? "
+            "GROUP BY l.config_name, e.session_type "
+            "ORDER BY l.config_name",
+            (season_id,),
+        )
+        rows = await cursor.fetchall()
+
+    return points_config_service.group_sessions_by_config(rows)
+
+
 async def get_season_config_names(db_path: str, season_id: int) -> list[str]:
     """Return all config names attached to the given season."""
     async with get_connection(db_path) as db:

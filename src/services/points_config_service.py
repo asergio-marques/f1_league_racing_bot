@@ -317,6 +317,60 @@ async def list_configs(db_path: str) -> list[PointsConfigStore]:
     ]
 
 
+async def list_configs_with_sessions(
+    db_path: str,
+) -> list[tuple[str, list[SessionType]]]:
+    """Every configuration the server holds, with the session types that carry entries.
+
+    A configuration created and never filled in looks identical to a complete one from the
+    outside, and snapshots into a season as empty points (#200). So the listing reports what
+    each one actually carries rather than its name alone, and a configuration with no entries
+    comes back with an empty list — present, but visibly empty — never absent.
+
+    One ``LEFT JOIN`` rather than a query per configuration: a server may hold many, and the
+    per-configuration form would cost a round trip each. The pairing is pinned by
+    ``test_list_configs_with_sessions_names_only_sessions_that_carry_entries``.
+
+    Ordered by name, and each session-type list in the running order of ``SessionType``, so a
+    manager reads the same list twice running whatever the database hands back.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT s.config_name AS config_name, e.session_type AS session_type "
+            "FROM points_config_store s "
+            "LEFT JOIN points_config_entries e ON e.config_id = s.id "
+            "GROUP BY s.config_name, e.session_type "
+            "ORDER BY s.config_name"
+        )
+        rows = await cursor.fetchall()
+
+    return group_sessions_by_config(rows)
+
+
+def group_sessions_by_config(rows) -> list[tuple[str, list[SessionType]]]:
+    """Fold ``(config_name, session_type)`` rows into one entry per configuration.
+
+    Shared by the server store and a season's own, so both scopes of
+    ``/results config list`` render through one formatter (#200). A NULL ``session_type`` is
+    the ``LEFT JOIN`` reporting a configuration with no entries, and yields an empty list.
+    """
+    grouped: dict[str, list[SessionType]] = {}
+    for row in rows:
+        name = row["config_name"]
+        sessions = grouped.setdefault(name, [])
+        raw = row["session_type"]
+        if raw is None:
+            continue
+        session = SessionType(raw)
+        if session not in sessions:
+            sessions.append(session)
+
+    return [
+        (name, sorted(sessions, key=lambda s: list(SessionType).index(s)))
+        for name, sessions in sorted(grouped.items())
+    ]
+
+
 async def xml_import_config(
     db_path: str,
     config_name: str,
