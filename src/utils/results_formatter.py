@@ -543,3 +543,46 @@ def format_config_view(
             lines.append(f"  FL bonus: {fl_pts} pts{limit_str}")
 
     return "\n".join(lines)
+
+
+def format_config_list(
+    scope_label: str,
+    rows: list[tuple[str, list[SessionType]]],
+) -> str:
+    """Render the points configurations a store holds, naming what each carries.
+
+    ``scope_label`` names the store read — the season's or the server's own — because
+    `/results config list` makes the manager choose between them and the reply has to say
+    which one answered (#200). ``rows`` is ``(config_name, session_types)`` as the two
+    listing services return it.
+
+    A configuration carrying no entries is called out rather than listed silently: it looks
+    identical to a complete one from the outside and snapshots into a season as empty
+    points, which is the trap the command exists to expose.
+
+    Reuses :func:`format_session_label` rather than carrying a second label map, so a
+    session reads the same here as on a results post.
+    """
+    if not rows:
+        return (
+            f"**Points configurations — {scope_label}**\n\n"
+            f"None yet. Create one with `/results config add`."
+        )
+
+    lines = [f"**Points configurations — {scope_label}**", ""]
+
+    for config_name, session_types in rows:
+        if session_types:
+            carried = ", ".join(
+                format_session_label(session_type) for session_type in session_types
+            )
+            lines.append(f"**{config_name}**")
+            lines.append(f"  {carried}")
+        else:
+            lines.append(f"**{config_name}** — ⚠️ no entries yet")
+
+    count = len(rows)
+    lines.append("")
+    lines.append(f"{count} configuration{'s' if count != 1 else ''}.")
+
+    return "\n".join(lines)
