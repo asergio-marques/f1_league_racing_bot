@@ -812,6 +812,114 @@ async def test_the_standings_id_is_cleared_before_its_replacement_is_posted(tmp_
 
 
 # ---------------------------------------------------------------------------
+# A failure part-way is undone, not merely survived (#345)
+# ---------------------------------------------------------------------------
+
+
+async def _results_ids(db_path) -> list:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT results_message_id, results_message_ids FROM session_results ORDER BY id"
+        )
+        return [(r[0], r[1]) for r in await cursor.fetchall()]
+
+
+async def test_a_failed_results_rebuild_takes_its_replacements_down_and_restores_the_ids(
+    tmp_path,
+):
+    """**Surviving the failure was not enough.** The originals were left standing, but their ids
+    had been cleared to make room for the replacements — so nothing recorded them any more and no
+    later repost could ever take them down, while the replacements already posted stood beside
+    them. The rule (Constitution XIV.8) is that the new messages go and the old are untouched."""
+    db_path = await _make_db(
+        tmp_path,
+        name="ptd_undo",
+        rounds=((1, "FINAL", "NORMAL"), (2, "FINAL", "NORMAL")),
+        sessions=(("FEATURE_RACE", "ACTIVE", 8801),),
+    )
+    deleted: list = []
+    posts = 0
+
+    async def _post(_db, session_result, *_a, **_kw):
+        nonlocal posts
+        posts += 1
+        if posts == 2:
+            raise RuntimeError("Discord said no")
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
+                "WHERE id = ?",
+                (9000 + posts, f"[{9000 + posts}]", session_result.id),
+            )
+            await db.commit()
+        return 9000 + posts
+
+    async def _delete(_channel, anchor, ids, **_kw):
+        deleted.append((anchor, ids))
+
+    with patch(
+        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+    ), patch(
+        "services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
+    ), patch(
+        "services.results_post_service.post_session_results",
+        new=AsyncMock(side_effect=_post),
+    ), pytest.raises(RuntimeError):
+        await repost_results_for_division(db_path, DIVISION_ID, _guild(), bot=MagicMock())
+
+    assert deleted == [(9001, [9001])], "only the replacement is taken down"
+    assert await _results_ids(db_path) == [(8801, None), (8801, None)]
+
+
+async def test_a_failed_standings_rebuild_takes_its_replacements_down_and_restores_the_ids(
+    tmp_path,
+):
+    db_path = await _make_db(
+        tmp_path,
+        name="std_ptd_undo",
+        rounds=((1, "FINAL", "NORMAL"), (2, "FINAL", "NORMAL")),
+    )
+    await _seed_standings_messages(db_path, (1, 2))
+    deleted: list = []
+    posts = 0
+
+    async def _post(_db, division_id, round_id, *_a, **_kw):
+        nonlocal posts
+        posts += 1
+        if posts == 2:
+            raise RuntimeError("Discord said no")
+        from services.results_post_service import _set_standings_message_id
+
+        await _set_standings_message_id(
+            db_path, division_id, round_id, 9000 + posts, message_ids=f"[{9000 + posts}]"
+        )
+
+    async def _delete(_channel, anchor, ids, **_kw):
+        deleted.append((anchor, ids))
+
+    with patch(
+        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+    ), patch(
+        "services.results_post_service.driver_standings_for_display",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.results_post_service.standings_service.compute_team_standings",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.results_post_service.post_standings", new=AsyncMock(side_effect=_post)
+    ), pytest.raises(RuntimeError):
+        await repost_standings_for_division(db_path, DIVISION_ID, _guild(), bot=MagicMock())
+
+    assert deleted == [(9001, [9001])], "only the replacement is taken down"
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT round_id, standings_message_id FROM driver_standings_snapshots "
+            "ORDER BY round_id"
+        )
+        assert [tuple(r) for r in await cursor.fetchall()] == [(1, 7701), (2, 7702)]
+
+
+# ---------------------------------------------------------------------------
 # The stored standings id survives a change of leader (#345)
 # ---------------------------------------------------------------------------
 

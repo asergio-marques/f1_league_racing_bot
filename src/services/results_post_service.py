@@ -795,7 +795,7 @@ async def post_standings(
 
 async def _forget_standings_messages(
     db_path: str, division_id: int, round_id: int
-) -> list[tuple[int, list[int] | None]]:
+) -> list[tuple[str, int, list[int] | None]]:
     """Forget a round's standings messages and hand them back to be deleted later.
 
     The reading half of :func:`_clear_standings_messages`, split out for the produce-then-
@@ -803,9 +803,10 @@ async def _forget_standings_messages(
     posted, so :func:`post_standings` inserts rather than editing the message it replaces —
     but the messages themselves must not be destroyed until every replacement is up.
 
-    Returns ``(anchor id, chunk list)`` per championship that had one, in a stable order.
+    Returns ``(championship, anchor id, chunk list)`` per championship that had one, in a
+    stable order — the championship so that a rebuild which fails can put each id back.
     """
-    found: list[tuple[int, list[int] | None]] = []
+    found: list[tuple[str, int, list[int] | None]] = []
     for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS):
         existing_id = await _get_standings_message_id(
             db_path, division_id, round_id, championship
@@ -814,6 +815,7 @@ async def _forget_standings_messages(
             continue
         found.append(
             (
+                championship,
                 existing_id,
                 await _get_standings_message_ids(
                     db_path, division_id, round_id, championship
@@ -1693,8 +1695,9 @@ async def repost_results_for_division(
 
     Two things follow. The channel briefly carries **both** copies, the new set beneath the old,
     for as long as the rebuild takes; that is accepted, and it resolves itself. And a failure
-    before the deletions raises with the originals untouched, so the caller can take the new
-    messages down again and leave the league exactly what it had.
+    before the deletions takes down every replacement already posted, puts back the ids of the
+    postings they were to replace — still standing, nothing having been deleted — and raises,
+    so the league is left exactly the channel it had.
 
     Returns one of three status strings:
     - ``"ok"``         — results reposted successfully
@@ -1751,7 +1754,34 @@ async def repost_results_for_division(
     # deleted until every round has been reposted, so a failure part-way leaves the league the
     # results it already had rather than a channel half rebuilt.
     superseded: list[tuple[int, int, list[int] | None]] = []
+    # Each session whose stored id now names its replacement, or nothing — the ones a failure
+    # has to take down again.
+    touched: list[int] = []
 
+    try:
+        await _repost_results_rounds(
+            db_path, round_rows, rc, guild, bot, superseded, touched
+        )
+    except Exception:
+        await _undo_results_repost(db_path, rc, superseded, touched)
+        raise
+
+    # ── Then destroy ──────────────────────────────────────────────────────
+    # Every replacement is up. The originals go now, oldest first, so the channel reads in
+    # round order throughout rather than shuffling as it empties.
+    for _session_id, old_msg_id, old_ids in superseded:
+        await _delete_posting(rc, old_msg_id, old_ids, label="results message")
+
+    return "ok"
+
+
+async def _repost_results_rounds(
+    db_path: str, round_rows, rc, guild, bot,
+    superseded: list[tuple[int, int, list[int] | None]],
+    touched: list[int],
+) -> None:
+    """The produce half of :func:`repost_results_for_division`, filling in *superseded* and
+    *touched* as it goes so that a failure part-way can be undone from what they hold."""
     for rnd in round_rows:
         round_id: int = rnd["round_id"]
         round_number: int = rnd["round_number"]
@@ -1793,6 +1823,9 @@ async def repost_results_for_division(
                         (sr_row["id"],),
                     )
                     await db.commit()
+            # Only once the id is cleared: whatever this session records from here on is the
+            # replacement's, and so safe for an undo to take down.
+            touched.append(sr_row["id"])
 
             driver_rows = await _load_driver_rows(db_path, sr_row["id"], SessionType(sr_row["session_type"]))
             points_map = {
@@ -1806,13 +1839,51 @@ async def repost_results_for_division(
             )
             await throttle()
 
-    # ── Then destroy ──────────────────────────────────────────────────────
-    # Every replacement is up. The originals go now, oldest first, so the channel reads in
-    # round order throughout rather than shuffling as it empties.
-    for _session_id, old_msg_id, old_ids in superseded:
-        await _delete_posting(rc, old_msg_id, old_ids, label="results message")
 
-    return "ok"
+async def _undo_results_repost(
+    db_path: str,
+    channel,
+    superseded: list[tuple[int, int, list[int] | None]],
+    touched: list[int],
+) -> None:
+    """Take down the replacements a failed division repost had posted, and give each session
+    back the posting it had (Constitution XIV.8, #345).
+
+    Nothing was deleted before the failure, so every superseded posting is still in the channel;
+    only its id had been cleared, to make room for the replacement's. Without this the failure
+    left the originals recorded nowhere — standing beside the half-built replacement for good,
+    with no route by which the bot could ever take them down.
+    """
+    replacements: list[tuple[int, list[int] | None]] = []
+    async with get_connection(db_path) as db:
+        for session_id in touched:
+            cursor = await db.execute(
+                "SELECT results_message_id, results_message_ids FROM session_results "
+                "WHERE id = ?",
+                (session_id,),
+            )
+            row = await cursor.fetchone()
+            if row and row["results_message_id"] is not None:
+                replacements.append(
+                    (row["results_message_id"], _parse_ids(row["results_message_ids"]))
+                )
+    for anchor, chunk_ids in replacements:
+        await _delete_posting(channel, anchor, chunk_ids, label="replacement results message")
+
+    async with get_connection(db_path) as db:
+        for session_id in touched:
+            await db.execute(
+                "UPDATE session_results SET results_message_id = NULL, "
+                "results_message_ids = NULL WHERE id = ?",
+                (session_id,),
+            )
+        for session_id, old_msg_id, old_ids in superseded:
+            await db.execute(
+                "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
+                "WHERE id = ?",
+                (old_msg_id, json.dumps(old_ids) if old_ids else None, session_id),
+            )
+        await db.commit()
 
 
 async def repost_standings_for_division(
@@ -1831,7 +1902,8 @@ async def repost_standings_for_division(
 
     The stored ids are forgotten before each repost so that :func:`post_standings` inserts a
     new message rather than editing the one it is replacing, and the ids themselves are held
-    until the deletion pass at the end.
+    until the deletion pass at the end. A failure before that pass takes the replacements down
+    again and puts the ids back, as the results rebuild does, and raises.
 
     Returns one of three status strings for the caller to surface to the admin:
     - ``"ok"``         — standings reposted successfully
@@ -1872,36 +1944,62 @@ async def repost_standings_for_division(
     show_reserves = await _get_show_reserves(db_path, division_id)
 
     # ── Produce ───────────────────────────────────────────────────────────
-    # Each round's superseded standings, remembered while the replacements go up.
-    superseded: list[tuple[int, list[int] | None]] = []
+    # Each round's superseded standings, remembered while the replacements go up, and each
+    # round whose stored ids now name its replacements — the ones a failure takes down again.
+    superseded: list[tuple[int, str, int, list[int] | None]] = []
+    touched: list[int] = []
 
-    for row in rows:
-        round_id: int = row["round_id"]
-        round_number: int = row["round_number"]
-        track_name: str = row["track_name"] or "Unknown"
-        rsd_label: str = _label_from_status(row["status"] or "")
+    try:
+        for row in rows:
+            round_id: int = row["round_id"]
+            round_number: int = row["round_number"]
+            track_name: str = row["track_name"] or "Unknown"
+            rsd_label: str = _label_from_status(row["status"] or "")
 
-        superseded.extend(
-            await _forget_standings_messages(db_path, division_id, round_id)
-        )
+            superseded.extend(
+                (round_id, *entry)
+                for entry in await _forget_standings_messages(db_path, division_id, round_id)
+            )
+            touched.append(round_id)
 
-        driver_snaps = await driver_standings_for_display(
-            db_path, division_id, round_id, guild, bot
-        )
-        team_snaps = await standings_service.compute_team_standings(
-            db_path, division_id, round_id
-        )
-        await post_standings(
-            db_path, division_id, round_id, round_number, track_name, sc,
-            driver_snaps, team_snaps, guild, show_reserves, rsd_label, bot=bot,
-        )
-        await throttle()
+            driver_snaps = await driver_standings_for_display(
+                db_path, division_id, round_id, guild, bot
+            )
+            team_snaps = await standings_service.compute_team_standings(
+                db_path, division_id, round_id
+            )
+            await post_standings(
+                db_path, division_id, round_id, round_number, track_name, sc,
+                driver_snaps, team_snaps, guild, show_reserves, rsd_label, bot=bot,
+            )
+            await throttle()
+    except Exception:
+        await _undo_standings_repost(db_path, division_id, sc, superseded, touched)
+        raise
 
     # ── Then destroy ──────────────────────────────────────────────────────
-    for anchor, chunk_ids in superseded:
+    for _round_id, _championship, anchor, chunk_ids in superseded:
         await _delete_posting(sc, anchor, chunk_ids, label="standings message")
 
     return "ok"
+
+
+async def _undo_standings_repost(
+    db_path: str,
+    division_id: int,
+    channel,
+    superseded: list[tuple[int, str, int, list[int] | None]],
+    touched: list[int],
+) -> None:
+    """Take down the replacements a failed standings rebuild had posted, and give each round
+    back the standings it had — as :func:`_undo_results_repost` does for results (#345)."""
+    for round_id in touched:
+        await _clear_standings_messages(db_path, division_id, round_id, channel)
+    for round_id, championship, anchor, chunk_ids in superseded:
+        await _set_standings_message_id(
+            db_path, division_id, round_id, anchor, championship,
+            message_ids=json.dumps(chunk_ids) if chunk_ids else None,
+        )
 
 
 # ---------------------------------------------------------------------------
