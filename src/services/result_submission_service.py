@@ -1612,12 +1612,14 @@ async def _repoint_verdicts(
                 )
 
 
-def _amend_verdict_state(db_path: str, division_id: int, bot):
+def _amend_verdict_state(db_path: str, division_id: int, bot, *, division_name: str = ""):
     """Build the state each round's verdict announcement needs during a replay (#345).
 
     The announcement functions read the round, the division and the database off a
     ``PenaltyReviewState``. Republishing walks several rounds, so it is handed a factory rather
-    than one state — the round changes, everything else does not.
+    than one state — the round changes, everything else does not. The division is named, and the
+    replay fills in each round's number, for the one fault line that names a round it could not
+    read from the database.
     """
     from services.penalty_wizard import PenaltyReviewState
 
@@ -1629,6 +1631,7 @@ def _amend_verdict_state(db_path: str, division_id: int, bot):
             session_types_present=[],
             db_path=db_path,
             bot=bot,
+            division_name=division_name,
             is_amendment=True,
         )
 
@@ -2525,7 +2528,8 @@ async def _approve_amendment_appeals(interaction, state) -> None:
                 outcome = await _rps.replay_division_channels(
                     db_path, division_id, round_id, guild, bot=interaction.client,
                     verdict_state_factory=_amend_verdict_state(
-                        db_path, division_id, interaction.client
+                        db_path, division_id, interaction.client,
+                        division_name=state.division_name,
                     ),
                     attendance_step=_attendance_step,
                 )

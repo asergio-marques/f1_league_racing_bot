@@ -349,6 +349,44 @@ async def test_a_report_the_same_size_as_an_appeal_is_still_announced(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+async def test_each_round_is_announced_under_its_own_number(tmp_path):
+    """The one fault line that cannot read a round from the database names it by the number its
+    state carries; the replay's states were built without one, and read "Round 0"."""
+    db_path, ids = await _seed(tmp_path, "round_numbers", rounds=(1, 2))
+    await _verdict(db_path, ids[1], anchor=5001)
+    await _verdict(db_path, ids[2], anchor=5002)
+    seen: list[int] = []
+
+    async def _post_pen(_bot, state, _records, **_kw):
+        seen.append(state.round_number)
+        return []
+
+    with patch(
+        "services.verdict_announcement_service.post_penalty_announcements",
+        new=AsyncMock(side_effect=_post_pen),
+    ), patch(
+        "services.verdict_announcement_service.post_appeal_announcements",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
+    ), patch("services.results_post_service._delete_posting", new=AsyncMock()):
+        await republish_verdicts_from_round(
+            _bot(), db_path, DIVISION_ID, 1,
+            lambda round_id: SimpleNamespace(round_id=round_id, db_path=db_path),
+        )
+
+    assert seen == [1, 2]
+
+
+def test_the_replays_states_name_the_division():
+    from services.result_submission_service import _amend_verdict_state
+
+    state = _amend_verdict_state("x.db", DIVISION_ID, MagicMock(), division_name="Pro")(21)
+
+    assert state.division_name == "Pro"
+    assert state.is_amendment is True
+
+
 async def _banner(db_path, round_id: int, message_id: int, channel=VERDICTS_CHANNEL):
     async with get_connection(db_path) as db:
         await db.execute(

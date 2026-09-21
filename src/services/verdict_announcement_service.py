@@ -1259,6 +1259,10 @@ async def republish_verdicts_from_round(
             continue
 
         state = state_factory(round_id)
+        if not getattr(state, "round_number", 0):
+            # Read by the fault line naming a round whose context could not be loaded, which
+            # would otherwise say "Round 0".
+            state.round_number = rnd["round_number"]
         head = banner_for_round(bot, db_path, round_id)
 
         # Only a round that re-announces loses its banner. A round whose verdicts channel holds
