@@ -360,7 +360,7 @@ async def test_the_channel_is_opened_to_both_league_roles(tmp_path):
     stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
 
     kwargs = stubs["create"].await_args.kwargs
-    assert kwargs["admin_role"].id == 900
+    assert kwargs["interaction_role"].id == 900
     assert kwargs["league_admin_role"].id == 901
     assert kwargs["bot_cmd_channel_id"] == 100
 

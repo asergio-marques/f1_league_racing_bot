@@ -78,7 +78,7 @@ async def create_submission_channel(
     db_path: str,
     *,
     bot_cmd_channel_id: int | None = None,
-    admin_role: discord.Role | None = None,
+    interaction_role: discord.Role | None = None,
     league_admin_role: discord.Role | None = None,
 ) -> discord.TextChannel:
     """Create a transient text channel for result submission.
@@ -108,7 +108,7 @@ async def create_submission_channel(
         overwrites[bot_member] = discord.PermissionOverwrite(
             read_messages=True, send_messages=True, manage_messages=True
         )
-    for role in (admin_role, league_admin_role):
+    for role in (interaction_role, league_admin_role):
         if role is not None:
             overwrites[role] = discord.PermissionOverwrite(
                 read_messages=True, send_messages=True
@@ -4206,13 +4206,13 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # Look up both of the league's roles and the bot-command channel for channel setup
     server_cfg = await bot.config_service.get_server_config()  # type: ignore[attr-defined]
-    admin_role: discord.Role | None = None
+    interaction_role: discord.Role | None = None
     league_admin_role: discord.Role | None = None
     bot_cmd_channel_id: int | None = None
     if server_cfg is not None:
         bot_cmd_channel_id = server_cfg.interaction_channel_id
         if server_cfg.interaction_role_id:
-            admin_role = guild.get_role(server_cfg.interaction_role_id)
+            interaction_role = guild.get_role(server_cfg.interaction_role_id)
         if server_cfg.league_admin_role_id:
             league_admin_role = guild.get_role(server_cfg.league_admin_role_id)
 
@@ -4225,7 +4225,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             round_id,
             db_path,
             bot_cmd_channel_id=bot_cmd_channel_id,
-            admin_role=admin_role,
+            interaction_role=interaction_role,
             league_admin_role=league_admin_role,
         )
     except discord.HTTPException:
