@@ -398,8 +398,13 @@ async def _run_season_complete(divisions, outstanding, all_done=False):
     from cogs.season_cog import SeasonCog
 
     cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = AsyncMock()
+    # ``MagicMock`` with each awaited member named (issue #240). On a whole-bot
+    # ``AsyncMock`` the two readers pinned just below answered truthily without being
+    # asked to, so the gate this drives could pass on the stub rather than the season.
+    cog.bot = MagicMock()
+    cog.bot.output_router.post_log = AsyncMock()
     svc = cog.bot.season_service
+    svc.wind_down_ongoing = AsyncMock()
     svc.get_confirmed_season = AsyncMock(return_value=MagicMock(id=1, season_number=1))
     svc.get_divisions = AsyncMock(return_value=divisions)
     svc.refresh_division_status = AsyncMock(return_value=False)

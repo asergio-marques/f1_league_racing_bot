@@ -68,8 +68,12 @@ def _interaction():
 
 def _cog(db_path, *, attendance: bool = True):
     cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = AsyncMock()
+    # ``MagicMock`` with each awaited member named (issue #240). A whole-bot ``AsyncMock``
+    # answers an unpinned reader with a truthy mock, which for a file about *rules* would
+    # mean a rule passing on the stub rather than the round in front of it.
+    cog.bot = MagicMock()
     cog.bot.db_path = db_path
+    cog.bot.output_router.post_log = AsyncMock()
     # A real season service, so the round comes back carrying the status and phase flags the
     # rules read. Stubbing it would leave this testing the stub.
     cog.bot.season_service = SeasonService(db_path)
