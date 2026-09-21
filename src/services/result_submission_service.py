@@ -2733,6 +2733,11 @@ async def run_amendment_review_stages(
     staged, staged_appeals, staged_pardons = await load_staged_from_records(
         db_path, round_id, session_types=session_types
     )
+    # **The pardons only while attendance is on.** The appeal stage writes them back only then,
+    # so offering them with the module off let a manager remove one, be told it was removed,
+    # and approve a round still carrying it.
+    if not await bot.module_service.is_attendance_enabled():
+        staged_pardons = []
 
     state = PenaltyReviewState(
         round_id=round_id,

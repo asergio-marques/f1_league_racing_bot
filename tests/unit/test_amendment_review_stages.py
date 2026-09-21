@@ -99,10 +99,11 @@ def _channel():
     return channel
 
 
-async def _run(db_path, channel=None):
+async def _run(db_path, channel=None, *, attendance=True):
     channel = channel or _channel()
     bot = MagicMock()
     bot.add_view = MagicMock()
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
     state = await run_amendment_review_stages(
         db_path, ROUND_ID, DIVISION_ID, channel, bot,
         round_number=3, division_name="Pro",
@@ -195,3 +196,48 @@ async def test_the_prompt_message_is_remembered(tmp_path):
     state, _, _ = await _run(db_path)
 
     assert state.prompt_message_id == 8001
+
+
+# ---------------------------------------------------------------------------
+# The round's pardons, only while attendance is on (#345)
+# ---------------------------------------------------------------------------
+
+
+async def _pardon(db_path) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (31, '101', 'ASSIGNED')"
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance (id, round_id, division_id, driver_profile_id, "
+            "rsvp_status) VALUES (41, ?, ?, 31, 'NO_RSVP')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO attendance_pardons (attendance_id, pardon_type, justification, "
+            "granted_by, granted_at) VALUES (41, 'NO_RSVP', 'Ill', 55, '2026-02-01T20:00:00+00:00')"
+        )
+        await db.commit()
+
+
+async def test_the_rounds_pardons_are_shown_back_while_attendance_is_on(tmp_path):
+    db_path, _ = await _db(tmp_path, "stage_pardons_on")
+    await _pardon(db_path)
+
+    state, _, _ = await _run(db_path, attendance=True)
+
+    assert [p.pardon_type for p in state.staged_pardons] == ["NO_RSVP"]
+
+
+async def test_the_rounds_pardons_are_not_offered_with_attendance_off(tmp_path):
+    """The appeal stage writes them back only while the module is on; offered with it off, a
+    pardon could be removed, the removal confirmed, and the round approved still carrying it."""
+    db_path, _ = await _db(tmp_path, "stage_pardons_off")
+    await _pardon(db_path)
+
+    state, channel, _ = await _run(db_path, attendance=False)
+
+    assert state.staged_pardons == []
+    view = channel._sent[-1][1]
+    assert not [c for c in view.children if "pardon_remove" in str(getattr(c, "custom_id", ""))]

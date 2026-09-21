@@ -119,6 +119,7 @@ def _make_cog(db_path, *, league_admin_role=True):
     bot.loop = asyncio.get_running_loop()
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     bot.season_service = MagicMock()
     # The live season, with a stage: the command reads one now (issue #224). Ongoing,
     # because a round reaches FINAL while its season is still being raced.
