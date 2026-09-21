@@ -12,12 +12,6 @@ command anybody could run and see refused. `test_a_league_admin_may_drive_the_re
 regression test for exactly that, and it is the reason this file leads with the gate rather
 than the rendering.
 
-**`_parse_penalty_seconds` never raises and never guesses.** It reads whatever the submission
-validator stored — four different shapes, plus `"N/A"`, plus `None` — and returns `0` for
-anything it cannot read. Returning zero rather than raising is deliberate: a penalty review
-that died on one malformed cell would block the whole round's approval, and zero is the value
-that changes nothing.
-
 **The prompt is the only thing a league manager sees.** They approve a round from it, so every
 staged penalty and pardon must appear on it — a staged penalty missing from the prompt would be
 applied on approval without anybody having read it. The empty cases matter as much: "none" is
@@ -49,7 +43,6 @@ from services.penalty_wizard import (  # noqa: E402
     PenaltyReviewState,
     StagedPardon,
     _is_league_manager,
-    _parse_penalty_seconds,
     _pen_label,
     _render_prompt_content,
     _require_lm,
@@ -60,36 +53,6 @@ ROUND_ID = 5
 DIVISION_ID = 11
 DRIVER_A = 4001
 DRIVER_B = 4002
-
-
-# ---------------------------------------------------------------------------
-# _parse_penalty_seconds
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
-        ("5.000", 5),
-        ("5", 5),
-        ("1:05.000", 65),
-        ("0:30.500", 30),
-        ("1:00:00.000", 3600),
-        ("1:01:01.000", 3661),
-        ("+5.000", 5),
-        ("  5.000  ", 5),
-    ],
-)
-def test_every_stored_penalty_shape_is_read(raw, expected):
-    """Four formats the submission validator can store, plus a leading `+` and padding."""
-    assert _parse_penalty_seconds(raw) == expected
-
-
-@pytest.mark.parametrize("raw", [None, "", "   ", "N/A", "n/a", "nonsense", "a:b:c"])
-def test_an_unreadable_penalty_counts_as_none(raw):
-    """Zero rather than an exception: a review that died on one malformed cell would block
-    the whole round's approval, and zero is the value that changes nothing."""
-    assert _parse_penalty_seconds(raw) == 0
 
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ import discord
 from db.database import get_connection
 from models.points_config import SessionType
 from services.driver_service import accounts_of_in_division, current_account_map_for_division
-from services.penalty_service import StagedPenalty, validate_penalty_input, _time_to_ms
+from services.penalty_service import StagedPenalty, validate_penalty_input
 from utils.channel_guard import is_league_manager
 from utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
 from utils.league_server import LeagueModal, LeagueView
@@ -39,33 +39,6 @@ _CID_AR_APPROVE       = "ar_approve"
 _CID_AR_ADD           = "ar_add"
 _CID_AR_CONFIRM       = "ar_confirm"
 _CID_AR_MAKE_CHANGES  = "ar_make_changes"
-
-
-# ---------------------------------------------------------------------------
-# Time-penalty parsing helper
-# ---------------------------------------------------------------------------
-
-def _parse_penalty_seconds(raw: str | None) -> int:
-    """Parse a ``time_penalties`` TEXT value to integer seconds.
-
-    Accepts formats stored by the submission validator: ``"SS.mmm"``,
-    ``"M:SS.mmm"``, ``"H:MM:SS.mmm"``, ``"N/A"``, or ``None``.
-    Returns 0 for ``None``, ``"N/A"``, or any unparseable value.
-    """
-    if not raw or raw.strip().upper() == "N/A":
-        return 0
-    s = raw.strip().lstrip("+")
-    try:
-        parts = s.split(":")
-        if len(parts) == 1:
-            return int(float(parts[0]))
-        if len(parts) == 2:
-            return int(parts[0]) * 60 + int(float(parts[1]))
-        if len(parts) == 3:
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(float(parts[2]))
-    except (ValueError, IndexError):
-        return 0
-    return 0
 
 
 # ---------------------------------------------------------------------------
