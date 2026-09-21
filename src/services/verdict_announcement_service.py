@@ -34,6 +34,16 @@ def _for_message(value: str) -> str:
     return f"*{NOT_PROVIDED}*" if value == NOT_PROVIDED else value
 
 
+#: Who a verdict may notify: the people it mentions, and never a group (#204).
+#:
+#: The form refuses a role mention, ``@everyone`` or ``@here`` in a steward's text
+#: (``penalty_service.group_mention_refusal``), but the form is not the only way text reaches
+#: this channel: an amendment reposts every verdict a round carries from what was stored
+#: (#345). So the send withholds the notification as well. The text is still posted as written
+#: — a role still reads as its name — and a driver it mentions is still told.
+_VERDICT_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
+
+
 #: What a manager can do about a verdict that never reached the channel (#237).
 #:
 #: **A decided verdict cannot be announced again by the bot**, and the hint must say so. No
@@ -612,7 +622,9 @@ async def _send_verdict(
         # verdict belongs to, and leaking the raw template key was never intended.
         attachment = _discord.File(str(render.png), filename=Path(render.png).name)
         try:
-            return await target_channel.send(f"<@{driver_discord_id}>", file=attachment)
+            return await target_channel.send(
+                f"<@{driver_discord_id}>", file=attachment, allowed_mentions=_VERDICT_MENTIONS
+            )
         finally:
             image_verdict_post.discard(render, attachment)
 
@@ -627,7 +639,7 @@ async def _send_verdict(
         justification_text,
         driver_display_name=driver_display_name,
     )
-    return await target_channel.send(content)
+    return await target_channel.send(content, allowed_mentions=_VERDICT_MENTIONS)
 
 
 async def post_penalty_announcements(

@@ -26,10 +26,13 @@ from services.image_verdict_service import VerdictKind  # noqa: E402
 class _Channel:
     def __init__(self, guild_id: int = 99) -> None:
         self.sent: list[tuple[str, object]] = []
+        #: What each send was told about notifying, beside what it sent (#204).
+        self.allowed_mentions: list[object] = []
         self.guild = type("_Guild", (), {"id": guild_id, "get_role": lambda self, r: None})()
 
-    async def send(self, content=None, *, file=None, **_kwargs):
+    async def send(self, content=None, *, file=None, allowed_mentions=None, **_kwargs):
         self.sent.append((content, file))
+        self.allowed_mentions.append(allowed_mentions)
 
 
 class _Bot:
@@ -481,3 +484,34 @@ async def test_the_graphic_is_gone_when_the_send_fails(
         await _send(channel)
 
     assert not png.exists()
+
+
+# ── A verdict notifies drivers, never a group (#204) ──────────────────────
+
+
+def _notifies_drivers_alone(allowed) -> None:
+    assert allowed is not None, "sent unrestricted, a role or @everyone in the text notifies"
+    assert allowed.everyone is False
+    assert allowed.roles is False
+    assert allowed.users is True, "the driver the verdict pertains to is still told"
+
+
+@pytest.mark.asyncio
+async def test_the_textual_verdict_notifies_drivers_and_no_group(channel, stub_image_path):
+    """The form refuses a group mention, but text stored before that, or reposted by an
+    amendment (#345), reaches the channel through here all the same."""
+    stub_image_path["enabled"] = False
+    await _send(channel, justification_text="<@&987> reviewed this. @everyone take note.")
+
+    (content, _file), = channel.sent
+    assert "@everyone" in content, "posted as written; only the notifying is withheld"
+    _notifies_drivers_alone(channel.allowed_mentions[0])
+
+
+@pytest.mark.asyncio
+async def test_the_graphic_s_message_notifies_the_driver_alone(channel, stub_image_path):
+    await _send(channel)
+
+    (_content, file), = channel.sent
+    assert file is not None
+    _notifies_drivers_alone(channel.allowed_mentions[0])
