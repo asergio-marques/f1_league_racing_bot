@@ -533,42 +533,24 @@ async def load_staged_from_records(
     appeals: list[StagedPenalty] = []
     pardons: list[StagedPardon] = []
 
-    scope = (
-        "" if session_types is None
-        else f" AND sr.session_type IN ({', '.join('?' for _ in session_types)})"
-    )
-    params: list = [round_id] + (
-        [] if session_types is None else [st.value for st in session_types]
-    )
+    from services.verdict_records import VERDICT_TABLES, select_verdicts
+
     async with get_connection(db_path) as db:
-        rows_of: dict[str, list[dict]] = {"penalty_records": [], "appeal_records": []}
+        rows_of: dict[str, list[dict]] = {}
         # The two tables name their author and time differently.
         provenance = {
             "penalty_records": ("applied_by", "applied_at"),
             "appeal_records": ("submitted_by", "submitted_at"),
         }
-        for table in ("penalty_records", "appeal_records"):
+        for table in VERDICT_TABLES:
             by_col, at_col = provenance[table]
-            for fk_col, result_table in (
-                ("race_result_id", "race_session_results"),
-                ("qual_result_id", "qualifying_session_results"),
-            ):
-                cursor = await db.execute(
-                    f"""
-                    SELECT v.id AS record_id, v.penalty_type, v.time_seconds,
-                           v.description, v.justification,
-                           v.{by_col} AS decided_by, v.{at_col} AS decided_at,
-                           r.driver_user_id AS driver_user_id,
-                           sr.session_type AS session_type
-                    FROM {table} v
-                    JOIN {result_table} r ON r.id = v.{fk_col}
-                    JOIN session_results sr ON sr.id = r.session_result_id
-                    WHERE sr.round_id = ?{scope}
-                    ORDER BY v.id
-                    """,  # noqa: S608 — names come from the two tuples above
-                    params,
-                )
-                rows_of[table].extend(dict(row) for row in await cursor.fetchall())
+            rows_of[table] = await select_verdicts(
+                db, table,
+                "v.id AS record_id, v.penalty_type, v.time_seconds, v.description, "
+                f"v.justification, v.{by_col} AS decided_by, v.{at_col} AS decided_at, "
+                "r.driver_user_id AS driver_user_id, sr.session_type AS session_type",
+                round_id=round_id, session_types=session_types,
+            )
 
         for row in sorted(rows_of["appeal_records"], key=lambda r: r["record_id"]):
             appeals.append(_staged_from_record(row))

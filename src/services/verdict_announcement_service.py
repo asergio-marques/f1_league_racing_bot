@@ -1141,27 +1141,16 @@ async def _records_for_round(db_path: str, round_id: int, table: str) -> list[di
     record, none of which ``penalty_records`` and ``appeal_records`` carry together — the
     driver comes from the result row the verdict points at.
     """
-    rows: list[dict] = []
+    from services.verdict_records import select_verdicts
+
     async with get_connection(db_path) as db:
-        for fk_col, result_table in (
-            ("race_result_id", "race_session_results"),
-            ("qual_result_id", "qualifying_session_results"),
-        ):
-            cursor = await db.execute(
-                f"""
-                SELECT v.id AS id, v.race_result_id, v.qual_result_id,
-                       v.penalty_type, v.time_seconds, v.description, v.justification,
-                       r.driver_user_id AS driver_user_id, r.team_role_id AS team_role_id,
-                       sr.session_type AS session_type
-                FROM {table} v
-                JOIN {result_table} r ON r.id = v.{fk_col}
-                JOIN session_results sr ON sr.id = r.session_result_id
-                WHERE sr.round_id = ?
-                ORDER BY v.id
-                """,  # noqa: S608 — names come from the tuple above and the caller's literal
-                (round_id,),
-            )
-            rows.extend(dict(row) for row in await cursor.fetchall())
+        rows = await select_verdicts(
+            db, table,
+            "v.id AS id, v.race_result_id, v.qual_result_id, v.penalty_type, v.time_seconds, "
+            "v.description, v.justification, r.driver_user_id AS driver_user_id, "
+            "r.team_role_id AS team_role_id, sr.session_type AS session_type",
+            round_id=round_id,
+        )
     return sorted(rows, key=lambda r: r["id"])
 
 
@@ -1248,43 +1237,34 @@ async def republish_verdicts_from_round(
     # Kept by round, because a round's old announcements come down only where that round's
     # replacements actually went up (#345).
     superseded: dict[int, list[tuple[object, int, list[int] | None, int]]] = {}
+    from services.verdict_records import VERDICT_TABLES, select_verdicts
+
     async with get_connection(db_path) as db:
         for rnd in rounds:
-            for table in ("penalty_records", "appeal_records"):
-                for fk_col, result_table in (
-                    ("race_result_id", "race_session_results"),
-                    ("qual_result_id", "qualifying_session_results"),
+            for table in VERDICT_TABLES:
+                for row in await select_verdicts(
+                    db, table,
+                    "v.announcement_message_id AS anchor, "
+                    "v.announcement_message_ids AS chunks, "
+                    "v.announcement_channel_id AS channel_id, "
+                    "r.driver_user_id AS driver_user_id",
+                    round_id=rnd["round_id"],
                 ):
-                    cursor = await db.execute(
-                        f"""
-                        SELECT v.announcement_message_id AS anchor,
-                               v.announcement_message_ids AS chunks,
-                               v.announcement_channel_id AS channel_id,
-                               r.driver_user_id AS driver_user_id
-                        FROM {table} v
-                        JOIN {result_table} r ON r.id = v.{fk_col}
-                        JOIN session_results sr ON sr.id = r.session_result_id
-                        WHERE sr.round_id = ?
-                        ORDER BY v.id
-                        """,  # noqa: S608 — names come from the two tuples above
-                        (rnd["round_id"],),
-                    )
-                    for row in await cursor.fetchall():
-                        if not row["anchor"]:
-                            # No fault, and nothing to take down. A record with no id here is
-                            # one the amendment's report stage has just rewritten — its
-                            # predecessor's id was noted before that happened, and is taken
-                            # down separately — or one whose announcement never went out, which
-                            # was reported at the time (#345).
-                            continue
-                        superseded.setdefault(rnd["round_id"], []).append(
-                            (
-                                row["channel_id"],
-                                int(row["anchor"]),
-                                _parse_chunk_ids(row["chunks"]),
-                                row["driver_user_id"],
-                            )
+                    if not row["anchor"]:
+                        # No fault, and nothing to take down. A record with no id here is
+                        # one the amendment's report stage has just rewritten — its
+                        # predecessor's id was noted before that happened, and is taken
+                        # down separately — or one whose announcement never went out, which
+                        # was reported at the time (#345).
+                        continue
+                    superseded.setdefault(rnd["round_id"], []).append(
+                        (
+                            row["channel_id"],
+                            int(row["anchor"]),
+                            _parse_chunk_ids(row["chunks"]),
+                            row["driver_user_id"],
                         )
+                    )
 
     # ── Produce ───────────────────────────────────────────────────────────
     from services.penalty_service import reports_only

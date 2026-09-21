@@ -1502,22 +1502,15 @@ async def _verdicts_by_driver(
     recoverable through the row it points at: ``penalty_records`` and ``appeal_records`` store
     neither ``driver_user_id`` nor ``session_type``.
     """
-    fk_col = _verdict_fk_column(session_type)
-    table = "qualifying_session_results" if session_type.is_qualifying else "race_session_results"
+    from services.verdict_records import select_verdicts
+
     by_table: dict[str, dict[int, list[int]]] = {}
     for verdict_table in _VERDICT_TABLES:
-        cursor = await db.execute(
-            f"""
-            SELECT v.id AS verdict_id, r.driver_user_id AS driver_user_id
-            FROM {verdict_table} v
-            JOIN {table} r ON r.id = v.{fk_col}
-            WHERE r.session_result_id = ?
-            ORDER BY v.id
-            """,  # noqa: S608 — table and column names come from the two constants above
-            (session_result_id,),
-        )
         per_driver: dict[int, list[int]] = {}
-        for row in await cursor.fetchall():
+        for row in await select_verdicts(
+            db, verdict_table, "v.id AS verdict_id, r.driver_user_id AS driver_user_id",
+            session_result_id=session_result_id,
+        ):
             per_driver.setdefault(row["driver_user_id"], []).append(row["verdict_id"])
         if per_driver:
             by_table[verdict_table] = per_driver
@@ -1721,28 +1714,20 @@ async def _remember_superseded_announcements(
     a report stage retried after a failure — would read what the first had already cleared and
     overwrite the list with less.
     """
+    from services.verdict_records import VERDICT_TABLES, select_verdicts
+
     rows: list[dict] = []
     async with get_connection(db_path) as db:
-        for table in ("penalty_records", "appeal_records"):
-            for fk_col, result_table in (
-                ("race_result_id", "race_session_results"),
-                ("qual_result_id", "qualifying_session_results"),
-            ):
-                cursor = await db.execute(
-                    f"""
-                    SELECT v.announcement_message_id AS anchor,
-                           v.announcement_message_ids AS chunks,
-                           v.announcement_channel_id AS channel_id,
-                           r.driver_user_id AS driver_user_id
-                    FROM {table} v
-                    JOIN {result_table} r ON r.id = v.{fk_col}
-                    JOIN session_results sr ON sr.id = r.session_result_id
-                    WHERE sr.round_id = ? AND sr.session_type IN ({_placeholders(session_types)})
-                      AND v.announcement_message_id IS NOT NULL
-                    """,  # noqa: S608 — names come from the two tuples above
-                    (round_id, *[st.value for st in session_types]),
+        for table in VERDICT_TABLES:
+            rows.extend(
+                await select_verdicts(
+                    db, table,
+                    "v.announcement_message_id AS anchor, v.announcement_message_ids AS chunks, "
+                    "v.announcement_channel_id AS channel_id, r.driver_user_id AS driver_user_id",
+                    round_id=round_id, session_types=session_types,
+                    where=" AND v.announcement_message_id IS NOT NULL",
                 )
-                rows.extend(dict(row) for row in await cursor.fetchall())
+            )
         await db.execute(
             "UPDATE round_amend_channels SET superseded_announcements = ? "
             "WHERE round_id = ? AND superseded_announcements IS NULL",
@@ -1841,32 +1826,13 @@ async def _clear_round_verdict_records(
     Deleting them is also what releases the foreign key, so the rows may be rewritten against
     whichever driver rows the corrected classification produced.
     """
+    from services.verdict_records import delete_verdicts
+
     # Scoped to the sessions given, because those are all an amendment replays: clearing the
     # whole round would drop the decisions of sessions whose reports are never re-approved,
     # losing them outright.
-    scope = (
-        "" if session_types is None
-        else f" AND sr.session_type IN ({_placeholders(session_types)})"
-    )
-    params: list = [round_id] + ([] if session_types is None else [st.value for st in session_types])
     async with get_connection(db_path) as db:
-        for table, fk_col, result_table in (
-            ("penalty_records", "race_result_id", "race_session_results"),
-            ("penalty_records", "qual_result_id", "qualifying_session_results"),
-            ("appeal_records", "race_result_id", "race_session_results"),
-            ("appeal_records", "qual_result_id", "qualifying_session_results"),
-        ):
-            await db.execute(
-                f"""
-                DELETE FROM {table}
-                WHERE {fk_col} IN (
-                    SELECT r.id FROM {result_table} r
-                    JOIN session_results sr ON sr.id = r.session_result_id
-                    WHERE sr.round_id = ?{scope}
-                )
-                """,  # noqa: S608 — every name comes from the tuple above
-                params,
-            )
+        await delete_verdicts(db, round_id=round_id, session_types=session_types)
         await db.commit()
 
 
@@ -1911,6 +1877,8 @@ async def snapshot_before_amendment(
     whole of what the amendment changes that a revert cannot recompute. The standings and the
     points follow from the driver rows, so restoring those and cascading again reproduces them.
     """
+    from services.verdict_records import VERDICT_TABLES, select_verdicts
+
     sessions: list[dict] = []
     async with get_connection(db_path) as db:
         for session_type in session_types:
@@ -1918,7 +1886,6 @@ async def snapshot_before_amendment(
             rows_table = (
                 "qualifying_session_results" if is_qualifying else "race_session_results"
             )
-            fk_col = "qual_result_id" if is_qualifying else "race_result_id"
             cursor = await db.execute(
                 "SELECT * FROM session_results WHERE round_id = ? AND session_type = ?",
                 (round_id, session_type.value),
@@ -1937,21 +1904,17 @@ async def snapshot_before_amendment(
             # reverted after that point has nothing left to re-point: a snapshot holding only
             # ``(id, points_at)`` would silently no-op and lose every appeal record it carried.
             verdicts: list[dict] = []
-            for table in ("penalty_records", "appeal_records"):
-                cursor = await db.execute(
-                    f"SELECT * FROM {table} "  # noqa: S608
-                    f"WHERE {fk_col} IN (SELECT id FROM {rows_table} WHERE session_result_id = ?)",
-                    (header["id"],),
-                )
-                for row in await cursor.fetchall():
-                    verdicts.append({"table": table, "row": dict(row)})
+            for table in VERDICT_TABLES:
+                for row in await select_verdicts(
+                    db, table, "v.*", session_result_id=header["id"]
+                ):
+                    verdicts.append({"table": table, "row": row})
 
             sessions.append(
                 {
                     "session_result_id": header["id"],
                     "session_type": session_type.value,
                     "rows_table": rows_table,
-                    "fk_col": fk_col,
                     "header": dict(header),
                     "driver_rows": driver_rows,
                     "verdicts": verdicts,
@@ -2021,23 +1984,15 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot=None) -> b
 
     snapshot = _json.loads(row["pre_amendment_state"])
 
+    from services.verdict_records import delete_verdicts
+
     async with get_connection(db_path) as db:
         for state in snapshot["sessions"]:
             rows_table: str = state["rows_table"]
-            fk_col: str = state["fk_col"]
             session_result_id: int = state["session_result_id"]
             # Whatever the amendment left behind goes, in both tables, so the snapshot is
             # written over a clean slate rather than merged into one.
-            for table in ("penalty_records", "appeal_records"):
-                await db.execute(
-                    f"""
-                    DELETE FROM {table}
-                    WHERE {fk_col} IN (
-                        SELECT id FROM {rows_table} WHERE session_result_id = ?
-                    )
-                    """,  # noqa: S608 — names are from the snapshot, written by this module
-                    (session_result_id,),
-                )
+            await delete_verdicts(db, session_result_id=session_result_id)
             await db.execute(
                 f"DELETE FROM {rows_table} WHERE session_result_id = ?",  # noqa: S608
                 (session_result_id,),
