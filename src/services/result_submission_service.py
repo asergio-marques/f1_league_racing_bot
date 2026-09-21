@@ -1890,9 +1890,9 @@ async def snapshot_before_amendment(
     """Record the round as it stands, so an abandoned amendment can be undone.
 
     Taken before stage one writes. Captures, for every session being amended, its header, its
-    driver rows, and its verdict records — which is the whole of what the amendment changes that
-    a revert cannot recompute. The standings and the points follow from the driver rows, so
-    restoring those and cascading again reproduces them.
+    driver rows, and its verdict records, and the round's attendance pardons — which is the
+    whole of what the amendment changes that a revert cannot recompute. The standings and the
+    points follow from the driver rows, so restoring those and cascading again reproduces them.
     """
     sessions: list[dict] = []
     async with get_connection(db_path) as db:
@@ -1943,6 +1943,16 @@ async def snapshot_before_amendment(
         if not sessions:
             return
 
+        # **The pardons, whole** (#345). The appeal stage rewrites them before it releases the
+        # snapshot, so a failure between the two — or a crash — would otherwise revert the
+        # classification and the verdicts and leave the amendment's pardons standing on them.
+        cursor = await db.execute(
+            "SELECT * FROM attendance_pardons WHERE attendance_id IN "
+            "(SELECT id FROM driver_round_attendance WHERE round_id = ?) ORDER BY id",
+            (round_id,),
+        )
+        pardons = [dict(row) for row in await cursor.fetchall()]
+
         expires = (
             datetime.now(timezone.utc)
             + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS)
@@ -1950,7 +1960,7 @@ async def snapshot_before_amendment(
         await db.execute(
             "UPDATE round_amend_channels SET pre_amendment_state = ?, expires_at = ? "
             "WHERE round_id = ?",
-            (_json.dumps({"sessions": sessions}), expires, round_id),
+            (_json.dumps({"sessions": sessions, "pardons": pardons}), expires, round_id),
         )
         await db.commit()
 
@@ -1969,8 +1979,9 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot=None) -> b
     showing the round as it was. Reposting would only move the round to the bottom of each
     channel, out of order.
 
-    Nor is the attendance touched: the pardons are rewritten, and the attendance recalculated, in
-    the last stage too, after the snapshot is released.
+    The round's pardons come back as they were too: the last stage rewrites them before it
+    releases the snapshot. The attendance itself is left alone, being recalculated only after
+    the release.
 
     Reached by the sweep, by **Cancel**, by an internal failure part-way through, and by restart
     recovery, and safe to call where no snapshot was taken — an amendment abandoned before stage
@@ -2043,6 +2054,19 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot=None) -> b
                     session_result_id,
                 ),
             )
+        if "pardons" in snapshot:
+            await db.execute(
+                "DELETE FROM attendance_pardons WHERE attendance_id IN "
+                "(SELECT id FROM driver_round_attendance WHERE round_id = ?)",
+                (round_id,),
+            )
+            for pardon in snapshot["pardons"]:
+                columns = ", ".join(pardon)
+                placeholders = ", ".join("?" for _ in pardon)
+                await db.execute(
+                    f"INSERT INTO attendance_pardons ({columns}) VALUES ({placeholders})",  # noqa: S608
+                    list(pardon.values()),
+                )
         await db.execute(
             "UPDATE round_amend_channels SET pre_amendment_state = NULL, expires_at = NULL "
             "WHERE round_id = ?",
@@ -2414,7 +2438,8 @@ async def _approve_amendment_appeals(interaction, state) -> None:
     1. The amendment is claimed, so neither the sweep nor **Cancel** can revert the round while
        this runs.
     2. The upheld appeals are applied and recorded, and — with the attendance module on — the
-       round's pardons rewritten to the set the report stage held.
+       round's pardons rewritten to the set the report stage held. The snapshot holds both, so
+       a failure here or before the release puts the pardons back with everything else.
     3. The snapshot is released. That is the commitment: from here nothing reverts the round.
     4. Everything the division's channels show is rebuilt, in round order: results, standings,
        the attendance sheet, then the verdicts. Division-wide rather than this round alone,

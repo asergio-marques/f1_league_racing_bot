@@ -228,6 +228,52 @@ async def test_standings_names_that_cannot_be_had_still_leave_the_cascade_runnin
     assert cascade.await_args.args[3] is None
 
 
+async def _pardons(db_path) -> list[tuple]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, attendance_id, pardon_type, justification, granted_by, granted_at "
+            "FROM attendance_pardons ORDER BY id"
+        )
+        return [tuple(row) for row in await cursor.fetchall()]
+
+
+async def test_the_rounds_pardons_come_back_as_they_were(tmp_path):
+    """The appeal stage rewrites them before it releases the snapshot; a revert from there —
+    a failure, or a restart — put back the classification and left the new pardons on it."""
+    db_path = await _db(tmp_path, "revert_pardons")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (31, '101', 'ASSIGNED')"
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance (id, round_id, division_id, driver_profile_id, "
+            "rsvp_status) VALUES (41, ?, ?, 31, 'NO_RSVP')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO attendance_pardons (id, attendance_id, pardon_type, justification, "
+            "granted_by, granted_at) VALUES (7, 41, 'NO_RSVP', 'Ill', 55, "
+            "'2026-02-01T20:00:00+00:00')"
+        )
+        await db.commit()
+    before = await _pardons(db_path)
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    # What the appeal stage writes: the round's pardons gone, and another in their place.
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM attendance_pardons")
+        await db.execute(
+            "INSERT INTO attendance_pardons (attendance_id, pardon_type, justification, "
+            "granted_by, granted_at) VALUES (41, 'ABSENT', 'New', 56, '2026-02-02T00:00:00+00:00')"
+        )
+        await db.commit()
+
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        await revert_abandoned_amendment(db_path, ROUND_ID)
+
+    assert await _pardons(db_path) == before
+
+
 async def test_the_snapshot_is_cleared_once_it_has_been_used(tmp_path):
     """A snapshot left behind would let a later sweep undo the round a second time."""
     db_path = await _db(tmp_path, "revert_clears")
