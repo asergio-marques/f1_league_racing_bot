@@ -1,6 +1,53 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-21 — v14.0.0 → v14.0.1: PATCH — a verdict's message id is persisted (issues #345, #189)]
+  Version change    : 14.0.0 → 14.0.1
+  Bump rationale    : PATCH. Three statements of fact about the verdict are corrected to match
+                      the bot: that no message id is persisted for one, and that it is never
+                      replaced or deleted. The obligation of Rule 17 and the verdict's ground for
+                      meeting it are unchanged — a verdict is still never edited or redrawn, and
+                      its corrections still arrive as new postings. MINOR was weighed and
+                      rejected: the sentence Rule 17 gains says why persisting the id leaves the
+                      verdict static, which clarifies the existing ground rather than adding one,
+                      and nothing the old text required is forbidden, "need be persisted" never
+                      having been a prohibition.
+
+  Modified sections :
+    - Principle XIV, Rule 17, the paragraph naming the verdict the second static type — "no
+      message id need be persisted for it at all" becomes a statement that the id is persisted
+      for reasons outside the Rule, amendment and disabling, neither of which edits or redraws
+      a verdict.
+    - Principle XIV, the note on the steward module — the second test no longer says the type
+      "deliberately does not have" a persisted message id.
+    - New Entities (v4.8.0), the verdict bullet — "posted once and never edited, replaced or
+      deleted, and no message id is persisted" is corrected in place, keeping what held when it
+      was introduced and naming what is recorded now.
+
+  Why the constitution is the document that moved:
+    - Issue #345, merged as #358 on 2026-09-21, records each verdict's channel and message ids on
+      `penalty_records` and `appeal_records`, and each round's banner in
+      `verdict_banner_messages`, so that an amendment can replace a round's verdicts. That made
+      all three statements false; the amendment did not reach this document.
+    - Issue #189, decided with the user on 2026-09-21 on branch
+      fix/189-purge-verdict-announcements, has disabling the results module mid-season take the
+      season's announced verdicts and their banners down with its results. The results module
+      specification states the rule; this document only had to stop contradicting it.
+    - Principle XIV's rationale, which says reading the obligation as "no mutable datum" would
+      have meant "persisting a message id for a message nothing will ever edit", is left as it
+      stands: nothing edits a verdict still, and the id is persisted for other reasons.
+    - The v2.7.0 entity listing of `announcement_channel_id` is historical and unedited.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred items    : none.
+
+  Templates         : no template reads the verdict's persistence; none required changes.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-20 — v13.2.0 → v14.0.0: MAJOR — two stage restrictions on acts that had none (issue #224)]
   Version change    : 13.2.0 → 14.0.0
   Bump rationale    : MAJOR. Both changes narrow an existing permission, which is backward
@@ -7094,8 +7141,11 @@ rather than as edits to old ones. Where a correction would instead amend the pos
 type is drawing a state after all and is not static.
 
 The verdict is the second static type, and the strongest case of the form rather than a third form:
-its message is never edited either, so Rule 8's delete-and-repost does not arise for it in any shape
-and no message id need be persisted for it at all.
+its message is never edited either, so Rule 8's delete-and-repost does not arise for it on any change
+of what it draws. Its message id is persisted nonetheless, for reasons outside this Rule: an amendment
+of a round announces that round's verdicts afresh as new postings and takes the superseded ones down,
+and disabling the results module mid-season takes a season's verdicts down with its results. Neither
+edits a verdict or redraws its picture, so neither bears on its being static.
 
 The obligation is held by the author of the type and not by a check the module runs — a field's
 mutability is a fact about the module that owns the datum, not a property visible in the catalogue.
@@ -7318,8 +7368,9 @@ rather than discovered:
   MUST be reviewed as one, the question being whether the new value was settled at the moment the
   decision was taken.
 - A verdict **amended in place** rather than superseded by a second verdict is no longer a record
-  under Rule 17, and takes Rule 8's delete-and-repost like any other graphic — with a persisted
-  message id, which the type deliberately does not have today.
+  under Rule 17, and takes Rule 8's delete-and-repost like any other graphic. The persisted message
+  id that needs is already held (v14.0.1), but held for replacing and removing a verdict, never for
+  redrawing one.
 
 Neither is a prediction of what the steward module will do. Both are what it will have to answer.
 
@@ -7709,9 +7760,12 @@ is recorded here so that it is not re-derived as a schema one.
 **None.** The verdict image type introduces no entity and amends none, and the absence is recorded
 here so that it is not re-derived.
 
-- A verdict is posted once and is never edited, replaced or deleted, and **no message id is persisted
-  for one**. This is Rule 17's static form at its strongest, and it needs no state whatever: no table
-  records a verdict's message, and the image flow adds no column to any that exists.
+- A verdict is never edited, and the image flow adds no column to any table that exists. This is
+  Rule 17's static form at its strongest. As introduced, a verdict was also never replaced or deleted
+  and no message id was persisted for one; recorded at v14.0.1, its channel and message ids are now
+  held on `penalty_records` and `appeal_records`, and the banner heading a round's run in
+  `verdict_banner_messages`, so that an amendment can replace a round's verdicts (#345) and a disabled
+  results module remove them (#189). Neither redraws a verdict.
 - `PenaltyRecord`, `AppealRecord` and `DivisionResultsConfig.penalty_channel_id` (all v2.7.0) are read
   as they stand. So are the attendance module's autosack and autoreserve enforcements, whose
   announcements are verdicts of the third kind.
@@ -8029,4 +8083,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.0.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-20
+**Version**: 14.0.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-21
