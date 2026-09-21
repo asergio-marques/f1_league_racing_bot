@@ -876,9 +876,11 @@ async def _round_is_final(db_path: str, round_id: int) -> bool:
     return bool(row and row["status"] == RoundStatus.FINAL.value)
 
 
-# The one query behind both halves of ``recompute_former_drivers_for_round``: the profiles a
-# round's *final* results show as having raced it. Two selects rather than a union of the two
-# result tables, because the columns they share are exactly the three named here.
+# The one query behind both halves of ``recompute_former_drivers_for_round``: every (profile,
+# round) pair a *final* round's live results show as having raced. Qualifying and race rows live
+# in separate tables with only these columns in common, so the two are unioned rather than
+# joined. `UNION` and not `UNION ALL`: a driver appearing in both sessions of a round raced it
+# once.
 _RACED_A_ROUND_SQL = """
     SELECT rsr.driver_profile_id AS profile_id, sr.round_id AS round_id
     FROM race_session_results rsr
@@ -900,9 +902,9 @@ _RACED_A_ROUND_SQL = """
 """
 
 # Every profile named anywhere in one round's live results, whatever the outcome and whatever
-# the round's status. The candidate set the recompute considers — a driver an amendment struck
-# out entirely is no longer in it, which is why the caller passes the round rather than a list
-# of drivers.
+# the round's status. The recompute's candidate set, and the amendment path's record of who the
+# round held before it was rewritten. A driver struck out of the round entirely is in neither
+# table afterwards, which is what `also_consider` is for.
 _PROFILES_IN_ROUND_SQL = """
     SELECT rsr.driver_profile_id AS profile_id
     FROM race_session_results rsr
