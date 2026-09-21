@@ -592,6 +592,28 @@ async def test_a_channel_that_will_not_delete_does_not_fail_a_cancellation(tmp_p
     assert await _amend_rows(db_path) == 0
 
 
+async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path):
+    """The retired eight-column format is gone, not merely unused (#345).
+
+    `apply_penalties` adds to the stored penalty columns, and the replay re-inserts the driver
+    rows at zero before running the round's report and appeal stages over them. A paste that
+    also carried the sanctions would have each applied twice — so there is no switch left that
+    could ask for it, and the amendment validates exactly as a first submission does.
+    """
+    import inspect
+
+    from services.result_submission_service import validate_submission_block
+
+    assert "amend_format" not in inspect.signature(validate_submission_block).parameters
+
+    db_path = await _make_db(tmp_path)
+    interaction = _interaction(_amend_channel(), message=_message())
+    stubs = await _amend(_make_cog(db_path), interaction)
+
+    stubs["validate"].assert_called_once()
+    assert "amend_format" not in stubs["validate"].call_args.kwargs
+
+
 # ---------------------------------------------------------------------------
 # An amendment already open, and undoing one after its first stage (#345)
 # ---------------------------------------------------------------------------
@@ -993,6 +1015,7 @@ async def test_of_two_commands_racing_in_one_division_the_first_recorded_keeps_i
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT channel_id FROM round_amend_channels")
         assert [r[0] for r in await cursor.fetchall()] == [5151]
+
 
 
 # ---------------------------------------------------------------------------

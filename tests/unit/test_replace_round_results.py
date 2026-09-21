@@ -48,8 +48,6 @@ def _race_row(user_id: int, position: int) -> dict:
         "total_time": "1:30:00.000" if position == 1 else "+5.000",
         "fastest_lap": "1:20.000",
         "ingame_penalties": None,
-        "postrace_penalty": "N/A",
-        "appeal_penalty": "N/A",
     }
 
 
@@ -62,8 +60,6 @@ def _qualifying_row(user_id: int, position: int) -> dict:
         "tyre": "Soft",
         "best_lap": "1:19.000",
         "gap": None,
-        "postrace_penalty": "N/A",
-        "appeal_penalty": "N/A",
     }
 
 

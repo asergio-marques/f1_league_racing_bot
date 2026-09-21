@@ -2838,9 +2838,6 @@ _DELTA_TIME_RE = re.compile(
 # Lap gap:  "x Laps"  |  "+x Laps"  (case-insensitive)
 _LAP_GAP_RE = re.compile(r"^\+?\d+ Laps?$", re.IGNORECASE)
 
-# Seconds-only penalty value:  SS.mmm  (e.g. 5.000, 120.000)
-_PENALTY_SECONDS_RE = re.compile(r"^\d+\.\d{3}$")
-
 # Discord member mention:  <@123>  or  <@!123>
 _MEMBER_MENTION_RE = re.compile(r"^<@!?(\d+)>$")
 
@@ -2890,9 +2887,7 @@ class ParsedQualifyingRow:
     tyre: str | None
     best_lap: str           # time string or DNS/DNF/DSQ (in-game result)
     gap: str                # delta string or "N/A"
-    postrace_penalty: str   # "N/A" or "DSQ"
-    appeal_penalty: str     # "N/A" or "DSQ"
-    outcome: OutcomeModifier  # derived: DSQ if any penalty=DSQ, else from best_lap
+    outcome: OutcomeModifier  # derived from best_lap
 
 
 @dataclass
@@ -2903,9 +2898,9 @@ class ParsedRaceRow:
     total_time: str         # absolute time, delta, lap-gap, or outcome literal
     fastest_lap: str        # time string or "N/A"
     ingame_penalties: str   # time string (e.g. "5.000") or "N/A"
-    postrace_penalty: str   # seconds string (e.g. "5.000"), "N/A", or "DSQ"
-    appeal_penalty: str     # seconds string (e.g. "5.000"), "N/A", or "DSQ"
-    outcome: OutcomeModifier  # derived: DSQ if any penalty=DSQ or total_time=DSQ, else from total_time
+    outcome: OutcomeModifier  # derived from total_time
+    # No post-race or appeal sanction: those are decided in the review stages, never pasted —
+    # an amendment included, since #345 withdrew the two columns it used to take.
 
 
 # ---------------------------------------------------------------------------
@@ -3006,8 +3001,6 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
         tyre=canonicalise_tyre(tyre),
         best_lap=best_lap,
         gap=gap,
-        postrace_penalty="N/A",
-        appeal_penalty="N/A",
         outcome=outcome,
     )
 
@@ -3076,184 +3069,6 @@ def _validate_race_row_wizard(line: str, is_first: bool) -> ParsedRaceRow | str:
         total_time=total_time,
         fastest_lap=fastest_lap,
         ingame_penalties=ingame_penalties,
-        postrace_penalty="N/A",
-        appeal_penalty="N/A",
-        outcome=outcome,
-    )
-
-
-def validate_qualifying_row(line: str) -> ParsedQualifyingRow | str:
-    """Parse and validate a single qualifying-result line (8 comma-separated fields).
-
-    Fields: Position, Driver mention, Team role mention, Tyre, Best Lap, Gap,
-            Postrace Penalty, Appeal Penalty
-
-    Best Lap: absolute time (e.g. 1:23.456) or in-game outcome DNS/DNF/DSQ.
-    Postrace Penalty / Appeal Penalty: N/A or DSQ only; both DSQ on the same row is invalid.
-    Outcome is derived as DSQ if either penalty field is DSQ, otherwise from Best Lap.
-
-    Returns a ParsedQualifyingRow on success or an error string on failure.
-    """
-    parts = [p.strip() for p in line.strip().split(",")]
-    if len(parts) != 8:
-        return f"Expected 8 comma-separated fields, got {len(parts)}: `{line.strip()}`"
-
-    pos_str, driver_str, team_str, tyre, best_lap, gap, postrace_penalty, appeal_penalty = parts
-
-    if not pos_str.isdigit():
-        return f"Position must be a positive integer, got `{pos_str}`"
-    position = int(pos_str)
-
-    driver_user_id = _parse_mention(driver_str)
-    if driver_user_id is None:
-        return f"Driver must be a Discord member mention (<@user_id>), got `{driver_str}`"
-
-    team_role_id = _parse_role_mention(team_str)
-    if team_role_id is None:
-        return f"Team must be a Discord role mention (<@&role_id>), got `{team_str}`"
-
-    tyre_error = _tyre_error(tyre)
-    if tyre_error is not None:
-        return tyre_error
-
-    best_lap_upper = best_lap.upper()
-    if best_lap_upper not in _OUTCOME_LITERALS and not _ABS_TIME_RE.match(best_lap):
-        return (
-            f"Best Lap must be a time (e.g. 1:23.456) or DNS/DNF/DSQ, got `{best_lap}`"
-        )
-
-    # For 1st position the Gap input is ignored entirely (spec)
-    if position != 1:
-        gap_upper = gap.upper()
-        if (
-            gap_upper != "N/A"
-            and not _DELTA_TIME_RE.match(gap)
-            and not _ABS_TIME_RE.match(gap)
-        ):
-            return f"Gap must be a delta time (e.g. +1:23.456), an absolute time, or N/A, got `{gap}`"
-
-    pp_upper = postrace_penalty.upper()
-    if pp_upper not in ("N/A", "DSQ"):
-        return f"Postrace Penalty must be N/A or DSQ, got `{postrace_penalty}`"
-
-    ap_upper = appeal_penalty.upper()
-    if ap_upper not in ("N/A", "DSQ"):
-        return f"Appeal Penalty must be N/A or DSQ, got `{appeal_penalty}`"
-
-    if pp_upper == "DSQ" and ap_upper == "DSQ":
-        return "Postrace Penalty and Appeal Penalty cannot both be DSQ on the same row."
-
-    # Derive outcome: penalty DSQ overrides in-game result
-    if pp_upper == "DSQ" or ap_upper == "DSQ":
-        outcome = OutcomeModifier.DSQ
-    else:
-        outcome = _parse_outcome(best_lap)
-
-    return ParsedQualifyingRow(
-        position=position,
-        driver_user_id=driver_user_id,
-        team_role_id=team_role_id,
-        tyre=canonicalise_tyre(tyre),
-        best_lap=best_lap,
-        gap=gap,
-        postrace_penalty=postrace_penalty,
-        appeal_penalty=appeal_penalty,
-        outcome=outcome,
-    )
-
-
-def validate_race_row(line: str, is_first: bool) -> ParsedRaceRow | str:
-    """Parse and validate a single race-result line (8 comma-separated fields).
-
-    Fields: Position, Driver mention, Team role mention, Total Time, Fastest Lap,
-            Ingame Time Penalties, Postrace Penalty, Appeal Penalty
-
-    Total Time: absolute (P1), delta, lap-gap, or outcome literal DNS/DNF/DSQ.
-    Ingame Time Penalties: absolute time string (e.g. 5.000, 0:05.000) or N/A.
-    Postrace Penalty / Appeal Penalty: seconds-only string (e.g. 5.000), N/A, or DSQ.
-      - If either is DSQ, outcome is DSQ (treated as 0ms for base time calculation).
-    Returns a ParsedRaceRow on success or an error string on failure.
-    """
-    parts = [p.strip() for p in line.strip().split(",")]
-    if len(parts) != 8:
-        return f"Expected 8 comma-separated fields, got {len(parts)}: `{line.strip()}`"
-
-    pos_str, driver_str, team_str, total_time, fastest_lap, ingame_penalties, postrace_penalty, appeal_penalty = parts
-
-    if not pos_str.isdigit():
-        return f"Position must be a positive integer, got `{pos_str}`"
-    position = int(pos_str)
-
-    driver_user_id = _parse_mention(driver_str)
-    if driver_user_id is None:
-        return f"Driver must be a Discord member mention (<@user_id>), got `{driver_str}`"
-
-    team_role_id = _parse_role_mention(team_str)
-    if team_role_id is None:
-        return f"Team must be a Discord role mention (<@&role_id>), got `{team_str}`"
-
-    total_upper = total_time.upper()
-    if is_first:
-        if not _ABS_TIME_RE.match(total_time):
-            return (
-                f"1st-place Total Time must be an absolute time (e.g. 1:23:45.678), "
-                f"got `{total_time}`"
-            )
-    else:
-        valid = (
-            total_upper in _OUTCOME_LITERALS
-            or _ABS_TIME_RE.match(total_time)
-            or _DELTA_TIME_RE.match(total_time)
-            or _LAP_GAP_RE.match(total_time)
-        )
-        if not valid:
-            return (
-                f"Total Time must be a time, delta (+M:SS.mmm), lap gap (x Laps), "
-                f"or DNS/DNF/DSQ, got `{total_time}`"
-            )
-
-    fl_upper = fastest_lap.upper()
-    # When Total Time is an outcome literal, Fastest Lap validation is skipped (spec)
-    if total_upper not in _OUTCOME_LITERALS:
-        if fl_upper != "N/A" and not _ABS_TIME_RE.match(fastest_lap):
-            return f"Fastest Lap must be a time (e.g. 1:23.456) or N/A, got `{fastest_lap}`"
-
-    ip_upper = ingame_penalties.upper()
-    if ip_upper != "N/A" and not _ABS_TIME_RE.match(ingame_penalties):
-        return (
-            f"Ingame Time Penalties must be a time (e.g. 5.000, 0:05.000) or N/A, "
-            f"got `{ingame_penalties}`"
-        )
-
-    pp_upper = postrace_penalty.upper()
-    if pp_upper != "N/A" and pp_upper != "DSQ" and not _PENALTY_SECONDS_RE.match(postrace_penalty):
-        return (
-            f"Postrace Penalty must be a seconds value (e.g. 5.000), N/A, or DSQ, "
-            f"got `{postrace_penalty}`"
-        )
-
-    ap_upper = appeal_penalty.upper()
-    if ap_upper != "N/A" and ap_upper != "DSQ" and not _PENALTY_SECONDS_RE.match(appeal_penalty):
-        return (
-            f"Appeal Penalty must be a seconds value (e.g. 5.000), N/A, or DSQ, "
-            f"got `{appeal_penalty}`"
-        )
-
-    # Derive outcome: DSQ if any penalty is DSQ or total_time is DSQ
-    if pp_upper == "DSQ" or ap_upper == "DSQ" or total_upper == "DSQ":
-        outcome = OutcomeModifier.DSQ
-    else:
-        outcome = _parse_outcome(total_time)
-
-    return ParsedRaceRow(
-        position=position,
-        driver_user_id=driver_user_id,
-        team_role_id=team_role_id,
-        total_time=total_time,
-        fastest_lap=fastest_lap,
-        ingame_penalties=ingame_penalties,
-        postrace_penalty=postrace_penalty,
-        appeal_penalty=appeal_penalty,
         outcome=outcome,
     )
 
@@ -3303,7 +3118,6 @@ def validate_submission_block(
     reserve_team_role_id: int | None,
     driver_team_map: dict[int, int],
     reserve_driver_ids: set[int] | None = None,
-    amend_format: bool = False,
     other_active_assignments: dict[int, tuple[int, str]] | None = None,
     current_of: Mapping[int, int] | None = None,
 ) -> list[ParsedQualifyingRow | ParsedRaceRow] | list[str]:
@@ -3334,13 +3148,9 @@ def validate_submission_block(
 
     for i, line in enumerate(non_empty, start=1):
         if is_qualifying:
-            result = validate_qualifying_row(line) if amend_format else _validate_qualifying_row_wizard(line)
+            result = _validate_qualifying_row_wizard(line)
         else:
-            result = (
-                validate_race_row(line, is_first=(i == 1))
-                if amend_format
-                else _validate_race_row_wizard(line, is_first=(i == 1))
-            )
+            result = _validate_race_row_wizard(line, is_first=(i == 1))
 
         if isinstance(result, str):
             errors.append(f"Row {i}: {result}")
@@ -3965,8 +3775,6 @@ def _row_dict_from_qualifying(row: ParsedQualifyingRow) -> dict:
         "tyre": row.tyre,
         "best_lap": row.best_lap,
         "gap": row.gap,
-        "postrace_penalty": row.postrace_penalty,
-        "appeal_penalty": row.appeal_penalty,
     }
 
 
@@ -3981,8 +3789,6 @@ def _row_dict_from_race(row: ParsedRaceRow) -> dict:
         "total_time": row.total_time,
         "fastest_lap": fl,
         "ingame_penalties": ip,
-        "postrace_penalty": row.postrace_penalty,
-        "appeal_penalty": row.appeal_penalty,
     }
 
 
@@ -3998,7 +3804,11 @@ async def _insert_new_tables_in_tx(
     Must be called inside an open transaction; caller is responsible for commit.
     *rows* must be plain dicts with keys: driver_user_id, team_role_id,
     finishing_position, outcome, and for qualifying: tyre, best_lap;
-    for race: total_time, ingame_penalties, postrace_penalty, appeal_penalty, fastest_lap.
+    for race: total_time, ingame_penalties, fastest_lap.
+
+    A row is inserted with no post-race or appeal sanction. Those are applied by the review
+    stages, as records carrying their justification and author (#345); a classification
+    carries only what the game itself imposed.
     """
     if session_type.is_qualifying:
         for row in rows:
@@ -4037,21 +3847,9 @@ async def _insert_new_tables_in_tx(
             outcome = OutcomeModifier(outcome_str)
             total_time = row.get("total_time") or ""
 
-            # Parse all three penalty columns.  DSQ penalty fields count as 0ms.
             ip_str = row.get("ingame_penalties")
             ingame_ms = _parse_time_to_ms(ip_str) if ip_str else 0
-
-            def _penalty_ms(val: str | None) -> int:
-                if not val or val.upper() in ("N/A", "DSQ"):
-                    return 0
-                try:
-                    return _parse_time_to_ms(val)
-                except ValueError:
-                    return 0
-
-            postrace_ms = _penalty_ms(row.get("postrace_penalty"))
-            appeal_ms = _penalty_ms(row.get("appeal_penalty"))
-            total_penalty_ms = ingame_ms + postrace_ms + appeal_ms
+            total_penalty_ms = ingame_ms
 
             base_time_ms: int | None = None
             laps_behind: int | None = None
@@ -4087,8 +3885,8 @@ async def _insert_new_tables_in_tx(
                     base_time_ms,
                     laps_behind,
                     ingame_ms,
-                    postrace_ms,
-                    appeal_ms,
+                    0,
+                    0,
                     fl,
                     row.get("fastest_lap_bonus", 0),
                     row.get("points_awarded", 0),
