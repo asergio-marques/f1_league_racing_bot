@@ -5602,11 +5602,6 @@ class SeasonCog(commands.Cog):
             return
 
         stage_one_writing[0] = False
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_SUCCESS | "
-            f"round {rnd.round_number} session {sessions_text} config: "
-            + ", ".join(f"{c.session_type.value}={c.config_name}" for c in collected),
-        )
 
         # **Stages two and three follow in this channel** (#345). The corrected classifications
         # are recorded, and nothing posted; what the round *decided* about those sessions is

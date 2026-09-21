@@ -436,15 +436,19 @@ async def test_an_accepted_paste_sends_the_admin_to_the_review_stages(tmp_path):
     assert "reports and appeals" in replied
 
 
-async def test_a_success_is_logged_with_its_configuration(tmp_path):
+async def test_recording_stage_one_logs_no_success(tmp_path):
+    """Stage one is not the amendment succeeding, and the log must not say it was.
+
+    `amend_round_results` logs `AMEND_STAGE_1 | Recorded`, configurations and all; the command
+    once logged `AMEND_SUCCESS` beside it, before the reports and appeals had been reviewed or
+    anything published.
+    """
     db_path = await _make_db(tmp_path, name="amend_log")
     cog = _make_cog(db_path)
 
     await _amend(cog, _interaction(_amend_channel(), message=_message()))
 
-    assert "AMEND_SUCCESS" in _logged(cog)
-    # Named per session, one amendment now covering any number of them.
-    assert "FEATURE_RACE=Standard" in _logged(cog)
+    assert "AMEND_SUCCESS" not in _logged(cog)
 
 
 async def test_the_sessions_existing_configuration_is_kept_where_still_attached(tmp_path):

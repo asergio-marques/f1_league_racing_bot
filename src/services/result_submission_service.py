@@ -2711,8 +2711,9 @@ async def amend_round_results(
     await bot.output_router.post_log(
         f"<@{amended_by}> | AMEND_STAGE_1 | Recorded\n"
         f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
-        f"  round: {rctx['round_number']}, "
-        f"sessions: {_sessions_text([s.session_type for s in sessions])}\n"
+        f"  round: {rctx['round_number']}, sessions: "
+        + ", ".join(f"{s.session_type.value}={s.config_name}" for s in sessions)
+        + "\n"
         "  Corrected classification recorded. Nothing is published until the report and "
         "appeal stages are approved."
     )

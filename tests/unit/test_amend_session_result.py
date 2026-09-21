@@ -506,7 +506,9 @@ async def test_the_amendment_is_logged(tmp_path):
     assert "AMEND_STAGE_1 | Recorded" in logged
     assert f"<@{AMENDER}>" in logged
     assert "round: 3" in logged
-    assert "FEATURE_RACE" in logged
+    # Each session named with the configuration it was scored under — the one entry that
+    # records it, now that the cog's `AMEND_SUCCESS` is gone.
+    assert "FEATURE_RACE=Standard" in logged
     # Says where it has reached, not that it succeeded — nothing is published yet (#345).
     assert "Nothing is published until" in logged
 
@@ -828,7 +830,7 @@ async def test_several_sessions_are_written_in_one_amendment(tmp_path):
     # Points once per session, the standings once for the lot.
     assert stubs["apply_points"].await_count == 2
     stubs["cascade"].assert_awaited_once()
-    assert "sessions: FEATURE_QUALIFYING, FEATURE_RACE" in _amend_log(stubs)
+    assert "sessions: FEATURE_QUALIFYING=Standard, FEATURE_RACE=Standard" in _amend_log(stubs)
 
 
 async def test_a_refusal_in_one_session_writes_none_of_them(tmp_path):
