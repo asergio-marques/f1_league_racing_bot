@@ -17,6 +17,7 @@ from models.session_result import DriverSessionResult, OutcomeModifier  # Driver
 from utils import results_formatter
 from utils.batch_notice import batch_notice
 from utils.channel_guard import is_league_manager
+from utils.input_validator import USER_MENTION, parse_role_mention, parse_user_mention
 from utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
@@ -2998,28 +2999,11 @@ _DELTA_TIME_RE = re.compile(
 # Lap gap:  "x Laps"  |  "+x Laps"  (case-insensitive)
 _LAP_GAP_RE = re.compile(r"^\+?\d+ Laps?$", re.IGNORECASE)
 
-# Discord member mention:  <@123>  or  <@!123>
-_MEMBER_MENTION_RE = re.compile(r"^<@!?(\d+)>$")
-
-# Discord role mention:  <@&123>
-_ROLE_MENTION_RE = re.compile(r"^<@&(\d+)>$")
-
-# Optional fastest-lap override header:  FL: <@123>  (case-insensitive)
-_FL_OVERRIDE_RE = re.compile(r"^FL:\s*<@!?(\d+)>\s*$", re.IGNORECASE)
+# Optional fastest-lap override header:  FL: <@123>  (case-insensitive). The mention is the
+# shared one (#362), so the header names a driver exactly as a row of the paste does.
+_FL_OVERRIDE_RE = re.compile(rf"^FL:\s*{USER_MENTION}\s*$", re.IGNORECASE)
 
 _OUTCOME_LITERALS: frozenset[str] = frozenset({"DNS", "DNF", "DSQ"})
-
-
-def _parse_mention(text: str) -> int | None:
-    """Extract a member user ID from '<@123>' or '<@!123>'. Returns None if no match."""
-    m = _MEMBER_MENTION_RE.match(text.strip())
-    return int(m.group(1)) if m else None
-
-
-def _parse_role_mention(text: str) -> int | None:
-    """Extract a role ID from '<@&123>'. Returns None if no match."""
-    m = _ROLE_MENTION_RE.match(text.strip())
-    return int(m.group(1)) if m else None
 
 
 def _parse_outcome(time_field: str) -> OutcomeModifier:
@@ -3128,11 +3112,11 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
         return f"Position must be a positive integer, got `{pos_str}`"
     position = int(pos_str)
 
-    driver_user_id = _parse_mention(driver_str)
+    driver_user_id = parse_user_mention(driver_str)
     if driver_user_id is None:
         return f"Driver must be a Discord member mention (<@user_id>), got `{driver_str}`"
 
-    team_role_id = _parse_role_mention(team_str)
+    team_role_id = parse_role_mention(team_str)
     if team_role_id is None:
         return f"Team must be a Discord role mention (<@&role_id>), got `{team_str}`"
 
@@ -3181,11 +3165,11 @@ def _validate_race_row_wizard(line: str, is_first: bool) -> ParsedRaceRow | str:
         return f"Position must be a positive integer, got `{pos_str}`"
     position = int(pos_str)
 
-    driver_user_id = _parse_mention(driver_str)
+    driver_user_id = parse_user_mention(driver_str)
     if driver_user_id is None:
         return f"Driver must be a Discord member mention (<@user_id>), got `{driver_str}`"
 
-    team_role_id = _parse_role_mention(team_str)
+    team_role_id = parse_role_mention(team_str)
     if team_role_id is None:
         return f"Team must be a Discord role mention (<@&role_id>), got `{team_str}`"
 
