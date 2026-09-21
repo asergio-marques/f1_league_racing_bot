@@ -486,6 +486,23 @@ def _amend_guild(*, channel=None):
     return guild
 
 
+def test_amendments_are_reverted_before_submission_channels_resume():
+    """**The amend sweep runs before the submission-channel one** (#345, decided 2026-09-21).
+
+    An amendment open at the restart has its unapproved corrections in the database, and a
+    submission channel whose results were saved but never posted posts its standings from it on
+    recovery. Swept the other way round, those standings would publish the corrections the
+    amendment's revert then takes back. Read from the source, because the two run inside
+    `on_ready` among a dozen start-up steps no test drives whole.
+    """
+    import inspect
+
+    source = inspect.getsource(bot_module.main)
+    amend = source.index("await _recover_orphaned_amend_channels(bot)")
+    submission = source.index("await _recover_orphaned_submission_channels(bot)")
+    assert amend < submission
+
+
 async def test_an_orphaned_amend_channel_is_deleted(tmp_path):
     """Its `wait_for` loop died with the process, so it is a private channel nothing is
     listening to and a manager could paste results into for ever."""

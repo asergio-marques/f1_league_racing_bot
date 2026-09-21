@@ -256,13 +256,19 @@ async def main() -> None:
 
         await _recover_signup_close_timers()
 
+        # Close any results-amend channels left open by a previous run.
+        #
+        # **Before the submission channels, not after** (#345). An amendment open at the restart
+        # has its corrections in the database, unapproved; recovering a submission channel whose
+        # results were saved but never posted posts its standings from that database. Reverting
+        # the amendments first means those standings are built from the round as it raced,
+        # wherever the revert succeeds.
+        await _recover_orphaned_amend_channels(bot)
+
         # Close any submission channels that were left open by a previous run.
         # Their wait_for loops died with the process, so we reset them here
         # so /test-mode advance can re-trigger submission.
         await _recover_orphaned_submission_channels(bot)
-
-        # Close any results-amend channels left open by a previous run.
-        await _recover_orphaned_amend_channels(bot)
 
         # Clear any season-review approve button left standing by a previous run.
         await _recover_expired_review_prompts(bot)
