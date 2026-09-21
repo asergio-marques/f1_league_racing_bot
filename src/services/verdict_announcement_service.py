@@ -371,11 +371,12 @@ async def _mark_banner_over_sanction(db_path: str, banner) -> None:
     A sanction card is no verdict record: no replay re-announces it or takes it down. So a
     banner over one is kept by every replay, or the card would be left without its header.
 
-    *banner* is the message the card's own poster put up — spent earlier by the approval the
-    card belongs to, or posted for it just now. A card whose poster put up none, the banner
-    switch being off or the post failing, marks nothing: the banner that merely came before it
-    in the channel heads another run, and marked it would never come down. Never raises: the
-    card went out, and only this note of it failed.
+    *banner* is the message the card's own poster put up, picture or words — spent earlier by
+    the approval the card belongs to, or posted for it just now. Since #246 a header goes up
+    whether or not the aspect is on, so the switch being off no longer leaves a card bare;
+    only a post that failed does. Such a card marks nothing: the header that merely came
+    before it in the channel heads another run, and marked it would never come down. Never
+    raises: the card went out, and only this note of it failed.
     """
     banner_id = getattr(banner, "id", None)
     if banner_id is None:
