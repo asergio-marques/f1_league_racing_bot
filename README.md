@@ -2123,7 +2123,7 @@ The choice names above are exactly the names `/images config view` and `/season 
 >
 > One template serves all three kinds; they differ only in the text on the stage and session fields. A verdict of an **attendance sanction** pertains to no session and names no team, so those fields come off the picture — wrap them in a `_group` if your template draws a label above them, so the label leaves with them. A round of the mystery format reads "Mystery Grand Prix".
 >
-> **A verdict is posted once and never touched again.** It is not edited, replaced or deleted, and an appeal that overturns a penalty is announced as a verdict of its own standing beside the first, which remains a true record of what was decided when it was decided.
+> **A verdict is never edited.** Its picture is drawn once, when it is posted, and an appeal that overturns a penalty is announced as a verdict of its own standing beside the first, which remains a true record of what was decided when it was decided. Only two things take a verdict down: amending its round, which announces it afresh, and disabling the results module mid-season, which removes it.
 >
 > **A verdict that cannot be drawn never delays a sanction.** The review is finalised and the sanction enforced exactly as they would be with the images module switched off; the picture is made afterwards. A failed render posts that one verdict as text and leaves every other verdict of the same review, and of every other division, untouched. An attendance **pardon** is no verdict: it stays a log-channel record whatever the toggle says.
 >
