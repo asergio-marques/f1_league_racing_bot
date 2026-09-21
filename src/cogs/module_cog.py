@@ -16,6 +16,7 @@ from db.database import get_connection
 from models.driver_profile import DriverState
 from utils.channel_guard import league_admin_only
 from utils.league_server import LeagueView, league_guild
+from utils.output_router import _chunk_message
 
 log = logging.getLogger(__name__)
 
@@ -602,6 +603,10 @@ class ModuleCog(commands.Cog):
                 )
                 await db.commit()
 
+        # **Every message the bot could not remove is named, with a link** (decided 2026-09-21,
+        # #189). Its record went with the season, so this reply and the log are the only places
+        # left that can say where it is.
+        left_standing = purged["left_standing"]
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results | Success"
             + (
@@ -610,6 +615,12 @@ class ModuleCog(commands.Cog):
                 f"{purged['verdicts']} verdicts\n"
                 f"  rounds closed with no results: {len(closed)}"
                 if purged["rounds"]
+                else ""
+            )
+            + (
+                f"\n  left standing, to delete by hand: {len(left_standing)}\n"
+                + "\n".join(f"  {link}" for link in left_standing)
+                if left_standing
                 else ""
             ),
         )
@@ -624,6 +635,11 @@ class ModuleCog(commands.Cog):
                 f"{purged['verdicts']} verdict(s) removed" + tail
                 + "\nPoints configurations and division channels are kept."
             )
+        if left_standing:
+            season_note += (
+                f"\n⚠️ {len(left_standing)} message(s) could not be removed — delete them "
+                "by hand:\n" + "\n".join(left_standing)
+            )
 
         # Cascade: disable attendance if it is currently enabled
         cascaded = (
@@ -632,17 +648,17 @@ class ModuleCog(commands.Cog):
         )
         if cascaded:
             await self._disable_attendance(interaction, cascade=True)
-            await interaction.followup.send(
+            reply = (
                 "✅ Results & Standings module disabled.\n"
                 "✅ Attendance module disabled with it. Its per-division check-in and "
                 "attendance channels have been cleared; its timings, penalties and "
-                "thresholds are kept." + season_note,
-                ephemeral=True,
+                "thresholds are kept." + season_note
             )
         else:
-            await interaction.followup.send(
-                "✅ Results & Standings module disabled." + season_note, ephemeral=True
-            )
+            reply = "✅ Results & Standings module disabled." + season_note
+        # Split, because a season's worth of links can outrun Discord's limit on one message.
+        for chunk in _chunk_message(reply):
+            await interaction.followup.send(chunk, ephemeral=True)
 
     # ── Attendance enable ──────────────────────────────────────────────
 

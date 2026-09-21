@@ -193,12 +193,13 @@ def _view_of(interaction):
     return None
 
 
-def _purge(rounds: int = 0, *, on_call=None):
+def _purge(rounds: int = 0, *, on_call=None, left_standing=()):
     async def _run(db_path, bot):
         if on_call is not None:
             await on_call()
         return {"rounds": rounds, "sessions": rounds * 2, "standings": rounds * 20,
-                "messages": rounds * 3, "verdicts": rounds * 5}
+                "messages": rounds * 3, "verdicts": rounds * 5,
+                "left_standing": list(left_standing)}
 
     return patch("services.results_purge_service.purge_season_results", new=AsyncMock(side_effect=_run))
 
@@ -432,6 +433,62 @@ async def test_the_reply_counts_the_verdicts_removed(tmp_path):
     assert "12 results and standings message(s) and 20 verdict(s) removed" in replied
     log_line = cog.bot.output_router.post_log.await_args.args[0]
     assert "20 verdicts" in log_line
+
+
+def _links(count: int) -> list[str]:
+    return [f"https://discord.com/channels/5150/9003/{700000000000000000 + n}" for n in range(count)]
+
+
+async def test_the_reply_links_every_message_left_standing(tmp_path):
+    """**What the bot could not remove is named, with a link** (decided 2026-09-21, #189).
+
+    Its record went with the season, so the reply and the log channel are the only places left
+    that can tell a manager where it is.
+    """
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+    links = _links(2)
+
+    with _purge(rounds=4, left_standing=links):
+        await cog._apply_results_disable(interaction, cascade_attendance=False)
+
+    replied = _replied(interaction)
+    assert "2 message(s) could not be removed" in replied
+    log_line = cog.bot.output_router.post_log.await_args.args[0]
+    for link in links:
+        assert link in replied
+        assert link in log_line
+
+
+async def test_nothing_left_standing_says_nothing_of_it(tmp_path):
+    """A warning over nothing would send a manager looking for messages that are gone."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    with _purge(rounds=4):
+        await cog._apply_results_disable(interaction, cascade_attendance=False)
+
+    assert "could not be removed" not in _replied(interaction)
+    assert "left standing" not in cog.bot.output_router.post_log.await_args.args[0]
+
+
+async def test_a_long_list_is_split_across_replies(tmp_path):
+    """A season's worth of links outruns Discord's 2,000 characters, and one reply that long
+    would be refused outright — the manager would learn nothing at all."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+    links = _links(60)
+
+    with _purge(rounds=4, left_standing=links):
+        await cog._apply_results_disable(interaction, cascade_attendance=False)
+
+    sent = [call.args[0] for call in interaction.followup.send.await_args_list]
+    assert len(sent) > 1
+    assert all(len(chunk) <= 2000 for chunk in sent)
+    assert all(link in "\n".join(sent) for link in links)
 
 
 async def test_a_disable_between_seasons_reports_no_destruction(tmp_path):

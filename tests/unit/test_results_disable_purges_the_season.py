@@ -590,6 +590,20 @@ async def test_a_standings_message_left_standing_is_linked(tmp_path) -> None:
     assert cog.bot.channels[STANDINGS_CHANNEL_ID].deleted_messages == [2000]
 
 
+async def test_the_reply_links_a_verdict_left_standing(tmp_path) -> None:
+    """End to end: the verdict the bot could not remove is the one the reply links."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    cog = _make_cog(db_path)
+    cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {5001}
+
+    interaction = await _disable(cog)
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert "1 message(s) could not be removed" in reply
+    assert _link(VERDICTS_CHANNEL_ID, 5001) in reply
+
+
 async def test_a_message_deleted_by_hand_counts_as_removed(tmp_path) -> None:
     """A manager got there first. Nothing is left to remove, so nothing is named."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
