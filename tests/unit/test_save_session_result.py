@@ -68,6 +68,11 @@ async def _make_db(tmp_path, *, name: str, season_status: str = "ACTIVE") -> str
             "VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL')",
             (ROUND_ID, DIVISION_ID),
         )
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state, former_driver) "
+            "VALUES (31, ?, 'ASSIGNED', 0)",
+            (str(DRIVER_A),),
+        )
         await db.commit()
     return db_path
 
@@ -88,6 +93,26 @@ async def test_a_session_is_saved_with_its_drivers(tmp_path):
     )
 
     assert await _counts(db_path) == (1, 2)
+
+
+async def test_submitting_a_result_marks_nobody_a_former_driver(tmp_path):
+    """The round is still awaiting its verdicts, so nobody has raced it yet (#216).
+
+    The flag used to go up here, for every driver in the paste, the moment it was submitted —
+    so a driver pasted in by mistake and taken out by a resubmission stayed a former driver for
+    ever, and their profile survived a season end it should not have. It is set instead from
+    the round's final results, when the round becomes FINAL.
+    """
+    db_path = await _make_db(tmp_path, name="save_session_former")
+
+    await save_session_result(
+        db_path, ROUND_ID, DIVISION_ID, SessionType.FEATURE_RACE, "ACTIVE", "Standard",
+        77, [_race_row()],
+    )
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT former_driver FROM driver_profiles WHERE id = 31")
+        assert (await cursor.fetchone())["former_driver"] == 0
 
 
 async def test_saving_inside_a_transaction_writes_nothing_until_it_commits(tmp_path):

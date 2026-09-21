@@ -1255,6 +1255,11 @@ async def finalize_appeals_review(
                     f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
                     (RoundStatus.FINAL.value, round_id),
                 )
+                # The round's results are final as of the line above, so this is the moment its
+                # drivers become former drivers (#216) — in the same transaction, because a
+                # round that is FINAL with nobody marked is a season-end deletion of a profile
+                # its results point at.
+                await recompute_former_drivers_for_round(db, round_id)
                 await db.commit()
 
             # This is the only place a round becomes finished, and so the only place a division
@@ -1577,11 +1582,10 @@ async def _save_session_result_in_tx(
                 row["driver_user_id"], db
             )
         _profile_id_map[row["driver_user_id"]] = driver_profile_id
-        if driver_profile_id is not None:
-            await db.execute(
-                "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
-                (driver_profile_id,),
-            )
+    # **Submitting a result marks nobody a former driver** (#216). The round is still awaiting
+    # its verdicts, so this classification is provisional: a driver in it may yet be taken out
+    # by a resubmission or an appeal. The flag is set from the round's *final* results, by
+    # `recompute_former_drivers_for_round`, at the moment the round becomes FINAL.
     await _insert_new_tables_in_tx(db, session_result_id, session_type, driver_rows, _profile_id_map)
     return session_result_id
 

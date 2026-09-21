@@ -69,7 +69,10 @@ async def _make_db(
     round_status: str = "AWAITING_REPORT_VERDICTS",
     staged_json: str | None = None,
     attendance_row: bool = False,
+    results: list[tuple[int, int, str]] | None = None,
 ):
+    """*results* is (profile_id, driver_user_id, outcome), given a profile and a race row
+    apiece, for the tests that watch the former-driver flag (#216)."""
     db_path = os.path.join(str(tmp_path), f"{name}.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -108,8 +111,34 @@ async def _make_db(
                 "driver_profile_id, rsvp_status) VALUES (41, ?, ?, 31, 'NO_RSVP')",
                 (ROUND_ID, DIVISION_ID),
             )
+        if results:
+            session = await db.execute(
+                "INSERT INTO session_results (round_id, division_id, session_type, status, "
+                "config_name) VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE', 'Standard')",
+                (ROUND_ID, DIVISION_ID),
+            )
+            for position, (profile_id, driver, outcome) in enumerate(results, start=1):
+                await db.execute(
+                    "INSERT OR IGNORE INTO driver_profiles (id, discord_user_id, "
+                    "current_state, former_driver) VALUES (?, ?, 'ASSIGNED', 0)",
+                    (profile_id, str(driver)),
+                )
+                await db.execute(
+                    "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+                    "team_role_id, finishing_position, outcome, driver_profile_id) "
+                    "VALUES (?, ?, 3001, ?, ?, ?)",
+                    (session.lastrowid, driver, position, outcome, profile_id),
+                )
         await db.commit()
     return db_path
+
+
+async def _former(db_path, profile_id: int) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT former_driver FROM driver_profiles WHERE id = ?", (profile_id,)
+        )
+        return (await cursor.fetchone())["former_driver"]
 
 
 def _penalty(driver: int = 101) -> StagedPenalty:
@@ -675,6 +704,39 @@ async def test_approving_appeals_finishes_the_round(tmp_path):
     await _run(finalize_appeals_review, _state(db_path))
 
     assert await _round_status(db_path) == "FINAL"
+
+
+async def test_approving_appeals_marks_the_drivers_who_raced(tmp_path):
+    """Where the former-driver flag is set, and the only place the first pass sets it (#216).
+
+    The round becomes FINAL here, so this is the moment its results stop being provisional.
+    Driver 32's only entry is a did-not-start, so they did not race it.
+    """
+    db_path = await _make_db(
+        tmp_path,
+        name="appeals_former",
+        round_status="AWAITING_APPEAL_VERDICTS",
+        results=[(31, 101, "CLASSIFIED"), (32, 102, "DNS")],
+    )
+
+    await _run(finalize_appeals_review, _state(db_path))
+
+    assert await _former(db_path, 31) == 1
+    assert await _former(db_path, 32) == 0
+
+
+async def test_a_cancelled_round_marks_nobody(tmp_path):
+    """A round that never became final has no final results to mark by."""
+    db_path = await _make_db(
+        tmp_path,
+        name="appeals_cancelled_former",
+        round_status="CANCELLED",
+        results=[(31, 101, "CLASSIFIED")],
+    )
+
+    await _run(finalize_appeals_review, _state(db_path))
+
+    assert await _former(db_path, 31) == 0
 
 
 async def test_a_cancelled_round_is_not_raised_to_final(tmp_path):
