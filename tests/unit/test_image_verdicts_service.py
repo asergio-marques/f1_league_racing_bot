@@ -128,7 +128,7 @@ def test_a_bare_mention_becomes_the_name():
     )
 
 
-@pytest.mark.parametrize("form", ["<@123>", "<@!123>", "<@&123>"])
+@pytest.mark.parametrize("form", ["<@123>", "<@!123>"])
 def test_every_mention_form_is_resolved(form):
     assert resolve_mentions(f"{form} reached the limit.", _resolver) == (
         "Ada Lovelace reached the limit."
@@ -180,7 +180,7 @@ def test_the_ids_a_text_mentions_are_returned_in_the_order_they_appear():
     assert mention_ids("<@456> was hit by <@123>.") == ["456", "123"]
 
 
-@pytest.mark.parametrize("form", ["<@123>", "<@!123>", "<@&123>"])
+@pytest.mark.parametrize("form", ["<@123>", "<@!123>"])
 def test_every_mention_form_yields_its_id(form):
     assert mention_ids(f"{form} reached the limit.") == ["123"]
 
@@ -215,3 +215,11 @@ def test_text_holding_no_mention_yields_nothing():
 def test_empty_values_are_safe():
     assert mention_ids() == []
     assert mention_ids("", None) == []
+
+
+def test_a_role_mention_is_not_read_as_a_driver():
+    """A role addresses no driver (#362). Read as one it cost a member lookup that could only
+    fail, and drew the role's id where a name belonged; a steward's text refuses it since #204."""
+    assert mention_ids("<@&123> reviewed this.") == []
+    assert resolve_mentions("<@&123> reviewed this.", _resolver) == "<@&123> reviewed this."
+

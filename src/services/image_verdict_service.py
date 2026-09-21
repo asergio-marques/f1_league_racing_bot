@@ -27,6 +27,7 @@ from models.image_catalogues import (
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
 from utils.country_data import country_for_nationality
+from utils.input_validator import USER_MENTION
 
 TEMPLATE_KEY = "verdicts_template"
 
@@ -70,9 +71,11 @@ def sanction_text(penalty_type: str | None, time_seconds: int | None) -> str:
 
 # ── A mention standing inside a value (XIV.16, v4.8.0) ────────────────────
 
-#: `<@123>`, `<@!123>` and `<@&123>`, optionally followed by the parenthesised name the
-#: textual announcement appends after it.
-_MENTION = re.compile(r"<@[!&]?(\d+)>(\s*\(([^)]*)\))?")
+#: A user mention, `<@123>` or `<@!123>`, optionally followed by the parenthesised name the
+#: textual announcement appends after it. The shared form (#362). A role mention addresses no
+#: driver and is not read as one: a steward's text refuses it since #204, and read as a person
+#: it cost a member lookup that could only fail and then drew the role's id.
+_MENTION = re.compile(rf"{USER_MENTION}(\s*\(([^)]*)\))?")
 
 
 def mention_ids(*values: str | None) -> list[str]:
