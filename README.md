@@ -35,6 +35,12 @@ system-wide install leaves the interpreter importing apt's own copies from
 `/usr/lib/python3/dist-packages` — which pip never writes to — so the bot runs against
 whatever the distribution ships rather than against what was tested.
 
+**Versions.** Releases are numbered `vMAJOR.MINOR.PATCH` and listed on the repository's
+Releases page, each with notes of what changed. A clone gives you the latest work on `main`;
+to run a release instead, check out its tag — `git checkout v0.4.0`. Every release before
+`v1.0.0` is a pre-release. Where an upgrade needs you to do something, this README says so
+beside the behaviour concerned and names the version it applies from.
+
 ### 2. Configure environment
 
 ```bash
@@ -93,7 +99,7 @@ cp bot.db bot.db-wal bot.db-shm  /your/backup/location/   # -wal/-shm may not ex
 Back both up in the same run, so the pair comes from one moment. Each `.backup` archive is
 self-contained and can be restored by copying it back into place under the original name.
 
-> **Upgrading from a version before the split.** The scheduler used to keep its jobs inside
+> **Upgrading from v0.4.0 or earlier.** The scheduler used to keep its jobs inside
 > `bot.db`. On the first start after upgrading it begins with an empty `scheduler.db`, and
 > the old jobs are **not** carried across — a season already under way therefore loses its
 > pending weather phases, RSVP notices and result submissions. Run `/season placements-review` and
