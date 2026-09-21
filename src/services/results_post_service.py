@@ -740,6 +740,25 @@ async def post_standings(
             if len(content) <= _MSG_MAX:
                 await existing_msg.edit(content=content)
                 sent_msg = existing_msg
+                # **A shorter table leaves the chunks it no longer fills** (#345). Editing the
+                # anchor in place is the cheap path, but a posting that was three messages and
+                # is now one has to lose the other two — and once the id is rewritten as a
+                # single-message list, nothing could ever reach them again.
+                stale = [
+                    message_id
+                    for message_id in (
+                        await _get_standings_message_ids(
+                            db_path, division_id, round_id, STANDINGS_DRIVERS
+                        )
+                        or []
+                    )
+                    if message_id != existing_msg_id
+                ]
+                for message_id in stale:
+                    await _delete_posting(
+                        standings_channel, message_id, [message_id],
+                        label="standings continuation",
+                    )
             else:
                 # The whole posting, not its anchor alone (#345): a three-chunk table deleted by
                 # its first message left two-thirds of a superseded standings table below the

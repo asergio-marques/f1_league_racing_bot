@@ -882,3 +882,68 @@ async def test_only_one_row_of_a_round_names_its_standings_posting(tmp_path):
             "WHERE round_id = 1 AND standings_message_id IS NOT NULL"
         )
         assert [r[0] for r in await cursor.fetchall()] == [6666]
+
+
+async def test_a_standings_table_that_shrinks_drops_the_chunks_it_no_longer_fills(tmp_path):
+    """**Editing the anchor in place leaves the rest of a longer posting behind** (#345).
+
+    A standings table past Discord's limit occupies several messages. When the next one fits in
+    one, the anchor is edited and the others have to go — and once the stored list is rewritten
+    as a single message, nothing could reach them again now that the adjacency walk is retired.
+    """
+    from models.standings_snapshot import DriverStandingsSnapshot
+    from services.results_post_service import post_standings, _set_standings_message_id
+
+    db_path = await _make_db(tmp_path, name="std_shrink")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+            "standing_position, total_points) VALUES (1, ?, 101, 1, 25)",
+            (DIVISION_ID,),
+        )
+        await db.commit()
+    await _set_standings_message_id(
+        db_path, DIVISION_ID, 1, 7001, message_ids="[7001, 7002, 7003]"
+    )
+    deleted: list = []
+
+    async def _delete(_channel, anchor, ids, **_kw):
+        deleted.append(anchor)
+
+    existing = AsyncMock()
+    existing.id = 7001
+    channel = MagicMock()
+    channel.fetch_message = AsyncMock(return_value=existing)
+    channel.send = AsyncMock(return_value=MagicMock(id=7009))
+
+    with patch(
+        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+    ):
+        await post_standings(
+            db_path=db_path,
+            division_id=DIVISION_ID,
+            round_id=1,
+            round_number=1,
+            track_name="Track 1",
+            standings_channel=channel,
+            driver_snapshots=[
+                DriverStandingsSnapshot(
+                    id=0, round_id=1, division_id=DIVISION_ID, driver_user_id=101,
+                    standing_position=1, total_points=25, finish_counts={},
+                    first_finish_rounds={},
+                )
+            ],
+            team_snapshots=[],
+            guild=_guild(),
+            show_reserves=False,
+            label="Final Results",
+        )
+
+    existing.edit.assert_awaited_once()
+    assert deleted == [7002, 7003]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT standings_message_ids FROM driver_standings_snapshots "
+            "WHERE standings_message_id IS NOT NULL"
+        )
+        assert (await cursor.fetchone())[0] == "[7001]"
