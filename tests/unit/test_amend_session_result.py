@@ -91,11 +91,13 @@ async def _make_db(tmp_path, *, name: str = "amend_result", season_status: str =
             "config_name) VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE', 'Old')",
             (ROUND_ID, DIVISION_ID),
         )
-        for position, driver in enumerate((101, 102), start=1):
+        # The profile id is carried on the seeded rows so the former-driver recompute (#216)
+        # can attribute them; the production write resolves it the same way.
+        for position, (driver, profile_id) in enumerate(((101, 31), (102, 32)), start=1):
             await db.execute(
                 "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-                "team_role_id, finishing_position) VALUES (?, ?, 3001, ?)",
-                (race.lastrowid, driver, position),
+                "team_role_id, finishing_position, driver_profile_id) VALUES (?, ?, 3001, ?, ?)",
+                (race.lastrowid, driver, position, profile_id),
             )
         quali = await db.execute(
             "INSERT INTO session_results (round_id, division_id, session_type, status, "
@@ -104,7 +106,7 @@ async def _make_db(tmp_path, *, name: str = "amend_result", season_status: str =
         )
         await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, 101, 3001, 1)",
+            "team_role_id, finishing_position, driver_profile_id) VALUES (?, 101, 3001, 1, 31)",
             (quali.lastrowid,),
         )
         for profile_id, driver in ((31, 101), (32, 102), (33, 103)):
@@ -365,15 +367,27 @@ async def test_stage_one_settles_a_full_tie_by_name(tmp_path):
     assert stubs["cascade"].await_args.args[3] == names
 
 
-async def test_a_driver_in_the_amended_result_becomes_a_former_driver(tmp_path):
-    """Their name is now on a result, so a later sack must keep their profile."""
+async def _former(db_path, profile_id: int) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT former_driver FROM driver_profiles WHERE id = ?", (profile_id,)
+        )
+        return (await cursor.fetchone())[0]
+
+
+async def test_stage_one_marks_nobody_a_former_driver(tmp_path):
+    """Writing the corrected classification is not what settles the flag (#216).
+
+    Stage one publishes nothing and may still be reverted, so nothing a league sees has
+    changed yet. The flag is settled at stage three, by a recompute over the round's results
+    as a whole — the only shape that can also take a flag *down*, which is what an amendment
+    striking a driver out requires.
+    """
     db_path = await _make_db(tmp_path, name="amend_former")
 
     await _amend(db_path, [_race_row(103, 1)])
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT former_driver FROM driver_profiles WHERE id = 33")
-        assert (await cursor.fetchone())[0] == 1
+    assert await _former(db_path, 33) == 0
 
 
 async def _open_amendment_record(db_path) -> None:
@@ -386,23 +400,18 @@ async def _open_amendment_record(db_path) -> None:
         await db.commit()
 
 
-async def _former(db_path, profile_id: int) -> int:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT former_driver FROM driver_profiles WHERE id = ?", (profile_id,)
-        )
-        return (await cursor.fetchone())[0]
+async def test_reverting_leaves_the_flag_matching_the_restored_results(tmp_path):
+    """A driver pasted in by mistake, the amendment then cancelled or lapsed (#345, #216).
 
-
-async def test_reverting_unmarks_a_driver_the_amendment_made_a_former_driver(tmp_path):
-    """#345: a driver pasted in by mistake, the amendment then cancelled or lapsed. The round
-    is put back as it was, and so is whether they have ever raced."""
+    Stage one no longer marks them, so there is nothing to take back — and the round is put
+    back as it was, so the flag still says what its results say: driver 33 raced nothing.
+    """
     from services.result_submission_service import revert_abandoned_amendment
 
     db_path = await _make_db(tmp_path, name="amend_former_reverted")
     await _open_amendment_record(db_path)
     await _amend(db_path, [_race_row(103, 1)])
-    assert await _former(db_path, 33) == 1
+    assert await _former(db_path, 33) == 0
 
     with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         await revert_abandoned_amendment(db_path, ROUND_ID)
@@ -410,9 +419,31 @@ async def test_reverting_unmarks_a_driver_the_amendment_made_a_former_driver(tmp
     assert await _former(db_path, 33) == 0
 
 
-async def test_a_driver_with_a_result_elsewhere_stays_a_former_driver(tmp_path):
-    """The mark stage one raised is taken back only where nothing else would raise it — here a
-    race the driver ran in another division while the amendment stood open."""
+async def test_reverting_restores_the_flag_of_a_driver_the_amendment_struck_out(tmp_path):
+    """The round comes back, and with it the drivers it marked.
+
+    Driver 31 raced the round as it stood; the amendment left them out of it. Abandoning the
+    amendment puts their result back, so they are a former driver again — whatever the flag
+    happened to say while the amendment stood open.
+    """
+    from services.result_submission_service import revert_abandoned_amendment
+
+    db_path = await _make_db(tmp_path, name="amend_former_restored")
+    await _open_amendment_record(db_path)
+    await _amend(db_path, [_race_row(103, 1)])  # driver 101/profile 31 is struck out
+
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        await revert_abandoned_amendment(db_path, ROUND_ID)
+
+    assert await _former(db_path, 31) == 1
+
+
+async def test_a_driver_with_a_result_in_another_final_round_stays_a_former_driver(tmp_path):
+    """The flag is cleared only where nothing else would raise it (#216).
+
+    Here a sprint race the driver ran in the same final round. The recompute the revert runs
+    finds it and leaves them a former driver.
+    """
     from services.result_submission_service import revert_abandoned_amendment
 
     db_path = await _make_db(tmp_path, name="amend_former_kept")

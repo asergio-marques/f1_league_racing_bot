@@ -2159,16 +2159,14 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot=None) -> b
                     session_result_id,
                 ),
             )
-        # A driver stage one made a former driver is one no longer — unless a result of theirs
-        # stands anywhere once the round is back, another division's included.
-        for profile_id in snapshot.get("marked_former", []):
-            await db.execute(
-                "UPDATE driver_profiles SET former_driver = 0 WHERE id = ? "
-                "AND NOT EXISTS (SELECT 1 FROM race_session_results WHERE driver_profile_id = ?) "
-                "AND NOT EXISTS "
-                "(SELECT 1 FROM qualifying_session_results WHERE driver_profile_id = ?)",
-                (profile_id, profile_id, profile_id),
-            )
+        # The flag follows the results back (#216). Stage one marks nobody now, so in the
+        # ordinary case this finds nothing to do; it runs all the same, because the round's
+        # rows have just been restored and the flag is defined by them. `profiles_before`
+        # names anyone the abandoned amendment had struck out, who is in no result to be
+        # found by until the restore above puts them back.
+        await recompute_former_drivers_for_round(
+            db, round_id, also_consider=snapshot.get("profiles_before", [])
+        )
         if "pardons" in snapshot:
             await db.execute(
                 "DELETE FROM attendance_pardons WHERE attendance_id IN "
@@ -2295,6 +2293,34 @@ async def _claim_amendment(db_path: str, round_id: int) -> str | None:
         )
         await db.commit()
     return row["expires_at"] if cursor.rowcount == 1 else None
+
+
+async def _recompute_former_drivers_after_amendment(db_path: str, round_id: int) -> None:
+    """Settle the former-driver flag once an amendment commits (#216).
+
+    Reads ``profiles_before`` from the snapshot — the profiles the round held before stage one
+    rewrote it — and hands them to :func:`recompute_former_drivers_for_round` as candidates to
+    reconsider alongside the drivers the round now holds. Without them a driver the amendment
+    struck out is in no result to be found by, and their flag would stand for ever on a round
+    they are no longer in.
+
+    Must run before :func:`_release_amendment`, which drops the snapshot this reads.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT pre_amendment_state FROM round_amend_channels WHERE round_id = ?",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+        profiles_before: list[int] = []
+        if row is not None and row["pre_amendment_state"]:
+            profiles_before = _json.loads(row["pre_amendment_state"]).get(
+                "profiles_before", []
+            )
+        await recompute_former_drivers_for_round(
+            db, round_id, also_consider=profiles_before
+        )
+        await db.commit()
 
 
 async def _rearm_amendment(db_path: str, round_id: int, deadline: str) -> None:
@@ -2588,6 +2614,12 @@ async def _approve_amendment_appeals(interaction, state) -> None:
         )
         if await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
             await _rewrite_round_pardons(db_path, round_id, state.staged_pardons)
+        # **The amendment's own settling of the former-driver flag** (#216), and the one path
+        # that can take a flag *down*: an amendment may strike a driver from the round, or
+        # correct them to a did-not-start, leaving them no longer having raced it. Run before
+        # the release, because the snapshot it reads is what the release destroys, and inside
+        # the `try`, so a failure reverts with everything else.
+        await _recompute_former_drivers_after_amendment(db_path, round_id)
     except Exception as exc:  # noqa: BLE001 — undone, and the manager told
         log.exception("amendment: the appeal stage of round %s failed", round_id)
         await _abandon_failed_amendment(
@@ -2919,21 +2951,25 @@ async def amend_round_results(
             )
         season_id: int | None = season_row["season_id"] if season_row else None
 
-        marked_former: list[int] = []
+        # **Who the round held before the rewrite goes into the snapshot** (#216), read here
+        # because the next lines delete those rows. A driver an amendment strikes out entirely
+        # is afterwards in no result at all, so nothing would find them to reconsider their
+        # former-driver flag — which was the "never cleared" half of #216. Stage three passes
+        # this list to `recompute_former_drivers_for_round` as `also_consider`.
+        cursor = await db.execute(_PROFILES_IN_ROUND_SQL, (round_id, round_id))
+        profiles_before = sorted({r["profile_id"] for r in await cursor.fetchall()})
+
         for session in sessions:
             written.append(
                 (
                     await _write_amended_session_in_tx(
                         db, round_id, division_id, session, amended_by, submitted_at,
-                        has_season=season_row is not None, marked_former=marked_former,
+                        has_season=season_row is not None,
                     ),
                     session,
                 )
             )
-        # **Who this made a former driver goes into the snapshot** (#345), in the same
-        # transaction, so that a revert can unmark a driver pasted in by mistake. The flag is
-        # otherwise only ever raised, and the snapshot was taken before anyone was pasted.
-        if marked_former:
+        if profiles_before:
             cursor = await db.execute(
                 "SELECT pre_amendment_state FROM round_amend_channels WHERE round_id = ?",
                 (round_id,),
@@ -2941,7 +2977,7 @@ async def amend_round_results(
             snapshot_row = await cursor.fetchone()
             if snapshot_row is not None and snapshot_row["pre_amendment_state"]:
                 snapshot = _json.loads(snapshot_row["pre_amendment_state"])
-                snapshot["marked_former"] = marked_former
+                snapshot["profiles_before"] = profiles_before
                 await db.execute(
                     "UPDATE round_amend_channels SET pre_amendment_state = ? WHERE round_id = ?",
                     (_json.dumps(snapshot), round_id),
@@ -2996,13 +3032,9 @@ async def _write_amended_session_in_tx(
     submitted_at: str,
     *,
     has_season: bool,
-    marked_former: list[int] | None = None,
 ) -> int:
     """Replace one session's driver rows with its corrected classification, inside the caller's
     transaction, and return the session's ``session_results`` id.
-
-    *marked_former* collects the profiles this write made former drivers, for a revert to
-    unmark (#345).
 
     **Nothing is superseded here, and nothing keeps the classification being replaced.** The
     header is updated in place and the driver rows deleted outright, then re-inserted from the
@@ -3079,13 +3111,11 @@ async def _write_amended_session_in_tx(
             "fastest_lap": _get(dr, "fastest_lap"),
             "ingame_penalties": _get(dr, "ingame_penalties"),
         })
-        if drv_profile_id is not None:
-            marking = await db.execute(
-                "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
-                (drv_profile_id,),
-            )
-            if marked_former is not None and marking.rowcount == 1:
-                marked_former.append(drv_profile_id)
+    # **The former-driver flag is not touched here** (#216). Stage one writes the corrected
+    # classification but publishes nothing and may yet be reverted, and an amendment can take a
+    # driver *out* of a round as readily as put one in — so the flag is recomputed from the
+    # round's results as a whole, by `recompute_former_drivers_for_round`, once stage three
+    # commits the amendment. Marking row by row could only ever raise it.
     await _insert_new_tables_in_tx(
         db, session_result_id, session_type, rows_normalised, profile_map
     )
