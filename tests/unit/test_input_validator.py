@@ -21,6 +21,10 @@ from utils.input_validator import (  # noqa: E402
     InputValidator,
     Mode,
     Rule,
+    parse_role_mention,
+    parse_user,
+    parse_user_id,
+    parse_user_mention,
 )
 
 REJECT_ALL = InputValidator(frozenset(Rule), Mode.REJECT)
@@ -295,3 +299,48 @@ def test_signup_answers_keep_emoji_and_markup(typed):
 def test_a_drawn_name_is_stripped_by_the_rules_a_typed_name_is_refused_by():
     """The league cannot control a display name, so it is cleaned rather than refused."""
     assert DRAWN_NAME.check("name", "**Max** \U0001F3CE\uFE0F").text == "Max"
+
+
+# ── Formats: people and roles ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("typed, parsed", [("123456789012345678", 123456789012345678), (" 42 ", 42)])
+def test_parse_user_id_reads_digits(typed, parsed):
+    assert parse_user_id(typed) == parsed
+
+
+def test_parse_user_id_accepts_a_test_driver_id():
+    """Test drivers' ids start at 9 x 10^18, above every real snowflake."""
+    assert parse_user_id("9000000000000000001") == 9000000000000000001
+
+
+@pytest.mark.parametrize("typed", ["", "   ", None, "abc", "12a", "-5", "+5", "1 2", "\u00B2", "<@12>"])
+def test_parse_user_id_refuses_anything_but_digits(typed):
+    """`int()` would read `-5`, `+5` and some digits of other scripts; none is an id."""
+    assert parse_user_id(typed) is None
+
+
+@pytest.mark.parametrize("typed", ["<@123>", "<@!123>", "  <@123>  "])
+def test_parse_user_mention_reads_both_forms(typed):
+    assert parse_user_mention(typed) == 123
+
+
+@pytest.mark.parametrize("typed", ["<@&123>", "123", "<@123> x", "<@abc>", ""])
+def test_parse_user_mention_refuses_anything_else(typed):
+    assert parse_user_mention(typed) is None
+
+
+def test_parse_role_mention_reads_a_role_and_nothing_else():
+    assert parse_role_mention("<@&987>") == 987
+    assert parse_role_mention("<@987>") is None
+
+
+@pytest.mark.parametrize("typed", ["<@4001>", "<@!4001>", "4001"])
+def test_parse_user_takes_a_mention_or_an_id(typed):
+    assert parse_user(typed) == 4001
+
+
+@pytest.mark.parametrize("typed", ["<@&4001>", "Ada", "<@4001"])
+def test_parse_user_refuses_a_role_or_a_name(typed):
+    assert parse_user(typed) is None
+

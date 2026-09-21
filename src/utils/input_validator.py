@@ -283,3 +283,45 @@ SIGNUP_ANSWER = InputValidator(frozenset({Rule.GROUP_MENTIONS}), Mode.REJECT)
 #: A member's Discord display name, drawn on a graphic. The league cannot control it, so it is
 #: stripped rather than refused, by the same rules a name the league types is refused by.
 DRAWN_NAME = InputValidator(_ALL, Mode.STRIP)
+
+
+# ── Formats: people and roles ─────────────────────────────────────────────
+
+#: A user mention, ``<@123>`` or ``<@!123>``, and a role mention, ``<@&123>``, as pattern text
+#: for code that finds them inside a longer text. The id is the one group each captures.
+USER_MENTION = r"<@!?(\d+)>"
+ROLE_MENTION = r"<@&(\d+)>"
+
+_USER_MENTION_RE = re.compile(rf"^{USER_MENTION}$")
+_ROLE_MENTION_RE = re.compile(rf"^{ROLE_MENTION}$")
+_USER_ID_RE = re.compile(r"^\d+$", re.ASCII)
+
+
+def parse_user_id(text: str | None) -> int | None:
+    """A Discord user id typed as text — digits alone, around which space is ignored.
+
+    No length is asked for: a test driver's id, from 9 x 10^18 upwards, is digits like any
+    other. Digits of another script are not digits here, ``int`` reading some of them and
+    Discord none.
+    """
+    raw = (text or "").strip()
+    return int(raw) if _USER_ID_RE.match(raw) else None
+
+
+def parse_user_mention(text: str | None) -> int | None:
+    """The id a user mention addresses, where *text* is one and nothing besides."""
+    match = _USER_MENTION_RE.match((text or "").strip())
+    return int(match.group(1)) if match else None
+
+
+def parse_role_mention(text: str | None) -> int | None:
+    """The id a role mention addresses, where *text* is one and nothing besides."""
+    match = _ROLE_MENTION_RE.match((text or "").strip())
+    return int(match.group(1)) if match else None
+
+
+def parse_user(text: str | None) -> int | None:
+    """A user given either way a form asks for one: a mention, or the id typed out."""
+    mentioned = parse_user_mention(text)
+    return mentioned if mentioned is not None else parse_user_id(text)
+
