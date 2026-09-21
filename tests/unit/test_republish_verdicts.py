@@ -291,3 +291,235 @@ async def test_an_unreachable_channel_is_reported_not_raised(tmp_path):
     assert len(faults) == 1
     assert "no longer reachable" in faults[0]
     assert [kind for kind, _ in events if kind == "penalties"]
+
+
+async def test_an_upheld_appeal_is_announced_once_as_an_appeal(tmp_path):
+    """**Upholding an appeal writes a `penalty_records` row beside its appeal record** (#345).
+
+    Announcing every penalty row gave the driver the same decision twice — once as a penalty
+    verdict the first pass never announced, and once as the appeal it was. The row the appeal
+    wrote carries the appeal's own text, which is how it is told apart from a report.
+    """
+    db_path, ids = await _seed(tmp_path, "appeal_once", rounds=(1,))
+    await _verdict(db_path, ids[1], anchor=None, table="appeal_records")
+    async with get_connection(db_path) as db:
+        # The row `apply_penalties` writes for that appeal: same driver, session and sanction,
+        # and the appeal's description and justification.
+        await db.execute(
+            "INSERT INTO penalty_records (race_result_id, penalty_type, time_seconds, "
+            "description, justification, applied_by, applied_at) "
+            "VALUES (?, 'TIME', 3, 'Appeal', 'Upheld', '78', '2026-02-03T00:00:00+00:00')",
+            (ids[1],),
+        )
+        await db.commit()
+
+    _, events = await _republish(db_path, _bot(), 1)
+
+    assert ("appeals", (1, 1)) in events
+    assert not [e for e in events if e[0] == "penalties"]
+
+
+async def test_a_report_the_same_size_as_an_appeal_is_still_announced(tmp_path):
+    """A separate report of the same sanction, for another incident, is a report."""
+    db_path, ids = await _seed(tmp_path, "report_beside_appeal", rounds=(1,))
+    await _verdict(db_path, ids[1], anchor=None, table="appeal_records")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO penalty_records (race_result_id, penalty_type, time_seconds, "
+            "description, justification, applied_by, applied_at) "
+            "VALUES (?, 'TIME', 3, 'Appeal', 'Upheld', '78', '2026-02-03T00:00:00+00:00')",
+            (ids[1],),
+        )
+        await db.execute(
+            "INSERT INTO penalty_records (race_result_id, penalty_type, time_seconds, "
+            "description, justification, applied_by, applied_at) "
+            "VALUES (?, 'TIME', 3, 'Turn 1', 'Divebomb', '77', '2026-02-02T00:00:00+00:00')",
+            (ids[1],),
+        )
+        await db.commit()
+
+    _, events = await _republish(db_path, _bot(), 1)
+
+    assert ("penalties", (1, 1)) in events
+    assert ("appeals", (1, 1)) in events
+
+
+# ---------------------------------------------------------------------------
+# The banner heading each round's run (#345)
+# ---------------------------------------------------------------------------
+
+
+async def _banner(db_path, round_id: int, message_id: int, channel=VERDICTS_CHANNEL):
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO verdict_banner_messages (round_id, channel_id, message_id, posted_at) "
+            "VALUES (?, ?, ?, '2026-02-02T00:00:00+00:00')",
+            (round_id, str(channel), str(message_id)),
+        )
+        await db.commit()
+
+
+async def test_the_banner_over_a_replaced_run_is_taken_down_with_it(tmp_path):
+    """**A banner belongs to no verdict record**, so nothing else knows where it is. Left alone,
+    each amendment stranded a header over empty space and posted a fresh one below it."""
+    db_path, ids = await _seed(tmp_path, "banner_replaced", rounds=(1, 2))
+    await _verdict(db_path, ids[1], anchor=5001)
+    await _verdict(db_path, ids[2], anchor=5002)
+    await _banner(db_path, 1, 6001)
+    await _banner(db_path, 2, 6002)
+
+    _, events = await _republish(db_path, _bot(), 1)
+
+    deleted = [anchor for kind, anchor in events if kind == "delete"]
+    assert 6001 in deleted and 6002 in deleted
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM verdict_banner_messages")
+        assert (await cursor.fetchone())[0] == 0
+
+
+async def test_a_round_with_nothing_to_re_announce_keeps_its_banner(tmp_path):
+    """**Attendance sanction cards share that banner and are recorded nowhere** (#345), so a
+    round whose verdicts channel holds only those would lose its header to a replay that then
+    posts nothing in its place — leaving the cards bare."""
+    db_path, ids = await _seed(tmp_path, "banner_kept", rounds=(1, 2))
+    await _verdict(db_path, ids[1], anchor=5001)
+    await _banner(db_path, 1, 6001)
+    await _banner(db_path, 2, 6002)  # round 2 has only sanction cards under it
+
+    _, events = await _republish(db_path, _bot(), 1)
+
+    deleted = [anchor for kind, anchor in events if kind == "delete"]
+    assert 6001 in deleted
+    assert 6002 not in deleted
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT message_id FROM verdict_banner_messages")
+        assert [r[0] for r in await cursor.fetchall()] == ["6002"]
+
+
+async def test_the_banners_go_after_the_replacements_are_up(tmp_path):
+    """Produce before destroying, the banner included: it heads what a league is reading until
+    the new run is in place."""
+    db_path, ids = await _seed(tmp_path, "banner_order", rounds=(1,))
+    await _verdict(db_path, ids[1], anchor=5001)
+    await _banner(db_path, 1, 6001)
+
+    _, events = await _republish(db_path, _bot(), 1)
+
+    kinds = [kind for kind, _ in events]
+    assert kinds.index("penalties") < kinds.index("delete")
+
+
+async def test_an_earlier_rounds_banner_is_left_alone(tmp_path):
+    """Only the rounds being replayed are rebuilt."""
+    db_path, ids = await _seed(tmp_path, "banner_earlier", rounds=(1, 2))
+    await _verdict(db_path, ids[2], anchor=5002)
+    await _banner(db_path, 1, 6001)
+    await _banner(db_path, 2, 6002)
+
+    _, events = await _republish(db_path, _bot(), 2)
+
+    deleted = [anchor for kind, anchor in events if kind == "delete"]
+    assert 6001 not in deleted
+    assert 6002 in deleted
+
+
+async def test_one_banner_heads_a_rounds_reports_and_its_appeals(tmp_path):
+    """A second banner posted for the appeals would head the same run twice — and the poster's
+    own fallback records it, so the next amendment would find two to take down for one run."""
+    db_path, ids = await _seed(tmp_path, "banner_shared", rounds=(1,))
+    await _verdict(db_path, ids[1], anchor=5001)
+    await _verdict(db_path, ids[1], anchor=5002, table="appeal_records")
+    heads: list = []
+
+    async def _post_pen(_bot, _state, _records, **kwargs):
+        heads.append(kwargs.get("head"))
+        return []
+
+    async def _post_app(_bot, _state, _records, **kwargs):
+        heads.append(kwargs.get("head"))
+        return []
+
+    with patch(
+        "services.verdict_announcement_service.post_penalty_announcements",
+        new=AsyncMock(side_effect=_post_pen),
+    ), patch(
+        "services.verdict_announcement_service.post_appeal_announcements",
+        new=AsyncMock(side_effect=_post_app),
+    ), patch(
+        "services.verdict_announcement_service.banner_for_round",
+        MagicMock(return_value="the-banner"),
+    ), patch(
+        "services.results_post_service._delete_posting", new=AsyncMock()
+    ):
+        await republish_verdicts_from_round(
+            _bot(), db_path, DIVISION_ID, 1,
+            lambda round_id: SimpleNamespace(round_id=round_id, db_path=db_path),
+        )
+
+    assert heads == ["the-banner", "the-banner"]
+
+
+async def test_a_round_whose_announcements_failed_keeps_its_old_ones(tmp_path):
+    """**A whole batch can fail without raising** — an unreadable context, a verdicts channel
+    taken away. Taking the originals down then would leave those decisions in no channel at
+    all; doubled announcements a league can read and reconcile, missing ones it cannot."""
+    db_path, ids = await _seed(tmp_path, "round_failed", rounds=(1, 2))
+    await _verdict(db_path, ids[1], anchor=5001)
+    await _verdict(db_path, ids[2], anchor=5002)
+
+    async def _post_pen(_bot, state, records, **_kw):
+        return ["round one's verdicts channel is gone"] if state.round_id == 1 else []
+
+    with patch(
+        "services.verdict_announcement_service.post_penalty_announcements",
+        new=AsyncMock(side_effect=_post_pen),
+    ), patch(
+        "services.verdict_announcement_service.post_appeal_announcements",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
+    ), patch(
+        "services.results_post_service._delete_posting", new=AsyncMock()
+    ) as delete:
+        faults = await republish_verdicts_from_round(
+            _bot(), db_path, DIVISION_ID, 1,
+            lambda round_id: SimpleNamespace(round_id=round_id, db_path=db_path),
+        )
+
+    deleted = [call.args[1] for call in delete.await_args_list]
+    assert 5001 not in deleted, "round one's originals were taken down with no replacement"
+    assert 5002 in deleted
+    assert any("left standing" in fault for fault in faults)
+
+
+async def test_the_rounds_rebuilt_are_reported_to_the_caller(tmp_path):
+    """**Including a round left with nothing to announce.** An amendment that removed a round's
+    last verdict has its old announcement taken down on exactly that footing — every decision
+    the round carries is in the channel, there being none — and a round whose batch failed is
+    not reported, so its originals stay (#345)."""
+    db_path, ids = await _seed(tmp_path, "rebuilt_reported", rounds=(1, 2, 3))
+    await _verdict(db_path, ids[1], anchor=5001)
+    await _verdict(db_path, ids[3], anchor=5003)
+
+    async def _post_pen(_bot, state, records, **_kw):
+        return ["round three's channel is gone"] if state.round_id == 3 else []
+
+    rebuilt: list[int] = []
+    with patch(
+        "services.verdict_announcement_service.post_penalty_announcements",
+        new=AsyncMock(side_effect=_post_pen),
+    ), patch(
+        "services.verdict_announcement_service.post_appeal_announcements",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
+    ), patch(
+        "services.results_post_service._delete_posting", new=AsyncMock()
+    ):
+        await republish_verdicts_from_round(
+            _bot(), db_path, DIVISION_ID, 1,
+            lambda round_id: SimpleNamespace(round_id=round_id, db_path=db_path),
+            rebuilt=rebuilt,
+        )
+
+    assert sorted(rebuilt) == [1, 2]

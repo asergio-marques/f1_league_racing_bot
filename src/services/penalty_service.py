@@ -551,13 +551,10 @@ async def load_staged_from_records(
         for row in sorted(rows_of["appeal_records"], key=lambda r: r["record_id"]):
             appeals.append(_staged_from_record(row))
 
-        # One appeal accounts for one penalty row of the same shape, never two.
-        unclaimed = [_record_shape(row) for row in rows_of["appeal_records"]]
-        for row in sorted(rows_of["penalty_records"], key=lambda r: r["record_id"]):
-            shape = _record_shape(row)
-            if shape in unclaimed:
-                unclaimed.remove(shape)
-                continue
+        for row in reports_only(
+            sorted(rows_of["penalty_records"], key=lambda r: r["record_id"]),
+            rows_of["appeal_records"],
+        ):
             reports.append(_staged_from_record(row))
 
         cursor = await db.execute(
@@ -590,6 +587,30 @@ async def load_staged_from_records(
             )
 
     return reports, appeals, pardons
+
+
+def reports_only(penalty_rows: list, appeal_rows: list) -> list:
+    """The penalty records that are reports, leaving out the ones an appeal wrote.
+
+    ``apply_penalties`` inserts into ``penalty_records`` on both phases, so upholding an appeal
+    writes a row there *and* a row in ``appeal_records``, and nothing records which phase a
+    penalty row came from. A penalty row is therefore a report unless an appeal record of the
+    same shape accounts for it — matched once each, so two identical penalties are not both
+    swallowed by one appeal.
+
+    Both the amendment's hydration and its republish need the split (#345): the one to show a
+    report once rather than as a report *and* an appeal, the other to announce an upheld appeal
+    once rather than as a penalty verdict as well. *penalty_rows* keep their order.
+    """
+    unclaimed = [_record_shape(row) for row in appeal_rows]
+    kept = []
+    for row in penalty_rows:
+        shape = _record_shape(row)
+        if shape in unclaimed:
+            unclaimed.remove(shape)
+            continue
+        kept.append(row)
+    return kept
 
 
 def _record_shape(row) -> tuple:

@@ -1103,7 +1103,8 @@ async def _records_for_round(db_path: str, round_id: int, table: str) -> list[di
                 f"""
                 SELECT v.id AS id, v.race_result_id, v.qual_result_id,
                        v.penalty_type, v.time_seconds, v.description, v.justification,
-                       r.driver_user_id AS driver_user_id, r.team_role_id AS team_role_id
+                       r.driver_user_id AS driver_user_id, r.team_role_id AS team_role_id,
+                       sr.session_type AS session_type
                 FROM {table} v
                 JOIN {result_table} r ON r.id = v.{fk_col}
                 JOIN session_results sr ON sr.id = r.session_result_id
@@ -1156,9 +1157,17 @@ async def republish_verdicts_from_round(
     *state_factory* builds the ``PenaltyReviewState`` each round's announcement needs, the
     posters reading the round and division from it.
 
-    Returns the faults met, as lines a league can read — including a named line for every
-    verdict announced before the bot recorded message ids, which cannot be taken down and is
-    left standing beside its replacement rather than silently doubled.
+    Returns the faults met, as lines a league can read. *rebuilt*, where given, receives the id
+    of every round whose verdicts are now all in the channel — the one thing a fault line cannot
+    say, and the thing the amendment's own take-down turns on.
+
+    **A record with no announcement id is passed over rather than reported.** It has no message
+    standing anywhere to contradict the replacement: either the amendment's report stage has
+    just rewritten it, or its announcement never went out and was reported when it failed. The
+    case the specification had in mind — a verdict announced before the bot began recording ids
+    — cannot arise, the columns having been in the schema since before any league ran the bot,
+    and nothing distinguishes it from the two above; a line saying "this one may still be
+    standing" would therefore be guesswork on every verdict it named.
     """
     faults: list[str] = []
     rounds = await _rounds_from(db_path, division_id, from_round_id)
@@ -1167,7 +1176,22 @@ async def republish_verdicts_from_round(
     # `announcement_message_id` on the very rows the superseded messages are identified by, so
     # reading them afterwards would return the new announcements and delete what had just been
     # put up. The old ones are noted here and taken down at the end.
-    superseded: list[tuple[object, int, list[int] | None, int]] = []
+    # The banners heading each round's run go with it: they are messages of their own, above
+    # the cards, so re-announcing without removing them left a header over empty space and a
+    # second header below (#345). A caller that posts verdicts of its own before reaching here
+    # — the division rebuild, whose attendance sanctions head themselves — reads them before it
+    # starts and hands them in, or this capture would take down a banner posted minutes ago.
+    banners_by_round: dict[int, list[tuple[str, int]]] = {}
+    if superseded_banners is None:
+        for rnd in rounds:
+            banners_by_round[rnd["round_id"]] = await _banners_of(db_path, rnd["round_id"])
+    else:
+        for round_id, channel_id, message_id in superseded_banners:
+            banners_by_round.setdefault(round_id, []).append((channel_id, message_id))
+
+    # Kept by round, because a round's old announcements come down only where that round's
+    # replacements actually went up (#345).
+    superseded: dict[int, list[tuple[object, int, list[int] | None, int]]] = {}
     async with get_connection(db_path) as db:
         for rnd in rounds:
             for table in ("penalty_records", "appeal_records"):
@@ -1191,14 +1215,13 @@ async def republish_verdicts_from_round(
                     )
                     for row in await cursor.fetchall():
                         if not row["anchor"]:
-                            # No fault. A record with no id here is usually one the amendment's
-                            # report stage has just rewritten — its predecessor's id was noted
-                            # before that happened and is taken down separately (#345). A
-                            # genuinely pre-column verdict is reported by that path instead, so
-                            # reporting it here as well would name it twice, and naming a
-                            # rewritten record at all was simply wrong.
+                            # No fault, and nothing to take down. A record with no id here is
+                            # one the amendment's report stage has just rewritten — its
+                            # predecessor's id was noted before that happened, and is taken
+                            # down separately — or one whose announcement never went out, which
+                            # was reported at the time (#345).
                             continue
-                        superseded.append(
+                        superseded.setdefault(rnd["round_id"], []).append(
                             (
                                 row["channel_id"],
                                 int(row["anchor"]),
@@ -1208,34 +1231,89 @@ async def republish_verdicts_from_round(
                         )
 
     # ── Produce ───────────────────────────────────────────────────────────
+    from services.penalty_service import reports_only
+
+    #: The banners of the rounds this replay actually re-announced.
+    replaced: list[tuple[str, int]] = []
+    #: The rounds whose replacements are all up, and whose old announcements may therefore go.
+    #: Filled into the caller's list where one is given, as each round completes, so a caller
+    #: can act on the round it cares about even where a later one raised (#345).
+    if rebuilt is None:
+        rebuilt = []
+
     for rnd in rounds:
         round_id = rnd["round_id"]
-        penalties = await _records_for_round(db_path, round_id, "penalty_records")
         appeals = await _records_for_round(db_path, round_id, "appeal_records")
+        # **An upheld appeal is announced once, as an appeal.** Upholding one writes a
+        # `penalty_records` row beside its appeal record, and announcing every penalty row would
+        # give the driver the same decision twice — once as a penalty verdict the first pass
+        # never announced. Only the reports are announced as penalties.
+        penalties = reports_only(
+            await _records_for_round(db_path, round_id, "penalty_records"), appeals
+        )
         if not penalties and not appeals:
+            # Nothing to re-announce is a round rebuilt: every decision it carries is in the
+            # channel, there being none. An amendment that removed a round's last verdict has
+            # its old announcement taken down on exactly this footing.
+            rebuilt.append(round_id)
             continue
 
         state = state_factory(round_id)
         head = banner_for_round(bot, db_path, round_id)
 
+        # Only a round that re-announces loses its banner. A round whose verdicts channel holds
+        # nothing but attendance sanction cards — which share the banner and are recorded
+        # nowhere — would otherwise have its header deleted and no replacement posted, leaving
+        # those cards bare (#345).
+        replaced_banners = banners_by_round.get(round_id, [])
+
+        round_faults: list[str] = []
         if penalties:
-            faults.extend(
+            round_faults.extend(
                 await post_penalty_announcements(bot, state, penalties, head=head)
             )
         if appeals:
-            faults.extend(await post_appeal_announcements(bot, state, appeals))
+            # The same banner heads the appeals: one round, one run, one header — and a second
+            # banner posted here would be recorded and then never taken down by anything.
+            round_faults.extend(
+                await post_appeal_announcements(bot, state, appeals, head=head)
+            )
+        faults.extend(round_faults)
+
+        # **A round keeps its old announcements unless every replacement went up.** A whole
+        # batch can fail without raising — an unreadable context, a verdicts channel taken
+        # away — and taking the originals down then would leave those decisions in no channel
+        # at all. Doubled announcements a league can read and reconcile; missing ones it cannot.
+        if not round_faults:
+            rebuilt.append(round_id)
+            replaced.extend(replaced_banners)
+        elif superseded.get(round_id):
+            faults.append(
+                f"the superseded verdicts of round {rnd['round_number']} were left standing, "
+                f"the replacements for that round not having all gone out"
+            )
 
     # ── Then destroy ──────────────────────────────────────────────────────
     from services.results_post_service import _delete_posting
 
-    for channel_id, anchor, chunk_ids, driver_user_id in superseded:
+    for round_id in rebuilt:
+        for channel_id, anchor, chunk_ids, driver_user_id in superseded.get(round_id, []):
+            channel = bot.get_channel(int(channel_id)) if channel_id else None
+            if channel is None:
+                faults.append(
+                    f"the superseded verdict for {_driver_label(driver_user_id)} could not be "
+                    f"taken down: its channel is no longer reachable"
+                )
+                continue
+            await _delete_posting(channel, anchor, chunk_ids, label="verdict")
+
+    taken_down: list[int] = []
+    for channel_id, message_id in replaced:
         channel = bot.get_channel(int(channel_id)) if channel_id else None
         if channel is None:
-            faults.append(
-                f"the superseded verdict for {_driver_label(driver_user_id)} could not be "
-                f"taken down: its channel is no longer reachable"
-            )
             continue
-        await _delete_posting(channel, anchor, chunk_ids, label="verdict")
+        await _delete_posting(channel, message_id, [message_id], label="verdict banner")
+        taken_down.append(message_id)
+    await _forget_banners(db_path, taken_down)
 
     return faults
