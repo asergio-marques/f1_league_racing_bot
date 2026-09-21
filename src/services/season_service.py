@@ -10,6 +10,7 @@ from models.division import Division
 from models.round import (
     ROUND_AWAITING_RESULTS_MODULE,
     ROUND_CANCELLABLE,
+    ROUND_RACED_AWAITING_VERDICTS,
     ROUND_TERMINAL,
     Round,
     RoundFormat,
@@ -33,6 +34,9 @@ _TERMINAL_SQL = ", ".join(f"'{v}'" for v in sorted(ROUND_TERMINAL))
 _CANCELLABLE_SQL = ", ".join(f"'{v}'" for v in sorted(ROUND_CANCELLABLE))
 _AWAITING_RESULTS_MODULE_SQL = ", ".join(
     f"'{v}'" for v in sorted(ROUND_AWAITING_RESULTS_MODULE)
+)
+_RACED_AWAITING_VERDICTS_SQL = ", ".join(
+    f"'{v}'" for v in sorted(ROUND_RACED_AWAITING_VERDICTS)
 )
 
 log = logging.getLogger(__name__)
@@ -704,6 +708,77 @@ class SeasonService:
             }
             for row in rows
         ]
+
+    async def close_raced_rounds_for_cancellation(
+        self, season_id: int, actor_id: int, actor_name: str
+    ) -> list[int]:
+        """Close as FINAL every round of a season that was raced but whose verdicts are open.
+
+        Called by `/season cancel`, **before** the driver pass, and by nothing else.
+
+        A round at *awaiting report verdicts* or *awaiting appeal verdicts* has its results
+        entered, so `ROUND_CANCELLABLE` excludes it and the cancellation cascade leaves it
+        exactly where it is — "a cancellation shall never discard a result", and "a round
+        further along shall keep its place and its results". But nothing else will move it
+        either: the verdict commands it waits on are refused once the season is cancelled. It
+        would sit in a non-terminal state for ever.
+
+        That mattered little until the former-driver flag came to be set at the FINAL
+        transition (#216). A driver whose only round is one of these is now flagless when the
+        driver pass runs, and the pass deletes a flagless profile at Not Signed Up — NULLing
+        the `driver_profile_id` on their result rows and destroying their history entries,
+        which is the very discarding of a result the rule above forbids. Closing the rounds
+        first marks their drivers, and the pass keeps them.
+
+        Returns the ids closed, for the caller to report and for the tests to assert on.
+        """
+        from datetime import timezone
+        from services.result_submission_service import (
+            recompute_former_drivers_for_round,
+        )
+
+        now = datetime.now(timezone.utc).isoformat()
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                f"""
+                SELECT r.id, r.status, d.id AS division_id
+                FROM rounds r
+                JOIN divisions d ON d.id = r.division_id
+                WHERE d.season_id = ?
+                  AND r.status IN ({_RACED_AWAITING_VERDICTS_SQL})
+                ORDER BY r.id
+                """,
+                (season_id,),
+            )
+            rows = [dict(r) for r in await cursor.fetchall()]
+
+            for row in rows:
+                await db.execute(
+                    "UPDATE rounds SET status = ? WHERE id = ?",
+                    (RoundStatus.FINAL.value, row["id"]),
+                )
+                # The round's results are final as of the line above, so its drivers become
+                # former drivers here — which is the whole point of closing them (#216).
+                await recompute_former_drivers_for_round(db, row["id"])
+                await db.execute(
+                    """
+                    INSERT INTO audit_entries
+                        (actor_id, actor_name, division_id, change_type,
+                         old_value, new_value, timestamp)
+                    VALUES (?, ?, ?, 'round.status', ?, ?, ?)
+                    """,
+                    (
+                        actor_id,
+                        actor_name,
+                        row["division_id"],
+                        row["status"],
+                        RoundStatus.FINAL.value,
+                        now,
+                    ),
+                )
+            await db.commit()
+
+        return [row["id"] for row in rows]
 
     async def all_divisions_finished(self) -> bool:
         """True if every division of the active season is FINISHED or CANCELLED.

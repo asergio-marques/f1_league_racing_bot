@@ -484,3 +484,130 @@ async def test_closing_rounds_with_the_module_off_marks_who_raced_them(tmp_path)
 
     assert await _former(db_path, 31) == 1
     assert await _former(db_path, 32) == 0
+
+
+# ---------------------------------------------------------------------------
+# Cancelling a season closes the rounds it may not cancel
+# ---------------------------------------------------------------------------
+
+
+async def test_cancelling_a_season_closes_a_round_whose_verdicts_are_open(tmp_path):
+    """The rounds a cancellation may not call off are made final instead (#216).
+
+    `ROUND_CANCELLABLE` stops at *awaiting results*: a round further along has its results
+    entered, and "a cancellation shall never discard a result". So the cascade leaves it where
+    it is — and the verdict commands it waits on are refused once the season is cancelled, so
+    nothing else would ever move it.
+
+    That is only a tidiness problem until the flag is set at the FINAL transition. Then a
+    driver whose only round is one of these is flagless when the driver pass runs, and the pass
+    deletes them — taking their results and their history with them. Closing the rounds first
+    is what keeps them.
+    """
+    from services.season_service import SeasonService
+
+    db_path = await _make_db(tmp_path, name="cancel_verdicts")
+    await _add_round(db_path, 21, status="AWAITING_REPORT_VERDICTS", round_number=3)
+    await _add_round(db_path, 22, status="AWAITING_APPEAL_VERDICTS", round_number=4)
+    await _add_race(db_path, 21, [(31, 101, "CLASSIFIED"), (32, 102, "DNS")])
+    await _add_race(db_path, 22, [(33, 103, "CLASSIFIED")])
+
+    closed = await SeasonService(db_path).close_raced_rounds_for_cancellation(
+        SEASON_ID, 5, "Admin"
+    )
+
+    assert closed == [21, 22]
+    assert await _former(db_path, 31) == 1
+    assert await _former(db_path, 33) == 1
+    assert await _former(db_path, 32) == 0, "a did-not-start entry marked a driver"
+
+
+async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
+    """The harm the close prevents, stated end to end (#216).
+
+    The driver pass deletes a flagless profile at Not Signed Up, and
+    ``delete_driver_profiles`` NULLs the ``driver_profile_id`` on their result rows and
+    destroys their history entries. For a driver whose only round was left at a verdict state
+    by a cancellation, that is a result discarded — which "a cancellation shall never discard a
+    result" forbids. Closing the round first is what keeps them.
+    """
+    from services.season_lifecycle_service import run_driver_pass
+    from services.season_service import SeasonService
+
+    db_path = await _make_db(tmp_path, name="cancel_pass")
+    await _add_round(db_path, 21, status="AWAITING_REPORT_VERDICTS")
+    await _add_race(db_path, 21, [(31, 101, "CLASSIFIED")])
+    # Sacked mid-season: back at Not Signed Up, and so in the pass's sights.
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET current_state = 'NOT_SIGNED_UP' WHERE id = 31"
+        )
+        await db.commit()
+
+    await SeasonService(db_path).close_raced_rounds_for_cancellation(
+        SEASON_ID, 5, "Admin"
+    )
+    await run_driver_pass(db_path)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) AS n FROM driver_profiles WHERE id = 31")
+        assert (await cursor.fetchone())["n"] == 1, "a driver who raced was deleted"
+        cursor = await db.execute(
+            "SELECT driver_profile_id FROM race_session_results WHERE driver_user_id = 101"
+        )
+        assert (await cursor.fetchone())["driver_profile_id"] == 31, "a result was orphaned"
+
+
+async def test_cancelling_a_season_leaves_an_unraced_round_to_the_cascade(tmp_path):
+    """A round with no results entered is the cascade's to cancel, not this function's.
+
+    Closing it as FINAL would say it was raced when it was not, and would tell the attendance
+    module to expect a turnout for a round that never happened.
+    """
+    from services.season_service import SeasonService
+
+    db_path = await _make_db(tmp_path, name="cancel_unraced")
+    await _add_round(db_path, 21, status="AWAITING_RESULTS", round_number=3)
+    await _add_round(db_path, 22, status="NOT_RUN", round_number=4)
+
+    closed = await SeasonService(db_path).close_raced_rounds_for_cancellation(
+        SEASON_ID, 5, "Admin"
+    )
+
+    assert closed == []
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT id, status FROM rounds ORDER BY id")
+        assert [(r["id"], r["status"]) for r in await cursor.fetchall()] == [
+            (21, "AWAITING_RESULTS"),
+            (22, "NOT_RUN"),
+        ]
+
+
+async def test_cancelling_a_season_leaves_another_seasons_rounds_alone(tmp_path):
+    """Scoped by season, so cancelling one never closes a round of another."""
+    from services.season_service import SeasonService
+
+    db_path = await _make_db(tmp_path, name="cancel_other_season")
+    await _add_round(db_path, 21, status="AWAITING_REPORT_VERDICTS", round_number=3)
+    async with get_connection(db_path) as db:
+        # COMPLETED, not a second ACTIVE — a server holds at most one live season, and the
+        # partial unique index enforces it. An archived season is the realistic neighbour
+        # anyway: it is last season's rounds this must not reach back into.
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (2, 7, '2025-01-01', 'COMPLETED')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (99, 2, 'Pro', 1, 556)"
+        )
+        await db.commit()
+    await _add_round(
+        db_path, 31, status="AWAITING_REPORT_VERDICTS", division_id=99, round_number=1
+    )
+
+    closed = await SeasonService(db_path).close_raced_rounds_for_cancellation(
+        SEASON_ID, 5, "Admin"
+    )
+
+    assert closed == [21]

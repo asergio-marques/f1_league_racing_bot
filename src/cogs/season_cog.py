@@ -2944,6 +2944,16 @@ class SeasonCog(commands.Cog):
             round_ids=frozenset(to_cancel),
         )
 
+        # A round that was raced but whose verdicts are still open is closed as FINAL, and must
+        # be **before the driver pass**. The cascade below cannot cancel it — its results are
+        # in, and a cancellation never discards a result — so nothing else would ever move it
+        # off a non-terminal state. That leaves its drivers unflagged when the pass runs, and
+        # the pass deletes a flagless profile at Not Signed Up, NULLing the result rows that
+        # point at it (#216).
+        await self.bot.season_service.close_raced_rounds_for_cancellation(
+            season.id, interaction.user.id, str(interaction.user)
+        )
+
         # The roles, the driver pass, the window and test mode — as completing a season does.
         if interaction.guild is not None:
             await _revoke_season_roles(
