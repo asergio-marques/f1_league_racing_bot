@@ -22,8 +22,9 @@ closing a `bug` issue and a `feature-request` one may carry either or both.
 
 **`internal` is decided by the files, not by judgement.** A PR that changes nothing a league
 sees must carry it, which leaves it out of the release notes; one that changes anything a
-league sees must not. What a league sees is `LEAGUE_FACING`; a renamed file counts under its
-old path as well as its new, so moving a file out of `src/` is still a change to `src/`.
+league sees must not. What a league sees is set out beside `LEAGUE_FACING_DIRECTORIES`; a
+renamed file counts under its old path as well as its new, so moving a file out of `src/` is
+still a change to `src/`.
 """
 from __future__ import annotations
 
@@ -217,8 +218,9 @@ def fetch(number: int) -> tuple[set[str], dict[int, set[str]], list[str]]:
 def backfill(apply: bool) -> int:
     """Give every closed PR the labels it lacks, or with *apply* false say what it would give.
 
-    A one-off for the PRs closed before the check existed (#259), merged or not. It only ever adds, so a
-    second run changes nothing, and a label someone chose by hand is never taken away.
+    A one-off for the PRs closed before the check existed (#259), merged or not. It only ever
+    adds, so a second run changes nothing, and a label someone chose by hand is never taken
+    away.
     """
     numbers = sorted(
         int(number)
