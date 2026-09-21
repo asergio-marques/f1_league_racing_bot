@@ -230,6 +230,8 @@ async def test_a_pardon_comes_back_staged(tmp_path):
     assert pardons[0].pardon_type == "NO_RSVP"
     assert pardons[0].justification == "Away with work"
     assert pardons[0].grantor_id == 77
+    # Kept whole, so an amendment writing it out again keeps when it was granted (#345).
+    assert pardons[0].granted_at == "2026-02-02T00:00:00+00:00"
 
 
 async def test_a_round_that_was_never_penalised_hydrates_to_nothing(tmp_path):
@@ -338,3 +340,21 @@ async def test_a_report_and_an_appeal_of_the_same_size_for_different_incidents_b
 
     assert [r.description for r in reports] == ["Contact at turn one"]
     assert [a.description for a in appeals] == ["Track limits, lap 12"]
+
+
+async def test_a_decision_comes_back_with_its_author_and_its_time(tmp_path):
+    """**Who decided it and when survive an amendment** (#345). The report and appeal stages
+    write a session's decisions out again; without these, every kept verdict would name the
+    admin who amended the round, at the moment they did."""
+    db_path, ids = await _seed(tmp_path, "hydrate_provenance")
+    await _penalty(db_path, ids["race_101"], description="Report", justification="R")
+    await _appeal(db_path, ids["race_102"], description="Appeal", justification="A")
+
+    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+
+    assert (reports[0].decided_by, reports[0].decided_at) == (
+        "77", "2026-02-02T00:00:00+00:00"
+    )
+    assert (appeals[0].decided_by, appeals[0].decided_at) == (
+        "78", "2026-02-03T00:00:00+00:00"
+    )

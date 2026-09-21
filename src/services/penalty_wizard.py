@@ -80,6 +80,9 @@ class StagedPardon:
     pardon_type: str          # 'NO_RSVP' | 'ABSENT' | 'NO_SHOW'
     justification: str
     grantor_id: int           # Discord user ID of staging admin
+    #: When a pardon read back from the round was granted, so that an amendment writing it out
+    #: again keeps the time as well as the grantor (#345). None for one staged now.
+    granted_at: str | None = None
 
 
 # ---------------------------------------------------------------------------

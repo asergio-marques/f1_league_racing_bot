@@ -38,6 +38,13 @@ class StagedPenalty:
     penalty_seconds: int | None
     description: str = ""
     justification: str = ""
+    #: Who decided this and when, where it was read back from a decided round rather than typed
+    #: now (#345). An amendment writes a round's decisions out again, and a verdict it keeps
+    #: must keep its author and its time — otherwise every kept verdict would name the admin who
+    #: amended the round, at the moment they did. None for a decision staged now, which takes
+    #: the approving manager and the time of approval as it always has.
+    decided_by: str | None = None
+    decided_at: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +383,8 @@ async def apply_penalties(
                 continue
             race_result_id = new_result_id if not sp.session_type.is_qualifying else None
             qual_result_id = new_result_id if sp.session_type.is_qualifying else None
+            # A decision read back from the round keeps its own author and time (#345).
+            record_by = sp.decided_by or str(applied_by)
             cursor = await db.execute(
                 """
                 INSERT INTO penalty_records (
@@ -392,8 +401,8 @@ async def apply_penalties(
                     sp.penalty_seconds,
                     sp.description,
                     sp.justification,
-                    str(applied_by),
-                    now_str,
+                    record_by,
+                    sp.decided_at or now_str,
                 ),
             )
             inserted_records.append(
@@ -406,7 +415,7 @@ async def apply_penalties(
                     "time_seconds": sp.penalty_seconds,
                     "description": sp.description,
                     "justification": sp.justification,
-                    "applied_by": str(applied_by),
+                    "applied_by": record_by,
                     "announcement_channel_id": None,
                 }
             )
@@ -527,7 +536,13 @@ async def load_staged_from_records(
     params: list = [round_id] if session_type is None else [round_id, session_type.value]
     async with get_connection(db_path) as db:
         rows_of: dict[str, list[dict]] = {"penalty_records": [], "appeal_records": []}
+        # The two tables name their author and time differently.
+        provenance = {
+            "penalty_records": ("applied_by", "applied_at"),
+            "appeal_records": ("submitted_by", "submitted_at"),
+        }
         for table in ("penalty_records", "appeal_records"):
+            by_col, at_col = provenance[table]
             for fk_col, result_table in (
                 ("race_result_id", "race_session_results"),
                 ("qual_result_id", "qualifying_session_results"),
@@ -536,6 +551,7 @@ async def load_staged_from_records(
                     f"""
                     SELECT v.id AS record_id, v.penalty_type, v.time_seconds,
                            v.description, v.justification,
+                           v.{by_col} AS decided_by, v.{at_col} AS decided_at,
                            r.driver_user_id AS driver_user_id,
                            sr.session_type AS session_type
                     FROM {table} v
@@ -560,6 +576,7 @@ async def load_staged_from_records(
         cursor = await db.execute(
             """
             SELECT p.attendance_id, p.pardon_type, p.justification, p.granted_by,
+                   p.granted_at,
                    a.driver_profile_id AS driver_profile_id,
                    d.discord_user_id AS discord_user_id
             FROM attendance_pardons p
@@ -583,6 +600,7 @@ async def load_staged_from_records(
                     pardon_type=row["pardon_type"],
                     justification=row["justification"] or "",
                     grantor_id=int(row["granted_by"]) if row["granted_by"] else 0,
+                    granted_at=row["granted_at"],
                 )
             )
 
@@ -645,4 +663,6 @@ def _staged_from_record(row) -> StagedPenalty:
         penalty_seconds=row["time_seconds"],
         description=row["description"] or "",
         justification=row["justification"] or "",
+        decided_by=row["decided_by"],
+        decided_at=row["decided_at"],
     )
