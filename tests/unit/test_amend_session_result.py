@@ -766,3 +766,30 @@ async def test_an_amendment_with_no_verdicts_is_unaffected(tmp_path):
 
     assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
     assert await _verdict_rows(db_path, "penalty_records") == []
+
+
+async def test_a_verdict_follows_a_driver_who_has_changed_account(tmp_path):
+    """**Both sides are read under the driver's current account** (#243, #345).
+
+    A pasted classification is normalised onto the current account before anything is stored,
+    while the row a verdict points at holds whichever account the driver raced under. Comparing
+    them raw made the session permanently un-amendable the moment somebody changed account: the
+    amendment was refused, and the refusal named a driver the classification already carried.
+    """
+    db_path = await _make_db(tmp_path, name="amend_account_change")
+    # Driver 101 races on under a new account, 201. The schema's own triggers keep
+    # `driver_accounts`, so the change of account is the one write needed.
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE driver_profiles SET discord_user_id = '201' WHERE id = 31")
+        await db.commit()
+    verdict_id = await _add_penalty(db_path, await _race_result_id(db_path, 101))
+
+    # The paste names them by the account they use now, as the validator leaves it.
+    await _amend(db_path, [_race_row(201, 1), _race_row(102, 2)])
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM race_session_results WHERE driver_user_id = 201"
+        )
+        new_row_id = (await cursor.fetchone())[0]
+    assert await _verdict_rows(db_path, "penalty_records") == [(verdict_id, new_row_id)]

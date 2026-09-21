@@ -1611,6 +1611,7 @@ async def _repoint_verdicts(
     session_result_id: int,
     session_type: SessionType,
     verdicts: dict[str, dict[int, list[int]]],
+    division_id: int,
 ) -> None:
     """Point every verdict of this session at its driver's **new** result row.
 
@@ -1620,23 +1621,38 @@ async def _repoint_verdicts(
     justification, who applied it and when — is the only record of why that driver lost places,
     and an amendment correcting a lap time has no business discarding it (issue #345).
 
+    **Both sides are read under the driver's current account** (#243). A pasted classification is
+    normalised onto it by `validate_submission_block` before anything is stored, while the row a
+    verdict points at holds whichever account the driver raced under — so comparing them raw made
+    a session un-amendable the moment somebody changed account, and told the manager to include a
+    driver the classification already named.
+
     Raises :class:`AmendmentWouldOrphanVerdictError` where a driver carrying a verdict is not in
     the corrected classification. Nothing is written in that case; the caller's transaction is
     abandoned whole.
     """
     if not verdicts:
         return
+    from services.driver_service import current_account_map_for_division
+
+    current_of = await current_account_map_for_division(db, division_id)
+
+    def _now(driver_user_id: int) -> int:
+        return current_of.get(driver_user_id, driver_user_id)
+
     fk_col = _verdict_fk_column(session_type)
     table = "qualifying_session_results" if session_type.is_qualifying else "race_session_results"
     cursor = await db.execute(
         f"SELECT id, driver_user_id FROM {table} WHERE session_result_id = ?",  # noqa: S608
         (session_result_id,),
     )
-    new_row_of: dict[int, int] = {r["driver_user_id"]: r["id"] for r in await cursor.fetchall()}
+    new_row_of: dict[int, int] = {
+        _now(r["driver_user_id"]): r["id"] for r in await cursor.fetchall()
+    }
 
     orphaned: set[int] = set()
     for per_driver in verdicts.values():
-        orphaned.update(set(per_driver) - set(new_row_of))
+        orphaned.update({_now(driver) for driver in per_driver} - set(new_row_of))
     if orphaned:
         named = ", ".join(f"<@{driver}>" for driver in sorted(orphaned))
         raise AmendmentWouldOrphanVerdictError(
@@ -1651,7 +1667,7 @@ async def _repoint_verdicts(
             for verdict_id in verdict_ids:
                 await db.execute(
                     f"UPDATE {verdict_table} SET {fk_col} = ? WHERE id = ?",  # noqa: S608
-                    (new_row_of[driver_user_id], verdict_id),
+                    (new_row_of[_now(driver_user_id)], verdict_id),
                 )
 
 
@@ -2268,7 +2284,7 @@ async def amend_session_result(
         await _insert_new_tables_in_tx(db, session_result_id, session_type, _amend_rows_normalized, _amend_profile_map)
         # The verdicts follow their drivers onto the rows just inserted. Refuses, without
         # writing, where a driver carrying one is no longer in the classification.
-        await _repoint_verdicts(db, session_result_id, session_type, _verdicts)
+        await _repoint_verdicts(db, session_result_id, session_type, _verdicts, division_id)
         await db.commit()
 
     # Apply points from the config so points_awarded / fastest_lap_bonus are populated
