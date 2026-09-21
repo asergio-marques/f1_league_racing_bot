@@ -119,7 +119,8 @@
 
 ## Attendance
 - Once the initial round results are submitted, the attendance sheet of the round will be filled. Being listed in any of the sessions of the round will be enough to count as having attended.
-- A driver recorded as having attended a round shall not be recorded absent again by any later recording from that round's results, the amendment of those results included. The record errs in the driver's favour, they having had no opportunity to justify themselves. Only the "attendance sync" command, which rebuilds a round from its results outright, shall set a recorded attendance back.
+- A driver recorded as having attended a round shall not be recorded absent again by any later recording from that round's results. The record errs in the driver's favour, they having had no opportunity to justify themselves.
+    - Two things rebuild a round from its results outright, and may set a recorded attendance back: the "attendance sync" command, and the amendment of the round's results. Decided 2026-09-21 (#345): an amendment corrects what the round was, and a driver it removes from the classification did not attend it.
 - Drivers who are reserving for that division are ignored.
 - A driver's attendance points shall be counted separately in each division they race in.
 - Attendance points shall only be distributed once the post-race penalties results are finalized, to prevent erroneous automatic sackings due to omitting a driver on the results accidentally.
@@ -154,6 +155,7 @@
 - The attendance sheet for a round must be recalculated in the case "round results amend" is used. The pardons the round carries after the amendment shall be taken into consideration as well.
     - The sheet shall be reposted against the round the running totals stand at — the division's latest — and not against the round amended, there being one live sheet rather than one per round.
     - Any sanction the recalculation warrants shall be enforced against that latest round and no earlier one. A correction to an earlier round shall not undo a sanction already applied nor apply one retrospectively: the past is not rewritten. Decided 2026-09-20 (#345).
+    - It follows that a driver whom the correction takes past a limit is sanctioned now, at the division's latest round, and not at the round where the limit would first have been crossed. Decided 2026-09-21.
 - Recalculating a round's attendance shall carry the new totals through every later round of the division whose penalties have been approved, so that no sheet later drawn against one of them — the final sheet of the season included — publishes a total the recalculation has superseded.
 - The total recorded against a round shall be the driver's total **as at that round**: the points of every earlier round of the division whose penalties have been approved, and that round's own. It shall not be the season's total, so that a figure which looks wrong can be traced round by round.
 - It follows that a division's current total stands at its latest such round. Where a recalculation carries totals forward, the sheet posted and the limits verified shall be those of the latest round it recalculated, not of the round it was asked to recalculate from.

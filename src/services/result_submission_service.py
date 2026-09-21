@@ -1638,7 +1638,10 @@ async def _repost_attendance_after_amendment(
     ``recompute="round"`` rebuilds the amended round's attendance from its corrected results
     and carries the totals forward, which is the amendment's own mode (FR-030) —
     ``cascade_attendance_from_round`` hardcodes ``"none"`` and would leave the amended round's
-    attended flags describing the classification it replaced.
+    attended flags describing the classification it replaced. **In both directions, and on
+    purpose** (decided 2026-09-21): a driver the correction removes is marked absent and
+    charged, and any sanction that follows is applied now, against the latest round. The
+    first pass's rule that a recorded attendance is never taken back does not hold here.
 
     Returns the faults met, as lines a league can read.
     """

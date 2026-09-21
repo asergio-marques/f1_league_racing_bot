@@ -111,7 +111,12 @@ async def _run(db_path, *, bot=None, touched=(AMENDED_ROUND, 5, LATEST_ROUND),
 
 async def test_the_recompute_rebuilds_the_amended_rounds_attendance(tmp_path):
     """`"round"`, not `"none"` — or the round keeps the attendance of the classification
-    it replaced."""
+    it replaced.
+
+    **Deliberately in both directions** (decided 2026-09-21). `"round"` is a full recompute, so
+    a driver the correction removes is marked absent and charged; the first pass's rule that a
+    recorded attendance is never taken back does not hold for an amendment. Do not "fix" this to
+    the upgrade-only recording — the league chose the correction over the driver's favour."""
     db_path = await _db(tmp_path, "att_mode")
 
     _, calls = await _run(db_path)
