@@ -449,3 +449,38 @@ async def test_a_round_with_no_results_changes_nothing(tmp_path):
     await _recompute(db_path, 21)
 
     assert await _former(db_path, 31) == 1
+
+
+# ---------------------------------------------------------------------------
+# Closing a season's rounds when the results module is switched off
+# ---------------------------------------------------------------------------
+
+
+async def test_closing_rounds_with_the_module_off_marks_who_raced_them(tmp_path):
+    """`end_rounds_awaiting_results` is the other way a round becomes final (#167, #216).
+
+    A round waiting on a results command will never get one once the module is off, so it is
+    closed as FINAL — it was raced, and only its scoring is abandoned. That makes its results
+    final, so its drivers become former drivers here; the results finaliser is itself a results
+    command and will never run for them.
+
+    In the ordinary disable the purge has already erased these results and this finds nothing.
+    It earns its place where the purge failed — `_apply_results_disable` closes the rounds
+    regardless — which is the case seeded here.
+    """
+    from services.season_service import SeasonService
+
+    db_path = await _make_db(tmp_path, name="module_off")
+    await _add_round(db_path, 21, status="AWAITING_APPEAL_VERDICTS")
+    await _add_race(db_path, 21, [(31, 101, "CLASSIFIED"), (32, 102, "DNS")])
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (77, 900, 100, 101)"
+        )
+        await db.commit()
+
+    await SeasonService(db_path).end_rounds_awaiting_results(5, "Admin")
+
+    assert await _former(db_path, 31) == 1
+    assert await _former(db_path, 32) == 0

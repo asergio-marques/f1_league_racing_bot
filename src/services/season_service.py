@@ -650,11 +650,27 @@ class SeasonService:
             )
             rows = [dict(r) for r in await cursor.fetchall()]
 
+            from services.result_submission_service import (
+                recompute_former_drivers_for_round,
+            )
+
             for row in rows:
                 await db.execute(
                     "UPDATE rounds SET status = ? WHERE id = ?",
                     (RoundStatus.FINAL.value, row["id"]),
                 )
+                # These rounds were raced and their results submitted; it is only the scoring
+                # that has been abandoned. Closing them as FINAL is what makes those results
+                # final, so it is here that their drivers become former drivers (#216) — the
+                # first pass's own finaliser is a results command and will never run for them.
+                #
+                # **Usually this finds nothing**, and that is correct rather than wasteful:
+                # disabling the module purges the season's results before reaching here, and a
+                # driver whose results have been erased has raced nothing the bot still knows
+                # of. It marks where the purge failed — `_apply_results_disable` catches that
+                # and closes the rounds regardless, leaving the results standing — and where a
+                # league disables between seasons with an older season's results intact.
+                await recompute_former_drivers_for_round(db, row["id"])
                 await db.execute(
                     """
                     INSERT INTO audit_entries
