@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -19,9 +18,6 @@ from utils.input_validator import (
 )
 
 log = logging.getLogger(__name__)
-
-# Lap gap: "+N Lap(s)" or "N Lap(s)"
-_LAP_GAP_RE = re.compile(r"^\+?(\d+) Laps?$", re.IGNORECASE)
 
 
 @dataclass
