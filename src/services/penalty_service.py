@@ -34,6 +34,23 @@ _LAP_GAP_RE = re.compile(r"^\+?(\d+) Laps?$", re.IGNORECASE)
 #: mention is not among them — naming the other car is the ordinary thing to write.
 _GROUP_MENTION_RE = re.compile(r"<@&\d+>|@everyone|@here", re.IGNORECASE)
 
+#: An emoji in a steward's text (#204): a server's own, which a graphic draws as its raw markup,
+#: and a standard one, which the host's fonts need not carry — on the Pi it vanishes from the
+#: graphic without trace. The standard set is Unicode's Emoji_Presentation characters
+#: (emoji-data.txt, Emoji 15.1: those below U+10000 listed one by one, every other lying in
+#: U+1F000..U+1FAFF), a keycap, and any character U+FE0F asks to be shown as an emoji. A symbol
+#: that is text by default — ✓, ★, ©, an arrow — is not among them.
+_EMOJI_RE = re.compile(
+    r"<a?:\w+:\d+>"
+    r"|[0-9#*]️?⃣"
+    r"|.️"
+    r"|[\U0001F000-\U0001FAFF"
+    r"⌚⌛⏩-⏬⏰⏳◽◾☔☕♈-♓♿"
+    r"⚓⚡⚪⚫⚽⚾⛄⛅⛎⛔⛪⛲⛳"
+    r"⛵⛺⛽✅✊✋✨❌❎❓-❕❗"
+    r"➕-➗➰➿⬛⬜⭐⭕]"
+)
+
 
 @dataclass
 class StagedPenalty:
@@ -141,6 +158,31 @@ def group_mention_refusal(field_label: str, text: str) -> str | None:
         f"The {field_label} mentions {named}, which would notify everybody it covers. "
         "Mention drivers only, then submit the form again."
     )
+
+
+def emoji_refusal(field_label: str, text: str) -> str | None:
+    """Why *text* cannot stand as a steward's *field_label* for an emoji, or None (#204).
+
+    A steward's text carries no emoji. The graphic cannot draw one faithfully — a server's own
+    comes out as its markup, a standard one as whatever the host's fonts make of it. Refused at
+    the form, as a group mention is, rather than stripped from a text the steward wrote.
+    """
+    match = _EMOJI_RE.search(text or "")
+    if match is None:
+        return None
+    return (
+        f"The {field_label} contains an emoji ({match.group(0)}), and a steward's text may "
+        "hold none. Remove it, then submit the form again."
+    )
+
+
+def steward_text_refusal(field_label: str, text: str) -> str | None:
+    """Why *text* cannot stand as a steward's *field_label*, or None where it can.
+
+    The one check every text a steward types into a review passes through, so the penalty's
+    two texts and a pardon's justification are held to the same rules.
+    """
+    return group_mention_refusal(field_label, text) or emoji_refusal(field_label, text)
 
 
 # ---------------------------------------------------------------------------

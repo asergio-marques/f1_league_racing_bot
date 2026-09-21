@@ -535,3 +535,15 @@ async def test_a_driver_mention_in_the_justification_is_staged(tmp_path):
     await _submit(state, justification="Agreed with <@900000002> beforehand")
 
     assert len(state.staged_pardons) == 1
+
+
+async def test_an_emoji_in_the_justification_is_refused(tmp_path):
+    """One rule for every text a steward types, though this one is only ever logged."""
+    db_path = await _make_db(tmp_path, name="emoji")
+    state = _state(db_path)
+
+    interaction, _ = await _submit(state, justification="Power cut ⚡")
+
+    assert state.staged_pardons == []
+    assert "emoji" in _replied(interaction)
+    state.bot.output_router.post_log.assert_not_awaited()

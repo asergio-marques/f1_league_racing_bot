@@ -859,3 +859,75 @@ def test_the_refusal_names_the_field():
 
     assert refusal is not None
     assert refusal.startswith("The justification ")
+
+
+# ---------------------------------------------------------------------------
+# An emoji in a steward's text is refused (#204)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("typed", ["<:facepalm:123456789012345678>", "<a:siren:1>"])
+def test_a_server_s_own_emoji_is_refused(typed):
+    """The graphic draws one as its raw markup."""
+    from services.penalty_service import emoji_refusal
+
+    assert emoji_refusal("justification", f"Unsafe rejoin {typed}") is not None
+
+
+@pytest.mark.parametrize(
+    "typed",
+    [
+        "\U0001F4A5",              # collision — beyond the BMP
+        "❌",                  # cross mark — an emoji by default below U+10000
+        "⭐",                  # star
+        "⚠️",            # warning, asked to be shown as an emoji
+        "❤️",            # heart, likewise
+        "\U0001F3CE️",        # racing car
+        "\U0001F44D\U0001F3FD",    # thumbs up with a skin tone
+        "\U0001F1EC\U0001F1E7",    # a flag
+        "1️⃣",           # a keycap
+    ],
+)
+def test_a_standard_emoji_is_refused(typed):
+    """The host's fonts need not carry one: on the Pi it vanishes from the graphic."""
+    from services.penalty_service import emoji_refusal
+
+    assert emoji_refusal("description", f"Contact at turn 3 {typed}") is not None
+
+
+@pytest.mark.parametrize("typed", ["✓", "★", "©", "→", "90°", "T1–T3"])
+def test_a_symbol_that_is_text_by_default_is_not_an_emoji(typed):
+    """A tick, a star, an arrow or a degree sign is ordinary text a steward may write."""
+    from services.penalty_service import emoji_refusal
+
+    assert emoji_refusal("description", f"Contact at turn 3 {typed}") is None
+
+
+def test_the_emoji_refusal_names_the_field_and_the_emoji():
+    from services.penalty_service import emoji_refusal
+
+    refusal = emoji_refusal("justification", "Rejoined unsafely \U0001F4A5")
+
+    assert refusal is not None
+    assert refusal.startswith("The justification ")
+    assert "\U0001F4A5" in refusal
+
+
+@pytest.mark.parametrize(
+    "typed, expected",
+    [
+        ("@here look", "notify"),
+        ("Contact \U0001F4A5", "emoji"),
+        ("Contact with <@4002>", None),
+    ],
+)
+def test_a_steward_s_text_is_held_to_both_rules(typed, expected):
+    """The one check the forms call, so no text a steward types escapes either rule."""
+    from services.penalty_service import steward_text_refusal
+
+    refusal = steward_text_refusal("description", typed)
+
+    if expected is None:
+        assert refusal is None
+    else:
+        assert refusal is not None and expected in refusal

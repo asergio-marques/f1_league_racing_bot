@@ -27,9 +27,10 @@ driver does not distort the arithmetic.
 onto the penalty list would be applied a pass too early, against results the appeal was lodged
 about.
 
-**Neither text may mention a group** (#204). The description and the justification are both
-published in the verdict, where a role mention, `@everyone` or `@here` would notify everybody it
-covers. A mention of a driver stands.
+**Neither text may mention a group or carry an emoji** (#204). The description and the
+justification are both published in the verdict, where a role mention, `@everyone` or `@here`
+would notify everybody it covers, and the graphic cannot draw an emoji faithfully. A mention of a
+driver stands.
 
 The modal is constructed inside `async def` tests, as `CLAUDE.md` requires of anything building
 a `Modal`: apt's discord.py calls `asyncio.get_running_loop()` in the constructor.
@@ -520,3 +521,22 @@ async def test_a_driver_mention_in_the_justification_is_staged(tmp_path):
 
     assert len(state.staged) == 1
     assert state.staged[0].justification == f"Contact with <@{STRANGER}> at turn one"
+
+
+async def test_an_emoji_in_the_description_is_refused(tmp_path):
+    """Neither text carries an emoji, which the graphic cannot draw faithfully."""
+    state = _state(await _make_db(tmp_path))
+
+    interaction = await _submit(state, description="Contact at turn one \U0001F4A5")
+
+    assert state.staged == []
+    assert "description" in _replied(interaction)
+
+
+async def test_a_server_emoji_in_the_justification_is_refused(tmp_path):
+    state = _state(await _make_db(tmp_path))
+
+    interaction = await _submit(state, justification="Reviewed <:facepalm:123456789012345678>")
+
+    assert state.staged == []
+    assert "justification" in _replied(interaction)
