@@ -22,8 +22,9 @@ from apscheduler.triggers.date import DateTrigger
 from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupRecord, SignupWizardRecord, WizardState
-from utils.input_validator import SIGNUP_ANSWER
+from utils.input_validator import SIGNUP_ANSWER, parse_time
 from utils.nationality_data import NATIONALITY_LOOKUP
+from utils.results_formatter import render_lap_time
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
@@ -1115,35 +1116,14 @@ class WizardService:
 
     @staticmethod
     def _normalise_lap_time(raw: str) -> str | None:
-        """Normalise a lap-time string to ``M:ss.mmm``."""
-        raw = raw.strip()
-        # Accept M:ss.mmm or M:ss:mmm (separator can be . or :)
-        m = re.fullmatch(r"(\d+):(\d{2})[.:]([0-9]+)", raw)
-        if not m:
-            return None
-        minutes = int(m.group(1))
-        seconds = int(m.group(2))
-        if seconds >= 60:
-            return None
-        ms_raw = m.group(3)
-        length = len(ms_raw)
-        if length < 3:
-            ms_val = ms_raw.ljust(3, "0")
-        elif length > 3:
-            # Half-up rounding to 3 digits
-            divisor = 10 ** (length - 3)
-            ms_int = int(ms_raw)
-            ms_rounded = (ms_int + divisor // 2) // divisor
-            if ms_rounded >= 1000:
-                seconds += 1
-                ms_rounded -= 1000
-                if seconds >= 60:
-                    minutes += 1
-                    seconds -= 60
-            ms_val = f"{ms_rounded:03d}"
-        else:
-            ms_val = ms_raw
-        return f"{minutes}:{seconds:02d}.{ms_val}"
+        """A lap time in the one form the bot reads times in, ``M:SS.mmm``, or None (#362).
+
+        Strict, as the results paste is, by the shared parser: always a dot and exactly three
+        digits after it. `1:23:456` and `1:23.4` were once read here and guessed at; they are
+        refused, and the driver asked again, as the prompt has always shown `1:23.456`.
+        """
+        ms = parse_time(raw)
+        return None if ms is None else render_lap_time(ms)
 
     @staticmethod
     def _validate_nationality(raw: str) -> str | None:

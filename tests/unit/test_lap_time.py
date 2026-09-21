@@ -1,9 +1,15 @@
-"""Unit tests for WizardService._normalise_lap_time edge cases — T051."""
+"""A driver's lap time at signup — `WizardService._normalise_lap_time`.
+
+Read by the shared strict parser (#362, decided 2026-09-21): always a dot and exactly three
+digits after it, as the results paste reads times and as the prompt has always shown. Signup
+once read `1:23:456` and `1:23.4` and guessed at them; those are now refused and the driver is
+asked again, so the two ways a time enters the bot can no longer disagree.
+"""
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 
 import pytest
 
@@ -11,82 +17,41 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 def _normalise(raw: str):
-    """Import and call _normalise_lap_time without instantiating WizardService."""
+    """Call _normalise_lap_time without instantiating WizardService."""
     from services.wizard_service import WizardService
     return WizardService._normalise_lap_time(raw)
 
 
-# ---------------------------------------------------------------------------
-# Valid input cases
-# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "typed, stored",
+    [
+        ("1:23.456", "1:23.456"),
+        ("  1:23.456  ", "1:23.456"),
+        ("0:59.999", "0:59.999"),
+        ("58.123", "0:58.123"),
+        ("12:00.000", "12:00.000"),
+    ],
+)
+def test_a_lap_time_in_the_strict_form_is_stored_as_m_ss_mmm(typed, stored):
+    assert _normalise(typed) == stored
 
 
-class TestNormaliseLapTimeValid:
-    def test_canonical_dot_separator(self):
-        assert _normalise("1:23.456") == "1:23.456"
-
-    def test_colon_ms_normalised_to_dot(self):
-        assert _normalise("1:23:456") == "1:23.456"
-
-    def test_zero_pad_one_digit_ms(self):
-        # "1:23.4" → zero-pad → "1:23.400"
-        assert _normalise("1:23.4") == "1:23.400"
-
-    def test_zero_pad_two_digit_ms(self):
-        # "1:23.45" → zero-pad → "1:23.450"
-        assert _normalise("1:23.45") == "1:23.450"
-
-    def test_half_up_round_four_digit_ms_rounds_up(self):
-        # "1:23.4567" → round to 3 digits → 456.7 → 457 → "1:23.457"
-        assert _normalise("1:23.4567") == "1:23.457"
-
-    def test_half_up_round_four_digit_ms_rounds_down(self):
-        # "1:23.4561" → 456.1 → 456 → "1:23.456"
-        assert _normalise("1:23.4561") == "1:23.456"
-
-    def test_half_up_round_exactly_half(self):
-        # "1:23.4565" → 456.5 → 457 (half-up) → "1:23.457"
-        assert _normalise("1:23.4565") == "1:23.457"
-
-    def test_strip_leading_whitespace(self):
-        assert _normalise("  1:23.456") == "1:23.456"
-
-    def test_strip_trailing_whitespace(self):
-        assert _normalise("1:23.456  ") == "1:23.456"
-
-    def test_strip_both_sides(self):
-        assert _normalise("  1:23.456  ") == "1:23.456"
-
-    def test_zero_minutes_valid(self):
-        # 0-minute laps shouldn't appear in F1 but should still parse
-        assert _normalise("0:59.999") == "0:59.999"
-
-    def test_ms_carry_over_rounds_to_next_second(self):
-        # "1:23.9997" → 999.7 → rounds to 1000 → carry-over → "1:24.000"
-        assert _normalise("1:23.9997") == "1:24.000"
-
-
-# ---------------------------------------------------------------------------
-# Invalid input cases — should return None
-# ---------------------------------------------------------------------------
-
-
-class TestNormaliseLapTimeInvalid:
-    def test_no_minutes_separator_returns_none(self):
-        assert _normalise("23.456") is None
-
-    def test_letters_in_time_returns_none(self):
-        assert _normalise("1:2a.456") is None
-
-    def test_empty_string_returns_none(self):
-        assert _normalise("") is None
-
-    def test_seconds_only_returns_none(self):
-        assert _normalise("23:456") is None  # ambiguous without proper format
-
-    def test_extra_colons_returns_none(self):
-        # Two colons but wrong positions
-        assert _normalise("1:2:3:4") is None
-
-    def test_negative_value_returns_none(self):
-        assert _normalise("-1:23.456") is None
+@pytest.mark.parametrize(
+    "typed",
+    [
+        "1:23:456",     # a colon before the thousandths
+        "1:23.4",       # one digit after the dot
+        "1:23.45",      # two
+        "1:23.4567",    # four
+        "1:23",         # none
+        "1:60.000",     # sixty seconds
+        "1:2a.456",
+        "-1:23.456",
+        "1:2:3:4",
+        "",
+        "   ",
+    ],
+)
+def test_a_lap_time_outside_the_strict_form_is_refused(typed):
+    """Refused, not guessed: the driver is asked again rather than seeded on a guess."""
+    assert _normalise(typed) is None

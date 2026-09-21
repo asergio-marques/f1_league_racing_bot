@@ -121,8 +121,9 @@ class TestNormaliseLapTimeRoundTrip:
         for t in ["1:23.456", "0:59.000", "2:01.999"]:
             assert _normalise(t) == t
 
-    def test_colon_ms_converts_to_dot(self):
-        assert _normalise("1:23:456") == "1:23.456"
+    def test_a_colon_before_the_thousandths_is_refused(self):
+        """Strict since #362: signup reads times as the results paste does."""
+        assert _normalise("1:23:456") is None
 
-    def test_short_ms_pads_to_three(self):
-        assert _normalise("1:23.5") == "1:23.500"
+    def test_fewer_than_three_digits_is_refused(self):
+        assert _normalise("1:23.5") is None
