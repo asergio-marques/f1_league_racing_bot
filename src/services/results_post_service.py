@@ -982,9 +982,8 @@ async def _get_standings_message_ids(
     """Return every message id *championship*'s posting occupies, or None where none was recorded.
 
     None is not an empty list. A posting written before the chunk list existed recorded only its
-    anchor, and has to fall back to the adjacency walk; a posting that recorded ``[]`` would be
-    claiming to occupy no messages at all. Keeping the two apart is what stops the fallback
-    being reached by accident.
+    anchor, and is deleted by that alone; a posting that recorded ``[]`` would be claiming to
+    occupy no messages at all.
     """
     column = _STANDINGS_IDS_COLUMNS[championship]
     anchor_column = _STANDINGS_ID_COLUMNS[championship]

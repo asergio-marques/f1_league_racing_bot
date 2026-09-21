@@ -604,15 +604,18 @@ async def _drop_superseded_driver_rows(db, driver_snaps: list[DriverStandingsSna
     recomputation leaves out is left as it was. Only a live season is ever recomputed, so
     this never touches a completed one.
 
-    The message ids of the posted standings live on the round's top row. Where that row is
-    one being dropped, they are carried onto the new top row.
+    The message ids of the posted standings live on the round's top row — the anchor of each
+    championship's posting and the list of every message it occupies. Where that row is one
+    being dropped, all four are carried onto the new top row: the list is what a repost deletes
+    the posting by, and one lost leaves every message after the anchor in the channel (#345).
     """
     by_round: dict[tuple[int, int], set[int]] = defaultdict(set)
     for snap in driver_snaps:
         by_round[(snap.round_id, snap.division_id)].add(int(snap.driver_user_id))
     for (round_id, division_id), kept in by_round.items():
         cursor = await db.execute(
-            "SELECT driver_user_id, standings_message_id, constructor_standings_message_id "
+            "SELECT driver_user_id, standings_message_id, constructor_standings_message_id, "
+            "standings_message_ids, constructor_standings_message_ids "
             "FROM driver_standings_snapshots WHERE round_id = ? AND division_id = ?",
             (round_id, division_id),
         )
@@ -629,7 +632,10 @@ async def _drop_superseded_driver_rows(db, driver_snaps: list[DriverStandingsSna
             continue
         carried = next(
             (
-                (r["standings_message_id"], r["constructor_standings_message_id"])
+                (
+                    r["standings_message_id"], r["constructor_standings_message_id"],
+                    r["standings_message_ids"], r["constructor_standings_message_ids"],
+                )
                 for r in dropped
                 if r["standings_message_id"] or r["constructor_standings_message_id"]
             ),
@@ -657,9 +663,12 @@ async def _drop_superseded_driver_rows(db, driver_snaps: list[DriverStandingsSna
             await db.execute(
                 "UPDATE driver_standings_snapshots SET "
                 "standings_message_id = COALESCE(standings_message_id, ?), "
-                "constructor_standings_message_id = COALESCE(constructor_standings_message_id, ?) "
+                "constructor_standings_message_id = COALESCE(constructor_standings_message_id, ?), "
+                "standings_message_ids = COALESCE(standings_message_ids, ?), "
+                "constructor_standings_message_ids = "
+                "COALESCE(constructor_standings_message_ids, ?) "
                 "WHERE round_id = ? AND division_id = ? AND driver_user_id = ?",
-                (carried[0], carried[1], round_id, division_id, top.driver_user_id),
+                (*carried, round_id, division_id, top.driver_user_id),
             )
 
 
