@@ -26,17 +26,13 @@ outlives any one season — they are unseated, not deleted. The two are told apa
 `is_test_driver`, and the profiles are removed *after* the rows referencing them, which is the
 ordering the comment in the source is about.
 
-**One table in the cascade no longer exists, and the delete fails on any season that has
-results.** Migration 036 dropped `driver_session_results`; the cascade still deletes from it,
-inside the branch that only runs when the season has `session_results` rows — which is every
-season a league has actually raced. The whole delete raises `no such table` and rolls back, so
-the method cannot remove a used season at all. No league command reaches it: its only
-caller, `/season abort`, deletes a season still in setup, which has no results, and the method
-refuses any other season (issue #153). Issue #214 records both. That is pinned by
-`test_deleting_a_season_with_results_fails_today`, which asserts the failure rather than the
-cascade, and is written to fail loudly the day it is fixed so whoever fixes it replaces it with
-the assertion beneath. Everything else here therefore seeds a season *without* results, which is
-the only shape the function currently handles.
+**Results are seeded too, though no league can reach a season that has them.** The only caller,
+`/season abort`, deletes a season still in setup, which has no results, and the method refuses
+any other season (issue #153). But a cascade statement fails only on the rows that reach it, so
+a seed without results cannot see one that is broken: the delete once raised `no such table` on
+any season carrying a `session_results` row, because it still named a table the schema had
+dropped (issue #214). So every season carries a qualifying and a race result, and
+`test_a_season_with_results_is_deleted` is named for the defect.
 
 **Only a season in setup can be deleted.** A season's number is committed once it leaves SETUP,
 and removing it would leave a gap in the league's history (issue #153). So the season deleted
@@ -72,6 +68,7 @@ CHILD_TABLES = [
     ("round_submission_channels", "round_id", ROUND_ID),
     ("driver_standings_snapshots", "round_id", ROUND_ID),
     ("team_standings_snapshots", "round_id", ROUND_ID),
+    ("session_results", "round_id", ROUND_ID),
     ("forecast_messages", "round_id", ROUND_ID),
     ("phase_results", "round_id", ROUND_ID),
     ("sessions", "round_id", ROUND_ID),
@@ -123,8 +120,22 @@ async def _seed_season(db, season_id, division_id, round_id, *, number: int):
         "(round_id, division_id, team_role_id, standing_position) VALUES (?, ?, 3001, 1)",
         (round_id, division_id),
     )
-    # No `session_results` row: the cascade raises on any season that has one. See
-    # `test_deleting_a_season_with_results_fails_today`.
+    for session_type in ("FULL_QUALIFYING", "FULL_RACE"):
+        cursor = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, ?, 'ACTIVE')",
+            (round_id, division_id, session_type),
+        )
+        child = (
+            "qualifying_session_results"
+            if session_type == "FULL_QUALIFYING"
+            else "race_session_results"
+        )
+        await db.execute(
+            f"INSERT INTO {child} (session_result_id, driver_user_id, team_role_id, "
+            "finishing_position) VALUES (?, 101, 3001, 1)",
+            (cursor.lastrowid,),
+        )
     await db.execute(
         "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
         "posted_at) VALUES (?, ?, 1, 900, '2026-02-01T00:00:00+00:00')",
@@ -249,45 +260,43 @@ async def test_no_child_row_survives_the_delete(tmp_path, table, column, value):
     assert await _count(db_path, table, column, value) == 0
 
 
-async def test_deleting_a_season_with_results_fails_today(tmp_path):
-    """**A defect, pinned as it stands.** Migration 036 dropped `driver_session_results`;
-    the cascade still deletes from it, inside the branch that only runs when the season has
-    `session_results` rows. So the method raises `no such table` and rolls back on any
-    season a league has actually raced — the season, its divisions and its rounds all
-    survive. No league command reaches it (issue #214).
-
-    Asserting the failure rather than the cascade, so this fails loudly the day it is fixed
-    and whoever fixes it replaces it with the assertion below.
-    """
-    import sqlite3
-
+async def test_a_season_with_results_is_deleted(tmp_path):
+    """Issue #214. The cascade once deleted from `driver_session_results`, a table the schema
+    dropped, inside the branch that runs only when the season has `session_results` rows — so
+    the whole delete raised `no such table` and rolled back on any season carrying a result.
+    Every season seeded here carries results, so this is the plain case, named for the defect
+    it would bring back."""
     db_path, _ = await _make_db(tmp_path, name="cascade_with_results")
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO session_results (round_id, division_id, session_type, status) "
-            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
-            (ROUND_ID, DIVISION_ID),
-        )
-        await db.commit()
-
-    with pytest.raises(sqlite3.OperationalError, match="driver_session_results"):
-        await SeasonService(db_path).delete_season(SEASON_ID)
-
-    # And nothing was removed, because the whole cascade is one transaction.
-    assert await _count(db_path, "seasons", "id", SEASON_ID) == 1
-    assert await _count(db_path, "rounds", "division_id", DIVISION_ID) == 1
-
-
-async def test_the_session_result_children_would_go_with_their_session(tmp_path):
-    """They have no foreign key to a round, so they are reached through `session_results`
-    and would otherwise be left behind pointing at a session that no longer exists. Seeded
-    without a parent session here because the test above is why one cannot be seeded."""
-    db_path, _ = await _make_db(tmp_path, name="cascade_session_children")
+    assert await _count(db_path, "session_results", "round_id", ROUND_ID) > 0  # the seed is real
 
     await SeasonService(db_path).delete_season(SEASON_ID)
 
-    for table in ("race_session_results", "qualifying_session_results"):
-        assert await _count(db_path, table) == 0
+    assert await _count(db_path, "seasons", "id", SEASON_ID) == 0
+    assert await _count(db_path, "session_results", "round_id", ROUND_ID) == 0
+
+
+async def test_the_session_result_children_go_with_their_session(tmp_path):
+    """They hang from `session_results`, not a round, so they sit one link further from the
+    season than anything `CHILD_TABLES` counts by round. Counted by the deleted season's own
+    session ids, because the other season's results survive."""
+    db_path, _ = await _make_db(tmp_path, name="cascade_session_children")
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id FROM session_results WHERE round_id = ?", (ROUND_ID,)
+        )
+        session_ids = [r["id"] for r in await cursor.fetchall()]
+    assert session_ids  # the seed is real
+
+    await SeasonService(db_path).delete_season(SEASON_ID)
+
+    ph = ",".join("?" * len(session_ids))
+    async with get_connection(db_path) as db:
+        for table in ("race_session_results", "qualifying_session_results"):
+            cursor = await db.execute(
+                f"SELECT COUNT(*) AS n FROM {table} WHERE session_result_id IN ({ph})",
+                session_ids,
+            )
+            assert (await cursor.fetchone())["n"] == 0, table
 
 
 async def test_the_team_seats_go_with_their_team(tmp_path):
@@ -318,6 +327,7 @@ async def test_the_team_seats_go_with_their_team(tmp_path):
         ("divisions", "season_id", OTHER_SEASON_ID),
         ("rounds", "division_id", OTHER_DIVISION_ID),
         ("driver_standings_snapshots", "round_id", OTHER_ROUND_ID),
+        ("session_results", "round_id", OTHER_ROUND_ID),
         ("team_instances", "division_id", OTHER_DIVISION_ID),
         ("season_points_links", "season_id", OTHER_SEASON_ID),
         ("driver_season_assignments", "season_id", OTHER_SEASON_ID),

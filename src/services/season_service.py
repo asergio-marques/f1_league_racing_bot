@@ -817,7 +817,7 @@ class SeasonService:
                 await db.execute(f"DELETE FROM round_submission_channels WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM driver_standings_snapshots WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM team_standings_snapshots WHERE round_id IN ({ph})", round_ids)
-                # driver_session_results has no direct FK to rounds — delete via session_results
+                # Race and qualifying results hang from session_results, not a round
                 cursor = await db.execute(
                     f"SELECT id FROM session_results WHERE round_id IN ({ph})", round_ids
                 )
@@ -826,7 +826,6 @@ class SeasonService:
                     sph = ",".join("?" * len(session_result_ids))
                     await db.execute(f"DELETE FROM race_session_results WHERE session_result_id IN ({sph})", session_result_ids)
                     await db.execute(f"DELETE FROM qualifying_session_results WHERE session_result_id IN ({sph})", session_result_ids)
-                    await db.execute(f"DELETE FROM driver_session_results WHERE session_result_id IN ({sph})", session_result_ids)
                 await db.execute(f"DELETE FROM session_results WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM forecast_messages WHERE round_id IN ({ph})", round_ids)
                 await db.execute(f"DELETE FROM phase_results WHERE round_id IN ({ph})", round_ids)
