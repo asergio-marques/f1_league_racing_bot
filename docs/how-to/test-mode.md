@@ -189,7 +189,9 @@ Driving a check-in through the buttons requires as many Discord accounts as ther
 /test-mode set-former-driver user:@someone value:True
 ```
 
-`former_driver` is otherwise only set by saving a session's results, at submission or amendment, for every driver in the classification who has a profile (`result_submission_service`). It decides what becomes of a profile once the driver has returned to Not Signed Up, by `/driver sack` or any other route: nothing is deleted at that moment, but when the season ends its driver pass keeps a former driver's profile and deletes anyone else's — every signup is kept either way. This sets it directly so both branches can be reached without submitting results first.
+`former_driver` is otherwise set from a round's **final** results, and never from a submission (`result_submission_service`). It goes up when the round becomes final — when its appeals are approved, or when the rounds are closed because the results module was switched off — for the drivers who raced it, a did-not-start entry not counting. An amendment of a final round settles it again, in both directions: a driver the amendment leaves no longer having raced that round loses the flag, unless another final round still marks them. So reaching it by racing takes a whole round through to its appeals, which is exactly what this command is for avoiding.
+
+It decides what becomes of a profile once the driver has returned to Not Signed Up, by `/driver sack` or any other route: nothing is deleted at that moment, but when the season ends its driver pass keeps a former driver's profile and deletes anyone else's — every signup is kept either way. This sets it directly so both branches can be reached without submitting results first.
 
 The pass reads **real** drivers only. A fake driver is never deleted by it, flag or no flag: fake drivers go when test mode is switched off, which the same end-of-season pass does once the driver pass is through. To exercise the pass itself, reach it with a real account at Not Signed Up.
 
