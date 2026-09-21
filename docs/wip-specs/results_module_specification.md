@@ -225,7 +225,7 @@
 - When listing points configuration for any session, if all positions beyond a certain point yield 0 points, then they shall all be listed as "xth+" to prevent repetition.
 
 ### Submitting round results
-- At the scheduled time of every round, the bot will create a new channel adjacent to the results channel of the division that had just had its round, notifying the interaction role to input the results of each session applicable to the round in the following order: Sprint Quali, Sprint Race, Feature Quali, Feature Race.
+- At the scheduled time of every round, the bot will create a new channel for the division that had just had its round, in the category of the interaction channel, notifying the interaction role and no other role to input the results of each session applicable to the round in the following order: Sprint Quali, Sprint Race, Feature Quali, Feature Race.
     - If the round type is not Sprint, then Sprint Quali and Sprint Race will be omitted.
     - Each round will be requested in order; i.e. the user will have to first input the Sprint Quali's results exclusively, then Sprint Race, etc.
 - The bot shall read the inputs of the league manager to create the data entry for the results of the session. The expected format depends on the type of session, but will always require Position, Driver, and Team.
