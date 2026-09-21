@@ -2054,6 +2054,16 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot=None) -> b
                     session_result_id,
                 ),
             )
+        # A driver stage one made a former driver is one no longer — unless a result of theirs
+        # stands anywhere once the round is back, another division's included.
+        for profile_id in snapshot.get("marked_former", []):
+            await db.execute(
+                "UPDATE driver_profiles SET former_driver = 0 WHERE id = ? "
+                "AND NOT EXISTS (SELECT 1 FROM race_session_results WHERE driver_profile_id = ?) "
+                "AND NOT EXISTS "
+                "(SELECT 1 FROM qualifying_session_results WHERE driver_profile_id = ?)",
+                (profile_id, profile_id, profile_id),
+            )
         if "pardons" in snapshot:
             await db.execute(
                 "DELETE FROM attendance_pardons WHERE attendance_id IN "
@@ -2802,16 +2812,33 @@ async def amend_round_results(
             )
         season_id: int | None = season_row["season_id"] if season_row else None
 
+        marked_former: list[int] = []
         for session in sessions:
             written.append(
                 (
                     await _write_amended_session_in_tx(
                         db, round_id, division_id, session, amended_by, submitted_at,
-                        has_season=season_row is not None,
+                        has_season=season_row is not None, marked_former=marked_former,
                     ),
                     session,
                 )
             )
+        # **Who this made a former driver goes into the snapshot** (#345), in the same
+        # transaction, so that a revert can unmark a driver pasted in by mistake. The flag is
+        # otherwise only ever raised, and the snapshot was taken before anyone was pasted.
+        if marked_former:
+            cursor = await db.execute(
+                "SELECT pre_amendment_state FROM round_amend_channels WHERE round_id = ?",
+                (round_id,),
+            )
+            snapshot_row = await cursor.fetchone()
+            if snapshot_row is not None and snapshot_row["pre_amendment_state"]:
+                snapshot = _json.loads(snapshot_row["pre_amendment_state"])
+                snapshot["marked_former"] = marked_former
+                await db.execute(
+                    "UPDATE round_amend_channels SET pre_amendment_state = ? WHERE round_id = ?",
+                    (_json.dumps(snapshot), round_id),
+                )
         await db.commit()
 
     # Apply points from the config so points_awarded / fastest_lap_bonus are populated
@@ -2862,9 +2889,13 @@ async def _write_amended_session_in_tx(
     submitted_at: str,
     *,
     has_season: bool,
+    marked_former: list[int] | None = None,
 ) -> int:
     """Replace one session's driver rows with its corrected classification, inside the caller's
     transaction, and return the session's ``session_results`` id.
+
+    *marked_former* collects the profiles this write made former drivers, for a revert to
+    unmark (#345).
 
     **Nothing is superseded here, and nothing keeps the classification being replaced.** The
     header is updated in place and the driver rows deleted outright, then re-inserted from the
@@ -2942,10 +2973,12 @@ async def _write_amended_session_in_tx(
             "ingame_penalties": _get(dr, "ingame_penalties"),
         })
         if drv_profile_id is not None:
-            await db.execute(
+            marking = await db.execute(
                 "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND former_driver = 0",
                 (drv_profile_id,),
             )
+            if marked_former is not None and marking.rowcount == 1:
+                marked_former.append(drv_profile_id)
     await _insert_new_tables_in_tx(
         db, session_result_id, session_type, rows_normalised, profile_map
     )

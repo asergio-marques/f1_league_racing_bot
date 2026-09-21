@@ -361,6 +361,67 @@ async def test_a_driver_in_the_amended_result_becomes_a_former_driver(tmp_path):
         assert (await cursor.fetchone())[0] == 1
 
 
+async def _open_amendment_record(db_path) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at) "
+            "VALUES (?, 7777, '[\"FEATURE_RACE\"]', '2026-02-02T00:00:00+00:00')",
+            (ROUND_ID,),
+        )
+        await db.commit()
+
+
+async def _former(db_path, profile_id: int) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT former_driver FROM driver_profiles WHERE id = ?", (profile_id,)
+        )
+        return (await cursor.fetchone())[0]
+
+
+async def test_reverting_unmarks_a_driver_the_amendment_made_a_former_driver(tmp_path):
+    """#345: a driver pasted in by mistake, the amendment then cancelled or lapsed. The round
+    is put back as it was, and so is whether they have ever raced."""
+    from services.result_submission_service import revert_abandoned_amendment
+
+    db_path = await _make_db(tmp_path, name="amend_former_reverted")
+    await _open_amendment_record(db_path)
+    await _amend(db_path, [_race_row(103, 1)])
+    assert await _former(db_path, 33) == 1
+
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        await revert_abandoned_amendment(db_path, ROUND_ID)
+
+    assert await _former(db_path, 33) == 0
+
+
+async def test_a_driver_with_a_result_elsewhere_stays_a_former_driver(tmp_path):
+    """The mark stage one raised is taken back only where nothing else would raise it — here a
+    race the driver ran in another division while the amendment stood open."""
+    from services.result_submission_service import revert_abandoned_amendment
+
+    db_path = await _make_db(tmp_path, name="amend_former_kept")
+    await _open_amendment_record(db_path)
+    await _amend(db_path, [_race_row(103, 1)])
+    async with get_connection(db_path) as db:
+        other = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'SPRINT_RACE', 'ACTIVE')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position, driver_profile_id) VALUES (?, 103, 3001, 1, 33)",
+            (other.lastrowid,),
+        )
+        await db.commit()
+
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        await revert_abandoned_amendment(db_path, ROUND_ID)
+
+    assert await _former(db_path, 33) == 1
+
+
 async def test_the_result_row_is_linked_to_the_drivers_profile(tmp_path):
     """The stable link a standings snapshot survives a Discord account change by."""
     db_path = await _make_db(tmp_path, name="amend_profile")
