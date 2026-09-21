@@ -796,6 +796,69 @@ async def test_the_reply_names_the_verdicts_removed(tmp_path) -> None:
     assert "1 verdict(s) removed" in reply
 
 
+def _purge_that_raises(monkeypatch) -> None:
+    async def _raise(db_path, bot):
+        raise RuntimeError("the erase stopped part-way")
+
+    monkeypatch.setattr(
+        "services.results_purge_service.purge_season_results", _raise
+    )
+
+
+async def test_a_purge_that_raises_still_closes_the_rounds(tmp_path, monkeypatch) -> None:
+    """**A failed erase never strands the season** (decided 2026-09-21).
+
+    The flag is already down when the erase runs, and closing the waiting rounds is the only
+    thing that lets the season complete. Left unclosed behind an exception, they wait on a
+    module that is off for ever — issue #167 reached by another road.
+    """
+    db_path, division_id, (round_id,) = await _seed(
+        tmp_path, round_statuses=("AWAITING_RESULTS",)
+    )
+    _purge_that_raises(monkeypatch)
+
+    await _disable(_make_cog(db_path))
+
+    assert await _round_status(db_path, round_id) == "FINAL"
+    assert await _division_status(db_path, division_id) == "FINISHED"
+
+
+async def test_the_flag_stays_down_when_the_purge_raises(tmp_path, monkeypatch) -> None:
+    """Flag first, and it stays down: putting it back would leave a round that started during
+    the erase closed with no results while the module claims to be on."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
+    _purge_that_raises(monkeypatch)
+
+    await _disable(_make_cog(db_path))
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT module_enabled FROM results_module_config")
+        assert (await cursor.fetchone())[0] == 0
+
+
+async def test_a_purge_that_raises_says_so(tmp_path, monkeypatch) -> None:
+    """The league is told the erase did not finish, so it knows to look for what is left —
+    in the reply, in the log channel as Incomplete, and in the audit."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
+    _purge_that_raises(monkeypatch)
+    cog = _make_cog(db_path)
+
+    interaction = await _disable(cog)
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert "stopped part-way" in reply
+    assert "delete them by hand" in reply
+    assert "closed all the same (1 round(s))" in reply
+    log_line = cog.bot.output_router.post_log.await_args.args[0]
+    assert "/module disable results | Incomplete" in log_line
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT new_value FROM audit_entries WHERE change_type = 'RESULTS_SEASON_PURGED'"
+        )
+        audited = json.loads((await cursor.fetchone())[0])
+    assert audited == {"incomplete": True, "rounds_closed": 1}
+
+
 async def test_an_open_amendment_is_closed_with_the_season(tmp_path) -> None:
     """**An amendment outlives the purge otherwise, and cannot be undone** (#345).
 

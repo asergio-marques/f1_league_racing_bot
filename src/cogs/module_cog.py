@@ -558,6 +558,15 @@ class ModuleCog(commands.Cog):
         rounds still awaiting results closed, because closing the last of them finishes its
         division and a division finishing is what lets `/season complete` run. Between seasons
         all three steps are still taken and the last two simply find nothing to do.
+
+        **The flag stays first even though the erasure can fail** (decided 2026-09-21). Written
+        last, it would read "on" for as long as the erasure runs — minutes, on a large season,
+        every message being a call to Discord — and a round reaching its start in that time
+        would open a submission channel nothing then closes, or, starting after the rounds were
+        closed, wait on results for ever. Instead the rounds are closed **whether or not the
+        erasure finished**: a failure part-way leaves some of the season's messages posted,
+        which the league is told to delete by hand, but never a season that cannot complete —
+        issue #167 over again.
         """
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
@@ -575,7 +584,11 @@ class ModuleCog(commands.Cog):
 
         from services.results_purge_service import purge_season_results
 
-        purged = await purge_season_results(self.bot.db_path, self.bot)
+        try:
+            purged = await purge_season_results(self.bot.db_path, self.bot)
+        except Exception:  # noqa: BLE001 — the rounds below must be closed whatever happened
+            log.exception("could not erase this season's results")
+            purged = None
         closed = await self.bot.season_service.end_rounds_awaiting_results(
             interaction.user.id, str(interaction.user)
         )
@@ -587,7 +600,12 @@ class ModuleCog(commands.Cog):
         except Exception:  # noqa: BLE001 — never fail the disabling on the season's next stage
             log.exception("could not wind the season down")
 
-        if purged["rounds"]:
+        if purged is None or purged["rounds"]:
+            outcome = (
+                {"incomplete": True, "rounds_closed": len(closed)}
+                if purged is None
+                else {**purged, "rounds_closed": len(closed)}
+            )
             async with get_connection(self.bot.db_path) as db:
                 await db.execute(
                     "INSERT INTO audit_entries "
@@ -597,7 +615,7 @@ class ModuleCog(commands.Cog):
                     (
                         interaction.user.id,
                         str(interaction.user),
-                        json.dumps({**purged, "rounds_closed": len(closed)}),
+                        json.dumps(outcome),
                         now,
                     ),
                 )
@@ -606,17 +624,26 @@ class ModuleCog(commands.Cog):
         # **Every message the bot could not remove is named, with a link** (decided 2026-09-21,
         # #189). Its record went with the season, so this reply and the log are the only places
         # left that can say where it is.
-        left_standing = purged["left_standing"]
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results | Success"
-            + (
+        left_standing = purged["left_standing"] if purged is not None else []
+        if purged is None:
+            summary = (
+                " | Incomplete\n  the erase of this season's results stopped part-way: some "
+                "results, standings and verdicts may still be posted\n"
+                f"  rounds closed with no results: {len(closed)}"
+            )
+        elif purged["rounds"]:
+            summary = (
+                " | Success"
                 f"\n  season results deleted: {purged['sessions']} session results, "
                 f"{purged['standings']} standings rows, {purged['messages']} messages, "
                 f"{purged['verdicts']} verdicts\n"
                 f"  rounds closed with no results: {len(closed)}"
-                if purged["rounds"]
-                else ""
             )
+        else:
+            summary = " | Success"
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results"
+            + summary
             + (
                 f"\n  left standing, to delete by hand: {len(left_standing)}\n"
                 + "\n".join(f"  {link}" for link in left_standing)
@@ -626,7 +653,14 @@ class ModuleCog(commands.Cog):
         )
 
         season_note = ""
-        if purged["rounds"]:
+        if purged is None:
+            season_note = (
+                "\n⚠️ The erase of this season's results stopped part-way, so some of its "
+                "results, standings and verdicts may still be posted — delete them by hand. "
+                "Every round still waiting on results was closed all the same "
+                f"({len(closed)} round(s)), so the season can still be completed."
+            )
+        elif purged["rounds"]:
             tail = f", {len(closed)} round(s) closed with no results." if closed else "."
             season_note = (
                 f"\n🗑️ This season's results are gone: {purged['sessions']} session "
