@@ -14,6 +14,14 @@ So these drive `_do_approve` rather than reading it. They are not about whether 
 decides correctly — the gates have their own tests — but about whether the sequence
 *executes*: every attribute it touches exists, and every refusal reaches the manager
 instead of an exception log.
+
+The bot is stubbed member by member rather than as one `AsyncMock` (issue #240). The
+blanket form suited the paragraph above until you look at what it does: every unstubbed
+`await` answers with a further mock, and a mock is truthy, so a gate passes on the
+strength of the stub and the walk carries on having tested nothing. Three gates in this
+file turned out to be reached that way — attendance's channel check, and the results
+module's, neither of which had ever read a division. Naming each member costs a line and
+makes the failure loud: an `await` nobody pinned raises `TypeError` rather than passing.
 """
 from __future__ import annotations
 
@@ -87,18 +95,43 @@ def _pending():
 def _cog(db_path, **overrides):
     """A cog whose services all answer, so the gates run to the end and commit."""
     cog = SeasonCog.__new__(SeasonCog)
-    # An AsyncMock bot, so every service call along the sequence awaits rather than
-    # stopping the walk at the first one nobody thought to stub. That is the point: a
-    # gate reached only because an earlier one was stubbed is a gate this file did not
-    # actually execute.
-    cog.bot = AsyncMock()
+    # A ``MagicMock`` bot with every awaited member named below, not a blanket
+    # ``AsyncMock`` (issue #240). The blanket form looks like it makes the walk more
+    # thorough and does the opposite: an unstubbed ``await bot.svc.method()`` answers with
+    # a further mock, which is **truthy**, so a gate passes on the strength of the stub
+    # rather than the season — and a gate reached that way is a gate this file did not
+    # execute either. Under ``MagicMock`` the same slip raises ``TypeError`` on the await,
+    # which is the walk failing loudly, which is what this file is for.
+    cog.bot = MagicMock()
     cog.bot.db_path = db_path
+    # Synchronous: ``scheduler_service`` schedules jobs rather than awaiting them, so an
+    # ``AsyncMock`` here returns coroutines nobody awaits.
+    cog.bot.scheduler_service = MagicMock()
+    cog.bot.output_router.post_log = AsyncMock()
     cog._pending = {USER_ID: _pending()}
 
     season_svc = cog.bot.season_service
     season_svc.validate_division_tiers = AsyncMock()
     season_svc.get_divisions = AsyncMock(return_value=[])
     season_svc.transition_to_active = AsyncMock()
+    season_svc.create_sessions_for_round = AsyncMock()
+    season_svc.commit_placements = AsyncMock()
+
+    # Every module off unless a test says otherwise. Said in as many words rather than left
+    # to a mock's truthiness, so a gate that runs here runs because a test chose it.
+    module_svc = cog.bot.module_service
+    module_svc.is_weather_enabled = AsyncMock(return_value=False)
+    module_svc.is_attendance_enabled = AsyncMock(return_value=False)
+    module_svc.is_results_enabled = AsyncMock(return_value=False)
+    module_svc.is_signup_enabled = AsyncMock(return_value=False)
+    module_svc.is_images_enabled = AsyncMock(return_value=False)
+
+    # The image readers the review helpers reach for. Each is wrapped in a `try` that logs
+    # and carries on, so leaving them unpinned would not fail a test — it would just log an
+    # error and skip the check, which is the silence issue #240 is about.
+    cog.bot.image_config_service.get_config = AsyncMock(return_value=None)
+    cog.bot.image_config_service.get_toggles = AsyncMock(return_value={})
+    cog.bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
 
     # The gates that read the season rather than Discord. Each answers "nothing wrong",
     # so the sequence runs its whole length — which is what makes a missing attribute
@@ -257,6 +290,18 @@ def _attendance_config():
     )
 
 
+def _division_attendance_config():
+    """A division with both attendance channels set, so Gate 2c passes on the season.
+
+    Left unstubbed it was answered by the blanket ``AsyncMock`` of issue #240, whose
+    ``rsvp_channel_id`` and ``attendance_channel_id`` are both truthy child mocks — so the
+    gate passed for every one of these tests without ever reading a division. The window
+    gates below are what this file is about, and they sit *after* Gate 2c: a fabricated
+    pass here is the only reason they were reached at all.
+    """
+    return SimpleNamespace(rsvp_channel_id=800, attendance_channel_id=801)
+
+
 def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
     cog = _cog(db_path)
     div = _division()
@@ -267,6 +312,9 @@ def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
     cog.bot.attendance_service.get_or_create_config = AsyncMock(
         return_value=_attendance_config()
+    )
+    cog.bot.attendance_service.get_division_config = AsyncMock(
+        return_value=_division_attendance_config()
     )
     return cog
 
@@ -438,6 +486,24 @@ def _cog_with_results(db_path, **overrides):
     approval in test mode.
     """
     cog = _cog(db_path, **overrides)
+    # Said outright. Before issue #240 the module read as on because the whole-bot
+    # ``AsyncMock`` answered every question truthily, so this fixture's name was the only
+    # place the intent existed — and a test meaning to cover a league without the results
+    # module would have covered this one just the same.
+    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    # With the module genuinely on, the results gate reads each division's three channels
+    # before it reaches the points table these tests are about. One fully configured
+    # division, so the gate passes on its merits and the points gate is what refuses.
+    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                name="Pro",
+                results_channel_id=700,
+                standings_channel_id=701,
+                penalty_channel_id=702,
+            )
+        ]
+    )
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(test_mode_active=False)
     )
