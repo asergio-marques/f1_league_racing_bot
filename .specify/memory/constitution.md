@@ -1,6 +1,50 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-21 — v14.0.1 → v14.1.0: MINOR — a person's name is cleaned, and a role mention is not resolved (issue #362)]
+  Version change    : 14.0.1 → 14.1.0
+  Bump rationale    : MINOR, decided with the user: Rule 16 gains two paragraphs of guidance on
+                      the fixed renderings it already governs — how a person's name is cleaned,
+                      and that a role mention is not resolved. MAJOR was proposed, on the ground
+                      that a graphic drawing a raw display name or resolving a role mention
+                      complied before and does not now, and was declined as out of proportion:
+                      no principle is removed or redefined, and no role mention can reach a
+                      graphic under the rules the bot now enforces. PATCH was weighed and
+                      rejected, the two paragraphs adding obligations rather than clarifying.
+
+  Modified sections :
+    - Principle XIV, Rule 16 — a paragraph is added after the fixed rendering of an entity of the
+      server: every link of a person's chain is drawn without any role mention, "@everyone" or
+      "@here", emoji or Discord markup, a link left empty is passed over, and the cleaning is the
+      name resolver's work and never an image type's.
+    - Principle XIV, Rule 16 — the in-place resolution of a mention inside free text is narrowed to
+      a mention of a user, and a paragraph is added saying a role mention is not resolved.
+
+  Why the constitution is the document that moved:
+    - Issue #362, decided with the user on 2026-09-21 on branch feature/362-input-validator, gave
+      the bot one input validator. A name the league types is refused where it holds a group
+      mention, an emoji or markup; a member's Discord display name, which the league cannot
+      control, is stripped of the same three where a graphic draws it. The image module
+      specification states the rule under "The name of a person"; this document had to stop
+      requiring the raw display name.
+    - The stripping sits in the name resolver, which hands the name to every image type. The
+      paragraph on markup, which says an image type found stripping markup inside a value it was
+      handed has been given the wrong thing, is kept unchanged and still holds.
+    - Issue #204 refused a role mention in a steward's text, and #362 in every name a league
+      types. The verdict graphic had read a role mention as a person, a member lookup that could
+      only fail and then drew the role's id; it now reads user mentions alone. Resolving a role to
+      its team's name was offered and declined, nothing being able to reach it.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred items    : none.
+
+  Templates         : no template reads Rule 16's renderings; none required changes.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-21 — v14.0.0 → v14.0.1: PATCH — a verdict's message id is persisted (issues #345, #189)]
   Version change    : 14.0.0 → 14.0.1
   Bump rationale    : PATCH. Three statements of fact about the verdict are corrected to match
@@ -7069,6 +7113,14 @@ role, falling back to the name of the role itself. An image type MUST state the 
 is reached where the first is unavailable, and MUST reach the same name wherever it draws that
 entity, so that one driver is not two names on one graphic.
 
+**A person's name is cleaned before it is drawn** (v14.1.0). A Discord display name is the one text a
+graphic draws that the league cannot control, so every link of a person's chain MUST be drawn without
+any role mention, `@everyone` or `@here`, emoji or Discord markup it holds, the words markup wraps
+being kept, and a link holding nothing else once they are removed MUST be passed over for the next.
+It is cleaned rather than refused, by the rules a name the league types is refused by. The cleaning is
+the work of the code that resolves the name and hands it over, never of an image type, which is what
+keeps it consistent with the paragraph on markup below: an image type is still never handed markup.
+
 **Markup the message channel interprets is not content.** Bold, italic, underline, strike-through, a
 code span, a block quote — anything that is an instruction to the channel rather than a value — is
 dropped by the graphic. The graphic draws the value the markup adorned and leaves the distinguishing
@@ -7083,17 +7135,22 @@ stripping markup **inside** a value it was handed has been given the wrong thing
 the code that handed it over.
 
 **A mention standing inside a value is content, and is resolved in place.** Where a person — or a
-module composing prose on a person's behalf — writes a mention **into** free text the graphic draws,
-that mention is part of what was written. It MUST be resolved to the entity's fixed rendering above,
-in the position it stands, and the text around it drawn as it was written. The justification the
-attendance module composes for a sacking is built around such a mention, and reaches the canvas
-carrying the name alone.
+module composing prose on a person's behalf — writes a mention of a **user** into free text the
+graphic draws, that mention is part of what was written. It MUST be resolved to that person's fixed
+rendering above, in the position it stands, and the text around it drawn as it was written. The
+justification the attendance module composes for a sacking is built around such a mention, and
+reaches the canvas carrying the name alone.
 
 This is the fixed rendering of the first paragraph and not the markup-stripping of the one before it,
 and the distinction is worth holding. Markup is an instruction the text path added to a value, so
 finding it inside means the handover is wrong. A mention is a value a person put there, and no repair
 upstream could take it out without taking it out of the **message** too — which is the one place it
 belongs, the message being where a reader can act on it.
+
+**A role mention is not resolved** (v14.1.0). Every text a person types that a graphic draws refuses
+one, and the bot composes none, so none reaches a graphic; a graphic MUST NOT read one as a person or
+as a team. Read as a person, it cost a member lookup that could only fail, and drew the role's id
+where a name belonged.
 
 Rule 15 is this rule applied to time: the timestamp every reader saw in their own zone becomes the
 one configured zone drawn for all. Stating the general form once is what stops each image type
@@ -8083,4 +8140,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.0.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-21
+**Version**: 14.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-21
