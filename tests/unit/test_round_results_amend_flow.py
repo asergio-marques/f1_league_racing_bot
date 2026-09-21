@@ -1120,3 +1120,80 @@ async def test_a_rejected_second_paste_writes_nothing_at_all(tmp_path):
     stubs["amend"].assert_not_awaited()
     assert "AMEND_REJECTED | round 3 session FEATURE_RACE" in _logged(cog)
     assert await _amend_rows(db_path) == 0
+
+
+# ---------------------------------------------------------------------------
+# A fault before stage one lets the division go (#345)
+#
+# From the moment its record is in, an amendment holds its division, and until stage one writes
+# it has no deadline for the sweep. A send failing part-way through the pastes left the record
+# standing and the division held until a restart.
+# ---------------------------------------------------------------------------
+
+
+def _gone():
+    return discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
+
+
+async def test_a_fault_between_pastes_lets_the_division_go(tmp_path):
+    """The review's case: the channel is deleted after the first paste, and asking for the
+    second session fails."""
+    db_path = await _make_db(tmp_path, name="amend_fault_between")
+    await _add_qualifying(db_path)
+    channel = _amend_channel()
+    # The Cancel button, the first session's prompt, then the second's.
+    channel.send = AsyncMock(side_effect=[MagicMock(), MagicMock(), _gone()])
+    interaction = _interaction(channel, message=_message())
+    cog = _make_cog(db_path)
+
+    stubs = await _amend(
+        cog, interaction,
+        parsed=_team_rows(101, 102),
+        sessions=[SessionType.FEATURE_QUALIFYING, SessionType.FEATURE_RACE],
+    )
+
+    stubs["amend"].assert_not_awaited()
+    assert await _amend_rows(db_path) == 0
+    channel.delete.assert_awaited_once()
+    assert "AMEND_FAILED" in _logged(cog)
+    assert "before anything was written" in _replied(interaction)
+
+
+async def test_a_channel_that_cannot_be_deleted_keeps_its_record_closed(tmp_path):
+    """Closed rather than forgotten: it holds nothing, and restart recovery still finds the
+    channel by it."""
+    from services.result_submission_service import open_amendment_in_division
+
+    db_path = await _make_db(tmp_path, name="amend_fault_undeletable")
+    channel = _amend_channel()
+    channel.send = AsyncMock(side_effect=_gone())
+    channel.delete = AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Access")
+    )
+
+    await _amend(_make_cog(db_path), _interaction(channel, message=_message()))
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT channel_id, closed_at FROM round_amend_channels")
+        row = await cursor.fetchone()
+    assert row["channel_id"] == AMEND_CHANNEL and row["closed_at"] is not None
+    assert await open_amendment_in_division(db_path, DIVISION_ID) is None
+
+
+async def test_a_fault_once_stage_one_has_begun_is_left_to_its_own_handling(tmp_path):
+    """From stage one on, the command's own handling puts the round back; the guard must not
+    delete the record — and the snapshot with it — from under that."""
+    db_path = await _make_db(tmp_path, name="amend_fault_after")
+    cog = _make_cog(db_path)
+    interaction = _interaction(_amend_channel())
+
+    async def _body(self, _interaction, _division, _round, _session, opened):
+        opened.round_id = ROUND_ID
+        opened.channel = _amend_channel()
+        opened.stage_one_started = True
+        raise RuntimeError("after stage one")
+
+    with patch.object(SeasonCog, "_amend_round_results", new=_body), pytest.raises(RuntimeError):
+        await undecorate(SeasonCog.round_results_amend)(cog, interaction, "Pro Division", 3, None)
+
+    cog.bot.output_router.post_log.assert_not_awaited()

@@ -445,6 +445,22 @@ REVIEW_IMAGE_FAULT = "FAULT"
 _RECOVERED = 0
 
 
+@dataclass
+class _OpenedAmendment:
+    """What one `/round results amend` has opened, for the command to let go of on a fault (#345).
+
+    Filled in as the command goes: the round and channel once its record is in, the Cancel view
+    once it is posted, and *stage_one_started* the moment stage one begins to write — after
+    which the command's own handling puts the round back, and this has nothing to do.
+    """
+
+    round_id: int | None = None
+    channel: Any = None
+    round_number: int | None = None
+    cancel_view: Any = None
+    stage_one_started: bool = False
+
+
 def _amendment_open_refusal(division_name: str, open_row) -> str:
     """Why `/round results amend` was refused: another amendment is open in the division."""
     channel_id = open_row["channel_id"] if open_row else None
@@ -5022,7 +5038,88 @@ class SeasonCog(commands.Cog):
 
         Adding, amending and importing rounds stay a league manager's; cancelling and
         deleting one are a league admin's for the same reason this is.
+
+        **A fault before stage one lets the division go** (#345). From the moment its record is
+        in, an amendment holds its division — no other amendment, paste, approval or sync — and
+        until stage one writes, it carries no deadline for the sweep to act on. A send failing
+        part-way through the pastes, say to a channel deleted under it, would otherwise leave
+        the record standing and the division held until a restart. Nothing has been written by
+        then, so the record and the channel simply go.
         """
+        opened = _OpenedAmendment()
+        try:
+            await self._amend_round_results(
+                interaction, division_name, round_number, session, opened
+            )
+        except Exception:
+            if opened.round_id is None or opened.stage_one_started:
+                raise
+            log.exception("amend: round %s failed before anything was written", opened.round_id)
+            await self._let_go_of_unwritten_amendment(interaction, opened)
+
+    async def _let_go_of_unwritten_amendment(
+        self, interaction: discord.Interaction, opened: _OpenedAmendment
+    ) -> None:
+        """Forget an amendment that failed before stage one, and delete its channel.
+
+        The channel goes first. Where it cannot be deleted the record is kept, marked closed —
+        so it holds nothing, and restart recovery still finds the channel — as
+        `close_submission_channel` does; where it can, or is already gone, the record goes.
+        """
+        if opened.cancel_view is not None:
+            opened.cancel_view.stop()
+        channel_gone = True
+        try:
+            await opened.channel.delete(reason="Amendment failed before anything was written")
+        except discord.NotFound:
+            pass
+        except discord.HTTPException:
+            log.exception("amend: could not delete channel %s", opened.channel.id)
+            channel_gone = False
+        try:
+            async with get_connection(self.bot.db_path) as db:
+                if channel_gone:
+                    await db.execute(
+                        "DELETE FROM round_amend_channels WHERE round_id = ? AND channel_id = ? "
+                        "AND pre_amendment_state IS NULL",
+                        (opened.round_id, opened.channel.id),
+                    )
+                else:
+                    await db.execute(
+                        "UPDATE round_amend_channels SET closed_at = ? "
+                        "WHERE round_id = ? AND channel_id = ? AND pre_amendment_state IS NULL",
+                        (datetime.now(timezone.utc).isoformat(), opened.round_id,
+                         opened.channel.id),
+                    )
+                await db.commit()
+        except Exception:  # noqa: BLE001 — restart recovery clears what is left
+            log.exception("amend: could not forget the record of round %s", opened.round_id)
+        try:
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
+                f"round {opened.round_number}\n"
+                "  Failed before the corrected results were recorded; nothing was written."
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("amend: could not log the failure of round %s", opened.round_id)
+        try:
+            await interaction.followup.send(
+                "\u274c Amendment failed due to an internal error before anything was "
+                "written. Check the log channel, then re-run `/round results amend`.",
+                ephemeral=True,
+            )
+        except discord.HTTPException:
+            pass
+
+    async def _amend_round_results(
+        self,
+        interaction: discord.Interaction,
+        division_name: str,
+        round_number: int,
+        session: app_commands.Choice[str] | None,
+        opened: _OpenedAmendment,
+    ) -> None:
+        """The body of `/round results amend`, filling in *opened* as it goes."""
         if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "\u274c The Results & Standings module is not enabled.", ephemeral=True
@@ -5276,6 +5373,10 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        opened.round_id = rnd.id
+        opened.channel = amend_channel
+        opened.round_number = rnd.round_number
+
         # Cancel button posted in the amend channel
         cancelled_flag: list[bool] = [False]
         # **What the collection loop races the paste against** (#345). It used to race
@@ -5353,6 +5454,7 @@ class SeasonCog(commands.Cog):
                 await bi.response.send_message("Amendment cancelled.", ephemeral=True)
 
         cancel_view = _CancelView()
+        opened.cancel_view = cancel_view
         await amend_channel.send(
             f"📋 **Amend Results — Round {round_number} ({division_name})**\n"
             f"Sessions: {', '.join(_label(st) for st in chosen)}.\n"
@@ -5560,6 +5662,7 @@ class SeasonCog(commands.Cog):
             return
 
         stage_one_writing[0] = True
+        opened.stage_one_started = True
         try:
             await amend_round_results(
                 self.bot.db_path,
