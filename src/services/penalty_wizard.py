@@ -691,6 +691,12 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             return
 
         justification = self.justification_input.value.strip()
+        # Refused as a penalty's texts are (#204). The log channel it reaches notifies nobody;
+        # this keeps one rule for every text a steward types.
+        refusal = group_mention_refusal("justification", justification)
+        if refusal is not None:
+            await interaction.followup.send(f"❌ {refusal}", ephemeral=True)
+            return
 
         from db.database import get_connection
         from services.driver_service import current_account_of, resolve_driver_profile_id
