@@ -1,0 +1,18 @@
+# How GitHub groups the notes it generates for a release, read by the Release workflow's
+# `gh release create --generate-notes`. The labels come from the issues a PR tracks and are
+# checked on every PR by `.github/workflows/pr-labels.yml`; CONTRIBUTING.md, "Pull requests",
+# holds the rule (#259). A PR goes under the first heading whose label it carries.
+changelog:
+  exclude:
+    labels:
+      - internal
+  categories:
+    - title: New features
+      labels:
+        - feature-request
+    - title: Fixes
+      labels:
+        - bug
+    - title: Other changes
+      labels:
+        - "*"
