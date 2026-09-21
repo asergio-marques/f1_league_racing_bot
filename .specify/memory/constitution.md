@@ -1,6 +1,53 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-21 — v14.1.0 → v14.2.0: MINOR — the former-driver flag is set by a round's final results, and is two-way (issue #216)]
+  Version change    : 14.1.0 → 14.2.0
+  Bump rationale    : MINOR, decided with the user. Principle VIII's former-driver rule gains
+                      the precision it always lacked: "set on first round participation" is
+                      replaced by the three conditions the core specification has stated all
+                      along — only a final round marks, a submission marks nobody, and a
+                      did-not-start entry does not count — and the clearing rule it already
+                      required is made explicit here too. MAJOR was proposed, on the ground
+                      that an implementation complying with the old wording does not comply
+                      with the new, and was declined: the governing rule is the core
+                      specification's, which is unchanged, and the principle it serves — a
+                      driver who raced is kept, one who did not is deletable — is untouched.
+                      This document was restating that rule loosely and had drifted from it;
+                      correcting a restatement is not redefining a principle. PATCH was weighed
+                      and rejected, the clearing rule being an obligation this document did not
+                      previously carry.
+
+  Modified sections :
+    - Principle VIII, "Immutability of former drivers" — renamed "Retention of former drivers"
+      and its guarantee kept whole: a profile whose flag is true is never deleted, only
+      modified. It now says plainly that the guarantee is of the profile and not of the flag,
+      the old title having implied an irreversibility the rule never meant.
+    - Principle VIII, new "When the former-driver flag is set" — carries the three conditions
+      that replace the parenthetical "set on first round participation": only a final round's
+      results mark, a submission or resubmission marks nobody, and a did-not-start entry does
+      not count.
+    - Principle VIII, new "The flag is two-way" — an amendment of a final round's results that
+      leaves a driver no longer having raced it clears the flag, unless another final round
+      marks them.
+
+  Why the constitution is the document that moved:
+    - `docs/wip-specs/core_specification.md`, under "Leaving the league", already stated all
+      three rules correctly, and remains the governing statement of them. This document was
+      restating that rule in a parenthetical and had drifted from it; the implementation had
+      drifted from it too, which is what issue #216 reported.
+    - The fix on branch fix/216-former-driver-flag-on-final-results moves the marking out of
+      `save_session_result` and the amendment write, and into one recompute run where a round
+      becomes final. Leaving "set on first round participation" standing would have left this
+      document describing the code the fix removed.
+    - Two readings were taken with the user on 2026-09-21 and are recorded in the core spec's
+      own terms rather than here: only `DNS` excludes, a driver who retired or was disqualified
+      having started; and no backfill is owed, no league yet running the bot.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred items    : none.
+
 [2026-09-21 — v14.0.1 → v14.1.0: MINOR — a person's name is cleaned, and a role mention is not resolved (issue #362)]
   Version change    : 14.0.1 → 14.1.0
   Bump rationale    : MINOR, decided with the user: Rule 16 gains two paragraphs of guidance on
@@ -5072,9 +5119,18 @@ stewarding module, which will bring the bar together with the commands that impo
   holds a record for each signup. No transition clears a signup record; a season deleted by
   abort takes its signups with it. The former rule nulling a former driver's signup fields on
   leaving is **withdrawn**.
-- **Immutability of former drivers**: Once `former_driver` is `true` (set on first round
-  participation), the profile record MUST NOT be deleted — only modified. Deletion attempts
-  MUST be rejected.
+- **When the former-driver flag is set**: `former_driver` MUST be set from a round's **final**
+  results and from nothing else. A driver is held to have raced a round only once that round is
+  final; results still awaiting report or appeal verdicts MUST mark nobody, and submitting or
+  resubmitting a classification MUST NOT set the flag. An entry recording that the driver did
+  not start MUST NOT count as having raced, so a driver whose only entries in a round are
+  did-not-start entries has not raced it.
+- **The flag is two-way**: An amendment of a final round's results that leaves a driver no
+  longer having raced that round MUST clear the flag, unless another final round marks them.
+- **Retention of former drivers**: While `former_driver` is `true`, the profile record MUST NOT
+  be deleted — only modified. Deletion attempts MUST be rejected. The guarantee is of the
+  profile, not of the flag: a driver whose flag is cleared by the rule above is thereafter
+  treated as any flagless driver, and is **pending deletion** if they stand at *Not Signed Up*.
 - **Pending deletion**: A driver with `former_driver = false` who reaches *Not Signed Up* by
   any route is **pending deletion**. The profile MUST NOT be deleted at the transition: it
   stands at *Not Signed Up*, and MAY sign up again, until the driver pass run when the season
@@ -8140,4 +8196,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.1.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-21
+**Version**: 14.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-21
