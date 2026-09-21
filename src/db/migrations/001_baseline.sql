@@ -5,8 +5,9 @@
 -- before they were deleted. Each table carries the comments SQLite kept inside its CREATE
 -- statement; comments that stood above a statement live on in the history of those files.
 --
--- Until go-live this file may be edited in place. From go-live on it is never edited again:
--- every schema change is a new migration numbered after it, with a test of its own.
+-- Until go-live, which is release v1.0.0 (#259), this file may be edited in place. From
+-- go-live on it is never edited again: every schema change is a new migration numbered after
+-- it, with a test of its own.
 
 -- server_configs
 -- One row, always. `server_id` is the claim on the league's server and is NULL while the bot

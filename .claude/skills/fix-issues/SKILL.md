@@ -233,8 +233,11 @@ that issue complete. It is mandatory per issue — one batch-wide close-out at t
 what each branch changed.
 
 **Push and open the pull request only on the user's explicit yes**, one pull request per issue,
-closing its number. Report per issue and say plainly whether each is fixed, partly fixed, or turned
-out not to reproduce.
+closing its number. **Label each as it is opened**, from its own issue: one work type, one severity
+and one module, plus `internal` when the change touches nothing a league sees — the rule and the
+file test are in `CONTRIBUTING.md`, "Pull requests", and the required check `pr-label-check`
+refuses a pull request without them. The `fix-issue` skill's Phase 7 gives the commands. Report per
+issue and say plainly whether each is fixed, partly fixed, or turned out not to reproduce.
 
 Keep the worktree of any issue that ended red or unfinished, so the failure can be inspected. Remove
 only the worktrees of issues that merged cleanly, and only once the user has seen the result.
