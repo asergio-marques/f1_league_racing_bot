@@ -18,13 +18,9 @@ import discord
 from db.database import get_connection
 from models.points_config import SessionType
 from services.driver_service import accounts_of_in_division, current_account_map_for_division
-from services.penalty_service import (
-    StagedPenalty,
-    _time_to_ms,
-    steward_text_refusal,
-    validate_penalty_input,
-)
+from services.penalty_service import StagedPenalty, validate_penalty_input, _time_to_ms
 from utils.channel_guard import is_league_manager
+from utils.input_validator import STEWARD_TEXT
 from utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
@@ -493,7 +489,7 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
             ("description", self.description_input),
             ("justification", self.justification_input),
         ):
-            refusal = steward_text_refusal(label, text_input.value)
+            refusal = STEWARD_TEXT.check(label, text_input.value).refusal
             if refusal is not None:
                 await interaction.followup.send(f"❌ {refusal}", ephemeral=True)
                 return
@@ -694,7 +690,7 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         justification = self.justification_input.value.strip()
         # Refused as a penalty's texts are (#204). The log channel it reaches notifies nobody and
         # draws nothing; this keeps one rule for every text a steward types.
-        refusal = steward_text_refusal("justification", justification)
+        refusal = STEWARD_TEXT.check("justification", justification).refusal
         if refusal is not None:
             await interaction.followup.send(f"❌ {refusal}", ephemeral=True)
             return

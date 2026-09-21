@@ -37,7 +37,7 @@ def _for_message(value: str) -> str:
 #: Who a verdict may notify: the people it mentions, and never a group (#204).
 #:
 #: The form refuses a role mention, ``@everyone`` or ``@here`` in a steward's text
-#: (``penalty_service.group_mention_refusal``), but the form is not the only way text reaches
+#: (``utils.input_validator.STEWARD_TEXT``), but the form is not the only way text reaches
 #: this channel: an amendment reposts every verdict a round carries from what was stored
 #: (#345). So the send withholds the notification as well. The text is still posted as written
 #: — a role still reads as its name — and a driver it mentions is still told.
