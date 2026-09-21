@@ -19,6 +19,7 @@ from typing import TypedDict
 
 from db.database import get_connection
 from models.points_config import SessionType
+from utils.input_validator import NAME
 from utils.nationality_data import NATIONALITY_LOOKUP
 
 log = logging.getLogger(__name__)
@@ -157,8 +158,15 @@ async def add_test_driver(
     the same team is held to, and the driver is refused where one would be (#150). The cog
     always passes it; left None, as tests of the seating alone do, the check is skipped.
 
+    *driver_name* is drawn on graphics as a real driver's name is, so it is held to the rules
+    every name a league types is held to (#362).
+
     Returns a TestDriverInfo dict on success, or an error string on failure.
     """
+    refusal = NAME.check("driver name", driver_name).refusal
+    if refusal is not None:
+        return refusal
+
     canonical_nationality: str | None = None
     if nationality is not None and nationality.strip():
         canonical_nationality = _canonical_nationality(nationality)

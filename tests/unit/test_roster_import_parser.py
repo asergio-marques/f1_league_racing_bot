@@ -221,3 +221,12 @@ def test_the_divisions_come_back_in_the_order_they_appear():
     )
 
     assert divisions_named(drivers) == ["Elite", "Challenger"]
+
+
+def test_a_roster_line_naming_a_driver_with_markup_is_refused():
+    """Held to the rules every typed name is (#362); the line is named, as for any fault."""
+    drivers, errors = parse_roster_csv(_csv(_row(name="**Quicksilver**")))
+
+    assert drivers == []
+    assert any(e.startswith("Line 2:") and "driver name" in e for e in errors)
+
