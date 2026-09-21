@@ -1887,6 +1887,20 @@ async def _clear_round_verdict_records(
 AMENDMENT_STAGE_TIMEOUT_SECONDS: int = 1800
 
 
+def amendment_wait_text() -> str:
+    """How an open amendment ends, as the refusals it causes tell a league.
+
+    Worked out from the deadline rather than written out, so that tuning it cannot leave a
+    refusal quoting the old figure. "Once", never "at most": the sweep that undoes a lapsed
+    amendment runs every few minutes, and nothing bounds the pastes before the deadline starts.
+    """
+    minutes = AMENDMENT_STAGE_TIMEOUT_SECONDS // 60
+    return (
+        f"it ends when approved, or is undone once {minutes} minutes have passed since its "
+        "corrections were entered"
+    )
+
+
 async def snapshot_before_amendment(
     db_path: str, round_id: int, session_types: list[SessionType]
 ) -> None:
@@ -2326,7 +2340,7 @@ async def held_by_amendment(
     unapproved corrections — and leave them published if the amendment were then cancelled or
     lapsed, its revert posting nothing. So while one is open, a first pass's results paste and
     its report and appeal approvals are refused, and the channel stays open for the manager to
-    try again. The wait is short: an amendment lapses 30 minutes after its first stage.
+    try again. The wait is short: an amendment lapses a fixed time after its first stage.
 
     Called at the point of the commit itself — after the points configuration is chosen, not
     when the paste arrives — so an amendment opened while the manager is choosing still holds.
@@ -2338,7 +2352,7 @@ async def held_by_amendment(
     return (
         f"⏸️ Round {row['round_number']} of this division is being amended in "
         f"<#{row['channel_id']}>, so nothing can be committed for another of its rounds until "
-        "that ends — at most 30 minutes after its corrections are entered. " + then
+        f"that ends — {amendment_wait_text()}. " + then
     )
 
 

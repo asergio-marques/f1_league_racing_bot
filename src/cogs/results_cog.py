@@ -494,7 +494,10 @@ class ResultsCog(commands.Cog):
         the amendment were then cancelled or lapsed, its revert posting nothing. It waits, as a
         submission of another of the division's rounds does.
         """
-        from services.result_submission_service import open_amendment_in_division
+        from services.result_submission_service import (
+            amendment_wait_text,
+            open_amendment_in_division,
+        )
 
         row = await open_amendment_in_division(self.bot.db_path, div.id)
         if row is None:
@@ -502,8 +505,8 @@ class ResultsCog(commands.Cog):
         await interaction.followup.send(
             f"\u23f8\ufe0f Round {row['round_number']} of **{div.name}** is being amended in "
             f"<#{row['channel_id']}>, and its corrections are not approved yet, so the "
-            "division cannot be synced until that ends — at most 30 minutes after they are "
-            "entered. Run this again then.",
+            f"division cannot be synced until that ends — {amendment_wait_text()}. "
+            "Run this again then.",
             ephemeral=True,
         )
         return False
@@ -1324,14 +1327,17 @@ class ResultsCog(commands.Cog):
         # until its last stage is approved; approving here reposts every round of every
         # division from the same database, and would publish them unapproved. Shown in the
         # panel and read again at the press, as the two refusals above are.
-        from services.result_submission_service import open_amendment_in_season
+        from services.result_submission_service import (
+            amendment_wait_text,
+            open_amendment_in_season,
+        )
 
         def _held_text(row) -> str:
             return (
                 f"Round {row['round_number']} of **{row['division_name']}** is being amended in "
                 f"<#{row['channel_id']}>. Its corrections are not approved yet, and approving "
                 "here reposts every round of every division, so it waits until that amendment "
-                "has finished — at most 30 minutes after its corrections are entered."
+                f"has finished — {amendment_wait_text()}."
             )
 
         held = await open_amendment_in_season(self.bot.db_path, season.id)

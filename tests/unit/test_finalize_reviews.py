@@ -1183,6 +1183,21 @@ async def test_an_amendment_is_not_held_by_itself(tmp_path):
     assert await held_by_amendment(db_path, ROUND_ID, DIVISION_ID, then="") is not None
 
 
+async def test_the_wait_a_refusal_quotes_follows_the_deadline(tmp_path, monkeypatch):
+    """Written out, a tuned deadline left every refusal quoting the old one; and "at most" was
+    never true, the sweep running every few minutes."""
+    import services.result_submission_service as rss
+
+    db_path = await _make_db(tmp_path, name="held_wait")
+    await _amend_round_two(db_path)
+    monkeypatch.setattr(rss, "AMENDMENT_STAGE_TIMEOUT_SECONDS", 600)
+
+    refusal = await rss.held_by_amendment(db_path, ROUND_ID, DIVISION_ID, then="")
+
+    assert "once 10 minutes have passed since its corrections were entered" in refusal
+    assert "at most" not in refusal
+
+
 async def test_the_season_names_an_amendment_open_in_any_of_its_divisions(tmp_path):
     """What completing the season and approving a change to its points ask (#345)."""
     from services.result_submission_service import open_amendment_in_season
