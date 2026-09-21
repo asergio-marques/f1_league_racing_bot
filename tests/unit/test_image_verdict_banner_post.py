@@ -9,9 +9,11 @@ The rules these pin are the ones a later reader could plausibly undo:
   — an attendance sanction is a verdict and is headed like one, so the sanctions a penalty
   approval enforces fall under that approval's banner rather than raising a second, and
   sanctions firing where no penalty was applied raise one of their own;
-* the message carries no text, the attachment's filename being what a search has to go on;
-* with the aspect off the verdicts channel reads exactly as it did before the feature;
-* a banner that cannot be drawn never costs the league a verdict.
+* a drawn banner's message carries no text, the attachment's filename being what a search has
+  to go on;
+* every batch is headed, the aspect choosing only whether in a picture or in words — with it
+  off, the module off or the template unusable, the heading is posted as text (#246);
+* a header that cannot be posted, drawn or written, never costs the league a verdict.
 """
 from __future__ import annotations
 
@@ -221,14 +223,71 @@ async def test_the_attachment_is_named_for_the_round_it_heads():
 # ── The aspect off, and the render failing ────────────────────────────────
 
 
-async def test_with_the_aspect_off_the_channel_reads_as_it_always_did(flow):
-    """The banner is additive: nothing stood above a run of verdicts before it."""
+async def test_with_the_aspect_off_the_batch_is_headed_in_words(flow):
+    """A batch is headed however the league is configured (#246, STW-VER-027).
+
+    It was once additive — nothing above the run at all — which left a league not using the
+    banner unable to tell where one batch ended and the next began.
+    """
     flow["banner_enabled"] = False
     channel = _Channel()
     await vas.post_penalty_announcements(_Bot(channel), _State(2), _State(2).records)
 
-    assert [content for content, _file in channel.sent] == ["<@101>", "<@102>"]
+    assert channel.sent[0] == ("**Season 5 Pit Wall Premier Round 8**", None)
+    assert [content for content, _file in channel.sent[1:]] == ["<@101>", "<@102>"]
     assert all(file is None for _content, file in channel.sent)
+
+
+async def test_with_the_aspect_off_the_batch_is_headed_only_once(flow):
+    """The one-header-per-approval rule holds for the words as much as the picture."""
+    flow["banner_enabled"] = False
+    channel = _Channel()
+    await vas.post_penalty_announcements(_Bot(channel), _State(3), _State(3).records)
+
+    headings = [content for content, _file in channel.sent
+                if content == "**Season 5 Pit Wall Premier Round 8**"]
+    assert len(headings) == 1
+
+
+async def test_a_text_heading_is_returned_so_it_can_be_taken_down(flow):
+    """The message is what an amendment records and later removes (#345).
+
+    A heading that went unrecorded would be left standing over the empty space where the run
+    it headed used to be.
+    """
+    flow["banner_enabled"] = False
+
+    sent = object()
+
+    class _Recording(_Channel):
+        async def send(self, content=None, *, file=None, **_kwargs):
+            await super().send(content, file=file)
+            return sent
+
+    channel = _Recording()
+    drawing = banner.build_drawing(
+        season_number=5, division_name="Pit Wall Premier", division_tier=1,
+        round_number=8, race_name=None, country_name=None,
+    )
+
+    assert await banner.try_post(_Bot(channel), channel, drawing) is sent
+    assert channel.sent == [("**Season 5 Pit Wall Premier Round 8**", None)]
+
+
+async def test_a_heading_that_cannot_be_sent_never_costs_the_league_its_verdicts(flow):
+    """A header failing must not cost a league the decisions it heads."""
+    flow["banner_enabled"] = False
+
+    class _Refusing(_Channel):
+        async def send(self, content=None, *, file=None, **_kwargs):
+            if content is not None and content.startswith("**Season"):
+                raise RuntimeError("no headers here")
+            await super().send(content, file=file)
+
+    channel = _Refusing()
+    await vas.post_penalty_announcements(_Bot(channel), _State(2), _State(2).records)
+
+    assert [content for content, _file in channel.sent] == ["<@101>", "<@102>"]
 
 
 async def test_a_render_that_fails_heads_the_batch_in_words(flow):

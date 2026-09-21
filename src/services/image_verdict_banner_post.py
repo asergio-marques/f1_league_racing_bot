@@ -7,21 +7,42 @@ delete-and-repost does not arise.
 
 Three rules are this module's own.
 
-**It is additive.** Nothing stood above a run of verdicts before it, so with the aspect off
-the verdicts channel reads exactly as it always has. Enabling it adds a header; it takes
-nothing away.
+**Every batch is headed, the aspect choosing only how** (decided 2026-09-21, issue #246,
+reversing 2026-09-09). Where the aspect is on and the picture can be drawn the header is the
+banner; where it is off, the module is off, the template is unusable or the render failed,
+the header is ``heading_text`` posted as words. This is the fallback every other image aspect
+makes — a picture replacing a text output, not adding one — and STW-VER-026 and STW-VER-027
+require it: a batch of verdicts names the round it belongs to however the league is
+configured.
 
-**Its message carries no text** (decided 2026-09-09), as the calendar's and the two
-season-boundary classifications' do not. The banner draws the season, the division and the
-round, and a heading above it would only repeat the picture. The cost is accepted and is
-real: a Discord text search for "Round 8" will not find it, and the attachment's filename —
+It was once additive: nothing stood above a run of verdicts before the banner existed, so
+with the aspect off the channel read as it always had. That left a league not using the
+banner unable to tell where one batch ended and the next began, the heading existing in the
+code but reachable only on a failed render. The banner is now a *picture of* the heading
+rather than a thing of its own.
+
+**A drawn banner's message carries no text**, as the calendar's and the two season-boundary
+classifications' do not. The banner draws the season, the division and the round, and a
+heading beside it would only repeat the picture. The cost is accepted and is real: a Discord
+text search for "Round 8" will not find it, and the attachment's filename —
 ``season5_division1_round8_verdict_banner.png``, composed by ``utils.image_naming`` — is the
-only handle a search has. The trade was made knowingly rather than overlooked.
+only handle a search has. A league that would rather have searchable headers switches the
+aspect off and gets them in words, which is now a choice between two headers rather than
+between a header and none.
 
-**A banner never costs a verdict.** It is rendered and posted before the first card of the
-batch, and every failure on that path is swallowed: the cards follow whether the header
-arrived or not. Where the render fails but the aspect is on, the plain heading is posted as
-text instead, so a batch is still identified when the picture cannot be drawn.
+**A header never costs a verdict.** It is posted before the first card of the batch, and
+every failure on that path is swallowed: the cards follow whether the header arrived or not.
+That holds for the words as much as for the picture — a channel that refuses the heading
+still gets its verdicts.
+
+That swallowing is safe because **a header is an aid to reading a channel and is no record
+of a decision** (decided 2026-09-21): it exists so a reader can tell at a glance which round
+the verdicts beneath it pertain to. Two things follow, and a later reader is apt to reach for
+either. It carries no repost or amendment marking, though a text heading now *could* carry
+one where a drawn banner could not — a re-headed batch reads identically to the one it
+replaced, and that is intended. And a batch that slips through unheaded is a want of
+organisation, not a correctness defect, so this path is not worth hardening beyond the
+posters that already route through it.
 """
 from __future__ import annotations
 
@@ -42,8 +63,10 @@ BANNER_TEMPLATE_KEY = "verdict_banner_template"
 class BannerRender:
     """What the image path produced for one banner.
 
-    *png* is None wherever no picture is to be posted — the module off, the aspect off, the
-    template invalid, or the render having failed. The caller need not know which.
+    *png* is None wherever no picture is to be drawn — the module off, the aspect off, the
+    template invalid, or the render having failed. The caller need not know which. It says
+    nothing about whether a header is posted: each of those cases heads the batch in words
+    instead (#246).
     """
 
     png: Path | None = None
@@ -152,9 +175,10 @@ async def render_banner(
 def heading_text(drawing: VerdictBannerDrawing) -> str:
     """The heading the banner draws, as message text.
 
-    Posted only where the aspect is on and the render failed. It is deliberately not the
-    ordinary case: a banner that arrived says all of this already, and a heading above it
-    would repeat the picture.
+    Posted wherever the picture is not — the aspect off, the module off, the template
+    unusable, or the render having failed (#246). It is the ordinary case for a league not
+    using the banner, and the exception is the other way round: a banner that arrived says
+    all of this already, so nothing is posted beside it.
     """
     season = f"Season {drawing.season_number} " if drawing.season_number is not None else ""
     return f"**{season}{drawing.division_name} Round {drawing.round_number}**"
@@ -212,7 +236,13 @@ async def try_post(bot, channel, drawing: VerdictBannerDrawing):
     import discord
 
     if not await banner_enabled(bot):
-        return None
+        #  The picture is not to be drawn — the module off, the aspect off, or the template
+        #  unusable — so the batch is headed in words instead of not at all (STW-VER-027).
+        try:
+            return await channel.send(heading_text(drawing))
+        except Exception:
+            log.exception("verdict banner: could not head the batch in words")
+            return None
 
     subject = describe(
         division_name=drawing.division_name,

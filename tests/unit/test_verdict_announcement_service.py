@@ -248,6 +248,11 @@ class _Channel:
     #: What a sent message's id counts up from, so a test can assert on a known value.
     FIRST_MESSAGE_ID = 770001
 
+    #: The id of the first *verdict*. Since #246 every batch is headed — as a banner where the
+    #: aspect is on, in words where it is off, and this stub bot has no image module at all —
+    #: so the heading takes `FIRST_MESSAGE_ID` and the verdict beneath it the next.
+    FIRST_VERDICT_ID = 770002
+
     def __init__(self, member: "_Member | None" = None, *, channel_id: int = 4242) -> None:
         self.sent: list[tuple] = []
         self.guild = _Guild(member)
@@ -646,7 +651,8 @@ async def test_a_verdict_on_a_result_under_a_past_account_names_the_current_one(
         bot, state, [_penalty_record(seeded["race_result_id"])]
     )
 
-    assert [content for content, _file in channel.sent] == ["<@31337>"]
+    #  The batch's heading comes first (#246); the verdict beneath it is what this pins.
+    assert [content for content, _file in channel.sent[1:]] == ["<@31337>"]
 
 
 # ---------------------------------------------------------------------------
@@ -885,7 +891,7 @@ async def test_a_penalty_verdict_records_the_message_it_was_announced_in(tmp_pat
     assert await post_penalty_announcements(bot, state, [record]) == []
 
     row = await _announcement_row(db_path, "penalty_records")
-    assert row["announcement_message_id"] == str(_Channel.FIRST_MESSAGE_ID)
+    assert row["announcement_message_id"] == str(_Channel.FIRST_VERDICT_ID)
 
 
 @pytest.mark.asyncio
@@ -930,7 +936,7 @@ async def test_a_verdict_records_its_chunk_list_too(tmp_path):
     )
 
     row = await _announcement_row(db_path, "penalty_records")
-    assert json.loads(row["announcement_message_ids"]) == [_Channel.FIRST_MESSAGE_ID]
+    assert json.loads(row["announcement_message_ids"]) == [_Channel.FIRST_VERDICT_ID]
 
 
 @pytest.mark.asyncio
@@ -951,7 +957,7 @@ async def test_an_appeal_verdict_records_its_message(tmp_path):
     assert await post_appeal_announcements(bot, state, [record]) == []
 
     row = await _announcement_row(db_path, "appeal_records")
-    assert row["announcement_message_id"] == str(_Channel.FIRST_MESSAGE_ID)
+    assert row["announcement_message_id"] == str(_Channel.FIRST_VERDICT_ID)
 
 
 @pytest.mark.asyncio
@@ -974,7 +980,8 @@ async def test_a_record_with_no_id_is_announced_all_the_same(tmp_path):
     )
 
     assert faults == []
-    assert len(channel.sent) == 1
+    #  The batch's heading, then the one verdict (#246).
+    assert len(channel.sent) == 2
 
 
 async def test_the_banner_records_the_message_it_was_posted_as(tmp_path):

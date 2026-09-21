@@ -602,7 +602,7 @@ This comes last on purpose. Switching something on before its drawing file is bi
 Two of the nine *add* a picture rather than replacing anything, so switching them on takes nothing away from what your drivers read today.
 
 - **The check-in call.** The message, the roster and the buttons all stay exactly as they were.
-- **The verdict banner.** It puts one header above the run of verdicts a review produced, naming the season, the division and the round — and the grand prix and its flag where your track list has a record for that round's circuit. Leave it off and the verdicts channel reads exactly as it does now. **You only ever see one where something follows it** — approve a review with nothing staged, or finish a round where nobody was penalised and nobody hit an attendance threshold, and no banner is posted.
+- **The verdict banner.** It draws the header above the run of verdicts a review produced, naming the season, the division and the round — and the grand prix and its flag where your track list has a record for that round's circuit. Leave it off and you still get the header, written as plain text instead of drawn. **You only ever see one where something follows it** — approve a review with nothing staged, or finish a round where nobody was penalised and nobody hit an attendance threshold, and no header is posted.
 
 **Verdicts and the verdict banner are two separate switches, and you want to know why before you use them.** The banner heads the batch; the verdict pictures are the decisions inside it. You can have either without the other. Keeping them apart also means a banner drawing that will not load can never stop a verdict being posted.
 
@@ -611,10 +611,11 @@ Two of the nine *add* a picture rather than replacing anything, so switching the
 > message, because the drawing already says the season, the division and the round and a heading above
 > it would only repeat them. The cost is that searching your verdicts channel for "Round 8" no longer
 > finds that round's verdicts — the only handle a search has is the attachment's filename, which reads
-> `season5_division1_round8_verdict_banner.png`. There is no setting that changes this. If searchable
-> verdicts matter more to your league than a tidy channel, leave the banner off.
+> `season5_division1_round8_verdict_banner.png`. Switching the aspect off is what changes this: you
+> get the same header written as text, which your league can search. If searchable verdicts matter
+> more to you than a drawn header, leave the banner off — you lose the picture, not the header.
 
-**Attendance sanctions get a banner too.** The sackings and reserve moves the bot enforces itself go to the same verdicts channel, so they are headed like anything else. Approving a penalty review posts its verdicts and then enforces that round's attendance sanctions, and one banner covers the lot — you read one header over one run, not two. A round with no penalties at all, or a pardon or amendment that makes the bot re-check attendance, raises a banner of its own for whatever it sanctions.
+**Attendance sanctions get a header too.** The sackings and reserve moves the bot enforces itself go to the same verdicts channel, so they are headed like anything else. Approving a penalty review posts its verdicts and then enforces that round's attendance sanctions, and one header covers the lot — you read one over one run, not two. A round with no penalties at all, or a pardon or amendment that makes the bot re-check attendance, raises one of its own for whatever it sanctions.
 
 **Standings is the other odd one out: it posts two pictures where the text posts one message.** The driver standings go first and the constructor standings after, each carrying its heading and lifecycle label as message text and its table as an attachment. Both are drawn again and replaced on every occasion the standings were reposted before — a round first posted as provisional, a penalty or appeal phase closed, an amendment approved, a points change recalculating a round, and `/results standings sync`.
 
