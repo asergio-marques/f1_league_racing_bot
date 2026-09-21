@@ -473,7 +473,8 @@ async def test_no_notes_stores_nothing(wizard_and_service):
 
 
 async def test_a_note_over_fifty_characters_is_refused(wizard_and_service):
-    """The note is drawn onto the signup graphic, where there is room for fifty."""
+    """Fifty characters is the limit the signup specification sets for a note, which is
+    quoted as text in the review panel and the unassigned list."""
     svc, wizard, advanced = wizard_and_service
     message = _Message("x" * 51)
 
