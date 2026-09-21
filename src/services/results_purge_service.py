@@ -15,10 +15,12 @@ What survives is the module's *configuration*: the points configurations, the se
 copy of them, and each division's results, standings and verdicts channels. Those are settings
 rather than output, and the bot has always promised they survive a disable.
 
-One thing is not undone. Penalty and appeal verdicts already announced stay where they were
-posted. Their message ids are recorded now (#189, #345) and could be deleted by, but whether
-disabling the module should erase a league's decisions as well as its results is a rule nobody
-has stated; the confirmation says they stay rather than pretending otherwise.
+The verdicts go with the results (decided 2026-09-21, issue #189). Every penalty and appeal
+verdict already announced is taken down from the verdicts channel, by the message ids recorded
+when it was posted. They were once left standing, and the league told so, only because no id was
+recorded and nothing could find them — a limitation, never a rule. An attendance sanction card
+in the same channel stays: it is the attendance module's, and recorded nowhere. The stewarding
+module will meet the same question for verdicts of its own; see :func:`_delete_posted_verdicts`.
 """
 from __future__ import annotations
 
@@ -38,7 +40,7 @@ async def purge_season_results(db_path: str, bot) -> dict:
     Discord first, while the message ids are still stored: once the rows are gone there is
     nothing left to find the messages by.
 
-    Returns a report — ``rounds``, ``sessions``, ``standings``, ``messages`` and
+    Returns a report — ``rounds``, ``sessions``, ``standings``, ``messages``, ``verdicts`` and
     ``submission_channels`` — for the reply to the league and the line in the log channel.
     Where no season is active every count is zero and nothing is touched.
     """
@@ -47,6 +49,7 @@ async def purge_season_results(db_path: str, bot) -> dict:
         "sessions": 0,
         "standings": 0,
         "messages": 0,
+        "verdicts": 0,
         "submission_channels": 0,
         "amend_channels": 0,
     }
@@ -82,6 +85,7 @@ async def purge_season_results(db_path: str, bot) -> dict:
 
     if guild is not None:
         report["messages"] = await _delete_posted_results(db_path, rounds, guild)
+        report["verdicts"] = await _delete_posted_verdicts(db_path, rounds, guild)
         report["submission_channels"] = await _close_open_submissions(db_path, rounds, guild)
 
     # **Not under the guild** (#345). Deleting the channel needs one; forgetting the amendment
@@ -94,11 +98,12 @@ async def purge_season_results(db_path: str, bot) -> dict:
     )
     log.info(
         "purge_season_results: %s rounds, %s sessions, %s standings rows, "
-        "%s messages, %s submission channels",
+        "%s messages, %s verdicts, %s submission channels",
         report["rounds"],
         report["sessions"],
         report["standings"],
         report["messages"],
+        report["verdicts"],
         report["submission_channels"],
     )
     return report
@@ -171,6 +176,77 @@ async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int
             )
             if standings_channel is not None:
                 deleted += standings_messages
+
+    return deleted
+
+
+async def _delete_posted_verdicts(db_path: str, rounds: list[dict], guild) -> int:
+    """Take down every penalty and appeal verdict the season announced, and count them.
+
+    Each is found by the channel and message ids recorded when it was posted (#189), and
+    deleted through ``_delete_posting`` by every chunk it recorded — the same route an
+    amendment's replay takes, so the two cannot disagree about what a verdict's messages are.
+    A verdict whose channel is gone is logged and passed over: its record goes with the rest of
+    the season all the same, and a channel the bot cannot reach holds nothing it could remove.
+
+    **The stewarding module will have to face this too.** It is to announce and record verdicts
+    of its own — reports, appeals and investigations alike
+    (``docs/wip-specs/steward_module_specification.md``) — and disabling this module disables
+    it with them (STW-MOD-009). What is taken down here is only what ``penalty_records`` and
+    ``appeal_records`` hold, so a verdict stewarding records anywhere else would be left on
+    display by this function, exactly as every verdict was before #189. Whether its verdicts go
+    with the season's results, and what becomes of the announcement of a ban that itself
+    survives the module being disabled (STW-MOD-006), are that module's to settle when it is
+    built; neither is decided here.
+    """
+    from services.results_post_service import _delete_posting
+    from services.verdict_announcement_service import _parse_chunk_ids
+    from services.verdict_records import VERDICT_TABLES, select_verdicts
+
+    deleted = 0
+    for row in rounds:
+        round_id = row["round_id"]
+        async with get_connection(db_path) as db:
+            verdicts = [
+                verdict
+                for table in VERDICT_TABLES
+                for verdict in await select_verdicts(
+                    db, table,
+                    "v.announcement_message_id AS anchor, "
+                    "v.announcement_message_ids AS chunks, "
+                    "v.announcement_channel_id AS channel_id",
+                    round_id=round_id,
+                    where=" AND v.announcement_message_id IS NOT NULL",
+                )
+            ]
+
+        taken: set[int] = set()
+        for verdict in verdicts:
+            try:
+                anchor = int(verdict["anchor"])
+            except (TypeError, ValueError):
+                continue
+            # One announcement per anchor. No two records share one today, but deleting a
+            # message twice would count it twice and log a failure for the second attempt.
+            if anchor in taken:
+                continue
+            taken.add(anchor)
+            channel = (
+                guild.get_channel(int(verdict["channel_id"]))
+                if verdict["channel_id"]
+                else None
+            )
+            if channel is None:
+                log.warning(
+                    "_delete_posted_verdicts: verdict %s of round %s is in a channel no longer "
+                    "reachable (%s); leaving it",
+                    anchor, round_id, verdict["channel_id"],
+                )
+                continue
+            await _delete_posting(
+                channel, anchor, _parse_chunk_ids(verdict["chunks"]), label="verdict"
+            )
+            deleted += 1
 
     return deleted
 

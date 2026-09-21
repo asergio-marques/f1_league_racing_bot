@@ -14,8 +14,9 @@ Two things now happen instead, decided 2026-09-14:
   standings messages already posted — because a disabled module holds and shows nothing.
 
 What survives is deliberate and pinned below: the points configurations, the season's own copy
-of them, the division channel bindings, and the verdicts already announced, which carry no
-message id and so cannot be taken back.
+of them, and the division channel bindings. The verdicts already announced go with the results
+(decided 2026-09-21, issue #189): they were left standing until then only because no message id
+was recorded to find them by.
 
 Every test that constructs the confirmation view is `async def`: apt's discord.py 2.5.0 calls
 `asyncio.get_running_loop()` in `View.__init__` where the pinned 2.7.1 defers it.
@@ -40,6 +41,7 @@ ACTOR_NAME = "Admin"
 BOT_USER_ID = 77
 RESULTS_CHANNEL_ID = 9001
 STANDINGS_CHANNEL_ID = 9002
+VERDICTS_CHANNEL_ID = 9003
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +95,7 @@ def _make_bot(db_path: str, *, guild: bool = True) -> MagicMock:
     channels = {
         RESULTS_CHANNEL_ID: _FakeChannel(RESULTS_CHANNEL_ID),
         STANDINGS_CHANNEL_ID: _FakeChannel(STANDINGS_CHANNEL_ID),
+        VERDICTS_CHANNEL_ID: _FakeChannel(VERDICTS_CHANNEL_ID),
     }
     bot.channels = channels
     if guild:
@@ -253,6 +256,24 @@ async def _seed_results_for_round(
             "(round_id, channel_id, created_at, closed) "
             "VALUES (?, ?, '2026-01-01T00:00:00', 0)",
             (round_id, 8000 + index),
+        )
+        await db.commit()
+
+
+async def _announce(
+    db_path: str,
+    table: str,
+    message_id: int,
+    *,
+    chunks: list[int] | None = None,
+    channel_id: int = VERDICTS_CHANNEL_ID,
+) -> None:
+    """Record the seeded verdict of *table* as announced, as `_record_announcement` does."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            f"UPDATE {table} SET announcement_message_id = ?, "  # noqa: S608
+            "announcement_message_ids = ?, announcement_channel_id = ?",
+            (str(message_id), json.dumps(chunks or [message_id]), str(channel_id)),
         )
         await db.commit()
 
@@ -442,6 +463,55 @@ async def test_the_posted_results_and_standings_are_unposted(tmp_path) -> None:
     standings_channel = cog.bot.channels[STANDINGS_CHANNEL_ID]
     assert results_channel.deleted_messages == [1000]
     assert sorted(standings_channel.deleted_messages) == [2000, 3000]
+
+
+async def test_announced_verdicts_are_taken_down(tmp_path) -> None:
+    """**The verdicts go with the results** (decided 2026-09-21, issue #189).
+
+    They were left in the verdicts channel only because no message id was recorded to find them
+    by. Now that one is, a season whose results are destroyed does not keep its decisions on
+    display over a classification that no longer exists.
+    """
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    await _announce(db_path, "appeal_records", 6001)
+    cog = _make_cog(db_path)
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert sorted(cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages) == [5001, 6001]
+    assert report["verdicts"] == 2
+    assert await _count(db_path, "penalty_records") == 0
+    assert await _count(db_path, "appeal_records") == 0
+
+
+async def test_a_verdict_goes_by_every_chunk_it_recorded(tmp_path) -> None:
+    """By the list written when it was posted, as every other posting is (#345)."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001, chunks=[5001, 5002])
+    cog = _make_cog(db_path)
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert sorted(cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages) == [5001, 5002]
+    assert report["verdicts"] == 1
+
+
+async def test_an_unreachable_verdicts_channel_still_erases_the_rows(tmp_path) -> None:
+    """A channel deleted since a verdict went out holds nothing the bot could remove. That one
+    is passed over and not counted, the next verdict is still taken down, and every record goes
+    with the rest of the season all the same."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001, channel_id=9999)
+    await _announce(db_path, "appeal_records", 6001)
+    cog = _make_cog(db_path)
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["verdicts"] == 1
+    assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
+    assert await _count(db_path, "penalty_records") == 0
+    assert await _count(db_path, "appeal_records") == 0
 
 
 async def test_an_open_submission_channel_is_closed(tmp_path) -> None:
