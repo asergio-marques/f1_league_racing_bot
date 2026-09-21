@@ -344,6 +344,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ## Rounds
 - A round shall belong to one division and shall state a moment in UTC, a format and a track.
+    - A moment given with a time zone shall be converted to UTC; one given without shall be read as UTC. Every command taking a round's moment shall read it alike. Decided 2026-09-21 (#362).
 - Round numbers shall never be entered. The rounds of a division shall be ordered by their moment and numbered from 1, and adding, deleting or re-timing one shall renumber the division.
 - Two rounds of one division shall not be scheduled at the same moment. This shall be refused by every command that would create one, and again when placements are first confirmed.
 - A round shall be refused where the division would thereby hold more rounds than its calendar graphic can draw.

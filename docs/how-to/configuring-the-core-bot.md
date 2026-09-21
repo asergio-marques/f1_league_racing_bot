@@ -308,7 +308,7 @@ Got something wrong? Until placements are confirmed you can fix any of it:
 
 Four things to know:
 
-- **Times are UTC**, always, in the form `YYYY-MM-DDTHH:MM:SS`. When the bot posts a time to your drivers it converts it to each person's own local time, so put in the real UTC time and let it do that.
+- **Times are UTC**, always, in the form `YYYY-MM-DDTHH:MM:SS`. Give one with a zone, such as `2026-06-14T20:00+02:00`, and the bot converts it to UTC for you. When the bot posts a time to your drivers it converts it to each person's own local time, so put in the real UTC time and let it do that.
 - **You never give a round number.** The bot sorts the division's rounds by date and numbers them. Add a round in the middle later and everything after it renumbers itself.
 - **Four formats**: `NORMAL`, `SPRINT`, `MYSTERY` and `ENDURANCE`. You type the format rather than picking it from a list — case does not matter, but a name that is not one of the four is refused. Only `track` offers autocomplete.
 - **A `MYSTERY` round takes no track**, and every other format must have one. That is the whole point of a mystery round: the circuit is kept secret until the weekend.

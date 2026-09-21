@@ -449,7 +449,7 @@ Round numbers are **auto-assigned** by sorting all rounds in the division by `sc
 |-----------|------|----------|-------------|
 | `division_name` | String | ✅ | Exact name of the division this round belongs to |
 | `format` | String | ✅ | Race format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE` |
-| `scheduled_at` | String | ✅ | Race date and time in ISO format: `YYYY-MM-DDTHH:MM:SS` (UTC) |
+| `scheduled_at` | String | ✅ | Race date and time in ISO format: `YYYY-MM-DDTHH:MM:SS` (UTC). A time given with a zone, such as `2026-06-14T20:00+02:00`, is converted to UTC |
 | `track` | String | — | Track ID or circuit name — use the autocomplete dropdown (e.g. `12` or `Silverstone Circuit`). What the dropdown displays (`12 – Silverstone Circuit`) is accepted too, so a pasted or retyped entry works; circuit names are matched regardless of case. Required for every format except `MYSTERY`, where it must be omitted. |
 
 > **Two rounds of one division cannot share a start time.** The command refuses the second, naming the round already there. Approval has always refused a season holding such a pair — this catches it at the moment you can still fix it easily.
@@ -644,7 +644,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `division_name` | String | ✅ | Name of the division containing the round |
 | `round_number` | Integer | ✅ | The round number to amend |
 | `track` | String | — | New track — track ID or circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). What the dropdown displays (`04 – Bahrain International Circuit`) is accepted too, and names are matched regardless of case. Refused while a forecast drawn for the current circuit still stands, or once the round has started. |
-| `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler and renumbers rounds. Refused if the moment has already passed. |
+| `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC); a time given with a zone is converted to UTC. Amending re-triggers the scheduler and renumbers rounds. Refused if the moment has already passed. |
 | `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Refused while the second forecast, drawn for the current sessions, still stands, or once the round has started. |
 
 **An amendment is one change.** Whatever combination of the three fields you give, the round is judged and amended once. If any rule refuses any part of it, none of it happens and the round is left exactly as it was — so amending a circuit and a date together is a single decision, and a circuit that could not be changed on its own often can be when the round moves with it.
@@ -1035,7 +1035,7 @@ Name the driver by any of their accounts: `old_user` where it is still in the se
 |-----------|------|----------|-------------|
 | `new_user` | Member | ✅ | The account to make current — a new one, or one of the driver's own past accounts. Must be in the server. |
 | `old_user` | Member | — | Any account of the driver's, current or past |
-| `old_user_id` | String | — | Raw Discord snowflake ID of any account of the driver's, for one no longer in the server |
+| `old_user_id` | String | — | Raw Discord snowflake ID of any account of the driver's, for one no longer in the server. Digits only; anything else is refused |
 
 > **Switching back is allowed.** Naming one of the driver's own past accounts as `new_user` makes it current again.
 
