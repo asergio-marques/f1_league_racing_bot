@@ -798,3 +798,64 @@ async def test_apply_penalties_logs_success_only_after_the_repost(tmp_path):
 
     assert order == ["repost", "log"]
     assert "PENALTIES_APPLIED | Success" in _logged_lines(bot)
+
+
+# ---------------------------------------------------------------------------
+# A group mention in a steward's text is refused (#204)
+# ---------------------------------------------------------------------------
+
+
+def test_a_role_mention_is_refused():
+    """Published in a verdict, it would notify every holder of the role — a whole division
+    told about one driver's penalty."""
+    from services.penalty_service import group_mention_refusal
+
+    refusal = group_mention_refusal("justification", "<@&987654321098765432> reviewed this.")
+
+    assert refusal is not None
+    assert "a role" in refusal
+
+
+@pytest.mark.parametrize(
+    "typed, named",
+    [
+        ("@everyone take note", "@everyone"),
+        ("take note @here", "@here"),
+        ("@Everyone take note", "@everyone"),
+        ("TAKE NOTE @HERE", "@here"),
+    ],
+)
+def test_everyone_and_here_are_refused(typed, named):
+    """Any case: nothing a verdict legitimately says reads "@Everyone", and refusing it keeps
+    the rule from resting on exactly how Discord matches the two."""
+    from services.penalty_service import group_mention_refusal
+
+    refusal = group_mention_refusal("description", typed)
+
+    assert refusal is not None
+    assert named in refusal
+
+
+@pytest.mark.parametrize("typed", ["Contact with <@4002> at turn 3.", "Contact with <@!4002>."])
+def test_a_driver_mention_is_not_a_group_mention(typed):
+    """Naming the other car is the ordinary thing to write, and the graphic draws it as their
+    name (#142)."""
+    from services.penalty_service import group_mention_refusal
+
+    assert group_mention_refusal("description", typed) is None
+
+
+def test_text_mentioning_nobody_is_not_refused():
+    from services.penalty_service import group_mention_refusal
+
+    assert group_mention_refusal("justification", "Video evidence reviewed.") is None
+
+
+def test_the_refusal_names_the_field():
+    """The form has two texts; the steward is told which one to rewrite."""
+    from services.penalty_service import group_mention_refusal
+
+    refusal = group_mention_refusal("justification", "@here")
+
+    assert refusal is not None
+    assert refusal.startswith("The justification ")

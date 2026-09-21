@@ -29,6 +29,11 @@ _DELTA_GAP_RE = re.compile(
 # Lap gap: "+N Lap(s)" or "N Lap(s)"
 _LAP_GAP_RE = re.compile(r"^\+?(\d+) Laps?$", re.IGNORECASE)
 
+#: What in a steward's text would notify a group rather than name a person (#204): a role
+#: mention, and the two Discord reads as the whole server and as everyone online in it. A user
+#: mention is not among them — naming the other car is the ordinary thing to write.
+_GROUP_MENTION_RE = re.compile(r"<@&\d+>|@everyone|@here", re.IGNORECASE)
+
 
 @dataclass
 class StagedPenalty:
@@ -113,6 +118,28 @@ def validate_penalty_input(
         session_type=session_type,
         penalty_type="TIME",
         penalty_seconds=seconds,
+    )
+
+
+def group_mention_refusal(field_label: str, text: str) -> str | None:
+    """Why *text* cannot stand as a steward's *field_label*, or None where it can (#204).
+
+    A penalty's description and justification are published in its verdict, where a role
+    mention, ``@everyone`` or ``@here`` would notify everybody it covers — a whole division told
+    of one driver's penalty. Refused at the form, where the steward can still rewrite it, rather
+    than stripped on the way out, which would publish a text they did not write.
+
+    Matched in any case: nothing a verdict legitimately says reads "@Everyone", and refusing it
+    keeps the rule from resting on exactly how Discord matches the two.
+    """
+    match = _GROUP_MENTION_RE.search(text or "")
+    if match is None:
+        return None
+    found = match.group(0)
+    named = "a role" if found.startswith("<@&") else f"`{found.lower()}`"
+    return (
+        f"The {field_label} mentions {named}, which would notify everybody it covers. "
+        "Mention drivers only, then submit the form again."
     )
 
 
