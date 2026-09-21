@@ -89,7 +89,8 @@ async def purge_season_results(db_path: str, bot) -> dict:
         )
 
     if guild is not None:
-        report["messages"] = await _delete_posted_results(db_path, rounds, guild)
+        report["messages"], left = await _delete_posted_results(db_path, rounds, guild)
+        report["left_standing"].extend(left)
         report["verdicts"], left = await _delete_posted_verdicts(db_path, rounds, guild)
         report["left_standing"].extend(left)
         report["submission_channels"] = await _close_open_submissions(db_path, rounds, guild)
@@ -115,8 +116,13 @@ async def purge_season_results(db_path: str, bot) -> dict:
     return report
 
 
-async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int:
-    """Unpost every results and standings message of the season, and count them.
+async def _delete_posted_results(
+    db_path: str, rounds: list[dict], guild
+) -> tuple[int, list[str]]:
+    """Unpost every results and standings message of the season.
+
+    Returns how many went, and a link to each message the bot could not remove — a posting
+    counts only where every part of it went.
 
     The deletion helpers come from ``results_post_service`` rather than being written again
     here. A posted table longer than Discord's limit is split across several messages and every
@@ -131,6 +137,7 @@ async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int
     )
 
     deleted = 0
+    left_standing: list[str] = []
     for row in rounds:
         round_id = row["round_id"]
 
@@ -151,39 +158,29 @@ async def _delete_posted_results(db_path: str, rounds: list[dict], guild) -> int
                 # By what the posting recorded, not by what follows it (#345). The adjacency walk
                 # cannot tell this posting's continuation from the next posting down, so purging a
                 # season could destroy a message it was not asked to touch.
-                await _delete_posting(
+                left = await _delete_posting(
                     results_channel, message_id, _parse_ids(chunk_ids),
                     label="results message",
                 )
-                deleted += 1
+                if left:
+                    left_standing.extend(
+                        _message_link(guild, results_channel, m) for m in left
+                    )
+                else:
+                    deleted += 1
 
         standings_channel = (
             guild.get_channel(row["standings_channel_id"])
             if row["standings_channel_id"]
             else None
         )
-        # Counted before the call, which clears the ids as it goes.
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT COUNT(*) FROM ("
-                "  SELECT DISTINCT standings_message_id FROM driver_standings_snapshots"
-                "   WHERE round_id = ? AND standings_message_id IS NOT NULL"
-                "  UNION"
-                "  SELECT DISTINCT constructor_standings_message_id"
-                "    FROM driver_standings_snapshots"
-                "   WHERE round_id = ? AND constructor_standings_message_id IS NOT NULL"
-                ")",
-                (round_id, round_id),
-            )
-            standings_messages = (await cursor.fetchone())[0]
-        if standings_messages:
-            await _clear_standings_messages(
-                db_path, row["division_id"], round_id, standings_channel
-            )
-            if standings_channel is not None:
-                deleted += standings_messages
+        removed, left = await _clear_standings_messages(
+            db_path, row["division_id"], round_id, standings_channel
+        )
+        deleted += removed
+        left_standing.extend(_message_link(guild, standings_channel, m) for m in left)
 
-    return deleted
+    return deleted, left_standing
 
 
 def _message_link(guild, channel, message_id: int) -> str:

@@ -563,6 +563,33 @@ async def test_a_verdict_left_standing_is_linked_not_counted(tmp_path) -> None:
     assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
 
 
+async def test_a_results_message_left_standing_is_linked(tmp_path) -> None:
+    """The results and standings messages go by the same rule as the verdicts: counted only
+    where they went, and linked where they did not."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    cog = _make_cog(db_path)
+    cog.bot.channels[RESULTS_CHANNEL_ID].refuse = {1000}
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["left_standing"] == [_link(RESULTS_CHANNEL_ID, 1000)]
+    assert report["messages"] == 2  # the two standings messages, and not the results one
+
+
+async def test_a_standings_message_left_standing_is_linked(tmp_path) -> None:
+    """The image flow posts the constructors' table as a message of its own, and it is named
+    on its own where it stays."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    cog = _make_cog(db_path)
+    cog.bot.channels[STANDINGS_CHANNEL_ID].refuse = {3000}
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["left_standing"] == [_link(STANDINGS_CHANNEL_ID, 3000)]
+    assert report["messages"] == 2
+    assert cog.bot.channels[STANDINGS_CHANNEL_ID].deleted_messages == [2000]
+
+
 async def test_a_message_deleted_by_hand_counts_as_removed(tmp_path) -> None:
     """A manager got there first. Nothing is left to remove, so nothing is named."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
