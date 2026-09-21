@@ -488,3 +488,20 @@ async def test_the_anchor_is_not_deleted_twice_when_the_list_names_it():
     await _delete_posting(channel, 11, [11, 12], label="results message")
 
     assert channel._deleted == [11, 12]
+
+
+async def test_a_posting_that_fails_part_way_takes_its_first_chunks_down():
+    """**A posting is whole or absent** (#345). The chunks already sent are recorded nowhere
+    until the whole posting is, so leaving them stranded the start of a table in the channel
+    with no route by which the bot could ever take it down."""
+    first = MagicMock()
+    first.id = 1
+    first.delete = AsyncMock()
+    channel = MagicMock()
+    channel.send = AsyncMock(side_effect=[first, discord.HTTPException(MagicMock(status=500), "x")])
+    text = "\n".join(f"line {i:04d} " + "x" * 60 for i in range(60))
+
+    with pytest.raises(discord.HTTPException):
+        await _send_chunked(channel, text)
+
+    first.delete.assert_awaited_once()

@@ -91,7 +91,21 @@ async def _send_chunked(
     guess entirely.
     """
     chunks = _split_content(content)
-    return [await channel.send(chunk) for chunk in chunks]
+    sent: list[discord.Message] = []
+    try:
+        for chunk in chunks:
+            sent.append(await channel.send(chunk))
+    except Exception:
+        # **A posting is whole or absent** (#345). The chunks already sent are recorded nowhere
+        # until the whole posting is, so leaving them would strand the start of a table in the
+        # channel with no route by which the bot could ever take it down.
+        for message in sent:
+            try:
+                await message.delete()
+            except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
+                log.warning("_send_chunked: could not take down chunk %s: %s", message.id, exc)
+        raise
+    return sent
 
 
 def _ids_json(messages: list[discord.Message]) -> str:
