@@ -31,6 +31,7 @@ from models.image_catalogues import (
 )
 from utils.asset_resolver import normalise
 from utils.country_data import country_for_nationality
+from utils.input_validator import DRAWN_NAME
 from utils.svg_document import FieldIndex
 from utils.svg_fill import FillSpec
 
@@ -130,6 +131,11 @@ def resolve_driver_name(
 
     An image cannot carry a Discord mention as the textual lineup does, so the chain ends
     at the user id rather than at nothing: every driver is named, always.
+
+    **Each link is cleaned before it is judged** (#362). A Discord name is the one text a
+    graphic draws that the league cannot control, so it is stripped of group mentions, emoji
+    and markup rather than refused — the rules a name the league types is refused by. A link
+    left empty by the cleaning, a name made only of emoji, falls through to the next.
     """
     for candidate in (
         display_name,
@@ -138,8 +144,11 @@ def resolve_driver_name(
         test_display_name,
         None if discord_user_id is None else str(discord_user_id),
     ):
-        if candidate and str(candidate).strip():
-            return str(candidate).strip()
+        if candidate is None:
+            continue
+        cleaned = DRAWN_NAME.check("name", str(candidate)).text
+        if cleaned:
+            return cleaned
     return ""
 
 
