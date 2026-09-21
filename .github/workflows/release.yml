@@ -1,0 +1,97 @@
+name: Release
+
+# Started by hand from the Actions tab, on `main`. It names the next version from the tags and
+# leaves a *draft* release for a maintainer to finish and publish. The rule it applies is in
+# CONTRIBUTING.md, "Releases" (#259); `tools/next_version.py` does the naming.
+#
+# It stops at a draft on purpose. Releases on this repository are immutable once published —
+# the tag can be neither moved nor deleted — and a draft creates no tag at all, so the draft is
+# where the summary is written and anything wrong is caught. A mistaken draft is deleted
+# without trace.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "patch: fixes only. minor: a module, or a feature a league would notice. major: go-live (v1.0.0), and after it a change a league must adapt to."
+        type: choice
+        options: [patch, minor, major]
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Refuse any branch but main
+      if: github.ref != 'refs/heads/main'
+      run: |
+        echo "::error::A release is cut from main only; this run is on ${GITHUB_REF_NAME}."
+        exit 1
+
+    # Every tag, not just the commit: the version is worked out from the highest tag, and the
+    # tool refuses a checkout that has none rather than guessing.
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.13
+
+    - name: Refuse unless CI passed on this commit
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        conclusion=$(gh run list --workflow unit-test.yml --commit "$GITHUB_SHA" --limit 1 \
+          --json conclusion --jq '.[0].conclusion // ""')
+        if [ "$conclusion" != "success" ]; then
+          echo "::error::CI has not passed on ${GITHUB_SHA} (conclusion: ${conclusion:-none yet}). Wait for it, or put main right first."
+          exit 1
+        fi
+
+    - name: Work out the version
+      id: version
+      env:
+        BUMP: ${{ inputs.bump }}
+      run: python tools/next_version.py "$BUMP" >> "$GITHUB_OUTPUT"
+
+    # `gh release view` finds a draft as well as a published release, so a second run before
+    # the first draft is published is refused rather than drafting the same version twice.
+    - name: Refuse a version already released or drafted
+      env:
+        GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        if gh release view "$VERSION" > /dev/null 2>&1; then
+          echo "::error::${VERSION} is already released or drafted. Publish or delete that one first."
+          exit 1
+        fi
+
+    - name: Draft the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ steps.version.outputs.version }}
+        PRERELEASE: ${{ steps.version.outputs.prerelease }}
+      run: |
+        flags=()
+        if [ "$PRERELEASE" = "true" ]; then
+          flags+=(--prerelease)
+        fi
+        url=$(gh release create "$VERSION" --draft --target "$GITHUB_SHA" --title "$VERSION" \
+          --generate-notes "${flags[@]}")
+        {
+          echo "Drafted **${VERSION}** at \`${GITHUB_SHA}\`: ${url}"
+          echo
+          echo "Open the draft, write the summary by module above the generated list, and press Publish."
+        } >> "$GITHUB_STEP_SUMMARY"
