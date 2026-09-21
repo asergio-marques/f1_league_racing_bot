@@ -197,6 +197,10 @@ in `src/db/database.py`).
 3. Open the draft, write a short summary by module above the generated list, and press
    **Publish**.
 
+**There is no changelog file.** The Releases page is the changelog. A file in the repository
+could only be brought up to date through a pull request of its own, which a workflow cannot open
+and get checked, so it would fall behind the releases it claims to list.
+
 **A published release cannot be changed.** Releases here are immutable: once one is published,
 its tag can be neither moved nor deleted. A draft creates no tag, so put anything right there —
 and delete a mistaken draft rather than publishing it.
