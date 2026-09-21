@@ -18,7 +18,12 @@ import discord
 from db.database import get_connection
 from models.points_config import SessionType
 from services.driver_service import accounts_of_in_division, current_account_map_for_division
-from services.penalty_service import StagedPenalty, validate_penalty_input, _time_to_ms
+from services.penalty_service import (
+    StagedPenalty,
+    _time_to_ms,
+    group_mention_refusal,
+    validate_penalty_input,
+)
 from utils.channel_guard import is_league_manager
 from utils.league_server import LeagueModal, LeagueView
 
@@ -481,6 +486,16 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
+
+        # Both texts are published in the verdict, so neither may mention a group (#204).
+        for label, text_input in (
+            ("description", self.description_input),
+            ("justification", self.justification_input),
+        ):
+            refusal = group_mention_refusal(label, text_input.value)
+            if refusal is not None:
+                await interaction.followup.send(f"❌ {refusal}", ephemeral=True)
+                return
 
         # Resolve driver user ID from @mention or raw integer
         raw = self.driver_input.value.strip()

@@ -27,6 +27,10 @@ driver does not distort the arithmetic.
 onto the penalty list would be applied a pass too early, against results the appeal was lodged
 about.
 
+**Neither text may mention a group** (#204). The description and the justification are both
+published in the verdict, where a role mention, `@everyone` or `@here` would notify everybody it
+covers. A mention of a driver stands.
+
 The modal is constructed inside `async def` tests, as `CLAUDE.md` requires of anything building
 a `Modal`: apt's discord.py calls `asyncio.get_running_loop()` in the constructor.
 """
@@ -157,13 +161,15 @@ async def _submit(
     penalty: str = "+5s",
     session: SessionType = SessionType.FEATURE_RACE,
     appeals: bool = False,
+    description: str = "Contact at turn one",
+    justification: str = "Reviewed the footage",
 ):
     """Build the modal, fill it in, and submit — with the prompt refresh stubbed."""
     modal = AddPenaltyModal(state, session, use_appeals_staging=appeals)
     modal.driver_input._value = driver
     modal.penalty_input._value = penalty
-    modal.description_input._value = "Contact at turn one"
-    modal.justification_input._value = "Reviewed the footage"
+    modal.description_input._value = description
+    modal.justification_input._value = justification
     interaction = _interaction()
 
     with patch(
@@ -465,3 +471,52 @@ async def test_the_prompt_names_the_staged_driver_by_the_current_account(tmp_pat
 
     assert f"<@{NEW_ACCOUNT}>" in content
     assert f"<@{DRIVER}>" not in content
+
+
+# ---------------------------------------------------------------------------
+# A group mention in either text is refused (#204)
+# ---------------------------------------------------------------------------
+
+ROLE_MENTION = "<@&987654321098765432>"
+
+
+async def test_a_group_mention_in_the_description_is_refused(tmp_path):
+    """Both texts are published in the verdict, where a role or `@everyone` would notify the
+    whole group it names."""
+    state = _state(await _make_db(tmp_path))
+
+    interaction = await _submit(state, description="@everyone look at turn one")
+
+    assert state.staged == []
+    assert "description" in _replied(interaction)
+    assert "Staged" not in _replied(interaction)
+
+
+async def test_a_group_mention_in_the_justification_is_refused(tmp_path):
+    state = _state(await _make_db(tmp_path))
+
+    interaction = await _submit(state, justification=f"{ROLE_MENTION} reviewed the footage")
+
+    assert state.staged == []
+    assert "justification" in _replied(interaction)
+    assert "Staged" not in _replied(interaction)
+
+
+async def test_a_correction_carrying_a_group_mention_is_refused(tmp_path):
+    """The appeals pass stages through the same form, and its verdict is published the same
+    way."""
+    state = _state(await _make_db(tmp_path))
+
+    await _submit(state, penalty="+3s", appeals=True, justification="@here upheld")
+
+    assert state.staged_appeals == []
+
+
+async def test_a_driver_mention_in_the_justification_is_staged(tmp_path):
+    """Naming the other car is the ordinary thing to write; only a group is refused."""
+    state = _state(await _make_db(tmp_path))
+
+    await _submit(state, justification=f"Contact with <@{STRANGER}> at turn one")
+
+    assert len(state.staged) == 1
+    assert state.staged[0].justification == f"Contact with <@{STRANGER}> at turn one"
