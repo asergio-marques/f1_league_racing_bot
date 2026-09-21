@@ -43,7 +43,7 @@ from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from models.season import SeasonStage
 from services import cancellation_notice_service, season_points_service
 import services.track_service as track_service
-from services.season_service import SeasonImmutableError
+from services.season_service import SeasonImmutableError, validate_division_name
 from utils.autocomplete import bounded_autocomplete
 from utils.batch_notice import batch_notice
 from utils.channel_guard import (
@@ -3187,6 +3187,11 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        refusal = validate_division_name(name)
+        if refusal is not None:
+            await interaction.followup.send(f"\u274c {refusal}", ephemeral=True)
+            return
+
         if any(d.name.lower() == name.lower() for d in cfg.divisions if d.name):
             await interaction.followup.send(
                 f"\u274c A division named **{name}** already exists in this setup.",
@@ -3267,6 +3272,11 @@ class SeasonCog(commands.Cog):
                 f"\u274c Division `{source_name}` not found in pending setup.",
                 ephemeral=True,
             )
+            return
+
+        refusal = validate_division_name(new_name)
+        if refusal is not None:
+            await interaction.response.send_message(f"\u274c {refusal}", ephemeral=True)
             return
 
         if any(d.name.lower() == new_name.lower() for d in divisions):
@@ -3423,6 +3433,11 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        refusal = validate_division_name(new_name)
+        if refusal is not None:
+            await interaction.response.send_message(f"\u274c {refusal}", ephemeral=True)
+            return
+
         if any(d.name.lower() == new_name.lower() for d in divisions if d.id != div.id):
             await interaction.response.send_message(
                 f"\u274c A division named **{new_name}** already exists.",
@@ -3495,6 +3510,12 @@ class SeasonCog(commands.Cog):
                 ephemeral=True,
             )
             return
+
+        if new_name is not None:
+            refusal = validate_division_name(new_name)
+            if refusal is not None:
+                await interaction.response.send_message(f"\u274c {refusal}", ephemeral=True)
+                return
 
         if new_name is not None and any(
             d.name.lower() == new_name.lower() for d in divisions if d.id != div.id
