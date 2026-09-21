@@ -168,14 +168,16 @@ def _results_disable_warning(*, season_active: bool, attendance: bool) -> str:
             "computed from them;\n"
             "• every results and standings message already posted is removed from its "
             "channel;\n"
+            "• every penalty and appeal verdict already announced is removed from the "
+            "verdicts channel, with the banner heading it;\n"
             "• every round still waiting on results, report verdicts or appeal verdicts is "
             "closed as final with no results;\n"
             "• no further results are collected for the rest of the season.\n"
             "**None of this can be undone**, and the module cannot be switched back on until "
             "the season ends.\n"
-            "Penalty and appeal verdicts already announced stay in the verdicts channel — "
-            "the bot cannot take those back. Your points configurations, the season's copy of "
-            "them, and every division's channels are kept."
+            "Your points configurations, the season's copy of them, and every division's "
+            "channels are kept, and so are any auto-sack and auto-reserve announcements in "
+            "the verdicts channel."
         )
 
     if attendance:
@@ -604,7 +606,8 @@ class ModuleCog(commands.Cog):
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results | Success"
             + (
                 f"\n  season results deleted: {purged['sessions']} session results, "
-                f"{purged['standings']} standings rows, {purged['messages']} messages\n"
+                f"{purged['standings']} standings rows, {purged['messages']} messages, "
+                f"{purged['verdicts']} verdicts\n"
                 f"  rounds closed with no results: {len(closed)}"
                 if purged["rounds"]
                 else ""
@@ -617,9 +620,9 @@ class ModuleCog(commands.Cog):
             season_note = (
                 f"\n🗑️ This season's results are gone: {purged['sessions']} session "
                 f"result(s) and {purged['standings']} standings row(s) deleted, "
-                f"{purged['messages']} posted message(s) removed" + tail
-                + "\nVerdicts already announced remain in the verdicts channel. Points "
-                "configurations and division channels are kept."
+                f"{purged['messages']} results and standings message(s) and "
+                f"{purged['verdicts']} verdict(s) removed" + tail
+                + "\nPoints configurations and division channels are kept."
             )
 
         # Cascade: disable attendance if it is currently enabled

@@ -632,14 +632,18 @@ async def test_a_running_season_is_confirmed_even_with_attendance_off(tmp_path) 
     assert await _count(db_path, "session_results") == 1
 
 
-async def test_the_warning_says_verdicts_cannot_be_taken_back(tmp_path) -> None:
-    """They record the channel they went to but never a message id, so nothing can delete them."""
+async def test_the_warning_says_verdicts_are_taken_down(tmp_path) -> None:
+    """They go with the results (decided 2026-09-21, #189), and the manager is told before
+    confirming. The warning once said the bot could not take them back, which stopped being
+    true the moment each verdict's message id was recorded."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     interaction = _make_interaction()
 
     await _make_cog(db_path)._disable_results(interaction)
 
-    assert "verdicts channel" in interaction.response.send_message.await_args.args[0]
+    warning = interaction.response.send_message.await_args.args[0]
+    assert "verdict already announced is removed from the verdicts channel" in warning
+    assert "cannot take those back" not in warning
 
 
 async def test_confirming_erases_the_season(tmp_path) -> None:
@@ -677,6 +681,16 @@ async def test_the_reply_names_what_was_destroyed(tmp_path) -> None:
     reply = interaction.followup.send.await_args.args[0]
     assert "This season's results are gone" in reply
     assert "1 round(s) closed with no results" in reply
+
+
+async def test_the_reply_names_the_verdicts_removed(tmp_path) -> None:
+    """End to end: the verdict the purge takes down is the one the reply counts."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    interaction = await _disable(_make_cog(db_path))
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert "1 verdict(s) removed" in reply
 
 
 async def test_an_open_amendment_is_closed_with_the_season(tmp_path) -> None:

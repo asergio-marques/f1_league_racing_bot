@@ -73,16 +73,18 @@ def test_the_season_warning_lists_everything_that_goes():
         "removed from its channel",
         "closed as final with no results",
         "no further results are collected",
+        "verdict already announced is removed from the verdicts channel",
     ):
         assert cost in warning
 
 
 def test_the_season_warning_says_what_survives():
     """Just as important: a manager who believed their points configurations were going
-    too might not disable a module they needed to."""
+    too might not disable a module they needed to. The auto-sack and auto-reserve announcements
+    are named because they share the verdicts channel with what does go (#189)."""
     warning = _results_disable_warning(season_active=True, attendance=False)
 
-    assert "verdicts channel" in warning
+    assert "auto-sack and auto-reserve announcements" in warning
     assert "points configurations" in warning.lower()
 
 
@@ -196,7 +198,7 @@ def _purge(rounds: int = 0, *, on_call=None):
         if on_call is not None:
             await on_call()
         return {"rounds": rounds, "sessions": rounds * 2, "standings": rounds * 20,
-                "messages": rounds * 3}
+                "messages": rounds * 3, "verdicts": rounds * 5}
 
     return patch("services.results_purge_service.purge_season_results", new=AsyncMock(side_effect=_run))
 
@@ -398,8 +400,9 @@ async def test_the_reply_counts_what_was_destroyed(tmp_path):
 
 
 async def test_the_reply_says_what_survived_the_purge(tmp_path):
-    """Verdicts already announced cannot be taken back, and the points configurations are
-    kept — both are things a manager would otherwise go looking for."""
+    """The points configurations are kept, which a manager would otherwise go looking for. The
+    verdicts are not: they go with the results (decided 2026-09-21, #189), and a reply still
+    saying they remain would send the manager looking for them."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
     interaction = _interaction()
@@ -410,8 +413,25 @@ async def test_the_reply_says_what_survived_the_purge(tmp_path):
         )
 
     replied = _replied(interaction)
-    assert "Verdicts already announced remain" in replied
+    assert "Verdicts already announced remain" not in replied
     assert "Points configurations and division channels are kept" in replied
+
+
+async def test_the_reply_counts_the_verdicts_removed(tmp_path):
+    """Beside the results and standings messages, so the manager sees the decisions went too."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    with _purge(rounds=4):
+        await cog._apply_results_disable(
+            interaction, cascade_attendance=False
+        )
+
+    replied = _replied(interaction)
+    assert "12 results and standings message(s) and 20 verdict(s) removed" in replied
+    log_line = cog.bot.output_router.post_log.await_args.args[0]
+    assert "20 verdicts" in log_line
 
 
 async def test_a_disable_between_seasons_reports_no_destruction(tmp_path):
