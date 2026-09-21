@@ -257,8 +257,8 @@ out, and which `tests/unit/test_migration_steps.py` now refuses.
 
 **The schema starts from one baseline** (decided 2026-09-19, issue #254). The 61 migrations
 that built it before go-live were squashed into `src/db/migrations/001_baseline.sql`; git keeps
-them, and no test of a historic migration remains. Until go-live, a schema change edits the
-baseline. From go-live on, every schema change is a new migration numbered after it, with a
+them, and no test of a historic migration remains. Until go-live — release `v1.0.0` (decided
+2026-09-21, #259) — a schema change edits the baseline. From go-live on, every schema change is a new migration numbered after it, with a
 test of its own, and no applied file is ever edited. `run_migrations` refuses a database that
 records a migration the bot does not carry. The docstring there holds the detail.
 

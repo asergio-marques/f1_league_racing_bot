@@ -99,10 +99,11 @@ async def run_migrations(db_path: str) -> None:
 
     **The schema starts from one baseline** (issue #254). The 61 migrations that built it
     before the bot went live were squashed into ``001_baseline.sql``; git keeps them. Until
-    go-live the baseline may be edited in place. From go-live on it is never edited again:
-    every schema change is a new migration numbered after it, carrying a test of its own, and
-    no applied file is ever changed. At go-live, also consider recording a checksum of each
-    applied file and refusing one that has changed since, which would enforce that rule.
+    go-live, which is release ``v1.0.0`` (#259), the baseline may be edited in place. From
+    go-live on it is never edited again: every schema change is a new migration numbered after
+    it, carrying a test of its own, and no applied file is ever changed. At go-live, also
+    consider recording a checksum of each applied file and refusing one that has changed
+    since, which would enforce that rule.
 
     **A database from before the baseline is refused, not migrated.** It records versions
     such as ``001_initial.sql`` that no longer exist, and the baseline applied over its tables
