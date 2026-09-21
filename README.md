@@ -596,7 +596,10 @@ does, the season's roles are revoked, an open signup window is closed, every dri
 Signed Up, drivers who never raced are deleted (their signups kept) and test mode is switched off.
 
 Available only while the season is **ongoing**. A season pending completion is completed instead,
-and one whose placements have never been confirmed is abandoned with `/season abort`.
+and one whose placements have never been confirmed is abandoned with `/season abort`. It is also
+refused while a round's results are being amended, naming the round and its amend channel: the
+history it writes would carry corrections nobody has approved yet. Finish or cancel the amendment
+first.
 
 #### `/season complete` — Mark the active season as complete
 *Access: League admin*
@@ -1726,7 +1729,7 @@ A **❌ Cancel Amendment** button is posted in the channel to abort at any time.
 
 **One amendment open in a division at a time.** While any round of a division has an amendment open, running the command for that division again — any round, any session — is refused, naming the round and the channel the open one is in. Finish or cancel that first. The last step reposts the whole division, so an amendment finished beside another would publish the other's unapproved classification.
 
-**Nothing else in the division is committed meanwhile.** While an amendment is open, the submission channels of the division's other rounds stay open but refuse anything that would commit: a session's results or `CANCELLED`, and the approval of the reports or the appeals. `/results standings sync` and `/results rounds sync` are refused for the division too, and across the season so are approving a points change with `/results amend review` and `/season complete`. The refusal names the round being amended and its channel; try again once it has finished. It ends when approved, or is undone once half an hour has passed since its corrections were pasted — the bot checks every few minutes, so allow a little over. Each of these posts standings, which would carry the amendment's corrections before anybody had approved them.
+**Nothing else in the division is committed meanwhile.** While an amendment is open, the submission channels of the division's other rounds stay open but refuse anything that would commit: a session's results or `CANCELLED`, and the approval of the reports or the appeals. `/results standings sync`, `/results rounds sync` and `/attendance sync` are refused for the division too, and across the season so are approving a points change with `/results amend review`, `/season complete` and `/season cancel`. The refusal names the round being amended and its channel; try again once it has finished. It ends when approved, or is undone once half an hour has passed since its corrections were pasted — the bot checks every few minutes, so allow a little over. Each of these posts or records something from the results, which would carry the amendment's corrections before anybody had approved them.
 
 > **Nothing is published until the last step.** The corrected classification is recorded when you paste it, but the round your drivers see is unchanged until you approve the appeals — it is never published half-amended. The sessions you did not choose are left alone; their penalties and appeals are not reopened. To review a session's decisions, include that session in the amendment.
 
@@ -1995,7 +1998,7 @@ Recalculates the attendance of the round you name and of every later round whose
 
 It is safe to run more than once: a driver already sacked or already in the Reserve team is not sanctioned again, so a second run applies only what the first did not.
 
-> **Limitation:** Available only while the season is ongoing, and only for a round whose penalties have been approved. It is refused, with nothing changed, if a channel it would post to cannot be reached.
+> **Limitation:** Available only while the season is ongoing, and only for a round whose penalties have been approved. It is refused, with nothing changed, if a channel it would post to cannot be reached, and while a round of the division has a `/round results amend` open — it would recalculate from corrections nobody has approved yet.
 
 #### `/attendance post-check-in` — Post a round's check-in call by hand
 *Access: League manager*

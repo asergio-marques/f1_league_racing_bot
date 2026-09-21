@@ -627,7 +627,8 @@ If you need to stop a season rather than finish it, which command depends on whe
 > they took part in — a cancelled season is league history, marked as cancelled so it can be told apart
 > from one that ran to its end — and then, as on completion, every driver returns to Not Signed Up
 > and those who never raced are deleted. What you lose is the ending: no final classification is
-> posted. It is available only while the season is ongoing.
+> posted. It is available only while the season is ongoing, and not while a round's results are
+> being amended — finish or cancel that amendment first, or the history would carry its corrections.
 
 A season whose placements were never confirmed — one in configuration, waiting, signups or placements — is abandoned instead:
 

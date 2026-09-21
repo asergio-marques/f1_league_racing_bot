@@ -173,6 +173,7 @@
 - <NEW COMMAND> An "attendance sync" command shall be made available to league managers, which shall have as input a division name and a round number.
     - It shall be available only while the season is in one of the three ongoing stages, and only for a round whose penalties have been approved. It shall be refused otherwise, with nothing changed.
     - It shall be refused, with nothing changed, where any channel the recalculation posts to cannot be reached, as the approval of an amendment is.
+    - It shall be refused, with nothing changed, while a round of the division has an amendment of its results open, naming the round being amended and its channel. The recalculation would otherwise read that amendment's corrections before they are approved, and its sheet and sanctions would stand were the amendment then abandoned. Decided 2026-09-21.
     - It shall recalculate the attendance of every round of the division from the one given onwards whose penalties have been approved, from their results, as one change that lands whole or not at all. Rounds before the one given shall be left alone.
     - It shall then post the sheet of the latest of those rounds, and enforce the sanctions against that round.
     - It shall be safe to run again: a driver already sacked or already in the reserve team shall not be sanctioned a second time, so a second run applies only what the first did not.
