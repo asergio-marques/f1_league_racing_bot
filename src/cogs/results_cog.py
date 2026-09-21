@@ -19,6 +19,7 @@ from services.season_points_service import (
     SeasonNotInSetupError,
 )
 from utils.channel_guard import league_admin_only, league_manager_only
+from utils.input_validator import NAME
 from utils.league_server import LeagueModal, LeagueView
 from utils.season_gate import season_for_command
 
@@ -527,6 +528,12 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         await interaction.response.defer(ephemeral=True)
+        # A configuration's name is shown in replies and reviews, and held to the rules every
+        # name a league types is held to (#362).
+        refusal = NAME.check("configuration name", name).refusal
+        if refusal is not None:
+            await interaction.followup.send(f"\u274c {refusal}", ephemeral=True)
+            return
         try:
             await points_config_service.create_config(self.bot.db_path, name)
         except ConfigAlreadyExistsError:
