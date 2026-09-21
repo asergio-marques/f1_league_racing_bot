@@ -28,6 +28,8 @@ import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
@@ -54,19 +56,28 @@ class _FakeChannel:
 
     `_delete_posting` fetches each message the posting recorded and deletes it. One id is
     recorded here, which is the single-message case every posting under 2000 characters takes.
+
+    An id in `refuse` will not delete, as for a bot that has lost its permissions there; one in
+    `gone` cannot be fetched, as for a message a manager has already deleted by hand.
     """
 
     def __init__(self, channel_id: int) -> None:
         self.id = channel_id
         self.deleted_messages: list[int] = []
         self.deleted = False
+        self.refuse: set[int] = set()
+        self.gone: set[int] = set()
 
     async def fetch_message(self, message_id: int):
+        if message_id in self.gone:
+            raise discord.NotFound(MagicMock(status=404), "Unknown Message")
         message = MagicMock()
         message.id = message_id
         message.author.id = BOT_USER_ID
 
         async def _delete() -> None:
+            if message_id in self.refuse:
+                raise discord.Forbidden(MagicMock(status=403), "Missing Permissions")
             self.deleted_messages.append(message_id)
 
         message.delete = _delete
@@ -100,6 +111,7 @@ def _make_bot(db_path: str, *, guild: bool = True) -> MagicMock:
     bot.channels = channels
     if guild:
         fake_guild = MagicMock()
+        fake_guild.id = SERVER_ID
         fake_guild.get_channel = lambda cid: channels.get(cid)
         bot.get_guild = MagicMock(return_value=fake_guild)
     else:
@@ -526,6 +538,56 @@ async def test_an_unreachable_verdicts_channel_still_erases_the_rows(tmp_path) -
     assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
     assert await _count(db_path, "penalty_records") == 0
     assert await _count(db_path, "appeal_records") == 0
+
+
+def _link(channel_id: int, message_id: int) -> str:
+    return f"https://discord.com/channels/{SERVER_ID}/{channel_id}/{message_id}"
+
+
+async def test_a_verdict_left_standing_is_linked_not_counted(tmp_path) -> None:
+    """**What the bot could not remove is named, with a link** (decided 2026-09-21, #189).
+
+    Its record is deleted with the rest of the season, so once the purge returns nothing could
+    find the message again. Counting it as removed told the league it was gone when it was not.
+    """
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    await _announce(db_path, "appeal_records", 6001)
+    cog = _make_cog(db_path)
+    cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {5001}
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["verdicts"] == 1
+    assert report["left_standing"] == [_link(VERDICTS_CHANNEL_ID, 5001)]
+    assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
+
+
+async def test_a_message_deleted_by_hand_counts_as_removed(tmp_path) -> None:
+    """A manager got there first. Nothing is left to remove, so nothing is named."""
+    db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _announce(db_path, "penalty_records", 5001)
+    cog = _make_cog(db_path)
+    cog.bot.channels[VERDICTS_CHANNEL_ID].gone = {5001}
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["verdicts"] == 1
+    assert report["left_standing"] == []
+
+
+async def test_a_banner_left_standing_keeps_its_record(tmp_path) -> None:
+    """Linked like any other message, and not forgotten: forgetting a banner still standing
+    would leave nothing to say it was ever there."""
+    db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("FINAL",))
+    await _banner(db_path, round_id, 7001)
+    cog = _make_cog(db_path)
+    cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {7001}
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["left_standing"] == [_link(VERDICTS_CHANNEL_ID, 7001)]
+    assert await _count(db_path, "verdict_banner_messages") == 1
 
 
 async def test_the_verdict_banner_is_taken_down_and_forgotten(tmp_path) -> None:
