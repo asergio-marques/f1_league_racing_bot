@@ -18,9 +18,10 @@ instead of an exception log.
 The bot is stubbed member by member rather than as one `AsyncMock` (issue #240). The
 blanket form suited the paragraph above until you look at what it does: every unstubbed
 `await` answers with a further mock, and a mock is truthy, so a gate passes on the
-strength of the stub and the walk carries on having tested nothing. Three gates in this
-file turned out to be reached that way — attendance's channel check, and the results
-module's, neither of which had ever read a division. Naming each member costs a line and
+strength of the stub and the walk carries on having tested nothing. Two gates in this
+file turned out to be reached that way — attendance's channel check and the results
+module's, neither of which had ever read a division — and `_cog_with_results` turned out
+to name a module it had never actually switched on. Naming each member costs a line and
 makes the failure loud: an `await` nobody pinned raises `TypeError` rather than passing.
 """
 from __future__ import annotations
