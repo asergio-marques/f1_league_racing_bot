@@ -498,7 +498,7 @@ async def apply_penalties(
 
 
 async def load_staged_from_records(
-    db_path: str, round_id: int, *, session_type: SessionType | None = None
+    db_path: str, round_id: int, *, session_types: list[SessionType] | None = None
 ) -> tuple[list[StagedPenalty], list[StagedPenalty], list["StagedPardon"]]:
     """Rebuild a round's decided reports, appeals and pardons as staged entries.
 
@@ -520,9 +520,10 @@ async def load_staged_from_records(
     and sanction accounts for it — matched once each, so two identical penalties are not both
     swallowed by one appeal.
 
-    *session_type* narrows the read to one session, which is what an amendment wants: it replays
-    one session, and re-applying a report belonging to another would add to penalty columns that
-    already hold it — the rows of an unamended session were never re-inserted at zero.
+    *session_types* narrows the read to those sessions, which is what an amendment wants: it
+    replays the sessions it re-entered, and re-applying a report belonging to another would add
+    to penalty columns that already hold it — the rows of an unamended session were never
+    re-inserted at zero.
 
     Returned in the order the records were written, so a manager reads them as they were decided.
     """
@@ -532,8 +533,13 @@ async def load_staged_from_records(
     appeals: list[StagedPenalty] = []
     pardons: list[StagedPardon] = []
 
-    scope = "" if session_type is None else " AND sr.session_type = ?"
-    params: list = [round_id] if session_type is None else [round_id, session_type.value]
+    scope = (
+        "" if session_types is None
+        else f" AND sr.session_type IN ({', '.join('?' for _ in session_types)})"
+    )
+    params: list = [round_id] + (
+        [] if session_types is None else [st.value for st in session_types]
+    )
     async with get_connection(db_path) as db:
         rows_of: dict[str, list[dict]] = {"penalty_records": [], "appeal_records": []}
         # The two tables name their author and time differently.

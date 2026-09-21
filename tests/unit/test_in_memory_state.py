@@ -43,6 +43,9 @@ EXEMPT = {
     # The placements-review button's own report. It dies with the view, and once no server
     # is claimed every press on it is refused.
     ("cogs/season_cog.py", "_report"),
+    # The amendment's session chooser: what the member ticked, read once when they press
+    # Continue. It dies with the ephemeral view it belongs to (#345).
+    ("cogs/season_cog.py", "selected"),
     # One parsed SVG document's index of its own elements.
     ("utils/svg_document.py", "by_id"),
     ("utils/svg_document.py", "by_label"),

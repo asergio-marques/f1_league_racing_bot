@@ -170,6 +170,13 @@ def _sent_view(interaction):
     return None
 
 
+def _offered(interaction) -> list[str]:
+    """The sessions the chooser offers, by label, in the order it lists them."""
+    view = _sent_view(interaction)
+    select = next(item for item in view.children if isinstance(item, discord.ui.Select))
+    return [option.label for option in select.options]
+
+
 def _choice(session_type: SessionType | None):
     if session_type is None:
         return None
@@ -320,8 +327,10 @@ async def test_a_session_the_round_does_not_have_is_refused(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def _choose(cog, interaction, *, answer: SessionType | None, cancel: bool = False):
-    """Run the command with no session given, answering the selection view with *answer*."""
+async def _choose(
+    cog, interaction, *, answer: list[SessionType] | None, cancel: bool = False
+):
+    """Run the command with no session given, answering the chooser with *answer*."""
     original = discord.ui.View.wait
 
     async def _answer(self):
@@ -330,7 +339,7 @@ async def _choose(cog, interaction, *, answer: SessionType | None, cancel: bool 
         if cancel:
             self.cancelled = True
         else:
-            self.selected = answer
+            self.selected = [st.value for st in (answer or [])]
         return None
 
     discord.ui.View.wait = _answer  # type: ignore[assignment]
@@ -341,7 +350,7 @@ async def _choose(cog, interaction, *, answer: SessionType | None, cancel: bool 
 
 
 async def test_a_manager_who_does_not_name_a_session_is_asked(tmp_path):
-    """A round has up to four sessions and only one is being amended; guessing would amend
+    """A round has up to four sessions and any of them may be amended; guessing would amend
     the wrong race."""
     db_path = await _make_db(tmp_path, name="amend_ask")
     cog = _make_cog(db_path)
@@ -349,7 +358,7 @@ async def test_a_manager_who_does_not_name_a_session_is_asked(tmp_path):
 
     await _choose(cog, interaction, answer=None, cancel=True)
 
-    assert "Select the session to re-submit" in _replied(interaction)
+    assert "Select the sessions to amend" in _replied(interaction)
 
 
 async def test_only_the_sessions_the_round_has_are_offered(tmp_path):
@@ -365,8 +374,7 @@ async def test_only_the_sessions_the_round_has_are_offered(tmp_path):
 
     await _choose(cog, interaction, answer=None, cancel=True)
 
-    labels = [item.label for item in _sent_view(interaction).children]
-    assert labels == ["Feature Qualifying", "Feature Race", "❌ Cancel"]
+    assert _offered(interaction) == ["Feature Qualifying", "Feature Race"]
 
 
 async def test_a_superseded_session_is_not_offered(tmp_path):
@@ -381,8 +389,7 @@ async def test_a_superseded_session_is_not_offered(tmp_path):
 
     await _choose(cog, interaction, answer=None, cancel=True)
 
-    labels = [item.label for item in _sent_view(interaction).children]
-    assert labels == ["Feature Race", "❌ Cancel"]
+    assert _offered(interaction) == ["Feature Race"]
 
 
 async def test_the_sessions_are_offered_in_racing_order(tmp_path):
@@ -403,8 +410,7 @@ async def test_the_sessions_are_offered_in_racing_order(tmp_path):
 
     await _choose(cog, interaction, answer=None, cancel=True)
 
-    labels = [item.label for item in _sent_view(interaction).children]
-    assert labels[:4] == [
+    assert _offered(interaction) == [
         "Sprint Qualifying",
         "Sprint Race",
         "Feature Qualifying",
@@ -426,8 +432,8 @@ async def test_cancelling_the_choice_amends_nothing(tmp_path):
 
 
 async def test_a_choice_that_times_out_amends_nothing(tmp_path):
-    """The view carries no timeout of its own, so this is the case of a manager closing the
-    ephemeral message — `selected` stays None and must not be read as a session."""
+    """A manager who closes the ephemeral message or lets it lapse chooses nothing, and an
+    empty choice must not be read as a session."""
     db_path = await _make_db(tmp_path, name="amend_timeout")
     cog = _make_cog(db_path)
     interaction = _interaction()
@@ -436,3 +442,22 @@ async def test_a_choice_that_times_out_amends_nothing(tmp_path):
 
     assert "Amendment cancelled" in _replied(interaction)
     interaction.guild.create_text_channel.assert_not_awaited()
+
+
+async def test_several_sessions_can_be_chosen_at_once(tmp_path):
+    """**One amendment for as many of the round's sessions as need correcting** (#345, decided
+    2026-09-21). A round's reports and appeals are reviewed together, so the chooser takes any
+    number, up to every session the round ran."""
+    db_path = await _make_db(
+        tmp_path,
+        name="amend_offer_many",
+        sessions=(("FEATURE_RACE", "ACTIVE"), ("FEATURE_QUALIFYING", "ACTIVE")),
+    )
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _choose(cog, interaction, answer=None, cancel=True)
+
+    view = _sent_view(interaction)
+    select = next(item for item in view.children if isinstance(item, discord.ui.Select))
+    assert (select.min_values, select.max_values) == (1, 2)

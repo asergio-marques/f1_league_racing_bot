@@ -1,7 +1,8 @@
 """Writing an amended classification over a round that has already reached FINAL.
 
-Issue #208. `amend_session_result` was uncovered. It is what `/round results amend` calls once
-the corrected paste has been validated, and it is destructive by design.
+Issue #208. `amend_round_results` (once `amend_session_result`) was uncovered. It is what
+`/round results amend` calls once the corrected pastes have been validated, and it is
+destructive by design.
 
 **Nothing is superseded; the classification being replaced is gone.** The session header is
 updated in place and the driver rows are deleted outright, then re-inserted from the amendment.
@@ -44,7 +45,8 @@ from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
 from services.result_submission_service import (  # noqa: E402
     AmendmentWouldOrphanVerdictError,
-    amend_session_result,
+    AmendedSession,
+    amend_round_results,
 )
 from services.season_service import SeasonImmutableError  # noqa: E402
 
@@ -149,6 +151,7 @@ async def _amend(
     config_name="Standard",
     fl_override=None,
     repost_faults=None,
+    sessions=None,
 ):
     """*repost_faults* are the lines the cascade could not post (#237).
 
@@ -170,16 +173,13 @@ async def _amend(
     ) as subsequent, patch(
         "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
     ) as cascade:
-        await amend_session_result(
+        await amend_round_results(
             db_path,
             ROUND_ID,
             DIVISION_ID,
-            session_type,
-            rows,
-            config_name,
+            sessions or [AmendedSession(session_type, rows, config_name, fl_override)],
             AMENDER,
             bot,
-            fl_driver_override=fl_override,
         )
     return {
         "bot": bot,
@@ -307,8 +307,6 @@ async def test_a_parsed_row_object_is_read_like_a_dict(tmp_path):
         total_time="1:30:00.000",
         fastest_lap=None,
         ingame_penalties=None,
-        postrace_penalty="N/A",
-        appeal_penalty="N/A",
     )
 
     await _amend(db_path, [row])
@@ -793,3 +791,58 @@ async def test_a_verdict_follows_a_driver_who_has_changed_account(tmp_path):
         )
         new_row_id = (await cursor.fetchone())[0]
     assert await _verdict_rows(db_path, "penalty_records") == [(verdict_id, new_row_id)]
+
+
+
+# ---------------------------------------------------------------------------
+# Several sessions in one amendment (#345, decided 2026-09-21)
+# ---------------------------------------------------------------------------
+
+
+def _quali_row(driver: int, position: int, best_lap: str = "1:19.000") -> dict:
+    return {"driver_user_id": driver, "team_role_id": 3001, "position": position,
+            "best_lap": best_lap}
+
+
+async def _quali_drivers(db_path) -> list[tuple[int, str]]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id, best_lap FROM qualifying_session_results "
+            "ORDER BY finishing_position"
+        )
+        return [tuple(r) for r in await cursor.fetchall()]
+
+
+async def test_several_sessions_are_written_in_one_amendment(tmp_path):
+    db_path = await _make_db(tmp_path, name="amend_two_sessions")
+
+    stubs = await _amend(db_path, None, sessions=[
+        AmendedSession(SessionType.FEATURE_QUALIFYING,
+                       [_quali_row(102, 1), _quali_row(101, 2, "1:19.500")], "Standard"),
+        AmendedSession(SessionType.FEATURE_RACE,
+                       [_race_row(102, 1), _race_row(101, 2)], "Standard"),
+    ])
+
+    assert await _quali_drivers(db_path) == [(102, "1:19.000"), (101, "1:19.500")]
+    assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
+    # Points once per session, the standings once for the lot.
+    assert stubs["apply_points"].await_count == 2
+    stubs["cascade"].assert_awaited_once()
+    assert "sessions: FEATURE_QUALIFYING, FEATURE_RACE" in _amend_log(stubs)
+
+
+async def test_a_refusal_in_one_session_writes_none_of_them(tmp_path):
+    """**One transaction for every session.** The round is never left holding some sessions
+    corrected and others not — which a refusal part-way through would otherwise do."""
+    db_path = await _make_db(tmp_path, name="amend_two_refused")
+    await _add_penalty(db_path, await _race_result_id(db_path, 102))
+
+    with pytest.raises(AmendmentWouldOrphanVerdictError):
+        await _amend(db_path, None, sessions=[
+            AmendedSession(SessionType.FEATURE_QUALIFYING, [_quali_row(102, 1)], "Standard"),
+            # Driver 102 carries a verdict in the race and is left out of it.
+            AmendedSession(SessionType.FEATURE_RACE, [_race_row(101, 1)], "Standard"),
+        ])
+
+    assert await _quali_drivers(db_path) == [(101, None)]
+    assert await _race_drivers(db_path) == [(101, 1), (102, 2)]

@@ -28,6 +28,8 @@ from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
 from services.result_submission_service import (  # noqa: E402
     AMENDMENT_STAGE_TIMEOUT_SECONDS,
+    _claim_amendment,
+    cancel_amendment,
     revert_abandoned_amendment,
     snapshot_before_amendment,
     sweep_expired_amendments,
@@ -70,8 +72,8 @@ async def _db(tmp_path, name: str) -> str:
                 (session.lastrowid, driver, position),
             )
         await db.execute(
-            "INSERT INTO round_amend_channels (round_id, channel_id, session_type, created_at) "
-            "VALUES (?, ?, 'FEATURE_RACE', '2026-02-02T00:00:00+00:00')",
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at) "
+            "VALUES (?, ?, '[\"FEATURE_RACE\"]', '2026-02-02T00:00:00+00:00')",
             (ROUND_ID, CHANNEL_ID),
         )
         await db.commit()
@@ -100,7 +102,10 @@ async def _drivers(db_path) -> list[tuple[int, int]]:
 async def _overwrite_the_classification(db_path) -> None:
     """Stand in for stage one: replace the driver rows, as the amendment does."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT id FROM session_results WHERE round_id = ?", (ROUND_ID,))
+        cursor = await db.execute(
+            "SELECT id FROM session_results WHERE round_id = ? AND session_type = 'FEATURE_RACE'",
+            (ROUND_ID,),
+        )
         session_id = (await cursor.fetchone())["id"]
         await db.execute(
             "DELETE FROM race_session_results WHERE session_result_id = ?", (session_id,)
@@ -129,10 +134,12 @@ def _bot(db_path):
 async def test_the_round_is_snapshotted_before_it_is_overwritten(tmp_path):
     db_path = await _db(tmp_path, "snap_taken")
 
-    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
     state = json.loads((await _snapshot_row(db_path))["pre_amendment_state"])
-    assert [r["driver_user_id"] for r in state["driver_rows"]] == [101, 102]
+    [session] = state["sessions"]
+    assert session["session_type"] == "FEATURE_RACE"
+    assert [r["driver_user_id"] for r in session["driver_rows"]] == [101, 102]
 
 
 async def test_the_snapshot_carries_a_deadline(tmp_path):
@@ -140,7 +147,7 @@ async def test_the_snapshot_carries_a_deadline(tmp_path):
     db_path = await _db(tmp_path, "snap_deadline")
     before = datetime.now(timezone.utc)
 
-    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
     expires = datetime.fromisoformat((await _snapshot_row(db_path))["expires_at"])
     assert expires > before
@@ -159,15 +166,12 @@ async def test_the_timeout_leaves_room_to_work_through_two_stages(tmp_path):
 async def test_the_classification_is_put_back(tmp_path):
     """The league keeps the round it raced rather than a half-amended one."""
     db_path = await _db(tmp_path, "revert_rows")
-    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     assert await _drivers(db_path) == [(102, 1)]
 
     with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        # An empty list: reverted, and nothing went wrong reposting it.
-        assert await revert_abandoned_amendment(
-            db_path, ROUND_ID, SessionType.FEATURE_RACE, _bot(db_path)
-        ) == []
+        assert await revert_abandoned_amendment(db_path, ROUND_ID) is True
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
@@ -175,15 +179,13 @@ async def test_the_classification_is_put_back(tmp_path):
 async def test_the_standings_are_recomputed_rather_than_restored(tmp_path):
     """They follow from the driver rows, so a second stored copy would only drift."""
     db_path = await _db(tmp_path, "revert_cascade")
-    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
 
     with patch(
         "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
     ) as cascade:
-        await revert_abandoned_amendment(
-            db_path, ROUND_ID, SessionType.FEATURE_RACE, _bot(db_path)
-        )
+        await revert_abandoned_amendment(db_path, ROUND_ID)
 
     cascade.assert_awaited_once()
 
@@ -191,12 +193,10 @@ async def test_the_standings_are_recomputed_rather_than_restored(tmp_path):
 async def test_the_snapshot_is_cleared_once_it_has_been_used(tmp_path):
     """A snapshot left behind would let a later sweep undo the round a second time."""
     db_path = await _db(tmp_path, "revert_clears")
-    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
     with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        await revert_abandoned_amendment(
-            db_path, ROUND_ID, SessionType.FEATURE_RACE, _bot(db_path)
-        )
+        await revert_abandoned_amendment(db_path, ROUND_ID)
 
     assert (await _snapshot_row(db_path))["pre_amendment_state"] is None
 
@@ -205,11 +205,9 @@ async def test_an_amendment_abandoned_before_stage_one_has_nothing_to_undo(tmp_p
     """Cancelled at the paste, or a restart before it landed. Reverting nothing must be safe."""
     db_path = await _db(tmp_path, "revert_nothing")
 
-    # None, not an empty list: there was nothing to revert, which is not the same as having
-    # reverted cleanly — the sweep must not announce it.
-    assert await revert_abandoned_amendment(
-        db_path, ROUND_ID, SessionType.FEATURE_RACE, _bot(db_path)
-    ) is None
+    # False: there was nothing to revert, which is not the same as having reverted — restart
+    # recovery must not claim to have put the round back.
+    assert await revert_abandoned_amendment(db_path, ROUND_ID) is False
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
 
@@ -218,7 +216,7 @@ async def test_an_amendment_abandoned_before_stage_one_has_nothing_to_undo(tmp_p
 
 async def test_an_expired_amendment_is_reverted(tmp_path):
     db_path = await _db(tmp_path, "sweep_expired")
-    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     later = datetime.now(timezone.utc) + timedelta(
         seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
@@ -233,7 +231,7 @@ async def test_an_expired_amendment_is_reverted(tmp_path):
 async def test_an_amendment_still_within_its_deadline_is_left_alone(tmp_path):
     """**The one that matters**: a manager mid-review must not have it pulled from under them."""
     db_path = await _db(tmp_path, "sweep_live")
-    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
 
     assert await sweep_expired_amendments(_bot(db_path), now=datetime.now(timezone.utc)) == 0
@@ -243,7 +241,7 @@ async def test_an_amendment_still_within_its_deadline_is_left_alone(tmp_path):
 async def test_the_revert_is_announced(tmp_path):
     """An amendment quietly undone would be worse than one left hanging."""
     db_path = await _db(tmp_path, "sweep_announced")
-    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     bot = _bot(db_path)
     later = datetime.now(timezone.utc) + timedelta(
@@ -325,7 +323,7 @@ async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
     `_amendment_sweep_job`'s blanket `except` logged it where nobody would connect the two.
     """
     db_path = await _db(tmp_path, "sweep_naive")
-    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     naive = datetime.now() + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
     assert naive.tzinfo is None
@@ -358,7 +356,7 @@ async def test_the_verdict_records_come_back_whole(tmp_path):
             (first,),
         )
         await db.commit()
-    await snapshot_before_amendment(db_path, ROUND_ID, SessionType.FEATURE_RACE)
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
     # The report stage deletes the round's records outright.
     async with get_connection(db_path) as db:
@@ -367,9 +365,7 @@ async def test_the_verdict_records_come_back_whole(tmp_path):
     await _overwrite_the_classification(db_path)
 
     with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
-        await revert_abandoned_amendment(
-            db_path, ROUND_ID, SessionType.FEATURE_RACE, _bot(db_path)
-        )
+        await revert_abandoned_amendment(db_path, ROUND_ID)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -379,3 +375,153 @@ async def test_the_verdict_records_come_back_whole(tmp_path):
     assert row is not None, "the appeal record was lost by the revert"
     assert row["penalty_type"] == "DSQ"
     assert row["justification"] == "Upheld"
+
+
+# ── Nothing acts on an amendment another is already acting on ──────────────
+
+
+async def test_the_sweep_leaves_an_amendment_a_stage_has_claimed(tmp_path):
+    """**A stage being approved at the moment the sweep runs is left to finish.** Reverting from
+    under it would restore the round and then let the stage write its reports on top — doubling
+    every sanction of the round it had just put back."""
+    db_path = await _db(tmp_path, "sweep_claimed")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await _overwrite_the_classification(db_path)
+    assert await _claim_amendment(db_path, ROUND_ID) is not None
+    later = datetime.now(timezone.utc) + timedelta(days=1)
+
+    assert await sweep_expired_amendments(_bot(db_path), now=later) == 0
+    assert await _drivers(db_path) == [(102, 1)]
+
+
+async def test_only_one_claim_on_an_amendment_succeeds(tmp_path):
+    db_path = await _db(tmp_path, "claim_once")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+
+    first = await _claim_amendment(db_path, ROUND_ID)
+    second = await _claim_amendment(db_path, ROUND_ID)
+
+    assert first is not None
+    assert second is None
+
+
+async def test_an_amendment_with_no_snapshot_cannot_be_claimed(tmp_path):
+    """Before stage one has written there is nothing for a stage to act on."""
+    db_path = await _db(tmp_path, "claim_nothing")
+
+    assert await _claim_amendment(db_path, ROUND_ID) is None
+
+
+async def test_the_sweep_deletes_the_channel_of_what_it_reverted(tmp_path):
+    db_path = await _db(tmp_path, "sweep_channel")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    later = datetime.now(timezone.utc) + timedelta(
+        seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
+    )
+    channel = MagicMock()
+    channel.delete = AsyncMock()
+    guild = MagicMock()
+    guild.get_channel = MagicMock(return_value=channel)
+
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()), \
+            patch(
+                "services.result_submission_service.league_guild",
+                new=AsyncMock(return_value=guild),
+            ):
+        await sweep_expired_amendments(_bot(db_path), now=later)
+
+    guild.get_channel.assert_called_with(CHANNEL_ID)
+    channel.delete.assert_awaited_once()
+    assert (await _snapshot_row_or_none(db_path)) is None
+
+
+async def test_a_sweep_whose_revert_fails_tries_again_next_time(tmp_path):
+    """The deadline is handed back, so the next sweep finds it — the snapshot is kept."""
+    db_path = await _db(tmp_path, "sweep_retry")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    later = datetime.now(timezone.utc) + timedelta(
+        seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
+    )
+
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(side_effect=RuntimeError("locked")),
+    ):
+        assert await sweep_expired_amendments(_bot(db_path), now=later) == 0
+
+    row = await _snapshot_row(db_path)
+    assert row["pre_amendment_state"] is not None
+    assert row["expires_at"] is not None
+
+
+async def _snapshot_row_or_none(db_path):
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT * FROM round_amend_channels")
+        row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+# ── Cancel, after stage one ────────────────────────────────────────────────
+
+
+async def test_cancelling_puts_the_round_back_and_closes_the_channel(tmp_path):
+    db_path = await _db(tmp_path, "cancel_reverts")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await _overwrite_the_classification(db_path)
+    bot = _bot(db_path)
+
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        assert await cancel_amendment(bot, ROUND_ID, cancelled_by=77) is True
+
+    assert await _drivers(db_path) == [(101, 1), (102, 2)]
+    assert (await _snapshot_row_or_none(db_path)) is None
+    logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
+    assert "AMEND_CANCELLED" in logged
+    assert "<@77>" in logged
+
+
+async def test_cancelling_an_amendment_already_being_committed_does_nothing(tmp_path):
+    """The appeal stage claims the amendment before it writes; a cancel then is too late."""
+    db_path = await _db(tmp_path, "cancel_too_late")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await _overwrite_the_classification(db_path)
+    await _claim_amendment(db_path, ROUND_ID)
+
+    assert await cancel_amendment(_bot(db_path), ROUND_ID, cancelled_by=77) is False
+    assert await _drivers(db_path) == [(102, 1)]
+
+
+# ── Several sessions (#345, decided 2026-09-21) ────────────────────────────
+
+
+async def test_every_amended_session_is_snapshotted_and_put_back(tmp_path):
+    """One amendment may re-enter several of a round's sessions, and undoing it puts back each
+    of them — not only the first the snapshot happened to hold."""
+    db_path = await _db(tmp_path, "revert_two_sessions")
+    async with get_connection(db_path) as db:
+        quali = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
+            "team_role_id, finishing_position, best_lap) VALUES (?, 101, 3001, 1, '1:20.000')",
+            (quali.lastrowid,),
+        )
+        await db.commit()
+    await snapshot_before_amendment(
+        db_path, ROUND_ID, [SessionType.FEATURE_QUALIFYING, SessionType.FEATURE_RACE]
+    )
+    await _overwrite_the_classification(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE qualifying_session_results SET best_lap = '1:25.000'")
+        await db.commit()
+
+    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        assert await revert_abandoned_amendment(db_path, ROUND_ID) is True
+
+    assert await _drivers(db_path) == [(101, 1), (102, 2)]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT best_lap FROM qualifying_session_results")
+        assert [r[0] for r in await cursor.fetchall()] == ["1:20.000"]

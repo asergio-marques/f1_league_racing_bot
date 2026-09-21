@@ -30,6 +30,7 @@ neither applies is the manager asked.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 from types import SimpleNamespace
@@ -203,14 +204,20 @@ async def _amend(
     config_names=("Standard",),
     amend_error=None,
     timeout=False,
+    sessions=None,
+    validate_results=None,
 ):
+    """*sessions*, where given, answers the session chooser instead of naming one session;
+    *validate_results*, where given, is what each paste validates to, in turn."""
     stubs = {
         # Sync, as the real one is: it parses text and returns rows or errors. It was an
         # AsyncMock here and unused, which hid that the patch below went to a literal.
         "validate": MagicMock(
-            return_value=parsed if parsed is not None else _parsed(101, 102)
+            return_value=parsed if parsed is not None else _parsed(101, 102),
+            side_effect=validate_results,
         ),
         "amend": AsyncMock(side_effect=amend_error),
+        "assignments": AsyncMock(return_value={}),
     }
     patches = [
         patch(
@@ -219,7 +226,7 @@ async def _amend(
         ),
         patch(
             "services.result_submission_service.other_active_team_assignments",
-            new=AsyncMock(return_value={}),
+            new=stubs["assignments"],
         ),
         patch(
             "services.result_submission_service.extract_fl_override",
@@ -234,7 +241,7 @@ async def _amend(
             new=AsyncMock(return_value=list(config_names)),
         ),
         patch(
-            "services.result_submission_service.amend_session_result", new=stubs["amend"]
+            "services.result_submission_service.amend_round_results", new=stubs["amend"]
         ),
     ]
     if timeout:
@@ -242,10 +249,21 @@ async def _amend(
             return set(), set(tasks)
 
         patches.append(patch("asyncio.wait", new=_no_one_came))
+    if sessions is not None:
+        from cogs.season_cog import _AmendSessionsView
+
+        async def _choose_them(view):
+            view.selected = [st.value for st in sessions]
+            return False
+
+        patches.append(patch.object(_AmendSessionsView, "wait", new=_choose_them))
     for p in patches:
         p.start()
     try:
-        choice = SimpleNamespace(name="FEATURE_RACE", value="FEATURE_RACE")
+        choice = (
+            None if sessions is not None
+            else SimpleNamespace(name="FEATURE_RACE", value="FEATURE_RACE")
+        )
         await undecorate(SeasonCog.round_results_amend)(
             cog, interaction, "Pro Division", 3, choice
         )
@@ -355,7 +373,8 @@ async def test_the_manager_is_pointed_at_the_channel(tmp_path):
 
     assert f"Amendment channel created: <#{AMEND_CHANNEL}>" in _replied(interaction)
     prompt = str(channel.send.await_args_list[0].args[0])
-    assert "Feature Race | Round 3 (Pro Division)" in prompt
+    assert "Round 3 (Pro Division)" in prompt
+    assert "Sessions: Feature Race." in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -373,9 +392,10 @@ async def test_a_valid_paste_is_written(tmp_path):
     stubs["amend"].assert_awaited_once()
     args = stubs["amend"].await_args.args
     assert args[1] == ROUND_ID
-    assert args[3] == SessionType.FEATURE_RACE
-    assert args[5] == "Standard"
-    assert "Corrected results posted" in _replied(interaction)
+    [session] = args[3]
+    assert session.session_type == SessionType.FEATURE_RACE
+    assert session.config_name == "Standard"
+    assert "Corrected results recorded" in _replied(interaction)
 
 
 async def test_the_paste_is_deleted_from_the_channel(tmp_path):
@@ -423,7 +443,8 @@ async def test_a_success_is_logged_with_its_configuration(tmp_path):
     await _amend(cog, _interaction(_amend_channel(), message=_message()))
 
     assert "AMEND_SUCCESS" in _logged(cog)
-    assert "config: Standard" in _logged(cog)
+    # Named per session, one amendment now covering any number of them.
+    assert "FEATURE_RACE=Standard" in _logged(cog)
 
 
 async def test_the_sessions_existing_configuration_is_kept_where_still_attached(tmp_path):
@@ -435,7 +456,7 @@ async def test_the_sessions_existing_configuration_is_kept_where_still_attached(
         config_names=("Half", "Standard"),
     )
 
-    assert stubs["amend"].await_args.args[5] == "Standard"
+    assert stubs["amend"].await_args.args[3][0].config_name == "Standard"
 
 
 async def test_a_fastest_lap_override_in_the_paste_is_passed_on(tmp_path):
@@ -447,7 +468,7 @@ async def test_a_fastest_lap_override_in_the_paste_is_passed_on(tmp_path):
         fl_override=102,
     )
 
-    assert stubs["amend"].await_args.kwargs["fl_driver_override"] == 102
+    assert stubs["amend"].await_args.args[3][0].fl_driver_override == 102
 
 
 # ---------------------------------------------------------------------------
@@ -571,18 +592,504 @@ async def test_a_channel_that_will_not_delete_does_not_fail_a_cancellation(tmp_p
     assert await _amend_rows(db_path) == 0
 
 
-async def test_the_amendment_validates_against_the_submission_format(tmp_path):
-    """Not the retired eight-column one (#345).
+# ---------------------------------------------------------------------------
+# An amendment already open, and undoing one after its first stage (#345)
+# ---------------------------------------------------------------------------
 
-    `apply_penalties` adds to the stored penalty columns, and the replay re-inserts the driver
-    rows at zero before running the round's report and appeal stages over them. A paste that
-    also carried the sanctions would have each applied twice — so the amendment asks for the
-    same format a first submission takes, and `amend_format` must be false to get it.
-    """
-    db_path = await _make_db(tmp_path)
+
+async def test_a_second_amendment_of_an_open_session_is_refused(tmp_path):
+    """**The record of the first held its snapshot.** Replacing it — which the old
+    `INSERT OR REPLACE` did — threw away the only way back to the classification raced, and left
+    the first channel's stages live over rows the second was rewriting."""
+    db_path = await _make_db(tmp_path, name="amend_already_open")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "pre_amendment_state) VALUES (?, 6666, '[\"FEATURE_RACE\"]', '2026-02-02T00:00:00', '{}')",
+            (ROUND_ID,),
+        )
+        await db.commit()
     interaction = _interaction(_amend_channel(), message=_message())
 
     stubs = await _amend(_make_cog(db_path), interaction)
 
-    stubs["validate"].assert_called_once()
-    assert stubs["validate"].call_args.kwargs["amend_format"] is False
+    stubs["amend"].assert_not_awaited()
+    interaction.guild.create_text_channel.assert_not_awaited()
+    assert "<#6666>" in _replied(interaction)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT pre_amendment_state FROM round_amend_channels")
+        assert (await cursor.fetchone())["pre_amendment_state"] == "{}"
+
+
+async def test_cancelling_after_the_first_stage_puts_the_round_back(tmp_path):
+    """The corrected classification is already written by then, so the button that once only
+    stopped a paste being waited for now has to undo one. It used to reply "Amendment cancelled"
+    and do nothing at all, leaving the round scored one way and posted another."""
+    db_path = await _make_db(tmp_path, name="amend_cancel_late")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    cog = _make_cog(db_path)
+    await _amend(cog, interaction)
+
+    view = channel.send.await_args_list[0].kwargs["view"]
+    press = MagicMock()
+    press.user = SimpleNamespace(id=USER_ID)
+    press.response = MagicMock()
+    press.response.send_message = AsyncMock()
+    press.followup = MagicMock()
+    press.followup.send = AsyncMock()
+    with patch(
+        "services.result_submission_service.cancel_amendment",
+        new=AsyncMock(return_value=True),
+    ) as cancel:
+        await type(view).cancel_btn(view, press, MagicMock())
+
+    cancel.assert_awaited_once()
+    assert cancel.await_args.args[1:] == (ROUND_ID,)
+
+
+async def test_cancelling_too_late_says_so(tmp_path):
+    """The appeal stage may already be committing it; nothing is undone then."""
+    db_path = await _make_db(tmp_path, name="amend_cancel_too_late")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    await _amend(_make_cog(db_path), interaction)
+
+    view = channel.send.await_args_list[0].kwargs["view"]
+    press = MagicMock()
+    press.user = SimpleNamespace(id=USER_ID)
+    press.response = MagicMock()
+    press.response.send_message = AsyncMock()
+    press.followup = MagicMock()
+    press.followup.send = AsyncMock()
+    with patch(
+        "services.result_submission_service.cancel_amendment",
+        new=AsyncMock(return_value=False),
+    ):
+        await type(view).cancel_btn(view, press, MagicMock())
+
+    assert "Too late" in str(press.followup.send.await_args.args[0])
+
+
+async def test_a_failed_write_puts_back_what_it_had_written_before_tidying_up(tmp_path):
+    """The classification is written in one transaction, but its points and standings after it
+    are not. Tidying up deleted the channel's record — and the snapshot with it — so a failure
+    there left the round half-amended with nothing able to undo it."""
+    db_path = await _make_db(tmp_path, name="amend_fail_reverts")
+    interaction = _interaction(_amend_channel(), message=_message())
+
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ) as revert:
+        await _amend(_make_cog(db_path), interaction, amend_error=RuntimeError("locked"))
+
+    revert.assert_awaited_once_with(db_path, ROUND_ID)
+    assert await _amend_rows(db_path) == 0
+
+
+async def test_a_failed_revert_keeps_the_snapshot(tmp_path):
+    """Where the round cannot be put back, its record is kept for a restart to retry."""
+    db_path = await _make_db(tmp_path, name="amend_fail_revert_fails")
+    interaction = _interaction(_amend_channel(), message=_message())
+
+    with patch(
+        "services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(side_effect=RuntimeError("still locked")),
+    ):
+        await _amend(_make_cog(db_path), interaction, amend_error=RuntimeError("locked"))
+
+    assert await _amend_rows(db_path) == 1
+    assert "could not be put back" in _replied(interaction)
+
+
+async def test_a_report_stage_that_cannot_open_undoes_the_amendment(tmp_path):
+    """With no report stage on screen the amendment cannot be finished, so it is undone rather
+    than left half-applied until the sweep."""
+    db_path = await _make_db(tmp_path, name="amend_stage_two_fails")
+    interaction = _interaction(_amend_channel(), message=_message())
+
+    with patch(
+        "services.result_submission_service.run_amendment_review_stages",
+        new=AsyncMock(side_effect=RuntimeError("no channel")),
+    ), patch(
+        "services.result_submission_service.cancel_amendment",
+        new=AsyncMock(return_value=True),
+    ) as cancel:
+        await _amend(_make_cog(db_path), interaction)
+
+    cancel.assert_awaited_once()
+    assert "has been undone" in _replied(interaction)
+
+
+async def test_cancelling_while_the_paste_is_being_written_is_refused_not_swallowed(tmp_path):
+    """**The window between "the paste is in" and "stage one is done".**
+
+    The button set its flag, stopped itself and replied "Amendment cancelled" — but the loop had
+    already passed the point where that flag is read, so nothing was cancelled, and the view was
+    now stopped: the manager believed the amendment was off, and could not cancel it afterwards.
+    """
+    db_path = await _make_db(tmp_path, name="amend_cancel_mid_write")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    pressed: dict = {}
+
+    async def _press_during_the_write(*_a, **_kw):
+        view = channel.send.await_args_list[0].kwargs["view"]
+        press = MagicMock()
+        press.user = SimpleNamespace(id=USER_ID)
+        press.response = MagicMock()
+        press.response.send_message = AsyncMock()
+        press.followup = MagicMock()
+        press.followup.send = AsyncMock()
+        await type(view).cancel_btn(view, press, MagicMock())
+        pressed["said"] = str(press.response.send_message.await_args.args[0])
+        pressed["view"] = view
+
+    with patch(
+        "services.result_submission_service.cancel_amendment", new=AsyncMock()
+    ) as cancel:
+        await _amend(_make_cog(db_path), interaction, amend_error=_press_during_the_write)
+
+    assert "being recorded" in pressed["said"]
+    cancel.assert_not_awaited()
+    # The amendment carried on: its channel is still open for the review stages.
+    assert await _amend_rows(db_path) == 1
+
+
+async def test_a_channel_created_for_a_second_amendment_is_not_left_behind(tmp_path):
+    """The check for an open amendment is a read, so two commands can both pass it. The unique
+    constraint settles it — and the loser's channel has to go, or it is an orphan nothing can
+    find, the row naming the winner's."""
+    db_path = await _make_db(tmp_path, name="amend_race")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+
+    async def _claim_it_first(*_a, **_kw):
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO round_amend_channels (round_id, channel_id, session_types, "
+                "created_at) VALUES (?, 4321, '[\"FEATURE_RACE\"]', '2026-02-02T00:00:00')",
+                (ROUND_ID,),
+            )
+            await db.commit()
+        return channel
+
+    interaction.guild.create_text_channel = AsyncMock(side_effect=_claim_it_first)
+
+    stubs = await _amend(_make_cog(db_path), interaction)
+
+    stubs["amend"].assert_not_awaited()
+    channel.delete.assert_awaited_once()
+    assert "already has an amendment open" in _replied(interaction)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT channel_id FROM round_amend_channels")
+        assert [r[0] for r in await cursor.fetchall()] == [4321]
+
+
+async def test_the_cancel_button_still_listens_once_the_paste_is_in(tmp_path):
+    """**discord.py drops every press on a view whose future is done**, and the collection loop
+    cancelled the task awaiting that future on each turn — so the button died the moment the
+    paste arrived, which is exactly when it becomes the only way to undo the amendment. The loop
+    races an event of its own instead."""
+    db_path = await _make_db(tmp_path, name="amend_cancel_alive")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+
+    await _amend(_make_cog(db_path), interaction)
+
+    view = channel.send.await_args_list[0].kwargs["view"]
+    assert view.is_finished() is False
+
+
+async def test_cancelling_while_the_configuration_is_being_chosen_stops_the_amendment(tmp_path):
+    """**The last window in which stopping costs nothing** (#345). The press set its flag after
+    the loop had read it, so the amendment went on to commit while the manager was told it had
+    been cancelled — the paste having been accepted and a configuration still being picked."""
+    db_path = await _make_db(tmp_path, name="amend_cancel_at_config")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+
+    sent: list = []
+    cancel_view: list = []
+
+    async def _send(content=None, **kwargs):
+        sent.append(content)
+        if kwargs.get("view") is not None and cancel_view:
+            # The configuration picker is on screen and the manager presses Cancel.
+            press = MagicMock()
+            press.user = SimpleNamespace(id=USER_ID)
+            press.response = MagicMock()
+            press.response.send_message = AsyncMock()
+            await type(cancel_view[0]).cancel_btn(cancel_view[0], press, MagicMock())
+            kwargs["view"].stop()
+        elif kwargs.get("view") is not None:
+            cancel_view.append(kwargs["view"])
+        return MagicMock()
+
+    channel.send = AsyncMock(side_effect=_send)
+    cog = _make_cog(db_path)
+    # Two configurations, neither the session's own, so the picker is posted and waited on.
+    stubs = await _amend(cog, interaction, config_names=("A", "B"))
+
+    stubs["amend"].assert_not_awaited()
+    assert "AMEND_CANCELLED" in _logged(cog)
+    assert await _amend_rows(db_path) == 0
+
+
+async def test_a_finished_amendment_whose_channel_survived_does_not_block_the_next(tmp_path):
+    """Its row is kept so restart recovery can still find the channel, but it describes no
+    amendment in progress and must not hold the unique constraint against a fresh one."""
+    db_path = await _make_db(tmp_path, name="amend_after_closed")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "closed_at) VALUES (?, 4444, '[\"FEATURE_RACE\"]', '2026-02-02T00:00:00', "
+            "'2026-02-02T01:00:00')",
+            (ROUND_ID,),
+        )
+        await db.commit()
+    interaction = _interaction(_amend_channel(), message=_message())
+    stale = MagicMock()
+    stale.delete = AsyncMock()
+    command_channel = interaction.guild.get_channel.return_value
+    interaction.guild.get_channel = MagicMock(
+        side_effect=lambda cid: stale if cid == 4444 else command_channel
+    )
+
+    stubs = await _amend(_make_cog(db_path), interaction)
+
+    stubs["amend"].assert_awaited_once()
+    # The row was the only record of the old channel, so the channel goes before it does.
+    stale.delete.assert_awaited_once()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT channel_id FROM round_amend_channels")
+        assert [r[0] for r in await cursor.fetchall()] == [AMEND_CHANNEL]
+
+
+async def test_a_configuration_nobody_chooses_times_out_like_a_paste_nobody_sends(tmp_path):
+    """The picker has no timeout of its own, so a manager who walked away held the channel and
+    its row — and every later amendment of the session — until the bot restarted."""
+    db_path = await _make_db(tmp_path, name="amend_config_timeout")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    cog = _make_cog(db_path)
+    real_wait = asyncio.wait
+    calls = {"n": 0}
+
+    async def _wait(tasks, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return await real_wait(tasks, **kwargs)  # the paste arrives
+        return set(), set(tasks)  # nobody picks a configuration
+
+    with patch("asyncio.wait", new=_wait):
+        stubs = await _amend(cog, interaction, config_names=("A", "B"))
+
+    stubs["amend"].assert_not_awaited()
+    assert "AMEND_TIMEOUT" in _logged(cog)
+    assert await _amend_rows(db_path) == 0
+
+
+async def test_a_stale_channel_that_will_not_delete_keeps_its_row_and_says_so(tmp_path):
+    """The row is the only record of that channel. Dropping it while the channel still stands
+    would leak a private channel nothing could ever find again."""
+    db_path = await _make_db(tmp_path, name="amend_stale_stuck")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "closed_at) VALUES (?, 4444, '[\"FEATURE_RACE\"]', '2026-02-02T00:00:00', "
+            "'2026-02-02T01:00:00')",
+            (ROUND_ID,),
+        )
+        await db.commit()
+    interaction = _interaction(_amend_channel(), message=_message())
+    stale = MagicMock()
+    stale.delete = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "no"))
+    command_channel = interaction.guild.get_channel.return_value
+    interaction.guild.get_channel = MagicMock(
+        side_effect=lambda cid: stale if cid == 4444 else command_channel
+    )
+
+    stubs = await _amend(_make_cog(db_path), interaction)
+
+    stubs["amend"].assert_not_awaited()
+    assert "<#4444>" in _replied(interaction)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT channel_id FROM round_amend_channels")
+        assert [r[0] for r in await cursor.fetchall()] == [4444]
+
+
+# ---------------------------------------------------------------------------
+# One amendment open in a division at a time (#345, decided 2026-09-21)
+# ---------------------------------------------------------------------------
+
+
+async def _open_elsewhere(db_path, *, division_id: int, round_id: int, channel_id: int):
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (?, ?, 'Other', 2, 556)",
+            (division_id, SEASON_ID),
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
+            "VALUES (?, ?, 5, '2026-03-01T18:00:00+00:00', 'NORMAL', 'FINAL')",
+            (round_id, division_id),
+        )
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at) "
+            "VALUES (?, ?, '[\"SPRINT_RACE\"]', '2026-02-02T00:00:00')",
+            (round_id, channel_id),
+        )
+        await db.commit()
+
+
+async def test_an_amendment_open_elsewhere_in_the_division_refuses_another(tmp_path):
+    """**The last stage reposts the whole division from the database**, so a second amendment
+    open beside it would have its unapproved classification published by the first — and left
+    published if it were then cancelled or lapsed, its revert posting nothing."""
+    db_path = await _make_db(tmp_path, name="amend_division_busy")
+    await _open_elsewhere(db_path, division_id=DIVISION_ID, round_id=22, channel_id=5151)
+    interaction = _interaction(_amend_channel(), message=_message())
+
+    stubs = await _amend(_make_cog(db_path), interaction)
+
+    stubs["amend"].assert_not_awaited()
+    interaction.guild.create_text_channel.assert_not_awaited()
+    replied = _replied(interaction)
+    assert "<#5151>" in replied
+    assert "round 5, Sprint Race" in replied
+
+
+async def test_an_amendment_open_in_another_division_is_no_obstacle(tmp_path):
+    db_path = await _make_db(tmp_path, name="amend_other_division")
+    await _open_elsewhere(db_path, division_id=99, round_id=22, channel_id=5151)
+    interaction = _interaction(_amend_channel(), message=_message())
+
+    stubs = await _amend(_make_cog(db_path), interaction)
+
+    stubs["amend"].assert_awaited_once()
+
+
+async def test_of_two_commands_racing_in_one_division_the_first_recorded_keeps_it(tmp_path):
+    """Both can pass the read before either is recorded; the table then says which came first,
+    and the later one withdraws — deleting the channel it had just made."""
+    db_path = await _make_db(tmp_path, name="amend_division_race")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+
+    async def _another_lands_first(*_a, **_kw):
+        await _open_elsewhere(db_path, division_id=DIVISION_ID, round_id=22, channel_id=5151)
+        return channel
+
+    interaction.guild.create_text_channel = AsyncMock(side_effect=_another_lands_first)
+
+    stubs = await _amend(_make_cog(db_path), interaction)
+
+    stubs["amend"].assert_not_awaited()
+    channel.delete.assert_awaited_once()
+    assert "<#5151>" in _replied(interaction)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT channel_id FROM round_amend_channels")
+        assert [r[0] for r in await cursor.fetchall()] == [5151]
+
+
+# ---------------------------------------------------------------------------
+# Several sessions in one amendment (#345, decided 2026-09-21)
+# ---------------------------------------------------------------------------
+
+
+async def _add_qualifying(db_path) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status, "
+            "config_name) VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE', 'Standard')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.commit()
+
+
+def _team_rows(*drivers):
+    return [SimpleNamespace(driver_user_id=d, team_role_id=3001) for d in drivers]
+
+
+async def test_the_chosen_sessions_are_pasted_in_turn_and_written_together(tmp_path):
+    """A round's reports and appeals are reviewed together, so the sessions being corrected are
+    re-entered one after another — in running order, whatever order they were ticked in — and
+    written in one go once every paste is in."""
+    db_path = await _make_db(tmp_path, name="amend_many")
+    await _add_qualifying(db_path)
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+
+    stubs = await _amend(
+        _make_cog(db_path), interaction,
+        parsed=_team_rows(101, 102),
+        sessions=[SessionType.FEATURE_RACE, SessionType.FEATURE_QUALIFYING],
+    )
+
+    stubs["amend"].assert_awaited_once()
+    written = stubs["amend"].await_args.args[3]
+    assert [w.session_type for w in written] == [
+        SessionType.FEATURE_QUALIFYING, SessionType.FEATURE_RACE,
+    ]
+    asked = [str(c.args[0]) for c in channel.send.await_args_list if c.args]
+    assert any("Feature Qualifying" in text and "paste" in text for text in asked)
+    assert any("Feature Race" in text and "paste" in text for text in asked)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT session_types FROM round_amend_channels")
+        assert json.loads((await cursor.fetchone())[0]) == [
+            "FEATURE_QUALIFYING", "FEATURE_RACE",
+        ]
+
+
+async def test_a_later_paste_is_checked_against_the_earlier_one_not_the_old_rows(tmp_path):
+    """**A correction must not be held against the classification it corrects.** A driver's
+    team must agree across the round's sessions; where both sessions are being replaced, the
+    second is checked against the first one's new paste, and neither against their old rows."""
+    db_path = await _make_db(tmp_path, name="amend_many_teams")
+    await _add_qualifying(db_path)
+    interaction = _interaction(_amend_channel(), message=_message())
+
+    stubs = await _amend(
+        _make_cog(db_path), interaction,
+        parsed=_team_rows(101, 102),
+        sessions=[SessionType.FEATURE_QUALIFYING, SessionType.FEATURE_RACE],
+    )
+
+    seen = [
+        (call.args[2], list(call.kwargs["also_exclude"]))
+        for call in stubs["assignments"].await_args_list
+    ]
+    assert seen == [
+        (SessionType.FEATURE_QUALIFYING, [SessionType.FEATURE_RACE]),
+        (SessionType.FEATURE_RACE, [SessionType.FEATURE_QUALIFYING]),
+    ]
+    second_call = stubs["validate"].call_args_list[1]
+    assert second_call.kwargs["other_active_assignments"] == {
+        101: (3001, "FEATURE_QUALIFYING"), 102: (3001, "FEATURE_QUALIFYING"),
+    }
+
+
+async def test_a_rejected_second_paste_writes_nothing_at_all(tmp_path):
+    """Nothing is written while the pastes are collected, so the first session's accepted paste
+    goes with the amendment rather than being half-applied.
+
+    **And the amendment ends there** (decided 2026-09-21): the refused session is not asked for
+    again. A league amending a round prepares every classification before it starts."""
+    db_path = await _make_db(tmp_path, name="amend_many_rejected")
+    await _add_qualifying(db_path)
+    interaction = _interaction(_amend_channel(), message=_message())
+    cog = _make_cog(db_path)
+    good, bad = _team_rows(101, 102), ["Row 1: Position must be a positive integer"]
+
+    stubs = await _amend(
+        cog, interaction,
+        sessions=[SessionType.FEATURE_QUALIFYING, SessionType.FEATURE_RACE],
+        validate_results=[good, bad],
+    )
+
+    stubs["amend"].assert_not_awaited()
+    assert "AMEND_REJECTED | round 3 session FEATURE_RACE" in _logged(cog)
+    assert await _amend_rows(db_path) == 0

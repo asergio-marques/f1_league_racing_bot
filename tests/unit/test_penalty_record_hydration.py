@@ -358,3 +358,23 @@ async def test_a_decision_comes_back_with_its_author_and_its_time(tmp_path):
     assert (appeals[0].decided_by, appeals[0].decided_at) == (
         "78", "2026-02-03T00:00:00+00:00"
     )
+
+
+async def test_several_sessions_are_read_back_together(tmp_path):
+    """An amendment may re-enter several of a round's sessions, and their reports are reviewed
+    together — while a session it leaves alone keeps its decisions out of the review (#345)."""
+    db_path, ids = await _seed(tmp_path, "hydrate_many")
+    await _penalty(db_path, ids["race_101"], description="Race")
+    await _penalty(db_path, ids["qual_101"], column="qual_result_id", penalty_type="DSQ",
+                   seconds=None, description="Quali")
+
+    both, _, _ = await load_staged_from_records(
+        db_path, ROUND_ID,
+        session_types=[SessionType.FEATURE_QUALIFYING, SessionType.FEATURE_RACE],
+    )
+    race_only, _, _ = await load_staged_from_records(
+        db_path, ROUND_ID, session_types=[SessionType.FEATURE_RACE]
+    )
+
+    assert sorted(r.description for r in both) == ["Quali", "Race"]
+    assert [r.description for r in race_only] == ["Race"]

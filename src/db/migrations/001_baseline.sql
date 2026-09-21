@@ -629,25 +629,34 @@ CREATE TABLE "round_amend_channels" (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id     INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
     channel_id   INTEGER NOT NULL,
-    session_type TEXT    NOT NULL,
+    -- session_types: the sessions this amendment re-enters, as a JSON array of session-type
+    -- values in running order (#345). One amendment covers any number of a round's sessions,
+    -- its reports and appeals being reviewed for them together, as a round's are.
+    session_types TEXT   NOT NULL,
     created_at   TEXT    NOT NULL,
     -- pre_amendment_state: the round as it stood before stage one overwrote it, as JSON
     -- (#345). The amendment's first stage commits the corrected classification, so an
     -- amendment abandoned before its last stage is approved leaves the round scored one way
-    -- and posted another. This is what the revert puts back: the session header, the driver
-    -- rows of the amended session, and where each verdict pointed. NULL until stage one has
+    -- and posted another. This is what the revert puts back: for each amended session, its
+    -- header, its driver rows, and its verdict records whole. NULL until stage one has
     -- written, and cleared when the amendment completes.
     pre_amendment_state TEXT,
     -- expires_at: when an unapproved amendment is reverted. The stages have no timeout of
     -- their own, so without this a manager who walks away leaves the round on "Provisional
     -- Results" for ever.
     expires_at   TEXT,
+    -- closed_at: set where the amendment has finished but its channel could not be deleted,
+    -- the guild or the channel being out of cache (#345). The row is the only thing that names
+    -- the channel, so restart recovery finds an orphan by no other route and it is kept for
+    -- that — but it no longer describes an amendment in progress, and nothing treats it as one.
+    closed_at   TEXT,
     -- superseded_announcements: the verdict announcements standing in the channel when the
     -- amendment's report stage was approved, as JSON (#345). That stage deletes the round's
     -- verdict records and writes the approved set back, so the message ids of the announcements
     -- to be taken down are gone by the time the final stage re-announces — noted here first.
     superseded_announcements TEXT,
-    UNIQUE (round_id, session_type)
+    -- One amendment of a round at a time; the command allows one per division besides.
+    UNIQUE (round_id)
 );
 
 -- signup_module_settings

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import NamedTuple
 
 import discord
 
@@ -2333,6 +2334,19 @@ def _sr_from_row(sr_row) -> "SessionResult":
 
 
 
+class ReplayOutcome(NamedTuple):
+    """What a division rebuild achieved: the faults met, and the rounds whose verdicts are back.
+
+    The second is not derivable from the first. A verdict that could not be announced is a fault
+    line like any other, and the caller has one decision that turns on *which round* it was: the
+    amendment takes its superseded announcements down only where the amended round's replacements
+    all went up, a verdict deleted from a channel being in no channel at all (#345).
+    """
+
+    faults: list[str]
+    rebuilt_rounds: frozenset[int]
+
+
 async def replay_division_channels(
     db_path: str,
     division_id: int,
@@ -2342,7 +2356,7 @@ async def replay_division_channels(
     bot=None,
     verdict_state_factory=None,
     attendance_step=None,
-) -> list[str]:
+) -> ReplayOutcome:
     """Rebuild everything a division's channels show, in the order a league reads them.
 
     What the amendment replay calls once its corrected round has been computed (#345). The
@@ -2366,9 +2380,11 @@ async def replay_division_channels(
     five stages actually happen in the order the specification states rather than merely being
     named in it.
 
-    Returns the faults met across every stage, merged, as lines a league can read.
+    Returns the faults met across every stage, merged, as lines a league can read, and the
+    rounds whose verdicts were all re-announced.
     """
     faults: list[str] = []
+    rebuilt_rounds: list[int] = []
 
     # **The banners standing now, before any stage has posted one of its own** (#345). The
     # attendance step enforces the division's sanctions, and those head themselves; a capture
@@ -2450,10 +2466,11 @@ async def replay_division_channels(
                 await republish_verdicts_from_round(
                     bot, db_path, division_id, from_round_id, verdict_state_factory,
                     superseded_banners=superseded_banners,
+                    rebuilt=rebuilt_rounds,
                 )
             )
         except Exception as exc:  # noqa: BLE001 — reported rather than lost
             log.exception("replay_division_channels: the verdict republish failed")
             faults.append(f"the division's verdicts could not be re-announced: {exc}")
 
-    return merge_faults(faults, [])
+    return ReplayOutcome(merge_faults(faults, []), frozenset(rebuilt_rounds))

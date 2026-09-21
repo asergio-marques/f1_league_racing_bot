@@ -1,6 +1,7 @@
 """Entry point for the F1 League Weather Randomizer Bot."""
 
 import asyncio
+import json
 import logging
 import os
 
@@ -1006,7 +1007,7 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
 
     async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
         cursor = await db.execute(
-            "SELECT id, round_id, channel_id, session_type FROM round_amend_channels"
+            "SELECT id, round_id, channel_id, session_types, closed_at FROM round_amend_channels"
         )
         orphans = await cursor.fetchall()
 
@@ -1016,24 +1017,44 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
         row_id: int = row["id"]
         round_id: int = row["round_id"]
         channel_id: int = row["channel_id"]
-        session_type: str = row["session_type"]
+        try:
+            _sessions = ", ".join(
+                str(st).replace("_", " ").title() for st in json.loads(row["session_types"])
+            )
+        except (TypeError, ValueError):
+            _sessions = str(row["session_types"])
+        # A row kept only because its channel could not be deleted when the amendment finished
+        # (#345). There is nothing to revert and nothing to tell the league; the channel is the
+        # whole of what is outstanding.
+        already_closed: bool = bool(row["closed_at"])
 
         # **The round goes back as it was, where stage one had already written** (#345). The
         # amendment's first stage commits the corrected classification, so abandoning one
         # without undoing it leaves the round scored from the new results and posted from the
-        # old — indefinitely, since no later sweep would know to look. Where nothing was
-        # written yet the revert finds no snapshot and does nothing, which is correct.
-        try:
-            from models.points_config import SessionType as _SessionType
-            from services.result_submission_service import revert_abandoned_amendment
+        # old. Where nothing was written yet — or the amendment had already been approved and
+        # released its snapshot — the revert finds nothing to do, which is correct.
+        from datetime import datetime as _dt, timezone as _tz
 
-            await revert_abandoned_amendment(
-                bot.db_path, round_id, _SessionType(session_type), bot  # type: ignore[attr-defined]
+        from services.result_submission_service import revert_abandoned_amendment
+
+        try:
+            reverted = (
+                False if already_closed
+                else await revert_abandoned_amendment(bot.db_path, round_id)
             )
         except Exception:
+            # The row keeps the snapshot, and a deadline of now hands it to the sweep, which
+            # retries within minutes and deletes the channel once it has put the round back.
             log.exception(
                 "Recovery: could not put round %s back after an abandoned amendment", round_id
             )
+            async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+                await db.execute(
+                    "UPDATE round_amend_channels SET expires_at = ? WHERE id = ?",
+                    (_dt.now(_tz.utc).isoformat(), row_id),
+                )
+                await db.commit()
+            continue
 
         # Remove the DB row first so a further crash doesn't re-process it.
         async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
@@ -1053,26 +1074,42 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
                     pass
 
         log.info(
-            "Recovery: deleted orphaned amend channel %s for round %s session %s",
-            channel_id, round_id, session_type,
+            "Recovery: deleted orphaned amend channel %s for round %s sessions %s",
+            channel_id, round_id, _sessions,
         )
 
         # Notify the log channel so the LM knows to re-run the command.
+        if already_closed:
+            continue
         try:
             async with get_connection(bot.db_path) as _rdb:  # type: ignore[attr-defined]
                 _rcur = await _rdb.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
                 _rrow = await _rcur.fetchone()
             _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
+            if reverted:
+                _what = (
+                    "  Amendment channel deleted, and the round put back as it was. Please "
+                    "re-run /round results amend."
+                )
+            else:
+                # Nothing to put back means one of two things, and the row cannot say which:
+                # the corrected results were never entered, or the amendment had been approved
+                # and its channels were being rebuilt when the bot stopped (#345).
+                _what = (
+                    "  Amendment channel deleted; nothing needed putting back. If the "
+                    "amendment had not been approved, re-run /round results amend. If it had, "
+                    "its channels may be part-rebuilt: run /results rounds sync and "
+                    "/results standings sync."
+                )
             await bot.output_router.post_log(  # type: ignore[attr-defined]
                 f"System | Bot restarted mid-amendment | Notice\n"
-                f"  round: {_round_label}, session: {session_type.replace('_', ' ').title()}\n"
-                "  Amendment channel deleted, and the round put back as it was. Please "
-                "re-run /round results amend.",
+                f"  round: {_round_label}, sessions: {_sessions}\n"
+                + _what,
             )
         except Exception:
             log.exception(
-                "Recovery: failed to post log for orphaned amend channel round %s session %s",
-                round_id, session_type,
+                "Recovery: failed to post log for orphaned amend channel round %s sessions %s",
+                round_id, _sessions,
             )
 
 

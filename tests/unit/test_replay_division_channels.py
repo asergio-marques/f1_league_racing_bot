@@ -87,11 +87,11 @@ async def _replay(
         "services.verdict_announcement_service.republish_verdicts_from_round",
         new=AsyncMock(side_effect=_verdicts),
     ):
-        faults = await replay_division_channels(
+        outcome = await replay_division_channels(
             "db.sqlite", DIVISION_ID, FROM_ROUND, MagicMock(),
             bot=bot, verdict_state_factory=state_factory,
         )
-    return faults, order
+    return outcome.faults, order
 
 
 async def test_the_stages_run_in_the_order_a_league_reads_them():
@@ -278,3 +278,64 @@ async def test_a_banner_posted_by_the_attendance_step_is_not_taken_down(tmp_path
 
     assert seen["captured_before_attendance"] is True
     assert seen["handed_in"] == [(FROM_ROUND, "77", 4242)]
+
+
+async def test_the_rebuild_says_whether_the_verdicts_were_replaced():
+    """**The caller has one decision that turns on it** (#345): the amendment takes its
+    superseded announcements down only where replacements went up, a verdict deleted from a
+    channel being in no channel at all. A fault line alone cannot say which stage failed."""
+    async def _results(*_a, **_kw):
+        return "ok"
+
+    async def _standings(*_a, **_kw):
+        return "ok"
+
+    with patch(
+        "services.results_post_service.repost_results_for_division",
+        new=AsyncMock(side_effect=_results),
+    ), patch(
+        "services.results_post_service.repost_standings_for_division",
+        new=AsyncMock(side_effect=_standings),
+    ), patch(
+        "services.verdict_announcement_service.banners_from_round",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.verdict_announcement_service.republish_verdicts_from_round",
+        new=AsyncMock(side_effect=RuntimeError("gateway closed")),
+    ):
+        outcome = await replay_division_channels(
+            "db.sqlite", DIVISION_ID, FROM_ROUND, MagicMock(),
+            bot=MagicMock(), verdict_state_factory=lambda round_id: MagicMock(),
+        )
+
+    assert outcome.rebuilt_rounds == frozenset()
+    assert any("gateway closed" in fault for fault in outcome.faults)
+
+
+async def _rebuilds_round_three(*_a, rebuilt=None, **_kw):
+    rebuilt.append(3)
+    return []
+
+
+async def test_a_rebuild_that_announced_its_verdicts_says_so():
+    """The counterpart: the rounds the republish rebuilt are carried back to the caller."""
+    with patch(
+        "services.results_post_service.repost_results_for_division",
+        new=AsyncMock(return_value="ok"),
+    ), patch(
+        "services.results_post_service.repost_standings_for_division",
+        new=AsyncMock(return_value="ok"),
+    ), patch(
+        "services.verdict_announcement_service.banners_from_round",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.verdict_announcement_service.republish_verdicts_from_round",
+        new=AsyncMock(side_effect=_rebuilds_round_three),
+    ):
+        outcome = await replay_division_channels(
+            "db.sqlite", DIVISION_ID, FROM_ROUND, MagicMock(),
+            bot=MagicMock(), verdict_state_factory=lambda round_id: MagicMock(),
+        )
+
+    assert outcome.rebuilt_rounds == frozenset({3})
+    assert outcome.faults == []
