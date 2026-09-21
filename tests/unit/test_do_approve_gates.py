@@ -23,6 +23,13 @@ file turned out to be reached that way — attendance's channel check and the re
 module's, neither of which had ever read a division — and `_cog_with_results` turned out
 to name a module it had never actually switched on. Naming each member costs a line and
 makes the failure loud: an `await` nobody pinned raises `TypeError` rather than passing.
+
+Three tests were added with that fix, covering what only became reachable once those gates
+ran for real: that Gate 2c's refusal stops the walk before the window gates below it, and
+that the R&S gate names a missing channel and a phantom points configuration in one
+refusal rather than one per attempt. Whether each gate *decides* correctly is still
+`test_do_approve_posting.py`'s; the *order* they decide in is this file's, and could not be
+tested while a truthy mock was passing them.
 """
 from __future__ import annotations
 
@@ -303,7 +310,9 @@ def _division_attendance_config():
     return SimpleNamespace(rsvp_channel_id=800, attendance_channel_id=801)
 
 
-def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
+def _cog_with_rounds(
+    db_path, rounds, *, attendance=True, weather=False, division_attendance=...
+):
     cog = _cog(db_path)
     div = _division()
     cog.bot.season_service.get_divisions = AsyncMock(return_value=[div])
@@ -315,7 +324,9 @@ def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
         return_value=_attendance_config()
     )
     cog.bot.attendance_service.get_division_config = AsyncMock(
-        return_value=_division_attendance_config()
+        return_value=(
+            _division_attendance_config() if division_attendance is ... else division_attendance
+        )
     )
     return cog
 
@@ -388,7 +399,47 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
 
 
 # ── #181: the round's own moment, judged whatever the modules ────────────────
+# ── Gate 2c refuses before the windows are ever looked at ────────────────────
 #
+# What these two add is the *order*, which is the one thing only this file can show. That
+# Gate 2c refuses a division with no attendance channel is settled in
+# `test_do_approve_posting.py`; that its refusal stops the walk before the window gates
+# below is not tested anywhere, and could not have been until issue #240 — the gate was
+# answered by a truthy mock and passed for every season ever put through this file.
+#
+# It matters because the two refusals read very differently to a manager. A missing channel
+# is a thing to go and set; an overdue check-in window is a schedule to move. Reaching the
+# second while the first is outstanding would send a manager to reschedule a season whose
+# real fault was one unset channel.
+
+
+async def test_a_missing_attendance_channel_refuses_before_the_window_gate(db_path):
+    """The channel gate is the earlier one, and a manager hears about it first."""
+    cog = _cog_with_rounds(db_path, [_round_in(3)], division_attendance=None)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "attendance module is enabled but" in replies
+    # The window gate sits after it and never ran, so its wording is absent.
+    assert "already gone by" not in replies
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_the_window_gate_is_not_consulted_once_a_channel_is_missing(db_path):
+    """The proof of the order, rather than of the wording.
+
+    A round three days out against a five-day notice fails the window gate, so this season
+    is refusable on both counts. Only the first refusal may be reached.
+    """
+    cog = _cog_with_rounds(db_path, [_round_in(3)], division_attendance=None)
+
+    await _run(cog, _interaction())
+
+    cog.bot.attendance_service.get_or_create_config.assert_not_awaited()
+
+
 # The windows above are contributed by the modules that configure them. With weather and
 # attendance both off there were none, the gate had nothing to check, and a season every
 # round of which was already in the past was approved in silence — every round of it then
@@ -653,6 +704,38 @@ async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
     replies = _replies(interaction)
     assert "Standrad" in replies, "the refusal must name the configuration that is missing"
     assert "does not exist" in replies
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_a_missing_channel_and_a_phantom_config_are_named_together(db_path):
+    """One refusal carrying both faults, rather than one fault per attempt.
+
+    The R&S gate gathers its channel checks and its points checks into a single list before
+    refusing, so a manager with two things wrong is told both and fixes them in one pass.
+    Approving repeatedly to be told one fault at a time is the experience this avoids.
+
+    Only testable since issue #240: the results module read as enabled from a truthy mock
+    and `get_divisions_with_results_config` returned one, so this gate had never run.
+    """
+    await _attach_phantom(db_path, "Standrad")
+    cog = _cog_with_results(db_path)
+    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                name="Pro",
+                results_channel_id=700,
+                standings_channel_id=None,
+                penalty_channel_id=702,
+            )
+        ]
+    )
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "missing a standings channel" in replies
+    assert "Standrad" in replies
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
