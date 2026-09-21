@@ -876,6 +876,37 @@ async def _show_approval_step(
 # Main persistent view (T010, T011, T018)
 # ---------------------------------------------------------------------------
 
+def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
+    """Add a view's Remove buttons in rows 1 to 4, into whatever room those rows have left.
+
+    Each is ``(label, custom_id, callback)``. Placing them by arithmetic alone — five to a row
+    from row 1 — ignored the static buttons already sitting there: the penalty review keeps its
+    Attendance Pardon button on row 1, so a fifth staged penalty overflowed the row and the
+    view raised ``ValueError`` as it was built. A first pass needed five penalties to reach it;
+    an amendment reaches it by showing back five reports the round already carries (#345).
+
+    Discord allows twenty-five components to a message, so a list longer than the room left is
+    cut short with a warning rather than failing the whole prompt: the entries beyond it are
+    still listed and still applied, and removing an earlier one brings theirs into view.
+    """
+    used = [0] * 5
+    for item in view.children:
+        if item.row is not None:
+            used[item.row] += item.width
+    slots = [row for row in range(1, 5) for _ in range(5 - used[row])]
+    if len(buttons) > len(slots):
+        log.warning(
+            "_add_remove_buttons: %d Remove buttons, room for %d; the rest are not shown",
+            len(buttons), len(slots),
+        )
+    for (label, custom_id, callback), row in zip(buttons, slots):
+        btn = discord.ui.Button(
+            label=label, style=discord.ButtonStyle.danger, custom_id=custom_id, row=row
+        )
+        btn.callback = callback
+        view.add_item(btn)
+
+
 class PenaltyReviewView(LeagueView):
     """Persistent penalty review prompt view.
 
@@ -909,16 +940,13 @@ class PenaltyReviewView(LeagueView):
 
         # Dynamic Remove buttons — one per staged entry (T018)
         if state is not None:
-            for idx, sp in enumerate(state.staged):
-                row_num = min(1 + idx // 5, 4)
-                btn = discord.ui.Button(
-                    label=f"Remove #{idx + 1}",
-                    style=discord.ButtonStyle.danger,
-                    custom_id=f"pw_remove_{idx}",
-                    row=row_num,
-                )
-                btn.callback = self._make_remove_cb(idx)
-                self.add_item(btn)
+            _add_remove_buttons(
+                self,
+                [
+                    (f"Remove #{idx + 1}", f"pw_remove_{idx}", self._make_remove_cb(idx))
+                    for idx in range(len(state.staged))
+                ],
+            )
 
     def _make_remove_cb(self, idx: int):
         async def cb(interaction: discord.Interaction) -> None:
@@ -1178,16 +1206,13 @@ class AppealsReviewView(LeagueView):
 
         # Dynamic Remove buttons — one per staged correction
         if state is not None:
-            for idx, sp in enumerate(state.staged_appeals):
-                row_num = min(1 + idx // 5, 4)
-                btn = discord.ui.Button(
-                    label=f"Remove #{idx + 1}",
-                    style=discord.ButtonStyle.danger,
-                    custom_id=f"ar_remove_{idx}",
-                    row=row_num,
-                )
-                btn.callback = self._make_remove_cb(idx)
-                self.add_item(btn)
+            _add_remove_buttons(
+                self,
+                [
+                    (f"Remove #{idx + 1}", f"ar_remove_{idx}", self._make_remove_cb(idx))
+                    for idx in range(len(state.staged_appeals))
+                ],
+            )
 
     def _make_remove_cb(self, idx: int):
         async def cb(interaction: discord.Interaction) -> None:
