@@ -121,6 +121,15 @@ def _make_cog(
     bot.season_service.cancel_season_cascade = AsyncMock(side_effect=_cascade)
     bot.season_service.discard_uncommitted_placements = AsyncMock(return_value=0)
 
+    async def _close_raced(*_a, **_k):
+        if order is not None:
+            order.append("close_raced")
+        return []
+
+    bot.season_service.close_raced_rounds_for_cancellation = AsyncMock(
+        side_effect=_close_raced
+    )
+
     bot.scheduler_service = MagicMock()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
@@ -273,7 +282,7 @@ async def test_driver_history_is_written_before_the_cascade():
     with history, roles:
         await _cancel(cog, _interaction())
 
-    assert order == ["history", "cascade"]
+    assert order == ["history", "close_raced", "cascade"]
 
 
 async def test_the_history_is_marked_cancelled_explicitly():
@@ -388,7 +397,10 @@ async def test_the_modules_are_told_after_the_history_and_before_the_roles_go():
     ):
         await undecorate(SeasonCog.season_cancel)(cog, _interaction(), "CONFIRM")
 
-    assert order == ["history", "announce", "roles", "cascade"]
+    # `close_raced` sits between the announcement and the roles: it must precede the driver
+    # pass, which the roles step is followed by, so that a driver whose only round was left
+    # awaiting verdicts is marked and the pass keeps them (#216).
+    assert order == ["history", "announce", "close_raced", "roles", "cascade"]
 
 
 async def test_a_failed_history_write_tells_nobody():
