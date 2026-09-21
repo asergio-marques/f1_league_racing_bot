@@ -1485,15 +1485,29 @@ Only allowed when the season is in **SETUP** status.
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Config name to detach |
 
+##### `/results config list` — List the points configurations a store holds
+*Access: League manager · Results module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scope` | Choice | ✅ | Which store to read — `Season` or `Server` |
+
+Names every configuration in the chosen store, and under each the session types it actually carries points for. A configuration created but never filled in is marked as holding no entries, rather than looking identical to a complete one — it would otherwise reach a season as empty points.
+
+`scope: Server` needs no season, so it is how a league between seasons finds out what it already holds, and how a manager looks up the spelling of a name `/results config append` has just refused.
+
 ##### `/results config view` — View a points config
 *Access: League manager*
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `scope` | Choice | ✅ | Which store to read — `Season` or `Server` |
 | `name` | String | ✅ | Config name |
 | `session` | Choice | — | Optional: filter output to a specific session type |
 
-Displays position-to-points mappings and fastest-lap settings. Works for both server-level configs (SETUP) and season-attached configs (ACTIVE).
+Displays position-to-points mappings and fastest-lap settings.
+
+**`scope` says which store to read, and the command never guesses.** `scope: Server` is what this server holds — what you edit, and what the next season starts from. `scope: Season` is the copy the current season took at approval, which is what it actually scores by. The two match until a season is approved and diverge afterwards, so a manager preparing next season's table can read the server's copy without the running season's being substituted for it. Asking for `scope: Season` when there is no season is refused, and the refusal names `scope: Server`.
 
 ##### `/results config bulk-session` — Set many positions at once via a modal
 *Access: League manager*

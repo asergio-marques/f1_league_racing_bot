@@ -109,16 +109,19 @@ A configuration starts with **every position in every session worth nothing**. F
 **The fastest-lap bonus belongs to races only.** Setting it on a qualifying session is refused. The position limit is what stops a driver who finished eighteenth from taking a bonus point: set it to `10` and only the top ten are eligible.
 
 ```
-/results config view name: 100%
+/results config list scope: Server
+/results config view scope: Server  name: 100%
 ```
 
-Reads a configuration back to you privately. Positions worth nothing at the bottom of the table are collapsed into a single `P11+` line rather than listed one by one.
+`list` names every configuration the store holds, and under each the session types it actually carries points for — so a configuration you created and never filled in is marked as empty rather than looking complete. `view` reads one of them back in full, privately. Positions worth nothing at the bottom of the table are collapsed into a single `P11+` line rather than listed one by one.
+
+**Both ask which store to read, and neither guesses.** `scope: Server` is what this server holds — the configurations you build and edit, and what the next season will start from. `scope: Season` is the copy the current season took when it was approved, which is what it actually scores by. The two are the same until a season is approved and drift apart afterwards, because editing a configuration from then on prepares the *next* season without touching the running one.
 
 > **A lower position may never be worth as much as the one above it.** Give second place more points than first and the bot takes the change, then tells you the table is out of order and names the positions. The edit is not refused, because filling a table in passes through states that are momentarily wrong — setting second place before first, or repairing a table from the bottom up — and refusing them would make ordinary ways of building a table impossible to follow.
 >
 > **Approval is where it is refused**, and `/season placements-review` names it before you get there — the report lists every position at fault and the Approve button is withheld, so you are not offered an approval that would be turned down. Two positive values tying counts as out of order; positions worth nothing at the bottom of the table do not, being the ordinary shape of one.
 
-> **`/results config view` needs a season.** Between seasons there is none, and the command refuses — so a table you may want to check before starting your next season setup is unreachable until you have run `/season setup`. There is also no command that lists what configurations you hold, so keep a note of the names you chose.
+> **Between seasons, use `scope: Server`.** There is no season then, so `scope: Season` has nothing to read and says so, naming `scope: Server` as the way to it. The server's own store is always readable — which is how you find out what you already hold before starting your next season setup, and how you look up the spelling of a name `/results config append` has just refused.
 
 ---
 
@@ -448,7 +451,7 @@ Worth knowing so you do not go looking for the setting.
 - [ ] Every division has a results channel, a standings channel **and** a verdicts channel, including any you created by copying another
 - [ ] `/team reserve-role` is set, or no reserve can ever be submitted
 - [ ] At least one points configuration exists and its tables are filled in for every session type your calendar uses
-- [ ] No position is worth the same as or more than the one above it — check this yourself with `/results config view`, because approval will not
+- [ ] No position is worth the same as or more than the one above it — check this yourself with `/results config view`, naming the store, because approval will not
 - [ ] The fastest-lap bonus and its position limit are set, or deliberately left at nothing
 - [ ] Every configuration you will need is attached, and `/season placements-review` lists the names you expect — spelled exactly as you built them
 - [ ] Reserve visibility is what you want, per division
@@ -473,7 +476,7 @@ Worth knowing so you do not go looking for the setting.
 | A submission rejected over a driver | Not mentioned, or not seated in that division — a driver placed mid-season whose placement is not yet confirmed counts as not seated. A reserve also needs `/team reserve-role` set |
 | Everything you pasted gone after a restart | Known: a part-finished submission is discarded and reopened from the first session. A part-finished *resubmission* is dropped too, but the round keeps the results it had |
 | Results posted but no standings | Every session of the round was cancelled, so there was nothing to score |
-| Points on the tables you did not expect | The session was scored against whichever configuration was chosen for it. `/results config view` shows what that configuration says |
+| Points on the tables you did not expect | The session was scored against whichever configuration was chosen for it. `/results config view scope: Season` shows what the season actually scores by — read the season's copy here, not the server's |
 | A driver keeping their fastest-lap point after retiring | Intended. A retirement forfeits position points, not the bonus |
 | A sprint winner losing a tie-break | Intended. Only feature-race finishes are counted back |
 | Standings still showing provisional numbers | The round has not been through both review stages. The label on the post says which stage it is at |
