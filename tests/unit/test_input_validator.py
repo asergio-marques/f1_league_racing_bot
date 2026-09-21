@@ -21,6 +21,8 @@ from utils.input_validator import (  # noqa: E402
     InputValidator,
     Mode,
     Rule,
+    is_disqualification,
+    parse_penalty_seconds,
     parse_role_mention,
     parse_user,
     parse_user_id,
@@ -343,4 +345,26 @@ def test_parse_user_takes_a_mention_or_an_id(typed):
 @pytest.mark.parametrize("typed", ["<@&4001>", "Ada", "<@4001"])
 def test_parse_user_refuses_a_role_or_a_name(typed):
     assert parse_user(typed) is None
+
+
+# ── Formats: a sanction ───────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("typed", ["DSQ", "dsq", " Dsq "])
+def test_a_disqualification_is_read_in_any_case(typed):
+    assert is_disqualification(typed)
+
+
+@pytest.mark.parametrize(
+    "typed, seconds", [("5", 5), ("+5s", 5), ("5S", 5), ("-3s", -3), (" 10 ", 10), ("0", 0)]
+)
+def test_parse_penalty_seconds_reads_a_signed_whole_number(typed, seconds):
+    assert parse_penalty_seconds(typed) == seconds
+
+
+@pytest.mark.parametrize("typed", ["5.5s", "5 s", "DSQ", "five", "", None, "\uFF15"])
+def test_parse_penalty_seconds_refuses_anything_else(typed):
+    """A fraction is refused: the review gives whole seconds only. So is a digit of another
+    script, which `int()` would read."""
+    assert parse_penalty_seconds(typed) is None
 

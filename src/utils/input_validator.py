@@ -325,3 +325,21 @@ def parse_user(text: str | None) -> int | None:
     mentioned = parse_user_mention(text)
     return mentioned if mentioned is not None else parse_user_id(text)
 
+
+# ── Formats: a sanction ───────────────────────────────────────────────────
+
+#: A time penalty: a signed whole number of seconds, with an optional ``s``. A fraction of a
+#: second is not one: the review gives whole seconds only.
+_PENALTY_SECONDS_RE = re.compile(r"^([+-]?\d+)s?$", re.IGNORECASE | re.ASCII)
+
+
+def is_disqualification(text: str | None) -> bool:
+    """Whether *text* is the disqualification, ``DSQ``, in any case."""
+    return (text or "").strip().upper() == "DSQ"
+
+
+def parse_penalty_seconds(text: str | None) -> int | None:
+    """The seconds a time penalty adds, negative where it gives time back, or None."""
+    match = _PENALTY_SECONDS_RE.match((text or "").strip())
+    return int(match.group(1)) if match else None
+

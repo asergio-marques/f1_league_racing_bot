@@ -11,10 +11,9 @@ import discord
 
 from db.database import get_connection
 from models.points_config import SessionType
+from utils.input_validator import is_disqualification, parse_penalty_seconds
 
 log = logging.getLogger(__name__)
-
-_TIME_PENALTY_RE = re.compile(r"^([+-]?\d+)s?$", re.IGNORECASE)
 
 # HH:MM:SS.mmm or MM:SS.mmm or SS.mmm
 _LAP_TIME_RE = re.compile(
@@ -74,9 +73,7 @@ def validate_penalty_input(
             negative penalties are rejected if their absolute value exceeds
             this figure — you cannot remove more penalty than was applied.
     """
-    pv = penalty_value.strip().upper()
-
-    if pv == "DSQ":
+    if is_disqualification(penalty_value):
         return StagedPenalty(
             driver_user_id=driver_user_id,
             session_type=session_type,
@@ -87,11 +84,9 @@ def validate_penalty_input(
     if session_type.is_qualifying:
         return "Only DSQ is accepted for qualifying sessions."
 
-    m = _TIME_PENALTY_RE.match(penalty_value.strip())
-    if not m:
+    seconds = parse_penalty_seconds(penalty_value)
+    if seconds is None:
         return "Invalid penalty. Use seconds (e.g. `5`, `+5s`, `-3s`) or `DSQ`."
-
-    seconds = int(m.group(1))
 
     if seconds < 0 and current_time_penalty_s is not None:
         if abs(seconds) > current_time_penalty_s:
