@@ -270,8 +270,12 @@ def _banner_once_recorded(bot, channel, ctx, db_path: str, round_id: int):
 
     async def post() -> None:
         message = await once()
+        if message is not None:
+            post.message = message
         await _record_banner(db_path, round_id, getattr(channel, "id", None), message)
 
+    #: The banner this poster put up, once it has; read by a sanction card beneath it.
+    post.message = None
     return post
 
 
@@ -304,10 +308,14 @@ def banner_for_round(bot, db_path: str, round_id: int):
             if channel is None:
                 return
             message = await _banner_once(bot, channel, ctx)()
+            post.message = message
             await _record_banner(db_path, round_id, channel_id_raw, message)
         except Exception:
             log.exception("verdict banner: could not head round %s", round_id)
 
+    #: The banner this poster put up, once it has; read by a sanction card beneath it, which
+    #: may come from a later path of the same approval.
+    post.message = None
     return post
 
 
@@ -352,35 +360,30 @@ async def _banners_of(db_path: str, round_id: int) -> list[tuple[str, int]]:
     return found
 
 
-async def _mark_banner_over_sanction(db_path: str, round_id: int, channel_id, card) -> None:
-    """Note that a round's banner heads an attendance sanction card (decided 2026-09-21).
+async def _mark_banner_over_sanction(db_path: str, banner) -> None:
+    """Note that *banner* heads an attendance sanction card (decided 2026-09-21).
 
     A sanction card is no verdict record: no replay re-announces it or takes it down. So a
-    banner over one is kept by every replay, or the card would be left without its header. The
-    banner above *card* is the round's latest in the channel posted before it, message ids
-    rising with time. Never raises: the card went out, and only this note of it failed.
+    banner over one is kept by every replay, or the card would be left without its header.
+
+    *banner* is the message the card's own poster put up — spent earlier by the approval the
+    card belongs to, or posted for it just now. A card whose poster put up none, the banner
+    switch being off or the post failing, marks nothing: the banner that merely came before it
+    in the channel heads another run, and marked it would never come down. Never raises: the
+    card went out, and only this note of it failed.
     """
-    card_id = getattr(card, "id", None)
-    if card_id is None:
+    banner_id = getattr(banner, "id", None)
+    if banner_id is None:
         return
     try:
         async with get_connection(db_path) as db:
             await db.execute(
-                """
-                UPDATE verdict_banner_messages SET heads_sanctions = 1
-                WHERE id = (
-                    SELECT id FROM verdict_banner_messages
-                    WHERE round_id = ? AND channel_id = ?
-                      AND CAST(message_id AS INTEGER) < ?
-                    ORDER BY CAST(message_id AS INTEGER) DESC
-                    LIMIT 1
-                )
-                """,
-                (round_id, str(channel_id), int(card_id)),
+                "UPDATE verdict_banner_messages SET heads_sanctions = 1 WHERE message_id = ?",
+                (str(banner_id),),
             )
             await db.commit()
     except Exception:  # noqa: BLE001
-        log.exception("could not note the banner over a sanction card of round %s", round_id)
+        log.exception("could not note banner %s as heading a sanction card", banner_id)
 
 
 async def _banners_heading_sanctions(db_path: str, message_ids: list[int]) -> set[int]:
@@ -1064,10 +1067,8 @@ async def post_autosanction_announcement(
     try:
         #  After every check that could still make this a no-op, so a banner is never
         #  posted over a sanction that is not announced.
-        if head is not None:
-            await head()
-        else:
-            await banner_for_round(bot, db_path, round_id)()
+        poster = head if head is not None else banner_for_round(bot, db_path, round_id)
+        await poster()
 
         card = await _send_verdict(
             bot,
@@ -1091,9 +1092,8 @@ async def post_autosanction_announcement(
             description_text=description_text,
             justification_text=justification_text,
         )
-        await _mark_banner_over_sanction(
-            db_path, round_id, getattr(target_channel, "id", penalty_channel_id_raw), card
-        )
+        if card is not None:
+            await _mark_banner_over_sanction(db_path, getattr(poster, "message", None))
         return []
     except Exception as exc:  # noqa: BLE001 — recorded with the sanction's outcome
         log.exception(

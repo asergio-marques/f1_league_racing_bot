@@ -424,25 +424,54 @@ async def test_a_sanction_standing_alone_heads_itself(sanction):
     assert channel.sent[1][0] == "<@501>"
 
 
-async def test_a_sanction_card_notes_the_banner_above_it(sanction, monkeypatch):
-    """So that no replay takes that banner down and leaves the card bare (decided 2026-09-21)."""
-    card = SimpleNamespace(id=7001)
+def _poster(message):
+    """A banner poster that has put up *message* — or none, where the switch is off."""
+    async def post():
+        return None
+
+    post.message = message
+    return post
+
+
+@pytest.mark.parametrize("banner", [SimpleNamespace(id=6001), None])
+async def test_a_sanction_card_notes_its_own_posters_banner(sanction, monkeypatch, banner):
+    """The banner the card's poster put up, and no other (decided 2026-09-21). Marked, it is
+    kept by every replay, so the card is never left bare. Where the poster put up none — the
+    switch off, or the post failing — the banner before it in the channel heads another run,
+    and marking it would keep it for ever."""
     marked: list = []
 
     async def _send(_bot, channel, **kwargs):
         await channel.send(f"<@{kwargs['driver_discord_id']}>")
-        return card
+        return SimpleNamespace(id=7001)
 
-    async def _mark(db_path, round_id, channel_id, sent):
-        marked.append((round_id, sent))
+    async def _mark(_db_path, noted):
+        marked.append(noted)
 
     monkeypatch.setattr(vas, "_send_verdict", _send)
     monkeypatch.setattr(vas, "_mark_banner_over_sanction", _mark)
     channel = _Channel()
 
-    await _autosanction(_Bot(channel), channel)
+    await _autosanction(_Bot(channel), channel, head=_poster(banner))
 
-    assert marked == [(1, card)]
+    assert marked == [banner]
+
+
+async def test_a_shared_poster_remembers_the_banner_it_put_up(flow):
+    """What a sanction card further down the same approval reads to know its header."""
+
+    class _Answering(_Channel):
+        async def send(self, content=None, *, file=None, **_kwargs):
+            await super().send(content, file=file)
+            return SimpleNamespace(id=6001)
+
+    channel = _Answering()
+    head = vas.banner_for_round(_Bot(channel), ":memory:", 1)
+    assert head.message is None
+
+    await head()
+
+    assert head.message.id == 6001
 
 
 async def test_a_round_sanctioning_three_drivers_raises_one_banner(sanction):

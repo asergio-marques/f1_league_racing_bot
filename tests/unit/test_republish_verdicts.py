@@ -463,18 +463,14 @@ async def test_a_banner_over_sanction_cards_is_kept(tmp_path):
     assert await _banners_left(db_path) == ["6001", "6002"]
 
 
-async def test_a_sanction_card_marks_the_banner_it_falls_under(tmp_path):
-    """The round's latest banner in the channel posted before the card; not a later one, and
-    not another round's."""
+async def test_a_sanction_card_marks_exactly_its_banner(tmp_path):
     from services.verdict_announcement_service import _mark_banner_over_sanction
 
     db_path, _ = await _seed(tmp_path, "banner_marked", rounds=(1, 2))
-    await _banner(db_path, 1, 6001)
-    await _banner(db_path, 1, 6003)
-    await _banner(db_path, 2, 6004)
-    await _banner(db_path, 1, 6009)
+    for round_id, message_id in ((1, 6001), (1, 6003), (2, 6004)):
+        await _banner(db_path, round_id, message_id)
 
-    await _mark_banner_over_sanction(db_path, 1, VERDICTS_CHANNEL, SimpleNamespace(id=6005))
+    await _mark_banner_over_sanction(db_path, SimpleNamespace(id=6003))
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -483,13 +479,13 @@ async def test_a_sanction_card_marks_the_banner_it_falls_under(tmp_path):
         assert [row[0] for row in await cursor.fetchall()] == ["6003"]
 
 
-async def test_a_sanction_card_that_never_went_out_marks_nothing(tmp_path):
+async def test_a_card_under_no_banner_marks_nothing(tmp_path):
     from services.verdict_announcement_service import _mark_banner_over_sanction
 
     db_path, _ = await _seed(tmp_path, "banner_unmarked", rounds=(1,))
     await _banner(db_path, 1, 6001)
 
-    await _mark_banner_over_sanction(db_path, 1, VERDICTS_CHANNEL, None)
+    await _mark_banner_over_sanction(db_path, None)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
