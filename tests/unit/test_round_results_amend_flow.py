@@ -1028,6 +1028,7 @@ async def test_of_two_commands_racing_in_one_division_the_first_recorded_keeps_i
         assert [r[0] for r in await cursor.fetchall()] == [5151]
 
 
+
 # ---------------------------------------------------------------------------
 # Several sessions in one amendment (#345, decided 2026-09-21)
 # ---------------------------------------------------------------------------
@@ -1227,3 +1228,21 @@ async def test_a_rejected_paste_whose_channel_cannot_be_deleted_keeps_its_row_cl
         row = await cursor.fetchone()
     assert row is not None and row["closed_at"] is not None
     assert await open_amendment_in_division(db_path, DIVISION_ID) is None
+
+
+async def test_a_reply_that_can_no_longer_be_sent_is_not_taken_for_a_failure(tmp_path):
+    """An interaction's token lapses after fifteen minutes, which several pastes outlast. The
+    rejection was logged and tidied up, and the reply failing afterwards had it logged a second
+    time as `AMEND_FAILED`, "nothing was written" and all."""
+    db_path = await _make_db(tmp_path, name="amend_reply_lapsed")
+    cog = _make_cog(db_path)
+    interaction = _interaction(_amend_channel(), message=_message())
+    expired = discord.HTTPException(MagicMock(status=401, reason="Unauthorized"), "Invalid Webhook Token")
+    interaction.followup.send = AsyncMock(side_effect=[None, expired])
+
+    await _amend(cog, interaction, parsed=["Line 1: driver not in division"])
+
+    logged = _logged(cog)
+    assert "AMEND_REJECTED" in logged
+    assert "AMEND_FAILED" not in logged
+    assert await _amend_rows(db_path) == 0

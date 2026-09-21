@@ -5502,7 +5502,13 @@ class SeasonCog(commands.Cog):
             )
             await _cleanup_channel()
             if reply is not None:
-                await interaction.followup.send(reply, ephemeral=True)
+                # **Best effort** (#345). The interaction's token lapses after fifteen minutes,
+                # which several pastes can outlast; raised here, the ending just logged would be
+                # taken for a fault and logged a second time as `AMEND_FAILED`.
+                try:
+                    await interaction.followup.send(reply, ephemeral=True)
+                except discord.HTTPException:
+                    log.warning("amend: could not reply to the admin of round %s", rnd.id)
 
         import asyncio as _asyncio
         _AMEND_TIMEOUT_S = 300  # 5 minutes, for each paste and each choice of configuration
