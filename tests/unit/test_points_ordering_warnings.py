@@ -66,12 +66,21 @@ def _interaction():
 
 def _cog(db_path):
     cog = ResultsCog.__new__(ResultsCog)
-    cog.bot = AsyncMock()
+    # ``MagicMock``, with every awaited member named below (issue #240). This file pinned
+    # the readers it was bitten by first, but on an ``AsyncMock`` base, which leaves the
+    # hazard itself: the *next* reader nobody thought of is answered truthily just the
+    # same. On ``MagicMock`` an unpinned ``await`` raises ``TypeError`` and names itself.
+    cog.bot = MagicMock()
     cog.bot.db_path = db_path
     cog._module_gate = AsyncMock(return_value=True)
     cog.bot.user.id = _BOT_USER_ID
+    cog.bot.output_router.post_log = AsyncMock()
+    # ``league_guild`` awaits this and then calls ``get_guild`` synchronously — the
+    # asymmetry that made this file's original failure look like a fault in the change
+    # under test rather than in its stub.
+    cog.bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     cog.bot.get_guild = MagicMock(return_value=_guild())
-    # Both modules off, said in as many words. Left to the whole-bot ``AsyncMock`` above,
+    # Both modules off, said in as many words. Left to a whole-bot ``AsyncMock``,
     # ``is_images_enabled`` and ``get_toggles`` answer with further ``AsyncMock``s, and
     # ``toggles.get("results")`` is then an unawaited **coroutine** — truthy, so the image
     # module reads as on and every aspect as enabled. A stub that says "off" by accident of

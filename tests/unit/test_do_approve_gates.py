@@ -14,6 +14,22 @@ So these drive `_do_approve` rather than reading it. They are not about whether 
 decides correctly — the gates have their own tests — but about whether the sequence
 *executes*: every attribute it touches exists, and every refusal reaches the manager
 instead of an exception log.
+
+The bot is stubbed member by member rather than as one `AsyncMock` (issue #240). The
+blanket form suited the paragraph above until you look at what it does: every unstubbed
+`await` answers with a further mock, and a mock is truthy, so a gate passes on the
+strength of the stub and the walk carries on having tested nothing. Two gates in this
+file turned out to be reached that way — attendance's channel check and the results
+module's, neither of which had ever read a division — and `_cog_with_results` turned out
+to name a module it had never actually switched on. Naming each member costs a line and
+makes the failure loud: an `await` nobody pinned raises `TypeError` rather than passing.
+
+Three tests were added with that fix, covering what only became reachable once those gates
+ran for real: that Gate 2c's refusal stops the walk before the window gates below it, and
+that the R&S gate names a missing channel and a phantom points configuration in one
+refusal rather than one per attempt. Whether each gate *decides* correctly is still
+`test_do_approve_posting.py`'s; the *order* they decide in is this file's, and could not be
+tested while a truthy mock was passing them.
 """
 from __future__ import annotations
 
@@ -87,18 +103,43 @@ def _pending():
 def _cog(db_path, **overrides):
     """A cog whose services all answer, so the gates run to the end and commit."""
     cog = SeasonCog.__new__(SeasonCog)
-    # An AsyncMock bot, so every service call along the sequence awaits rather than
-    # stopping the walk at the first one nobody thought to stub. That is the point: a
-    # gate reached only because an earlier one was stubbed is a gate this file did not
-    # actually execute.
-    cog.bot = AsyncMock()
+    # A ``MagicMock`` bot with every awaited member named below, not a blanket
+    # ``AsyncMock`` (issue #240). The blanket form looks like it makes the walk more
+    # thorough and does the opposite: an unstubbed ``await bot.svc.method()`` answers with
+    # a further mock, which is **truthy**, so a gate passes on the strength of the stub
+    # rather than the season — and a gate reached that way is a gate this file did not
+    # execute either. Under ``MagicMock`` the same slip raises ``TypeError`` on the await,
+    # which is the walk failing loudly, which is what this file is for.
+    cog.bot = MagicMock()
     cog.bot.db_path = db_path
+    # Synchronous: ``scheduler_service`` schedules jobs rather than awaiting them, so an
+    # ``AsyncMock`` here returns coroutines nobody awaits.
+    cog.bot.scheduler_service = MagicMock()
+    cog.bot.output_router.post_log = AsyncMock()
     cog._pending = {USER_ID: _pending()}
 
     season_svc = cog.bot.season_service
     season_svc.validate_division_tiers = AsyncMock()
     season_svc.get_divisions = AsyncMock(return_value=[])
     season_svc.transition_to_active = AsyncMock()
+    season_svc.create_sessions_for_round = AsyncMock()
+    season_svc.commit_placements = AsyncMock()
+
+    # Every module off unless a test says otherwise. Said in as many words rather than left
+    # to a mock's truthiness, so a gate that runs here runs because a test chose it.
+    module_svc = cog.bot.module_service
+    module_svc.is_weather_enabled = AsyncMock(return_value=False)
+    module_svc.is_attendance_enabled = AsyncMock(return_value=False)
+    module_svc.is_results_enabled = AsyncMock(return_value=False)
+    module_svc.is_signup_enabled = AsyncMock(return_value=False)
+    module_svc.is_images_enabled = AsyncMock(return_value=False)
+
+    # The image readers the review helpers reach for. Each is wrapped in a `try` that logs
+    # and carries on, so leaving them unpinned would not fail a test — it would just log an
+    # error and skip the check, which is the silence issue #240 is about.
+    cog.bot.image_config_service.get_config = AsyncMock(return_value=None)
+    cog.bot.image_config_service.get_toggles = AsyncMock(return_value={})
+    cog.bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
 
     # The gates that read the season rather than Discord. Each answers "nothing wrong",
     # so the sequence runs its whole length — which is what makes a missing attribute
@@ -257,7 +298,21 @@ def _attendance_config():
     )
 
 
-def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
+def _division_attendance_config():
+    """A division with both attendance channels set, so Gate 2c passes on the season.
+
+    Left unstubbed it was answered by the blanket ``AsyncMock`` of issue #240, whose
+    ``rsvp_channel_id`` and ``attendance_channel_id`` are both truthy child mocks — so the
+    gate passed for every one of these tests without ever reading a division. The window
+    gates below are what this file is about, and they sit *after* Gate 2c: a fabricated
+    pass here is the only reason they were reached at all.
+    """
+    return SimpleNamespace(rsvp_channel_id=800, attendance_channel_id=801)
+
+
+def _cog_with_rounds(
+    db_path, rounds, *, attendance=True, weather=False, division_attendance=...
+):
     cog = _cog(db_path)
     div = _division()
     cog.bot.season_service.get_divisions = AsyncMock(return_value=[div])
@@ -267,6 +322,11 @@ def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
     cog.bot.attendance_service.get_or_create_config = AsyncMock(
         return_value=_attendance_config()
+    )
+    cog.bot.attendance_service.get_division_config = AsyncMock(
+        return_value=(
+            _division_attendance_config() if division_attendance is ... else division_attendance
+        )
     )
     return cog
 
@@ -339,7 +399,47 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
 
 
 # ── #181: the round's own moment, judged whatever the modules ────────────────
+# ── Gate 2c refuses before the windows are ever looked at ────────────────────
 #
+# What these two add is the *order*, which is the one thing only this file can show. That
+# Gate 2c refuses a division with no attendance channel is settled in
+# `test_do_approve_posting.py`; that its refusal stops the walk before the window gates
+# below is not tested anywhere, and could not have been until issue #240 — the gate was
+# answered by a truthy mock and passed for every season ever put through this file.
+#
+# It matters because the two refusals read very differently to a manager. A missing channel
+# is a thing to go and set; an overdue check-in window is a schedule to move. Reaching the
+# second while the first is outstanding would send a manager to reschedule a season whose
+# real fault was one unset channel.
+
+
+async def test_a_missing_attendance_channel_refuses_before_the_window_gate(db_path):
+    """The channel gate is the earlier one, and a manager hears about it first."""
+    cog = _cog_with_rounds(db_path, [_round_in(3)], division_attendance=None)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "attendance module is enabled but" in replies
+    # The window gate sits after it and never ran, so its wording is absent.
+    assert "already gone by" not in replies
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_the_window_gate_is_not_consulted_once_a_channel_is_missing(db_path):
+    """The proof of the order, rather than of the wording.
+
+    A round three days out against a five-day notice fails the window gate, so this season
+    is refusable on both counts. Only the first refusal may be reached.
+    """
+    cog = _cog_with_rounds(db_path, [_round_in(3)], division_attendance=None)
+
+    await _run(cog, _interaction())
+
+    cog.bot.attendance_service.get_or_create_config.assert_not_awaited()
+
+
 # The windows above are contributed by the modules that configure them. With weather and
 # attendance both off there were none, the gate had nothing to check, and a season every
 # round of which was already in the past was approved in silence — every round of it then
@@ -438,6 +538,24 @@ def _cog_with_results(db_path, **overrides):
     approval in test mode.
     """
     cog = _cog(db_path, **overrides)
+    # Said outright. Before issue #240 the module read as on because the whole-bot
+    # ``AsyncMock`` answered every question truthily, so this fixture's name was the only
+    # place the intent existed — and a test meaning to cover a league without the results
+    # module would have covered this one just the same.
+    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    # With the module genuinely on, the results gate reads each division's three channels
+    # before it reaches the points table these tests are about. One fully configured
+    # division, so the gate passes on its merits and the points gate is what refuses.
+    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                name="Pro",
+                results_channel_id=700,
+                standings_channel_id=701,
+                penalty_channel_id=702,
+            )
+        ]
+    )
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(test_mode_active=False)
     )
@@ -586,6 +704,38 @@ async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
     replies = _replies(interaction)
     assert "Standrad" in replies, "the refusal must name the configuration that is missing"
     assert "does not exist" in replies
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_a_missing_channel_and_a_phantom_config_are_named_together(db_path):
+    """One refusal carrying both faults, rather than one fault per attempt.
+
+    The R&S gate gathers its channel checks and its points checks into a single list before
+    refusing, so a manager with two things wrong is told both and fixes them in one pass.
+    Approving repeatedly to be told one fault at a time is the experience this avoids.
+
+    Only testable since issue #240: the results module read as enabled from a truthy mock
+    and `get_divisions_with_results_config` returned one, so this gate had never run.
+    """
+    await _attach_phantom(db_path, "Standrad")
+    cog = _cog_with_results(db_path)
+    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                name="Pro",
+                results_channel_id=700,
+                standings_channel_id=None,
+                penalty_channel_id=702,
+            )
+        ]
+    )
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    replies = _replies(interaction)
+    assert "missing a standings channel" in replies
+    assert "Standrad" in replies
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 

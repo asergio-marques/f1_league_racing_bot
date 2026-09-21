@@ -145,8 +145,16 @@ def _cog(
     results_enabled: bool = False,
 ):
     cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = AsyncMock()
+    # Member by member, not one whole-bot ``AsyncMock`` (issue #240): every unstubbed
+    # ``await`` on that form answers with a truthy mock, so a branch nobody chose runs and
+    # the test passes reporting on it. ``MagicMock`` raises ``TypeError`` on the same slip.
+    cog.bot = MagicMock()
     cog.bot.db_path = db_path
+    # ``scheduler_service`` is synchronous — ``schedule_all_rounds`` and its neighbours are
+    # ``def``, not ``async def``. Under an ``AsyncMock`` each returned a coroutine nobody
+    # awaited, which these tests then asserted against.
+    cog.bot.scheduler_service = MagicMock()
+    cog.bot.output_router.post_log = AsyncMock()
     cog._pending = {USER_ID: _pending()}
     cog._get_pending = MagicMock(return_value=_pending())
     # In Placements, every signup settled and every channel set (issue #220; tested in
@@ -169,6 +177,18 @@ def _cog(
     )
     season_svc.transition_to_active = AsyncMock()
     season_svc.get_divisions_with_results_config = AsyncMock(return_value=[])
+    season_svc.create_sessions_for_round = AsyncMock()
+    season_svc.commit_placements = AsyncMock()
+
+    # The lineup post, which several tests below count the awaits of. Its call site is
+    # wrapped in a `try` that logs and carries on, so an unpinned one does not fail the
+    # approval — it just silently posts nothing, which is what these tests would have been
+    # measuring.
+    cog.bot.placement_service._refresh_lineup_post = AsyncMock()
+    cog.bot.placement_service._grant_roles = AsyncMock()
+    cog.bot.placement_service.get_team_role_config = AsyncMock(return_value=None)
+    # Read by the per-tier colour check, behind its own `try`.
+    cog.bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
 
     module_svc = cog.bot.module_service
     module_svc.is_signup_enabled = AsyncMock(return_value=signup_enabled)
