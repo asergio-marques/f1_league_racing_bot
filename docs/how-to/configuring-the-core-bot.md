@@ -178,7 +178,7 @@ Each module then has its own configuration, which is not covered here. Start fro
 
 A team belongs to the **server**, not to a season, so you do this once and it carries forward. Every team needs a Discord role — that role is granted to a driver when you seat them and taken away when you do not.
 
-The rules for a team's **name** are checked the moment you set it, and are listed in full under [`/team add`](../../README.md#team-commands). The short version: a name has to stay distinct from every other team once punctuation and accents are stripped, so `Red Bull` and `Red  Bull!` cannot both exist — they would draw the same badge file. A name may start with a digit; `2 Fast` is fine.
+The rules for a team's **name** are checked the moment you set it, and are listed in full under [`/team add`](../../README.md#team-commands). The short version: a name has to stay distinct from every other team once punctuation and accents are stripped, so `Red Bull` and `Red  Bull!` cannot both exist — they would draw the same badge file. A name may start with a digit; `2 Fast` is fine. It cannot hold an emoji, Discord formatting, a role mention, `@everyone` or `@here`: a picture cannot show them the way a message does.
 
 > **These rules apply whether or not you ever use pictures.** A name is only cheap to fix at the moment you set it, so the bot constrains it then, rather than leaving you stuck with a name you cannot correct without losing that team's history.
 
@@ -280,6 +280,8 @@ The season is now **in placements**. This is when the calendar is built, because
 
 All three are required. Tiers must be unique, and by the time you confirm placements they must run 1, 2, 3… with no gaps — so if you delete your tier 2 division, something has to become tier 2.
 
+**Keep the name plain.** A division's name heads everything the bot posts for it, text and pictures alike, so it cannot hold an emoji, Discord formatting such as `**bold**`, a role mention, `@everyone` or `@here`. The same goes for every command that names or renames one.
+
 If two divisions race the same calendar at different times, build the first one fully and then:
 
 ```
@@ -306,7 +308,7 @@ Got something wrong? Until placements are confirmed you can fix any of it:
 
 Four things to know:
 
-- **Times are UTC**, always, in the form `YYYY-MM-DDTHH:MM:SS`. When the bot posts a time to your drivers it converts it to each person's own local time, so put in the real UTC time and let it do that.
+- **Times are UTC**, always, in the form `YYYY-MM-DDTHH:MM:SS`. Give one with a zone, such as `2026-06-14T20:00+02:00`, and the bot converts it to UTC for you. When the bot posts a time to your drivers it converts it to each person's own local time, so put in the real UTC time and let it do that.
 - **You never give a round number.** The bot sorts the division's rounds by date and numbers them. Add a round in the middle later and everything after it renumbers itself.
 - **Four formats**: `NORMAL`, `SPRINT`, `MYSTERY` and `ENDURANCE`. You type the format rather than picking it from a list — case does not matter, but a name that is not one of the four is refused. Only `track` offers autocomplete.
 - **A `MYSTERY` round takes no track**, and every other format must have one. That is the whole point of a mystery round: the circuit is kept secret until the weekend.

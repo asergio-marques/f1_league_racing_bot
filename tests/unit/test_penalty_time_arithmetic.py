@@ -68,13 +68,18 @@ def test_a_finishing_time_is_read_as_milliseconds(raw, expected):
     assert _time_to_ms(raw) == expected
 
 
-@pytest.mark.parametrize(
-    "raw,expected", [("1:23.4", 83_400), ("1:23.45", 83_450), ("1:23.4567", 83_456)]
-)
-def test_the_millisecond_field_is_padded_then_truncated(raw, expected):
-    """One decimal place means four hundred milliseconds. Reading it as four would move a
-    penalised time by nearly half a second in the wrong direction."""
-    assert _time_to_ms(raw) == expected
+@pytest.mark.parametrize("raw", ["1:23.4", "1:23.45", "1:23.4567", "1:23"])
+def test_a_time_outside_the_strict_form_reads_as_nothing(raw):
+    """Every stored time has exactly three digits after its dot, being written by the results
+    paste or by `_ms_to_time`. One that has not is refused rather than guessed (#362); padding
+    it once moved nothing, but guessing is how a wrong number becomes a finishing position."""
+    assert _time_to_ms(raw) is None
+
+
+def test_the_penalty_reader_reads_a_time_under_a_minute():
+    """`58.123` is a form the results paste accepts and stores, and the old reader, needing a
+    colon, could not read it (#362)."""
+    assert _time_to_ms("58.123") == 58_123
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "-", "N/A", "n/a", None])

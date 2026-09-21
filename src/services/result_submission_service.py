@@ -17,6 +17,14 @@ from models.session_result import DriverSessionResult, OutcomeModifier  # Driver
 from utils import results_formatter
 from utils.batch_notice import batch_notice
 from utils.channel_guard import is_league_manager
+from utils.input_validator import (
+    USER_MENTION,
+    parse_gap,
+    parse_lap_gap,
+    parse_role_mention,
+    parse_time,
+    parse_user_mention,
+)
 from utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
@@ -2981,45 +2989,14 @@ async def _write_amended_session_in_tx(
 # Validation — regex constants
 # ---------------------------------------------------------------------------
 
-# Absolute lap time:  M:SS.mmm  |  SS.mmm  |  H:MM:SS.mmm
-_ABS_TIME_RE = re.compile(
-    r"^\d+:\d{2}\.\d{3}$"
-    r"|^\d+\.\d{3}$"
-    r"|^\d+:\d{2}:\d{2}\.\d{3}$"
-)
+# Times, gaps and lap gaps are read by the shared parsers (#362): one strict form across the
+# bot, the one this paste always asked for.
 
-# Delta time:  +M:SS.mmm  |  +SS.mmm  |  +H:MM:SS.mmm
-_DELTA_TIME_RE = re.compile(
-    r"^\+\d+:\d{2}\.\d{3}$"
-    r"|^\+\d+\.\d{3}$"
-    r"|^\+\d+:\d{2}:\d{2}\.\d{3}$"
-)
-
-# Lap gap:  "x Laps"  |  "+x Laps"  (case-insensitive)
-_LAP_GAP_RE = re.compile(r"^\+?\d+ Laps?$", re.IGNORECASE)
-
-# Discord member mention:  <@123>  or  <@!123>
-_MEMBER_MENTION_RE = re.compile(r"^<@!?(\d+)>$")
-
-# Discord role mention:  <@&123>
-_ROLE_MENTION_RE = re.compile(r"^<@&(\d+)>$")
-
-# Optional fastest-lap override header:  FL: <@123>  (case-insensitive)
-_FL_OVERRIDE_RE = re.compile(r"^FL:\s*<@!?(\d+)>\s*$", re.IGNORECASE)
+# Optional fastest-lap override header:  FL: <@123>  (case-insensitive). The mention is the
+# shared one (#362), so the header names a driver exactly as a row of the paste does.
+_FL_OVERRIDE_RE = re.compile(rf"^FL:\s*{USER_MENTION}\s*$", re.IGNORECASE)
 
 _OUTCOME_LITERALS: frozenset[str] = frozenset({"DNS", "DNF", "DSQ"})
-
-
-def _parse_mention(text: str) -> int | None:
-    """Extract a member user ID from '<@123>' or '<@!123>'. Returns None if no match."""
-    m = _MEMBER_MENTION_RE.match(text.strip())
-    return int(m.group(1)) if m else None
-
-
-def _parse_role_mention(text: str) -> int | None:
-    """Extract a role ID from '<@&123>'. Returns None if no match."""
-    m = _ROLE_MENTION_RE.match(text.strip())
-    return int(m.group(1)) if m else None
 
 
 def _parse_outcome(time_field: str) -> OutcomeModifier:
@@ -3128,11 +3105,11 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
         return f"Position must be a positive integer, got `{pos_str}`"
     position = int(pos_str)
 
-    driver_user_id = _parse_mention(driver_str)
+    driver_user_id = parse_user_mention(driver_str)
     if driver_user_id is None:
         return f"Driver must be a Discord member mention (<@user_id>), got `{driver_str}`"
 
-    team_role_id = _parse_role_mention(team_str)
+    team_role_id = parse_role_mention(team_str)
     if team_role_id is None:
         return f"Team must be a Discord role mention (<@&role_id>), got `{team_str}`"
 
@@ -3141,15 +3118,15 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
         return tyre_error
 
     best_lap_upper = best_lap.upper()
-    if best_lap_upper not in _OUTCOME_LITERALS and not _ABS_TIME_RE.match(best_lap):
+    if best_lap_upper not in _OUTCOME_LITERALS and parse_time(best_lap) is None:
         return f"Best Lap must be a time (e.g. 1:23.456) or DNS/DNF/DSQ, got `{best_lap}`"
 
     if position != 1:
         gap_upper = gap.upper()
         if (
             gap_upper != "N/A"
-            and not _DELTA_TIME_RE.match(gap)
-            and not _ABS_TIME_RE.match(gap)
+            and parse_gap(gap) is None
+            and parse_time(gap) is None
         ):
             return f"Gap must be a delta time (e.g. +1:23.456), an absolute time, or N/A, got `{gap}`"
 
@@ -3181,17 +3158,17 @@ def _validate_race_row_wizard(line: str, is_first: bool) -> ParsedRaceRow | str:
         return f"Position must be a positive integer, got `{pos_str}`"
     position = int(pos_str)
 
-    driver_user_id = _parse_mention(driver_str)
+    driver_user_id = parse_user_mention(driver_str)
     if driver_user_id is None:
         return f"Driver must be a Discord member mention (<@user_id>), got `{driver_str}`"
 
-    team_role_id = _parse_role_mention(team_str)
+    team_role_id = parse_role_mention(team_str)
     if team_role_id is None:
         return f"Team must be a Discord role mention (<@&role_id>), got `{team_str}`"
 
     total_upper = total_time.upper()
     if is_first:
-        if not _ABS_TIME_RE.match(total_time):
+        if parse_time(total_time) is None:
             return (
                 f"1st-place Total Time must be an absolute time (e.g. 1:23:45.678), "
                 f"got `{total_time}`"
@@ -3199,9 +3176,9 @@ def _validate_race_row_wizard(line: str, is_first: bool) -> ParsedRaceRow | str:
     else:
         valid = (
             total_upper in _OUTCOME_LITERALS
-            or _ABS_TIME_RE.match(total_time)
-            or _DELTA_TIME_RE.match(total_time)
-            or _LAP_GAP_RE.match(total_time)
+            or parse_time(total_time) is not None
+            or parse_gap(total_time) is not None
+            or parse_lap_gap(total_time) is not None
         )
         if not valid:
             return (
@@ -3211,11 +3188,11 @@ def _validate_race_row_wizard(line: str, is_first: bool) -> ParsedRaceRow | str:
 
     fl_upper = fastest_lap.upper()
     if total_upper not in _OUTCOME_LITERALS:
-        if fl_upper != "N/A" and not _ABS_TIME_RE.match(fastest_lap):
+        if fl_upper != "N/A" and parse_time(fastest_lap) is None:
             return f"Fastest Lap must be a time (e.g. 1:23.456) or N/A, got `{fastest_lap}`"
 
     ip_upper = ingame_penalties.upper()
-    if ip_upper != "N/A" and not _ABS_TIME_RE.match(ingame_penalties):
+    if ip_upper != "N/A" and parse_time(ingame_penalties) is None:
         return (
             f"Time Penalties must be a time (e.g. 5.000, 0:05.000) or N/A, "
             f"got `{ingame_penalties}`"
@@ -3430,7 +3407,7 @@ def validate_submission_block(
                 return 3
             if tt == "DNF":
                 return 2
-            if _LAP_GAP_RE.match(row.total_time):
+            if parse_lap_gap(row.total_time) is not None:
                 return 1  # lapped finisher
             return 0      # lead-lap finisher (absolute or delta time)
 
@@ -3454,7 +3431,7 @@ def validate_submission_block(
         _LAP_INT_RE = re.compile(r"(\d+)")
         prev_lap_count: int | None = None
         for row in rows_by_pos:
-            if _LAP_GAP_RE.match(row.total_time):
+            if parse_lap_gap(row.total_time) is not None:
                 m = _LAP_INT_RE.search(row.total_time)
                 if m:
                     lap_count = int(m.group(1))
@@ -3508,13 +3485,13 @@ def validate_submission_block(
         if (
             p1_row is not None
             and p1_row.best_lap.upper() not in _OUTCOME_LITERALS
-            and _ABS_TIME_RE.match(p1_row.best_lap)
+            and parse_time(p1_row.best_lap) is not None
         ):
             try:
                 p1_ms = _parse_time_to_ms(p1_row.best_lap)
                 for row in parsed_rows:
                     if row.best_lap.upper() == "DNF" and (
-                        _DELTA_TIME_RE.match(row.gap) or _ABS_TIME_RE.match(row.gap)
+                        parse_gap(row.gap) is not None or parse_time(row.gap) is not None
                     ):
                         gap_ms = _parse_time_to_ms(row.gap)
                         row.best_lap = _format_time_ms(p1_ms + gap_ms)
@@ -3529,27 +3506,11 @@ def validate_submission_block(
 # ---------------------------------------------------------------------------
 
 def _parse_time_to_ms(s: str) -> int:
-    """Parse 'H:MM:SS.mmm', 'M:SS.mmm', or 'SS.mmm' (optional leading '+') to ms."""
-    s = s.lstrip("+")
-    parts = s.split(":")
-    try:
-        if len(parts) == 1:
-            sec_str, ms_str = parts[0].split(".")
-            return int(sec_str) * 1000 + int(ms_str)
-        if len(parts) == 2:
-            sec_str, ms_str = parts[1].split(".")
-            return int(parts[0]) * 60_000 + int(sec_str) * 1000 + int(ms_str)
-        if len(parts) == 3:
-            sec_str, ms_str = parts[2].split(".")
-            return (
-                int(parts[0]) * 3_600_000
-                + int(parts[1]) * 60_000
-                + int(sec_str) * 1000
-                + int(ms_str)
-            )
-    except (ValueError, IndexError) as exc:
-        raise ValueError(f"Cannot parse time string {s!r}") from exc
-    raise ValueError(f"Cannot parse time string {s!r}")
+    """A time, or a gap to the leader, in milliseconds — read by the shared parsers (#362)."""
+    ms = parse_gap(s) if s.strip().startswith("+") else parse_time(s)
+    if ms is None:
+        raise ValueError(f"Cannot parse time string {s!r}")
+    return ms
 
 
 def _format_time_ms(total_ms: int) -> str:
@@ -3997,7 +3958,7 @@ async def _insert_new_tables_in_tx(
         p1_abs_ms: int | None = None
         for row in sorted(rows, key=lambda r: r["finishing_position"]):
             tt = row.get("total_time") or ""
-            if _ABS_TIME_RE.match(tt):
+            if parse_time(tt) is not None:
                 p1_abs_ms = _parse_time_to_ms(tt)
                 break
 
@@ -4016,13 +3977,13 @@ async def _insert_new_tables_in_tx(
 
             if outcome in (OutcomeModifier.DNF, OutcomeModifier.DNS):
                 pass  # base_time_ms stays None
-            elif _LAP_GAP_RE.match(total_time):
+            elif parse_lap_gap(total_time) is not None:
                 m = re.search(r"(\d+)", total_time)
                 laps_behind = int(m.group(1)) if m else 1
-            elif _ABS_TIME_RE.match(total_time):
+            elif parse_time(total_time) is not None:
                 # Store base time even for DSQ (penalties may be overturned on appeal)
                 base_time_ms = _parse_time_to_ms(total_time) - total_penalty_ms
-            elif _DELTA_TIME_RE.match(total_time) and p1_abs_ms is not None:
+            elif parse_gap(total_time) is not None and p1_abs_ms is not None:
                 delta_ms = _parse_time_to_ms(total_time)
                 base_time_ms = p1_abs_ms + delta_ms - total_penalty_ms
 

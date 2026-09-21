@@ -24,6 +24,7 @@ from models.season import (
     status_of_stage,
 )
 from models.session import Session, SessionType, SESSIONS_BY_FORMAT
+from utils.input_validator import NAME
 
 #: Rendered from the model's sets so the queries below cannot drift from the rule they
 #: encode. Interpolated rather than bound because they are our own enum values and the
@@ -35,6 +36,16 @@ _AWAITING_RESULTS_MODULE_SQL = ", ".join(
 )
 
 log = logging.getLogger(__name__)
+
+
+def validate_division_name(name: str) -> str | None:
+    """Why *name* cannot name a division, or None where it can (#362).
+
+    A division's name heads every posting and every graphic of the division, so it is held to
+    the rules every name a league types is held to: no group mention, no emoji and no markup.
+    Checked by each command that sets one, before its own test for a duplicate.
+    """
+    return NAME.check("division name", name).refusal
 
 
 class SeasonImmutableError(Exception):

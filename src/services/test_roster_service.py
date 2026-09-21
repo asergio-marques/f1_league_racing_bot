@@ -19,7 +19,7 @@ from typing import TypedDict
 
 from db.database import get_connection
 from models.points_config import SessionType
-from utils.nationality_data import NATIONALITY_LOOKUP
+from utils.input_validator import NAME, parse_nationality
 
 log = logging.getLogger(__name__)
 
@@ -55,16 +55,6 @@ class TestDriverInfo(TypedDict):
 
 
 # ─── Internal helpers ────────────────────────────────────────────────────────
-
-def _canonical_nationality(raw: str) -> str | None:
-    """Return the canonical Title-Case nationality for *raw*, or None if it is not one.
-
-    The same rule the signup wizard validates by (WizardService._validate_nationality):
-    a lowercase adjective or country name, or "other", looked up in NATIONALITY_LOOKUP.
-    A mock driver's nationality is stored in the form a real driver's is, so that the
-    country a flag is resolved from is derived from it in exactly the same way.
-    """
-    return NATIONALITY_LOOKUP.get(raw.strip().lower())
 
 async def _next_synthetic_id(db_path: str) -> int:
     """Return the next available synthetic driver ID."""
@@ -157,11 +147,18 @@ async def add_test_driver(
     the same team is held to, and the driver is refused where one would be (#150). The cog
     always passes it; left None, as tests of the seating alone do, the check is skipped.
 
+    *driver_name* is drawn on graphics as a real driver's name is, so it is held to the rules
+    every name a league types is held to (#362).
+
     Returns a TestDriverInfo dict on success, or an error string on failure.
     """
+    refusal = NAME.check("driver name", driver_name).refusal
+    if refusal is not None:
+        return refusal
+
     canonical_nationality: str | None = None
     if nationality is not None and nationality.strip():
-        canonical_nationality = _canonical_nationality(nationality)
+        canonical_nationality = parse_nationality(nationality)
         if canonical_nationality is None:
             return (
                 f"Invalid nationality '{nationality.strip()}'. Give a full nationality "
@@ -322,7 +319,7 @@ async def add_test_drivers_in_bulk(
         if driver.nationality is None:
             canonical[driver.line] = None
             continue
-        resolved = _canonical_nationality(driver.nationality)
+        resolved = parse_nationality(driver.nationality)
         if resolved is None:
             errors.append(
                 f"Line {driver.line}: `{driver.nationality}` is not a nationality the bot "

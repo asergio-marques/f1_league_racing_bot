@@ -102,3 +102,17 @@ async def test_post_log_returns_none_when_the_channel_cannot_be_reached():
     )
 
     assert await OutputRouter(bot).post_log("anything") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mention", ["<@123>", "<@!123>", "<@&123>"])
+async def test_every_mention_in_a_log_line_is_written_as_code(mention):
+    """Named without notifying: the log channel mentions nobody (#362 builds the forms from the
+    shared ones, which also wraps `<@!123>`)."""
+    sent = []
+    router = OutputRouter(_bot(_channel(sent)))
+
+    await router.post_log(f"{mention} did something")
+
+    assert f"`{mention}`" in sent[0]
+

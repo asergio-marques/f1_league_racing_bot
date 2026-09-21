@@ -22,7 +22,8 @@ from apscheduler.triggers.date import DateTrigger
 from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupRecord, SignupWizardRecord, WizardState
-from utils.nationality_data import NATIONALITY_LOOKUP
+from utils.input_validator import SIGNUP_ANSWER, parse_nationality, parse_time
+from utils.results_formatter import render_lap_time
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
@@ -31,6 +32,12 @@ if TYPE_CHECKING:
     from utils.output_router import OutputRouter
 
 log = logging.getLogger(__name__)
+
+#: Who the review panel may notify: the people it mentions, and never a group (#362). It
+#: quotes a driver's free-text answers, which refuse a group mention where they are typed;
+#: this withholds the notification as well, the bot holding the permission to mention
+#: everybody where the driver does not.
+_REVIEW_PANEL_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
 
 # Module-level sentinel so APScheduler picklable jobs can reach the service.
 _GLOBAL_WIZARD_SERVICE: "WizardService | None" = None
@@ -587,6 +594,7 @@ class WizardService:
                 await channel.send(
                     panel_text,
                     view=AdminReviewView(discord_user_id, self._bot),  # type: ignore[arg-type]
+                    allowed_mentions=_REVIEW_PANEL_MENTIONS,
                 )
 
         member = guild.get_member(int(discord_user_id))
@@ -1107,40 +1115,19 @@ class WizardService:
 
     @staticmethod
     def _normalise_lap_time(raw: str) -> str | None:
-        """Normalise a lap-time string to ``M:ss.mmm``."""
-        raw = raw.strip()
-        # Accept M:ss.mmm or M:ss:mmm (separator can be . or :)
-        m = re.fullmatch(r"(\d+):(\d{2})[.:]([0-9]+)", raw)
-        if not m:
-            return None
-        minutes = int(m.group(1))
-        seconds = int(m.group(2))
-        if seconds >= 60:
-            return None
-        ms_raw = m.group(3)
-        length = len(ms_raw)
-        if length < 3:
-            ms_val = ms_raw.ljust(3, "0")
-        elif length > 3:
-            # Half-up rounding to 3 digits
-            divisor = 10 ** (length - 3)
-            ms_int = int(ms_raw)
-            ms_rounded = (ms_int + divisor // 2) // divisor
-            if ms_rounded >= 1000:
-                seconds += 1
-                ms_rounded -= 1000
-                if seconds >= 60:
-                    minutes += 1
-                    seconds -= 60
-            ms_val = f"{ms_rounded:03d}"
-        else:
-            ms_val = ms_raw
-        return f"{minutes}:{seconds:02d}.{ms_val}"
+        """A lap time in the one form the bot reads times in, ``M:SS.mmm``, or None (#362).
+
+        Strict, as the results paste is, by the shared parser: always a dot and exactly three
+        digits after it. `1:23:456` and `1:23.4` were once read here and guessed at; they are
+        refused, and the driver asked again, as the prompt has always shown `1:23.456`.
+        """
+        ms = parse_time(raw)
+        return None if ms is None else render_lap_time(ms)
 
     @staticmethod
     def _validate_nationality(raw: str) -> str | None:
         """Accept nationality adjective, country name, or 'other'; return canonical Title-Case string."""
-        return NATIONALITY_LOOKUP.get(raw.strip().lower())
+        return parse_nationality(raw)
 
     _PLATFORMS = ["Steam", "EA", "Xbox", "PlayStation"]
     _DRIVER_TYPES = ["Full-Time Driver", "Reserve Driver"]
@@ -1434,6 +1421,8 @@ class WizardService:
         if not raw:
             await message.channel.send("❌ Platform ID cannot be empty.")
             return
+        if not await self._answer_stands(message, "platform ID", raw):
+            return
         wizard.draft_answers["platform_id"] = raw
         await self._advance_wizard(wizard, message)
 
@@ -1520,10 +1509,27 @@ class WizardService:
         wizard.draft_answers["preferred_teams"] = parts
         await self._advance_wizard(wizard, message)
 
+    @staticmethod
+    async def _answer_stands(message: discord.Message, field_label: str, raw: str) -> bool:
+        """Whether a driver's free-text answer may be kept, telling them why where not (#362).
+
+        The review panel quotes the answer to the channel, and a role mention, ``@everyone`` or
+        ``@here`` in it would notify everybody who can see it — through the bot's own permission
+        to mention them, which the driver does not normally hold. An emoji or markup reads as
+        the driver meant it there, and is kept.
+        """
+        refusal = SIGNUP_ANSWER.check(field_label, raw).refusal
+        if refusal is None:
+            return True
+        await message.channel.send(f"❌ {refusal}")
+        return False
+
     async def _handle_preferred_teammate(
         self, wizard: SignupWizardRecord, message: discord.Message
     ) -> None:
         raw = message.content.strip()
+        if not await self._answer_stands(message, "preferred teammate", raw):
+            return
         wizard.draft_answers["preferred_teammate"] = (
             None if raw.lower() == "no preference" else raw
         )
@@ -1575,6 +1581,8 @@ class WizardService:
             await message.channel.send(
                 "❌ Notes must be 50 characters or fewer."
             )
+            return
+        elif not await self._answer_stands(message, "notes", raw):
             return
         else:
             wizard.draft_answers["notes"] = raw
@@ -1815,6 +1823,7 @@ class WizardService:
                     await channel.send(
                         self._format_review_panel(record, slot_labels, track_name_map=track_map),
                         view=AdminReviewView(discord_user_id, self._bot),  # type: ignore[arg-type]
+                        allowed_mentions=_REVIEW_PANEL_MENTIONS,
                     )
 
     async def _commit_correction(
@@ -1875,4 +1884,5 @@ class WizardService:
                 await channel.send(
                     self._format_review_panel(record, slot_labels, track_name_map=track_map),
                     view=AdminReviewView(discord_user_id, self._bot),  # type: ignore[arg-type]
+                    allowed_mentions=_REVIEW_PANEL_MENTIONS,
                 )

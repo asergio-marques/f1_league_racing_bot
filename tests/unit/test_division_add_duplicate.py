@@ -664,3 +664,33 @@ async def test_a_naive_round_datetime_is_read_as_utc(tmp_path):
     await _duplicate(cog, interaction, day_offset=0)
 
     assert "in the past" in _replied(interaction)
+
+
+# ---------------------------------------------------------------------------
+# A division's name is held to the rules every typed name is (#362)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_division_name_with_an_emoji_is_refused(tmp_path):
+    """It heads every posting and every graphic of the division, and a graphic cannot draw
+    an emoji."""
+    db_path = await _make_db(tmp_path)
+    cfg = _pending()
+    cog = _make_cog(db_path, cfg=cfg)
+    interaction = _interaction()
+
+    await _add(cog, interaction, name="Pro \U0001F3C6")
+
+    assert "division name" in _replied(interaction)
+    assert not any(d.name for d in cfg.divisions)
+
+
+async def test_a_duplicated_division_named_with_markup_is_refused(tmp_path):
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _duplicate(cog, interaction, new_name="**Am**")
+
+    assert "division name" in _replied(interaction)
+    cog.bot.season_service.duplicate_division.assert_not_awaited()

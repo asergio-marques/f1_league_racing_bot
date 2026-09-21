@@ -15,7 +15,11 @@ from typing import TYPE_CHECKING, Optional
 
 import discord
 
-_MENTION_RE = re.compile(r"(<@&?\d+>)")
+from utils.input_validator import ROLE_MENTION, USER_MENTION
+
+#: Every mention a log line can carry, wrapped whole as code so it names without notifying.
+#: Built from the shared forms (#362), so ``<@!123>`` is wrapped as ``<@123>`` is.
+_MENTION_RE = re.compile(rf"((?:{USER_MENTION})|(?:{ROLE_MENTION}))")
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot

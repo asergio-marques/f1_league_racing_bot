@@ -1075,3 +1075,20 @@ async def test_other_active_team_assignments_leaves_out_the_sessions_an_amendmen
         also_exclude=[SessionType.FEATURE_QUALIFYING],
     )
     assert result == {500: (300, "SPRINT_RACE")}
+
+
+# ---------------------------------------------------------------------------
+# Times are read by the shared strict parser (#362)
+# ---------------------------------------------------------------------------
+
+
+def test_a_best_lap_with_seconds_of_sixty_or_more_is_refused():
+    """The paste's own pattern let `1:75.000` through; the shared parser, which signup reads
+    by too, refuses what no clock shows."""
+    line = "1, <@123>, <@&456>, Soft, 1:75.000, N/A"
+    assert isinstance(_validate_qualifying_row_wizard(line), str)
+
+
+def test_a_best_lap_under_a_minute_is_still_read():
+    line = "1, <@123>, <@&456>, Soft, 58.123, N/A"
+    assert not isinstance(_validate_qualifying_row_wizard(line), str)

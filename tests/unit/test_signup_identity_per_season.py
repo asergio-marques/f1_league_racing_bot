@@ -95,3 +95,16 @@ async def test_a_season_holding_no_signup_falls_back_to_the_latest(db_path):
 async def test_a_verdict_reads_the_nationality_of_its_rounds_season(db_path):
     assert await _driver_nationality(db_path, USER, 111) == "French"
     assert await _driver_nationality(db_path, USER) == "British"
+
+
+async def test_a_server_display_name_is_cleaned_before_it_is_drawn(db_path):
+    """Every graphic's names come through here, and are cleaned by the lineup's chain (#362)."""
+    from unittest.mock import MagicMock
+
+    guild = MagicMock()
+    guild.get_member = lambda _uid: SimpleNamespace(display_name="Max \U0001F3CE\uFE0F Racer")
+
+    names = await _driver_names(_bot(db_path), guild, [USER])
+
+    assert names[USER] == "Max Racer"
+

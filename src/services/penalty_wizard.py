@@ -18,13 +18,9 @@ import discord
 from db.database import get_connection
 from models.points_config import SessionType
 from services.driver_service import accounts_of_in_division, current_account_map_for_division
-from services.penalty_service import (
-    StagedPenalty,
-    _time_to_ms,
-    steward_text_refusal,
-    validate_penalty_input,
-)
+from services.penalty_service import StagedPenalty, validate_penalty_input
 from utils.channel_guard import is_league_manager
+from utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
 from utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
@@ -43,33 +39,6 @@ _CID_AR_APPROVE       = "ar_approve"
 _CID_AR_ADD           = "ar_add"
 _CID_AR_CONFIRM       = "ar_confirm"
 _CID_AR_MAKE_CHANGES  = "ar_make_changes"
-
-
-# ---------------------------------------------------------------------------
-# Time-penalty parsing helper
-# ---------------------------------------------------------------------------
-
-def _parse_penalty_seconds(raw: str | None) -> int:
-    """Parse a ``time_penalties`` TEXT value to integer seconds.
-
-    Accepts formats stored by the submission validator: ``"SS.mmm"``,
-    ``"M:SS.mmm"``, ``"H:MM:SS.mmm"``, ``"N/A"``, or ``None``.
-    Returns 0 for ``None``, ``"N/A"``, or any unparseable value.
-    """
-    if not raw or raw.strip().upper() == "N/A":
-        return 0
-    s = raw.strip().lstrip("+")
-    try:
-        parts = s.split(":")
-        if len(parts) == 1:
-            return int(float(parts[0]))
-        if len(parts) == 2:
-            return int(parts[0]) * 60 + int(float(parts[1]))
-        if len(parts) == 3:
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(float(parts[2]))
-    except (ValueError, IndexError):
-        return 0
-    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -493,25 +462,14 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
             ("description", self.description_input),
             ("justification", self.justification_input),
         ):
-            refusal = steward_text_refusal(label, text_input.value)
+            refusal = STEWARD_TEXT.check(label, text_input.value).refusal
             if refusal is not None:
                 await interaction.followup.send(f"❌ {refusal}", ephemeral=True)
                 return
 
         # Resolve driver user ID from @mention or raw integer
         raw = self.driver_input.value.strip()
-        driver_user_id: int | None = None
-        if raw.startswith("<@") and raw.endswith(">"):
-            try:
-                driver_user_id = int(raw.strip("<@!>"))
-            except ValueError:
-                pass
-        else:
-            try:
-                driver_user_id = int(raw)
-            except ValueError:
-                pass
-
+        driver_user_id = parse_user(raw)
         if driver_user_id is None:
             await interaction.followup.send(
                 "❌ Could not parse driver. Use a @mention or a Discord user ID.",
@@ -674,13 +632,13 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
 
         # --- Parse driver user ID ---
         raw_id = self.driver_id_input.value.strip()
-        try:
-            driver_user_id = int(raw_id)
-        except ValueError:
+        parsed_id = parse_user_id(raw_id)
+        if parsed_id is None:
             await interaction.followup.send(
                 "❌ Invalid Discord User ID — must be a numeric ID.", ephemeral=True
             )
             return
+        driver_user_id = parsed_id
 
         # --- Validate pardon type ---
         pardon_type = self.pardon_type_input.value.strip().upper()
@@ -694,7 +652,7 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         justification = self.justification_input.value.strip()
         # Refused as a penalty's texts are (#204). The log channel it reaches notifies nobody and
         # draws nothing; this keeps one rule for every text a steward types.
-        refusal = steward_text_refusal("justification", justification)
+        refusal = STEWARD_TEXT.check("justification", justification).refusal
         if refusal is not None:
             await interaction.followup.send(f"❌ {refusal}", ephemeral=True)
             return

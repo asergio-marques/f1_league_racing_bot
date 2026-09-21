@@ -393,6 +393,8 @@ Divisions are built once the season is in **placements** — after its configura
 
 Tiers must additionally be **sequential from 1 with no gaps** across the whole season. That is checked at approval, not here, so a half-built season may hold a gap while you are still adding divisions.
 
+**Naming.** A division's name heads every posting and every graphic of the division, so it cannot hold a role mention, `@everyone` or `@here`, an emoji, or Discord formatting such as `**bold**`. The command refuses such a name and says what it found. The same holds wherever a division is named: `/division duplicate`, `/division rename` and `/division amend`.
+
 Division channels are not set here. Assign them afterwards with the `/division *-channel` commands.
 
 #### `/division duplicate` — Copy a division with a datetime offset
@@ -447,7 +449,7 @@ Round numbers are **auto-assigned** by sorting all rounds in the division by `sc
 |-----------|------|----------|-------------|
 | `division_name` | String | ✅ | Exact name of the division this round belongs to |
 | `format` | String | ✅ | Race format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE` |
-| `scheduled_at` | String | ✅ | Race date and time in ISO format: `YYYY-MM-DDTHH:MM:SS` (UTC) |
+| `scheduled_at` | String | ✅ | Race date and time in ISO format: `YYYY-MM-DDTHH:MM:SS` (UTC). A time given with a zone, such as `2026-06-14T20:00+02:00`, is converted to UTC |
 | `track` | String | — | Track ID or circuit name — use the autocomplete dropdown (e.g. `12` or `Silverstone Circuit`). What the dropdown displays (`12 – Silverstone Circuit`) is accepted too, so a pasted or retyped entry works; circuit names are matched regardless of case. Required for every format except `MYSTERY`, where it must be omitted. |
 
 > **Two rounds of one division cannot share a start time.** The command refuses the second, naming the round already there. Approval has always refused a season holding such a pair — this catches it at the moment you can still fix it easily.
@@ -642,7 +644,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `division_name` | String | ✅ | Name of the division containing the round |
 | `round_number` | Integer | ✅ | The round number to amend |
 | `track` | String | — | New track — track ID or circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). What the dropdown displays (`04 – Bahrain International Circuit`) is accepted too, and names are matched regardless of case. Refused while a forecast drawn for the current circuit still stands, or once the round has started. |
-| `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC). Amending re-triggers the scheduler and renumbers rounds. Refused if the moment has already passed. |
+| `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC); a time given with a zone is converted to UTC. Amending re-triggers the scheduler and renumbers rounds. Refused if the moment has already passed. |
 | `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Refused while the second forecast, drawn for the current sessions, still stands, or once the round has started. |
 
 **An amendment is one change.** Whatever combination of the three fields you give, the round is judged and amended once. If any rule refuses any part of it, none of it happens and the round is left exactly as it was — so amending a circuit and a date together is a single decision, and a circuit that could not be changed on its own often can be when the round moves with it.
@@ -837,7 +839,7 @@ Creates a synthetic driver profile occupying a real seat, so a division can be f
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `driver_name` | String | ✅ | Display name for the fake driver |
+| `driver_name` | String | ✅ | Display name for the fake driver. Held to the rules a division's name is: no role mention, `@everyone`, `@here`, emoji or formatting |
 | `team_name` | String | ✅ | Team to seat them in (must exist in the division) |
 | `division` | String | ✅ | Division name |
 | `nationality` | String | ❌ | A nationality (`British`), a country name (`United Kingdom`), or `other` — the same forms the signup wizard accepts |
@@ -1033,7 +1035,7 @@ Name the driver by any of their accounts: `old_user` where it is still in the se
 |-----------|------|----------|-------------|
 | `new_user` | Member | ✅ | The account to make current — a new one, or one of the driver's own past accounts. Must be in the server. |
 | `old_user` | Member | — | Any account of the driver's, current or past |
-| `old_user_id` | String | — | Raw Discord snowflake ID of any account of the driver's, for one no longer in the server |
+| `old_user_id` | String | — | Raw Discord snowflake ID of any account of the driver's, for one no longer in the server. Digits only; anything else is refused |
 
 > **Switching back is allowed.** Naming one of the driver's own past accounts as `new_user` makes it current again.
 
@@ -1143,6 +1145,8 @@ Adds the team to the server's default team list and saves its role mapping (gran
 - is empty (a name of nothing but punctuation);
 - matches another team in the same scope (`Red Bull` and `Red  Bull!` collide — both would draw the same badge);
 - is `reserve`, which belongs to the Reserve team of every division.
+
+Before any of that, a team name cannot hold a role mention, `@everyone` or `@here`, an emoji, or Discord formatting, being posted as text and drawn on graphics, the same as a division's name.
 
 > **A name may begin with a digit.** `2 Fast` is accepted and draws `2_fast.svg`. Earlier versions refused it, because the name had to serve as an identifier inside the lineup template; it names a file now, and a filename may start with anything.
 
@@ -1318,6 +1322,8 @@ No parameters.
 
 **A window belongs to a season.** It can be opened only while the season is **waiting** for its signup window (its configuration confirmed) or **ongoing** with no placements left to confirm; opening it moves the season to signups, or to ongoing with signups open. Refused in every other state, and with no season at all.
 
+**What drivers type is checked.** Each lap time is written `1:23.456` — a dot and exactly three digits after it (`58.123` and `1:02:03.456` are read too). `1:23:456` or `1:23.4` is refused and the time asked for again; the bot does not guess. A platform ID, preferred teammate or note holding a role mention, `@everyone` or `@here` is refused and asked again, because the review panel quoting it would otherwise notify everybody who can see the channel. Emoji and formatting in those answers are kept.
+
 Also refused unless the signup channel, base role and completion role are all set and at least one availability time slot exists. Also refused while test mode is active — no real driver may sign up under test mode, so the window would be one nobody could use. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
 
 #### `/signup close` — Close the signup window
@@ -1402,7 +1408,7 @@ An edit warns rather than refuses because building a table in passes through sta
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Unique config name (e.g. `100%`) |
 
-All positions default to 0 points after creation.
+All positions default to 0 points after creation. The name cannot hold a role mention, `@everyone` or `@here`, an emoji, or Discord formatting.
 
 ##### `/results config remove` — Delete a named points configuration
 *Access: League admin*
@@ -1556,6 +1562,8 @@ Each line of a race submission block represents one driver. The number of fields
 | `total time / gap` | `H:MM:SS.mmm` for P1; `+M:SS.mmm` or `+SS.mmm` delta for others; `+N Lap(s)` for lapped drivers; `DNF`, `DNS`, or `DSQ` for non-classified entries |
 | `fastest lap` | Lap time string (e.g. `1:24.000`) or `N/A` |
 | `time penalties` | `N/A`, or an in-game time penalty in `M:SS.mmm` or `SS.mmm` format (e.g. `0:05.000`) |
+
+**Every time is written the one way the bot reads times everywhere:** a dot and exactly three digits after it, with seconds and minutes written after a colon as two digits under sixty. `1:75.000` is refused as a typo. It is the same form a driver's signup lap times are held to.
 
 **Results amend (8 fields):**
 ```
@@ -2033,6 +2041,8 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 **What the files are called.** Every picture is named for what it shows rather than for the template that drew it, so a folder of them saved off Discord still makes sense: `season1_division1_round10_standings_drivers.png`, `season1_division1_round10_feature_qualifying_results.png`, `season1_division1_lineup.png`. The division is named by its tier where the graphic knows it and by its name otherwise (`season1_elite_calendar.png`); the season or round is left out where there is none, and the lineup and calendar carry no round because they stand for the whole season. `/images test` names its output the same way.
 
 **A batch of pictures announces itself.** Drawing takes a few seconds per picture, and some jobs draw a run of them — `/season placements-review` draws a lineup and a calendar per division, and closing a penalty review redraws every session's results, both championships, one verdict per penalty and the attendance sheet. A short message saying the pictures are being drawn is posted before the batch starts and deleted once it has finished. It goes to the channel you gave the command in — the bot interaction channel for a command you type, the round's results channel for the button presses that drive the results flow — and never to the channels the pictures themselves land in. Nothing is lost when it disappears: a fault is reported to you and to the log channel in its own right.
+
+**A driver is drawn under their display name, cleaned.** A picture cannot mention anybody, so each driver is drawn under the display name of their Discord account on the server. Any emoji, Discord formatting, role mention, `@everyone` or `@here` in it is left out, because a picture cannot show them the way a message does: `Max 🏎️ Racer` is drawn `Max Racer`, and `_Max_` is drawn `Max`. A display name that is nothing but those falls back to the name they signed up under, then their username, then their user ID. Names you type yourself, a division's or a team's, are refused instead when they hold any of these, since you can pick another.
 
 #### `/images config toggle` — Choose image or text, per kind of output
 *Access: League manager*

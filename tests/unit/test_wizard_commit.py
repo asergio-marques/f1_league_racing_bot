@@ -248,6 +248,17 @@ async def test_the_review_panel_is_posted_to_the_signup_channel(committer):
     assert committer.channel.send.await_args.kwargs["view"] is not None
 
 
+async def test_the_review_panel_notifies_no_group(committer):
+    """It quotes the driver's own answers, and the bot's permission to mention everybody must
+    not carry a group mention in one of them (#362)."""
+    await _commit(committer)
+
+    allowed = committer.channel.send.await_args.kwargs["allowed_mentions"]
+    assert allowed.everyone is False
+    assert allowed.roles is False
+    assert allowed.users is True
+
+
 async def test_a_missing_channel_still_commits_the_record(committer):
     """A channel deleted by hand must not cost the driver their signup."""
     committer.guild.get_channel = MagicMock(return_value=None)
@@ -326,3 +337,19 @@ async def test_a_driver_who_has_left_is_logged_by_id(committer):
     await _commit(committer)
 
     assert DRIVER_ID in committer.svc._output_router.post_log.await_args.args[0]
+
+
+def test_every_send_of_the_review_panel_restricts_mentions():
+    """Three paths post the panel: the first submission, the correction lapsing and the
+    correction committed. Each quotes the driver's answers, so each withholds a group
+    notification; one that forgot would reopen the ping #362 closed."""
+    import inspect
+    import re
+
+    from services import wizard_service
+
+    source = inspect.getsource(wizard_service)
+    sends = re.findall(r"view=AdminReviewView\([^)]*\),[^\n]*\n\s*([a-z_]+)=", source)
+    assert len(sends) == 3
+    assert set(sends) == {"allowed_mentions"}
+

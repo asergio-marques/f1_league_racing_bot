@@ -8,7 +8,6 @@ from __future__ import annotations
 import json as _json
 import logging
 from datetime import datetime, timezone
-import re
 from pathlib import Path
 
 import discord
@@ -20,6 +19,7 @@ from models.points_config import SessionType
 from services import image_verdict_post
 from services.image_verdict_service import VerdictKind
 from utils import results_formatter
+from utils.input_validator import is_disqualification, parse_penalty_seconds
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def _for_message(value: str) -> str:
 #: Who a verdict may notify: the people it mentions, and never a group (#204).
 #:
 #: The form refuses a role mention, ``@everyone`` or ``@here`` in a steward's text
-#: (``penalty_service.group_mention_refusal``), but the form is not the only way text reaches
+#: (``utils.input_validator.STEWARD_TEXT``), but the form is not the only way text reaches
 #: this channel: an amendment reposts every verdict a round carries from what was stored
 #: (#345). So the send withholds the notification as well. The text is still posted as written
 #: — a role still reads as its name — and a driver it mentions is still told.
@@ -144,10 +144,6 @@ async def _graphic_name(
         discord_user_id=discord_user_id, display_name=fallback_display_name
     )
 
-# +Ns or -Ns  (with optional sign, digits, optional 's')
-_PENALTY_RE = re.compile(r"^([+-]?\d+)s?$", re.IGNORECASE)
-
-
 def translate_penalty(penalty_str: str) -> str:
     """Convert a raw penalty magnitude to a human-readable description.
 
@@ -161,11 +157,10 @@ def translate_penalty(penalty_str: str) -> str:
     | ``-3s``     | ``3 seconds removed``     |
     | ``DSQ``     | ``Disqualified``          |
     """
-    if penalty_str.strip().upper() == "DSQ":
+    if is_disqualification(penalty_str):
         return "Disqualified"
-    m = _PENALTY_RE.match(penalty_str.strip())
-    if m:
-        seconds = int(m.group(1))
+    seconds = parse_penalty_seconds(penalty_str)
+    if seconds is not None:
         if seconds < 0:
             return f"{abs(seconds)} seconds removed"
         return f"{seconds} seconds added"

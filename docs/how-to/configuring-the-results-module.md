@@ -93,6 +93,8 @@ All three are set **per division**, so a league with three divisions sets nine c
 /results config add name: 100%
 ```
 
+Keep the name plain: it cannot hold an emoji, Discord formatting, a role mention, `@everyone` or `@here`.
+
 A configuration starts with **every position in every session worth nothing**. Filling it in is the whole of this step, and the commands that do it are listed in full under [Points Config Management](../../README.md#points-config-management):
 
 | Command | Use it for |
@@ -215,6 +217,7 @@ See [Test mode](test-mode.md) for the whole picture.
 - Every driver **mentioned**, and seated in that division. A name typed as text is not a driver.
 - Every team **mentioned as its role**, and never the Reserve role — a reserve is submitted under the team whose car they drove.
 - **No more than two lines per team**, counting a reserve standing in for it.
+- **Every time written exactly**: a dot and exactly three digits after it (`1:23.456`, `58.123`, `1:02:03.456`), with seconds and minutes after a colon under sixty. `1:75.000` is refused as the typo it is.
 - **Positions running 1, 2, 3… with no gaps**, and the order of outcomes respected: classified runners first, then lapped ones, then DNF, then DNS, then DSQ.
 - **A driver under the team they are seated in.** Reserves are the exception, and a wide one: a reserve may be submitted under any real team. But not a *different* one in different sessions of the same round — a driver's team must agree across every session of a round, and a submission disagreeing with one already recorded is rejected, naming the driver and the team the earlier session recorded.
 - **On a qualifying session, a tyre the game actually offers** — `Soft`, `Medium`, `Hard`, `Intermediate` or `Wet`, and nothing else. Write them however suits you: case, spacing and punctuation are ignored, and each answers to its plural and its single letter, so `softs`, `S`, `Inter` and `ExWets` are all understood. Whichever you type, the bot records the proper name and draws the right tyre on the graphic. Leave the column blank, or put `N/A`, where you did not note one — that is not an error.

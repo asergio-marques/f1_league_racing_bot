@@ -402,3 +402,39 @@ def test_a_division_seated_wholly_by_mock_drivers_has_seated_drivers():
 
     assert drawing.teams[0].occupied_count == 2
     assert [s.occupied for s in drawing.teams[0].seats] == [True, True]
+
+
+# ── A Discord name is cleaned before it is drawn (#362) ───────────────────
+
+
+@pytest.mark.parametrize(
+    "display_name, drawn",
+    [
+        ("Max \U0001F3CE\uFE0F Racer", "Max Racer"),
+        ("_Max_", "Max"),
+        ("**Max** Racer", "Max Racer"),
+        ("@everyone Max", "Max"),
+    ],
+)
+def test_a_display_name_is_drawn_without_its_emoji_and_markup(display_name, drawn):
+    """The league cannot control a member's display name, so it is cleaned rather than
+    refused. The Pi drew `Max   Racer` for the first."""
+    assert resolve_driver_name(discord_user_id="7", display_name=display_name) == drawn
+
+
+def test_a_display_name_left_empty_falls_through_to_the_next_link():
+    """A name made only of emoji cleans to nothing, and nothing is no name."""
+    assert (
+        resolve_driver_name(
+            discord_user_id="7",
+            display_name="\U0001F3CE\uFE0F\U0001F3C1",
+            signup_display_name="\U0001F3CE\uFE0F",
+            signup_username="maxracer",
+        )
+        == "maxracer"
+    )
+
+
+def test_a_name_that_cleans_to_nothing_everywhere_falls_to_the_user_id():
+    assert resolve_driver_name(discord_user_id="7", display_name="\U0001F3C1") == "7"
+

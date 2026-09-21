@@ -236,3 +236,22 @@ async def test_season_review_catches_two_teams_normalising_alike(tmp_path):
 
     assert len(problems) == 1
     assert "red_bull" in problems[0]
+
+
+# ── The rules every typed name is held to (#362) ──────────────────────────
+
+
+@pytest.mark.parametrize(
+    "name", ["**Red** Bull", "Red Bull \U0001F402", "<@&987654321098765432> Racing", "@here Racing"]
+)
+def test_a_team_name_with_markup_an_emoji_or_a_group_mention_is_refused(name):
+    """A team's name is posted as text and drawn on graphics, so it is held to the rules every
+    name a league types is held to."""
+    problem = validate_team_name(name)
+
+    assert problem is not None
+    assert "team name" in problem
+
+
+def test_a_team_name_with_markup_is_refused():
+    assert validate_team_name("_Scuderia_") is not None

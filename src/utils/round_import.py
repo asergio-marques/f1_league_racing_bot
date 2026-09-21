@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 from lxml import etree
 
 from models.round import RoundFormat
+from utils.input_validator import parse_datetime
 from utils.timezones import is_known_zone
 
 __all__ = [
@@ -79,14 +80,15 @@ def _parse_format(raw: str, location: str, errors: list[str]) -> RoundFormat | N
 
 
 def _parse_datetime(raw: str, location: str, errors: list[str]) -> datetime | None:
-    try:
-        return datetime.fromisoformat(raw.strip())
-    except ValueError:
+    """A round's moment as naive UTC by the shared rule (#362), a zone converted as the XML
+    import converts one."""
+    moment = parse_datetime(raw)
+    if moment is None:
         errors.append(
             f"{location}: `{raw.strip()}` is not a datetime. "
             f"Use ISO format, such as `2026-06-14T18:00`."
         )
-        return None
+    return moment
 
 
 def _check_track(

@@ -328,6 +328,7 @@ it only to place it; the rules governing it belong to its own specification.
 ## Divisions
 - A division shall be created while its season is in Placements, taking a name, a role and a tier.
     - A division's name shall be unique within its season, without regard to case.
+    - A division's name shall hold no role mention, "@everyone" or "@here", in any case, no emoji and no Discord markup, being posted as text and drawn on graphics. Every command that sets one shall refuse such a name, saying which it holds. Decided 2026-09-21 (#362).
     - A division's tier shall be unique within its season and shall be no lower than 1.
 - The tiers of a season's divisions shall form a sequence from 1 with no gaps, or confirming placements shall be refused. Divisions shall be held and displayed in ascending order of tier, tier 1 being the highest.
 - A division's tier may be used to identify it in a command, but its name shall be what the bot displays.
@@ -343,6 +344,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ## Rounds
 - A round shall belong to one division and shall state a moment in UTC, a format and a track.
+    - A moment given with a time zone shall be converted to UTC; one given without shall be read as UTC. Every command taking a round's moment shall read it alike. Decided 2026-09-21 (#362).
 - Round numbers shall never be entered. The rounds of a division shall be ordered by their moment and numbered from 1, and adding, deleting or re-timing one shall renumber the division.
 - Two rounds of one division shall not be scheduled at the same moment. This shall be refused by every command that would create one, and again when placements are first confirmed.
 - A round shall be refused where the division would thereby hold more rounds than its calendar graphic can draw.
@@ -422,6 +424,7 @@ it only to place it; the rules governing it belong to its own specification.
 - The role of any team may be set at any time, whatever the state of the season, so that a role deleted from the server may be repaired. Pending completion is the one exception: nothing is raced then, and completing the season revokes every team role a few steps later, so the mapping is repaired once the season has ended, for the season that follows.
     - Every driver holding a committed seat in that team shall follow the change: the team's former role shall be revoked from them, save where another team still maps to it, and its new role granted. A driver created by test mode holds no role and shall be left alone.
 - Adding, renaming or removing a team shall change the server's list. It shall be permitted while the server holds no active season, or while the active season is in Configuration, and shall be refused otherwise.
+- A team name shall hold no role mention, "@everyone" or "@here", in any case, no emoji and no Discord markup, as a division's name shall not. Decided 2026-09-21 (#362).
 - A team name shall reduce to a usable filename:
     - It shall not be empty and shall hold at least one letter or digit.
     - It shall not reduce to `reserve`.
@@ -568,6 +571,7 @@ section states the rules it holds to.
 - A driver created by test mode shall be refused wherever a real driver placed in the same team would be refused for carrying the division past the capacity of a configured template, and nothing shall be written. A roster seated at once shall be measured over every driver it gives each division, and a division it would carry past such a capacity shall refuse the whole import.
 - The identifiers of such drivers shall be drawn from a range above any identifier a real Discord account can hold.
 - A driver created by test mode shall never be granted or revoked a Discord role.
+- The name of a driver created by test mode shall be held to the rules a division's name is held to, whether the driver is added alone or by a roster. Decided 2026-09-21 (#362).
 - The commands adding, removing and clearing drivers created by test mode shall be refused in any state but Placements.
 - A command shall take a whole roster at once, as comma-separated values written one driver to a line, stating the driver's identifier, name, team, division and nationality. A header line naming the columns shall be accepted and ignored.
     - The identifier stated for a driver shall be the identifier the driver is created with. The roster is authoritative, the files generated beside it naming its drivers by those identifiers.

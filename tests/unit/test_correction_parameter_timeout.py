@@ -285,6 +285,23 @@ async def test_the_revert_reposts_the_review_panel(tmp_path):
     assert any(v is not None and type(v).__name__ == "AdminReviewView" for v in views)
 
 
+async def test_the_reposted_review_panel_notifies_no_group(tmp_path):
+    """The repost quotes the same answers the first panel did (#362)."""
+    db_path = await _seed(tmp_path)
+    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
+    channel = _channel()
+    svc, _ = _build_service(db_path, channel)
+
+    await svc.recover_correction_timeouts()
+
+    panel = next(
+        call for call in channel.send.call_args_list
+        if type(call.kwargs.get("view")).__name__ == "AdminReviewView"
+    )
+    assert panel.kwargs["allowed_mentions"].everyone is False
+    assert panel.kwargs["allowed_mentions"].roles is False
+
+
 # ── The ordinary five-minute lapse ────────────────────────────────────────
 
 

@@ -249,3 +249,27 @@ async def test_only_the_manager_who_asked_may_answer(db_path):
     await view.confirm.callback(interaction)
 
     assert await points_config_service.config_exists(db_path, "Standard") is True
+
+
+# ── /results config add ───────────────────────────────────────────────────
+
+
+async def test_a_points_configuration_name_with_everyone_is_refused(db_path):
+    """Held to the rules every name a league types is held to (#362)."""
+    cog = _cog(db_path)
+    interaction = _interaction()
+
+    await ResultsCog.config_add.callback(cog, interaction, "@everyone 100%")
+
+    assert "configuration name" in _replies(interaction)
+    assert not await points_config_service.config_exists(db_path, "@everyone 100%")
+
+
+async def test_a_plain_points_configuration_name_is_still_created(db_path):
+    cog = _cog(db_path)
+    interaction = _interaction()
+
+    await ResultsCog.config_add.callback(cog, interaction, "100%")
+
+    assert await points_config_service.config_exists(db_path, "100%")
+

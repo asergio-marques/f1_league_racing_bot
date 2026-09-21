@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -11,45 +10,14 @@ import discord
 
 from db.database import get_connection
 from models.points_config import SessionType
+from utils.input_validator import (
+    is_disqualification,
+    parse_gap,
+    parse_penalty_seconds,
+    parse_time,
+)
 
 log = logging.getLogger(__name__)
-
-_TIME_PENALTY_RE = re.compile(r"^([+-]?\d+)s?$", re.IGNORECASE)
-
-# HH:MM:SS.mmm or MM:SS.mmm or SS.mmm
-_LAP_TIME_RE = re.compile(
-    r"^(?:(?P<h>\d+):)?(?P<m>\d+):(?P<s>\d+)(?:\.(?P<ms>\d+))?$"
-)
-
-# Delta gap: +SS.mmm  |  +M:SS.mmm  |  +H:MM:SS.mmm  (leading + required)
-_DELTA_GAP_RE = re.compile(
-    r"^\+(?:(?:(?P<h>\d+):)?(?P<m>\d+):)?(?P<s>\d+)(?:\.(?P<ms>\d+))?$"
-)
-
-# Lap gap: "+N Lap(s)" or "N Lap(s)"
-_LAP_GAP_RE = re.compile(r"^\+?(\d+) Laps?$", re.IGNORECASE)
-
-#: What in a steward's text would notify a group rather than name a person (#204): a role
-#: mention, and the two Discord reads as the whole server and as everyone online in it. A user
-#: mention is not among them — naming the other car is the ordinary thing to write.
-_GROUP_MENTION_RE = re.compile(r"<@&\d+>|@everyone|@here", re.IGNORECASE)
-
-#: An emoji in a steward's text (#204): a server's own, which a graphic draws as its raw markup,
-#: and a standard one, which the host's fonts need not carry — on the Pi it vanishes from the
-#: graphic without trace. The standard set is Unicode's Emoji_Presentation characters
-#: (emoji-data.txt, Emoji 15.1: those below U+10000 listed one by one, every other lying in
-#: U+1F000..U+1FAFF), a keycap, and any character U+FE0F asks to be shown as an emoji. A symbol
-#: that is text by default — ✓, ★, ©, an arrow — is not among them.
-_EMOJI_RE = re.compile(
-    r"<a?:\w+:\d+>"
-    r"|[0-9#*]\uFE0F?\u20E3"
-    r"|.\uFE0F"
-    r"|[\U0001F000-\U0001FAFF"
-    r"\u231A\u231B\u23E9-\u23EC\u23F0\u23F3\u25FD\u25FE\u2614\u2615\u2648-\u2653\u267F"
-    r"\u2693\u26A1\u26AA\u26AB\u26BD\u26BE\u26C4\u26C5\u26CE\u26D4\u26EA\u26F2\u26F3"
-    r"\u26F5\u26FA\u26FD\u2705\u270A\u270B\u2728\u274C\u274E\u2753-\u2755\u2757"
-    r"\u2795-\u2797\u27B0\u27BF\u2B1B\u2B1C\u2B50\u2B55]"
-)
 
 
 @dataclass
@@ -96,9 +64,7 @@ def validate_penalty_input(
             negative penalties are rejected if their absolute value exceeds
             this figure — you cannot remove more penalty than was applied.
     """
-    pv = penalty_value.strip().upper()
-
-    if pv == "DSQ":
+    if is_disqualification(penalty_value):
         return StagedPenalty(
             driver_user_id=driver_user_id,
             session_type=session_type,
@@ -109,11 +75,9 @@ def validate_penalty_input(
     if session_type.is_qualifying:
         return "Only DSQ is accepted for qualifying sessions."
 
-    m = _TIME_PENALTY_RE.match(penalty_value.strip())
-    if not m:
+    seconds = parse_penalty_seconds(penalty_value)
+    if seconds is None:
         return "Invalid penalty. Use seconds (e.g. `5`, `+5s`, `-3s`) or `DSQ`."
-
-    seconds = int(m.group(1))
 
     if seconds < 0 and current_time_penalty_s is not None:
         if abs(seconds) > current_time_penalty_s:
@@ -138,124 +102,20 @@ def validate_penalty_input(
     )
 
 
-def group_mention_refusal(field_label: str, text: str) -> str | None:
-    """Why *text* cannot stand as a steward's *field_label*, or None where it can (#204).
-
-    A penalty's description and justification are published in its verdict, where a role
-    mention, ``@everyone`` or ``@here`` would notify everybody it covers — a whole division told
-    of one driver's penalty. Refused at the form, where the steward can still rewrite it, rather
-    than stripped on the way out, which would publish a text they did not write.
-
-    Matched in any case: nothing a verdict legitimately says reads "@Everyone", and refusing it
-    keeps the rule from resting on exactly how Discord matches the two.
-    """
-    match = _GROUP_MENTION_RE.search(text or "")
-    if match is None:
-        return None
-    found = match.group(0)
-    named = "a role" if found.startswith("<@&") else f"`{found.lower()}`"
-    return (
-        f"The {field_label} mentions {named}, which would notify everybody it covers. "
-        "Mention drivers only, then submit the form again."
-    )
-
-
-def emoji_refusal(field_label: str, text: str) -> str | None:
-    """Why *text* cannot stand as a steward's *field_label* for an emoji, or None (#204).
-
-    A steward's text carries no emoji. The graphic cannot draw one faithfully — a server's own
-    comes out as its markup, a standard one as whatever the host's fonts make of it. Refused at
-    the form, as a group mention is, rather than stripped from a text the steward wrote.
-    """
-    match = _EMOJI_RE.search(text or "")
-    if match is None:
-        return None
-    return (
-        f"The {field_label} contains an emoji ({match.group(0)}), and a steward's text may "
-        "hold none. Remove it, then submit the form again."
-    )
-
-
-#: Discord markup in a steward's text (#204), in the order it is looked for, each with the words a
-#: refusal names it by. The text verdict formats every one of these and the graphic draws each
-#: raw, so a steward's text is plain and both show exactly what was typed. A list (``- item``,
-#: ``1. item``) and a bare URL read alike either way and are not here. The formatting follows
-#: Discord's own rules: a star opens only before a non-space and closes only after one, and an
-#: underscore italicises only with a non-word character either side, so ``snake_case``, a lone
-#: ``*`` and ``5 * 2`` all pass.
-_MARKUP: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("a channel mention", re.compile(r"<#\d+>")),
-    ("a timestamp", re.compile(r"<t:-?\d+(?::[tTdDfFR])?>")),
-    ("a command mention", re.compile(r"</[^<>\n]+:\d+>")),
-    ("a server link", re.compile(r"<id:[a-z-]+>")),
-    ("a link", re.compile(r"\[[^\]\n]+\]\(\s*<?https?://")),
-    (
-        "a heading, quote or subtext line",
-        re.compile(r"^[ \t]*(?:#{1,3}|-#|>{1,3})[ \t].*", re.MULTILINE),
-    ),
-    (
-        "formatting",
-        re.compile(
-            r"\*\*[\s\S]+?\*\*|__[\s\S]+?__|~~[\s\S]+?~~|\|\|[\s\S]+?\|\||`[^`]+`"
-            r"|\*[^\s*](?:[^*]*?[^\s*])?\*"
-            r"|(?<!\w)_[^\s_](?:[^_]*?[^\s_])?_(?!\w)"
-        ),
-    ),
-)
-
-#: A bare URL, which Discord formats nothing inside. It is replaced by its scheme before the
-#: markup is looked for, so its underscores and stars pass while a masked link keeps its shape.
-_BARE_URL_RE = re.compile(r"https?://\S+")
-
-
-def markup_refusal(field_label: str, text: str) -> str | None:
-    """Why *text* cannot stand as a steward's *field_label* for its markup, or None (#204).
-
-    A steward's text is plain. The fragment found is quoted in a code span, which Discord shows
-    exactly as typed — the reply names the markup rather than applying it. A double backtick, so
-    that a fragment holding one of its own still closes where it should.
-    """
-    scanned = _BARE_URL_RE.sub("https://", text or "")
-    for kind, pattern in _MARKUP:
-        match = pattern.search(scanned)
-        if match is not None:
-            return (
-                f"The {field_label} contains {kind} (`` {match.group(0).strip()} ``). "
-                "A steward's text is plain: remove it, then submit the form again."
-            )
-    return None
-
-
-def steward_text_refusal(field_label: str, text: str) -> str | None:
-    """Why *text* cannot stand as a steward's *field_label*, or None where it can.
-
-    The one check every text a steward types into a review passes through, so the penalty's
-    two texts and a pardon's justification are held to the same rules.
-    """
-    return (
-        group_mention_refusal(field_label, text)
-        or emoji_refusal(field_label, text)
-        or markup_refusal(field_label, text)
-    )
-
-
 # ---------------------------------------------------------------------------
 # Time helpers
 # ---------------------------------------------------------------------------
 
 def _time_to_ms(time_str: str) -> int | None:
-    """Parse HH:MM:SS.mmm or MM:SS.mmm into total milliseconds."""
+    """A stored time in milliseconds, or None where there is none (``-``, ``N/A``, empty).
+
+    Read by the shared strict parser (#362). Every stored time was written in its form, by
+    the results paste or by `_ms_to_time`, so a value outside it is refused rather than
+    guessed.
+    """
     if not time_str or time_str.strip() in ("-", "N/A", ""):
         return None
-    m = _LAP_TIME_RE.match(time_str.strip())
-    if not m:
-        return None
-    h = int(m.group("h") or 0)
-    mins = int(m.group("m") or 0)
-    secs = int(m.group("s") or 0)
-    ms_raw = m.group("ms") or "0"
-    ms = int(ms_raw.ljust(3, "0")[:3])
-    return (h * 3600 + mins * 60 + secs) * 1000 + ms
+    return parse_time(time_str)
 
 
 def _ms_to_time(ms: int) -> str:
@@ -269,19 +129,8 @@ def _ms_to_time(ms: int) -> str:
 
 
 def _delta_to_ms(delta_str: str) -> int | None:
-    """Parse a delta gap string (+SS.mmm, +M:SS.mmm, +H:MM:SS.mmm) into ms.
-
-    Returns None if the string does not match the expected format.
-    """
-    m = _DELTA_GAP_RE.match((delta_str or "").strip())
-    if not m:
-        return None
-    h = int(m.group("h") or 0)
-    mins = int(m.group("m") or 0)
-    secs = int(m.group("s") or 0)
-    ms_raw = m.group("ms") or "0"
-    ms = int(ms_raw.ljust(3, "0")[:3])
-    return (h * 3600 + mins * 60 + secs) * 1000 + ms
+    """A stored gap to the leader in milliseconds, or None — read by the shared parser."""
+    return parse_gap(delta_str)
 
 
 def _ms_to_delta(gap_ms: int) -> str:

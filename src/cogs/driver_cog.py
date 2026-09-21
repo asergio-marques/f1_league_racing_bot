@@ -9,6 +9,7 @@ from discord.ext import commands
 
 from models.season import ONGOING_STAGES, SeasonStage
 from utils.channel_guard import league_admin_only, league_manager_only
+from utils.input_validator import parse_user_id
 from services.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)
@@ -122,7 +123,13 @@ class DriverCog(commands.Cog):
         if old_user is not None:
             resolved_old_id = str(old_user.id)
         elif old_user_id is not None:
-            resolved_old_id = old_user_id.strip()
+            parsed_old_id = parse_user_id(old_user_id)
+            if parsed_old_id is None:
+                await interaction.response.send_message(
+                    "⛔ `old_user_id` must be a numeric Discord user ID.", ephemeral=True
+                )
+                return
+            resolved_old_id = str(parsed_old_id)
         else:
             await interaction.response.send_message(
                 "⛔ You must supply either `old_user` (mention) or `old_user_id` (raw snowflake).",

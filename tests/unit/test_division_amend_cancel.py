@@ -809,3 +809,30 @@ async def test_a_division_is_cancelled_only_while_the_season_is_ongoing(tmp_path
     await _cancel(cog, interaction)
 
     assert "only while the season is ongoing" in _replied(interaction)
+
+
+# ---------------------------------------------------------------------------
+# A new name is held to the rules every typed name is (#362)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_division_renamed_with_a_role_mention_is_refused(tmp_path):
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _rename(cog, interaction, new="<@&987654321098765432> Elite")
+
+    assert "division name" in _replied(interaction)
+    cog.bot.season_service.rename_division.assert_not_awaited()
+
+
+async def test_a_division_amended_to_a_name_with_everyone_is_refused(tmp_path):
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _amend(cog, interaction, new_name="@everyone Elite")
+
+    assert "division name" in _replied(interaction)
+    assert (await _division_row(db_path))["name"] == "Pro"

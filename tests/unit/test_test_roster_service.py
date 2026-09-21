@@ -216,3 +216,21 @@ class TestSeating:
 
         assert isinstance(result, str)
         assert "Nowhere" in result
+
+
+# ── A mock driver's name is held to the rules every typed name is (#362) ──
+
+
+class TestTheNameIsChecked:
+    async def test_a_test_driver_named_with_a_role_mention_is_refused(self, db_path):
+        """A mock driver's name is drawn on graphics as a real driver's is."""
+        result = await _add(db_path, name="<@&987654321098765432> Alpha")
+
+        assert isinstance(result, str)
+        assert "driver name" in result
+
+    async def test_a_test_driver_named_with_an_emoji_is_refused(self, db_path):
+        result = await _add(db_path, name="Alpha \U0001F3CE\uFE0F")
+
+        assert isinstance(result, str)
+
