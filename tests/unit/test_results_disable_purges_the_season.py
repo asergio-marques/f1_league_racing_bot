@@ -566,3 +566,50 @@ async def test_the_reply_names_what_was_destroyed(tmp_path) -> None:
     reply = interaction.followup.send.await_args.args[0]
     assert "This season's results are gone" in reply
     assert "1 round(s) closed with no results" in reply
+
+
+async def test_an_open_amendment_is_closed_with_the_season(tmp_path) -> None:
+    """**An amendment outlives the purge otherwise, and cannot be undone** (#345).
+
+    It holds a snapshot of the round as it stood and a deadline by which the sweep reverts it.
+    Once the purge has deleted the session the snapshot names, every sweep fails that foreign
+    key and retries five minutes later for ever — and the channel it would have deleted stays
+    open on a module that is off.
+    """
+    db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("FINAL",))
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "pre_amendment_state, expires_at) VALUES (?, 9100, '[\"FEATURE_RACE\"]', "
+            "'2026-01-01T00:00:00', '{}', '2026-01-01T00:30:00')",
+            (round_id,),
+        )
+        await db.commit()
+    cog = _make_cog(db_path)
+    amend_channel = _FakeChannel(9100)
+    cog.bot.channels[9100] = amend_channel
+
+    report = await purge_season_results(db_path, cog.bot)
+
+    assert report["amend_channels"] == 1
+    assert amend_channel.deleted is True
+    assert await _count(db_path, "round_amend_channels") == 0
+
+
+async def test_an_open_amendment_is_forgotten_even_with_no_guild(tmp_path) -> None:
+    """Deleting the channel needs a guild; forgetting the amendment does not — and a row that
+    survived would name a session the purge went on to delete, which the sweep then fails to
+    revert every five minutes for ever."""
+    db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("FINAL",))
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "pre_amendment_state, expires_at) VALUES (?, 9100, '[\"FEATURE_RACE\"]', "
+            "'2026-01-01T00:00:00', '{}', '2026-01-01T00:30:00')",
+            (round_id,),
+        )
+        await db.commit()
+
+    await purge_season_results(db_path, _make_cog(db_path, guild=False).bot)
+
+    assert await _count(db_path, "round_amend_channels") == 0
