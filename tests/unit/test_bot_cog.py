@@ -1,6 +1,6 @@
 """Core server configuration — `/bot init` and the four settings beside it.
 
-Three properties are pinned here, each of which a plausible tidy-up would undo.
+Four properties are pinned here, each of which a plausible tidy-up would undo.
 
 **The four setting commands are not bound to the interaction channel.** The tier guards
 admit a command only in the configured interaction channel and only to a holder of one of
@@ -18,9 +18,14 @@ possible.
 
 **`/bot init` runs once.** A second run is refused rather than overwriting, which is what
 makes the clobber above unreachable rather than merely corrected.
+
+**Each is audited as well as logged** (issue #371). The log line is all these once wrote, which
+left the database no record of who changed who may command and govern the bot, nor of what the
+setting had been. The audit keeps the value each command replaced.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
@@ -86,6 +91,15 @@ async def _row(db_path: str) -> dict:
         )
         row = await cursor.fetchone()
     return dict(row) if row is not None else {}
+
+
+async def _audit_rows(db_path: str) -> list[dict]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT actor_id, division_id, change_type, old_value, new_value "
+            "FROM audit_entries"
+        )
+        return [dict(r) for r in await cursor.fetchall()]
 
 
 def _bot(db_path: str) -> MagicMock:
@@ -318,6 +332,14 @@ _SETTINGS = [
     ("handle_admin_role", "league_admin_role_id", _role, 558),
 ]
 
+#: column → (the audit's change type, its value key, the value the seed holds)
+_AUDITED = {
+    "log_channel_id": ("LOG_CHANNEL_SET", "channel_id", CONFIGURED_LOG),
+    "interaction_channel_id": ("INTERACTION_CHANNEL_SET", "channel_id", CONFIGURED_CHANNEL),
+    "interaction_role_id": ("INTERACTION_ROLE_SET", "role_id", CONFIGURED_ROLE),
+    "league_admin_role_id": ("LEAGUE_ADMIN_ROLE_SET", "role_id", CONFIGURED_ADMIN_ROLE),
+}
+
 
 @pytest.mark.parametrize(
     "attribute,column,factory,new_id", _SETTINGS, ids=[s[1] for s in _SETTINGS]
@@ -337,6 +359,28 @@ async def test_a_setting_command_writes_only_its_own_column(
     assert {k: v for k, v in after.items() if k != column} == {
         k: v for k, v in before.items() if k != column
     }
+
+
+@pytest.mark.parametrize(
+    "attribute,column,factory,new_id", _SETTINGS, ids=[s[1] for s in _SETTINGS]
+)
+async def test_a_setting_command_is_audited_with_the_value_it_replaced(
+    tmp_path, attribute, column, factory, new_id
+):
+    """Issue #371: the log line alone left no record of who changed who governs the bot."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    cog = BotCog(_bot(db_path))
+    change_type, key, old_id = _AUDITED[column]
+
+    await _unwrap(getattr(cog, attribute))(cog, _interaction(), factory(new_id))
+
+    (row,) = await _audit_rows(db_path)
+    assert row["change_type"] == change_type
+    assert row["actor_id"] == 7
+    assert row["division_id"] is None
+    assert json.loads(row["old_value"]) == {key: old_id}
+    assert json.loads(row["new_value"]) == {key: new_id}
 
 
 @pytest.mark.parametrize(
@@ -373,6 +417,7 @@ async def test_a_setting_command_refuses_an_unconfigured_server(
 
     assert "/bot init" in interaction.response.send_message.call_args.args[0]
     assert await _row(db_path) == {}
+    assert await _audit_rows(db_path) == []
 
 
 @pytest.mark.parametrize(
@@ -395,6 +440,7 @@ async def test_a_setting_command_refuses_a_member_of_neither_tier(
     reply = interaction.response.send_message.call_args.args[0]
     assert "Administrator" in reply
     assert (await _row(db_path))[column] != new_id
+    assert await _audit_rows(db_path) == []
 
 
 @pytest.mark.parametrize(

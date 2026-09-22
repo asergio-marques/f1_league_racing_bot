@@ -175,7 +175,7 @@ class BotCog(commands.Cog):
         log.info("Bot configured by %s", interaction.user)
 
     # ------------------------------------------------------------------
-    # The three settings, each written on its own
+    # The four settings, each written on its own
     # ------------------------------------------------------------------
 
     async def _set_one(
@@ -187,11 +187,15 @@ class BotCog(commands.Cog):
         command: str,
         label: str,
         mention: str,
+        change_type: str,
     ) -> None:
-        """Shared body of the three setting commands.
+        """Shared body of the four setting commands.
 
         Writes a single column, so nothing else in the row — test mode, the module flags,
-        the other two settings — can be carried over stale from a half-built model.
+        the other three settings — can be carried over stale from a half-built model.
+
+        Audited with the value it replaced (issue #371): these decide who may command and
+        govern the bot, and once a setting is overwritten nothing else keeps what it was.
         """
 
         # A channel does one job (decided 2026-09-06). Keyed on the column, because this
@@ -215,6 +219,9 @@ class BotCog(commands.Cog):
                 )
                 return
 
+        config = await self.bot.config_service.get_server_config()
+        old_value = None if config is None else getattr(config, column)
+
         changed = await self.bot.config_service.set_core_setting(column, value)
         if not changed:
             await interaction.response.send_message(
@@ -222,6 +229,11 @@ class BotCog(commands.Cog):
                 ephemeral=True,
             )
             return
+
+        key = "channel_id" if _setting is not None else "role_id"
+        await _audit(
+            self.bot, interaction.user, change_type, {key: old_value}, {key: value}
+        )
 
         await interaction.response.send_message(
             f"✅ **{label}** set to {mention}.", ephemeral=True
@@ -252,6 +264,7 @@ class BotCog(commands.Cog):
             command="/bot log-channel",
             label="Log channel",
             mention=f"<#{channel.id}>",
+            change_type="LOG_CHANNEL_SET",
         )
 
     @group.command(
@@ -270,6 +283,7 @@ class BotCog(commands.Cog):
             command="/bot interaction-channel",
             label="Interaction channel",
             mention=f"<#{channel.id}>",
+            change_type="INTERACTION_CHANNEL_SET",
         )
 
     @group.command(
@@ -288,6 +302,7 @@ class BotCog(commands.Cog):
             command="/bot interaction-role",
             label="Interaction role",
             mention=f"<@&{role.id}>",
+            change_type="INTERACTION_ROLE_SET",
         )
 
     @group.command(
@@ -313,6 +328,7 @@ class BotCog(commands.Cog):
             command="/bot admin-role",
             label="League admin role",
             mention=f"<@&{role.id}>",
+            change_type="LEAGUE_ADMIN_ROLE_SET",
         )
 
     # ------------------------------------------------------------------
@@ -333,9 +349,10 @@ class BotCog(commands.Cog):
 
         Not `_set_one`, whose commands repair the settings the guards read and so run from
         any channel on the Administrator permission. These are ordinary league manager
-        commands, refused once a season's configuration is confirmed, and audited with the
-        role they replaced: a league that finds its members locked out needs to know which
-        role used to hold the access, and nothing else keeps it once it is overwritten.
+        commands, refused once a season's configuration is confirmed. Like `_set_one`'s,
+        each is audited with the role it replaced: a league that finds its members locked
+        out needs to know which role used to hold the access, and nothing else keeps it
+        once it is overwritten.
         """
         from services.season_lifecycle_service import configuration_fixed
 
