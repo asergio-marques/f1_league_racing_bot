@@ -79,7 +79,7 @@ Nothing happens immediately. The module needs channels to post to, a points tabl
 /division verdicts-channel  name: Division One  channel: #div1-verdicts
 ```
 
-All three are set **per division**, so a league with three divisions sets nine channels. The first carries each session's classification, the second the two championship tables, the third your stewarding verdicts. They can be the same channel if you want them to be, but the standings post is replaced after every round while the results posts accumulate, so keeping them apart reads better.
+All three are set **per division**, so a league with three divisions sets nine channels. The first carries each session's classification, the second the two championship tables, the third your stewarding verdicts. **Each needs a channel of its own.** The bot refuses a channel already doing another job (one of the other two, the same kind of channel in another division, or anything else it posts to) and names what holds it; see [Setting up the bot for your league](configuring-the-core-bot.md#step-9--point-each-division-at-its-channels). That suits these three anyway: the standings post is replaced after every round while the results posts accumulate, and the two would read badly in one channel.
 
 **All three block a season.** While results & standings is on, a season cannot be approved until every division has all three, and the bot names each division that is missing one. The verdicts channel is the one people forget, because penalties are the last thing on your mind while building a calendar.
 
