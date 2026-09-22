@@ -51,6 +51,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.result_submission_service import run_result_submission_job  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 14008
 SEASON_ID = 1
@@ -96,6 +97,7 @@ async def _make_db(
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, TEAM_ROLE)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
             "VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', ?, ?)",
@@ -185,7 +187,7 @@ async def _run(
     patches = {
         "validation": patch(
             "services.result_submission_service._build_division_validation_data",
-            new=AsyncMock(return_value=({101, 102}, {TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set())),
+            new=AsyncMock(return_value=({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {})),
         ),
         "create": patch(
             "services.result_submission_service.create_submission_channel",

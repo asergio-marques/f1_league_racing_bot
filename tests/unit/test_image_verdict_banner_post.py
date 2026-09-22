@@ -61,7 +61,7 @@ class _State:
             {"race_result_id": index, "qual_result_id": None, "driver_user_id": 100 + index,
              "penalty_type": "TIME_PENALTY", "time_seconds": 5,
              "description": "Contact.", "justification": "Reviewed.",
-             "team_role_id": None}
+             "team_instance_id": None}
             for index in range(1, count + 1)
         ]
 

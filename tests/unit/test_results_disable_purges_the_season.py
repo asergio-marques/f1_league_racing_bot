@@ -231,7 +231,7 @@ async def _seed_results_for_round(
         session_result_id = cur.lastrowid
         cur = await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position) "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position) "
             "VALUES (?, 42, 7, 1)",
             (session_result_id,),
         )
@@ -261,7 +261,7 @@ async def _seed_results_for_round(
         )
         await db.execute(
             "INSERT INTO team_standings_snapshots "
-            "(round_id, division_id, team_role_id, standing_position, total_points) "
+            "(round_id, division_id, team_instance_id, standing_position, total_points) "
             "VALUES (?, ?, 7, 1, 25)",
             (round_id, division_id),
         )

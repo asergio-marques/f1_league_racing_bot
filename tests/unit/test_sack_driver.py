@@ -133,13 +133,13 @@ async def _make_db(
         session_result_id = cursor.lastrowid
         await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, driver_profile_id) "
+            "team_instance_id, finishing_position, driver_profile_id) "
             "VALUES (?, 4242, 3001, 1, ?)",
             (session_result_id, PROFILE_ID),
         )
         await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, driver_profile_id) "
+            "team_instance_id, finishing_position, driver_profile_id) "
             "VALUES (?, 4242, 3001, 1, ?)",
             (session_result_id, PROFILE_ID),
         )

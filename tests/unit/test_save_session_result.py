@@ -22,6 +22,7 @@ from services.result_submission_service import (  # noqa: E402
     save_session_result,
 )
 from services.season_service import SeasonImmutableError  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 13210
 SEASON_ID = 1
@@ -33,7 +34,7 @@ DRIVER_A = 101
 def _race_row(user_id: int = DRIVER_A, position: int = 1) -> dict:
     return {
         "driver_user_id": user_id,
-        "team_role_id": 3001,
+        "team_instance_id": 3001,
         "finishing_position": position,
         "outcome": "CLASSIFIED",
         "total_time": "1:30:00.000",
@@ -63,6 +64,7 @@ async def _make_db(tmp_path, *, name: str, season_status: str = "ACTIVE") -> str
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 3001)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format) "
             "VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL')",

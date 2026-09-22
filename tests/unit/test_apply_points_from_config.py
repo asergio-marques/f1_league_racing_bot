@@ -119,14 +119,14 @@ async def _make_db(
             if session_type.is_qualifying:
                 await db.execute(
                     f"INSERT INTO {table} "  # noqa: S608
-                    "(id, session_result_id, driver_user_id, team_role_id, "
+                    "(id, session_result_id, driver_user_id, team_instance_id, "
                     " finishing_position, outcome) VALUES (?, ?, ?, 0, ?, ?)",
                     (index, SESSION_RESULT_ID, user_id, position, outcome),
                 )
             else:
                 await db.execute(
                     f"INSERT INTO {table} "  # noqa: S608
-                    "(id, session_result_id, driver_user_id, team_role_id, "
+                    "(id, session_result_id, driver_user_id, team_instance_id, "
                     " finishing_position, outcome, fastest_lap) "
                     "VALUES (?, ?, ?, 0, ?, ?, ?)",
                     (index, SESSION_RESULT_ID, user_id, position, outcome, fastest_lap),

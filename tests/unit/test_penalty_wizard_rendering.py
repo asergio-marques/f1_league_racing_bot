@@ -214,7 +214,7 @@ async def _make_db(tmp_path, *, attendees=(), test_names=None) -> str:
             for index, uid in enumerate(attendees, start=1):
                 await db.execute(
                     "INSERT INTO race_session_results "
-                    "(id, session_result_id, driver_user_id, team_role_id, "
+                    "(id, session_result_id, driver_user_id, team_instance_id, "
                     " finishing_position, outcome) VALUES (?, 1, ?, 0, ?, 'FINISHED')",
                     (index, uid, index),
                 )

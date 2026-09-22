@@ -22,6 +22,7 @@ from services.standings_service import (
     compute_points_for_session,
     persist_snapshots,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +59,7 @@ async def _bootstrap(db_path: str):
             (season_id,),
         )
         division_id = cursor.lastrowid
+        await seed_team_instances(db, division_id, 997, 998, 999)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
             "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00')",
@@ -87,7 +89,7 @@ async def test_save_session_result_creates_rows(db_path):
     driver_rows = [
         {
             "driver_user_id": 111,
-            "team_role_id": 999,
+            "team_instance_id": 999,
             "finishing_position": 1,
             "outcome": OutcomeModifier.CLASSIFIED.value,
             "total_time": "1:23:45.678",
@@ -98,7 +100,7 @@ async def test_save_session_result_creates_rows(db_path):
         },
         {
             "driver_user_id": 222,
-            "team_role_id": 998,
+            "team_instance_id": 998,
             "finishing_position": 2,
             "outcome": OutcomeModifier.CLASSIFIED.value,
             "total_time": "+0:01.234",
@@ -142,7 +144,7 @@ async def test_compute_driver_standings_correct_totals(db_path):
     driver_rows = [
         {
             "driver_user_id": 111,
-            "team_role_id": 999,
+            "team_instance_id": 999,
             "finishing_position": 1,
             "outcome": OutcomeModifier.CLASSIFIED.value,
             "total_time": "1:23:45.678",
@@ -153,7 +155,7 @@ async def test_compute_driver_standings_correct_totals(db_path):
         },
         {
             "driver_user_id": 222,
-            "team_role_id": 998,
+            "team_instance_id": 998,
             "finishing_position": 2,
             "outcome": OutcomeModifier.CLASSIFIED.value,
             "total_time": "+0:01.234",
@@ -164,7 +166,7 @@ async def test_compute_driver_standings_correct_totals(db_path):
         },
         {
             "driver_user_id": 333,
-            "team_role_id": 997,
+            "team_instance_id": 997,
             "finishing_position": 3,
             "outcome": OutcomeModifier.DNF.value,
             "total_time": "DNF",
@@ -212,7 +214,7 @@ async def test_persist_snapshots_writes_rows(db_path):
     driver_rows = [
         {
             "driver_user_id": 111,
-            "team_role_id": 999,
+            "team_instance_id": 999,
             "finishing_position": 1,
             "outcome": OutcomeModifier.CLASSIFIED.value,
             "total_time": "1:23:45.678",

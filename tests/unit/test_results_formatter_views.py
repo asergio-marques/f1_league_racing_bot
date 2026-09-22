@@ -38,9 +38,9 @@ from utils.results_formatter import (  # noqa: E402
 )
 
 
-def _team(position: int, role_id: int, points: int):
+def _team(position: int, team_id: int, points: int):
     return SimpleNamespace(
-        standing_position=position, team_role_id=role_id, total_points=points
+        standing_position=position, team_instance_id=team_id, total_points=points
     )
 
 
@@ -49,12 +49,21 @@ def _team(position: int, role_id: int, points: int):
 # ---------------------------------------------------------------------------
 
 
-def test_every_team_is_listed_with_its_points():
-    result = format_team_standings([_team(1, 5001, 43), _team(2, 5002, 21)])
+def test_every_team_is_listed_by_name_with_its_points():
+    result = format_team_standings(
+        [_team(1, 5001, 43), _team(2, 5002, 21)], {5001: "Ferrari", 5002: "Rival"}
+    )
 
-    assert "<@&5001>" in result
-    assert "43 pts" in result
-    assert "<@&5002>" in result
+    assert result.splitlines() == ["1. Ferrari — **43 pts**", "2. Rival — **21 pts**"]
+
+
+def test_a_team_is_never_printed_as_a_role_mention():
+    """The role only typed the team in; one replaced mid-season would print as a deleted role
+    (#375). A team with no name to hand is said to be unknown instead."""
+    result = format_team_standings([_team(1, 5001, 43)])
+
+    assert "<@&" not in result
+    assert result == "1. unknown team — **43 pts**"
 
 
 def test_teams_are_ordered_by_standing_not_by_the_order_given():

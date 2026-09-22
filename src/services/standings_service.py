@@ -320,24 +320,24 @@ async def compute_team_standings(
     tiebreaks; tiebreak uses Feature Race CLASSIFIED finishes only.
 
     The final tiebreak mirrors it too, and for the same reason (#143): alphabetically by
-    team name, the reserve team after every named team, and ascending role id where two
+    team name, the reserve team after every named team, and the team added first where two
     teams carry the same name. Without it two teams level on everything are ordered by set
-    iteration over role snowflakes, which the addition of an unrelated team can silently
-    reverse.
+    iteration, which the addition of an unrelated team can silently reverse.
 
-    The name ordered on is the one the database holds, as ``opening_team_standings`` already
-    does — a constructor is drawn as a role mention, and no Discord lookup is needed to know
-    what the league called the team.
+    **A team is the division's team, never its Discord role** (#375). A result records the
+    team, so a team whose role is replaced mid-season keeps a single entry holding every
+    round it raced. The name ordered on is the one the database holds, as
+    ``opening_team_standings`` already does.
 
     Returns snapshots with standing_position assigned from 1.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT team_role_id, finishing_position, points_awarded,
+            SELECT team_instance_id, finishing_position, points_awarded,
                    fastest_lap_bonus, outcome, session_type, round_number
             FROM (
-                SELECT rsr.team_role_id, rsr.finishing_position,
+                SELECT rsr.team_instance_id, rsr.finishing_position,
                        rsr.points_awarded, rsr.fastest_lap_bonus, rsr.outcome,
                        sr.session_type, r.round_number
                 FROM race_session_results rsr
@@ -348,7 +348,7 @@ async def compute_team_standings(
                   AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
                   AND sr.status = 'ACTIVE'
                 UNION ALL
-                SELECT qsr.team_role_id, qsr.finishing_position,
+                SELECT qsr.team_instance_id, qsr.finishing_position,
                        qsr.points_awarded, 0 AS fastest_lap_bonus, qsr.outcome,
                        sr.session_type, r.round_number
                 FROM qualifying_session_results qsr
@@ -373,7 +373,7 @@ async def compute_team_standings(
     first_finish_rounds: dict[int, dict[int, int]] = defaultdict(dict)
 
     for row in rows:
-        tid: int = row["team_role_id"]
+        tid: int = row["team_instance_id"]
         pts = (row["points_awarded"] or 0) + (row["fastest_lap_bonus"] or 0)
         total_points[tid] += pts
 
@@ -388,29 +388,20 @@ async def compute_team_standings(
 
     all_teams = set(total_points) | set(finish_counts)
 
-    # Every team instance of the division, reserves included. Two jobs, one query: the
-    # non-reserve teams join the standings without having scored, and every team supplies the
-    # name the final tiebreak orders on — a reserve team whose driver scored is in the set
-    # already.
+    # Every team of the division, reserves included. Two jobs, one query: the non-reserve
+    # teams join the standings without having scored, and every team supplies the name the
+    # final tiebreak orders on — a reserve team whose driver scored is in the set already.
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            """
-            SELECT trc.role_id, ti.name AS team_name, ti.is_reserve
-            FROM team_instances ti
-            JOIN divisions d ON d.id = ti.division_id
-            JOIN seasons s ON s.id = d.season_id
-            JOIN team_role_configs trc
-              ON trc.team_name = ti.name
-            WHERE ti.division_id = ?
-            """,
+            "SELECT id, name AS team_name, is_reserve FROM team_instances WHERE division_id = ?",
             (division_id,),
         )
         team_rows = await cursor.fetchall()
-    # role id -> (team rank, team name). Rank 0 a named team, 1 the reserve team; a role the
-    # division holds no instance for gets 2 below and ranks after both, ordered by id alone.
+    # team id -> (team rank, team name). Rank 0 a named team, 1 the reserve team; a team of
+    # another division, which no result should name, gets 2 below and ranks after both.
     team_meta: dict[int, tuple[int, str]] = {}
     for r in team_rows:
-        tid = int(r["role_id"])
+        tid = int(r["id"])
         is_reserve = bool(r["is_reserve"])
         team_meta[tid] = (1 if is_reserve else 0, r["team_name"] or "")
         if is_reserve:
@@ -446,7 +437,7 @@ async def compute_team_standings(
                 id=0,
                 round_id=up_to_round_id,
                 division_id=division_id,
-                team_role_id=tid,
+                team_instance_id=tid,
                 standing_position=i,
                 total_points=total_points.get(tid, 0),
                 finish_counts=fc,
@@ -545,46 +536,34 @@ async def opening_team_standings(
     Ordered alphabetically by team name, case-insensitively, so the two opening sheets agree
     with one another about which team comes first.
 
-    Keyed by role id, as a constructor's classification always is, and selecting the same
-    teams ``compute_team_standings`` does. A team the server holds no role mapping for is
-    absent here exactly as it would be after a round.
+    Keyed by the division's team, as a constructor's classification always is (#375), and
+    selecting the same teams ``compute_team_standings`` does — every team of the division but
+    the reserve, whatever role it holds. Two teams of one name stand in the order they were
+    added, as they do there.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            """
-            SELECT trc.role_id, ti.name AS team_name
-            FROM team_instances ti
-            JOIN divisions d ON d.id = ti.division_id
-            JOIN seasons s ON s.id = d.season_id
-            JOIN team_role_configs trc
-              ON trc.team_name = ti.name
-            WHERE ti.division_id = ?
-              AND ti.is_reserve = 0
-            """,
+            "SELECT id, name AS team_name FROM team_instances "
+            "WHERE division_id = ? AND is_reserve = 0",
             (division_id,),
         )
         rows = await cursor.fetchall()
 
-    teams: list[tuple[int, str]] = []
-    for row in rows:
-        try:
-            teams.append((int(row["role_id"]), row["team_name"] or ""))
-        except (TypeError, ValueError):
-            continue
+    teams = [(int(row["id"]), row["team_name"] or "") for row in rows]
 
     return [
         TeamStandingsSnapshot(
             id=0,
             round_id=0,
             division_id=division_id,
-            team_role_id=role_id,
+            team_instance_id=team_id,
             standing_position=position,
             total_points=0,
             finish_counts={},
             first_finish_rounds={},
         )
-        for position, (role_id, _name) in enumerate(
-            sorted(teams, key=lambda entry: entry[1].casefold()), start=1
+        for position, (team_id, _name) in enumerate(
+            sorted(teams, key=lambda entry: (entry[1].casefold(), entry[0])), start=1
         )
     ]
 
@@ -727,10 +706,10 @@ async def persist_snapshots(
             await db.execute(
                 """
                 INSERT INTO team_standings_snapshots
-                    (round_id, division_id, team_role_id, standing_position, total_points,
+                    (round_id, division_id, team_instance_id, standing_position, total_points,
                      finish_counts, first_finish_rounds)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(round_id, division_id, team_role_id)
+                ON CONFLICT(round_id, division_id, team_instance_id)
                 DO UPDATE SET
                     standing_position = excluded.standing_position,
                     total_points = excluded.total_points,
@@ -740,7 +719,7 @@ async def persist_snapshots(
                 (
                     snap.round_id,
                     snap.division_id,
-                    snap.team_role_id,
+                    snap.team_instance_id,
                     snap.standing_position,
                     snap.total_points,
                     json.dumps(snap.finish_counts),
@@ -916,7 +895,7 @@ async def previous_standing_positions(
 ) -> dict[int, int] | None:
     """Key → the standing position it held in the reference round, or None.
 
-    The key is the driver's user id, or the team's Discord role id where *teams*. None —
+    The key is the driver's user id, or the division team's id where *teams*. None —
     distinct from an empty mapping — where there is no reference round at all, which is
     what makes "the first round of a division" different from "a round nobody scored in".
     """
@@ -925,7 +904,7 @@ async def previous_standing_positions(
         return None
 
     table = "team_standings_snapshots" if teams else "driver_standings_snapshots"
-    key = "team_role_id" if teams else "driver_user_id"
+    key = "team_instance_id" if teams else "driver_user_id"
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"""

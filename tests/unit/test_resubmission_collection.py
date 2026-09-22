@@ -115,7 +115,7 @@ async def _seed_old_results(db_path, *, team_role=TEAM_ROLE):
             (ROUND_ID, DIVISION_ID),
         )
         await db.execute(
-            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_role_id, "
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_instance_id, "
             "finishing_position) VALUES (500, 101, ?, 1)",
             (team_role,),
         )
@@ -188,7 +188,7 @@ async def _run(
             "services.result_submission_service._build_division_validation_data",
             new=AsyncMock(
                 return_value=validation
-                or ({101, 102}, {TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set()),
+                or ({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {}),
                 side_effect=validation_error,
             ),
         ),
@@ -503,7 +503,7 @@ async def test_a_team_disagreement_within_the_resubmission_is_refused(tmp_path):
     bot = _bot(db_path, [QUALI_PASTE, other_team, RACE_PASTE])
 
     stubs = await _run(
-        bot, validation=({101, 102}, {TEAM_ROLE, 3002}, None, {102: TEAM_ROLE}, {101})
+        bot, validation=({101, 102}, {TEAM_ROLE: TEAM_ROLE, 3002: 3002}, None, {102: TEAM_ROLE}, {101}, {})
     )
 
     assert "was recorded under <@&3001> in Feature Qualifying" in _said(stubs["channel"])
@@ -840,7 +840,7 @@ async def _press_resubmit_and_collect(bot, state):
     with patch(
         "services.result_submission_service._build_division_validation_data",
         new=AsyncMock(
-            return_value=({101, 102}, {TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set())
+            return_value=({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {})
         ),
     ), patch(
         "services.season_points_service.get_attached_config_names",

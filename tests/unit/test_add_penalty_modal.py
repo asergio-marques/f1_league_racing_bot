@@ -108,14 +108,14 @@ async def _make_db(
         if qualifying:
             await db.execute(
                 "INSERT INTO qualifying_session_results "
-                "(id, session_result_id, driver_user_id, team_role_id, finishing_position, "
+                "(id, session_result_id, driver_user_id, team_instance_id, finishing_position, "
                 " outcome) VALUES (1, 1, ?, 0, 1, 'CLASSIFIED')",
                 (DRIVER,),
             )
         else:
             await db.execute(
                 "INSERT INTO race_session_results "
-                "(id, session_result_id, driver_user_id, team_role_id, finishing_position, "
+                "(id, session_result_id, driver_user_id, team_instance_id, finishing_position, "
                 " outcome, base_time_ms, ingame_time_penalties_ms) "
                 "VALUES (1, 1, ?, 0, 1, 'CLASSIFIED', ?, ?)",
                 (DRIVER, base_time_ms, ingame_ms),

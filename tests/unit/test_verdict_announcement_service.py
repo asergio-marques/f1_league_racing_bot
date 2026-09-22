@@ -384,7 +384,7 @@ async def _seed_round(db_path: str) -> dict:
         session_result_id = cursor.lastrowid
         cursor = await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, ?, 888, 1)",
+            "team_instance_id, finishing_position) VALUES (?, ?, 888, 1)",
             (session_result_id, DRIVER_ID),
         )
         race_result_id = cursor.lastrowid
@@ -427,7 +427,7 @@ def _penalty_record(race_result_id: int) -> dict:
         "race_result_id": race_result_id,
         "qual_result_id": None,
         "driver_user_id": DRIVER_ID,
-        "team_role_id": 888,
+        "team_instance_id": 888,
         "penalty_type": "TIME",
         "time_seconds": 5,
         "description": "Contact at turn four.",

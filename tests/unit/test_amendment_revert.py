@@ -71,7 +71,7 @@ async def _db(tmp_path, name: str) -> str:
         for position, driver in enumerate((101, 102), start=1):
             await db.execute(
                 "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-                "team_role_id, finishing_position) VALUES (?, ?, 3001, ?)",
+                "team_instance_id, finishing_position) VALUES (?, ?, 3001, ?)",
                 (session.lastrowid, driver, position),
             )
         await db.execute(
@@ -115,7 +115,7 @@ async def _overwrite_the_classification(db_path) -> None:
         )
         await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, 102, 3001, 1)",
+            "team_instance_id, finishing_position) VALUES (?, 102, 3001, 1)",
             (session_id,),
         )
         await db.commit()
@@ -651,7 +651,7 @@ async def test_every_amended_session_is_snapshotted_and_put_back(tmp_path):
         )
         await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, best_lap) VALUES (?, 101, 3001, 1, '1:20.000')",
+            "team_instance_id, finishing_position, best_lap) VALUES (?, 101, 3001, 1, '1:20.000')",
             (quali.lastrowid,),
         )
         await db.commit()

@@ -292,12 +292,12 @@ async def test_apply_negative_penalty_reorders(tmp_path):
         sr_id = cursor.lastrowid
         # P1 = driver 1 (20:00.000 = 1200000ms), P2 = driver 2 (20:10.000 = 1210000ms)
         await db.execute(
-            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_role_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_instance_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
             "VALUES (?,1,100,1,'CLASSIFIED',1200000,0,0,0)",
             (sr_id,),
         )
         await db.execute(
-            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_role_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_instance_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
             "VALUES (?,2,200,2,'CLASSIFIED',1210000,0,0,0)",
             (sr_id,),
         )
@@ -367,12 +367,12 @@ async def test_apply_negative_penalty_reorders_move_up(tmp_path):
         sr_id = cursor.lastrowid
         # P1 = driver 1 (20:00.000 = 1200000ms), P2 = driver 2 (20:10.000 = 1210000ms)
         await db.execute(
-            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_role_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_instance_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
             "VALUES (?,1,100,1,'CLASSIFIED',1200000,0,0,0)",
             (sr_id,),
         )
         await db.execute(
-            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_role_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_instance_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
             "VALUES (?,2,200,2,'CLASSIFIED',1210000,0,0,0)",
             (sr_id,),
         )
@@ -443,12 +443,12 @@ async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
         # Give driver 1 a -10s penalty → 1210000 - 10000 = 1200000ms = same as driver 2
         # Tiebreak: original position → driver 1 stays P1
         await db.execute(
-            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_role_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_instance_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
             "VALUES (?,1,100,1,'CLASSIFIED',1210000,0,0,0)",
             (sr_id,),
         )
         await db.execute(
-            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_role_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_instance_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
             "VALUES (?,2,200,2,'CLASSIFIED',1200000,0,0,0)",
             (sr_id,),
         )
@@ -523,13 +523,13 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
         # Driver 2 = P2, no fastest lap
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms, fastest_lap, fastest_lap_bonus) "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms, fastest_lap, fastest_lap_bonus) "
             "VALUES (?,1,100,1,'CLASSIFIED',1200000,0,0,0,'1:30.000',1)",
             (sr_id,),
         )
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms, fastest_lap, fastest_lap_bonus) "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms, fastest_lap, fastest_lap_bonus) "
             "VALUES (?,2,200,2,'CLASSIFIED',1210000,0,0,0,'1:31.000',0)",
             (sr_id,),
         )

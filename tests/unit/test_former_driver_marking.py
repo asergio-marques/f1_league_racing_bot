@@ -109,7 +109,7 @@ async def _add_race(
         for position, (profile_id, driver, outcome) in enumerate(entries, start=1):
             await db.execute(
                 "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-                "team_role_id, finishing_position, outcome, driver_profile_id) "
+                "team_instance_id, finishing_position, outcome, driver_profile_id) "
                 "VALUES (?, ?, 3001, ?, ?, ?)",
                 (session.lastrowid, driver, position, outcome, profile_id),
             )
@@ -132,7 +132,7 @@ async def _add_qualifying(
         for position, (profile_id, driver, outcome) in enumerate(entries, start=1):
             await db.execute(
                 "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-                "team_role_id, finishing_position, outcome, driver_profile_id) "
+                "team_instance_id, finishing_position, outcome, driver_profile_id) "
                 "VALUES (?, ?, 3001, ?, ?, ?)",
                 (session.lastrowid, driver, position, outcome, profile_id),
             )

@@ -45,6 +45,10 @@ _SESSION_LABELS: dict[SessionType, str] = {
 #: empties the field instead and never draws it (FR-013).
 NOT_APPLICABLE = "—"
 
+#: Where a recorded team has no name to print. Every result names a team of its division, so
+#: this marks a fault rather than a case a league meets; it is never a role mention (#375).
+UNKNOWN_TEAM = "unknown team"
+
 
 def parse_lap_time(s: str) -> int | None:
     """A stored lap time in milliseconds, or None — read by the shared strict parser (#362)."""
@@ -156,7 +160,7 @@ class QualifyingRow:
 
     position: int
     driver_user_id: int
-    team_role_id: int
+    team_instance_id: int
     tyre: str | None
     best_lap: str | None
     gap: str | None
@@ -173,7 +177,7 @@ class RaceRow:
 
     position: int
     driver_user_id: int
-    team_role_id: int
+    team_instance_id: int
     #: Total race time for the first-placed entry, an interval, a lap count, or an outcome.
     time: str | None
     fastest_lap: str | None
@@ -230,7 +234,7 @@ def build_qualifying_rows(
             QualifyingRow(
                 position=row.finishing_position,
                 driver_user_id=row.driver_user_id,
-                team_role_id=row.team_role_id,
+                team_instance_id=row.team_instance_id,
                 tyre=row.tyre or None,
                 best_lap=best_lap,
                 gap=gap,
@@ -285,7 +289,7 @@ def build_race_rows(
             RaceRow(
                 position=row.finishing_position,
                 driver_user_id=row.driver_user_id,
-                team_role_id=row.team_role_id,
+                team_instance_id=row.team_instance_id,
                 time=time_cell,
                 fastest_lap=(row.fastest_lap or "").strip() or None,
                 ingame_penalty=render_time_penalty(row.ingame_time_penalties_ms),
@@ -324,7 +328,7 @@ def format_qualifying_table(
     """Render a qualifying result as a plain-text mention list.
 
     Format per line:
-      {pos}. @Driver (@&Team) — {tyre} — {best_lap} — {gap} — {postrace_pen} — {appeal_pen} — {pts} pts
+      {pos}. @Driver (Team) — {tyre} — {best_lap} — {gap} — {postrace_pen} — {appeal_pen} — {pts} pts
 
     Every value is resolved by :func:`build_qualifying_rows`; this function places them and
     computes nothing of its own (Constitution XIV.7). A cell the builder returns as ``None``
@@ -337,7 +341,7 @@ def format_qualifying_table(
     lines: list[str] = []
     for row in rows:
         driver_ref = (member_display or {}).get(row.driver_user_id) or f"<@{row.driver_user_id}>"
-        team_ref = (team_display or {}).get(row.team_role_id) or f"<@&{row.team_role_id}>"
+        team_ref = (team_display or {}).get(row.team_instance_id) or UNKNOWN_TEAM
         lines.append(
             f"**{row.position}.** {driver_ref} ({team_ref})"
             f" — {row.tyre or NOT_APPLICABLE}"
@@ -360,7 +364,7 @@ def format_race_table(
     """Render a race result as a plain-text mention list.
 
     Format per line:
-      {pos}. @Driver (@&Team) — {total_time_or_interval} — {fastest_lap} — {ingame_pen} — {postrace_pen} — {appeal_pen} — {pts} pts
+      {pos}. @Driver (Team) — {total_time_or_interval} — {fastest_lap} — {ingame_pen} — {postrace_pen} — {appeal_pen} — {pts} pts
 
     Every value is resolved by :func:`build_race_rows`; this function places them and computes
     nothing of its own (Constitution XIV.7). A cell the builder returns as ``None`` is drawn as
@@ -373,7 +377,7 @@ def format_race_table(
     lines: list[str] = []
     for row in rows:
         driver_ref = (member_display or {}).get(row.driver_user_id) or f"<@{row.driver_user_id}>"
-        team_ref = (team_display or {}).get(row.team_role_id) or f"<@&{row.team_role_id}>"
+        team_ref = (team_display or {}).get(row.team_instance_id) or UNKNOWN_TEAM
         lines.append(
             f"**{row.position}.** {driver_ref} ({team_ref})"
             f" — {row.time or NOT_APPLICABLE}"
@@ -499,15 +503,22 @@ def format_driver_standings(
 
 def format_team_standings(
     snapshots: list[TeamStandingsSnapshot],
+    team_names: dict[int, str] | None = None,
 ) -> str:
-    """Render team standings as a ranked mention list.
+    """Render team standings as a ranked list, each team by its name.
 
-    Format: ``{pos}. @&Team — **{total_points} pts**``
+    Format: ``{pos}. Team — **{total_points} pts**``
+
+    *team_names* maps each division team's id to its name. A team is printed by name and never
+    as a role mention: the role is only how a submission typed the team, and one replaced
+    mid-season would otherwise print as a deleted role (#375).
     """
+    names = team_names or {}
     sorted_snaps = sorted(snapshots, key=lambda s: s.standing_position)
     lines: list[str] = []
     for snap in sorted_snaps:
-        lines.append(f"{snap.standing_position}. <@&{snap.team_role_id}> — **{snap.total_points} pts**")
+        name = names.get(snap.team_instance_id) or UNKNOWN_TEAM
+        lines.append(f"{snap.standing_position}. {name} — **{snap.total_points} pts**")
     return "\n".join(lines) if lines else "No standings available."
 
 

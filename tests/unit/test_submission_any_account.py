@@ -34,7 +34,7 @@ def _validate(lines: list[str]):
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={NOW, OTHER},
-        team_role_ids={TEAM_A, TEAM_B},
+        team_of_role={TEAM_A: TEAM_A, TEAM_B: TEAM_B},
         reserve_team_role_id=None,
         driver_team_map={NOW: TEAM_A, OTHER: TEAM_B},
         current_of={PAST: NOW},
@@ -93,7 +93,7 @@ async def _db_with_a_session_under_the_past_account(tmp_path) -> tuple[str, int]
         )
         await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (1, ?, ?, 1)",
+            "team_instance_id, finishing_position) VALUES (1, ?, ?, 1)",
             (PAST, TEAM_A),
         )
         cursor = await db.execute(

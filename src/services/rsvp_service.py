@@ -972,10 +972,8 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
                    ON dra.driver_profile_id = ts.driver_profile_id
                   AND dra.round_id = ?
                   AND dra.division_id = ?
-              LEFT JOIN team_role_configs trc
-                   ON trc.team_name = ti.name
               LEFT JOIN team_standings_snapshots tss
-                   ON tss.team_role_id = trc.role_id
+                   ON tss.team_instance_id = ti.id
                   AND tss.round_id = (
                       SELECT MAX(r2.id) FROM rounds r2
                        WHERE r2.division_id = ? AND r2.id < ?

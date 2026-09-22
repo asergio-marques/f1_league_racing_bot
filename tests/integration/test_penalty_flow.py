@@ -78,7 +78,7 @@ async def _insert_feature_race(db_path: str, round_id: int, division_id: int) ->
         # P1: driver 1 — 20:00.000 = 1200000ms, fastest lap 1:30.000
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
             "postrace_time_penalties_ms, appeal_time_penalties_ms, "
             "fastest_lap, fastest_lap_bonus, points_awarded) "
@@ -88,7 +88,7 @@ async def _insert_feature_race(db_path: str, round_id: int, division_id: int) ->
         # P2: driver 2 — 20:10.000 = 1210000ms, no fastest lap
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
             "postrace_time_penalties_ms, appeal_time_penalties_ms, "
             "fastest_lap, fastest_lap_bonus, points_awarded) "
@@ -389,7 +389,7 @@ async def _insert_race_with_gap_strings(db_path: str, round_id: int, division_id
         # P1: driver 1 — 47:55.744 = 2875744ms
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
             "postrace_time_penalties_ms, appeal_time_penalties_ms, "
             "fastest_lap, fastest_lap_bonus, points_awarded) "
@@ -399,7 +399,7 @@ async def _insert_race_with_gap_strings(db_path: str, round_id: int, division_id
         # P2: driver 2 — 47:55.744 + 2.955s = 2878699ms
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
             "postrace_time_penalties_ms, appeal_time_penalties_ms, "
             "fastest_lap, fastest_lap_bonus, points_awarded) "
@@ -409,7 +409,7 @@ async def _insert_race_with_gap_strings(db_path: str, round_id: int, division_id
         # P3: driver 3 — 47:55.744 + 42.044s = 2917788ms
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
             "postrace_time_penalties_ms, appeal_time_penalties_ms, "
             "fastest_lap, fastest_lap_bonus, points_awarded) "
@@ -505,7 +505,7 @@ async def _insert_race_and_new_tables(db_path: str, round_id: int, division_id: 
         # 20:00.000 = 1_200_000 ms; 20:10.000 = 1_210_000 ms
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
             "postrace_time_penalties_ms, appeal_time_penalties_ms, "
             "fastest_lap, fastest_lap_bonus, points_awarded) "
@@ -514,7 +514,7 @@ async def _insert_race_and_new_tables(db_path: str, round_id: int, division_id: 
         )
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
             "postrace_time_penalties_ms, appeal_time_penalties_ms, "
             "fastest_lap, fastest_lap_bonus, points_awarded) "
@@ -579,14 +579,14 @@ async def _insert_qualifying_and_new_tables(db_path: str, round_id: int, divisio
         # New qualifying table
         await db.execute(
             "INSERT INTO qualifying_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, tyre, best_lap, points_awarded) "
             "VALUES (?, 1, 100, 1, 'CLASSIFIED', 'Soft', '1:20.000', 0)",
             (sr_id,),
         )
         await db.execute(
             "INSERT INTO qualifying_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, tyre, best_lap, points_awarded) "
             "VALUES (?, 2, 200, 2, 'CLASSIFIED', 'Medium', '1:22.000', 0)",
             (sr_id,),

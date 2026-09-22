@@ -152,27 +152,26 @@ async def _driver_nationality(
 
 
 async def team_name_for_entry(
-    bot, guild, *, division_id: int, role_id: int | None
+    bot, guild, *, division_id: int, team_id: int | None
 ) -> str | None:
     """The team whose car the driver drove, resolved as the results graphic resolves it.
 
-    The session records the Discord **role** an entry drove for; the division's team holding
-    that role is what the graphic names, and what the badge is looked up by. Where the division
-    holds no such team the role's own name stands in, which is what the textual table does.
+    The session records the division's **team** an entry drove for (#375); its name is what
+    the graphic names, and what the badge is looked up by.
 
     For a reserve standing in for another driver this is the team whose car they drove and
-    never the reserve team, because the role is the one the *result* records.
+    never the reserve team, because the team is the one the *result* records.
     """
-    if role_id is None:
+    if team_id is None:
         return None
     try:
         from services.image_results_post import _team_names
 
-        names = await _team_names(bot, guild, division_id, [int(role_id)])
+        names = await _team_names(bot, guild, division_id, [int(team_id)])
     except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
-        log.warning("verdicts: team name unreadable for role %s: %s", role_id, exc)
+        log.warning("verdicts: team name unreadable for team %s: %s", team_id, exc)
         return None
-    return names.get(int(role_id))
+    return names.get(int(team_id))
 
 
 async def _mention_names(

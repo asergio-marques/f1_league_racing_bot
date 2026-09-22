@@ -55,12 +55,12 @@ async def _completed_season(tmp_path) -> str:
         for uid, pos in ((PAST, 1), (OTHER, 2)):
             await db.execute(
                 "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-                "team_role_id, finishing_position) VALUES (1, ?, 501, ?)",
+                "team_instance_id, finishing_position) VALUES (1, ?, 501, ?)",
                 (uid, pos),
             )
             await db.execute(
                 "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-                "team_role_id, finishing_position) VALUES (2, ?, 501, ?)",
+                "team_instance_id, finishing_position) VALUES (2, ?, 501, ?)",
                 (uid, pos),
             )
         cursor = await db.execute(

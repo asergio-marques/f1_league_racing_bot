@@ -65,7 +65,7 @@ async def _seed(tmp_path, name: str = "hydrate") -> tuple[str, dict]:
         for position, driver in enumerate((101, 102), start=1):
             cursor = await db.execute(
                 "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-                "team_role_id, finishing_position) VALUES (?, ?, 3001, ?)",
+                "team_instance_id, finishing_position) VALUES (?, ?, 3001, ?)",
                 (race.lastrowid, driver, position),
             )
             ids[f"race_{driver}"] = cursor.lastrowid
@@ -76,7 +76,7 @@ async def _seed(tmp_path, name: str = "hydrate") -> tuple[str, dict]:
         )
         cursor = await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, 101, 3001, 1)",
+            "team_instance_id, finishing_position) VALUES (?, 101, 3001, 1)",
             (quali.lastrowid,),
         )
         ids["qual_101"] = cursor.lastrowid
@@ -259,7 +259,7 @@ async def test_another_rounds_verdicts_are_not_picked_up(tmp_path):
         )
         cursor = await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, 101, 3001, 1)",
+            "team_instance_id, finishing_position) VALUES (?, 101, 3001, 1)",
             (other.lastrowid,),
         )
         other_row = cursor.lastrowid

@@ -127,7 +127,7 @@ async def _make_db(
                 )
                 await db.execute(
                     "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-                    "team_role_id, finishing_position, outcome, driver_profile_id) "
+                    "team_instance_id, finishing_position, outcome, driver_profile_id) "
                     "VALUES (?, ?, 3001, ?, ?, ?)",
                     (session.lastrowid, driver, position, outcome, profile_id),
                 )
@@ -1333,7 +1333,7 @@ async def _seed_driver_row(db_path, driver: int = 101) -> None:
             session_id = row["id"]
         await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, ?, 3001, 1)",
+            "team_instance_id, finishing_position) VALUES (?, ?, 3001, 1)",
             (session_id, driver),
         )
         await db.commit()
@@ -1597,7 +1597,7 @@ async def test_an_amendment_does_not_double_an_unamended_sessions_penalties(tmp_
         )
         await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, postrace_time_penalties_ms) "
+            "team_instance_id, finishing_position, postrace_time_penalties_ms) "
             "VALUES (?, 101, 3001, 1, 5000)",
             (other.lastrowid,),
         )
@@ -1635,7 +1635,7 @@ async def test_the_other_sessions_verdict_records_survive_an_amendment(tmp_path)
         )
         cursor = await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, 101, 3001, 1)",
+            "team_instance_id, finishing_position) VALUES (?, 101, 3001, 1)",
             (other.lastrowid,),
         )
         await db.execute(
@@ -2239,7 +2239,7 @@ async def test_the_report_stage_rewrites_every_amended_session_and_no_other(tmp_
                 else "race_session_results"
             )
             cursor = await db.execute(
-                f"INSERT INTO {table} (session_result_id, driver_user_id, team_role_id, "
+                f"INSERT INTO {table} (session_result_id, driver_user_id, team_instance_id, "
                 "finishing_position) VALUES (?, 101, 3001, 1)",
                 (session.lastrowid,),
             )

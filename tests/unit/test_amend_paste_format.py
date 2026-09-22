@@ -47,7 +47,7 @@ def _race(*, sanction_columns: bool) -> str:
 
 def _validate(line: str, session_type: SessionType):
     return validate_submission_block(
-        [line], session_type, {DRIVER}, {TEAM}, None, {DRIVER: TEAM},
+        [line], session_type, {DRIVER}, {TEAM: TEAM}, None, {DRIVER: TEAM},
     )
 
 
@@ -128,7 +128,7 @@ def test_a_driver_listed_twice_is_refused():
     ]
 
     result = validate_submission_block(
-        rows, SessionType.FEATURE_RACE, {DRIVER}, {TEAM}, None, {DRIVER: TEAM},
+        rows, SessionType.FEATURE_RACE, {DRIVER}, {TEAM: TEAM}, None, {DRIVER: TEAM},
     )
 
     assert isinstance(result[0], str)

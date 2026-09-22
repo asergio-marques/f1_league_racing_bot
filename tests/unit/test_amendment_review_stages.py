@@ -67,7 +67,7 @@ async def _db(tmp_path, name: str) -> tuple[str, int]:
         )
         cursor = await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, 101, 3001, 1)",
+            "team_instance_id, finishing_position) VALUES (?, 101, 3001, 1)",
             (session.lastrowid,),
         )
         await db.commit()

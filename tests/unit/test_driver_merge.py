@@ -94,7 +94,7 @@ async def _raced(db_path: str, account: str, division: int, profile_id: int | No
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, driver_profile_id) VALUES (?, ?, 501, 1, ?)",
+            "team_instance_id, finishing_position, driver_profile_id) VALUES (?, ?, 501, 1, ?)",
             (division, int(account), profile_id),
         )
         await db.commit()

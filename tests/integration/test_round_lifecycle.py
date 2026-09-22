@@ -83,7 +83,7 @@ async def _insert_session_with_drivers(db_path: str, round_id: int, division_id:
         sr_id = cursor.lastrowid
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, "
             "appeal_time_penalties_ms, points_awarded, fastest_lap_bonus) "
             "VALUES (?, 1, 100, 1, 'CLASSIFIED', 1200000, 0, 0, 0, 25, 0)",
@@ -91,7 +91,7 @@ async def _insert_session_with_drivers(db_path: str, round_id: int, division_id:
         )
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, "
             "appeal_time_penalties_ms, points_awarded, fastest_lap_bonus) "
             "VALUES (?, 2, 200, 2, 'CLASSIFIED', 1210000, 0, 0, 0, 18, 0)",

@@ -128,7 +128,7 @@ async def _make_db(
                 else "qualifying_session_results"
             )
             await db.execute(
-                f"INSERT INTO {table} (session_result_id, driver_user_id, team_role_id, "
+                f"INSERT INTO {table} (session_result_id, driver_user_id, team_instance_id, "
                 f"finishing_position, driver_profile_id) VALUES (?, ?, 3001, 1, ?)",
                 (cursor.lastrowid, DRIVER_USER_ID, PROFILE_ID),
             )

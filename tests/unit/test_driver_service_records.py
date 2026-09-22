@@ -122,12 +122,12 @@ async def _seed_results(db_path: str, user_id: str = OLD_USER, league: int = LEA
         await seed_team_instances(db, league, 501)
         await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, points_awarded) VALUES (?, ?, 501, 2, 18)",
+            "team_instance_id, finishing_position, points_awarded) VALUES (?, ?, 501, 2, 18)",
             (league, user_id),
         )
         await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, ?, 501, 3)",
+            "team_instance_id, finishing_position) VALUES (?, ?, 501, 3)",
             (league, user_id),
         )
         await db.commit()

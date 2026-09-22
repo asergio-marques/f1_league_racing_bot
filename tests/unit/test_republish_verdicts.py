@@ -69,7 +69,7 @@ async def _seed(tmp_path, name: str, *, rounds=(1, 2, 3)) -> tuple[str, dict]:
             )
             cursor = await db.execute(
                 "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-                "team_role_id, finishing_position) VALUES (?, ?, 3001, 1)",
+                "team_instance_id, finishing_position) VALUES (?, ?, 3001, 1)",
                 (session.lastrowid, 100 + number),
             )
             ids[number] = cursor.lastrowid

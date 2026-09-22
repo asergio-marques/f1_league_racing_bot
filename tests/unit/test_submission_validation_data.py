@@ -6,7 +6,8 @@ mistake in one surfaces as a validation result nobody can explain.
 
 **A driver belongs to the division that seats them.** `_build_division_validation_data` walks
 the division's teams and their seats to produce the set of drivers who may appear in a
-submission, the team roles that may appear beside them, and the map from one to the other. A
+submission, the team roles that may appear beside them — each resolved to the division's team it
+names, which is what a result records (#375) — and the map from each driver to their team. A
 driver missing from that set is rejected as not being in the division, so an empty seat and an
 unseated driver are the same thing here — which is correct, and worth saying out loud.
 
@@ -65,6 +66,9 @@ ROUND_ID = 21
 PRO_ROLE = 3001
 AM_ROLE = 3002
 RESERVE_ROLE = 3003
+#: Each division team's id, kept apart from the role numbers so a test cannot pass by
+#: mistaking one for the other.
+TEAM_IDS = {"Red": 1101, "Blue": 1102, "Reserves": 1103, "Ghost": 1104, "Unknown": 1105}
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +113,7 @@ async def _seed_session(
     table: str = "qualifying_session_results",
     round_id: int = ROUND_ID,
 ) -> int:
-    """One session of *round_id* with *rows* of (driver_user_id, team_role_id)."""
+    """One session of *round_id* with *rows* of (driver_user_id, team_instance_id)."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO session_results (round_id, division_id, session_type, status) "
@@ -120,7 +124,7 @@ async def _seed_session(
         await seed_team_instances(db, DIVISION_ID, *{role for _driver, role in rows})
         for position, (driver, role) in enumerate(rows, start=1):
             await db.execute(
-                f"INSERT INTO {table} (session_result_id, driver_user_id, team_role_id, "
+                f"INSERT INTO {table} (session_result_id, driver_user_id, team_instance_id, "
                 f"finishing_position) VALUES (?, ?, ?, ?)",
                 (session_id, driver, role, position),
             )
@@ -136,7 +140,7 @@ def _seat(user_id: int | None, number: int = 1) -> dict:
 
 
 def _team(name: str, seats: list[dict], *, reserve: bool = False) -> dict:
-    return {"name": name, "is_reserve": reserve, "seats": seats}
+    return {"id": TEAM_IDS[name], "name": name, "is_reserve": reserve, "seats": seats}
 
 
 def _bot(teams: list[dict], roles: dict[str, int | None]):
@@ -171,37 +175,38 @@ def _standard():
 async def test_every_seated_driver_is_in_the_division():
     """The set is what a submission is checked against — a driver missing from it is
     refused as not being in this division."""
-    drivers, _, _, _, _ = await _build(*_standard())
+    data = await _build(*_standard())
 
-    assert drivers == {101, 102, 201, 202, 301}
+    assert data.division_driver_ids == {101, 102, 201, 202, 301}
 
 
 async def test_an_empty_seat_contributes_no_driver():
     """A team with a vacancy is ordinary mid-season, and a `None` in the driver set would
     make every submission fail an identity check against nobody."""
     teams = [_team("Red", [_seat(101, 1), _seat(None, 2)])]
-    drivers, _, _, team_map, _ = await _build(teams, {"Red": PRO_ROLE})
+    data = await _build(teams, {"Red": PRO_ROLE})
 
-    assert drivers == {101}
-    assert team_map == {101: PRO_ROLE}
+    assert data.division_driver_ids == {101}
+    assert data.driver_team_map == {101: TEAM_IDS["Red"]}
 
 
-async def test_a_driver_is_mapped_to_their_teams_role():
-    """The map is what turns "this driver raced for that team" into something checkable."""
-    _, _, _, team_map, _ = await _build(*_standard())
+async def test_a_driver_is_mapped_to_their_team():
+    """The map is what turns "this driver raced for that team" into something checkable.
+    It names the division's team, never its role, as a stored result does (#375)."""
+    data = await _build(*_standard())
 
-    assert team_map[101] == PRO_ROLE
-    assert team_map[201] == AM_ROLE
+    assert data.driver_team_map[101] == TEAM_IDS["Red"]
+    assert data.driver_team_map[201] == TEAM_IDS["Blue"]
 
 
 async def test_seat_ids_are_read_as_numbers():
     """They are stored as text, and a submission carries an integer user id — comparing the
     two without the conversion silently matches nothing at all."""
     teams = [_team("Red", [_seat(101, 1)])]
-    drivers, _, _, team_map, _ = await _build(teams, {"Red": PRO_ROLE})
+    data = await _build(teams, {"Red": PRO_ROLE})
 
-    assert 101 in drivers
-    assert all(isinstance(uid, int) for uid in team_map)
+    assert 101 in data.division_driver_ids
+    assert all(isinstance(uid, int) for uid in data.driver_team_map)
 
 
 # ---------------------------------------------------------------------------
@@ -209,40 +214,41 @@ async def test_seat_ids_are_read_as_numbers():
 # ---------------------------------------------------------------------------
 
 
-async def test_the_full_time_team_roles_are_collected():
-    _, team_roles, _, _, _ = await _build(*_standard())
+async def test_each_full_time_role_is_resolved_to_its_team():
+    """The one place a role typed in a submission becomes the team a result records."""
+    data = await _build(*_standard())
 
-    assert team_roles == {PRO_ROLE, AM_ROLE}
+    assert data.team_of_role == {PRO_ROLE: TEAM_IDS["Red"], AM_ROLE: TEAM_IDS["Blue"]}
 
 
 async def test_the_reserve_team_is_kept_apart_from_the_others():
     """A reserve races for whoever needed them, so their role is not one a submission may
     name as a driver's team — it is named separately and treated separately."""
-    _, team_roles, reserve_role, _, _ = await _build(*_standard())
+    data = await _build(*_standard())
 
-    assert reserve_role == RESERVE_ROLE
-    assert RESERVE_ROLE not in team_roles
+    assert data.reserve_team_role_id == RESERVE_ROLE
+    assert RESERVE_ROLE not in data.team_of_role
 
 
 async def test_a_reserve_driver_is_in_the_division_and_flagged_as_a_reserve():
     """All three at once: in the driver set, in the team map, and in the reserve set.
     Returning them in only one would make them either unrecognised or indistinguishable
     from a full-time driver, and both surface as a confusing refusal."""
-    drivers, _, _, team_map, reserves = await _build(*_standard())
+    data = await _build(*_standard())
 
-    assert 301 in drivers
-    assert team_map[301] == RESERVE_ROLE
-    assert reserves == {301}
+    assert 301 in data.division_driver_ids
+    assert data.driver_team_map[301] == TEAM_IDS["Reserves"]
+    assert data.reserve_driver_ids == {301}
 
 
 async def test_a_division_with_no_reserve_team_reports_none():
     """Not every league runs reserves, and a falsy role id would be indistinguishable from
     one that exists."""
     teams = [_team("Red", [_seat(101, 1)])]
-    _, _, reserve_role, _, reserves = await _build(teams, {"Red": PRO_ROLE})
+    data = await _build(teams, {"Red": PRO_ROLE})
 
-    assert reserve_role is None
-    assert reserves == set()
+    assert data.reserve_team_role_id is None
+    assert data.reserve_driver_ids == set()
 
 
 async def test_a_team_without_a_role_contributes_no_drivers():
@@ -250,22 +256,20 @@ async def test_a_team_without_a_role_contributes_no_drivers():
     matched against anything in the posted results, so its drivers are not validatable and
     are deliberately absent rather than half-present."""
     teams = [_team("Red", [_seat(101, 1)]), _team("Ghost", [_seat(999, 1)])]
-    drivers, team_roles, _, team_map, _ = await _build(
-        teams, {"Red": PRO_ROLE, "Ghost": None}
-    )
+    data = await _build(teams, {"Red": PRO_ROLE, "Ghost": None})
 
-    assert drivers == {101}
-    assert 999 not in team_map
-    assert team_roles == {PRO_ROLE}
+    assert data.division_driver_ids == {101}
+    assert 999 not in data.driver_team_map
+    assert data.team_of_role == {PRO_ROLE: TEAM_IDS["Red"]}
 
 
 async def test_a_team_the_server_does_not_know_is_skipped():
     """Team names are matched between the division's teams and the server's roles; a
     division team with no matching server row has no role and cannot be validated."""
     teams = [_team("Red", [_seat(101, 1)]), _team("Unknown", [_seat(999, 1)])]
-    drivers, _, _, _, _ = await _build(teams, {"Red": PRO_ROLE})
+    data = await _build(teams, {"Red": PRO_ROLE})
 
-    assert drivers == {101}
+    assert data.division_driver_ids == {101}
 
 
 async def test_a_division_with_no_teams_yields_nothing():
@@ -273,7 +277,16 @@ async def test_a_division_with_no_teams_yields_nothing():
     rather than accepting all of them."""
     result = await _build([], {})
 
-    assert result == (set(), set(), None, {}, set())
+    assert result == (set(), {}, None, {}, set(), {})
+
+
+async def test_every_team_that_can_be_named_carries_its_name():
+    """For the messages that name a driver's team."""
+    data = await _build(*_standard())
+
+    assert data.team_names == {
+        TEAM_IDS["Red"]: "Red", TEAM_IDS["Blue"]: "Blue", TEAM_IDS["Reserves"]: "Reserves",
+    }
 
 
 # ---------------------------------------------------------------------------

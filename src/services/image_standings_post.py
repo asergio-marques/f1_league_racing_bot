@@ -256,30 +256,26 @@ async def _round_session_results(bot, ordinal_of_round: dict[int, int]):
     return results
 
 
-async def _seats(bot, division_id: int, team_names_by_role: dict[int, str]):
+async def _seats(bot, division_id: int):
     """The division's seating, in the three shapes the two drawings need.
 
-    Returns ``(assignments, counts, driver_team_names)`` — the first two keyed by team
-    **role** id for the constructors graphic's car allocation and seat trim, the third by
-    driver user id, because a drivers row names the team its own driver sits in rather than
-    the row's own subject.
+    Returns ``(assignments, counts, driver_team_names)`` — the first two keyed by the team's
+    id, as the constructors classification is, for that graphic's car allocation and seat
+    trim; the third by driver user id, because a drivers row names the team its own driver
+    sits in rather than the row's own subject.
 
-    The classification keys a constructor by the Discord role its drivers' results record;
-    the seats are held by the division's team *instance*, joined to that role by name at
-    server scope. A role the division holds no instance of contributes no seats — its cars
-    are then allocated to whoever drove, which is what FR-026 asks for.
+    The classification and the seats name a team the same way — by the division's team, never
+    its Discord role (#375) — so the two are joined directly.
     """
     assignments: dict[int, dict[int, int]] = {}
     counts: dict[int, int] = {}
     driver_team_names: dict[int, str] = {}
 
-    name_to_role = {name: role_id for role_id, name in team_names_by_role.items()}
-
     # A driver whose placement is not yet confirmed is not in the standings (issue #220).
     async with get_connection(bot.db_path) as db:
         rows = await (
             await db.execute(
-                "SELECT ti.name AS team_name, ti.max_seats AS max_seats, "
+                "SELECT ti.id AS team_id, ti.name AS team_name, ti.max_seats AS max_seats, "
                 "       ts.seat_number AS seat_number, "
                 "       dp.discord_user_id AS discord_user_id "
                 "FROM team_instances ti "
@@ -296,9 +292,8 @@ async def _seats(bot, division_id: int, team_names_by_role: dict[int, str]):
         ).fetchall()
 
     for row in rows:
-        role_id = name_to_role.get(row["team_name"])
-        if role_id is not None:
-            counts[role_id] = int(row["max_seats"] or 0)
+        team_id = int(row["team_id"])
+        counts[team_id] = int(row["max_seats"] or 0)
 
         if row["discord_user_id"] is None or row["seat_number"] is None:
             continue
@@ -309,8 +304,7 @@ async def _seats(bot, division_id: int, team_names_by_role: dict[int, str]):
             continue
 
         driver_team_names[driver_key] = row["team_name"]
-        if role_id is not None:
-            assignments.setdefault(role_id, {})[driver_key] = seat_number
+        assignments.setdefault(team_id, {})[driver_key] = seat_number
 
     return assignments, counts, driver_team_names
 
@@ -350,27 +344,25 @@ async def build_drawings(
     from services.image_standings_service import resolve_drawing
 
     driver_keys = [s.driver_user_id for s in driver_snapshots]
-    team_keys = [s.team_role_id for s in team_snapshots]
+    team_keys = [s.team_instance_id for s in team_snapshots]
 
     names = await _driver_names(bot, guild, driver_keys, division_id=division_id)
     nationalities = await _nationalities(bot, driver_keys, division_id=division_id)
     collected = await _nationality_collected(db_path)
 
-    # A constructors row *is* a team, so that graphic's names are keyed by role. A drivers
-    # row names the team its own driver sits in, so that graphic's are keyed by driver.
-    team_names_by_role = await _team_names(bot, guild, division_id, team_keys)
+    # A constructors row *is* a team, so that graphic's names are keyed by the team. A
+    # drivers row names the team its own driver sits in, so that graphic's are keyed by driver.
+    team_names_by_team = await _team_names(bot, guild, division_id, team_keys)
 
     headings, ordinal_of_round = await _calendar(bot, division_id)
     session_results = await _round_session_results(bot, ordinal_of_round)
-    seat_assignments, seat_counts, driver_team_names = await _seats(
-        bot, division_id, team_names_by_role
-    )
+    seat_assignments, seat_counts, driver_team_names = await _seats(bot, division_id)
 
     driver_current = [
         (s.driver_user_id, s.standing_position, s.total_points) for s in driver_snapshots
     ]
     team_current = [
-        (s.team_role_id, s.standing_position, s.total_points) for s in team_snapshots
+        (s.team_instance_id, s.standing_position, s.total_points) for s in team_snapshots
     ]
 
     # The opening sheet stands after nothing, so nobody has moved. The final sheet *is* the
@@ -416,8 +408,8 @@ async def build_drawings(
         snapshots=team_snapshots,
         # Both maps name the same thing here, the row's own team; the drivers inside its
         # cars are named separately, keyed by user id.
-        display_names=team_names_by_role,
-        team_names=team_names_by_role,
+        display_names=team_names_by_team,
+        team_names=team_names_by_team,
         movements=standings_service.derive_movement(team_current, team_previous),
         gaps=standings_service.derive_gaps(team_current),
         team_seat_assignments=seat_assignments,
