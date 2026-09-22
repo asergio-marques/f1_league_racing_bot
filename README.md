@@ -606,6 +606,8 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 
 The same list is added to the approval's line in the log channel.
 
+> **If your confirmation cannot reach you**, the channel the review was in is told instead, in one line that mentions you: the season is approved, and the log channel has what the confirmation said. Discord gives the bot fifteen minutes to answer a button, and an approval that waited on the backup question below and then posted a lot of pictures can outlast them.
+
 **Who may press it.** The person who ran the review, or a **league admin**. Anyone else who presses is told so privately and nothing is approved. That check matters because the question is posted publicly: a league manager can review a season and then ask a league admin to approve it, which is the point of putting it where both can see it.
 
 > **The button stands for five minutes**, and only for the season it was posted for. When they pass, the message is deleted and replaced by a notice mentioning whoever ran the review, saying it has expired and must be run again. The same happens if the bot restarts while a review is standing — the five minutes cannot have run while it was down, so the question is cleared at startup rather than left waiting for a press nothing would answer.
