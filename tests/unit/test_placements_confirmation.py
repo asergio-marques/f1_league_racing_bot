@@ -262,6 +262,41 @@ async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
+async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_nothing(db_path):
+    """Four channels wrong is one refusal, not four attempts at starting a season. The
+    results module's channels are judged here with every other division channel (#374); the
+    gate that once judged them beside the points could no longer be reached."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE divisions SET lineup_channel_id = 200 WHERE id = 2")
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, results_channel_id, "
+            "standings_channel_id, penalty_channel_id) VALUES (1, NULL, 701, '702'), "
+            "(2, 800, NULL, NULL)"
+        )
+        await db.commit()
+    cog = _cog(db_path, results=True)
+    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID, season_number=1)}
+    cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
+    cog.bot.season_service.get_divisions = AsyncMock(
+        return_value=[SimpleNamespace(status="SETUP")]
+    )
+    cog.bot.season_service.transition_to_active = AsyncMock()
+    interaction = MagicMock()
+    interaction.guild = _guild()
+    interaction.user.id = USER_ID
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+
+    await SeasonCog._do_approve(cog, interaction)
+
+    (call,) = interaction.followup.send.await_args_list
+    refusal = call.args[0]
+    assert "**Pro** has no results channel — `/division results-channel`." in refusal
+    assert "**Am** has no standings channel" in refusal
+    assert "**Am** has no verdicts channel — `/division verdicts-channel`." in refusal
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
 @pytest.mark.parametrize("divisions", [[], [SimpleNamespace(status="CANCELLED")]])
 async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divisions):
     """A season with nothing to race would never reach Pending completion (issue #220)."""

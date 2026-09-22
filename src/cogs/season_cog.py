@@ -6316,19 +6316,12 @@ class SeasonCog(commands.Cog):
                 await season_svc.create_sessions_for_round(rnd.id, rnd.format)
                 all_rounds.append(rnd)
 
-        # ── Gate 1: weather channel prerequisite (FR-011) ──────────────────────
-        if await self.bot.module_service.is_weather_enabled():
-            missing_weather = [d.name for d in divisions if not d.forecast_channel_id]
-            if missing_weather:
-                names = ", ".join(f"**{n}**" for n in missing_weather)
-                msg = (
-                    f"\u274c Season cannot be approved \u2014 the following divisions are missing a "
-                    f"weather forecast channel: {names}. Assign a weather channel to each division first."
-                )
-                await interaction.followup.send(msg, ephemeral=True)
-                return
+        # Every channel a division posts to — the weather, results, standings, verdicts, RSVP
+        # and attendance channels among them — is judged at Gate S above, by the helper the
+        # review withholds its button on (#374). The gates that checked them one module at a
+        # time here could no longer be reached, and are withdrawn.
 
-        # ── Gate 2: R&S channel and points-config prerequisites (FR-013) ───────
+        # ── Gate 2: points-config prerequisites (FR-013) ───────────────────────
         if await self.bot.module_service.is_results_enabled():
             # Auto-seed point configs if test mode is active and none are attached yet
             server_config = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
@@ -6346,19 +6339,7 @@ class SeasonCog(commands.Cog):
                         db_path=self.bot.db_path,  # type: ignore[attr-defined]
                     )
 
-            divs_rs = await season_svc.get_divisions_with_results_config(cfg.season_id)
             errors: list[str] = []
-            for d in divs_rs:
-                if not d.results_channel_id:
-                    errors.append(f"**{d.name}** is missing a results channel")
-                if not d.standings_channel_id:
-                    errors.append(f"**{d.name}** is missing a standings channel")
-                if not d.penalty_channel_id:
-                    errors.append(
-                        f"**{d.name}** is missing a verdicts channel \u2014 "
-                        f"run /division verdicts-channel {d.name} <channel>"
-                    )
-
             async with get_connection(self.bot.db_path) as _db:
                 cursor = await _db.execute(
                     "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
@@ -6419,30 +6400,6 @@ class SeasonCog(commands.Cog):
                     )
                     await interaction.followup.send(msg, ephemeral=True)
                     return
-
-        # ── Gate 2c: attendance module channel prerequisites ──────────────────
-        if await self.bot.module_service.is_attendance_enabled():
-            att_errors: list[str] = []
-            for _div in divisions:
-                att_div_cfg = await self.bot.attendance_service.get_division_config(_div.id)  # type: ignore[attr-defined]
-                if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
-                    att_errors.append(
-                        f"**{_div.name}** is missing an RSVP channel "
-                        f"(use `/division rsvp-channel {_div.name} <channel>`)"
-                    )
-                if att_div_cfg is None or not att_div_cfg.attendance_channel_id:
-                    att_errors.append(
-                        f"**{_div.name}** is missing an attendance channel "
-                        f"(use `/division attendance-channel {_div.name} <channel>`)"
-                    )
-            if att_errors:
-                bullet_list = "\n\u2022 ".join(att_errors)
-                msg = (
-                    f"\u274c Season cannot be approved \u2014 attendance module is enabled but "
-                    f"missing required channel configuration:\n\u2022 {bullet_list}"
-                )
-                await interaction.followup.send(msg, ephemeral=True)
-                return
 
         # ── Gate 2d: no round may already have run, nor be inside a window (#121, #122, #181)
         #

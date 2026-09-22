@@ -622,6 +622,21 @@ async def test_a_division_missing_a_channel_it_posts_to_withholds_approval(db_pa
     assert "**Pro** has no results channel — `/division results-channel`." in _private(messages)
 
 
+async def test_a_missing_channel_and_a_phantom_config_are_named_together(db_path):
+    """A manager with two things wrong is told both and fixes them in one pass. The
+    approval's results gate once carried both faults in one refusal; the channel is judged
+    with every other division channel now (#374), and the review is where both are named."""
+    cog = _cog(db_path, results=True, phantoms=["Standrad"])
+    cog._placement_confirmation_faults = AsyncMock(
+        return_value=([], ["**Pro** has no standings channel — `/division standings-channel`."])
+    )
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "**Pro** has no standings channel" in _private(messages)
+    assert "points configuration that does not exist" in _private(messages)
+
+
 async def test_the_review_judges_the_channels_upon_its_own_server(db_path):
     """A channel deleted from the server is found only where the server is asked (#374)."""
     cog = _cog(db_path)

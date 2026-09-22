@@ -30,6 +30,11 @@ that the R&S gate names a missing channel and a phantom points configuration in 
 refusal rather than one per attempt. Whether each gate *decides* correctly is still
 `test_do_approve_posting.py`'s; the *order* they decide in is this file's, and could not be
 tested while a truthy mock was passing them.
+
+Since #374 every channel a division posts to is judged at Gate S, by the helper the review
+withholds its button on, and the weather, results and attendance channel gates are gone.
+The order test stands against Gate S; the channel-and-phantom pair is named together by the
+review, in `test_season_review_report.py`.
 """
 from __future__ import annotations
 
@@ -298,21 +303,7 @@ def _attendance_config():
     )
 
 
-def _division_attendance_config():
-    """A division with both attendance channels set, so Gate 2c passes on the season.
-
-    Left unstubbed it was answered by the blanket ``AsyncMock`` of issue #240, whose
-    ``rsvp_channel_id`` and ``attendance_channel_id`` are both truthy child mocks — so the
-    gate passed for every one of these tests without ever reading a division. The window
-    gates below are what this file is about, and they sit *after* Gate 2c: a fabricated
-    pass here is the only reason they were reached at all.
-    """
-    return SimpleNamespace(rsvp_channel_id=800, attendance_channel_id=801)
-
-
-def _cog_with_rounds(
-    db_path, rounds, *, attendance=True, weather=False, division_attendance=...
-):
+def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
     cog = _cog(db_path)
     div = _division()
     cog.bot.season_service.get_divisions = AsyncMock(return_value=[div])
@@ -322,11 +313,6 @@ def _cog_with_rounds(
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
     cog.bot.attendance_service.get_or_create_config = AsyncMock(
         return_value=_attendance_config()
-    )
-    cog.bot.attendance_service.get_division_config = AsyncMock(
-        return_value=(
-            _division_attendance_config() if division_attendance is ... else division_attendance
-        )
     )
     return cog
 
@@ -399,29 +385,33 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
 
 
 # ── #181: the round's own moment, judged whatever the modules ────────────────
-# ── Gate 2c refuses before the windows are ever looked at ────────────────────
+# ── A missing channel refuses before the windows are ever looked at ──────────
 #
 # What these two add is the *order*, which is the one thing only this file can show. That
-# Gate 2c refuses a division with no attendance channel is settled in
-# `test_do_approve_posting.py`; that its refusal stops the walk before the window gates
-# below is not tested anywhere, and could not have been until issue #240 — the gate was
-# answered by a truthy mock and passed for every season ever put through this file.
+# a division missing its attendance channel is refused is settled in
+# `test_placements_confirmation.py`, where every channel a division posts to is judged by
+# Gate S (#374); that the refusal stops the walk before the window gates below is shown
+# here. It was once Gate 2c's to refuse, a gate a truthy mock passed for every season put
+# through this file until issue #240.
 #
 # It matters because the two refusals read very differently to a manager. A missing channel
 # is a thing to go and set; an overdue check-in window is a schedule to move. Reaching the
 # second while the first is outstanding would send a manager to reschedule a season whose
 # real fault was one unset channel.
 
+_NO_ATTENDANCE_CHANNEL = ([], ["**Pro** has no attendance channel — `/division attendance-channel`."])
+
 
 async def test_a_missing_attendance_channel_refuses_before_the_window_gate(db_path):
     """The channel gate is the earlier one, and a manager hears about it first."""
-    cog = _cog_with_rounds(db_path, [_round_in(3)], division_attendance=None)
+    cog = _cog_with_rounds(db_path, [_round_in(3)])
+    cog._placement_confirmation_faults = AsyncMock(return_value=_NO_ATTENDANCE_CHANNEL)
     interaction = _interaction()
 
     await _run(cog, interaction)
 
     replies = _replies(interaction)
-    assert "attendance module is enabled but" in replies
+    assert "**Pro** has no attendance channel" in replies
     # The window gate sits after it and never ran, so its wording is absent.
     assert "already gone by" not in replies
     cog.bot.season_service.transition_to_active.assert_not_awaited()
@@ -433,7 +423,8 @@ async def test_the_window_gate_is_not_consulted_once_a_channel_is_missing(db_pat
     A round three days out against a five-day notice fails the window gate, so this season
     is refusable on both counts. Only the first refusal may be reached.
     """
-    cog = _cog_with_rounds(db_path, [_round_in(3)], division_attendance=None)
+    cog = _cog_with_rounds(db_path, [_round_in(3)])
+    cog._placement_confirmation_faults = AsyncMock(return_value=_NO_ATTENDANCE_CHANNEL)
 
     await _run(cog, _interaction())
 
@@ -707,38 +698,6 @@ async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
-async def test_a_missing_channel_and_a_phantom_config_are_named_together(db_path):
-    """One refusal carrying both faults, rather than one fault per attempt.
-
-    The R&S gate gathers its channel checks and its points checks into a single list before
-    refusing, so a manager with two things wrong is told both and fixes them in one pass.
-    Approving repeatedly to be told one fault at a time is the experience this avoids.
-
-    Only testable since issue #240: the results module read as enabled from a truthy mock
-    and `get_divisions_with_results_config` returned one, so this gate had never run.
-    """
-    await _attach_phantom(db_path, "Standrad")
-    cog = _cog_with_results(db_path)
-    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
-        return_value=[
-            SimpleNamespace(
-                name="Pro",
-                results_channel_id=700,
-                standings_channel_id=None,
-                penalty_channel_id=702,
-            )
-        ]
-    )
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    replies = _replies(interaction)
-    assert "missing a standings channel" in replies
-    assert "Standrad" in replies
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
-
-
 async def test_a_phantom_points_config_is_refused_rather_than_raising(db_path):
     """Said separately because the silence, not the refusal, was the reported fault."""
     await _attach_phantom(db_path, "Standrad")
@@ -791,110 +750,3 @@ async def test_the_refusal_names_every_phantom_at_once(db_path):
     assert "Standrad" in replies
     assert "Haf Points" in replies
 
-
-# ══════════════════════════════════════════════════════════════════════════
-# Gate 1 — the weather forecast channel (FR-011)
-#
-# Issue #185. This gate had a test that never reached it: a helper in the
-# since-deleted `test_season_approval_gates.py` re-derived the rule from the same
-# two service calls and asserted against its own answer, so the gate could have been
-# deleted from the cog outright and the suite would have stayed green. These drive
-# `_do_approve`, which is the only thing that proves the gate is still wired in.
-# ══════════════════════════════════════════════════════════════════════════
-
-
-def _division_without_forecast(name: str = "Premier", div_id: int = 1):
-    """A division the weather module has nowhere to post a forecast to."""
-    return SimpleNamespace(id=div_id, name=name, tier=1, forecast_channel_id=None)
-
-
-def _cog_with_weather(db_path, divisions):
-    """Weather on, results off, and rounds far enough out that no window gate bites."""
-    cog = _cog(db_path)
-    cog.bot.season_service.get_divisions = AsyncMock(return_value=divisions)
-    cog.bot.season_service.get_division_rounds = AsyncMock(
-        side_effect=lambda div_id: [_round_in(30, div_id=div_id)]
-    )
-    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
-    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    return cog
-
-
-async def test_a_division_without_a_forecast_channel_refuses_the_approval(db_path):
-    """Weather on and nowhere to post: the season is refused, naming the division.
-
-    Approving anyway would arm a forecast pipeline that posts into nothing — a module
-    switched on and silently producing no output, which the league would discover on
-    race week rather than at setup.
-    """
-    cog = _cog_with_weather(db_path, [_division_without_forecast("Premier")])
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    assert "Premier" in _replies(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
-
-
-async def test_the_forecast_channel_refusal_names_every_division_at_once(db_path):
-    """A manager fixing one division per refused approval is the check failing them."""
-    cog = _cog_with_weather(
-        db_path,
-        [
-            _division_without_forecast("Premier", 1),
-            _division_without_forecast("Challenger", 2),
-        ],
-    )
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    replies = _replies(interaction)
-    assert "Premier" in replies
-    assert "Challenger" in replies
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
-
-
-async def test_only_the_division_missing_a_channel_is_named(db_path):
-    """The one that is configured is not dragged into the refusal."""
-    cog = _cog_with_weather(
-        db_path,
-        [
-            SimpleNamespace(id=1, name="Premier", tier=1, forecast_channel_id="9"),
-            _division_without_forecast("Challenger", 2),
-        ],
-    )
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    replies = _replies(interaction)
-    assert "Challenger" in replies
-    assert "Premier" not in replies
-
-
-async def test_a_division_with_a_forecast_channel_still_approves(db_path):
-    """The positive half: the gate passes rather than refusing everything."""
-    cog = _cog_with_weather(
-        db_path,
-        [SimpleNamespace(id=1, name="Premier", tier=1, forecast_channel_id="9")],
-    )
-
-    await _run(cog, _interaction())
-
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
-
-
-async def test_the_weather_gate_is_not_checked_when_the_module_is_off(db_path):
-    """A league not running weather is not asked for a channel it has no use for.
-
-    This is the half a re-derived helper cannot pin: the gate's `if` guard could be
-    dropped and only a test that runs the real function would notice.
-    """
-    cog = _cog_with_weather(db_path, [_division_without_forecast("Premier")])
-    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
-
-    await _run(cog, _interaction())
-
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
