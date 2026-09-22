@@ -23,6 +23,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from db.database import get_connection, run_migrations
 from services.rsvp_service import run_reserve_distribution
 
 
@@ -35,80 +36,9 @@ _FUTURE = datetime(2025, 6, 8, 14, 0, 0, tzinfo=timezone.utc)
 
 
 async def _make_db(tmp_path) -> str:
-    """Create a minimal SQLite DB with all tables required by run_reserve_distribution."""
+    """A migrated database for run_reserve_distribution; _seed_base gives it a round."""
     path = str(tmp_path / "rsvp_test.db")
-    async with aiosqlite.connect(path) as db:
-        db.row_factory = aiosqlite.Row
-        await db.executescript(
-            """
-            CREATE TABLE seasons (
-                id            INTEGER PRIMARY KEY,
-                season_number INTEGER NOT NULL DEFAULT 1,
-                status        TEXT    NOT NULL DEFAULT 'ACTIVE'
-            );
-
-            CREATE TABLE divisions (
-                id        INTEGER PRIMARY KEY,
-                season_id INTEGER NOT NULL,
-                name      TEXT    NOT NULL DEFAULT 'Div1'
-            );
-
-            CREATE TABLE rounds (
-                id              INTEGER PRIMARY KEY,
-                division_id     INTEGER NOT NULL,
-                round_number    INTEGER NOT NULL,
-                format          TEXT    NOT NULL DEFAULT 'NORMAL',
-                track_name      TEXT,
-                scheduled_at    TEXT    NOT NULL
-            );
-
-            CREATE TABLE driver_profiles (
-                id                INTEGER PRIMARY KEY,
-                discord_user_id   TEXT    NOT NULL DEFAULT '0',
-                test_display_name TEXT,
-                is_test_driver    INTEGER NOT NULL DEFAULT 0
-            );
-
-            CREATE TABLE team_instances (
-                id          INTEGER PRIMARY KEY,
-                division_id INTEGER NOT NULL,
-                name        TEXT    NOT NULL,
-                full_name   TEXT    NOT NULL,
-                is_reserve  INTEGER NOT NULL DEFAULT 0,
-                max_seats   INTEGER NOT NULL DEFAULT 2
-            );
-
-            CREATE TABLE team_seats (
-                id                INTEGER PRIMARY KEY,
-                team_instance_id  INTEGER NOT NULL,
-                driver_profile_id INTEGER NOT NULL
-            );
-
-            CREATE TABLE driver_round_attendance (
-                id                INTEGER PRIMARY KEY,
-                round_id          INTEGER NOT NULL,
-                division_id       INTEGER NOT NULL,
-                driver_profile_id INTEGER NOT NULL,
-                rsvp_status       TEXT    NOT NULL DEFAULT 'NO_RSVP',
-                accepted_at       TEXT,
-                assigned_team_id  INTEGER,
-                is_standby        INTEGER NOT NULL DEFAULT 0,
-                attended          INTEGER,
-                points_awarded    INTEGER,
-                total_points_after INTEGER,
-                UNIQUE (round_id, division_id, driver_profile_id)
-            );
-
-            CREATE TABLE team_standings_snapshots (
-                id                INTEGER PRIMARY KEY,
-                team_instance_id  INTEGER NOT NULL,
-                round_id          INTEGER NOT NULL,
-                division_id       INTEGER NOT NULL DEFAULT 10,
-                standing_position INTEGER
-            );
-            """
-        )
-        await db.commit()
+    await run_migrations(path)
     return path
 
 
@@ -123,21 +53,30 @@ def _make_bot(db_path: str) -> MagicMock:
 
 
 async def _seed_base(db_path: str) -> None:
-    """Insert one season, one division, and one round."""
-    async with aiosqlite.connect(db_path) as db:
-        await db.execute("INSERT INTO seasons (id, season_number) VALUES (1, 1)")
-        await db.execute("INSERT INTO divisions (id, season_id) VALUES (10, 1)")
+    """Insert one active season, its division 10, and the division's round 42."""
+    async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, scheduled_at) VALUES (42, 10, 3, ?)",
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2025-05-01', 'ACTIVE', 1)"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id) "
+            "VALUES (10, 1, 'Div1', 3010)"
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
+            "VALUES (42, 10, 3, 'NORMAL', ?)",
             (_FUTURE.isoformat(),),
         )
         await db.commit()
 
 
 async def _insert_driver(db: aiosqlite.Connection, dp_id: int, name: str) -> None:
+    """A driver whose Discord account is their profile id: each driver needs one of their own."""
     await db.execute(
-        "INSERT INTO driver_profiles (id, test_display_name) VALUES (?, ?)",
-        (dp_id, name),
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state, test_display_name) "
+        "VALUES (?, ?, 'ASSIGNED', ?)",
+        (dp_id, str(dp_id), name),
     )
 
 
@@ -149,9 +88,12 @@ async def _insert_team(db: aiosqlite.Connection, team_id: int, div_id: int, name
 
 
 async def _add_driver_to_team(db: aiosqlite.Connection, team_id: int, dp_id: int) -> None:
+    """Seat the driver in the team's next seat."""
     await db.execute(
-        "INSERT INTO team_seats (team_instance_id, driver_profile_id) VALUES (?, ?)",
-        (team_id, dp_id),
+        "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+        "SELECT ?, COALESCE(MAX(seat_number), 0) + 1, ? FROM team_seats "
+        "WHERE team_instance_id = ?",
+        (team_id, dp_id, team_id),
     )
 
 
@@ -188,8 +130,7 @@ class TestNoAcceptedReserves:
     async def test_no_assignments_made(self, tmp_path):
         db_path = await _make_db(tmp_path)
         await _seed_base(db_path)
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             await _insert_driver(db, 1, "Alice")
             await _insert_driver(db, 2, "Bob (reserve)")
             await _insert_team(db, 101, 10, "Alpha")
@@ -204,8 +145,7 @@ class TestNoAcceptedReserves:
         # Should return without writing anything
         await run_reserve_distribution(42, 10, bot)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             row1 = await _get_dra(db, dra1)
             row2 = await _get_dra(db, dra2)
 
@@ -226,8 +166,7 @@ class TestPriorityOrdering:
         db_path = await _make_db(tmp_path)
         await _seed_base(db_path)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             # Regular drivers
             await _insert_driver(db, 1, "Driver1 (NO_RSVP team)")
             await _insert_driver(db, 2, "Driver2 (DECLINED team)")
@@ -250,8 +189,7 @@ class TestPriorityOrdering:
         bot = _make_bot(db_path)
         await run_reserve_distribution(42, 10, bot)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
 
         # Reserve should be assigned to TeamB_Declined (tier 2) not TeamA_NoRsvp (tier 3)
@@ -272,8 +210,7 @@ class TestPriorityPartialAllocation:
         db_path = await _make_db(tmp_path)
         await _seed_base(db_path)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             # Partial team: 1 accepted FT driver, 1 seat physically vacant (max_seats=2)
             await _insert_driver(db, 1, "PartialAccepted")
             # Tentative team: 2 FT drivers both tentative, fully staffed
@@ -300,8 +237,7 @@ class TestPriorityPartialAllocation:
         bot = _make_bot(db_path)
         await run_reserve_distribution(42, 10, bot)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
 
         # Reserve should go to the partially-staffed team (tier 3), not the tentative team (tier 5)
@@ -322,8 +258,7 @@ class TestPriorityNoFtDrivers:
         db_path = await _make_db(tmp_path)
         await _seed_base(db_path)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             # Tentative team: 2 FT drivers both tentative
             await _insert_driver(db, 1, "Tentative1")
             await _insert_driver(db, 2, "Tentative2")
@@ -348,8 +283,7 @@ class TestPriorityNoFtDrivers:
         bot = _make_bot(db_path)
         await run_reserve_distribution(42, 10, bot)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
 
         # Reserve should go to the fully-empty team (tier 4), not the tentative team (tier 5)
@@ -370,10 +304,10 @@ class TestTiebreakerStandings:
         await _seed_base(db_path)
 
         # Need a prior round to anchor the standings snapshot
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO rounds (id, division_id, round_number, scheduled_at) VALUES (41, 10, 2, ?)",
+                "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
+                "VALUES (41, 10, 2, 'NORMAL', ?)",
                 (datetime(2025, 5, 25, tzinfo=timezone.utc).isoformat(),),
             )
 
@@ -396,18 +330,21 @@ class TestTiebreakerStandings:
 
             # Standings: TeamAlpha=pos1, TeamBeta=pos2 (snapshot anchored at round 41)
             await db.execute(
-                "INSERT INTO team_standings_snapshots (team_instance_id, round_id, standing_position) VALUES (102, 41, 1)"
+                "INSERT INTO team_standings_snapshots "
+                "(team_instance_id, round_id, division_id, standing_position) "
+                "VALUES (102, 41, 10, 1)"
             )
             await db.execute(
-                "INSERT INTO team_standings_snapshots (team_instance_id, round_id, standing_position) VALUES (101, 41, 2)"
+                "INSERT INTO team_standings_snapshots "
+                "(team_instance_id, round_id, division_id, standing_position) "
+                "VALUES (101, 41, 10, 2)"
             )
             await db.commit()
 
         bot = _make_bot(db_path)
         await run_reserve_distribution(42, 10, bot)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
 
         assert reserve_row["assigned_team_id"] == 101  # TeamBeta (pos 2)
@@ -419,10 +356,10 @@ class TestTiebreakerStandings:
         await _seed_base(db_path)
 
         # Need a prior round to anchor the standings snapshot
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO rounds (id, division_id, round_number, scheduled_at) VALUES (41, 10, 2, ?)",
+                "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
+                "VALUES (41, 10, 2, 'NORMAL', ?)",
                 (datetime(2025, 5, 25, tzinfo=timezone.utc).isoformat(),),
             )
 
@@ -445,15 +382,16 @@ class TestTiebreakerStandings:
 
             # Only TeamRanked carries a snapshot; TeamUnranked has none
             await db.execute(
-                "INSERT INTO team_standings_snapshots (team_instance_id, round_id, standing_position) VALUES (101, 41, 1)"
+                "INSERT INTO team_standings_snapshots "
+                "(team_instance_id, round_id, division_id, standing_position) "
+                "VALUES (101, 41, 10, 1)"
             )
             await db.commit()
 
         bot = _make_bot(db_path)
         await run_reserve_distribution(42, 10, bot)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
 
         assert reserve_row["assigned_team_id"] == 101  # TeamRanked, despite being top of the table
@@ -471,8 +409,7 @@ class TestTiebreakerAlphabetical:
         db_path = await _make_db(tmp_path)
         await _seed_base(db_path)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             await _insert_driver(db, 1, "D1")
             await _insert_driver(db, 2, "D2")
             await _insert_driver(db, 3, "ReserveR")
@@ -493,8 +430,7 @@ class TestTiebreakerAlphabetical:
         bot = _make_bot(db_path)
         await run_reserve_distribution(42, 10, bot)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             reserve_row = await _get_dra(db, reserve_dra)
 
         assert reserve_row["assigned_team_id"] == 102  # Alpha
@@ -513,10 +449,10 @@ class TestAcceptedAtOrdering:
         await _seed_base(db_path)
 
         # Need a prior round for standings
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO rounds (id, division_id, round_number, scheduled_at) VALUES (41, 10, 2, ?)",
+                "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
+                "VALUES (41, 10, 2, 'NORMAL', ?)",
                 (datetime(2025, 5, 25, tzinfo=timezone.utc).isoformat(),),
             )
 
@@ -541,18 +477,21 @@ class TestAcceptedAtOrdering:
             late_dra  = await _insert_dra(db, 42, 10, 4, "ACCEPTED", "2025-06-01T11:00:00+00:00")
 
             await db.execute(
-                "INSERT INTO team_standings_snapshots (team_instance_id, round_id, standing_position) VALUES (101, 41, 1)"
+                "INSERT INTO team_standings_snapshots "
+                "(team_instance_id, round_id, division_id, standing_position) "
+                "VALUES (101, 41, 10, 1)"
             )
             await db.execute(
-                "INSERT INTO team_standings_snapshots (team_instance_id, round_id, standing_position) VALUES (102, 41, 2)"
+                "INSERT INTO team_standings_snapshots "
+                "(team_instance_id, round_id, division_id, standing_position) "
+                "VALUES (102, 41, 10, 2)"
             )
             await db.commit()
 
         bot = _make_bot(db_path)
         await run_reserve_distribution(42, 10, bot)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             early_row = await _get_dra(db, early_dra)
             late_row  = await _get_dra(db, late_dra)
 
@@ -572,8 +511,7 @@ class TestStandbyClassification:
         db_path = await _make_db(tmp_path)
         await _seed_base(db_path)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             await _insert_driver(db, 1, "D1")         # the only non-reserve driver
             await _insert_driver(db, 2, "ReserveA")
             await _insert_driver(db, 3, "ReserveB")   # this one should end up standby
@@ -593,8 +531,7 @@ class TestStandbyClassification:
         bot = _make_bot(db_path)
         await run_reserve_distribution(42, 10, bot)
 
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             first_row  = await _get_dra(db, first_dra)
             second_row = await _get_dra(db, second_dra)
 
@@ -610,39 +547,25 @@ class TestStandbyClassification:
 
 
 async def _make_attendance_db(tmp_path) -> str:
-    """Create DB with attendance tables (mirrors the schema's attendance tables)."""
+    """A migrated database holding what the CRUD round-trips name: rounds 1 and 2 of
+    division 10, and drivers 100, 200 and 300."""
     path = str(tmp_path / "att_crud.db")
-    async with aiosqlite.connect(path) as db:
-        await db.executescript(
-            """
-            CREATE TABLE driver_round_attendance (
-                id                INTEGER PRIMARY KEY AUTOINCREMENT,
-                round_id          INTEGER NOT NULL,
-                division_id       INTEGER NOT NULL,
-                driver_profile_id INTEGER NOT NULL,
-                rsvp_status       TEXT    NOT NULL DEFAULT 'NO_RSVP',
-                accepted_at       TEXT,
-                assigned_team_id  INTEGER,
-                is_standby        INTEGER NOT NULL DEFAULT 0,
-                attended          INTEGER,
-                points_awarded    INTEGER,
-                total_points_after INTEGER,
-                UNIQUE (round_id, division_id, driver_profile_id)
-            );
-
-            CREATE TABLE rsvp_embed_messages (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                round_id    INTEGER NOT NULL,
-                division_id INTEGER NOT NULL,
-                message_id  TEXT    NOT NULL,
-                channel_id  TEXT    NOT NULL,
-                posted_at   TEXT    NOT NULL,
-                last_notice_msg_id  TEXT,
-                distribution_msg_id TEXT,
-                UNIQUE (round_id, division_id)
-            );
-            """
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, '2025-05-01', 'ACTIVE')"
         )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id) "
+            "VALUES (10, 1, 'Div1', 3010)"
+        )
+        await db.executemany(
+            "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
+            "VALUES (?, 10, ?, 'NORMAL', ?)",
+            [(1, 1, "2025-06-01T18:00:00"), (2, 2, "2025-06-08T18:00:00")],
+        )
+        for dp_id in (100, 200, 300):
+            await _insert_driver(db, dp_id, f"Driver {dp_id}")
         await db.commit()
     return path
 
