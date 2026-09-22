@@ -41,11 +41,13 @@ to run a release instead, check out its tag — `git checkout v0.4.0`. Every rel
 `v1.0.0` is a pre-release. Where an upgrade needs you to do something, this README says so
 beside the behaviour concerned and names the version it applies from.
 
-**Which version is running.** The bot writes it to its log as it starts — `Running v0.5.0`
-for a release, or `Running v0.4.0-230` for a copy taken between releases, the number
-counting the changes merged since `v0.4.0`. Quote that line when you report a problem. A copy
-downloaded from GitHub, as a release's zip or with **Download ZIP**, carries its version in
-the `VERSION` file and needs nothing else; a copy made with `git clone` asks git for it
+**Which version is running.** The bot writes it to its log as it starts, with the date and
+time that version was made: `Running v0.5.0, made 2026-10-01T18:04:12+01:00` for a release,
+or `Running v0.4.0-230, made …` for a copy taken between releases, the number counting the
+changes merged since `v0.4.0`. Members see the same through **About** on the
+[hub](#bot-hub-channel--set-the-hub)'s panel. Quote it when you report a problem. A copy
+downloaded from GitHub, as a release's zip or with **Download ZIP**, carries both in the
+`VERSION` file and needs nothing else; a copy made with `git clone` asks git for them
 instead. Where neither can tell, the log says `Running an unknown version`.
 
 ### 2. Configure environment
@@ -175,7 +177,7 @@ This registers:
 
 The league's two roles — the **base role** its members hold and the **driver role** its drivers hold — are set afterwards with [`/bot base-role` and `/bot driver-role`](#bot-base-role-bot-driver-role--set-the-leagues-two-roles). Neither is needed until you turn the signup module on.
 
-A **hub** — one channel every member can use the bot from — can be set with [`/bot hub-channel`](#bot-hub-channel--set-the-hub). It is optional, and offers nothing yet.
+A **hub** — one channel every member can use the bot from — can be set with [`/bot hub-channel`](#bot-hub-channel--set-the-hub). It is optional, and offers **About** — which bot this is and which version it runs — until modules add options of their own.
 
 > **Setting a league up for the first time?** This README is the reference — every command, in its own right. For the order to do them in, from an invited bot to an approved season, follow [Configuring the core bot](docs/how-to/configuring-the-core-bot.md).
 
@@ -331,7 +333,7 @@ Setting a new base role moves the signup channel's permissions to it, and the ro
 
 The hub is the one channel every member of your league can use the bot from, rather than only its managers. The bot posts a single panel of buttons there, and each button answers whoever presses it; no role is needed beyond being able to see the channel.
 
-**Nothing is offered on the panel yet.** Modules add their options to it as they are built, while they are enabled; until then the panel says that nothing is offered here. The panel is brought up to date whenever a module is switched on or off, and posted again if somebody deletes it, at the latest when the bot next starts. Its buttons keep working across a restart.
+**What the panel offers.** **About** is always there: pressing it tells you alone the bot's name, the version it is running — `v0.5.0` for a release, or `v0.4.0-230` for a copy taken between releases, counting the changes merged since `v0.4.0` — the date and time that version was made, shown in your own time zone, and a link to the project's repository. Quote that version when you report a problem. Modules add their own options as they are built, offered while they are enabled, and About stays after them. The panel is brought up to date whenever a module is switched on or off, and posted again if somebody deletes it, at the latest when the bot next starts. Its buttons keep working across a restart.
 
 **Who can see it.** Holders of the league's [base role](#bot-base-role-bot-driver-role--set-the-leagues-two-roles), or every member where you have set none, and holders of the interaction role and the league admin role. Nobody but the bot can post there, so the panel stays in view. Setting the hub replaces the channel's own permissions, so use a channel of its own. Changing the base role or either league role later sets them again. If the base role you set has since been deleted from the server, the hub stays closed to members and the reply says so.
 

@@ -6,8 +6,9 @@ buttons. A button asks no tier; who may see the channel is who may press it.
 
 **Core owns the channel and the panel; each module says what it adds.** A module registers a
 `HubOption` at import, naming when it is offered — typically while the module is enabled — and
-what a press does. Core knows none of them by name. The panel ships empty (decided
-2026-09-22): nothing is registered here, and the panel says so until a module adds an option.
+what a press does. This service knows none of them by name and registers nothing itself. Core
+adds one option of its own, About, from `services/about_service.py` and offered always (decided
+2026-09-22, #258); every other option is a module's. A panel offering nothing says so.
 
 **A press is judged when it is made, not when the panel was posted.** A panel is refreshed
 whenever what it offers may have changed, but a press can still arrive on one posted before a
