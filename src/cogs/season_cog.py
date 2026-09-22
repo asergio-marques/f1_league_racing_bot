@@ -6456,6 +6456,15 @@ class SeasonCog(commands.Cog):
         await season_svc.commit_placements(cfg.season_id)
         await season_svc.transition_to_active(cfg.season_id)
 
+        # The setup held in memory ends here, with the setup, and not once the posting below
+        # is done (issue #262). The round commands read it to decide that a season is being
+        # set up, and the database refuses to sync one that has left setup — so while it was
+        # held, a round moved during the posting was refused as a fault, and a posting that
+        # raised kept it until a restart, refusing every `/round amend` of the running season
+        # until then. Everything below reads `cfg`, not the store. The one window left is
+        # inside `transition_to_active`, between its commit and its return.
+        self._pending.clear()
+
         # ── T015: Bulk role grant for all ASSIGNED drivers (FR-006) ──────────
         _guild = interaction.guild
         if _guild is not None:
@@ -6620,8 +6629,6 @@ class SeasonCog(commands.Cog):
                         log.exception(
                             "_do_approve: could not post the opening classification report"
                         )
-
-        self._pending.clear()
 
         msg = (
             f"\u2705 **Season approved and activated!**\n"
