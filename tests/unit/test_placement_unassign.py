@@ -10,11 +10,9 @@ the two halves, and collapsing them would either strip a driver mid-season from 
 are still racing in, or leave a driver marked Assigned with no seat anywhere.
 
 **The team role is revoked only when no other seat claims it.** Two divisions can both run a
-team called "Alpha" mapped to the same Discord role, and a driver leaving one of them keeps the
-role by virtue of the other. The query that decides this joins back through `team_role_configs`
-by *role id* rather than by team name, because the same role can be mapped to more than one
-team — `test_a_role_held_through_a_differently_named_team_survives` is what holds that, and it
-is the case a simpler name-based check would get wrong.
+team called "Alpha", the one team of the server's list mapped to one Discord role, and a driver
+leaving one of them keeps the role by virtue of the other. A role belongs to one team only
+(#375), so no differently named team can hold it too.
 
 **The seat is freed before the assignment is deleted**, and both happen before the state
 changes. The seat is what the lineup graphic draws from, so a deleted assignment with an
@@ -300,29 +298,6 @@ async def test_a_role_held_through_another_division_survives(tmp_path):
     entitled to in a division they are still racing in."""
     db_path = await _make_db(tmp_path)
     await _map_role(db_path, "Alpha")
-    await _seat(db_path, DIVISION_A)
-    await _seat(db_path, DIVISION_B)
-    service = _service(db_path)
-    member = MagicMock()
-
-    await _unassign(service, DIVISION_A, member=member)
-
-    revoked = service._revoke_roles.await_args.args if service._revoke_roles.await_args else ()
-    assert ROLE_ID not in revoked
-
-
-async def test_a_role_held_through_a_differently_named_team_survives(tmp_path):
-    """The query joins back by *role id*, not by team name, because one role can be
-    mapped to more than one team. A name-based check would revoke a role the driver still
-    holds through "Beta"."""
-    db_path = await _make_db(tmp_path)
-    await _map_role(db_path, "Alpha")
-    await _map_role(db_path, "Beta")
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE team_instances SET name = 'Beta' WHERE id = ?", (DIVISION_B * 10,)
-        )
-        await db.commit()
     await _seat(db_path, DIVISION_A)
     await _seat(db_path, DIVISION_B)
     service = _service(db_path)
