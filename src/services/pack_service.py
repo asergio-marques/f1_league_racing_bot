@@ -13,7 +13,9 @@ coarser `status`. A current season's divisions are built on this server's roles 
 and a league does not pack up and leave with one under way.
 
 **One transaction.** The check and every write share one `BEGIN IMMEDIATE`, so a season set
-up between the check and the release cannot be stranded on a server the bot has left.
+up between the check and the release cannot be stranded on a server the bot has left. The
+audit entry shares it too (issue #383): every pack that takes effect is recorded, and a
+refused one records nothing.
 
 The Discord side is left as it is: the old server keeps the bot's messages and buttons, which
 refuse from then on (see `utils.league_server.LeagueView`). Pack touches only the database.
@@ -21,8 +23,10 @@ refuse from then on (see `utils.league_server.LeagueView`). Pack touches only th
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from db.database import get_connection
@@ -76,6 +80,43 @@ async def current_season(db) -> tuple[int, str | None] | None:
     return None if row is None else (int(row["season_number"]), row["stage"])
 
 
+#: The settings a league set that pack clears from `server_configs`, as the audit names them.
+#: The hub's panel is left out: a message id is the bot's record of its own post.
+_AUDITED_SETTINGS: tuple[str, ...] = (
+    "server_id",
+    "interaction_role_id",
+    "interaction_channel_id",
+    "log_channel_id",
+    "league_admin_role_id",
+    "base_role_id",
+    "driver_role_id",
+    "hub_channel_id",
+)
+
+
+async def _cleared_configuration(db) -> dict[str, Any]:
+    """The configuration pack is about to clear, for its audit entry (issue #383).
+
+    Every setting and role a league set upon this server: the four settings and the claim,
+    the two league roles, the hub, the signup channel and each team's role. The next
+    server's `/bot init` is audited as replacing nothing, so this entry is the only place
+    in the database the values survive.
+    """
+    cursor = await db.execute(f"SELECT {', '.join(_AUDITED_SETTINGS)} FROM server_configs")
+    row = await cursor.fetchone()
+    cleared: dict[str, Any] = {
+        column: None if row is None else row[column] for column in _AUDITED_SETTINGS
+    }
+    cursor = await db.execute("SELECT signup_channel_id FROM signup_module_config")
+    row = await cursor.fetchone()
+    cleared["signup_channel_id"] = None if row is None else row["signup_channel_id"]
+    cursor = await db.execute(
+        "SELECT team_name, role_id FROM team_role_configs ORDER BY team_name"
+    )
+    cleared["team_roles"] = {r["team_name"]: r["role_id"] for r in await cursor.fetchall()}
+    return cleared
+
+
 async def pack(
     db_path: str,
     scheduler_service: "SchedulerService",
@@ -96,6 +137,8 @@ async def pack(
             season = await current_season(db)
             if season is not None:
                 raise PackRefused(*season)
+
+            cleared = await _cleared_configuration(db)
 
             team_roles = (await db.execute("DELETE FROM team_role_configs")).rowcount
             wizards = (await db.execute("DELETE FROM signup_wizard_records")).rowcount
@@ -135,6 +178,19 @@ async def pack(
             )
 
             await db.execute(RELEASE_CLAIM_SQL)
+
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
+                "timestamp) VALUES (?, ?, NULL, 'BOT_PACKED', ?, ?, ?)",
+                (
+                    actor_id,
+                    actor_name,
+                    json.dumps(cleared),
+                    json.dumps({**dict.fromkeys(cleared), "team_roles": {}}),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
         except BaseException:
             await db.rollback()
             raise

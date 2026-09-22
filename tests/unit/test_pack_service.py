@@ -6,6 +6,7 @@ current season in any stage short of completed or cancelled.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from unittest.mock import MagicMock
@@ -273,7 +274,7 @@ async def test_pack_keeps_the_past_season_whole(db_path):
     assert await _count(db_path, "rounds") == 1
     submission = await _one(db_path, "SELECT * FROM round_submission_channels")
     assert (submission["closed"], submission["results_posted"]) == (1, 1)
-    assert await _count(db_path, "audit_entries") == 1
+    assert await _count(db_path, "audit_entries WHERE change_type = 'X'") == 1
 
 
 async def test_pack_keeps_the_teams_points_and_module_settings(db_path):
@@ -289,3 +290,42 @@ async def test_pack_keeps_the_teams_points_and_module_settings(db_path):
     assert signup["selected_tracks_json"] == '["1"]'
     settings = await _one(db_path, "SELECT * FROM signup_module_settings")
     assert settings["time_type"] == "SHORT_QUALI"
+
+
+# ── The record of the pack ────────────────────────────────────────────────
+
+
+async def test_pack_is_audited_with_every_setting_and_role_it_cleared(db_path):
+    """Issue #383. The log line goes to a server the league is leaving; the audit entry is
+    what keeps who packed and what the settings held. Message ids are the bot's record of
+    its own posts, not configuration, and are not in it."""
+    await _seed(db_path)
+
+    await pack(db_path, _scheduler(), **ACTOR)
+
+    row = await _one(db_path, "SELECT * FROM audit_entries WHERE change_type = 'BOT_PACKED'")
+    assert (row["actor_id"], row["actor_name"], row["division_id"]) == (7, "admin", None)
+    assert json.loads(row["old_value"]) == {
+        "server_id": SERVER,
+        "interaction_role_id": 1,
+        "interaction_channel_id": 2,
+        "log_channel_id": 3,
+        "league_admin_role_id": 4,
+        "base_role_id": 5,
+        "driver_role_id": 6,
+        "hub_channel_id": 7,
+        "signup_channel_id": 80,
+        "team_roles": {"Ferrari": 70},
+    }
+    assert json.loads(row["new_value"]) == {
+        "server_id": None,
+        "interaction_role_id": None,
+        "interaction_channel_id": None,
+        "log_channel_id": None,
+        "league_admin_role_id": None,
+        "base_role_id": None,
+        "driver_role_id": None,
+        "hub_channel_id": None,
+        "signup_channel_id": None,
+        "team_roles": {},
+    }
