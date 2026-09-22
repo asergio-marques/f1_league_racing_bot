@@ -368,7 +368,7 @@ Frees the bot from this server so that `/bot init` on another can claim it. What
 | Kept | Cleared |
 |---|---|
 | Every driver profile, with its accounts, history and portrait — test drivers too | The four bot settings, which frees the claim |
-| Every completed and cancelled season | The base role and the driver role, every team's role, and the signup channel |
+| Every completed and cancelled season | The base role and the driver role, every team's role, the hub channel, and the signup channel |
 | The team list and the points configurations | Open signup wizards, undelivered messages waiting to be retried, and the season review prompt |
 | Test mode, and every module setting that is not a channel or a role | The bot's record of which messages it posted, and all scheduled work (the daily portrait refresh aside) |
 

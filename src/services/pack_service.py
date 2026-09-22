@@ -108,6 +108,11 @@ async def pack(
             await db.execute(
                 "UPDATE server_configs SET base_role_id = NULL, driver_role_id = NULL"
             )
+            # The hub is a channel of this server, and its panel a message in it (#279). The
+            # panel stays where it is, its buttons refused while no server is claimed.
+            await db.execute(
+                "UPDATE server_configs SET hub_channel_id = NULL, hub_message_id = NULL"
+            )
 
             # The message ids the bot keeps to edit its own posts.
             await db.execute("DELETE FROM forecast_messages")

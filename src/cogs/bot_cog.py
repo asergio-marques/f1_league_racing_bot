@@ -613,7 +613,7 @@ class BotCog(commands.Cog):
         await interaction.followup.send(
             "✅ The bot no longer serves this server.\n"
             f"Cleared: the four bot settings, the base role and the driver role, "
-            f"**{result.team_roles}** team role(s), the signup channel, "
+            f"**{result.team_roles}** team role(s), the hub channel, the signup channel, "
             f"**{result.wizards}** signup wizard(s), "
             f"**{result.queued_messages}** undelivered message(s) and "
             f"**{result.scheduled_jobs}** scheduled job(s).\n"

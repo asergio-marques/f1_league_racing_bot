@@ -40,8 +40,9 @@ async def _seed(db_path: str, *, stage: str = "COMPLETED", test_mode: int = 0) -
         await db.executescript(f"""
             INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id,
                 log_channel_id, league_admin_role_id, test_mode_active,
-                weather_module_enabled, signup_module_enabled, base_role_id, driver_role_id)
-            VALUES ({SERVER}, 1, 2, 3, 4, {test_mode}, 1, 1, 5, 6);
+                weather_module_enabled, signup_module_enabled, base_role_id, driver_role_id,
+                hub_channel_id, hub_message_id)
+            VALUES ({SERVER}, 1, 2, 3, 4, {test_mode}, 1, 1, 5, 6, 7, 8);
             INSERT INTO seasons (id, start_date, status, season_number, stage)
             VALUES (1, '2026-01-01', '{status}', 1, '{stage}');
             INSERT INTO divisions (id, season_id, name, mention_role_id, lineup_channel_id,
@@ -178,6 +179,17 @@ async def test_a_pack_clears_both_league_roles(db_path):
 
     row = await _one(db_path, "SELECT base_role_id, driver_role_id FROM server_configs")
     assert (row["base_role_id"], row["driver_role_id"]) == (None, None)
+
+
+async def test_a_pack_clears_the_hub_and_the_record_of_its_panel(db_path):
+    """The hub is a channel of the server left behind (issue #279), and its panel a message
+    there: the next server's hub is set afresh."""
+    await _seed(db_path)
+
+    await pack(db_path, _scheduler())
+
+    row = await _one(db_path, "SELECT hub_channel_id, hub_message_id FROM server_configs")
+    assert (row["hub_channel_id"], row["hub_message_id"]) == (None, None)
 
 
 async def test_pack_clears_wizards_the_retry_queue_and_the_review_prompt(db_path):

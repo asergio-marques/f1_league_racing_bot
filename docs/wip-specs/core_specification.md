@@ -124,7 +124,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A pack shall keep what belongs to the league rather than the server: every driver profile with its accounts, history and portrait, test drivers among them; every completed and cancelled season; the team list; the points configurations; test mode; and every module setting that is not a channel or a role.
 - A pack shall clear everything tied to the server:
     - the four settings, which frees the bot's claim on the server;
-    - the league's base role and driver role, the role of every team, and the signup channel;
+    - the league's base role and driver role, the role of every team, the hub channel, and the signup channel;
     - every signup wizard, every undelivered message awaiting a retry, and the season review prompt;
     - the record of which messages the bot posted, by which it edits them;
     - every piece of scheduled work, but the daily refresh of driver portraits.
