@@ -445,22 +445,46 @@ it only to place it; the rules governing it belong to its own specification.
 - A round shall record the canonical name of its circuit.
 
 ## Teams
-- A server shall hold a list of teams. The teams of a division shall be created from that list when the division is created.
+- A server shall hold a list of teams. The teams of a division shall be created from that list when the division is created, carrying the names the team holds then, so that a season keeps the names it ran under.
 - The list shall ship holding the Reserve team alone. A league shall build its own.
 - The Reserve team shall always exist upon the server and in every division. It shall not be added, renamed or removed, and it shall have no limit of seats. Its role shall be set by a command of its own.
-- The role of any team may be set at any time, whatever the state of the season, so that a role deleted from the server may be repaired. Pending completion is the one exception: nothing is raced then, and completing the season revokes every team role a few steps later, so the mapping is repaired once the season has ended, for the season that follows.
-    - Every driver holding a committed seat in that team shall follow the change: the team's former role shall be revoked from them and its new role granted. A driver created by test mode holds no role and shall be left alone.
-    - The team's results and standings shall stay with the team: every round recorded before the change shall remain the team's. Decided 2026-09-22 (#375).
-- A role shall belong to one team only, the Reserve team included. Adding a team, or setting a team's role, with a role another team holds shall be refused, naming that team, and nothing shall change. Decided 2026-09-22 (#375).
-- Adding, renaming or removing a team shall change the server's list. It shall be permitted while the server holds no active season, or while the active season is in Configuration, and shall be refused otherwise.
-- A team name shall hold no role mention, "@everyone" or "@here", in any case, no emoji and no Discord markup, as a division's name shall not. Decided 2026-09-21 (#362).
-- A team name shall reduce to a usable filename:
+
+### A team's three names
+Decided 2026-09-22 (#381). Each name has one job, and no name does another's.
+
+- A team shall carry a **full name**, a **shorthand** and a **role**.
+- The **full name** shall be what is shown wherever a team is named to a league: every results and standings posting, every graphic, the lineup, the attendance sheet, a verdict, the check-in, the placements and season reviews, the team list, and the reply and log line of every command that acts on a team.
+- The **shorthand** shall be the only way a team is typed: in a command, in the team column of a results submission, and in a test roster. A command taking a team shall offer the shorthands as the manager types, each suggestion showing the full name beside the shorthand and matching either, and shall send the shorthand.
+- The shorthand shall also name the team's artwork, being the datum every graphic seeks the team's badge under.
+- The **role** shall be what the team's drivers are granted, and what the team is mentioned by. It shall never name a team where one is typed.
+- Where a team is typed, anything that is not a shorthand shall be refused saying what it is: a role mention, "@everyone", "@here", a mention of a member, and a Discord ID typed out.
+
+### The rules each name is held to
+- Both names shall hold no role mention, "@everyone" or "@here", in any case, no emoji, no Discord markup and no mention of a member. A division's name is held to all but the last. Decided 2026-09-21 (#362) and 2026-09-22 (#381).
+- A **full name** shall not be empty, shall be at most 64 characters, and shall be unique across the server's list ignoring case, so that two teams cannot be shown alike.
+- A **shorthand** shall be at most 16 characters and shall hold no comma, being typed into the comma-separated rows of a results submission and a test roster.
+- A shorthand shall reduce to a usable filename:
     - It shall not be empty and shall hold at least one letter or digit.
     - It shall not reduce to `reserve`.
-    - It shall not reduce to the same form as another team's name in its scope — the server for the server's list, the division for the teams of a season.
-    - This shall bind whether or not the image module is enabled, the reduced name being the filename under which every graphic seeks that team's artwork.
-    - Only the new name shall be validated when a team is renamed, so that a team named before this rule may still be corrected.
-    - A season whose configuration has been confirmed shall not be validated against this rule again.
+    - It shall not reduce to the same form as another team's shorthand in its scope — the server for the server's list, the division for the teams of a season.
+    - This shall bind whether or not the image module is enabled, the reduced shorthand being the filename under which every graphic seeks that team's artwork.
+- Only the new names shall be validated when a team is changed, so that a team named before these rules may still be corrected.
+- A season whose configuration has been confirmed shall not be validated against these rules again.
+
+### Changing a team
+- Adding or removing a team shall change the server's list. It shall be permitted while the server holds no active season, or while the active season is in Configuration, and shall be refused otherwise.
+- One command shall change a team, taking the team by its shorthand and offering its shorthand, its full name and its role together, each filled with what the team holds now. Submitting it unchanged shall change nothing.
+    - The shorthand and the full name may be changed only while the team list may be changed. The form shall offer them only then.
+    - The role may be changed whatever the state of the season, so that a role deleted from the server may be repaired. Pending completion is the one exception: nothing is raced then, and completing the season revokes every team role a few steps later, so the mapping is repaired once the season has ended, for the season that follows.
+    - A submission naming a field that may not be changed at that moment shall be refused as a whole, saying which, and nothing at all shall be written.
+    - A change of name shall be recorded in the log of what changed, as a change of role is.
+    - Where the changed shorthand reduces to a different filename, the reply shall name the old and the new, so that the league may rename its artwork.
+- Every driver holding a committed seat in a team whose role changes shall follow the change: the team's former role shall be revoked from them and its new role granted. A driver created by test mode holds no role and shall be left alone.
+- The team's results and standings shall stay with the team: every round recorded before the change shall remain the team's. Decided 2026-09-22 (#375).
+- A role shall belong to one team only, the Reserve team included. Adding a team, or setting a team's role, with a role another team holds shall be refused, naming that team, and nothing shall change. Decided 2026-09-22 (#375).
+- A team's role shall be one the bot can grant, since it is granted to every driver placed in the team. Each of these shall be refused, saying why, at the moment the role is chosen: "@everyone"; a role managed by an integration; a role at or above the bot's own highest role, saying to move the bot's above it; and any role at all while the bot holds no permission to manage roles. Decided 2026-09-22 (#381).
+
+### Teams elsewhere
 - Every team other than Reserve shall hold two seats.
 - Teams shall be ordered as they were added and not alphabetically, so that adding or renaming one never moves those already drawn.
 - The placements review shall display every team, the drivers seated in each, and every signup still unsettled.

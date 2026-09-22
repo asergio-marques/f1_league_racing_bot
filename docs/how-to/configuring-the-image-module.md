@@ -182,7 +182,7 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 | Folder | The filename comes from |
 |---|---|
 | Circuit maps | The track's **name** — not its short track ID |
-| Team badges | The team's name |
+| Team badges | The team's **shorthand** — the short name you type, not the full name drawn beside the badge |
 | Country flags | The **country** — `united_kingdom.svg`. Never the nationality: `british.svg` is not looked for. A driver who answered `other` needs `other.svg`; one with nothing recorded draws no flag and needs no file |
 | Driver photos | The driver's **Discord user ID number**. The ID never changes, where a nickname or a username can, so a photo named this way does not vanish when a driver renames themselves. **You may not have to supply these at all** — see *Letting the bot fetch driver photos* below |
 | Arrows and weather | Fixed names the bot already uses — these come complete, just replace the pictures |
@@ -196,7 +196,7 @@ So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`
 
 ### Doing one, start to finish
 
-Say your league has a team called **Red Bull** and you have its badge ready.
+Say your league has a team whose shorthand is **Red Bull** — its full name might be *Oracle Red Bull Racing*, but the badge is named after the shorthand — and you have its badge ready.
 
 1. **Save it as an SVG at 120 × 120**, unless you have changed the shape of the team-badge blanks in your own drawings — in which case match whatever shape you gave them. 120 × 120 is what the drawings that ship with the bot use. Keep it simple — no filters, no clipping, and no lettering (fonts differ from one machine to the next, so draw any text as shapes). Gradients are fine. If the badge does not fill that shape, add see-through space around it until it does. The bot never pads or crops pictures for you, and a picture of the wrong shape gets stretched and smeared.
 2. **Do not put any words in the artwork.** Text inside a badge can come out in the wrong typeface on a different computer. Keep lettering as shapes, or leave it out.
@@ -347,7 +347,7 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 > every machine that will draw them. Either way the picture still gets drawn, and the log channel tells you
 > which font actually stood in.
 
-> **The lineup drawing works as it comes, like all the others.** It numbers its team blocks — block 1 draws whichever team is first in the division, block 2 the second, and so on — so the same file suits any league. The team's name and badge are the only things that change from block to block. The one that comes with the bot has room for eleven teams of two drivers each, plus ten reserves.
+> **The lineup drawing works as it comes, like all the others.** It numbers its team blocks — block 1 draws whichever team is first in the division, block 2 the second, and so on — so the same file suits any league. The team's full name and its badge are the only things that change from block to block. The one that comes with the bot has room for eleven teams of two drivers each, plus ten reserves.
 >
 > **If your league does not put reserves on its lineup, draw none.** A drawing file with no reserve block at all is perfectly good: the picture then never shows reserves, however many your division is carrying, and the bot does not complain — leaving the block out is how you say you do not want it. Ten is only what the shipped file guesses; draw more if your league carries more. What you cannot do is draw *some* and then carry more reserves than you drew room for, which is refused like any other overflow.
 >

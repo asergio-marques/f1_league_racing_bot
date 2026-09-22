@@ -225,13 +225,19 @@ placeholder before collection — import `bot` at module level freely, and do no
 default. Five test files passed on the Pi and failed collection on both runners before this
 (2026-09-16); `tests/unit/test_suite_needs_no_dotenv.py` pins it.
 
-**A test that constructs a `discord.ui.View` or `Modal` must be `async def`.** apt's discord.py
-2.5.0 calls `asyncio.get_running_loop()` in `View.__init__`; the pinned 2.7.1 defers it. So a
-sync test that builds one passes on CI and raises `RuntimeError: no running event loop` on the
-Pi — the version divergence above, in its most common concrete form. `pytest.ini` sets
+**A test that constructs a `discord.ui.View` or `Modal` must be `async def`.** discord.py 2.5.0
+calls `asyncio.get_running_loop()` in `View.__init__`, where 2.7.1 defers it, so a sync test that
+builds one passed on CI and raised `RuntimeError: no running event loop` wherever an older copy
+was imported — which on the Pi was apt's, until #381 made **2.6 the minimum** and `bot.py` began
+refusing to start below it. The rule stands whatever is installed: `pytest.ini` sets
 `asyncio_mode = auto`, so `async def` is the whole fix and needs no decorator; do not reach for
 `asyncio.run()` in a sync test, which closes the loop on return and leaves the view bound to a
 dead one (decided 2026-09-08, after five such tests failed on the Pi alone).
+
+**Run the suite with the interpreter that carries the pins** — a virtualenv built from
+`requirements.txt`, never a system Python importing apt's `dist-packages`. Since #381 the bot
+needs discord.py 2.6 or later, which apt does not ship, so a system-Python run now fails at
+import rather than testing a library the bot never runs on.
 
 **The suite keeps no scratch.** `pytest.ini` sets `tmp_path_retention_count = 0` and
 `tmp_path_retention_policy = failed`, and `tests/conftest.py` sweeps the template scratch
