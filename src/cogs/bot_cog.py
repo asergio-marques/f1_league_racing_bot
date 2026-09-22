@@ -42,9 +42,11 @@ from db.database import get_connection
 from models.server_config import ServerConfig
 from services import backup_service, factory_reset_service, pack_service
 from utils.channel_guard import (
+    DRIVER_ROLE_STANDS_FOR,
     bot_setup_only,
     league_admin_only,
     league_manager_only,
+    role_grant_refusal,
     server_owner_only,
 )
 
@@ -380,6 +382,18 @@ class BotCog(commands.Cog):
             )
             return
         old_role_id = getattr(config, column)
+
+        # The driver role is granted at every approval, and `wizard_service.approve_signup`
+        # only logs a grant Discord refuses (#374). The base role is granted by the league.
+        if column == "driver_role_id":
+            refusal = role_grant_refusal(
+                role,
+                stands_for=DRIVER_ROLE_STANDS_FOR,
+                remedy="Choose a role of the drivers' own.",
+            )
+            if refusal is not None:
+                await interaction.response.send_message(f"❌ {refusal}", ephemeral=True)
+                return
 
         # Two permission edits on the signup channel outrun Discord's three seconds.
         await interaction.response.defer(ephemeral=True)

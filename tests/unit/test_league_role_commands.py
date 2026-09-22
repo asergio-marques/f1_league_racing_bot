@@ -111,11 +111,16 @@ def _make_cog(db_path: str) -> BotCog:
     return BotCog(bot)
 
 
-def _role(role_id: int = NEW_ROLE, name: str = "Drivers"):
+def _role(role_id: int = NEW_ROLE, name: str = "Drivers", *, above_the_bot: bool = False):
+    """A role the bot can grant, unless *above_the_bot* says otherwise."""
     role = MagicMock(spec=discord.Role)
     role.id = role_id
     role.name = name
     role.mention = f"<@&{role_id}>"
+    role.is_default.return_value = False
+    role.managed = False
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, _other: not above_the_bot
     return role
 
 
@@ -452,6 +457,33 @@ async def test_the_driver_role_touches_no_channel(tmp_path):
     await _driver_role(cog, interaction)
 
     assert _permission_calls(interaction) == []
+
+
+async def test_a_driver_role_the_bot_cannot_grant_is_refused(tmp_path):
+    """It is granted at every approval, and `wizard_service.approve_signup` only logs a grant
+    Discord refuses — so a role the bot cannot grant costs every driver of the window their
+    role with nobody told (#374). Setting it is the moment a league is there to choose another,
+    as `/team role` holds since #381."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _driver_role(cog, interaction, role=_role(above_the_bot=True))
+
+    assert "Move my role above it" in _replied(interaction)
+    assert (await _stored(db_path))["driver_role_id"] == OLD_ROLE
+    assert await _audit_rows(db_path) == []
+
+
+async def test_a_base_role_the_bot_cannot_grant_is_still_set(tmp_path):
+    """The league grants the base role, not the bot, so where it sits in the role list is not
+    the bot's concern."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+
+    await _base_role(cog, _interaction(), role=_role(above_the_bot=True))
+
+    assert (await _stored(db_path))["base_role_id"] == NEW_ROLE
 
 
 def test_nothing_current_names_a_withdrawn_signup_role_command():
