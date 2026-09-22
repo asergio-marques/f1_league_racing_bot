@@ -134,7 +134,7 @@ async def test_reading_the_team_list_restores_a_lost_reserve(tmp_path):
     division seeded from it would then have no reserve team to distribute into."""
     db_path = await _make_db(tmp_path)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha")
+    await service.add_default_team("Alpha", full_name="Alpha")
     async with get_connection(db_path) as db:
         await db.execute(
             "DELETE FROM default_teams WHERE is_reserve = 1"
@@ -152,7 +152,7 @@ async def test_the_reserve_team_sorts_last(tmp_path):
     league reads its own teams first."""
     service = TeamService(await _make_db(tmp_path))
     for name in ("Zeta", "Alpha"):
-        await service.add_default_team(name)
+        await service.add_default_team(name, full_name=name)
 
     teams = await service.get_default_teams()
 
@@ -162,7 +162,7 @@ async def test_the_reserve_team_sorts_last(tmp_path):
 @pytest.mark.parametrize(
     "call",
     [
-        lambda s: s.add_default_team(RESERVE),
+        lambda s: s.add_default_team(RESERVE, full_name=RESERVE),
         lambda s: s.rename_default_team(RESERVE, "Something"),
         lambda s: s.remove_default_team(RESERVE),
     ],
@@ -182,8 +182,8 @@ async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
     service = TeamService(db_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO default_teams (name, max_seats, is_reserve) "
-            "VALUES ('Standbys', -1, 1)"
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES ('Standbys', 'Standbys', -1, 1)"
         )
         await db.commit()
 
@@ -205,7 +205,7 @@ async def test_seeding_leaves_an_existing_team_list_alone(tmp_path):
     """`/bot init` may be run again on a configured server."""
     db_path = await _make_db(tmp_path)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha")
+    await service.add_default_team("Alpha", full_name="Alpha")
     before = await _names(db_path)
 
     await service.seed_default_teams_if_empty()
@@ -221,7 +221,7 @@ async def test_seeding_leaves_an_existing_team_list_alone(tmp_path):
 async def test_a_team_is_added_with_its_seat_count(tmp_path):
     service = TeamService(await _make_db(tmp_path))
 
-    team = await service.add_default_team("Alpha", max_seats=3)
+    team = await service.add_default_team("Alpha", full_name="Alpha", max_seats=3)
 
     assert team.name == "Alpha"
     assert team.max_seats == 3
@@ -230,10 +230,10 @@ async def test_a_team_is_added_with_its_seat_count(tmp_path):
 
 async def test_a_duplicate_team_name_is_refused(tmp_path):
     service = TeamService(await _make_db(tmp_path))
-    await service.add_default_team("Alpha")
+    await service.add_default_team("Alpha", full_name="Alpha")
 
     with pytest.raises(ValueError, match="already exists"):
-        await service.add_default_team("Alpha")
+        await service.add_default_team("Alpha", full_name="Alpha")
 
 
 async def test_a_name_colliding_once_normalised_is_refused(tmp_path):
@@ -241,16 +241,16 @@ async def test_a_name_colliding_once_normalised_is_refused(tmp_path):
     normalise alike cannot both be drawn. The collision is invisible in the raw names,
     which is why this is checked rather than left to the UNIQUE constraint."""
     service = TeamService(await _make_db(tmp_path))
-    await service.add_default_team("Red Bull")
+    await service.add_default_team("Red Bull", full_name="Red Bull")
 
     with pytest.raises(ValueError):
-        await service.add_default_team("red-bull")
+        await service.add_default_team("red-bull", full_name="red-bull")
 
 
 async def test_a_team_is_renamed(tmp_path):
     db_path = await _make_db(tmp_path)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha")
+    await service.add_default_team("Alpha", full_name="Alpha")
 
     await service.rename_default_team("Alpha", "Beta")
 
@@ -268,7 +268,7 @@ async def test_renaming_a_team_that_does_not_exist_says_so(tmp_path):
 async def test_renaming_onto_an_existing_name_is_refused(tmp_path):
     service = TeamService(await _make_db(tmp_path))
     for name in ("Alpha", "Beta"):
-        await service.add_default_team(name)
+        await service.add_default_team(name, full_name=name)
 
     with pytest.raises(ValueError, match="already exists"):
         await service.rename_default_team("Alpha", "Beta")
@@ -282,8 +282,8 @@ async def test_a_team_whose_existing_name_breaks_the_rule_can_still_be_renamed(t
     service = TeamService(db_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO default_teams (name, max_seats, is_reserve) "
-            "VALUES ('???', 2, 0)"
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES ('???', '???', 2, 0)"
         )
         await db.commit()
 
@@ -295,7 +295,7 @@ async def test_a_team_whose_existing_name_breaks_the_rule_can_still_be_renamed(t
 async def test_a_team_is_removed(tmp_path):
     db_path = await _make_db(tmp_path)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha")
+    await service.add_default_team("Alpha", full_name="Alpha")
 
     await service.remove_default_team("Alpha")
 
@@ -317,7 +317,7 @@ async def test_removing_a_team_that_does_not_exist_says_so(tmp_path):
 async def test_a_team_with_no_role_mapping_reads_as_none(tmp_path):
     db_path = await _make_db(tmp_path)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha")
+    await service.add_default_team("Alpha", full_name="Alpha")
 
     entries = await service.get_teams_with_roles()
 
@@ -328,7 +328,7 @@ async def test_a_team_with_no_role_mapping_reads_as_none(tmp_path):
 async def test_a_mapped_role_is_carried_through(tmp_path):
     db_path = await _make_db(tmp_path)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha")
+    await service.add_default_team("Alpha", full_name="Alpha")
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
@@ -349,7 +349,7 @@ async def test_a_mapped_role_is_carried_through(tmp_path):
 async def test_seeding_a_division_copies_the_server_s_teams(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha")
+    await service.add_default_team("Alpha", full_name="Alpha")
 
     await service.seed_division_teams(1)
 
@@ -359,11 +359,45 @@ async def test_seeding_a_division_copies_the_server_s_teams(tmp_path):
 async def test_seeding_pre_creates_a_seat_for_every_place_in_a_team(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha", max_seats=3)
+    await service.add_default_team("Alpha", full_name="Alpha", max_seats=3)
 
     await service.seed_division_teams(1)
 
     assert await _seat_count(db_path, 1, "Alpha") == 3
+
+
+async def test_a_team_is_added_with_its_full_name_beside_its_shorthand(tmp_path):
+    """A team's shorthand is typed and names its artwork; its full name is what is shown
+    (#381). Both are kept, and neither stands in for the other."""
+    db_path = await _make_db(tmp_path)
+    service = TeamService(db_path)
+
+    added = await service.add_default_team("RBR", full_name="Oracle Red Bull Racing")
+
+    assert (added.name, added.full_name) == ("RBR", "Oracle Red Bull Racing")
+    listed = next(t for t in await service.get_default_teams() if t.name == "RBR")
+    assert listed.full_name == "Oracle Red Bull Racing"
+
+
+async def test_seeding_a_division_copies_each_team_s_full_name(tmp_path):
+    """A division keeps the names its season ran under, whatever becomes of the server's
+    list afterwards, so the full name is copied with the shorthand (#381)."""
+    db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
+    service = TeamService(db_path)
+    await service.add_default_team("RBR", full_name="Oracle Red Bull Racing")
+
+    await service.seed_division_teams(1)
+
+    names = {t["name"]: t["full_name"] for t in await service.get_division_teams(1)}
+    assert names == {"RBR": "Oracle Red Bull Racing", RESERVE: RESERVE}
+
+
+async def test_the_reserve_team_is_reserve_in_both_names(tmp_path):
+    db_path = await _make_db(tmp_path)
+
+    reserve = next(t for t in await TeamService(db_path).get_default_teams() if t.is_reserve)
+
+    assert (reserve.name, reserve.full_name) == (RESERVE, RESERVE)
 
 
 async def test_the_reserve_team_is_seeded_without_seats(tmp_path):
@@ -385,7 +419,7 @@ async def test_a_season_team_is_added_to_every_division(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=3)
     service = TeamService(db_path)
 
-    count = await service.season_team_add(SEASON_ID, "Alpha")
+    count = await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
 
     assert count == 3
     for division_id in (1, 2, 3):
@@ -395,7 +429,7 @@ async def test_a_season_team_is_added_to_every_division(tmp_path):
 async def test_a_season_team_is_added_with_its_seats(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
 
-    await TeamService(db_path).season_team_add(SEASON_ID, "Alpha", max_seats=4)
+    await TeamService(db_path).season_team_add(SEASON_ID, "Alpha", full_name="Alpha", max_seats=4)
 
     assert await _seat_count(db_path, 1, "Alpha") == 4
 
@@ -408,7 +442,7 @@ async def test_a_season_not_in_setup_refuses_every_team_change(tmp_path, status)
     service = TeamService(db_path)
 
     for call in (
-        service.season_team_add(SEASON_ID, "Alpha"),
+        service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha"),
         service.season_team_rename(SEASON_ID, "Alpha", "Beta"),
         service.season_team_remove(SEASON_ID, "Alpha"),
     ):
@@ -420,22 +454,22 @@ async def test_a_season_that_does_not_exist_refuses_a_team_change(tmp_path):
     db_path = await _make_db(tmp_path)
 
     with pytest.raises(ValueError, match="season is currently in setup"):
-        await TeamService(db_path).season_team_add(999, "Alpha")
+        await TeamService(db_path).season_team_add(999, "Alpha", full_name="Alpha")
 
 
 async def test_a_name_already_in_one_division_is_refused_for_the_season(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha")
+    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
 
     with pytest.raises(ValueError, match="already exists"):
-        await service.season_team_add(SEASON_ID, "Alpha")
+        await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
 
 
 async def test_a_season_team_is_renamed_across_every_division(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=3)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha")
+    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
 
     count = await service.season_team_rename(SEASON_ID, "Alpha", "Beta")
 
@@ -451,12 +485,12 @@ async def test_a_rename_rejected_in_one_division_changes_none_of_them(tmp_path):
     what the team is called and no command to reconcile them."""
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=3)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha")
+    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
     # Only the third division already holds the name being renamed to.
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-            "VALUES (3, 'Beta', 2, 0)"
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (3, 'Beta', 'Beta', 2, 0)"
         )
         await db.commit()
 
@@ -470,7 +504,7 @@ async def test_a_rename_rejected_in_one_division_changes_none_of_them(tmp_path):
 async def test_a_season_team_is_removed_from_every_division_with_its_seats(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha")
+    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
 
     count = await service.season_team_remove(SEASON_ID, "Alpha")
 
@@ -488,8 +522,8 @@ async def test_removing_a_team_absent_from_a_division_is_not_an_error(tmp_path):
     service = TeamService(db_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-            "VALUES (1, 'Alpha', 2, 0)"
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (1, 'Alpha', 'Alpha', 2, 0)"
         )
         await db.commit()
 
@@ -501,7 +535,7 @@ async def test_the_season_s_team_names_are_reported_without_the_reserve(tmp_path
     """Used to offer a driver their team preferences, where Reserve is not a choice."""
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha")
+    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
     await service.seed_division_teams(1)
 
     names = await service.get_setup_season_team_names(SEASON_ID)
@@ -513,7 +547,7 @@ async def test_the_season_s_team_names_are_reported_without_the_reserve(tmp_path
 async def test_a_name_in_two_divisions_is_reported_once(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha")
+    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
 
     assert await service.get_setup_season_team_names(SEASON_ID) == {"Alpha"}
 
@@ -530,8 +564,8 @@ async def test_a_division_s_teams_are_returned_in_insertion_order_not_by_name(tm
     the coupling ordinal addressing exists to remove."""
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Zeta")
-    await service.season_team_add(SEASON_ID, "Alpha")
+    await service.season_team_add(SEASON_ID, "Zeta", full_name="Zeta")
+    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
 
     teams = await service.get_division_teams(1)
 
@@ -542,7 +576,7 @@ async def test_a_division_s_reserve_team_comes_last(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
     await service.seed_division_teams(1)
-    await service.season_team_add(SEASON_ID, "Alpha")
+    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
 
     teams = await service.get_division_teams(1)
 
@@ -552,7 +586,7 @@ async def test_a_division_s_reserve_team_comes_last(tmp_path):
 async def test_an_empty_seat_is_reported_with_no_driver(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha", max_seats=2)
+    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha", max_seats=2)
 
     teams = await service.get_division_teams(1)
 
@@ -564,7 +598,7 @@ async def test_an_empty_seat_is_reported_with_no_driver(tmp_path):
 async def test_a_filled_seat_carries_its_driver(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha", max_seats=2)
+    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha", max_seats=2)
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "

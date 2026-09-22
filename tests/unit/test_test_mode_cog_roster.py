@@ -108,8 +108,8 @@ async def db_path(tmp_path):
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-            "VALUES (?, 'Redline', 2, 0)",
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, 'Redline', 'Redline', 2, 0)",
             (division_id,),
         )
         team_id = cursor.lastrowid
@@ -327,8 +327,8 @@ class TestRosterListShowsIt:
             )
             division_id = (await cursor.fetchone())[0]
             await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, 'Reserve', 0, 1)",
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, 'Reserve', 'Reserve', 0, 1)",
                 (division_id,),
             )
             await db.commit()

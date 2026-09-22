@@ -94,9 +94,9 @@ async def _make_db(
         for team, is_reserve, user_id, is_test, display in drivers:
             if team not in teams:
                 cursor = await db.execute(
-                    "INSERT INTO team_instances (division_id, name, is_reserve) "
-                    "VALUES (?, ?, ?)",
-                    (DIVISION_ID, team, int(is_reserve)),
+                    "INSERT INTO team_instances (division_id, name, full_name, is_reserve) "
+                    "VALUES (?, ?, ?, ?)",
+                    (DIVISION_ID, team, team, int(is_reserve)),
                 )
                 teams[team] = cursor.lastrowid
             profile_id += 1

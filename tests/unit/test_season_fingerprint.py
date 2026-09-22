@@ -53,8 +53,8 @@ async def season(tmp_path):
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-            "VALUES (?, 'Redline', 2, 0)",
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, 'Redline', 'Redline', 2, 0)",
             (division_id,),
         )
         team_id = cursor.lastrowid
@@ -232,8 +232,8 @@ async def test_a_team_added_to_the_server_list_is_part_of_the_team_list_area(sea
     before = await _take(season)
     await _assert_only(
         season, before, "team list",
-        "INSERT INTO default_teams (name, max_seats, is_reserve) "
-        "VALUES ('Bluestreak', 2, 0)",
+        "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+        "VALUES ('Bluestreak', 'Bluestreak', 2, 0)",
     )
 
 

@@ -85,7 +85,8 @@ class TeamCog(commands.Cog):
         description="Add a team to the server list, while no season's configuration is confirmed.",
     )
     @app_commands.describe(
-        name="Name of the new team (max 50 chars).",
+        name="Shorthand of the new team: what is typed to name it, and its artwork's filename.",
+        full_name="Full name of the new team: what every post and graphic shows.",
         role="Discord role to associate with this team.",
     )
     @league_manager_only
@@ -93,6 +94,7 @@ class TeamCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         name: str,
+        full_name: str,
         role: discord.Role,
     ) -> None:
         if await self._team_list_lock(interaction, "add"):
@@ -110,7 +112,7 @@ class TeamCog(commands.Cog):
             return
         try:
             await self.bot.team_service.add_default_team(  # type: ignore[attr-defined]
-                name
+                name, full_name=full_name
             )
         except ValueError as exc:
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)

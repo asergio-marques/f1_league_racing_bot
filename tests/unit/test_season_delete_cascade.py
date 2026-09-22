@@ -100,7 +100,7 @@ async def _seed_season(db, season_id, division_id, round_id, *, number: int):
     )
     # The division's team, created first so its results can name it (#375).
     cursor = await db.execute(
-        "INSERT INTO team_instances (division_id, name, is_reserve) VALUES (?, 'Red', 0)",
+        "INSERT INTO team_instances (division_id, name, full_name, is_reserve) VALUES (?, 'Red', 'Red', 0)",
         (division_id,),
     )
     team_instance = cursor.lastrowid

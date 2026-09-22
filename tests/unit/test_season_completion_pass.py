@@ -70,8 +70,8 @@ async def db_path(tmp_path):
             "VALUES (1, 1, 'Pro', 1, 1, 'FINISHED')"
         )
         await db.execute(
-            "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-            "VALUES (10, 1, 'Alpha', 4, 0)"
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (10, 1, 'Alpha', 'Alpha', 4, 0)"
         )
         for pid, uid, former, test in ((1, "1001", 1, 0), (2, "1002", 0, 0),
                                         (3, "9000000000000000003", 0, 1)):

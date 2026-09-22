@@ -103,16 +103,16 @@ async def _seed(
 
         # One real team carrying every seat, plus a reserve that must not be counted.
         cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-            "VALUES (?, 'Reserve', 0, 1)",
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, 'Reserve', 'Reserve', 0, 1)",
             (division_id,),
         )
         reserve_instance_id = cursor.lastrowid
         for index in range(teams):
             cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, 2, 0)",
-                (division_id, f"Team {index + 1}"),
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, 2, 0)",
+                (division_id, f"Team {index + 1}", f"Team {index + 1}"),
             )
         instance_id = cursor.lastrowid
 

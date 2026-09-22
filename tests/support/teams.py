@@ -18,7 +18,7 @@ async def seed_team_instances(db, division_id: int, *team_ids: int) -> None:
     """
     for team_id in team_ids:
         await db.execute(
-            "INSERT OR IGNORE INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-            "VALUES (?, ?, ?, 2, 0)",
-            (team_id, division_id, f"Team {team_id}"),
+            "INSERT OR IGNORE INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, ?, ?, 2, 0)",
+            (team_id, division_id, f"Team {team_id}", f"Team {team_id}"),
         )

@@ -104,8 +104,8 @@ async def _season(db_path: str, status: str) -> int:
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-            "VALUES (?, 'Redline', 2, 0)",
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, 'Redline', 'Redline', 2, 0)",
             (division_id,),
         )
         team_id = cursor.lastrowid

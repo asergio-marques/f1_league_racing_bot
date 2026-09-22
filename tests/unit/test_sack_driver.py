@@ -106,8 +106,8 @@ async def _make_db(
             (PROFILE_ID, SEASON_ID, DIVISION_ID),
         )
         cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, is_reserve) "
-            "VALUES (?, 'Red', 0)",
+            "INSERT INTO team_instances (division_id, name, full_name, is_reserve) "
+            "VALUES (?, 'Red', 'Red', 0)",
             (DIVISION_ID,),
         )
         await db.execute(
@@ -384,7 +384,7 @@ async def test_a_seat_in_a_completed_season_is_left_as_the_archive_holds_it(tmp_
             (PRIOR_DIVISION_ID, PRIOR_SEASON_ID),
         )
         cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, is_reserve) VALUES (?, 'Red', 0)",
+            "INSERT INTO team_instances (division_id, name, full_name, is_reserve) VALUES (?, 'Red', 'Red', 0)",
             (PRIOR_DIVISION_ID,),
         )
         await db.execute(

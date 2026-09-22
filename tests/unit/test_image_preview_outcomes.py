@@ -98,9 +98,9 @@ async def league(db_path):
         user_id = 9_100_000
         for team_name in ("Redline", "Bluewave"):
             cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, 2, 0)",
-                (division_id, team_name),
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, 2, 0)",
+                (division_id, team_name, team_name),
             )
             team_id = cursor.lastrowid
             for seat_number in (1, 2):
@@ -244,8 +244,8 @@ class TestStandingsPreview:
 
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, 'Reserve', 1, 1)",
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, 'Reserve', 'Reserve', 1, 1)",
                 (league,),
             )
             await db.commit()

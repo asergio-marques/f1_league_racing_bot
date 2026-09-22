@@ -110,8 +110,8 @@ async def _seed_full_division(
             (division_id * 10, division_id),
         )
         await db.execute(
-            "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-            "VALUES (?, ?, 'Alpha', 2, 0)",
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, 'Alpha', 'Alpha', 2, 0)",
             (division_id * 10, division_id),
         )
         await db.execute(

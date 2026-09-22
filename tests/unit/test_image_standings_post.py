@@ -594,9 +594,9 @@ async def _seed_league(tmp_path):
             )
             # The team takes its role's number, so the results below name it either way.
             cursor = await db.execute(
-                "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, ?, 2, 0)",
-                (role_id, division_id, team_name),
+                "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, ?, 2, 0)",
+                (role_id, division_id, team_name, team_name),
             )
             instance_id = cursor.lastrowid
             for user_id, seat_number in drivers:

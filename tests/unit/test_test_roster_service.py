@@ -62,9 +62,9 @@ async def _seed_season(db_path):
         division_id = cursor.lastrowid
         for name, seats, reserve in (("Redline", 2, 0), ("Reserve", 0, 1)):
             cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, ?, ?)",
-                (division_id, name, seats, reserve),
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (division_id, name, name, seats, reserve),
             )
             team_id = cursor.lastrowid
             for seat_number in range(1, seats + 1):

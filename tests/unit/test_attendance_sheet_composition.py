@@ -52,8 +52,8 @@ async def db_path(tmp_path):
                 (division_id, name, division_id),
             )
             await db.execute(
-                "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, 'Alpha', 6, 0), (?, ?, 'Reserve', 6, 1)",
+                "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, 'Alpha', 'Alpha', 6, 0), (?, ?, 'Reserve', 'Reserve', 6, 1)",
                 (division_id * 10, division_id, division_id * 10 + 1, division_id),
             )
             for number in (1, 2):

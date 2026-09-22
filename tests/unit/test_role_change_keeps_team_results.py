@@ -73,23 +73,23 @@ async def _league(tmp_path) -> tuple[str, dict[str, int]]:
             ("Ferrari", OLD_ROLE, 0), ("Rival", RIVAL_ROLE, 0), ("Reserve", RESERVE_ROLE, 1),
         ):
             await db.execute(
-                "INSERT INTO default_teams (name, max_seats, is_reserve) VALUES (?, ?, ?)",
-                (name, -1 if is_reserve else 2, is_reserve),
+                "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) VALUES (?, ?, ?, ?)",
+                (name, name, -1 if is_reserve else 2, is_reserve),
             )
             await db.execute(
                 "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
                 (name, role),
             )
             cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, 2, ?)",
-                (DIVISION_ID, name, is_reserve),
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, 2, ?)",
+                (DIVISION_ID, name, name, is_reserve),
             )
             teams[name] = cursor.lastrowid
         # The other division fields a Rival of its own, which a Pro result must never name.
         cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-            "VALUES (?, 'Rival', 2, 0)",
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, 'Rival', 'Rival', 2, 0)",
             (OTHER_DIVISION_ID,),
         )
         teams["Am Rival"] = cursor.lastrowid

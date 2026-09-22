@@ -96,13 +96,13 @@ async def _make_db(tmp_path, *, attendance_enabled: bool, scheduled_at: datetime
 
         # One full-time team with a vacancy, and a reserve team with one accepted reserve.
         await db.execute(
-            "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-            "VALUES (10, ?, 'Alpha', 2, 0)",
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (10, ?, 'Alpha', 'Alpha', 2, 0)",
             (DIVISION_ID,),
         )
         await db.execute(
-            "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-            "VALUES (11, ?, 'Reserve', 6, 1)",
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (11, ?, 'Reserve', 'Reserve', 6, 1)",
             (DIVISION_ID,),
         )
         for profile_id, name in ((101, "Full Timer"), (102, "Stand In")):

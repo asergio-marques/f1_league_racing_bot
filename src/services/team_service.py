@@ -141,9 +141,9 @@ class TeamService:
         if found:
             return False
         await db.execute(
-            "INSERT INTO default_teams (name, max_seats, is_reserve) "
-            "VALUES (?, -1, 1)",
-            (_RESERVE_NAME,),
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, -1, 1)",
+            (_RESERVE_NAME, _RESERVE_NAME),
         )
         return True
 
@@ -153,16 +153,19 @@ class TeamService:
             if await self._ensure_reserve(db):
                 await db.commit()
             cursor = await db.execute(
-                "SELECT id, name, max_seats, is_reserve "
+                "SELECT id, name, full_name, max_seats, is_reserve "
                 "FROM default_teams ORDER BY is_reserve ASC, name ASC",
             )
             rows = await cursor.fetchall()
         return [_row_to_default_team(r) for r in rows]
 
     async def add_default_team(
-        self, name: str, max_seats: int = 2
+        self, name: str, *, full_name: str, max_seats: int = 2
     ) -> DefaultTeam:
-        """Add a new default team.  Raises ValueError on duplicate or Reserve name."""
+        """Add a team to the server's list under its shorthand *name* and its *full_name*.
+
+        Raises ValueError on a duplicate or the Reserve name.
+        """
         if name == _RESERVE_NAME:
             raise ValueError(
                 f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
@@ -185,13 +188,15 @@ class TeamService:
                 raise ValueError(problem)
 
             cursor = await db.execute(
-                "INSERT INTO default_teams (name, max_seats, is_reserve) "
-                "VALUES (?, ?, 0)",
-                (name, max_seats),
+                "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, 0)",
+                (name, full_name, max_seats),
             )
             await db.commit()
             row_id = cursor.lastrowid
-        return DefaultTeam(id=row_id, name=name, max_seats=max_seats, is_reserve=False)
+        return DefaultTeam(
+            id=row_id, name=name, full_name=full_name, max_seats=max_seats, is_reserve=False
+        )
 
     async def rename_default_team(
         self, current_name: str, new_name: str
@@ -267,14 +272,22 @@ class TeamService:
     # ------------------------------------------------------------------
 
     async def seed_division_teams(self, division_id: int) -> None:
-        """Copy default_teams into team_instances and pre-create seats for the division."""
+        """Copy default_teams into team_instances and pre-create seats for the division.
+
+        Both names are copied, so the division keeps the names its season ran under whatever
+        becomes of the server's list afterwards (#381).
+        """
         defaults = await self.get_default_teams()
         async with get_connection(self._db_path) as db:
             for team in defaults:
                 cursor = await db.execute(
-                    "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                    "VALUES (?, ?, ?, ?)",
-                    (division_id, team.name, team.max_seats, int(team.is_reserve)),
+                    "INSERT INTO team_instances "
+                    "(division_id, name, full_name, max_seats, is_reserve) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        division_id, team.name, team.full_name, team.max_seats,
+                        int(team.is_reserve),
+                    ),
                 )
                 instance_id = cursor.lastrowid
                 if not team.is_reserve:
@@ -301,9 +314,9 @@ class TeamService:
             if existing:
                 return
             await db.execute(
-                "INSERT INTO default_teams (name, max_seats, is_reserve) "
-                "VALUES (?, -1, 1)",
-                (_RESERVE_NAME,),
+                "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, -1, 1)",
+                (_RESERVE_NAME, _RESERVE_NAME),
             )
             await db.commit()
 
@@ -336,7 +349,7 @@ class TeamService:
         return [r["id"] for r in div_rows]
 
     async def season_team_add(
-        self, season_id: int, name: str, max_seats: int = 2
+        self, season_id: int, name: str, *, full_name: str, max_seats: int = 2
     ) -> int:
         """Add a team to all divisions of a SETUP season.  Returns division count."""
         if name == _RESERVE_NAME:
@@ -364,9 +377,10 @@ class TeamService:
                     raise ValueError(problem)
             for div_id in division_ids:
                 cursor = await db.execute(
-                    "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                    "VALUES (?, ?, ?, 0)",
-                    (div_id, name, max_seats),
+                    "INSERT INTO team_instances "
+                    "(division_id, name, full_name, max_seats, is_reserve) "
+                    "VALUES (?, ?, ?, ?, 0)",
+                    (div_id, name, full_name, max_seats),
                 )
                 instance_id = cursor.lastrowid
                 for seat_num in range(1, max_seats + 1):
@@ -442,13 +456,14 @@ class TeamService:
     async def get_teams_with_roles(self) -> list[dict]:
         """Return all server teams joined with their optional role mapping.
 
-        Each entry: {name, max_seats, is_reserve, role_id} where role_id is int | None.
+        Each entry: {name, full_name, max_seats, is_reserve, role_id} where role_id is
+        int | None, and ``name`` is the team's shorthand.
         Ordered: non-reserve alphabetically first, Reserve last.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 """
-                SELECT dt.name, dt.max_seats, dt.is_reserve, trc.role_id
+                SELECT dt.name, dt.full_name, dt.max_seats, dt.is_reserve, trc.role_id
                 FROM default_teams dt
                 LEFT JOIN team_role_configs trc
                        ON trc.team_name = dt.name
@@ -459,6 +474,7 @@ class TeamService:
         return [
             {
                 "name": r["name"],
+                "full_name": r["full_name"],
                 "max_seats": r["max_seats"],
                 "is_reserve": bool(r["is_reserve"]),
                 "role_id": r["role_id"],
@@ -509,7 +525,7 @@ class TeamService:
         async with get_connection(self._db_path) as db:
             instance_rows = await (
                 await db.execute(
-                    "SELECT id, name, max_seats, is_reserve "
+                    "SELECT id, name, full_name, max_seats, is_reserve "
                     "FROM team_instances WHERE division_id = ? ORDER BY is_reserve ASC, id ASC",
                     (division_id,),
                 )
@@ -531,6 +547,7 @@ class TeamService:
                 teams.append({
                     "id": inst["id"],
                     "name": inst["name"],
+                    "full_name": inst["full_name"],
                     "max_seats": inst["max_seats"],
                     "is_reserve": bool(inst["is_reserve"]),
                     "seats": [
@@ -580,6 +597,7 @@ def _row_to_default_team(row: object) -> DefaultTeam:
     return DefaultTeam(
         id=row["id"],
         name=row["name"],
+        full_name=row["full_name"],
         max_seats=row["max_seats"],
         is_reserve=bool(row["is_reserve"]),
     )

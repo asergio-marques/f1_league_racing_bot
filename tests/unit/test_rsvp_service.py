@@ -73,6 +73,7 @@ async def _make_db(tmp_path) -> str:
                 id          INTEGER PRIMARY KEY,
                 division_id INTEGER NOT NULL,
                 name        TEXT    NOT NULL,
+                full_name   TEXT    NOT NULL,
                 is_reserve  INTEGER NOT NULL DEFAULT 0,
                 max_seats   INTEGER NOT NULL DEFAULT 2
             );
@@ -142,8 +143,8 @@ async def _insert_driver(db: aiosqlite.Connection, dp_id: int, name: str) -> Non
 
 async def _insert_team(db: aiosqlite.Connection, team_id: int, div_id: int, name: str, is_reserve: int = 0, max_seats: int = 2) -> None:
     await db.execute(
-        "INSERT INTO team_instances (id, division_id, name, is_reserve, max_seats) VALUES (?, ?, ?, ?, ?)",
-        (team_id, div_id, name, is_reserve, max_seats),
+        "INSERT INTO team_instances (id, division_id, name, full_name, is_reserve, max_seats) VALUES (?, ?, ?, ?, ?, ?)",
+        (team_id, div_id, name, name, is_reserve, max_seats),
     )
 
 

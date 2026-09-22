@@ -184,10 +184,10 @@ async def test_an_account_holds_one_signup_wizard(db_path):
 
 async def test_a_team_name_is_unique_in_the_league(db_path):
     db = _connect(db_path)
-    db.execute("INSERT INTO default_teams (name) VALUES ('Alpha')")
+    db.execute("INSERT INTO default_teams (name, full_name) VALUES ('Alpha', 'Alpha')")
     db.execute("INSERT INTO team_role_configs (team_name, role_id) VALUES ('Alpha', 1)")
     with pytest.raises(sqlite3.IntegrityError):
-        db.execute("INSERT INTO default_teams (name) VALUES ('Alpha')")
+        db.execute("INSERT INTO default_teams (name, full_name) VALUES ('Alpha', 'Alpha')")
     with pytest.raises(sqlite3.IntegrityError):
         db.execute("INSERT INTO team_role_configs (team_name, role_id) VALUES ('Alpha', 2)")
     db.close()

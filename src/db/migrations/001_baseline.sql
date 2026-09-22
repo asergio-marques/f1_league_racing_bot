@@ -78,7 +78,12 @@ CREATE TABLE driver_season_assignments (
 CREATE TABLE team_instances (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     division_id INTEGER NOT NULL REFERENCES divisions(id),
+    -- The team's shorthand: what a league types to name it, and what its artwork is found by.
+    -- Copied from the server's list with the full name, so a season keeps the names it ran
+    -- under (#381).
     name        TEXT    NOT NULL,
+    -- What every post and graphic shows (#381).
+    full_name   TEXT    NOT NULL,
     max_seats   INTEGER NOT NULL DEFAULT 2,
     is_reserve  INTEGER NOT NULL DEFAULT 0,
     UNIQUE(division_id, name)
@@ -807,7 +812,9 @@ CREATE INDEX idx_driver_history_identity
 -- default_teams
 CREATE TABLE "default_teams" (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- The shorthand, as on team_instances (#381).
     name       TEXT    NOT NULL UNIQUE,
+    full_name  TEXT    NOT NULL,
     max_seats  INTEGER NOT NULL DEFAULT 2,
     is_reserve INTEGER NOT NULL DEFAULT 0
 );

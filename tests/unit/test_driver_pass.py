@@ -44,8 +44,8 @@ async def db_path(tmp_path):
             "VALUES (1, 1, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T14:00:00', 'FINAL')"
         )
         await db.execute(
-            "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-            "VALUES (10, 1, 'Alpha', 6, 0)"
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (10, 1, 'Alpha', 'Alpha', 6, 0)"
         )
         drivers = [
             # id, uid, state, former, test

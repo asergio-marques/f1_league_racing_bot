@@ -82,8 +82,8 @@ async def _seed_teams_and_seat(db_path: str, division_ids: list[int]) -> None:
     async with get_connection(db_path) as db:
         for i, div_id in enumerate(division_ids):
             cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, 'Redline', 2, 0)",
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, 'Redline', 'Redline', 2, 0)",
                 (div_id,),
             )
             team_id = cursor.lastrowid
@@ -468,8 +468,8 @@ async def test_a_setup_command_seeds_teams_only_for_a_division_without_them(db_p
     async def seed(division_id):
         async with get_connection(db_path) as db:
             await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, 'Redline', 2, 0)",
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, 'Redline', 'Redline', 2, 0)",
                 (division_id,),
             )
             await db.commit()
