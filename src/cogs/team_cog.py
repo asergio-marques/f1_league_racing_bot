@@ -8,7 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from models.season import SeasonStage
-from utils.channel_guard import league_admin_only, league_manager_only
+from utils.channel_guard import league_admin_only, league_manager_only, role_grant_refusal
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +98,12 @@ class TeamCog(commands.Cog):
         role: discord.Role,
     ) -> None:
         if await self._team_list_lock(interaction, "add"):
+            return
+        # A team's role is granted to its drivers, so one the bot cannot grant is refused here,
+        # where a league can still choose another (#381).
+        refusal = role_grant_refusal(role)
+        if refusal is not None:
+            await interaction.response.send_message(f"⛔ {refusal}", ephemeral=True)
             return
         # A role belongs to one team only, and the team is not added where its role is taken.
         holder = await self.bot.placement_service.team_holding_role(  # type: ignore[attr-defined]
@@ -249,6 +255,10 @@ class TeamCog(commands.Cog):
         once the season has ended, for the season that follows.
         """
         if await self._refuse_once_the_season_is_done(interaction, "role"):
+            return
+        refusal = role_grant_refusal(role)
+        if refusal is not None:
+            await interaction.response.send_message(f"⛔ {refusal}", ephemeral=True)
             return
         teams = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
 
@@ -503,6 +513,11 @@ class TeamCog(commands.Cog):
         """
         if await self._refuse_once_the_season_is_done(interaction, "reserve-role"):
             return
+        if role is not None:
+            refusal = role_grant_refusal(role)
+            if refusal is not None:
+                await interaction.response.send_message(f"⛔ {refusal}", ephemeral=True)
+                return
         await interaction.response.defer(ephemeral=True)
         teams = await self.bot.team_service.get_teams_with_roles()  # type: ignore[attr-defined]
         old_role_id = next((t["role_id"] for t in teams if t["is_reserve"]), None)

@@ -15,6 +15,24 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _make_role(role_id: int = 555, *, grantable: bool = True) -> MagicMock:
+    """A role the bot can grant, unless *grantable* is False.
+
+    A team's role must be one the bot can grant (#381), so a double has to answer the four
+    questions that check asks: is it @everyone, is it managed, does the bot hold Manage Roles,
+    and is the bot's own role above it. *grantable* False leaves it above the bot's own, which
+    is the case a command test uses; the other three are `test_team_role_grantable.py`'s.
+    """
+    role = MagicMock()
+    role.id = role_id
+    role.mention = f"<@&{role_id}>"
+    role.is_default.return_value = False
+    role.managed = False
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, other: grantable
+    return role
+
+
 def _make_interaction(guild_id: int = 1) -> MagicMock:
     interaction = MagicMock()
     interaction.guild_id = guild_id
@@ -83,8 +101,7 @@ class TestTeamAdd:
         bot = _make_bot(setup_season=None)
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 555
+        role = _make_role(555)
         role.mention = "<@&555>"
 
         await _unwrap(cog.team_add)(cog, interaction, name="Alpine", full_name="Alpine Racing", role=role)
@@ -105,8 +122,7 @@ class TestTeamAdd:
         bot = _make_bot(live_season=season)
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 555
+        role = _make_role(555)
         role.mention = "<@&555>"
 
         await _unwrap(cog.team_add)(cog, interaction, name="Alpine", full_name="Alpine Racing", role=role)
@@ -126,7 +142,7 @@ class TestTeamAdd:
         cog = TeamCog(bot)
         interaction = _make_interaction()
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", full_name="Alpine Racing", role=MagicMock())
+        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", full_name="Alpine Racing", role=_make_role())
 
         bot.team_service.add_default_team.assert_not_awaited()
         bot.placement_service.set_team_role_config.assert_not_awaited()
@@ -140,8 +156,7 @@ class TestTeamAdd:
         bot = _make_bot(add_default_team_side_effect=ValueError('A default team named "Alpine" already exists.'))
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 555
+        role = _make_role(555)
 
         await _unwrap(cog.team_add)(cog, interaction, name="Alpine", full_name="Alpine Racing", role=role)
 
@@ -388,8 +403,7 @@ class TestTeamRole:
         )
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 222
+        role = _make_role(222)
         role.mention = "<@&222>"
 
         await _unwrap(cog.team_role)(cog, interaction, name="ferrari", role=role)
@@ -409,8 +423,7 @@ class TestTeamRole:
         bot.placement_service.swap_team_role = AsyncMock(return_value=3)
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 222
+        role = _make_role(222)
         role.mention = "<@&222>"
 
         await _unwrap(cog.team_role)(cog, interaction, name="Ferrari", role=role)
@@ -427,7 +440,7 @@ class TestTeamRole:
         cog = TeamCog(bot)
         interaction = _make_interaction()
 
-        await _unwrap(cog.team_role)(cog, interaction, name="Ghost", role=MagicMock())
+        await _unwrap(cog.team_role)(cog, interaction, name="Ghost", role=_make_role())
 
         bot.placement_service.set_team_role_config.assert_not_awaited()
         args, kwargs = interaction.response.send_message.call_args
@@ -439,7 +452,7 @@ class TestTeamRole:
         cog = TeamCog(bot)
         interaction = _make_interaction()
 
-        await _unwrap(cog.team_role)(cog, interaction, name="Reserve", role=MagicMock())
+        await _unwrap(cog.team_role)(cog, interaction, name="Reserve", role=_make_role())
 
         bot.placement_service.set_team_role_config.assert_not_awaited()
         args, kwargs = interaction.response.send_message.call_args
@@ -456,8 +469,7 @@ class TestTeamReserveRole:
         bot = _make_bot()
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 999
+        role = _make_role(999)
         role.mention = "<@&999>"
 
         await _unwrap(cog.team_reserve_role)(cog, interaction, role=role)
@@ -494,8 +506,7 @@ class TestTeamReserveRole:
         ])
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 999
+        role = _make_role(999)
         role.mention = "<@&999>"
 
         await _unwrap(cog.team_reserve_role)(cog, interaction, role=role)
@@ -516,10 +527,7 @@ class TestTeamReserveRole:
 class TestOneRolePerTeam:
     @staticmethod
     def _role(role_id: int = 111):
-        role = MagicMock()
-        role.id = role_id
-        role.mention = f"<@&{role_id}>"
-        return role
+        return _make_role(role_id)
 
     async def test_a_team_is_not_added_under_a_role_another_team_holds(self):
         from cogs.team_cog import TeamCog

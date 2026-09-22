@@ -110,6 +110,54 @@ def _role_name(guild: Any, role_id: int | None, fallback: str) -> str:
     return f"**{role.name}**" if role is not None else fallback
 
 
+def role_grant_refusal(role: Any) -> str | None:
+    """Why the bot could not grant *role* to a driver, or None where it can (#381).
+
+    A team's role is granted to every driver placed in it and revoked when they leave, and
+    `placement_service._grant_roles` only logs a failure — so a role the bot cannot grant costs
+    a whole team their role with nobody told. The four cases are refused where the role is set,
+    which is the one moment a league is there to choose another:
+
+    * **@everyone**, which is everybody on the server and is granted to nobody;
+    * a role **managed by an integration** — a bot's own, Server Booster, a linked role — which
+      Discord grants and revokes itself and refuses anybody else;
+    * a role **at or above the bot's own highest**, which Discord refuses by hierarchy;
+    * **any** role while the bot lacks Manage Roles.
+
+    The hierarchy and the permission can change after this, so this is a check at the moment of
+    setting and not a guarantee; it catches the misconfiguration a league can see and fix.
+    """
+    if getattr(role, "is_default", None) is not None and role.is_default():
+        return (
+            "`@everyone` is everybody on the server, so it cannot stand for a team. "
+            "Choose a role of the team's own."
+        )
+    if getattr(role, "managed", False):
+        mention = getattr(role, "mention", None) or getattr(role, "name", "that role")
+        return (
+            f"{mention} is managed by an integration — a bot, a subscription or a linked "
+            "role — so Discord will not let me grant it. Choose a role of the team's own."
+        )
+
+    me = getattr(getattr(role, "guild", None), "me", None)
+    if me is None:
+        return None
+    permissions = getattr(me, "guild_permissions", None)
+    if permissions is not None and not getattr(permissions, "manage_roles", False):
+        return (
+            "I cannot grant any role: the bot is missing the **Manage Roles** permission. "
+            "Grant it, then try again."
+        )
+    top_role = getattr(me, "top_role", None)
+    if top_role is not None and not top_role > role:
+        mention = getattr(role, "mention", None) or getattr(role, "name", "that role")
+        return (
+            f"{mention} sits at or above my own highest role, so Discord will not let me "
+            "grant it. Move my role above it in the server's role list, then try again."
+        )
+    return None
+
+
 def _member_of(interaction: Interaction) -> discord.Member | None:
     """The invoking member, or None where the interaction did not come from a server."""
     user = interaction.user
