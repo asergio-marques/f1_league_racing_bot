@@ -510,16 +510,18 @@ When it goes through, the bot:
 
 Your season is **ongoing** from the moment the placements are confirmed in step 2, before anything is posted. So a round you spot as wrong while the calendar is still arriving can be moved with `/round amend` straight away, and `/round add` is closed from then on.
 
-**If one of steps 2 to 4 cannot be done, the approval still stands.** Should the bot fail to read which drivers a division has placed, or the list of circuits the calendars are drawn from, it carries on with the rest. Your private confirmation then lists what was left undone, under **Not everything could be done**:
+**If one of steps 2 to 5 cannot be done, the approval still stands.** The bot carries on with the rest, and your private confirmation lists what was left undone, under **Not everything could be done**:
 
-- a division whose drivers were given no roles — grant them by hand, and `/team lineup` shows who they are;
-- the calendars that were not posted — post each one with `/division calendar-sync`.
+- a division whose placed drivers could not be read, or a driver the bot could not give their roles — grant them by hand, and `/team lineup` shows who is placed where;
+- a calendar that was not posted — post it with `/division calendar-sync`;
+- a lineup that was not posted — no command posts one again, and it is posted with the next change to that division's drivers;
+- opening standings and attendance sheets that were not all posted — no command posts them again, and each round's results and attendance post them as usual.
 
-The same list goes to the log channel.
+The same list goes to the log channel. A driver who has left the server is simply passed over.
 
 > **If your confirmation never arrives**, look in the channel you ran the review in. Discord gives the bot fifteen minutes to answer a button, and a long approval can outlast them. When it does, the bot posts one line there instead, mentioning you: the season is approved, and the log channel has what the confirmation said.
 
-**Confirming a mid-season window's placements works the same way.** The placements stand once confirmed. Anything left undone is listed in your confirmation: a driver the bot could not give their roles, whom you give them by hand, or a season it could not return to ongoing, which you put right by running `/season placements-review` and confirming again. The same one-line notice stands in for a confirmation that cannot reach you.
+**Confirming a mid-season window's placements works the same way.** The placements stand once confirmed. Anything left undone is listed in your confirmation: a driver the bot could not give their roles, whom you give them by hand; a lineup it could not post, which is posted with the next change to that division's drivers; or a season it could not return to ongoing, which you put right by running `/season placements-review` and confirming again. The same one-line notice stands in for a confirmation that cannot reach you.
 
 > **The opening classification needs the results and attendance modules, not the images module.**
 > Steps 3 and 4 draw nothing without `/images`; step 5 posts either way — as a drawing where the

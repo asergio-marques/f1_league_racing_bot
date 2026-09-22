@@ -568,7 +568,7 @@ No parameters. Displays the pending season configuration, ending with a message 
 
 > **Mid-season, the review covers the new drivers only.** When a signup window closed mid-season leaves drivers to place, the season waits in *ongoing, placements* while you place them with `/driver assign`. `/season placements-review` then lists the drivers to confirm and each division's lineup as it will stand, and — once every signup is settled — offers **✅ Confirm placements**, governed like the Approve button. Confirming grants the new drivers their division and team roles, posts each affected lineup once, and returns the season to ongoing. Until then the new drivers are outside the championship: no roles, no lineup, no check-in, no results or standings, while the season's rounds carry on without them.
 >
-> The placements stand once confirmed, even where something after them cannot be done. Your confirmation then lists it under **Not everything could be done**: a driver the bot could not give their roles, whom you give them by hand, or a season it could not return to ongoing, which you put right by running `/season placements-review` and confirming again. If the confirmation cannot reach you, the channel the review was in is told instead, as at approval.
+> The placements stand once confirmed, even where something after them cannot be done. Your confirmation then lists it under **Not everything could be done**: a driver the bot could not give their roles, whom you give them by hand; a lineup it could not post, which is posted with the next change to that division's drivers; or a season it could not return to ongoing, which you put right by running `/season placements-review` and confirming again. If the confirmation cannot reach you, the channel the review was in is told instead, as at approval.
 
 The report arrives as **one message per subsection**, in this order: the season and its enabled modules; signup; attendance; points configurations; weather; image outputs. A subsection with nothing in it — a module you have not enabled — is not posted at all. The per-division blocks follow, as before. Each subsection is split further if it alone is too long for one Discord message, because an over-long message is refused whole rather than truncated.
 
@@ -601,12 +601,14 @@ Pressing it saves all pending divisions and rounds to the database and arms the 
 
 **The review is deleted once the season is approved** — the whole report, pictures included, not just the button. It described a season waiting on a decision, and the decision has been made; leaving it would put a long stale scroll above everything the bot posts next. Your confirmation that the season was approved is private to you and stays. An expired review is cleared the same way, for the same reason.
 
-**Once committed, the approval stands, even where something after it cannot be done.** If the bot cannot read which drivers a division has placed, or the list of circuits its calendars are drawn from, it carries on with the rest. Your confirmation then lists what was left undone, under **Not everything could be done**:
+**Once committed, the approval stands, even where something after it cannot be done.** The bot carries on with the rest, and your confirmation lists what was left undone, under **Not everything could be done**:
 
-- a division whose drivers were given no roles — grant them by hand, and [`/team lineup`](#team-lineup--show-the-confirmed-team-lineups-of-the-season-being-raced) shows who they are;
-- the calendars that were not posted — post each one with [`/division calendar-sync`](#division-calendar-sync--repost-a-divisions-calendar).
+- a division whose placed drivers could not be read, or a driver the bot could not give their roles — grant them by hand, and [`/team lineup`](#team-lineup--show-the-confirmed-team-lineups-of-the-season-being-raced) shows who is placed where;
+- a calendar that was not posted — post it with [`/division calendar-sync`](#division-calendar-sync--repost-a-divisions-calendar);
+- a lineup that was not posted — no command posts one again, and it is posted with the next change to that division's drivers;
+- opening standings and attendance sheets that were not all posted — no command posts them again, and each round's results and attendance post them as usual.
 
-The same list is added to the approval's line in the log channel.
+The same list is added to the approval's line in the log channel. A driver who has left the server is simply passed over.
 
 > **If your confirmation cannot reach you**, the channel the review was in is told instead, in one line that mentions you: the season is approved, and the log channel has what the confirmation said. Discord gives the bot fifteen minutes to answer a button, and an approval that waited on the backup question below and then posted a lot of pictures can outlast them.
 
