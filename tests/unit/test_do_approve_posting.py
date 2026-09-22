@@ -1218,7 +1218,8 @@ async def _seat_a_driver(db_path: str, *, discord_user_id: str = "5001") -> None
         )
         profile_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name) VALUES (1, 'Alpha')"
+            "INSERT INTO team_instances (division_id, name, full_name) "
+            "VALUES (1, 'Alpha', 'Alpha Racing')"
         )
         cursor = await db.execute(
             "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
