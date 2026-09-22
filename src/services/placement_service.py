@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import discord
@@ -28,6 +29,18 @@ _UNSETTLED_SQL = ", ".join(
         "PENDING_DRIVER_CORRECTION",
     )
 )
+
+
+@dataclass
+class PlacementsCommitted:
+    """What committing a season's mid-season placements did.
+
+    *placements* is every placement committed, as ``uncommitted_placements`` read them.
+    *ungranted* is the Discord id of each driver among them whose roles could not be granted.
+    """
+
+    placements: list[dict] = field(default_factory=list)
+    ungranted: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -381,16 +394,23 @@ class PlacementService:
 
     async def commit_mid_season_placements(
         self, season_id: int, guild: discord.Guild | None
-    ) -> list[dict]:
+    ) -> PlacementsCommitted:
         """Commit the season's uncommitted placements, granting their roles and posting lineups.
 
         Each driver committed is granted their division's role and their team's role; the
         lineup of each division holding such a driver is posted once, however many of them
-        it holds. Returns the placements committed, as ``uncommitted_placements`` reads them.
+        it holds.
+
+        **Nothing after the commit raises** (issue #387). The placements are committed by
+        then, and a raise would leave every driver and lineup not yet reached undone for
+        good: confirming again finds nothing left to commit. So each driver and each lineup
+        is guarded on its own. A driver whose roles could not be granted is returned in
+        ``ungranted``, for the manager to be told; a lineup that fails is logged, as it is at
+        approval.
         """
         placements = await self.uncommitted_placements(season_id)
         if not placements:
-            return []
+            return PlacementsCommitted()
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "UPDATE driver_season_assignments SET committed = 1 "
@@ -399,25 +419,41 @@ class PlacementService:
             )
             await db.commit()
 
+        ungranted: list[str] = []
         if guild is not None:
             for placement in placements:
                 if placement["is_test_driver"]:
                     continue
-                member = guild.get_member(int(placement["discord_user_id"]))
-                if member is None:
-                    try:
-                        member = await guild.fetch_member(int(placement["discord_user_id"]))
-                    except discord.HTTPException:
-                        continue
-                role_ids = [placement["division_role_id"]]
-                if placement["team_name"]:
-                    team_cfg = await self.get_team_role_config(placement["team_name"])
-                    if team_cfg is not None:
-                        role_ids.append(team_cfg.role_id)
-                await self._grant_roles(member, *role_ids)
+                try:
+                    member = guild.get_member(int(placement["discord_user_id"]))
+                    if member is None:
+                        try:
+                            member = await guild.fetch_member(
+                                int(placement["discord_user_id"])
+                            )
+                        except discord.HTTPException:
+                            continue
+                    role_ids = [placement["division_role_id"]]
+                    if placement["team_name"]:
+                        team_cfg = await self.get_team_role_config(placement["team_name"])
+                        if team_cfg is not None:
+                            role_ids.append(team_cfg.role_id)
+                    await self._grant_roles(member, *role_ids)
+                except Exception:  # noqa: BLE001 — the placement is committed
+                    log.exception(
+                        "commit_mid_season_placements: could not grant the roles of %s",
+                        placement["discord_user_id"],
+                    )
+                    ungranted.append(str(placement["discord_user_id"]))
             for division_id in dict.fromkeys(p["division_id"] for p in placements):
-                await self._refresh_lineup_post(guild, division_id)
-        return placements
+                try:
+                    await self._refresh_lineup_post(guild, division_id)
+                except Exception:  # noqa: BLE001 — the placements are committed
+                    log.exception(
+                        "commit_mid_season_placements: lineup post failed for division %s",
+                        division_id,
+                    )
+        return PlacementsCommitted(placements=placements, ungranted=ungranted)
 
     # ------------------------------------------------------------------
     # Seeded unassigned listing (T008)

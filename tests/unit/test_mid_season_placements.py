@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from cogs.season_cog import SeasonCog  # noqa: E402
 from db.database import get_connection  # noqa: E402
 from models.season import SeasonStage  # noqa: E402
-from services.placement_service import PlacementService  # noqa: E402
+from services.placement_service import PlacementService, PlacementsCommitted  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 from tests.unit.test_uncommitted_drivers_outside_attendance import (  # noqa: E402
     DIVISION_ID,
@@ -58,7 +58,7 @@ async def test_confirming_commits_grants_roles_and_posts_each_lineup_once(db_pat
 
     committed = await service.commit_mid_season_placements(1, _guild())
 
-    assert [p["discord_user_id"] for p in committed] == ["1002"]
+    assert [p["discord_user_id"] for p in committed.placements] == ["1002"]
     assert await service.uncommitted_placements(1) == []
     role_ids = service._grant_roles.await_args.args[1:]
     assert role_ids == (1, 777)
@@ -71,8 +71,38 @@ async def test_confirming_with_nothing_uncommitted_does_nothing(db_path):
     await service.commit_mid_season_placements(1, _guild())
     service._refresh_lineup_post.reset_mock()
 
-    assert await service.commit_mid_season_placements(1, _guild()) == []
+    assert (await service.commit_mid_season_placements(1, _guild())).placements == []
     service._refresh_lineup_post.assert_not_awaited()
+
+
+# Nothing after the commit raises (issue #387). The placements are committed by then, and a
+# raise left every driver and lineup not yet reached undone for good — confirming again finds
+# nothing left to commit.
+
+
+async def test_a_driver_whose_team_role_cannot_be_read_is_left_ungranted_and_named(db_path):
+    import sqlite3
+
+    service = _service(db_path)
+    service.get_team_role_config = AsyncMock(
+        side_effect=sqlite3.OperationalError("database is locked")
+    )
+
+    committed = await service.commit_mid_season_placements(1, _guild())
+
+    assert committed.ungranted == ["1002"]
+    assert await service.uncommitted_placements(1) == []
+    service._refresh_lineup_post.assert_awaited_once()
+
+
+async def test_a_lineup_that_raises_does_not_escape_the_commit(db_path):
+    service = _service(db_path)
+    service._refresh_lineup_post = AsyncMock(side_effect=RuntimeError("Discord is down"))
+
+    committed = await service.commit_mid_season_placements(1, _guild())
+
+    assert [p["discord_user_id"] for p in committed.placements] == ["1002"]
+    assert committed.ungranted == []
 
 
 # ── The command ────────────────────────────────────────────────────────────────────
@@ -86,7 +116,9 @@ def _cog(db_path, stage: SeasonStage) -> SeasonCog:
     season = SimpleNamespace(id=1, season_number=1, stage=stage)
     cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=season)
     cog.bot.season_service.set_stage = AsyncMock()
-    cog.bot.placement_service.commit_mid_season_placements = AsyncMock(return_value=[{}])
+    cog.bot.placement_service.commit_mid_season_placements = AsyncMock(
+        return_value=PlacementsCommitted(placements=[{}])
+    )
     cog.bot.output_router.post_log = AsyncMock()
     return cog
 
@@ -362,7 +394,7 @@ async def test_a_test_driver_is_committed_without_roles(db_path):
 
     committed = await service.commit_mid_season_placements(1, _guild())
 
-    assert len(committed) == 1
+    assert len(committed.placements) == 1
     service._grant_roles.assert_not_awaited()
     service._refresh_lineup_post.assert_awaited_once()
 
@@ -391,7 +423,7 @@ async def test_a_member_who_left_is_committed_and_the_lineup_still_posted(db_pat
 
     committed = await service.commit_mid_season_placements(1, guild)
 
-    assert len(committed) == 1
+    assert len(committed.placements) == 1
     assert await service.uncommitted_placements(1) == []
     service._grant_roles.assert_not_awaited()
     service._refresh_lineup_post.assert_awaited_once()

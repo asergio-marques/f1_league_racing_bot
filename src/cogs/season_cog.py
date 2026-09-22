@@ -2390,9 +2390,10 @@ class SeasonCog(commands.Cog):
                 await interaction.followup.send(chunk, ephemeral=True)
             return
 
-        committed = await self.bot.placement_service.commit_mid_season_placements(  # type: ignore[attr-defined]
+        outcome = await self.bot.placement_service.commit_mid_season_placements(  # type: ignore[attr-defined]
             season.id, interaction.guild
         )
+        committed = outcome.placements
         try:
             await self.bot.season_service.set_stage(season.id, SeasonStage.ONGOING)  # type: ignore[attr-defined]
         except InvalidStageTransition:
