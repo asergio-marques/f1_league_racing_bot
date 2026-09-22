@@ -39,7 +39,8 @@ class ConfigService:
                 "SELECT server_id, interaction_role_id, interaction_channel_id, "
                 "       log_channel_id, league_admin_role_id, test_mode_active, "
                 "       test_mode_nationality_required, "
-                "       weather_module_enabled, signup_module_enabled "
+                "       weather_module_enabled, signup_module_enabled, "
+                "       base_role_id, driver_role_id "
                 "FROM server_configs WHERE server_id IS NOT NULL",
             )
             row = await cursor.fetchone()
@@ -56,6 +57,8 @@ class ConfigService:
             test_mode_nationality_required=bool(row["test_mode_nationality_required"]),
             weather_module_enabled=bool(row["weather_module_enabled"]),
             signup_module_enabled=bool(row["signup_module_enabled"]),
+            base_role_id=row["base_role_id"],
+            driver_role_id=row["driver_role_id"],
         )
 
     async def get_league_server_id(self) -> int | None:
@@ -136,7 +139,8 @@ class ConfigService:
             await db.commit()
             return cursor.rowcount > 0
 
-    #: The four settings `/bot init` establishes and the four commands beside it repair.
+    #: The four settings `/bot init` establishes and the four commands beside it repair, and
+    #: the league's two roles, which `/bot base-role` and `/bot driver-role` set (issue #276).
     #: Named here rather than interpolated from the caller so that no command can reach a
     #: column of its own choosing.
     _SETTABLE_COLUMNS = {
@@ -144,14 +148,16 @@ class ConfigService:
         "interaction_channel_id",
         "log_channel_id",
         "league_admin_role_id",
+        "base_role_id",
+        "driver_role_id",
     }
 
     async def set_core_setting(self, column: str, value: int) -> bool:
         """Write one core-config column, leaving every other column untouched.
 
-        One column at a time is the point: test mode, the module flags and the other three
-        settings are each written by their own command, and a whole-row save from any of
-        them would carry stale values over the others.
+        One column at a time is the point: test mode, the module flags, the league's two
+        roles and the other settings are each written by their own command, and a whole-row
+        save from any of them would carry stale values over the others.
 
         Returns False where no server is claimed, a packed row included: its settings
         belong to the next server's `/bot init`.

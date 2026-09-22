@@ -452,6 +452,38 @@ async def test_set_core_setting_refuses_a_column_of_the_callers_choosing(tmp_pat
     assert (await _row(db_path))["test_mode_active"] == 1
 
 
+# ── The league's two roles (issue #276) ───────────────────────────────────
+
+
+@pytest.mark.parametrize("column", ["base_role_id", "driver_role_id"])
+async def test_a_league_role_is_written_alone_and_read_back(tmp_path, column):
+    """The league's roles are core settings, written a column at a time like the four beside
+    them, so setting one cannot carry a stale value over the other or over anything else."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    service = ConfigService(db_path)
+    before = await _row(db_path)
+
+    assert await service.set_core_setting(column, 5150) is True
+
+    after = await _row(db_path)
+    assert after[column] == 5150
+    assert {k: v for k, v in after.items() if k != column} == {
+        k: v for k, v in before.items() if k != column
+    }
+    assert getattr(await service.get_server_config(), column) == 5150
+
+
+async def test_a_league_that_has_set_neither_role_reads_none(tmp_path):
+    """Both are optional until the signup module asks for them."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+
+    config = await ConfigService(db_path).get_server_config()
+
+    assert (config.base_role_id, config.driver_role_id) == (None, None)
+
+
 @pytest.mark.parametrize(
     "attribute", [s[0] for s in _SETTINGS] + ["handle_bot_init"]
 )

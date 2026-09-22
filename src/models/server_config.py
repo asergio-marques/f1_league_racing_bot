@@ -25,3 +25,11 @@ class ServerConfig:
     test_mode_nationality_required: bool = field(default=True)
     weather_module_enabled: bool = False
     signup_module_enabled: bool = False
+    #: The league's two roles (issue #276). The **base role** is held by the league's
+    #: members, and the **driver role** by its drivers — granted when a signup is approved and
+    #: revoked when the driver returns to Not Signed Up. Both are the league's rather than
+    #: the signup module's, so disabling signup keeps them; neither is part of the claim, and
+    #: `/bot pack` clears them itself. ``None`` until `/bot base-role` or `/bot driver-role`
+    #: sets one: they are required only while the signup module is enabled.
+    base_role_id: int | None = None
+    driver_role_id: int | None = None
