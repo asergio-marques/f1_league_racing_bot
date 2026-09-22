@@ -27,6 +27,8 @@ You do not need to read those first. Start here.
 
 **Principal division** — the highest tier division a driver holds a full-time seat in. A driver can race in more than one division at once — full-time in one, a reserve in others — and this is the one the rules name when only one will do. Somebody full-time in tier 2 who reserves in tier 1 has tier 2 as their principal division; somebody who only ever reserves, or who holds no seat, has none. You never set it. The bot works it out from the seats the driver holds, so it follows along when you place, move or release them.
 
+**Base role** and **driver role** — the league's roles for its people, as against the interaction and league admin roles, which are for the people who run it. The base role is who your members are, and the driver role is who your drivers are right now. See [step 1](#step-1--tell-the-bot-who-is-in-charge).
+
 **Stage** — where a season has got to. This matters more than anything else in this guide, because it decides which commands will even run. A season moves through them in one direction:
 
 | Stage | What happens in it | How it ends |
@@ -736,7 +738,7 @@ command.
 
 | What you see | Usually means |
 |---|---|
-| A command refuses with a short message only you can see | You are not in the command channel, or you hold neither of the two roles. Check the channel first — it is almost always the channel |
+| A command refuses with a short message only you can see | You are not in the command channel, or you hold neither the interaction role nor the league admin role. Check the channel first — it is almost always the channel |
 | A command does not appear in Discord's menu at all | The command list has not reached your server yet. Whoever hosts the bot can push it through immediately with `!sync` |
 | "This command is a league admin's" | It asks for the league admin role, which you do not hold. The table at the top of this guide lists which commands those are; someone holding that role has to run them |
 | "No league admin role is configured" | Your league was set up before the bot had one. A server administrator can put that right from any channel with `/bot admin-role`, and every league admin command works again |

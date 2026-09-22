@@ -173,6 +173,8 @@ This registers:
 - **Interaction channel** -- the only channel where commands are accepted
 - **Log channel** -- where computation audit logs are posted
 
+The league's two roles — the **base role** its members hold and the **driver role** its drivers hold — are set afterwards with [`/bot base-role` and `/bot driver-role`](#bot-base-role-bot-driver-role--set-the-leagues-two-roles). Neither is needed until you turn the signup module on.
+
 > **Setting a league up for the first time?** This README is the reference — every command, in its own right. For the order to do them in, from an invited bot to an approved season, follow [Configuring the core bot](docs/how-to/configuring-the-core-bot.md).
 
 ---

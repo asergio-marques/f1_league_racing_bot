@@ -203,7 +203,7 @@ When a driver finishes, the bot posts a **Signup Review** panel in their channel
 
 **Reject** ends it. They are told, with your reason, and are back to Not Signed Up.
 
-Anyone holding either of the league's two roles can press these. The driver whose signup it is cannot — they can read the channel, so the buttons check who is pressing.
+Anyone holding the interaction role or the league admin role can press these. The driver whose signup it is cannot — they can read the channel, so the buttons check who is pressing.
 
 > **Your next message in that channel becomes the reason.** After pressing Reject or Request Changes, the very next thing you type there is taken as the reason and deleted. Do not press the button and then start chatting to the driver — say your piece first, then press.
 
@@ -361,7 +361,7 @@ Worth running through before you confirm the season's configuration, which fixes
 
 | What you see | Usually means |
 |---|---|
-| Every `/signup` command refused | You are outside the interaction channel, or you hold neither of the league's two roles. Discord's Administrator permission does not get you past either |
+| Every `/signup` command refused | You are outside the interaction channel, or you hold neither the interaction role nor the league admin role. Discord's Administrator permission does not get you past either |
 | `/signup open` refused | Something in the chain is missing — the channel, one of the roles, or any time slot at all — or the season is not waiting for a window: its configuration is unconfirmed, or it is mid-way through placements. The reply names it |
 | `/season config-review` offers no button | The signup module is on but missing its channel or a role. The review names which |
 | `/season placements-review` offers no button, naming drivers | Those signups are unsettled. Place or reject each driver, or finish reviewing their signup |
