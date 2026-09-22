@@ -84,7 +84,8 @@ it only to place it; the rules governing it belong to its own specification.
 - The hub channel shall be set by a command of its own, a league manager's. Setting it shall set who may see it and post the hub's panel there.
 - The hub channel shall be visible to holders of the base role, or to every member where the league has set no base role, and to holders of the interaction role and the league admin role. Nobody but the bot shall post in it.
     - Where the base role is set but no longer in the server, the hub shall stay closed to members, and the command setting it shall say so.
-- The bot shall keep one panel in the hub channel.
+    - Changing the base role, the interaction role or the league admin role shall set the hub's permissions again.
+- The bot shall keep one panel in the hub channel. It shall be brought up to date whenever a module is enabled or disabled, and posted again where it has been deleted, at the latest when the bot next starts. Its buttons shall work across a restart.
 - The panel's options shall be the modules'. Core shall add none; each module's specification states what it adds, offered while that module is enabled. A panel offering nothing shall say so.
 - A press on an option no longer offered shall be refused, seen by the presser alone, and the panel brought up to date.
 - Moving the hub to another channel shall delete the panel from the old channel and remove the permissions the bot set there.
@@ -556,7 +557,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ## When the bot stops
 - The bot is a program somebody shall keep running. While it is stopped nothing happens.
-- When it starts again it shall recover: the weather phases that came due, where the weather module is enabled; the check-in calls and deadlines that came due; a signup window's closing timer, closing the window at once where its moment has passed and moving its season on as a close does; interrupted result submissions, which shall be cleared and reopened with the league manager told to submit again; penalty and appeal reviews, which shall be posted again rather than discarded; abandoned amendment channels, which shall be deleted; configuration and placements reviews left standing, which shall be expired; and seasons left part-built.
+- When it starts again it shall recover: the weather phases that came due, where the weather module is enabled; the check-in calls and deadlines that came due; a signup window's closing timer, closing the window at once where its moment has passed and moving its season on as a close does; interrupted result submissions, which shall be cleared and reopened with the league manager told to submit again; penalty and appeal reviews, which shall be posted again rather than discarded; abandoned amendment channels, which shall be deleted; configuration and placements reviews left standing, which shall be expired; seasons left part-built; and the hub's panel, posted again where it was deleted.
 - The end of a season shall not be recovered. A league admin shall complete it.
 - Anything else that came due while the bot was stopped is missed.
 - A message the bot failed to post shall be retried until it is delivered, shall survive a restart, and its eventual delivery shall be recorded in the log channel. A message still undelivered after about an hour shall be reported there.

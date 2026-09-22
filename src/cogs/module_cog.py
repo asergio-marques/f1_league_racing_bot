@@ -231,6 +231,7 @@ class _ConfirmDisableResultsView(LeagueView):
         await self._cog._apply_results_disable(
             interaction, cascade_attendance=self._cascade_attendance
         )
+        await self._cog._refresh_hub()
 
     @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
@@ -293,6 +294,7 @@ class ModuleCog(commands.Cog):
             await self._enable_images(interaction)
         else:
             await self._enable_signup(interaction)
+        await self._refresh_hub()
 
     # ── /module disable ────────────────────────────────────────────────
 
@@ -321,6 +323,24 @@ class ModuleCog(commands.Cog):
             await self._disable_images(interaction)
         else:
             await self._disable_signup(interaction)
+        await self._refresh_hub()
+
+    async def _refresh_hub(self) -> None:
+        """Bring the hub's panel up to date: a module's options are offered while it is on.
+
+        Run after every enable and disable, the confirmed results disable included, whether
+        or not the module offers anything — the hub asks each option, not each module. A
+        panel that cannot be refreshed is logged and never fails the toggle behind it.
+        """
+        from services.hub_service import refresh_panel
+
+        try:
+            fault = await refresh_panel(self.bot)
+        except Exception:  # noqa: BLE001 — see the docstring
+            log.exception("module toggle: the hub panel could not be refreshed")
+            return
+        if fault is not None:
+            await self.bot.output_router.post_log(f"Hub panel not refreshed: {fault}")
 
     async def _refuse_module_change(
         self,

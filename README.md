@@ -329,9 +329,9 @@ Setting a new base role moves the signup channel's permissions to it, and the ro
 
 The hub is the one channel every member of your league can use the bot from, rather than only its managers. The bot posts a single panel of buttons there, and each button answers whoever presses it; no role is needed beyond being able to see the channel.
 
-**Nothing is offered on the panel yet.** Modules add their options to it as they are built, while they are enabled; until then the panel says that nothing is offered here.
+**Nothing is offered on the panel yet.** Modules add their options to it as they are built, while they are enabled; until then the panel says that nothing is offered here. The panel is brought up to date whenever a module is switched on or off, and posted again if somebody deletes it, at the latest when the bot next starts. Its buttons keep working across a restart.
 
-**Who can see it.** Holders of the league's [base role](#bot-base-role-bot-driver-role--set-the-leagues-two-roles), or every member where you have set none, and holders of the interaction role and the league admin role. Nobody but the bot can post there, so the panel stays in view. Setting the hub replaces the channel's own permissions, so use a channel of its own. If the base role you set has since been deleted from the server, the hub stays closed to members and the reply says so.
+**Who can see it.** Holders of the league's [base role](#bot-base-role-bot-driver-role--set-the-leagues-two-roles), or every member where you have set none, and holders of the interaction role and the league admin role. Nobody but the bot can post there, so the panel stays in view. Setting the hub replaces the channel's own permissions, so use a channel of its own. Changing the base role or either league role later sets them again. If the base role you set has since been deleted from the server, the hub stays closed to members and the reply says so.
 
 **Moving it** deletes the panel from the old channel and clears the permissions the bot set there. The hub may not share a channel with anything else the bot posts to. The bot needs **Manage Channel** and **Manage Permissions** on the channel, and refuses before changing anything if it lacks either. Anything else Discord refuses — the panel's post, say — is named in the reply and the log channel, and the hub stays set.
 

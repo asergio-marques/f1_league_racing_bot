@@ -233,6 +233,8 @@ class BotCog(commands.Cog):
             f"  {column}: {mention}",
         )
         log.info("%s set %s", interaction.user, column)
+        if column in ("interaction_role_id", "league_admin_role_id"):
+            await _reapply_hub_permissions(self.bot)
 
     @group.command(
         name="log-channel",
@@ -370,6 +372,8 @@ class BotCog(commands.Cog):
             await self.bot.signup_module_service.move_base_role_overwrite(  # type: ignore[attr-defined]
                 interaction.guild, old_role_id, role
             )
+            # The hub is seen by the base role, or by everyone where there is none (#279).
+            await _reapply_hub_permissions(self.bot)
 
         async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
             await db.execute(
@@ -712,6 +716,23 @@ class BotCog(commands.Cog):
         self._clean_up = asyncio.create_task(
             _clean_up(interaction.guild, bot_user_id, targets, report)
         )
+
+
+async def _reapply_hub_permissions(bot) -> None:
+    """Set the hub's permissions again after a role they name has changed (issue #279).
+
+    Logged where it fails, and never failing the role command that asked for it: the role is
+    set either way, and the hub is repaired in Discord.
+    """
+    from services.hub_service import reapply_hub_permissions
+
+    try:
+        fault = await reapply_hub_permissions(bot)
+    except Exception:  # noqa: BLE001 — see the docstring
+        log.exception("the hub's permissions could not be applied again")
+        return
+    if fault is not None:
+        await bot.output_router.post_log(f"Hub permissions not updated: {fault}")
 
 
 async def _stand_down_old_hub(
