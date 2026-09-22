@@ -905,6 +905,39 @@ async def test_a_round_can_still_be_moved_after_a_posting_failure(db_path):
     cog.bot.season_service.sync_pending_config.assert_not_awaited()
 
 
+async def _while_posting(cog, command) -> list[BaseException]:
+    """Run *command* from inside the approval's posting, returning whatever it raised.
+
+    Collected rather than raised: the lineup post the command rides on sits inside a `try`
+    that logs and carries on, which would swallow a failure this test exists to see.
+    """
+    raised: list[BaseException] = []
+
+    async def lineup_post(guild, division_id):
+        try:
+            await command()
+        except Exception as exc:  # noqa: BLE001 — reported by the caller
+            raised.append(exc)
+
+    cog.bot.placement_service._refresh_lineup_post = AsyncMock(side_effect=lineup_post)
+    await _approve(cog, _interaction())
+    return raised
+
+
+async def test_a_round_moved_while_the_approval_posts_is_moved_on_the_ongoing_season(
+    db_path,
+):
+    cog = _cog(db_path)
+    _hold_the_setup(cog)
+    amend = _interaction()
+
+    raised = await _while_posting(cog, lambda: _move_round_one(cog, amend))
+
+    assert raised == []
+    assert _offered_the_move(amend)
+    cog.bot.season_service.sync_pending_config.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # What approval schedules
 #
