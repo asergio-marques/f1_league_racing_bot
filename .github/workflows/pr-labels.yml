@@ -8,8 +8,12 @@ name: Check PR labels
 # `pull_request` rather than `pull_request_target`: the check only reads, so the read-only
 # token a fork's PR is given is enough, and nothing from a PR ever runs with write access.
 # It runs again whenever the labels, the description (where `Part of #N` lives) or the
-# commits change, and a newer run replaces one still going — labels often arrive one by one
-# just after a PR is opened.
+# commits change, and labels often arrive one by one just after a PR is opened — several
+# events in quick succession. `cancel-in-progress: false` below queues rather than cancels: a
+# run already going is left to finish and report, and among runs still waiting only the
+# newest is kept. `tools/check_pr_labels.py` always reads the PR's current state from the API
+# regardless of which event asked, so a queued rerun is never stale — only a cancelled one is
+# lost, which is what left #378's required check waiting on a PR opened with several labels.
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize, labeled, unlabeled]
@@ -21,7 +25,7 @@ permissions:
 
 concurrency:
   group: pr-labels-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   pr-label-check:
