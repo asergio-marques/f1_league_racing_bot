@@ -55,9 +55,11 @@ def _division(div_id: int, name: str, tier: int):
     return SimpleNamespace(id=div_id, name=name, tier=tier)
 
 
-def _team(name: str, max_seats: int, seats: list[tuple[int, int | None, str | None]]):
+def _team(name: str, max_seats: int, seats: list[tuple[int, int | None, str | None]], *,
+           full_name: str | None = None):
     return {
         "name": name,
+        "full_name": full_name or name,
         "max_seats": max_seats,
         "is_reserve": name == "Reserve",
         "seats": [
@@ -411,3 +413,16 @@ async def test_clearing_the_reserve_role_is_logged_as_cleared(tmp_path):
     await undecorate(TeamCog.team_reserve_role)(cog, interaction, None)
 
     assert "cleared" in cog.bot.output_router.post_log.await_args.args[0]
+
+
+async def test_the_lineup_names_each_team_by_its_full_name():
+    """A team is shown by its full name and typed by its shorthand (#381)."""
+    cog = _make_cog(
+        teams=[_team("RBR", 2, [(1, 7, "900"), (2, None, None)], full_name="Oracle Red Bull Racing")]
+    )
+    interaction = _interaction()
+
+    with _no_graphic():
+        await _lineup(cog, interaction)
+
+    assert "Oracle Red Bull Racing" in _sent(interaction)

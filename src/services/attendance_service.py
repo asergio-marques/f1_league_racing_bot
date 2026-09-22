@@ -1148,7 +1148,7 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
     cursor = await db.execute(
         f"""
         SELECT dp.id AS driver_profile_id, dp.discord_user_id, dp.test_display_name,
-               ti.name AS team_name
+               ti.full_name AS team_name
         FROM team_seats ts
         JOIN team_instances ti ON ti.id = ts.team_instance_id
         JOIN driver_profiles dp ON dp.id = ts.driver_profile_id

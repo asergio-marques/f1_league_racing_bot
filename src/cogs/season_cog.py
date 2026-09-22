@@ -2021,7 +2021,7 @@ class SeasonCog(commands.Cog):
                     # so it is posted either way.
                     teams = await self.bot.team_service.get_division_teams(div.id)
                     missing_roles = (
-                        [t["name"] for t in teams if t["name"] in roleless] if teams else []
+                        [t["full_name"] for t in teams if t["name"] in roleless] if teams else []
                     )
                     role_warning = (
                         "  \u26a0\ufe0f **No role assigned:** "
@@ -2050,7 +2050,7 @@ class SeasonCog(commands.Cog):
                         lineup_lines: list[str] = ["\U0001f3ce\ufe0f **Lineup**"]
                         if teams:
                             lineup_lines.append(
-                                "  **Teams:** " + ", ".join(t["name"] for t in teams)
+                                "  **Teams:** " + ", ".join(t["full_name"] for t in teams)
                             )
                             if role_warning is not None:
                                 lineup_lines.append(role_warning)
@@ -2058,13 +2058,13 @@ class SeasonCog(commands.Cog):
                             _cur = await _db.execute(
                                 """
                                 SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name,
-                                       ti.name AS team_name, ti.is_reserve
+                                       ti.full_name AS team_name, ti.is_reserve
                                 FROM driver_season_assignments dsa
                                 JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
                                 JOIN team_seats ts ON ts.id = dsa.team_seat_id
                                 JOIN team_instances ti ON ti.id = ts.team_instance_id
                                 WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                                ORDER BY ti.name, dp.discord_user_id
+                                ORDER BY ti.full_name, dp.discord_user_id
                                 """,
                                 (div.id,),
                             )
@@ -2314,7 +2314,10 @@ class SeasonCog(commands.Cog):
                 lines.append("**Drivers to confirm**")
                 for p in placements:
                     who = p["test_display_name"] or f"<@{p['discord_user_id']}>"
-                    lines.append(f"  {who} → **{p['team_name']}** in **{p['division_name']}**")
+                    lines.append(
+                        f"  {who} → **{p['team_full_name'] or p['team_name']}** "
+                        f"in **{p['division_name']}**"
+                    )
             else:
                 lines.append("*No new placement to confirm.*")
             lines.append("")

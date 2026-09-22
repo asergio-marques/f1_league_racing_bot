@@ -245,7 +245,7 @@ async def query_division_roster(db_path: str, division_id: int) -> list[dict]:
         cursor = await db.execute(
             f"""
             SELECT ti.id        AS team_id,
-                   ti.name      AS team_name,
+                   ti.full_name AS team_name,
                    ti.is_reserve,
                    dp.id        AS driver_profile_id,
                    dp.discord_user_id,
@@ -255,7 +255,7 @@ async def query_division_roster(db_path: str, division_id: int) -> list[dict]:
               LEFT JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
                                           AND {uncommitted_seat_excluded("ts")}
              WHERE ti.division_id = ?
-             ORDER BY ti.is_reserve ASC, ti.name ASC, dp.id ASC
+             ORDER BY ti.is_reserve ASC, ti.full_name ASC, dp.id ASC
             """,
             (division_id,),
         )
@@ -958,7 +958,7 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
         cur = await db.execute(
             """
             SELECT ti.id                AS team_id,
-                   ti.name              AS team_name,
+                   ti.full_name         AS team_name,
                    ti.max_seats,
                    COUNT(CASE WHEN dra.rsvp_status = 'NO_RSVP'   THEN 1 END) AS no_rsvp_count,
                    COUNT(CASE WHEN dra.rsvp_status = 'DECLINED'  THEN 1 END) AS declined_count,
@@ -980,7 +980,7 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
                   )
              WHERE ti.division_id = ?
                AND ti.is_reserve = 0
-             GROUP BY ti.id, ti.name, ti.max_seats
+             GROUP BY ti.id, ti.full_name, ti.max_seats
             """,
             (round_id, division_id, division_id, round_id, division_id),
         )
@@ -1178,7 +1178,7 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot) 
                    dra.is_standby,
                    dp.discord_user_id,
                    dp.test_display_name,
-                   ti.name AS team_name
+                   ti.full_name AS team_name
               FROM driver_round_attendance dra
               JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
               JOIN team_seats ts ON ts.driver_profile_id = dra.driver_profile_id

@@ -269,7 +269,8 @@ async def add_test_driver(
         profile_id=profile_id,
         discord_user_id=synthetic_uid,
         display_name=driver_name,
-        team_name=team_name,
+        # What a reply shows is the full name; the shorthand is what was typed (#381).
+        team_name=reference.team["full_name"],
         nationality=canonical_nationality,
     )
 
@@ -530,13 +531,13 @@ async def list_test_drivers(
                    dp.discord_user_id,
                    dp.test_display_name,
                    dp.test_nationality,
-                   ti.name        AS team_name
+                   ti.full_name   AS team_name
             FROM driver_profiles dp
             JOIN team_seats ts     ON ts.driver_profile_id = dp.id
             JOIN team_instances ti ON ti.id = ts.team_instance_id
             WHERE dp.is_test_driver = 1
               AND ti.division_id = ?
-            ORDER BY ti.is_reserve ASC, ti.name, dp.id
+            ORDER BY ti.is_reserve ASC, ti.full_name, dp.id
             """,
             (division_id,),
         )
@@ -587,7 +588,7 @@ async def remove_test_driver(
             """
             SELECT dp.id AS profile_id,
                    dp.test_display_name,
-                   ti.name AS team_name
+                   ti.full_name AS team_name
             FROM driver_profiles dp
             LEFT JOIN team_seats ts ON ts.driver_profile_id = dp.id
             LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id

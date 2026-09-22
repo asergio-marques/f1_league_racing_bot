@@ -264,7 +264,7 @@ async def _checkin_audit(bot, division, round_id: int) -> str:
         rows = await (await db.execute(
             """
             SELECT dp.discord_user_id, dp.test_display_name,
-                   dra.rsvp_status, dra.is_standby, ti.name AS team_name
+                   dra.rsvp_status, dra.is_standby, ti.full_name AS team_name
               FROM driver_round_attendance dra
               JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
               LEFT JOIN team_instances ti ON ti.id = dra.assigned_team_id

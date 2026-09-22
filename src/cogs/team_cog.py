@@ -460,7 +460,7 @@ class TeamCog(commands.Cog):
                 lines.append("  *(no teams)*")
             else:
                 for team in teams:
-                    lines.append(f"  **{team['name']}**")
+                    lines.append(f"  **{team['full_name']}**")
                     filled = {
                         s["seat_number"]: s["discord_user_id"]
                         for s in team["seats"]
