@@ -279,9 +279,9 @@ it only to place it; the rules governing it belong to its own specification.
     - The sessions of every round shall be created.
     - The season's scheduled work shall be armed before the season's state is changed, so that a failure to arm it leaves the season in Placements.
     - The points configurations attached to the season shall be recorded upon it as they stand.
+    - The season shall move to Ongoing and take its number, before any role is granted or anything posted. Every command shall treat it as ongoing from then on, while the grants and postings below are still under way: a round may be amended, and nothing added. Decided 2026-09-22.
     - Every placed driver shall be granted their division's role and their team's role.
     - Each division's lineup, calendar and opening classification shall be posted. A posting that fails shall be reported and shall not refuse the confirmation.
-    - The season shall move to Ongoing and take its number.
 - Where the season is in Ongoing, placements:
     - Every driver whose placement is committed by it shall be granted their division's role and their team's role.
     - The lineup of each division holding such a driver shall be posted once.

@@ -508,7 +508,7 @@ When it goes through, the bot:
 4. **Posts the calendar** to each division's calendar channel.
 5. **Posts the opening classification** to each division's standings and attendance channels — every driver and team on zero, with the season's rounds drawn empty beside them.
 
-Your season is now **ongoing**.
+Your season is **ongoing** from the moment the placements are confirmed in step 2, before anything is posted. So a round you spot as wrong while the calendar is still arriving can be moved with `/round amend` straight away, and `/round add` is closed from then on.
 
 > **The opening classification needs the results and attendance modules, not the images module.**
 > Steps 3 and 4 draw nothing without `/images`; step 5 posts either way — as a drawing where the
