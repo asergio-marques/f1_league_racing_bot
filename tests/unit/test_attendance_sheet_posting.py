@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
 import aiosqlite
 import discord
@@ -22,6 +23,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from db.database import get_connection, run_migrations  # noqa: E402
 from services import attendance_service  # noqa: E402
 from services.attendance_service import (  # noqa: E402
     derive_checkin_deadline,
@@ -133,87 +135,61 @@ def _fake_attachment(sentinel):
 
 @pytest.fixture
 async def sheet_db(tmp_path):
-    """The smallest schema ``post_attendance_sheet`` reads."""
+    """Division 7 of an active season: round 3 not yet run and round 9 cancelled, thresholds
+    of 10 and 20, and one driver — Discord user 111 — seated in Apex Racing with 4 attendance
+    points after round 3."""
     path = str(tmp_path / "sheet.db")
-    async with aiosqlite.connect(path) as db:
-        await db.executescript(
-            """
-            CREATE TABLE attendance_division_config (
-                division_id           INTEGER PRIMARY KEY,
-                rsvp_channel_id       TEXT,
-                attendance_channel_id TEXT,
-                attendance_message_id TEXT
-            );
-            CREATE TABLE driver_round_attendance (
-                id                 INTEGER PRIMARY KEY,
-                round_id           INTEGER,
-                division_id        INTEGER,
-                driver_profile_id  INTEGER,
-                assigned_team_id   INTEGER,
-                total_points_after INTEGER
-            );
-            CREATE TABLE driver_season_assignments (
-                driver_profile_id INTEGER,
-                team_seat_id      INTEGER,
-                season_id         INTEGER,
-                committed         INTEGER
-            );
-            CREATE TABLE team_seats (
-                id                INTEGER PRIMARY KEY,
-                team_instance_id  INTEGER,
-                driver_profile_id INTEGER
-            );
-            CREATE TABLE team_instances (
-                id          INTEGER PRIMARY KEY,
-                division_id INTEGER,
-                is_reserve  INTEGER,
-                name        TEXT,
-                full_name   TEXT
-            );
-            CREATE TABLE driver_profiles (
-                id                INTEGER PRIMARY KEY,
-                discord_user_id   TEXT,
-                test_display_name TEXT
-            );
-            CREATE TABLE attendance_config (
-                id                    INTEGER PRIMARY KEY CHECK (id = 1),
-                autoreserve_threshold INTEGER,
-                autosack_threshold    INTEGER
-            );
-            CREATE TABLE seasons  (id INTEGER PRIMARY KEY, status TEXT);
-            CREATE TABLE divisions(id INTEGER PRIMARY KEY, season_id INTEGER, name TEXT);
-            CREATE TABLE rounds (
-                id           INTEGER PRIMARY KEY,
-                division_id  INTEGER,
-                round_number INTEGER,
-                format       TEXT,
-                track_name   TEXT,
-                status       TEXT DEFAULT 'ACTIVE'
-            );
-
-            INSERT INTO seasons  VALUES (1, 'ACTIVE');
-            INSERT INTO divisions VALUES (7, 1, 'Division 1');
-            INSERT INTO rounds VALUES (3, 7, 3, 'NORMAL', 'Silverstone Circuit', 'NOT_RUN');
-            INSERT INTO rounds VALUES (9, 7, 9, 'NORMAL', 'Circuit Zandvoort', 'CANCELLED');
-            INSERT INTO attendance_config VALUES (1, 10, 20);
-            INSERT INTO team_instances VALUES (100, 7, 0, 'Apex', 'Apex Racing');
-            INSERT INTO team_seats     VALUES (200, 100, 1);
-            INSERT INTO driver_profiles VALUES (1, '111', NULL);
-            INSERT INTO driver_season_assignments VALUES (1, 200, 1, 1);
-            INSERT INTO driver_round_attendance
-                (round_id, division_id, driver_profile_id, assigned_team_id, total_points_after)
-                VALUES (3, 7, 1, NULL, 4);
-            """
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, '2026-01-01', 'ACTIVE')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id) "
+            "VALUES (7, 1, 'Division 1', 3001)"
+        )
+        await db.executemany(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (?, 7, ?, 'NORMAL', ?, ?, ?)",
+            [
+                (3, 3, "Silverstone Circuit", "2026-06-07T18:00:00", "NOT_RUN"),
+                (9, 9, "Circuit Zandvoort", "2026-08-09T18:00:00", "CANCELLED"),
+            ],
+        )
+        await db.execute(
+            "INSERT INTO attendance_config (id, autoreserve_threshold, autosack_threshold) "
+            "VALUES (1, 10, 20)"
+        )
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name) "
+            "VALUES (100, 7, 'Apex', 'Apex Racing')"
+        )
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (1, '111', 'ASSIGNED')"
+        )
+        await db.execute(
+            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (200, 100, 1, 1)"
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id) VALUES (1, 1, 7, 200)"
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(round_id, division_id, driver_profile_id, total_points_after) VALUES (3, 7, 1, 4)"
         )
         await db.commit()
     return path
 
 
 async def _config(db_path, *, prior: str | None):
-    async with aiosqlite.connect(db_path) as db:
+    async with get_connection(db_path) as db:
         await db.execute("DELETE FROM attendance_division_config")
         await db.execute(
-            "INSERT INTO attendance_division_config VALUES (7, NULL, '900', ?)",
+            "INSERT INTO attendance_division_config "
+            "(division_id, attendance_channel_id, attendance_message_id) VALUES (7, '900', ?)",
             (prior,),
         )
         await db.commit()
@@ -297,6 +273,33 @@ async def test_a_first_posting_deletes_nothing(sheet_db):
 
     assert not any(e.startswith("delete:") for e in journal)
     assert await _stored_message_id(sheet_db) == "5001"
+
+
+class _ChannelWhosePriorSheetIsGone(_FakeChannel):
+    """Someone deleted the previous sheet by hand, so Discord no longer has it."""
+
+    async def fetch_message(self, message_id: int):
+        self.journal.append(f"fetch:{message_id}")
+        response = MagicMock(status=404, reason="Not Found")
+        raise discord.NotFound(response, "Unknown Message")
+
+
+@pytest.mark.asyncio
+async def test_a_previous_sheet_already_gone_is_passed_over_silently(sheet_db, caplog):
+    """FR-020: the replacement stands and is recorded, and nothing is logged — the sheet it
+    replaces is gone, which is what deleting it was for. A failed deletion of a sheet that
+    is still there is a different matter, and is logged."""
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _ChannelWhosePriorSheetIsGone(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    with caplog.at_level("WARNING", logger="services.attendance_service"):
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert journal == ["send:5001", "fetch:4242"]
+    assert await _stored_message_id(sheet_db) == "5001"
+    assert caplog.records == []
 
 
 # ── The text is unchanged by the reorder (T014) ───────────────────────────
@@ -446,10 +449,11 @@ async def test_a_cancelled_round_posts_nothing_and_generates_nothing(sheet_db):
 @pytest.mark.asyncio
 async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db):
     """FR-046: where the textual flow posts nothing, nothing happens at all."""
-    async with aiosqlite.connect(sheet_db) as db:
+    async with get_connection(sheet_db) as db:
         await db.execute("DELETE FROM attendance_division_config")
         await db.execute(
-            "INSERT INTO attendance_division_config VALUES (7, NULL, NULL, '4242')"
+            "INSERT INTO attendance_division_config (division_id, attendance_message_id) "
+            "VALUES (7, '4242')"
         )
         await db.commit()
 
@@ -460,6 +464,95 @@ async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db)
     await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert journal == []
+
+
+# ── What the sheet says (FR-017–FR-019) ──────────────────────────────────
+
+
+async def _seat(db_path, *, profile_id: int, user_id: str, seat: int, total: int) -> None:
+    """Seat another driver in Apex Racing with *total* attendance points after round 3."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (?, ?, 'ASSIGNED')",
+            (profile_id, user_id),
+        )
+        cursor = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (100, ?, ?)",
+            (seat, profile_id),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id) VALUES (?, 1, 7, ?)",
+            (profile_id, cursor.lastrowid),
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(round_id, division_id, driver_profile_id, total_points_after) VALUES (3, 7, ?, ?)",
+            (profile_id, total),
+        )
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db):
+    """FR-017/FR-018. Zebra and Alpha are level on 3, so the name decides between them; the
+    name is the one the server shows, not the Discord id, which here sorts the other way."""
+    await _config(sheet_db, prior=None)
+    async with get_connection(sheet_db) as db:
+        await db.execute("UPDATE driver_round_attendance SET total_points_after = 3")
+        await db.commit()
+    await _seat(sheet_db, profile_id=2, user_id="222", seat=2, total=5)
+    await _seat(sheet_db, profile_id=3, user_id="333", seat=3, total=3)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Zebra", 222: "Mike", 333: "Alpha"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    listed = [
+        line.split(" ")[0]
+        for line in channel.sent_content.splitlines()
+        if line.startswith("<@")
+    ]
+    assert listed == ["<@222>", "<@333>", "<@111>"]
+
+
+@pytest.mark.parametrize(
+    "autoreserve,autosack,footer",
+    [
+        (5, 10, [
+            "Drivers who reach 5 points will be moved to reserve.",
+            "Drivers who reach 10 points will be removed from all driving roles in all divisions.",
+        ]),
+        (0, 10, [
+            "Drivers who reach 10 points will be removed from all driving roles in all divisions.",
+        ]),
+        (5, None, ["Drivers who reach 5 points will be moved to reserve."]),
+        (0, 0, []),
+    ],
+)
+@pytest.mark.asyncio
+async def test_the_footer_names_only_the_thresholds_in_force(
+    sheet_db, autoreserve, autosack, footer
+):
+    """FR-019: a threshold of nought or none is switched off, and the sheet does not warn of
+    a sanction that cannot happen."""
+    await _config(sheet_db, prior=None)
+    async with get_connection(sheet_db) as db:
+        await db.execute(
+            "UPDATE attendance_config SET autoreserve_threshold = ?, autosack_threshold = ?",
+            (autoreserve, autosack),
+        )
+        await db.commit()
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    lines = channel.sent_content.splitlines()
+    assert [line for line in lines if line.startswith("Drivers who reach")] == footer
+    assert lines[-1] == (footer[-1] if footer else "<@111> — 4 attendance points")
 
 
 # ── The sheet graphic does not outlive its posting attempt ────────────────

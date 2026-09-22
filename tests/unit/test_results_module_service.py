@@ -5,10 +5,11 @@ from __future__ import annotations
 import sys
 import os
 
-import aiosqlite
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+
+from db.database import get_connection, run_migrations  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -18,30 +19,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 @pytest.fixture
 async def db_path(tmp_path):
-    """Temp SQLite DB with server_configs and results_module_config tables."""
+    """A migrated database with the league's server_configs row and no results_module_config
+    row, which is how a league that has never touched the module stands."""
     path = str(tmp_path / "results_module_test.db")
-    async with aiosqlite.connect(path) as db:
-        db.row_factory = aiosqlite.Row
-        await db.executescript(
-            """
-            CREATE TABLE server_configs (
-                server_id               INTEGER PRIMARY KEY,
-                interaction_role_id     INTEGER NOT NULL DEFAULT 0,
-                interaction_channel_id  INTEGER NOT NULL DEFAULT 0,
-                log_channel_id          INTEGER NOT NULL DEFAULT 0,
-                test_mode_active        INTEGER NOT NULL DEFAULT 0,
-                weather_module_enabled  INTEGER NOT NULL DEFAULT 0,
-                signup_module_enabled   INTEGER NOT NULL DEFAULT 0
-            );
-
-            CREATE TABLE results_module_config (
-                id             INTEGER PRIMARY KEY CHECK (id = 1),
-                module_enabled INTEGER NOT NULL DEFAULT 0
-            );
-
-            INSERT INTO server_configs (server_id) VALUES (1);
-            """
-        )
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute("INSERT INTO server_configs (server_id) VALUES (1)")
+        await db.commit()
     return path
 
 

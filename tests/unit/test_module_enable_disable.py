@@ -321,10 +321,12 @@ async def test_enabling_attendance_writes_the_packaged_defaults(tmp_path):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT rsvp_notice_days, rsvp_last_notice_hours, rsvp_deadline_hours, "
+            "no_rsvp_penalty, absent_penalty, no_show_penalty, "
             "autoreserve_threshold, autosack_threshold FROM attendance_config",
         )
         row = await cursor.fetchone()
     assert (row["rsvp_notice_days"], row["rsvp_last_notice_hours"], row["rsvp_deadline_hours"]) == (5, 24, 2)
+    assert (row["no_rsvp_penalty"], row["absent_penalty"], row["no_show_penalty"]) == (1, 1, 1)
     assert row["autoreserve_threshold"] is None
     assert row["autosack_threshold"] is None
 
@@ -370,3 +372,53 @@ async def test_enabling_attendance_is_audited(tmp_path):
     )
 
     assert (await _audit(db_path))[0]["change_type"] == "ATTENDANCE_MODULE_ENABLED"
+
+
+async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path):
+    """Constitution X.6: re-enabling a module starts fresh. A league that set its own
+    windows, penalties and thresholds finds the packaged ones after turning the module off
+    and on again, through the commands themselves."""
+    from services.attendance_service import AttendanceService
+    from services.module_service import ModuleService
+
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, results_enabled=True)
+    cog.bot.module_service.is_attendance_enabled = ModuleService(db_path).is_attendance_enabled
+
+    await cog._enable_attendance(_interaction())
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE attendance_config SET rsvp_notice_days = 7, rsvp_last_notice_hours = 48, "
+            "rsvp_deadline_hours = 6, no_rsvp_penalty = 2, absent_penalty = 3, "
+            "no_show_penalty = 4, autoreserve_threshold = 5, autosack_threshold = 9"
+        )
+        await db.commit()
+    await cog._disable_attendance(_interaction())
+    await cog._enable_attendance(_interaction())
+
+    cfg = await AttendanceService(db_path).get_config()
+    assert cfg.module_enabled is True
+    assert (cfg.rsvp_notice_days, cfg.rsvp_last_notice_hours, cfg.rsvp_deadline_hours) == (5, 24, 2)
+    assert (cfg.no_rsvp_penalty, cfg.absent_penalty, cfg.no_show_penalty) == (1, 1, 1)
+    assert cfg.autoreserve_threshold is None
+    assert cfg.autosack_threshold is None
+
+
+async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off(tmp_path):
+    """The configuration and its audit entry are one write: where the second fails, the
+    first is not kept either, and the league is told the module is still off."""
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
+    interaction = _interaction()
+
+    await _make_cog(db_path, results_enabled=True)._enable_attendance(interaction)
+
+    assert "Module remains disabled" in _replied(interaction)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM attendance_config")
+        assert (await cursor.fetchone())[0] == 0

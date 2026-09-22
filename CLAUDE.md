@@ -269,6 +269,19 @@ what took the `windows-latest` job from three minutes to over an hour. Never loo
 migrations directory yourself, which four files did until issue #252 timed the Windows job
 out, and which `tests/unit/test_migration_steps.py` now refuses.
 
+**A test builds its schema from the production migrations, never from a copy** (#233). Call
+`run_migrations` on a file under `tmp_path` — not `:memory:`, which the substitution above
+migrates in earnest — and seed what the test needs through `get_connection`, parents first,
+so foreign keys are enforced as production enforces them. Never write a `CREATE TABLE` for a
+table the migrations declare. A copy carries the columns its author wanted and none of the
+constraints, defaults or triggers, so a test on it passes on data the bot refuses: one gave
+every driver the same Discord account, another two race sessions to a round, a third penalty
+defaults the schema does not have. A table of the test's own — a spy it reads back, another
+program's jobstore — is no copy and is fine. The exceptions are a database whose schema is the
+subject (`tests/integration/test_database.py` builds one from before the baseline) and one
+nothing reads inside (the backup tests copy a stand-in whole). `test_migration_steps.py` names
+them with their reasons and refuses any other.
+
 **The schema starts from one baseline** (decided 2026-09-19, issue #254). The 61 migrations
 that built it before go-live were squashed into `src/db/migrations/001_baseline.sql`; git keeps
 them, and no test of a historic migration remains. Until go-live — release `v1.0.0` (decided

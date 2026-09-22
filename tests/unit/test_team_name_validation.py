@@ -164,27 +164,32 @@ from unittest.mock import MagicMock as _MagicMock  # noqa: E402
 
 _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "..", "..", "src"))
 
-import aiosqlite  # noqa: E402
-
 from cogs.season_cog import SeasonCog  # noqa: E402
+from db.database import get_connection, run_migrations  # noqa: E402
 
 
 async def _seed(path, server_teams, division_teams):
-    async with aiosqlite.connect(path) as db:
+    """Season 1 in setup, its one division Elite (id 10), and the two team lists.
+
+    The names are the shorthands under review, so each is its own full name too."""
+    await run_migrations(str(path))
+    async with get_connection(str(path)) as db:
         await db.execute(
-            "CREATE TABLE default_teams (name TEXT, is_reserve INTEGER)"
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, '2026-01-01', 'SETUP')"
         )
-        await db.execute("CREATE TABLE divisions (id INTEGER, season_id INTEGER, name TEXT, tier INTEGER)")
         await db.execute(
-            "CREATE TABLE team_instances (division_id INTEGER, name TEXT, is_reserve INTEGER)"
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
+            "VALUES (10, 1, 'Elite', 3001, 1)"
         )
         for name in server_teams:
             await db.execute(
-                "INSERT INTO default_teams VALUES (?, 0)", (name,)
+                "INSERT INTO default_teams (name, full_name) VALUES (?, ?)", (name, name)
             )
-        await db.execute("INSERT INTO divisions VALUES (10, 1, 'Elite', 1)")
         for name in division_teams:
-            await db.execute("INSERT INTO team_instances VALUES (10, ?, 0)", (name,))
+            await db.execute(
+                "INSERT INTO team_instances (division_id, name, full_name) VALUES (10, ?, ?)",
+                (name, name),
+            )
         await db.commit()
 
 

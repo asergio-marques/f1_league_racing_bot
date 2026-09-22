@@ -17,83 +17,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 @pytest.fixture
 async def db_path(tmp_path):
-    import aiosqlite
+    """A migrated database with the league's server_configs row."""
+    from db.database import get_connection, run_migrations
 
     path = str(tmp_path / "driver_test.db")
-    async with aiosqlite.connect(path) as db:
-        db.row_factory = aiosqlite.Row
-        await db.executescript(
-            """
-            CREATE TABLE server_configs (
-                server_id              INTEGER PRIMARY KEY,
-                interaction_role_id    INTEGER NOT NULL DEFAULT 0,
-                interaction_channel_id INTEGER NOT NULL DEFAULT 0,
-                log_channel_id         INTEGER NOT NULL DEFAULT 0,
-                test_mode_active       INTEGER NOT NULL DEFAULT 0,
-                weather_module_enabled INTEGER NOT NULL DEFAULT 0,
-                signup_module_enabled  INTEGER NOT NULL DEFAULT 0
-            );
-            INSERT INTO server_configs (server_id) VALUES (1);
-
-            CREATE TABLE driver_profiles (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                discord_user_id  TEXT NOT NULL UNIQUE,
-                current_state    TEXT NOT NULL DEFAULT 'NOT_SIGNED_UP',
-                former_driver    INTEGER NOT NULL DEFAULT 0
-            );
-
-            CREATE TABLE audit_entries (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                actor_id    INTEGER NOT NULL,
-                actor_name  TEXT    NOT NULL,
-                division_id INTEGER,
-                change_type TEXT    NOT NULL,
-                old_value   TEXT    NOT NULL,
-                new_value   TEXT    NOT NULL,
-                timestamp   TEXT    NOT NULL
-            );
-
-            CREATE TABLE seasons (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                status TEXT NOT NULL DEFAULT 'SETUP'
-            );
-            CREATE TABLE driver_season_assignments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                driver_profile_id INTEGER NOT NULL,
-                season_id INTEGER NOT NULL,
-                division_id INTEGER NOT NULL DEFAULT 0,
-                current_position INTEGER NOT NULL DEFAULT 0,
-                current_points INTEGER NOT NULL DEFAULT 0,
-                points_gap_to_first INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE team_seats (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                team_id          INTEGER NOT NULL,
-                seat_number      INTEGER NOT NULL DEFAULT 1,
-                driver_profile_id INTEGER
-            );
-
-            CREATE TABLE signup_records (
-                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                discord_user_id      TEXT NOT NULL,
-                discord_username     TEXT,
-                server_display_name  TEXT,
-                nationality          TEXT,
-                platform             TEXT,
-                platform_id          TEXT,
-                availability_slot_ids TEXT,
-                driver_type          TEXT,
-                preferred_teams      TEXT,
-                preferred_teammate   TEXT,
-                lap_times_json       TEXT,
-                notes                TEXT,
-                signup_channel_id    INTEGER,
-                total_lap_ms         INTEGER,
-                created_at           TEXT,
-                updated_at           TEXT
-            );
-            """
-        )
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute("INSERT INTO server_configs (server_id) VALUES (1)")
+        await db.commit()
     return path
 
 
@@ -103,9 +34,8 @@ def _make_svc(db_path):
 
 
 async def _seed_driver(db_path, user_id: str, state: str) -> None:
-    import aiosqlite
-    async with aiosqlite.connect(db_path) as db:
-        db.row_factory = aiosqlite.Row
+    from db.database import get_connection
+    async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES (?, ?)",
             (user_id, state),
@@ -128,10 +58,10 @@ class TestPendingSignupCompletionToNotSignedUp:
         assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP
 
     async def test_former_driver_retains_profile(self, db_path):
-        import aiosqlite
+        from db.database import get_connection
         from models.driver_profile import DriverState
         await _seed_driver(db_path, "u2", "PENDING_SIGNUP_COMPLETION")
-        async with aiosqlite.connect(db_path) as db:
+        async with get_connection(db_path) as db:
             await db.execute(
                 "UPDATE driver_profiles SET former_driver = 1 WHERE discord_user_id = 'u2'"
             )
@@ -256,96 +186,12 @@ class TestAwaitingCorrectionParameterTransitions:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-async def db_with_signup(tmp_path):
-    """DB fixture that includes signup_records table for clearing tests."""
-    import aiosqlite
-    path = str(tmp_path / "driver_signup_test.db")
-    async with aiosqlite.connect(path) as db:
-        db.row_factory = aiosqlite.Row
-        await db.executescript(
-            """
-            CREATE TABLE server_configs (
-                server_id              INTEGER PRIMARY KEY,
-                interaction_role_id    INTEGER NOT NULL DEFAULT 0,
-                interaction_channel_id INTEGER NOT NULL DEFAULT 0,
-                log_channel_id         INTEGER NOT NULL DEFAULT 0,
-                test_mode_active       INTEGER NOT NULL DEFAULT 0,
-                weather_module_enabled INTEGER NOT NULL DEFAULT 0,
-                signup_module_enabled  INTEGER NOT NULL DEFAULT 0
-            );
-            INSERT INTO server_configs (server_id) VALUES (1);
-
-            CREATE TABLE driver_profiles (
-                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-                discord_user_id    TEXT NOT NULL UNIQUE,
-                current_state      TEXT NOT NULL DEFAULT 'NOT_SIGNED_UP',
-                former_driver      INTEGER NOT NULL DEFAULT 0
-            );
-
-            CREATE TABLE audit_entries (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                actor_id    INTEGER NOT NULL,
-                actor_name  TEXT    NOT NULL,
-                division_id INTEGER,
-                change_type TEXT    NOT NULL,
-                old_value   TEXT    NOT NULL,
-                new_value   TEXT    NOT NULL,
-                timestamp   TEXT    NOT NULL
-            );
-
-            CREATE TABLE seasons (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                status TEXT NOT NULL DEFAULT 'SETUP'
-            );
-            CREATE TABLE driver_season_assignments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                driver_profile_id INTEGER NOT NULL,
-                season_id         INTEGER NOT NULL,
-                division_id       INTEGER NOT NULL DEFAULT 0,
-                current_position  INTEGER NOT NULL DEFAULT 0,
-                current_points    INTEGER NOT NULL DEFAULT 0,
-                points_gap_to_first INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE team_seats (
-                id                INTEGER PRIMARY KEY AUTOINCREMENT,
-                team_id           INTEGER NOT NULL,
-                seat_number       INTEGER NOT NULL DEFAULT 1,
-                driver_profile_id INTEGER
-            );
-
-            CREATE TABLE signup_records (
-                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                discord_user_id      TEXT NOT NULL,
-                discord_username     TEXT,
-                server_display_name  TEXT,
-                nationality          TEXT,
-                platform             TEXT,
-                platform_id          TEXT,
-                availability_slot_ids TEXT,
-                driver_type          TEXT,
-                preferred_teams      TEXT,
-                preferred_teammate   TEXT,
-                lap_times_json       TEXT,
-                notes                TEXT,
-                signup_channel_id    INTEGER,
-                total_lap_ms         INTEGER,
-                created_at           TEXT,
-                updated_at           TEXT
-            );
-            """
-        )
-        await db.commit()
-    return path
-
-
 class TestSignupDataClearing:
     """T052: NOT_SIGNED_UP keeps a former driver's signup data (issue #220 withdrew the clearing)."""
 
     async def _seed_former_driver_with_record(self, db_path: str, user_id: str) -> None:
-        import aiosqlite
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        from db.database import get_connection
+        async with get_connection(db_path) as db:
             await db.execute(
                 "INSERT INTO driver_profiles "
                 "(discord_user_id, current_state, former_driver) "
@@ -360,17 +206,17 @@ class TestSignupDataClearing:
             )
             await db.commit()
 
-    async def test_former_driver_nsu_keeps_signup_fields(self, db_with_signup):
+    async def test_former_driver_nsu_keeps_signup_fields(self, db_path):
         """former_driver=True: NOT_SIGNED_UP keeps the signup, which is season history (#220)."""
         import aiosqlite
         from models.driver_profile import DriverState
-        await self._seed_former_driver_with_record(db_with_signup, "fd1")
-        svc = _make_svc(db_with_signup)
+        await self._seed_former_driver_with_record(db_path, "fd1")
+        svc = _make_svc(db_path)
         result = await svc.transition("fd1", DriverState.NOT_SIGNED_UP)
         assert result is not None  # former driver profile retained
         assert result.current_state == DriverState.NOT_SIGNED_UP
         # The signup is kept whole
-        async with aiosqlite.connect(db_with_signup) as db:
+        async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
                 "SELECT discord_username, platform, platform_id FROM signup_records "
@@ -382,19 +228,18 @@ class TestSignupDataClearing:
         assert row["platform"] == "Steam"
         assert row["platform_id"] == "SteamUser123"
 
-    async def test_non_former_driver_nsu_keeps_profile_pending_deletion(self, db_with_signup):
+    async def test_non_former_driver_nsu_keeps_profile_pending_deletion(self, db_path):
         """former_driver=False: NOT_SIGNED_UP keeps the profile, pending deletion (#220)."""
+        from db.database import get_connection
         from models.driver_profile import DriverState
-        import aiosqlite
-        async with aiosqlite.connect(db_with_signup) as db:
-            db.row_factory = aiosqlite.Row
+        async with get_connection(db_path) as db:
             await db.execute(
                 "INSERT INTO driver_profiles "
                 "(discord_user_id, current_state, former_driver) "
                 "VALUES ('nfd1', 'PENDING_ADMIN_APPROVAL', 0)"
             )
             await db.commit()
-        svc = _make_svc(db_with_signup)
+        svc = _make_svc(db_path)
         result = await svc.transition("nfd1", DriverState.NOT_SIGNED_UP)
         assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP
 

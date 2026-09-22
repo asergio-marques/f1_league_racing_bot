@@ -20,6 +20,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from db.database import get_connection, run_migrations  # noqa: E402
 from services.driver_portrait_service import (  # noqa: E402
     has_own_avatar,
     portrait_path,
@@ -37,15 +38,7 @@ PNG = b"\x89PNG\r\n\x1a\nFAKEBYTES"
 @pytest.fixture
 async def db_path(tmp_path):
     path = str(tmp_path / "portraits.db")
-    async with aiosqlite.connect(path) as db:
-        # Only the portrait table is needed; the ALTER TABLE half of 047 wants image_config,
-        # which this service never reads.
-        await db.execute(
-            "CREATE TABLE driver_portraits ("
-            " discord_user_id TEXT PRIMARY KEY,"
-            " avatar_key TEXT NOT NULL, fetched_at TEXT NOT NULL)"
-        )
-        await db.commit()
+    await run_migrations(path)
     return path
 
 
@@ -474,31 +467,31 @@ async def test_the_gate_never_raises_on_a_configuration_predating_the_feature(
 
 
 async def _season_db(tmp_path, *, uids=("11", "22"), test_uid="99", status="ACTIVE"):
-    """A database carrying just the four tables `assigned_driver_ids` joins."""
+    """One season in *status*, each of *uids* assigned to its one division, and a test
+    driver beside them unless *test_uid* is None."""
     path = str(tmp_path / "season.db")
-    async with aiosqlite.connect(path) as db:
-        await db.execute("CREATE TABLE seasons (id INTEGER PRIMARY KEY, status TEXT)")
+    await run_migrations(path)
+    async with get_connection(path) as db:
         await db.execute(
-            "CREATE TABLE driver_profiles (id INTEGER PRIMARY KEY, discord_user_id TEXT,"
-            " is_test_driver INTEGER DEFAULT 0)"
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, '2026-01-01', ?)",
+            (status,),
         )
         await db.execute(
-            "CREATE TABLE driver_season_assignments (driver_profile_id INTEGER, season_id INTEGER)"
+            "INSERT INTO divisions (id, season_id, name, mention_role_id) "
+            "VALUES (1, 1, 'Pro', 3001)"
         )
-        await db.execute(
-            "CREATE TABLE driver_portraits (discord_user_id TEXT PRIMARY KEY,"
-            " avatar_key TEXT NOT NULL, fetched_at TEXT NOT NULL)"
-        )
-        await db.execute("INSERT INTO seasons VALUES (1, ?)", (status,))
-        pid = 0
-        for uid in uids:
-            pid += 1
-            await db.execute("INSERT INTO driver_profiles VALUES (?, ?, 0)", (pid, uid))
-            await db.execute("INSERT INTO driver_season_assignments VALUES (?, 1)", (pid,))
-        if test_uid:
-            pid += 1
-            await db.execute("INSERT INTO driver_profiles VALUES (?, ?, 1)", (pid, test_uid))
-            await db.execute("INSERT INTO driver_season_assignments VALUES (?, 1)", (pid,))
+        drivers = [(uid, 0) for uid in uids] + ([(test_uid, 1)] if test_uid else [])
+        for uid, is_test_driver in drivers:
+            cursor = await db.execute(
+                "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver) "
+                "VALUES (?, 'ASSIGNED', ?)",
+                (uid, is_test_driver),
+            )
+            await db.execute(
+                "INSERT INTO driver_season_assignments "
+                "(driver_profile_id, season_id, division_id) VALUES (?, 1, 1)",
+                (cursor.lastrowid,),
+            )
         await db.commit()
     return path
 

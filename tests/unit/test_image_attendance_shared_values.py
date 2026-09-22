@@ -13,11 +13,11 @@ import inspect
 import os
 import sys
 
-import aiosqlite
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from db.database import get_connection, run_migrations  # noqa: E402
 from services import attendance_service  # noqa: E402
 from services.image_attendance_service import resolve_drawing, DriverRecord  # noqa: E402
 
@@ -102,37 +102,41 @@ def test_the_sanction_annotation_matches_the_textual_one_with_its_emphasis_strip
 
 @pytest.fixture
 async def grid_db(tmp_path):
+    """Division 7's four rounds, none yet run, and two drivers' records against them.
+
+    The circuits are the seeded registry's, which places Silverstone in the United Kingdom
+    and Zandvoort in the Netherlands. "Suzuka" is not a name it holds — the registry's is
+    Suzuka International Racing Course — so round 4 resolves to no country."""
     path = str(tmp_path / "grid.db")
-    async with aiosqlite.connect(path) as db:
-        await db.executescript(
-            """
-            CREATE TABLE rounds (
-                id INTEGER PRIMARY KEY, division_id INTEGER, round_number INTEGER,
-                format TEXT, track_name TEXT, status TEXT DEFAULT 'ACTIVE'
-            );
-            CREATE TABLE driver_round_attendance (
-                id INTEGER PRIMARY KEY, round_id INTEGER, division_id INTEGER,
-                driver_profile_id INTEGER, points_awarded INTEGER
-            );
-            -- The columns `track_service.get_all_tracks` actually selects. A fixture
-            -- declaring fewer makes the registry unreadable, which the sheet survives by
-            -- drawing no heading flags — and every assertion about them would then pass
-            -- vacuously.
-            CREATE TABLE tracks (
-                id INTEGER PRIMARY KEY, name TEXT, gp_name TEXT, location TEXT,
-                country TEXT, mu REAL, sigma REAL
-            );
-            INSERT INTO tracks VALUES
-                (1, 'Silverstone Circuit', 'British GP', 'Silverstone', 'United Kingdom', 0, 0),
-                (2, 'Circuit Zandvoort',   'Dutch GP',   'Zandvoort',   'Netherlands',    0, 0);
-            INSERT INTO rounds VALUES (10, 7, 1, 'NORMAL',  'Silverstone Circuit', 'NOT_RUN');
-            INSERT INTO rounds VALUES (11, 7, 2, 'MYSTERY', NULL,                  'NOT_RUN');
-            INSERT INTO rounds VALUES (12, 7, 3, 'SPRINT',  'Circuit Zandvoort',   'NOT_RUN');
-            INSERT INTO rounds VALUES (13, 7, 4, 'NORMAL',  'Suzuka',              'NOT_RUN');
-            INSERT INTO driver_round_attendance VALUES (1, 10, 7, 501, 2);
-            INSERT INTO driver_round_attendance VALUES (2, 11, 7, 501, 0);
-            INSERT INTO driver_round_attendance VALUES (3, 10, 7, 502, NULL);
-            """
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, '2026-01-01', 'ACTIVE')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id) "
+            "VALUES (7, 1, 'Division 1', 3001)"
+        )
+        await db.executemany(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at) VALUES (?, 7, ?, ?, ?, ?)",
+            [
+                (10, 1, "NORMAL", "Silverstone Circuit", "2026-06-07T18:00:00"),
+                (11, 2, "MYSTERY", None, "2026-06-14T18:00:00"),
+                (12, 3, "SPRINT", "Circuit Zandvoort", "2026-06-21T18:00:00"),
+                (13, 4, "NORMAL", "Suzuka", "2026-06-28T18:00:00"),
+            ],
+        )
+        await db.executemany(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (?, ?, 'ASSIGNED')",
+            [(501, "9501"), (502, "9502")],
+        )
+        await db.executemany(
+            "INSERT INTO driver_round_attendance "
+            "(id, round_id, division_id, driver_profile_id, points_awarded) "
+            "VALUES (?, ?, 7, ?, ?)",
+            [(1, 10, 501, 2), (2, 11, 501, 0), (3, 10, 502, None)],
         )
         await db.commit()
     return path
@@ -166,7 +170,7 @@ async def test_a_round_heading_carries_the_country_its_circuit_is_run_in(grid_db
         "United Kingdom",
         "Mystery",
         "Netherlands",
-        None,  # Suzuka is in no registry this fixture holds
+        None,  # no registered circuit is named "Suzuka"
     ]
 
 

@@ -10,6 +10,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from db.database import get_connection, run_migrations  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -17,43 +19,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 @pytest.fixture
 async def db_path(tmp_path):
-    """Temp SQLite DB with server_configs, team_role_configs, and audit_entries."""
+    """A migrated database with the league's server_configs row."""
     path = str(tmp_path / "test.db")
-    async with aiosqlite.connect(path) as db:
-        db.row_factory = aiosqlite.Row
-        await db.executescript(
-            """
-            CREATE TABLE server_configs (
-                server_id              INTEGER PRIMARY KEY,
-                interaction_role_id    INTEGER NOT NULL DEFAULT 0,
-                interaction_channel_id INTEGER NOT NULL DEFAULT 0,
-                log_channel_id         INTEGER NOT NULL DEFAULT 0,
-                test_mode_active       INTEGER NOT NULL DEFAULT 0,
-                weather_module_enabled INTEGER NOT NULL DEFAULT 0,
-                signup_module_enabled  INTEGER NOT NULL DEFAULT 0
-            );
-            INSERT INTO server_configs (server_id) VALUES (1);
-
-            CREATE TABLE team_role_configs (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                team_name  TEXT    NOT NULL,
-                role_id    INTEGER NOT NULL,
-                updated_at TEXT    NOT NULL,
-                UNIQUE(team_name)
-            );
-
-            CREATE TABLE audit_entries (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                actor_id    INTEGER NOT NULL,
-                actor_name  TEXT    NOT NULL,
-                division_id INTEGER,
-                change_type TEXT    NOT NULL,
-                old_value   TEXT    NOT NULL,
-                new_value   TEXT    NOT NULL,
-                timestamp   TEXT    NOT NULL
-            );
-            """
-        )
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute("INSERT INTO server_configs (server_id) VALUES (1)")
+        await db.commit()
     return path
 
 
@@ -77,10 +48,9 @@ async def _count_audit(db_path: str, change_type: str) -> int:
 
 
 async def _seed_role(db_path: str, team_name: str, role_id: int) -> None:
-    async with aiosqlite.connect(db_path) as db:
+    async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id, updated_at) "
-            "VALUES (?, ?, datetime('now'))",
+            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
             (team_name, role_id),
         )
         await db.commit()
