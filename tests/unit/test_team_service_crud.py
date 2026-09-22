@@ -379,6 +379,20 @@ async def test_a_team_is_added_with_its_full_name_beside_its_shorthand(tmp_path)
     assert listed.full_name == "Oracle Red Bull Racing"
 
 
+@pytest.mark.parametrize("full_name", ["oracle RED BULL racing", "reserve"])
+async def test_a_team_is_refused_a_full_name_another_team_shows(tmp_path, full_name):
+    """Full names are unique across the server's list ignoring case, the Reserve team's
+    included, and nothing is added when one is taken (#381)."""
+    db_path = await _make_db(tmp_path)
+    service = TeamService(db_path)
+    await service.add_default_team("RBR", full_name="Oracle Red Bull Racing")
+
+    with pytest.raises(ValueError, match="already the full name"):
+        await service.add_default_team("RB2", full_name=full_name)
+
+    assert [t.name for t in await service.get_default_teams()] == ["RBR", RESERVE]
+
+
 async def test_seeding_a_division_copies_each_team_s_full_name(tmp_path):
     """A division keeps the names its season ran under, whatever becomes of the server's
     list afterwards, so the full name is copied with the shorthand (#381)."""

@@ -17,11 +17,25 @@ _RESERVE_NAME = "Reserve"
 #: would seek the same badge file (Constitution IX, XIV.11).
 _RESERVE_KEY = "reserve"
 
+#: The longest a team's shorthand may be (decided 2026-09-22, #381). A shorthand is a short alias
+#: typed wherever a team is entered, and names the team's artwork file.
+SHORTHAND_MAX = 16
+
+#: The longest a team's full name may be (decided 2026-09-22, #381). It is what every post and
+#: graphic shows, and the signup wizard offers teams by it on buttons, whose labels Discord caps
+#: at 80.
+FULL_NAME_MAX = 64
+
 
 def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -> str | None:
-    """Why *name* cannot become an asset **filename**, or None where it can.
+    """Why *name* cannot be a team's **shorthand**, or None where it can.
 
-    The normalised team name is the filename under which every graphic that draws a team
+    The shorthand is the team's short alias (#381): typed wherever a team is entered, and the
+    name of its artwork file. So it is held to two rules of its own besides the filename rules
+    below — at most ``SHORTHAND_MAX`` characters, and no comma, because a shorthand is typed
+    into the comma-separated rows of a results submission and a test roster.
+
+    The normalised shorthand is the filename under which every graphic that draws a team
     badge seeks that team's image (Constitution XIV.13) — the lineup, both results graphics,
     both standings graphics, the attendance sheet and the verdict. Constraining the datum is
     the business of the module that owns it (Principle IX); discovering the collision at
@@ -49,9 +63,21 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
     """
     trimmed = (name or "").strip()
     if not trimmed:
-        return "A team name cannot be empty."
+        return "A team's shorthand cannot be empty."
 
-    refusal = NAME.check("team name", trimmed).refusal
+    if len(trimmed) > SHORTHAND_MAX:
+        return (
+            f'"{trimmed}" is {len(trimmed)} characters long. A shorthand may be at most '
+            f"{SHORTHAND_MAX}."
+        )
+
+    if "," in trimmed:
+        return (
+            f'"{trimmed}" holds a comma. A shorthand is typed into the comma-separated rows '
+            "of a results submission and a test roster, so it cannot hold one."
+        )
+
+    refusal = NAME.check("shorthand", trimmed).refusal
     if refusal is not None:
         return refusal
 
@@ -74,6 +100,40 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
             f'"{trimmed}" and "{clash}" both reduce to "{key}", so both would draw the '
             f"same team image. Choose a more distinct name."
         )
+
+    return None
+
+
+def validate_full_name(full_name: str, taken: dict[str, str] | None = None) -> str | None:
+    """Why *full_name* cannot be a team's **full name**, or None where it can.
+
+    The full name is what every post and graphic shows (#381). It is never typed to name a
+    team, so it holds no rule of a reference: only the rules every name a league types is held
+    to (#362), a length, and uniqueness — two teams showing the same name could not be told
+    apart in a standings table.
+
+    *taken* maps an already-taken full name, casefolded, to the full name that holds it, the
+    Reserve team's included. Omit it to check only the properties of the name itself.
+
+    Returns a message ready to show a user, or None.
+    """
+    trimmed = (full_name or "").strip()
+    if not trimmed:
+        return "A team's full name cannot be empty."
+
+    if len(trimmed) > FULL_NAME_MAX:
+        return (
+            f"The full name is {len(trimmed)} characters long. A full name may be at most "
+            f"{FULL_NAME_MAX}."
+        )
+
+    refusal = NAME.check("full name", trimmed).refusal
+    if refusal is not None:
+        return refusal
+
+    clash = (taken or {}).get(trimmed.casefold())
+    if clash is not None:
+        return f'"{clash}" is already the full name of a team. A full name names one team only.'
 
     return None
 
@@ -117,6 +177,20 @@ class TeamService:
             normalise(r["name"]): r["name"]
             for r in rows
             if r["name"] != exclude and normalise(r["name"])
+        }
+
+    @staticmethod
+    async def _server_full_names(db, *, exclude_id: int | None = None) -> dict[str, str]:
+        """Casefolded full name → full name, across the server's team list, Reserve included.
+
+        *exclude_id* drops one team, so a team keeping its own full name does not clash with
+        itself.
+        """
+        rows = await (await db.execute("SELECT id, full_name FROM default_teams")).fetchall()
+        return {
+            r["full_name"].casefold(): r["full_name"]
+            for r in rows
+            if r["id"] != exclude_id
         }
 
     # ------------------------------------------------------------------
@@ -183,7 +257,7 @@ class TeamService:
             # (Principle IX). Scope: the server's own team list.
             problem = validate_team_name(
                 name, await self._server_keys(db, exclude=name)
-            )
+            ) or validate_full_name(full_name, await self._server_full_names(db))
             if problem is not None:
                 raise ValueError(problem)
 

@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.team_service import validate_team_name
+from services.team_service import validate_full_name, validate_team_name
 
 
 # ── Rule 1: non-empty, trimmed and normalised ─────────────────────────────
@@ -250,8 +250,73 @@ def test_a_team_name_with_markup_an_emoji_or_a_group_mention_is_refused(name):
     problem = validate_team_name(name)
 
     assert problem is not None
-    assert "team name" in problem
+    assert "shorthand" in problem
 
 
 def test_a_team_name_with_markup_is_refused():
     assert validate_team_name("_Scuderia_") is not None
+
+
+# ── A shorthand is short, and typed into comma-separated rows (#381) ───────
+
+
+def test_shorthand_refuses_a_comma():
+    """A shorthand is typed into the rows of a results submission and a test roster, which
+    are split on commas: one inside it would split the row in the wrong place."""
+    problem = validate_team_name("Red,Bull")
+
+    assert problem is not None
+    assert "comma" in problem
+
+
+def test_shorthand_refuses_seventeen_characters():
+    """Sixteen is the most a shorthand may hold (decided 2026-09-22)."""
+    assert validate_team_name("A" * 16) is None
+
+    problem = validate_team_name("A" * 17)
+
+    assert problem is not None
+    assert "16" in problem
+
+
+# ── A full name is what is shown (#381) ────────────────────────────────────
+
+
+@pytest.mark.parametrize("full_name", ["", "   "])
+def test_an_empty_full_name_is_refused(full_name):
+    assert validate_full_name(full_name) is not None
+
+
+def test_full_name_refuses_sixty_five_characters():
+    """Sixty-four is the most a full name may hold (decided 2026-09-22)."""
+    assert validate_full_name("A" * 64) is None
+
+    problem = validate_full_name("A" * 65)
+
+    assert problem is not None
+    assert "64" in problem
+
+
+def test_a_full_name_may_hold_what_a_shorthand_may_not():
+    """A full name is never typed as a reference, so a comma and a long name are its own
+    business; it is only ever shown."""
+    assert validate_full_name("Visa Cash App RB Formula One Team, Faenza") is None
+
+
+@pytest.mark.parametrize("full_name", ["**Red** Bull", "Red Bull \U0001F402", "@everyone Racing"])
+def test_a_full_name_with_markup_an_emoji_or_a_group_mention_is_refused(full_name):
+    problem = validate_full_name(full_name)
+
+    assert problem is not None
+    assert "full name" in problem
+
+
+def test_full_name_must_be_unique_ignoring_case():
+    """Two teams showing the same name could not be told apart in a table."""
+    taken = {"oracle red bull racing": "Oracle Red Bull Racing"}
+
+    problem = validate_full_name("ORACLE Red Bull Racing", taken)
+
+    assert problem is not None
+    assert "Oracle Red Bull Racing" in problem
+    assert validate_full_name("Red Bull Racing", taken) is None
