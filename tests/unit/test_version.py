@@ -164,7 +164,8 @@ def test_a_filled_file_dates_the_version_without_asking_git(tmp_path, git):
 
 def test_a_clone_asks_git_when_the_version_was_made(tmp_path, git):
     git.answer(stdout="2026-09-22T12:20:06+01:00\n")
-    assert v.read_version_date(_write(tmp_path, PLACEHOLDER + "\n" + DATE_PLACEHOLDER + "\n")) == MADE
+    root = _write(tmp_path, PLACEHOLDER + "\n" + DATE_PLACEHOLDER + "\n")
+    assert v.read_version_date(root) == MADE
     assert git.calls == [["git", "log", "-1", "--format=%cI"]]
 
 
