@@ -278,52 +278,6 @@ class TeamService:
             id=row_id, name=name, full_name=full_name, max_seats=max_seats, is_reserve=False
         )
 
-    async def rename_default_team(
-        self, current_name: str, new_name: str
-    ) -> None:
-        """Rename a default team.  Raises ValueError if protected or name conflict."""
-        if current_name == _RESERVE_NAME:
-            raise ValueError(
-                f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
-            )
-        async with get_connection(self._db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT id, is_reserve FROM default_teams "
-                    "WHERE name = ?",
-                    (current_name,),
-                )
-            ).fetchone()
-            if row is None:
-                raise ValueError(f'No default team named "{current_name}" found.')
-            if row["is_reserve"]:
-                raise ValueError(
-                    f'The team "{current_name}" is protected and cannot be managed.'
-                )
-            conflict = await (
-                await db.execute(
-                    "SELECT 1 FROM default_teams WHERE name = ?",
-                    (new_name,),
-                )
-            ).fetchone()
-            if conflict:
-                raise ValueError(f'A default team named "{new_name}" already exists.')
-
-            # Only the **new** name is validated. The current name identifies a team that
-            # already exists, and validating it would leave a team named before this rule
-            # impossible to rename or to remove (FR-011).
-            problem = validate_team_name(
-                new_name, await self._server_keys(db, exclude=current_name)
-            )
-            if problem is not None:
-                raise ValueError(problem)
-
-            await db.execute(
-                "UPDATE default_teams SET name = ? WHERE id = ?",
-                (new_name, row["id"]),
-            )
-            await db.commit()
-
     async def modify_default_team(
         self,
         current_name: str,

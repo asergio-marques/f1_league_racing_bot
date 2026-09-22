@@ -343,7 +343,7 @@ class TeamCog(commands.Cog):
         name="remove",
         description="Remove a team from the server list, while no season's configuration is confirmed.",
     )
-    @app_commands.describe(name="Exact team name to remove.")
+    @app_commands.describe(name="The team's shorthand.")
     @league_admin_only
     async def team_remove(
         self,
@@ -352,148 +352,41 @@ class TeamCog(commands.Cog):
     ) -> None:
         if await self._team_list_lock(interaction, "remove"):
             return
+        # A team is named by its shorthand (#381), offered by the autocomplete below.
+        reference = await self.bot.team_service.resolve_server_team(name)  # type: ignore[attr-defined]
+        if reference.team is None:
+            await interaction.response.send_message(f"⛔ {reference.refusal}", ephemeral=True)
+            return
+        shorthand, full_name = reference.team["name"], reference.team["full_name"]
         try:
             await self.bot.team_service.remove_default_team(  # type: ignore[attr-defined]
-                name
+                shorthand
             )
         except ValueError as exc:
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
             return
 
         await self.bot.placement_service.delete_team_role_config(  # type: ignore[attr-defined]
-            name,
+            shorthand,
             actor_id=interaction.user.id, actor_name=str(interaction.user),
         )
 
         await interaction.response.send_message(
-            f'✅ Team "{name}" removed from the server list.', ephemeral=True
+            f'✅ Team "{full_name}" removed from the server list.', ephemeral=True
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team remove | Success\n"
-            f"  team: {name}",
+            f"  team: {full_name}\n"
+            f"  shorthand: {shorthand}",
         )
 
-    # ------------------------------------------------------------------
-    # /team rename  (FR-007, FR-008, FR-009)
-    # ------------------------------------------------------------------
-
-    @team.command(
-        name="rename",
-        description="Rename a team in the server list, while no season's configuration is confirmed.",
-    )
-    @app_commands.describe(
-        current_name="Exact current name of the team.",
-        new_name="Replacement name (max 50 chars).",
-    )
-    @league_manager_only
-    async def team_rename(
-        self,
-        interaction: discord.Interaction,
-        current_name: str,
-        new_name: str,
-    ) -> None:
-        if await self._team_list_lock(interaction, "rename"):
-            return
-        try:
-            await self.bot.team_service.rename_default_team(  # type: ignore[attr-defined]
-                current_name, new_name
-            )
-        except ValueError as exc:
-            await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
-            return
-
-        await self.bot.placement_service.rename_team_role_config(  # type: ignore[attr-defined]
-            current_name, new_name,
-            actor_id=interaction.user.id, actor_name=str(interaction.user),
-        )
-
-        await interaction.response.send_message(
-            f'✅ Team "{current_name}" renamed to "{new_name}".', ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team rename | Success\n"
-            f"  old_name: {current_name}\n"
-            f"  new_name: {new_name}",
-        )
-
-    # ------------------------------------------------------------------
-    # /team role — set the role of a team, in any state
-    # ------------------------------------------------------------------
-
-    @team.command(
-        name="role",
-        description="Set the Discord role of a team, while the season is being built or raced.",
-    )
-    @app_commands.describe(
-        name="Exact name of the team.",
-        role="Discord role to associate with this team.",
-    )
-    @league_manager_only
-    async def team_role(
-        self,
-        interaction: discord.Interaction,
-        name: str,
-        role: discord.Role,
-    ) -> None:
-        """Map a team of the server list to a role, in any stage but Pending completion.
-
-        Unlike the team list, a team's role is never fixed: nothing stops a role being
-        deleted from the server mid-season, and a league must be able to point the team
-        at its replacement. The Reserve team keeps its own command.
-
-        **Except once every division is done** (issue #224). Nothing is raced in Pending
-        completion, and completing the season revokes every team role a few steps later, so
-        a mapping repaired there would be undone before anyone wore it. The repair is made
-        once the season has ended, for the season that follows.
-        """
-        if await self._refuse_once_the_season_is_done(interaction, "role"):
-            return
-        refusal = role_grant_refusal(role)
-        if refusal is not None:
-            await interaction.response.send_message(f"⛔ {refusal}", ephemeral=True)
-            return
-        teams = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
-
-        )
-        match = next(
-            (t for t in teams if t["name"].casefold() == name.casefold()), None
-        )
-        if match is None:
-            await interaction.response.send_message(
-                f'⛔ No team named "{name}" is in the server list.', ephemeral=True
-            )
-            return
-        if match["is_reserve"]:
-            await interaction.response.send_message(
-                "⛔ The Reserve team's role is set with `/team reserve-role`.", ephemeral=True
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        try:
-            await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-                match["name"], role.id,
-                actor_id=interaction.user.id, actor_name=str(interaction.user),
-            )
-        except ValueError as exc:
-            # Another team holds the role (#375): nothing is changed and no driver moves.
-            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
-            return
-        # The drivers already seated in the team follow its role (issue #220).
-        moved = await self.bot.placement_service.swap_team_role(  # type: ignore[attr-defined]
-            match["name"], match["role_id"], role.id, interaction.guild
-        )
-        await interaction.followup.send(
-            f'✅ Team "{match["name"]}" now maps to {role.mention}.'
-            + (f" {moved} seated driver(s) moved to the new role." if moved else ""),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team role | Success\n"
-            f"  team: {match['name']}\n"
-            f"  role: {role.name} (<@&{role.id}>)\n"
-            f"  seated drivers moved: {moved}",
-        )
+    @team_remove.autocomplete("name")
+    @bounded_autocomplete()
+    async def _remove_team_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """The teams `/team remove` acts on: the server's list, the Reserve team excepted."""
+        return await team_autocomplete(self.bot, current, include_reserve=False)
 
     # ------------------------------------------------------------------
     # /team list  (FR-010, FR-011)

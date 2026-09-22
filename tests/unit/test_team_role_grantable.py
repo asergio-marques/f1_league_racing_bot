@@ -84,7 +84,6 @@ def test_a_role_carrying_no_guild_is_judged_on_itself_alone():
 @pytest.mark.parametrize(
     "command,arguments",
     [
-        ("team_role", {"name": "RBR"}),
         ("team_reserve_role", {}),
     ],
 )

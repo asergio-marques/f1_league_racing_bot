@@ -14,10 +14,10 @@ fired only when the server had *no* team at all, so a configuration that lost it
 or predates the rule, never regained one. `test_reading_the_team_list_restores_a_lost_reserve`
 holds that. No `/team` command may add, rename or remove it.
 
-**Only the new name is validated on a rename.** Deliberately, per the method's own comment: a
-team named before the naming rule existed would otherwise be impossible to rename *or* to
-remove, because validating the current name would refuse the very command that fixes it.
-`test_a_team_whose_existing_name_breaks_the_rule_can_still_be_renamed` sits on that, and it is
+**Only the new names are validated when a team is changed.** Deliberately, per the method's own
+comment: a team named before the naming rule existed would otherwise be impossible to rename *or*
+to remove, because validating the current name would refuse the very command that fixes it.
+`test_a_team_whose_existing_name_breaks_the_rule_can_still_be_changed` sits on that, and it is
 the test most likely to be broken by someone "tightening" the validation.
 
 **Uniqueness is scoped differently in the two halves.** The server's default list is unique
@@ -163,10 +163,10 @@ async def test_the_reserve_team_sorts_last(tmp_path):
     "call",
     [
         lambda s: s.add_default_team(RESERVE, full_name=RESERVE),
-        lambda s: s.rename_default_team(RESERVE, "Something"),
+        lambda s: s.modify_default_team(RESERVE, shorthand="Something"),
         lambda s: s.remove_default_team(RESERVE),
     ],
-    ids=["add", "rename", "remove"],
+    ids=["add", "modify", "remove"],
 )
 async def test_no_team_command_may_manage_the_reserve_team(tmp_path, call):
     service = TeamService(await _make_db(tmp_path))
@@ -188,7 +188,7 @@ async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
         await db.commit()
 
     with pytest.raises(ValueError, match="protected"):
-        await service.rename_default_team("Standbys", "Reserves")
+        await service.modify_default_team("Standbys", shorthand="Reserves")
     with pytest.raises(ValueError, match="protected"):
         await service.remove_default_team("Standbys")
 
@@ -247,35 +247,83 @@ async def test_a_name_colliding_once_normalised_is_refused(tmp_path):
         await service.add_default_team("red-bull", full_name="red-bull")
 
 
-async def test_a_team_is_renamed(tmp_path):
+async def test_a_team_s_shorthand_is_changed(tmp_path):
     db_path = await _make_db(tmp_path)
     service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha")
+    await service.add_default_team("Alpha", full_name="Alpha Racing")
 
-    await service.rename_default_team("Alpha", "Beta")
+    result = await service.modify_default_team("Alpha", shorthand="Beta")
 
+    assert result == {"name": "Beta", "full_name": "Alpha Racing"}
     assert "Beta" in await _names(db_path)
     assert "Alpha" not in await _names(db_path)
 
 
-async def test_renaming_a_team_that_does_not_exist_says_so(tmp_path):
+async def test_a_team_s_full_name_is_changed_on_its_own(tmp_path):
+    """Either name may change without the other (#381)."""
+    db_path = await _make_db(tmp_path)
+    service = TeamService(db_path)
+    await service.add_default_team("Alpha", full_name="Alpha Racing")
+
+    result = await service.modify_default_team("Alpha", full_name="Alpha Grand Prix")
+
+    assert result == {"name": "Alpha", "full_name": "Alpha Grand Prix"}
+
+
+async def test_a_change_of_name_is_recorded_in_the_audit_log(tmp_path):
+    db_path = await _make_db(tmp_path)
+    service = TeamService(db_path)
+    await service.add_default_team("Alpha", full_name="Alpha Racing")
+
+    await service.modify_default_team(
+        "Alpha", full_name="Alpha Grand Prix", actor_id=7, actor_name="Manager"
+    )
+
+    async with get_connection(db_path) as db:
+        rows = await (
+            await db.execute(
+                "SELECT actor_name, old_value, new_value FROM audit_entries "
+                "WHERE change_type = 'TEAM_NAMES'"
+            )
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["actor_name"] == "Manager"
+    assert "Alpha Racing" in rows[0]["old_value"]
+    assert "Alpha Grand Prix" in rows[0]["new_value"]
+
+
+async def test_modifying_a_team_that_does_not_exist_says_so(tmp_path):
     service = TeamService(await _make_db(tmp_path))
 
     with pytest.raises(ValueError, match="No default team"):
-        await service.rename_default_team("Ghost", "Beta")
+        await service.modify_default_team("Ghost", shorthand="Beta")
 
 
-async def test_renaming_onto_an_existing_name_is_refused(tmp_path):
+async def test_a_shorthand_already_taken_is_refused(tmp_path):
     service = TeamService(await _make_db(tmp_path))
     for name in ("Alpha", "Beta"):
-        await service.add_default_team(name, full_name=name)
+        await service.add_default_team(name, full_name=f"{name} Racing")
 
     with pytest.raises(ValueError, match="already exists"):
-        await service.rename_default_team("Alpha", "Beta")
+        await service.modify_default_team("Alpha", shorthand="Beta")
 
 
-async def test_a_team_whose_existing_name_breaks_the_rule_can_still_be_renamed(tmp_path):
-    """Only the *new* name is validated, deliberately. A team named before the naming rule
+async def test_a_full_name_already_taken_is_refused_and_nothing_is_written(tmp_path):
+    db_path = await _make_db(tmp_path)
+    service = TeamService(db_path)
+    for name in ("Alpha", "Beta"):
+        await service.add_default_team(name, full_name=f"{name} Racing")
+
+    with pytest.raises(ValueError, match="already the full name"):
+        await service.modify_default_team(
+            "Alpha", shorthand="Gamma", full_name="beta racing"
+        )
+
+    assert "Alpha" in await _names(db_path)
+
+
+async def test_a_team_whose_existing_name_breaks_the_rule_can_still_be_changed(tmp_path):
+    """Only the *new* names are validated, deliberately. A team named before the naming rule
     existed must remain fixable — validating the current name would refuse the very command
     that puts it right, and the team could then be neither renamed nor removed."""
     db_path = await _make_db(tmp_path)
@@ -287,7 +335,7 @@ async def test_a_team_whose_existing_name_breaks_the_rule_can_still_be_renamed(t
         )
         await db.commit()
 
-    await service.rename_default_team("???", "Alpha")
+    await service.modify_default_team("???", shorthand="Alpha")
 
     assert "Alpha" in await _names(db_path)
 

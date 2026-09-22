@@ -364,10 +364,15 @@ async def test_a_drawn_lineup_is_sent_as_files(tmp_path):
 async def test_the_reserve_role_is_set(tmp_path):
     cog = _make_cog()
     interaction = _interaction()
+    # A team's role must be one the bot can grant (#381), so the double answers that check.
     role = MagicMock()
     role.id = 4242
     role.name = "Reserves"
     role.mention = "@Reserves"
+    role.is_default.return_value = False
+    role.managed = False
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, _other: True
 
     await undecorate(TeamCog.team_reserve_role)(cog, interaction, role)
 
@@ -394,10 +399,15 @@ async def test_omitting_the_role_clears_the_mapping(tmp_path):
 async def test_setting_the_reserve_role_is_logged_with_the_role(tmp_path):
     cog = _make_cog()
     interaction = _interaction()
+    # A team's role must be one the bot can grant (#381), so the double answers that check.
     role = MagicMock()
     role.id = 4242
     role.name = "Reserves"
     role.mention = "@Reserves"
+    role.is_default.return_value = False
+    role.managed = False
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, _other: True
 
     await undecorate(TeamCog.team_reserve_role)(cog, interaction, role)
 
