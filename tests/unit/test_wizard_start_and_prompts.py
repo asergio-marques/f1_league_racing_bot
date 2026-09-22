@@ -138,7 +138,10 @@ def _service(*, existing=None, signup_cfg=True, snapshot=None, teams=None, recor
     bot.team_service.get_default_teams = AsyncMock(
         return_value=teams
         if teams is not None
-        else [SimpleNamespace(name="Red", is_reserve=False), SimpleNamespace(name="Reserves", is_reserve=True)]
+        else [
+            SimpleNamespace(name="Red", full_name="Red Racing", is_reserve=False),
+            SimpleNamespace(name="Reserves", full_name="Reserves", is_reserve=True),
+        ]
     )
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     svc._bot = bot
@@ -257,7 +260,7 @@ async def test_the_team_buttons_leave_the_reserve_team_out(tmp_path):
 
     await svc.start_wizard(_interaction(_guild()))
 
-    assert _saved_wizard(svc).config_snapshot.team_names == ["Red"]
+    assert _saved_wizard(svc).config_snapshot.team_names == ["Red Racing"]
 
 
 async def test_nationality_is_asked_first_where_the_league_requires_it(tmp_path):
