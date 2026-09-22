@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import logging
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from db.database import get_connection
 from models.team import DefaultTeam, TeamInstance
 from utils.asset_resolver import normalise
-from utils.input_validator import TEAM_NAME
+from utils.input_validator import TEAM_NAME, parse_role_mention, parse_user_mention
 
 log = logging.getLogger(__name__)
 
@@ -557,6 +560,12 @@ class TeamService:
             for r in rows
         ]
 
+    async def resolve_server_team(self, text: str | None) -> TeamReference:
+        """The team of the server's list that *text* names, by role or by shorthand."""
+        return resolve_team_reference(
+            text, await self.get_teams_with_roles(), scope=" in the server's list"
+        )
+
     async def get_setup_season_team_names(
         self, season_id: int
     ) -> set[str]:
@@ -635,6 +644,104 @@ class TeamService:
                     ],
                 })
         return teams
+
+
+# ---------------------------------------------------------------------------
+# Finding a team from what a league typed (#381)
+# ---------------------------------------------------------------------------
+
+#: A Discord ID typed out: 17 to 20 digits. Longer than any shorthand may be, so never one.
+_DISCORD_ID_RE = re.compile(r"^\d{17,20}$", re.ASCII)
+
+_HOW_TO_NAME_A_TEAM = "Name a team by its role or its shorthand."
+
+
+@dataclass(frozen=True)
+class TeamReference:
+    """What a typed team resolved to: the team, or why it names none."""
+
+    team: Mapping | None = None
+    refusal: str | None = None
+
+
+def resolve_team_reference(
+    text: str | None, teams: Sequence[Mapping], *, scope: str = ""
+) -> TeamReference:
+    """The team of *teams* that *text* names, or why it names none.
+
+    A team is identified by its **role**, and a league may type its **shorthand** instead, as
+    a convenience (#381). So *text* names a team as a role mention, ``<@&id>``, matched to a
+    team's ``role_id``, or as a shorthand, matched to its ``name`` ignoring case. A full name
+    is never typed to name a team, and names none.
+
+    ``@everyone``, ``@here``, a mention of a member and a Discord ID typed out each look like
+    something a league might type for a team, and each is refused saying what it is rather
+    than as a shorthand no team has.
+
+    *teams* are mappings carrying ``name`` and ``role_id`` (None for a team with no role),
+    as ``TeamService.get_teams_with_roles`` and ``resolve_division_team`` return them.
+    *scope* finishes the refusal of a role or a shorthand no team holds — " of this division".
+    """
+    typed = (text or "").strip()
+    if not typed:
+        return TeamReference(refusal=f"No team was named. {_HOW_TO_NAME_A_TEAM}")
+
+    if typed.lower() in ("@everyone", "@here"):
+        return TeamReference(
+            refusal=f"`{typed.lower()}` is not a team. {_HOW_TO_NAME_A_TEAM}"
+        )
+    if parse_user_mention(typed) is not None:
+        return TeamReference(refusal=f"{typed} is a member, not a team. {_HOW_TO_NAME_A_TEAM}")
+    if _DISCORD_ID_RE.match(typed):
+        return TeamReference(
+            refusal=f"`{typed}` is a Discord ID, not a team. {_HOW_TO_NAME_A_TEAM}"
+        )
+
+    role_id = parse_role_mention(typed)
+    if role_id is not None:
+        match = next((t for t in teams if t.get("role_id") == role_id), None)
+        if match is None:
+            return TeamReference(refusal=f"{typed} is not the role of a team{scope}.")
+        return TeamReference(team=match)
+
+    folded = typed.casefold()
+    match = next((t for t in teams if (t.get("name") or "").casefold() == folded), None)
+    if match is None:
+        return TeamReference(
+            refusal=f"No team{scope} has the shorthand `{typed}`. {_HOW_TO_NAME_A_TEAM}"
+        )
+    return TeamReference(team=match)
+
+
+async def resolve_division_team(db_path: str, division_id: int, text: str | None) -> TeamReference:
+    """The team of the division that *text* names, by role or by shorthand.
+
+    Each team carries ``id``, ``name`` (its shorthand), ``full_name``, ``is_reserve`` and
+    ``role_id``. A division's team holds its role through the server's mapping, keyed by its
+    shorthand. A team with no role is still found by its shorthand: the Reserve team's role
+    may be cleared, and a driver must still be placed into it.
+    """
+    async with get_connection(db_path) as db:
+        rows = await (
+            await db.execute(
+                "SELECT ti.id, ti.name, ti.full_name, ti.is_reserve, trc.role_id "
+                "FROM team_instances ti "
+                "LEFT JOIN team_role_configs trc ON trc.team_name = ti.name "
+                "WHERE ti.division_id = ? ORDER BY ti.is_reserve, ti.id",
+                (division_id,),
+            )
+        ).fetchall()
+    teams = [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "full_name": r["full_name"],
+            "is_reserve": bool(r["is_reserve"]),
+            "role_id": r["role_id"],
+        }
+        for r in rows
+    ]
+    return resolve_team_reference(text, teams, scope=" of this division")
 
 
 # ---------------------------------------------------------------------------
