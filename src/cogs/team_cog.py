@@ -320,8 +320,10 @@ class TeamCog(commands.Cog):
             return
 
         def _fmt_team(t: dict) -> str:
+            # All three names a team carries (#381): what is shown, what is typed, and the
+            # role its drivers are given.
             role_part = f"<@&{t['role_id']}>" if t["role_id"] else "no role"
-            return f"  {t['name']} → {role_part}"
+            return f"  {t['full_name']} — `{t['name']}` → {role_part}"
 
         server_lines = [_fmt_team(t) for t in non_reserve]
         reserve = next((t for t in server_teams if t["is_reserve"]), None)

@@ -283,8 +283,8 @@ class TestTeamList:
     async def test_teams_no_season_shows_server_list(self):
         from cogs.team_cog import TeamCog
         teams = [
-            {"name": "Ferrari", "max_seats": 2, "is_reserve": False, "role_id": 111},
-            {"name": "Alpine", "max_seats": 2, "is_reserve": False, "role_id": None},
+            {"name": "Ferrari", "full_name": "Ferrari Racing", "max_seats": 2, "is_reserve": False, "role_id": 111},
+            {"name": "Alpine", "full_name": "Alpine Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
         ]
         bot = _make_bot(teams_with_roles=teams, setup_season=None)
         cog = TeamCog(bot)
@@ -302,8 +302,8 @@ class TestTeamList:
     async def test_setup_season_matching_shows_unified_header(self):
         from cogs.team_cog import TeamCog
         teams = [
-            {"name": "Ferrari", "max_seats": 2, "is_reserve": False, "role_id": None},
-            {"name": "Alpine", "max_seats": 2, "is_reserve": False, "role_id": None},
+            {"name": "Ferrari", "full_name": "Ferrari Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
+            {"name": "Alpine", "full_name": "Alpine Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
         ]
         season = _make_season(season_number=3)
         bot = _make_bot(
@@ -324,8 +324,8 @@ class TestTeamList:
     async def test_setup_season_divergent_shows_warning(self):
         from cogs.team_cog import TeamCog
         teams = [
-            {"name": "Ferrari", "max_seats": 2, "is_reserve": False, "role_id": None},
-            {"name": "Alpine", "max_seats": 2, "is_reserve": False, "role_id": None},
+            {"name": "Ferrari", "full_name": "Ferrari Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
+            {"name": "Alpine", "full_name": "Alpine Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
         ]
         season = _make_season(season_number=3)
         bot = _make_bot(
@@ -351,10 +351,32 @@ class TestTeamList:
 # /team role — available in every state, so a deleted role can be repaired
 # ---------------------------------------------------------------------------
 
+
+    async def test_each_team_is_listed_by_all_three_of_its_names(self):
+        """A league reads the full name, types the shorthand, and the role is the team's own
+        (#381)."""
+        from cogs.team_cog import TeamCog
+
+        bot = _make_bot(
+            teams_with_roles=[
+                {"name": "RBR", "full_name": "Oracle Red Bull Racing",
+                 "max_seats": 2, "is_reserve": False, "role_id": 111},
+            ],
+            setup_season=None,
+        )
+        cog = TeamCog(bot)
+        interaction = _make_interaction()
+
+        await _unwrap(cog.team_list)(cog, interaction)
+
+        args, kwargs = interaction.followup.send.call_args
+        content = args[0] if args else kwargs["content"]
+        assert "Oracle Red Bull Racing — `RBR` → <@&111>" in content
+
 class TestTeamRole:
     _TEAMS = [
-        {"name": "Ferrari", "max_seats": 2, "is_reserve": False, "role_id": 111},
-        {"name": "Reserve", "max_seats": 0, "is_reserve": True, "role_id": None},
+        {"name": "Ferrari", "full_name": "Ferrari Racing", "max_seats": 2, "is_reserve": False, "role_id": 111},
+        {"name": "Reserve", "full_name": "Reserve Racing", "max_seats": 0, "is_reserve": True, "role_id": None},
     ]
 
     async def test_sets_the_role_while_the_season_is_ongoing(self):
@@ -468,7 +490,7 @@ class TestTeamReserveRole:
     async def test_the_drivers_seated_in_reserve_follow_its_new_role(self):
         from cogs.team_cog import TeamCog
         bot = _make_bot(teams_with_roles=[
-            {"name": "Reserve", "max_seats": 0, "is_reserve": True, "role_id": 555},
+            {"name": "Reserve", "full_name": "Reserve Racing", "max_seats": 0, "is_reserve": True, "role_id": 555},
         ])
         cog = TeamCog(bot)
         interaction = _make_interaction()
@@ -532,7 +554,7 @@ class TestOneRolePerTeam:
     async def test_a_team_is_not_given_a_role_another_team_holds(self):
         from cogs.team_cog import TeamCog
         bot = _make_bot(teams_with_roles=[
-            {"name": "Alpine", "max_seats": 2, "is_reserve": False, "role_id": 222},
+            {"name": "Alpine", "full_name": "Alpine Racing", "max_seats": 2, "is_reserve": False, "role_id": 222},
         ])
         bot.placement_service.set_team_role_config = AsyncMock(
             side_effect=ValueError('<@&111> is already the role of "Ferrari".')
