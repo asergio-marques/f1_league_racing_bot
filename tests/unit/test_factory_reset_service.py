@@ -158,11 +158,16 @@ async def _seed_channels(db_path: str) -> None:
 async def test_every_channel_the_bot_posts_to_is_gathered(db_path):
     await _seed_channels(db_path)
 
+    # The hub (issue #279) is a channel the bot posts its panel to.
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET hub_channel_id = 4")
+        await db.commit()
+
     targets = await factory_reset_service.gather_targets(db_path)
 
-    # 2 and 3 are the interaction and log channels the fixture configures.
+    # 2 and 3 are the interaction and log channels the fixture configures; 4 is the hub.
     assert targets.channels == (
-        2, 3, 10, 11, 12, 20, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31, 32,
+        2, 3, 4, 10, 11, 12, 20, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31, 32,
     )
 
 

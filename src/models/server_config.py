@@ -33,3 +33,7 @@ class ServerConfig:
     #: sets one: they are required only while the signup module is enabled.
     base_role_id: int | None = None
     driver_role_id: int | None = None
+    #: The hub (issue #279): the channel every member may use, set by `/bot hub-channel`, and
+    #: the panel the bot keeps there. ``None`` until set; a pack clears both.
+    hub_channel_id: int | None = None
+    hub_message_id: int | None = None

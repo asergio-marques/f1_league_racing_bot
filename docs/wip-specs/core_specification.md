@@ -59,6 +59,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A channel the bot opens to the interaction role shall be opened to the league admin role on the same terms, so that a league admin may read what they are entitled to act upon.
 - A tier shall govern the action and not the command alone. Where the bot offers an action through a button of its own, that button shall ask the tier its action belongs to, which may be higher than the tier of the command that posted it.
 - A button the bot offers a driver in their own channel shall ask nothing, a driver needing no role.
+- A button of the hub's panel shall ask nothing: whoever can see the hub may press it.
 - A command given in a channel other than the interaction channel shall be refused, and the refusal shall be seen by the member alone.
 
 ### The league's roles
@@ -71,12 +72,24 @@ it only to place it; the rules governing it belong to its own specification.
 - Disabling a module shall clear neither. A pack shall clear both, a role belonging to its server.
 
 ### Channels
-- Three channels shall be configured for the server — the interaction channel, the log channel and the signup channel — and eight for each division: its weather forecasts, its lineup, its calendar, its results, its standings, its verdicts, its check-in calls and its attendance.
+- Four channels shall be configured for the server — the interaction channel, the log channel, the hub channel and the signup channel — and eight for each division: its weather forecasts, its lineup, its calendar, its results, its standings, its verdicts, its check-in calls and its attendance.
 - A channel shall serve one purpose upon a server. Every command setting a channel shall refuse a channel already set as any of the others, and shall name what holds it.
     - The rule holds across the whole server and not within a division alone. Two divisions shall not share a channel for the same purpose.
     - A command setting a channel to the value that setting already holds shall be refused in its own terms, nothing being changed by the refusal.
     - The check shall be made before anything is written, so that a refusal leaves the configuration exactly as it stood.
     - A channel recorded against a completed or cancelled season shall not be held to this rule.
+
+### The hub
+- The hub is the one channel every member of the league may use. A league need not set one.
+- The hub channel shall be set by a command of its own, a league manager's. Setting it shall set who may see it and post the hub's panel there.
+- The hub channel shall be visible to holders of the base role, or to every member where the league has set no base role, and to holders of the interaction role and the league admin role. Nobody but the bot shall post in it.
+    - Where the base role is set but no longer in the server, the hub shall stay closed to members, and the command setting it shall say so.
+    - Changing the base role, the interaction role or the league admin role shall set the hub's permissions again.
+- The bot shall keep one panel in the hub channel. It shall be brought up to date whenever a module is enabled or disabled, and posted again where it has been deleted, at the latest when the bot next starts. Its buttons shall work across a restart.
+- The panel's options shall be the modules'. Core shall add none; each module's specification states what it adds, offered while that module is enabled. A panel offering nothing shall say so.
+- A press on an option no longer offered shall be refused, seen by the presser alone, and the panel brought up to date.
+- Moving the hub to another channel shall delete the panel from the old channel and remove the permissions the bot set there.
+- Whatever fails once the channel is set — a permission or a post Discord refuses — shall be reported, and shall not undo the setting.
 
 ### The record of what changed
 - Every change to a league's configuration shall be recorded twice: as an entry stating who made it, when, in which division where one applies, what changed and from what to what; and as a line a person can read in the log channel.
@@ -111,7 +124,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A pack shall keep what belongs to the league rather than the server: every driver profile with its accounts, history and portrait, test drivers among them; every completed and cancelled season; the team list; the points configurations; test mode; and every module setting that is not a channel or a role.
 - A pack shall clear everything tied to the server:
     - the four settings, which frees the bot's claim on the server;
-    - the league's base role and driver role, the role of every team, and the signup channel;
+    - the league's base role and driver role, the role of every team, the hub channel, and the signup channel;
     - every signup wizard, every undelivered message awaiting a retry, and the season review prompt;
     - the record of which messages the bot posted, by which it edits them;
     - every piece of scheduled work, but the daily refresh of driver portraits.
@@ -544,7 +557,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ## When the bot stops
 - The bot is a program somebody shall keep running. While it is stopped nothing happens.
-- When it starts again it shall recover: the weather phases that came due, where the weather module is enabled; the check-in calls and deadlines that came due; a signup window's closing timer, closing the window at once where its moment has passed and moving its season on as a close does; interrupted result submissions, which shall be cleared and reopened with the league manager told to submit again; penalty and appeal reviews, which shall be posted again rather than discarded; abandoned amendment channels, which shall be deleted; configuration and placements reviews left standing, which shall be expired; and seasons left part-built.
+- When it starts again it shall recover: the weather phases that came due, where the weather module is enabled; the check-in calls and deadlines that came due; a signup window's closing timer, closing the window at once where its moment has passed and moving its season on as a close does; interrupted result submissions, which shall be cleared and reopened with the league manager told to submit again; penalty and appeal reviews, which shall be posted again rather than discarded; abandoned amendment channels, which shall be deleted; configuration and placements reviews left standing, which shall be expired; seasons left part-built; and the hub's panel, posted again where it was deleted.
 - The end of a season shall not be recovered. A league admin shall complete it.
 - Anything else that came due while the bot was stopped is missed.
 - A message the bot failed to post shall be retried until it is delivered, shall survive a restart, and its eventual delivery shall be recorded in the log channel. A message still undelivered after about an hour shall be reported there.

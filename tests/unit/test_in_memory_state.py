@@ -49,6 +49,9 @@ EXEMPT = {
     # One parsed SVG document's index of its own elements.
     ("utils/svg_document.py", "by_id"),
     ("utils/svg_document.py", "by_label"),
+    # The hub's options, registered by modules at import (#279): the bot's code, not the
+    # league's data. A pack keeps the modules, so it keeps what they offer.
+    ("services/hub_service.py", "_OPTIONS"),
 }
 
 

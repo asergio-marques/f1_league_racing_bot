@@ -29,6 +29,8 @@ You do not need to read those first. Start here.
 
 **Base role** and **driver role** — the league's roles for its people, as against the interaction and league admin roles, which are for the people who run it. The base role is who your members are, and the driver role is who your drivers are right now. See [step 1](#step-1--tell-the-bot-who-is-in-charge).
 
+**Hub** — the one channel every member of your league can use the bot from, rather than only the people running it. The bot keeps a panel of buttons there; see [step 1](#step-1--tell-the-bot-who-is-in-charge).
+
 **Stage** — where a season has got to. This matters more than anything else in this guide, because it decides which commands will even run. A season moves through them in one direction:
 
 | Stage | What happens in it | How it ends |
@@ -141,6 +143,14 @@ To move your league to another server, or to start over from nothing, see [Start
 | **Driver role** | Who your drivers are. The bot grants it when you approve a signup, and takes it back whenever a driver returns to Not Signed Up — turned down, sacked, or at the end of the season |
 
 These are ordinary commands: the interaction role runs them, in the command channel. **Once a season's configuration is confirmed they are fixed until that season ends**, so set them first. Make them two different roles: one is who may sign up, the other is who got through.
+
+**A hub for your members, if you want one.** Every command here is for the people running the league. The hub is a channel for everybody else: the bot keeps a single panel of buttons there, and anyone who can see the channel can press them.
+
+```
+/bot hub-channel channel:#league-hub
+```
+
+It is visible to your base role — or to every member, if you have not set one — and to both league roles, and nobody but the bot can post there. Change any of those roles later and the hub follows. Give it a channel of its own: setting the hub replaces that channel's permissions. **Nothing is offered on the panel yet**; modules add their options to it as they are built, and it says so until then.
 
 **One team already exists.** `/bot init` creates the **Reserve** team, which has unlimited seats and belongs to every division. You cannot remove or rename it. Nothing else is created — your team list starts empty apart from it.
 
@@ -689,8 +699,8 @@ you. The old server's channels and roles do not, so you set those again on the n
    left them.
 4. **Give each team its role again**, with `/team role` and `/team reserve-role` — the roles on
    the old server mean nothing on the new one. Set the league's two roles again with
-   `/bot base-role` and `/bot driver-role`, and if the signup module is on, its channel with
-   `/signup channel`.
+   `/bot base-role` and `/bot driver-role`, the hub with `/bot hub-channel` if you had one,
+   and if the signup module is on, its channel with `/signup channel`.
 5. **Set up the next season** as normal. Each division takes its role and channels from the new
    server.
 6. **Remove the bot from the old server** when you are ready. Its messages there stay, and their

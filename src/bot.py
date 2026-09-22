@@ -288,6 +288,16 @@ async def main() -> None:
         # and run missed RSVP deadline jobs for rounds whose deadline already passed (T019)
         await _recover_rsvp_views_and_deadlines(bot)
 
+        # Route the hub's buttons again, and post its panel afresh where it was deleted (#279).
+        try:
+            from services.hub_service import recover_hub
+
+            hub_fault = await recover_hub(bot)
+            if hub_fault is not None:
+                await bot.output_router.post_log(f"Hub panel not recovered: {hub_fault}")  # type: ignore[attr-defined]
+        except Exception:
+            log.warning("Hub recovery failed", exc_info=True)
+
         # Wire wizard service bot reference (needed for guild/service access)
         bot.wizard_service.set_bot(bot)  # type: ignore[attr-defined]
 

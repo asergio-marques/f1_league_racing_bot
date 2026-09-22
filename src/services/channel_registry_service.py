@@ -1,7 +1,8 @@
 """What each channel of a server is already being used for.
 
-A channel does one job. The bot posts to eleven configurable places — eight per division,
-two for the bot itself and one for signups — and pointing two of them at one channel
+A channel does one job. The bot posts to twelve configurable places — eight per division,
+three for the bot itself (its commands, its log and the hub) and one for signups — and
+pointing two of them at one channel
 interleaves two kinds of posting in it: a calendar among results, a check-in call among
 forecasts. Worse, several posting paths *edit or delete* the message they posted last, and
 they find it by an id stored against the channel, so two purposes sharing a channel is how
@@ -46,6 +47,7 @@ SETTING_LABELS: dict[str, str] = {
     "weather": "weather forecast",
     "interaction": "bot command",
     "log": "bot log",
+    "hub": "hub",
     "signup": "signup",
 }
 
@@ -54,7 +56,7 @@ SETTING_LABELS: dict[str, str] = {
 class ChannelUse:
     """What a channel is already doing.
 
-    *setting* is a key of :data:`SETTING_LABELS`; *division_name* is None for the three
+    *setting* is a key of :data:`SETTING_LABELS`; *division_name* is None for the four
     settings that belong to the server rather than to a division.
     """
 
@@ -90,6 +92,7 @@ DIVISION_SOURCES: tuple[tuple[str, str, str], ...] = (
 SERVER_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("interaction", "server_configs", "interaction_channel_id"),
     ("log", "server_configs", "log_channel_id"),
+    ("hub", "server_configs", "hub_channel_id"),
     ("signup", "signup_module_config", "signup_channel_id"),
 )
 
