@@ -375,21 +375,13 @@ class BotCog(commands.Cog):
             # The hub is seen by the base role, or by everyone where there is none (#279).
             await _reapply_hub_permissions(self.bot)
 
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
-                "timestamp) VALUES (?, ?, NULL, ?, ?, ?, ?)",
-                (
-                    interaction.user.id,
-                    str(interaction.user),
-                    change_type,
-                    json.dumps({"role_id": old_role_id}),
-                    json.dumps({"role_id": role.id}),
-                    datetime.now(timezone.utc).isoformat(),
-                ),
-            )
-            await db.commit()
+        await _audit(
+            self.bot,
+            interaction.user,
+            change_type,
+            {"role_id": old_role_id},
+            {"role_id": role.id},
+        )
 
         await interaction.followup.send(
             f"✅ **{label}** set to {role.mention}.", ephemeral=True
@@ -524,22 +516,15 @@ class BotCog(commands.Cog):
             if fault is not None:
                 faults.append(fault)
 
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
-                "timestamp) VALUES (?, ?, NULL, 'HUB_CHANNEL_SET', ?, ?, ?)",
-                (
-                    interaction.user.id,
-                    str(interaction.user),
-                    json.dumps({"channel_id": old_channel_id}),
-                    json.dumps({"channel_id": channel.id}),
-                    datetime.now(timezone.utc).isoformat(),
-                ),
-            )
-            await db.commit()
+        await _audit(
+            self.bot,
+            interaction.user,
+            "HUB_CHANNEL_SET",
+            {"channel_id": old_channel_id},
+            {"channel_id": channel.id},
+        )
 
-        reply = f"✅ **Hub channel** set to {channel.mention}."
+        reply =f"✅ **Hub channel** set to {channel.mention}."
         if faults:
             reply += "\n⚠️ " + "\n⚠️ ".join(faults)
         await interaction.followup.send(reply, ephemeral=True)
@@ -716,6 +701,29 @@ class BotCog(commands.Cog):
         self._clean_up = asyncio.create_task(
             _clean_up(interaction.guild, bot_user_id, targets, report)
         )
+
+
+async def _audit(bot, user, change_type: str, old: dict, new: dict) -> None:
+    """Write the audit entry for a change to the bot's configuration upon its server.
+
+    The other half of the log line each command posts: a configuration change is recorded
+    in both (issue #371). None of these belongs to a division.
+    """
+    async with get_connection(bot.db_path) as db:
+        await db.execute(
+            "INSERT INTO audit_entries "
+            "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
+            "timestamp) VALUES (?, ?, NULL, ?, ?, ?, ?)",
+            (
+                user.id,
+                str(user),
+                change_type,
+                json.dumps(old),
+                json.dumps(new),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        await db.commit()
 
 
 async def _reapply_hub_permissions(bot) -> None:
