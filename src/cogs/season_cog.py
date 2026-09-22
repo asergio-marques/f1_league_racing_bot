@@ -2439,8 +2439,8 @@ class SeasonCog(commands.Cog):
         placements are committed by then, and a raise reaching the view's error handler would
         tell the manager the confirmation did not finish and leave the review standing to
         expire. So every step after it is guarded on its own. What was left undone — a driver
-        not given their roles, a season not returned to Ongoing — is named in the reply and
-        the log line, with its repair. A season not moved on to Pending completion is only
+        not given their roles, a lineup not posted, a season not returned to Ongoing — is
+        named in the reply and the log line, with its repair. A season not moved on to Pending completion is only
         logged: `/season complete` moves it there itself.
         """
         from models.season import InvalidStageTransition
@@ -2471,11 +2471,8 @@ class SeasonCog(commands.Cog):
         # What the confirmation could not do, told to the manager and the log channel below.
         not_done: list[str] = []
         if outcome.ungranted:
-            who = ", ".join(f"<@{user_id}>" for user_id in outcome.ungranted)
-            not_done.append(
-                f"{who} \u2014 their roles could not be granted. Give them their division's "
-                f"and team's roles by hand."
-            )
+            not_done.append(_ungranted_line(outcome.ungranted))
+        not_done += [_unposted_lineup_line(name) for name in outcome.unposted_lineups]
 
         returned = False
         try:

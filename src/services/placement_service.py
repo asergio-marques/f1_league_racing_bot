@@ -36,11 +36,13 @@ class PlacementsCommitted:
     """What committing a season's mid-season placements did.
 
     *placements* is every placement committed, as ``uncommitted_placements`` read them.
-    *ungranted* is the Discord id of each driver among them whose roles could not be granted.
+    *ungranted* is the Discord id of each driver among them whose roles could not be granted,
+    and *unposted_lineups* the name of each division whose lineup could not be posted.
     """
 
     placements: list[dict] = field(default_factory=list)
     ungranted: list[str] = field(default_factory=list)
+    unposted_lineups: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -404,9 +406,10 @@ class PlacementService:
         **Nothing after the commit raises** (issue #387). The placements are committed by
         then, and a raise would leave every driver and lineup not yet reached undone for
         good: confirming again finds nothing left to commit. So each driver and each lineup
-        is guarded on its own. A driver whose roles could not be granted is returned in
-        ``ungranted``, for the manager to be told; a lineup that fails is logged, as it is at
-        approval.
+        is guarded on its own, and what failed is returned for the manager to be told: a
+        driver whose roles could not be granted in ``ungranted``, a division whose lineup
+        could not be posted in ``unposted_lineups``. A driver no longer in the server is
+        passed over, there being nobody to give a role to.
         """
         placements = await self.uncommitted_placements(season_id)
         if not placements:
@@ -420,6 +423,7 @@ class PlacementService:
             await db.commit()
 
         ungranted: list[str] = []
+        unposted: list[str] = []
         if guild is not None:
             for placement in placements:
                 if placement["is_test_driver"]:
@@ -445,7 +449,8 @@ class PlacementService:
                         placement["discord_user_id"],
                     )
                     ungranted.append(str(placement["discord_user_id"]))
-            for division_id in dict.fromkeys(p["division_id"] for p in placements):
+            names = {p["division_id"]: p["division_name"] for p in placements}
+            for division_id in names:
                 try:
                     await self._refresh_lineup_post(guild, division_id)
                 except Exception:  # noqa: BLE001 — the placements are committed
@@ -453,7 +458,10 @@ class PlacementService:
                         "commit_mid_season_placements: lineup post failed for division %s",
                         division_id,
                     )
-        return PlacementsCommitted(placements=placements, ungranted=ungranted)
+                    unposted.append(names[division_id])
+        return PlacementsCommitted(
+            placements=placements, ungranted=ungranted, unposted_lineups=unposted
+        )
 
     # ------------------------------------------------------------------
     # Seeded unassigned listing (T008)

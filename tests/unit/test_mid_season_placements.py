@@ -102,6 +102,7 @@ async def test_a_lineup_that_raises_does_not_escape_the_commit(db_path):
 
     assert [p["discord_user_id"] for p in committed.placements] == ["1002"]
     assert committed.ungranted == []
+    assert committed.unposted_lineups == [committed.placements[0]["division_name"]]
 
 
 # ── The command ────────────────────────────────────────────────────────────────────
@@ -425,6 +426,22 @@ async def test_ungranted_drivers_are_named_in_the_reply_and_the_log(db_path):
 
     assert "<@1002>, <@1003> — their roles could not be granted" in _replied(interaction)
     assert "not done: <@1002>, <@1003>" in _logged(cog)
+
+
+async def test_a_lineup_the_confirmation_could_not_post_is_named(db_path):
+    """No command posts a lineup again, so the line says when it will be."""
+    await _settle_every_signup(db_path)
+    cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
+    cog.bot.placement_service.commit_mid_season_placements = AsyncMock(
+        return_value=PlacementsCommitted(placements=[{}], unposted_lineups=["Pro"])
+    )
+    interaction = _interaction()
+
+    await cog._do_confirm_mid_season_placements(interaction)
+
+    assert "**Pro** — its lineup could not be posted" in _replied(interaction)
+    assert "the next change to its drivers" in _replied(interaction)
+    assert "not done: **Pro** — its lineup could not be posted" in _logged(cog)
 
 
 async def test_a_clean_confirmation_reports_nothing_undone(db_path):
