@@ -452,3 +452,27 @@ async def test_the_driver_role_touches_no_channel(tmp_path):
     await _driver_role(cog, interaction)
 
     assert _permission_calls(interaction) == []
+
+
+def test_nothing_current_names_a_withdrawn_signup_role_command():
+    """`/signup base-role`, `/signup complete-role` and `/signup config roles` were withdrawn
+    when the roles became the league's (issue #276). A reply or a guide naming one sends a
+    league to a command Discord no longer offers. `specs/` and the constitution's sync
+    reports are historical records and are not read."""
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    withdrawn = re.compile(r"/signup (?:base-role|complete-role|config roles)\b")
+    paths = [
+        *sorted((root / "src").rglob("*.py")),
+        root / "README.md",
+        *sorted((root / "docs" / "how-to").glob("*.md")),
+        *sorted((root / "docs" / "wip-specs").glob("*.md")),
+    ]
+    offenders = sorted(
+        str(path.relative_to(root))
+        for path in paths
+        if withdrawn.search(path.read_text(encoding="utf-8"))
+    )
+    assert offenders == []

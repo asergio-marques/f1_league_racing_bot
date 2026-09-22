@@ -201,8 +201,8 @@ async def db_path(tmp_path):
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO signup_module_config (id, signup_channel_id, base_role_id, "
-            "signed_up_role_id, signups_open) VALUES (?, 11, 12, 13, 0)",
+            "INSERT INTO signup_module_config (id, signup_channel_id, signups_open) "
+            "VALUES (?, 11, 0)",
             (1,),
         )
         await db.execute(

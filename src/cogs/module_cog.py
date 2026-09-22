@@ -900,12 +900,10 @@ class ModuleCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        # Upsert a bare config row — channel/role fields all NULL
+        # Upsert a bare config row — its channel NULL. The league's roles are core's (#276).
         from models.signup_module import SignupModuleConfig
         new_cfg = SignupModuleConfig(
             signup_channel_id=None,
-            base_role_id=None,
-            signed_up_role_id=None,
             signups_open=False,
             signup_button_message_id=None,
             selected_tracks=[],

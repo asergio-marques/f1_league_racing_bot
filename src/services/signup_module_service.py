@@ -31,7 +31,7 @@ class SignupModuleService:
     async def get_config(self) -> SignupModuleConfig | None:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT signup_channel_id, base_role_id, signed_up_role_id, "
+                "SELECT signup_channel_id, "
                 "       signups_open, signup_button_message_id, selected_tracks_json, "
                 "       signup_closed_message_id, close_at "
                 "FROM signup_module_config",
@@ -41,8 +41,6 @@ class SignupModuleService:
             return None
         return SignupModuleConfig(
             signup_channel_id=row["signup_channel_id"],
-            base_role_id=row["base_role_id"],
-            signed_up_role_id=row["signed_up_role_id"],
             signups_open=bool(row["signups_open"]),
             signup_button_message_id=row["signup_button_message_id"],
             selected_tracks=json.loads(row["selected_tracks_json"] or "[]"),
@@ -55,14 +53,12 @@ class SignupModuleService:
             await db.execute(
                 """
                 INSERT INTO signup_module_config
-                    (id, signup_channel_id, base_role_id, signed_up_role_id,
+                    (id, signup_channel_id,
                      signups_open, signup_button_message_id, selected_tracks_json,
                      signup_closed_message_id, close_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     signup_channel_id          = excluded.signup_channel_id,
-                    base_role_id               = excluded.base_role_id,
-                    signed_up_role_id          = excluded.signed_up_role_id,
                     signups_open               = excluded.signups_open,
                     signup_button_message_id   = excluded.signup_button_message_id,
                     selected_tracks_json       = excluded.selected_tracks_json,
@@ -72,8 +68,6 @@ class SignupModuleService:
                 (
                     1,
                     cfg.signup_channel_id,
-                    cfg.base_role_id,
-                    cfg.signed_up_role_id,
                     int(cfg.signups_open),
                     cfg.signup_button_message_id,
                     json.dumps(cfg.selected_tracks),

@@ -176,19 +176,13 @@ class TestRefusedOnceConfigurationIsConfirmed:
         assert "fixed for Season 3" in _reply(interaction)
         cog.bot.signup_module_service.get_settings.assert_not_awaited()
 
-    async def test_the_roles_and_channel_are_refused(self, tmp_path):
+    async def test_the_channel_is_refused(self, tmp_path):
+        """The league's two roles are fixed by the same rule, under `/bot` (issue #276);
+        `test_league_role_commands.py` pins them."""
         db_path = await _seed(tmp_path, unassigned=0, stage="WAITING")
-        cog = _cog(db_path)
-        for command in ("signup_channel", "signup_base_role", "signup_complete_role"):
-            interaction = _interaction()
-            await undecorate(getattr(SignupCog, command))(cog, interaction, MagicMock())
-            assert "fixed for Season 3" in _reply(interaction), command
-
-    async def test_the_deprecated_roles_command_is_refused_too(self, tmp_path):
-        db_path = await _seed(tmp_path, unassigned=0, stage="SIGNUPS")
         interaction = _interaction()
 
-        await undecorate(SignupCog.config_roles)(_cog(db_path), interaction, MagicMock(), MagicMock())
+        await undecorate(SignupCog.signup_channel)(_cog(db_path), interaction, MagicMock())
 
         assert "fixed for Season 3" in _reply(interaction)
 

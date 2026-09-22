@@ -340,8 +340,6 @@ class TestWindowState:
         svc = SignupModuleService(db_path)
         cfg = SignupModuleConfig(
             signup_channel_id=100,
-            base_role_id=200,
-            signed_up_role_id=300,
             signups_open=False,
             signup_button_message_id=None,
             selected_tracks=[],

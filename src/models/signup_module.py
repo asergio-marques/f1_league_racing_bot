@@ -34,9 +34,10 @@ class WizardState(str, Enum):
 
 @dataclass
 class SignupModuleConfig:
+    """The module's own configuration. The base role and the driver role it reads are the
+    league's, on `ServerConfig` (issue #276), and survive the module being disabled."""
+
     signup_channel_id: int | None
-    base_role_id: int | None
-    signed_up_role_id: int | None
     signups_open: bool
     signup_button_message_id: int | None
     selected_tracks: list[str]

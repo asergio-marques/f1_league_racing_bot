@@ -100,7 +100,6 @@ async def pack(
             # `/module enable signup` itself leaves it in.
             await db.execute(
                 "UPDATE signup_module_config SET signup_channel_id = NULL, "
-                "base_role_id = NULL, signed_up_role_id = NULL, "
                 "signup_button_message_id = NULL, signup_closed_message_id = NULL"
             )
 

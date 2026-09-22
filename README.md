@@ -965,7 +965,7 @@ Modules extend the bot beyond weather generation. Five modules are available: **
 |-----------|------|----------|-------------|
 | `module_name` | Choice | ✅ | Module to enable: `weather`, `signup`, `results`, `attendance`, or `images` |
 
-The module name is the only parameter. A module that needs channels or roles is configured by its own commands afterwards — the signup module by `/signup channel`, `/signup base-role` and `/signup complete-role`.
+The module name is the only parameter. A module that needs channels is configured by its own commands afterwards — the signup module by `/signup channel`, alongside the league's base role and driver role, which `/bot base-role` and `/bot driver-role` set.
 
 Ordering and timing constraints:
 
@@ -1260,40 +1260,16 @@ All commands below require the signup module to be enabled (`/module enable sign
 |-----------|------|----------|-------------|
 | `channel` | Channel | ✅ | Channel for signup interactions |
 
-Applies the channel's permission overwrites: `@everyone` cannot view, the base role can view but not send, and the interaction role can view and send. Setting a new signup channel clears **all** overwrites from the previously configured channel. The signup channel may not be the interaction channel.
+Applies the channel's permission overwrites: `@everyone` cannot view, the league's base role can view but not send, and the interaction role and the league admin role can view and send. Setting a new signup channel clears **all** overwrites from the previously configured channel. The signup channel may not be the interaction channel.
 
-#### `/signup base-role` — Set the base role
-*Access: League manager*
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `role` | Role | ✅ | Role granted to all members eligible to sign up |
-
-#### `/signup complete-role` — Set the completion role
-*Access: League manager*
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `role` | Role | ✅ | Role granted when a driver's signup is approved |
-
-All three of the above must be set before `/signup open` will run, and — while the signup module is enabled — before approval will commit a season.
-
-#### `/signup config roles` — Set both signup roles at once
-*Access: League manager*
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `base_role` | Role | ✅ | Role granted to members eligible to sign up |
-| `signed_up_role` | Role | ✅ | Role granted on successful signup completion |
-
-Deprecated alias retained for backwards compatibility; prefer `/signup base-role` and `/signup complete-role`.
+The two roles the module uses are the league's, set by [`/bot base-role` and `/bot driver-role`](#bot-base-role-bot-driver-role--set-the-leagues-two-roles). The channel and both roles must be set before `/signup open` will run, and — while the signup module is enabled — before a season's configuration can be confirmed.
 
 > **`/signup config channel` is non-functional.** It is retained as a deprecated alias but raises `TypeError` on invocation and sets nothing. Use `/signup channel`. See [#124](https://github.com/asergio-marques/f1_league_racing_bot/issues/124).
 
 #### `/signup config view` — View current signup configuration
 *Access: League manager*
 
-No parameters. Displays the current signup module configuration as an embed.
+No parameters. Displays the current signup module configuration as an embed, with the league's base role and driver role beside it.
 
 #### `/signup nationality` — Toggle nationality requirement
 *Access: League manager*
