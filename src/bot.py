@@ -82,6 +82,10 @@ async def main() -> None:
     bot.running_version = read_version(PROJECT_ROOT)  # type: ignore[attr-defined]
     log.info("Running %s", bot.running_version or "an unknown version")  # type: ignore[attr-defined]
 
+    # Registers the hub's About option, core's one, before `on_ready` recovers the hub and
+    # routes the panel's buttons (#258).
+    import services.about_service  # noqa: F401
+
     # Services are attached to bot for cog access
     from services.driver_service import DriverService
     from services.team_service import TeamService

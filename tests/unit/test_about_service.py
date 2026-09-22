@@ -125,3 +125,23 @@ def test_registering_the_module_again_is_harmless():
 @pytest.mark.parametrize("version_", ["v0.5.0", "v0.4.0-230"])
 def test_both_forms_of_the_version_are_shown_as_read(version_):
     assert f"Version: {version_}\n" in about_text(version_)
+
+
+def test_the_bot_registers_about_before_the_hub_is_recovered():
+    """`main()` imports the option's module in its own body, so About is registered before
+    `on_ready` — defined within `main()` and run later — recovers the hub."""
+    import ast
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[2] / "src" / "bot.py").read_text(encoding="utf-8")
+    main = next(
+        node for node in ast.parse(source).body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "main"
+    )
+    imported = [
+        alias.name
+        for statement in main.body
+        if isinstance(statement, ast.Import)
+        for alias in statement.names
+    ]
+    assert "services.about_service" in imported
