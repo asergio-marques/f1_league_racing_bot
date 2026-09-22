@@ -84,7 +84,7 @@ Switching it on gives you a starting configuration you can leave alone if it sui
 /division attendance-channel  name: Division One  channel: #div1-attendance
 ```
 
-Both are set **per division**, so a league with three divisions sets six channels. The first carries the check-in calls, the reminders and the reserve distribution result; the second carries the attendance sheet and nothing else. They can be the same channel if you want them to be, but keeping them apart is easier to read — one is a conversation before the race, the other a table that is replaced after it.
+Both are set **per division**, so a league with three divisions sets six channels. The first carries the check-in calls, the reminders and the reserve distribution result; the second carries the attendance sheet and nothing else. **Each needs a channel of its own.** The bot refuses a channel already doing another job (the other of the two, the same kind of channel in another division, or anything else it posts to) and names what holds it; see [Setting up the bot for your league](configuring-the-core-bot.md#step-9--point-each-division-at-its-channels). That suits these two anyway: one is a conversation before the race, the other a table that is replaced after it.
 
 **This is the thing that blocks a season.** While attendance is on, a season cannot be approved until every division has both, and the bot names each division that is missing one along with the command that fixes it.
 
