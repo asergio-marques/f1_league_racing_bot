@@ -4,7 +4,6 @@ from __future__ import annotations
 import sys
 import os
 
-import aiosqlite
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -39,6 +38,9 @@ async def db_path(tmp_path):
 
 # ---------------------------------------------------------------------------
 # T006 — Lifecycle tests (enable/disable)
+#
+# Enabling and disabling are driven through the cog in test_module_enable_disable.py and
+# test_module_disable_paths.py; what is left here is the service's own part.
 # ---------------------------------------------------------------------------
 
 
@@ -53,80 +55,6 @@ class TestIsAttendanceEnabledFalseByDefault:
         from services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         cfg = await svc.get_or_create_config()
-        assert cfg.module_enabled is False
-
-
-class TestEnableCreatesConfigWithDefaults:
-    async def test_enable_creates_config_with_defaults(self, db_path):
-        """Simulate the INSERT performed by _enable_attendance."""
-        import aiosqlite as _aio
-        async with _aio.connect(db_path) as db:
-            db.row_factory = _aio.Row
-            await db.execute(
-                "INSERT OR REPLACE INTO attendance_config "
-                "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
-                "autoreserve_threshold, autosack_threshold) "
-                "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
-                (1,),
-            )
-            await db.commit()
-
-        from services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        cfg = await svc.get_config()
-        assert cfg is not None
-        assert cfg.module_enabled is True
-        assert cfg.rsvp_notice_days == 5
-        assert cfg.rsvp_last_notice_hours == 24
-        assert cfg.rsvp_deadline_hours == 2
-        assert cfg.no_rsvp_penalty == 1
-        assert cfg.absent_penalty == 1
-        assert cfg.no_show_penalty == 1
-        assert cfg.autoreserve_threshold is None
-        assert cfg.autosack_threshold is None
-
-
-class TestEnableSetsFlag:
-    async def test_enable_sets_flag_true(self, db_path):
-        import aiosqlite as _aio
-        async with _aio.connect(db_path) as db:
-            db.row_factory = _aio.Row
-            await db.execute(
-                "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (?, 1)",
-                (1,),
-            )
-            await db.commit()
-
-        from services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        cfg = await svc.get_config()
-        assert cfg is not None
-        assert cfg.module_enabled is True
-
-
-class TestDisableSetsFlag:
-    async def test_disable_sets_flag_false(self, db_path):
-        import aiosqlite as _aio
-        async with _aio.connect(db_path) as db:
-            db.row_factory = _aio.Row
-            await db.execute(
-                "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (?, 1)",
-                (1,),
-            )
-            await db.commit()
-
-        from services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        # Simulate disable: UPDATE module_enabled = 0
-        async with _aio.connect(db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET module_enabled = 0"
-            )
-            await db.commit()
-
-        cfg = await svc.get_config()
-        assert cfg is not None
         assert cfg.module_enabled is False
 
 
@@ -150,66 +78,6 @@ class TestDisableDeletesDivisionConfigs:
 
         div_cfg = await svc.get_division_config(10)
         assert div_cfg is None
-
-
-class TestReenableResetsToDefaults:
-    async def test_reenable_resets_to_defaults(self, db_path):
-        """INSERT OR REPLACE overwrites any stale field values with defaults."""
-        import aiosqlite as _aio
-        async with _aio.connect(db_path) as db:
-            db.row_factory = _aio.Row
-            # First enable with custom values
-            await db.execute(
-                "INSERT OR REPLACE INTO attendance_config "
-                "(id, module_enabled, rsvp_notice_days) VALUES (?, 1, 10)",
-                (1,),
-            )
-            await db.commit()
-
-        # Re-enable (INSERT OR REPLACE restores defaults)
-        async with _aio.connect(db_path) as db:
-            db.row_factory = _aio.Row
-            await db.execute(
-                "INSERT OR REPLACE INTO attendance_config "
-                "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
-                "autoreserve_threshold, autosack_threshold) "
-                "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
-                (1,),
-            )
-            await db.commit()
-
-        from services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        cfg = await svc.get_config()
-        assert cfg is not None
-        assert cfg.rsvp_notice_days == 5
-
-
-class TestEnableRollbackOnDbFailure:
-    async def test_enable_rollback_on_db_failure(self, db_path):
-        """Simulate a DB error mid-transaction; confirms no partial row is left."""
-        import aiosqlite as _aio
-
-        # Simulate a failed transaction: begin but don't commit
-        async with _aio.connect(db_path) as db:
-            db.row_factory = _aio.Row
-            await db.execute(
-                "INSERT OR REPLACE INTO attendance_config "
-                "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
-                "autoreserve_threshold, autosack_threshold) "
-                "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
-                (1,),
-            )
-            # Intentionally NOT calling db.commit() — simulates rollback
-            await db.rollback()
-
-        from services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        cfg = await svc.get_config()
-        # No partial row should remain
-        assert cfg is None
 
 
 # ---------------------------------------------------------------------------
