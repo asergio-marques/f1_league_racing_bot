@@ -155,9 +155,7 @@ def _cog(
     modules.is_images_enabled = AsyncMock(return_value=False)
 
     bot.signup_module_service.get_config = AsyncMock(
-        return_value=SimpleNamespace(
-            signup_channel_id=900, base_role_id=901, signed_up_role_id=902
-        )
+        return_value=SimpleNamespace(signup_channel_id=900)
     )
     bot.signup_module_service.get_settings = AsyncMock(
         return_value=SimpleNamespace(
@@ -184,8 +182,11 @@ def _cog(
         return_value=SimpleNamespace(rsvp_channel_id=801, attendance_channel_id=None)
     )
 
+    # The two roles are the league's, on the server configuration (issue #276).
     bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(test_mode_active=test_mode)
+        return_value=SimpleNamespace(
+            test_mode_active=test_mode, base_role_id=901, driver_role_id=902
+        )
     )
     bot.team_service.get_teams_with_roles = AsyncMock(
         return_value=teams_with_roles
@@ -348,6 +349,18 @@ async def test_the_signup_configuration_is_reviewed(db_path):
     assert "Time image: Required" in public
     assert "Nationality: Not required" in public
     assert "Available slots: Sunday 20:00" in public
+
+
+async def test_the_league_s_roles_are_reviewed_with_signup_off(db_path):
+    """They are the league's, not the signup module's (issue #276), so they are reported
+    whatever modules are on — and the signup subsection no longer repeats them."""
+    cog = _cog(db_path, signup=False)
+    messages = await _review(cog, _interaction())
+
+    public = _public(messages)
+    assert "Base role: <@&901>" in public
+    assert "Driver role: <@&902>" in public
+    assert "Signup Config" not in public
 
 
 async def test_the_attendance_configuration_is_reviewed(db_path):

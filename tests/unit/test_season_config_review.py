@@ -31,22 +31,23 @@ REVIEWER = 4242
 ADMIN_ROLE = 444
 
 
-def _server_config(*, test_mode: bool = False) -> ServerConfig:
+def _server_config(*, test_mode: bool = False, base=2, driver=3) -> ServerConfig:
+    """The league's two roles are core's, on the server configuration (issue #276)."""
     config = ServerConfig(
         server_id=SERVER_ID,
         interaction_role_id=222,
         league_admin_role_id=ADMIN_ROLE,
         interaction_channel_id=111,
         log_channel_id=333,
+        base_role_id=base,
+        driver_role_id=driver,
     )
     config.test_mode_active = test_mode
     return config
 
 
-def _signup_config(*, channel=1, base=2, complete=3):
-    return SimpleNamespace(
-        signup_channel_id=channel, base_role_id=base, signed_up_role_id=complete
-    )
+def _signup_config(*, channel=1):
+    return SimpleNamespace(signup_channel_id=channel)
 
 
 def _bot(
@@ -57,6 +58,7 @@ def _bot(
     signup_config=None,
     test_mode=False,
     stage=SeasonStage.CONFIGURATION,
+    roles=(2, 3),
 ) -> MagicMock:
     bot = MagicMock()
     bot.db_path = ":memory:"
@@ -69,7 +71,7 @@ def _bot(
         return_value=signup_config if signup_config is not None else _signup_config()
     )
     bot.config_service.get_server_config = AsyncMock(
-        return_value=_server_config(test_mode=test_mode)
+        return_value=_server_config(test_mode=test_mode, base=roles[0], driver=roles[1])
     )
     bot.signup_module_service.snapshot_season_config = AsyncMock()
     bot.season_service.get_stage = AsyncMock(return_value=stage)
@@ -108,19 +110,22 @@ async def test_a_plain_configuration_has_no_faults():
 
 
 async def test_the_signup_module_needs_its_channel_and_both_roles():
-    bot = _bot(signup=True, signup_config=_signup_config(channel=None, base=None, complete=None))
+    """Each fault names the command that sets it: the roles are the league's, set under
+    `/bot`, not under `/signup` (issue #276)."""
+    bot = _bot(signup=True, signup_config=_signup_config(channel=None), roles=(None, None))
     cog = _cog(bot)
 
     faults = await cog._configuration_faults(SEASON_ID)
 
     assert len(faults) == 3
     assert any("signup channel" in f for f in faults)
-    assert any("base role" in f for f in faults)
-    assert any("complete role" in f for f in faults)
+    assert any("base role" in f and "/bot base-role" in f for f in faults)
+    assert any("driver role" in f and "/bot driver-role" in f for f in faults)
 
 
 async def test_a_disabled_signup_module_is_not_checked():
-    bot = _bot(signup=False, signup_config=_signup_config(channel=None))
+    """Nor are the league's roles: only the signup module needs them."""
+    bot = _bot(signup=False, signup_config=_signup_config(channel=None), roles=(None, None))
     assert await _cog(bot)._configuration_faults(SEASON_ID) == []
 
 
@@ -421,13 +426,13 @@ async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch)
 
 
 async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
-    bot = _report_bot(signup=True, signup_config=_signup_config(base=None))
+    bot = _report_bot(signup=True, roles=(None, 3))
     cog = _cog(bot)
 
     messages = await _report(cog, _interaction(), monkeypatch)
 
     assert "cannot be confirmed yet" in messages[-1]
-    assert "no **base role**" in messages[-1]
+    assert "**base role** — `/bot base-role`" in messages[-1]
     assert "/season config-review" in messages[-1]
     assert _RecordedView.made == []
 

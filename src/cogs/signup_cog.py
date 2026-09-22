@@ -797,22 +797,37 @@ class SignupCog(commands.Cog):
 
         embed = discord.Embed(title="Signup Module Configuration", color=discord.Color.blue())
 
+        # The two roles are the league's (issue #276), shown here because signups cannot
+        # open without them, and shown whether or not the module is enabled.
+        server_cfg = await self.bot.config_service.get_server_config()
+
+        def _role_value(role_id: int | None, command: str) -> str:
+            if role_id is None:
+                return f"*(not configured)* — `{command}`"
+            role = guild.get_role(role_id)
+            return role.mention if role else "*(not found)*"
+
         if cfg:
             ch = guild.get_channel(cfg.signup_channel_id) if cfg.signup_channel_id else None
             ch_val = ch.mention if ch else ("*(not configured)*" if cfg.signup_channel_id is None else "*(not found)*")
             embed.add_field(name="Channel", value=ch_val, inline=False)
-            br = guild.get_role(cfg.base_role_id) if cfg.base_role_id else None
-            br_val = br.mention if br else ("*(not configured)*" if cfg.base_role_id is None else "*(not found)*")
-            embed.add_field(name="Base Role", value=br_val, inline=True)
-            sr = guild.get_role(cfg.signed_up_role_id) if cfg.signed_up_role_id else None
-            sr_val = sr.mention if sr else ("*(not configured)*" if cfg.signed_up_role_id is None else "*(not found)*")
-            embed.add_field(name="Signed-Up Role", value=sr_val, inline=True)
-            embed.add_field(name="Signups Open", value="Yes" if cfg.signups_open else "No", inline=True)
         else:
             embed.add_field(name="Channel", value="Not set", inline=False)
-            embed.add_field(name="Base Role", value="Not set", inline=True)
-            embed.add_field(name="Signed-Up Role", value="Not set", inline=True)
-            embed.add_field(name="Signups Open", value="No", inline=True)
+        embed.add_field(
+            name="Base Role",
+            value=_role_value(server_cfg.base_role_id if server_cfg else None, "/bot base-role"),
+            inline=True,
+        )
+        embed.add_field(
+            name="Driver Role",
+            value=_role_value(
+                server_cfg.driver_role_id if server_cfg else None, "/bot driver-role"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="Signups Open", value="Yes" if cfg and cfg.signups_open else "No", inline=True
+        )
 
         nat_val = "ON" if settings.nationality_required else "OFF"
         tt_val = "Time Trial" if settings.time_type == "TIME_TRIAL" else "Short Qualification"

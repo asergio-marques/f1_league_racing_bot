@@ -66,6 +66,7 @@ it only to place it; the rules governing it belong to its own specification.
     - The base role shall be granted by the league and never by the bot. A module that reads it states what it governs.
     - The driver role shall be granted when a driver's signup is approved, and revoked whenever the driver returns to Not Signed Up.
 - Each shall be set by a command of its own, a league manager's.
+- Neither shall be required unless a module requires it. The signup module requires both, as its own specification sets out.
 - Confirming a season's configuration shall fix both until the season ends. A driver role changed mid-season would leave every driver holding the old one, the season's end revoking only the new.
 - Disabling a module shall clear neither.
 
@@ -187,11 +188,11 @@ it only to place it; the rules governing it belong to its own specification.
 - The signup module shall be enabled, disabled and configured only while its season is in Configuration, or while the server holds no active season.
 - Every other module may be enabled until the season's placements are first confirmed, or while the server holds no active season. Its settings may be changed at any time before then; once placements are confirmed, on the terms its own specification sets for a season being raced.
 - The configuration shall be confirmed through a configuration review, run by the configuration review command.
-    - The review shall report the season, whether it runs in test mode, the team list and each team's role, the modules enabled upon it and the configuration of each, and every fault that would prevent the configuration being confirmed.
+    - The review shall report the season, whether it runs in test mode, the modules enabled upon it, the league's base role and driver role, the team list and each team's role, the configuration of each enabled module, and every fault that would prevent the configuration being confirmed.
     - It shall post its report as the placements review posts the subsections preceding its divisions — the season and its modules, the signup configuration, the attendance configuration, the points configurations, the weather configuration and the image outputs, one message each, in the same words — a subsection holding nothing not being posted.
     - The review shall end with a button confirming the configuration, which shall be withheld while any fault stands. The button shall be governed as the button confirming placements is: who may press it, how long it stands, the evidence it is confirmed upon, and what becomes of a review that expires or is refused.
 - The configuration review shall check everything that can be checked before the season has divisions: every check the placements review makes shall be made here too, save those concerning divisions, lineups, calendars and division channels. Confirming the configuration shall require, among them:
-    - where the signup module is enabled, its signup channel, its base role and its signed-up role each to be set, every one missing being named;
+    - where the signup module is enabled, its signup channel and the league's base role and driver role each to be set, every one missing being named with the command that sets it;
     - every team name to be usable as the filename of that team's artwork, whether or not the image module is enabled;
     - every requirement an enabled module states of its configuration alone — its points configurations and its templates among them — as that module's own specification sets out.
 - Every check the configuration review makes shall be made again when placements are confirmed, the configuration of a module other than signup being able to change in between.
@@ -209,7 +210,7 @@ it only to place it; the rules governing it belong to its own specification.
 
 ### Reviewing placements
 - The placements review shall be run by any holder of the interaction role. Reading what a season is configured to be is not an administrative act.
-- Run while the season is in Placements, the review shall post its report publicly, as one message per subsection and not as one message carrying them all. The subsections are, in this order: the season and the modules enabled upon it; the signup configuration; the attendance configuration; the points configurations; the weather configuration; and the image outputs. The blocks describing each division follow them.
+- Run while the season is in Placements, the review shall post its report publicly, as one message per subsection and not as one message carrying them all. The subsections are, in this order: the season, the modules enabled upon it and the league's two roles; the signup configuration; the attendance configuration; the points configurations; the weather configuration; and the image outputs. The blocks describing each division follow them.
 - Run while the season is in Ongoing, placements, the review shall report the lineups alone: every division's lineup as it will stand once placements are confirmed, and, publicly, every signup still unsettled.
 - A subsection holding nothing shall not be posted.
 - Each subsection shall further be divided across as many messages as its own length requires.
@@ -234,7 +235,7 @@ it only to place it; the rules governing it belong to its own specification.
 - The button shall be withheld altogether where the review found something that would prevent the placements being confirmed.
 
 #### The evidence placements are confirmed upon
-- The review shall record the state of the season at the moment its report is posted, over the whole of what that report describes: the season, its divisions, its rounds, its teams and seats, its seated drivers, its unsettled signups, its channels, the modules enabled upon it, whether it runs in test mode, the server's team list and each team's role, its points configurations, the configuration of each module, and the template and artwork files its graphics are drawn from.
+- The review shall record the state of the season at the moment its report is posted, over the whole of what that report describes: the season, its divisions, its rounds, its teams and seats, its seated drivers, its unsettled signups, its channels, the modules enabled upon it, the league's two roles, whether it runs in test mode, the server's team list and each team's role, its points configurations, the configuration of each module, and the template and artwork files its graphics are drawn from.
 - The button shall refuse where that state has changed since the report was posted, shall name the parts of it that changed, and shall confirm nothing. The report read is the report confirmed.
 - The state shall be compared before the season is validated and before anything is drawn, and after the member pressing has been found entitled to confirm.
 - A review refused upon a changed state shall end as an expired one does.

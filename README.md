@@ -310,7 +310,7 @@ If the bot has never been configured on the server, these refuse and point you a
 | `/bot base-role` | `role` | The role the league's members hold. Where the signup module is enabled, only it and the two league roles can see the signup channel, and opening signups pings it |
 | `/bot driver-role` | `role` | The role the league's drivers hold. The bot grants it when a signup is approved, and takes it back whenever the driver returns to Not Signed Up |
 
-Both roles are the league's, not the signup module's. Disabling a module does not clear them.
+Both roles are the league's, not the signup module's. Disabling a module does not clear them. Neither is required unless the signup module is enabled; while it is, `/signup open` and confirming a season's configuration each refuse until both are set.
 
 Setting a new base role moves the signup channel's permissions to it, and the role it replaces loses its access. If Discord refuses the permission change, the role is still set and the channel can be fixed by hand. The driver role touches no channel.
 
@@ -398,9 +398,9 @@ Creates a season tied to today's date, in **configuration**. Its divisions and r
 #### `/season config-review` — Review and confirm the configuration
 *Access: League manager · Configuration only*
 
-No parameters. Posts a report of the season in configuration — test mode, the enabled modules, the team list with its roles (warning where the Reserve team has none), and the configuration of each enabled module in the words of `/season placements-review`: the signup settings, the attendance settings, the attached points configurations, the weather deadlines and the image outputs — and checks everything that can be checked before the season has divisions:
+No parameters. Posts a report of the season in configuration — test mode, the enabled modules, the league's base role and driver role, the team list with its roles (warning where the Reserve team has none), and the configuration of each enabled module in the words of `/season placements-review`: the signup settings, the attendance settings, the attached points configurations, the weather deadlines and the image outputs — and checks everything that can be checked before the season has divisions:
 
-- the signup module's channel, base role and complete role, where it is enabled;
+- where the signup module is enabled, its channel and the league's base role and driver role, each fault naming the command that sets it;
 - every team name, as a filename;
 - where the results module is enabled, that a points configuration is attached, that each attached one exists, and that its tables are in order;
 - where the images module is enabled, that the rasteriser is installed, that every template an enabled output draws is valid, the per-tier colours and the driver portrait settings.
@@ -1356,7 +1356,7 @@ No parameters.
 
 **What drivers type is checked.** Each lap time is written `1:23.456` — a dot and exactly three digits after it (`58.123` and `1:02:03.456` are read too). `1:23:456` or `1:23.4` is refused and the time asked for again; the bot does not guess. A platform ID, preferred teammate or note holding a role mention, `@everyone` or `@here` is refused and asked again, because the review panel quoting it would otherwise notify everybody who can see the channel. Emoji and formatting in those answers are kept.
 
-Also refused unless the signup channel, base role and completion role are all set and at least one availability time slot exists. Also refused while test mode is active — no real driver may sign up under test mode, so the window would be one nobody could use. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
+Also refused unless the signup channel, the league's base role and its driver role are all set and at least one availability time slot exists. Also refused while test mode is active — no real driver may sign up under test mode, so the window would be one nobody could use. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
 
 #### `/signup close` — Close the signup window
 *Access: League manager*

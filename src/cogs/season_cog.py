@@ -1739,12 +1739,7 @@ class SeasonCog(commands.Cog):
                 signup_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
                 if signup_cfg:
                     signup_ch = f"<#{signup_cfg.signup_channel_id}>" if signup_cfg.signup_channel_id else "*(not configured)*"
-                    signup_br = f"<@&{signup_cfg.base_role_id}>" if signup_cfg.base_role_id else "*(not configured)*"
-                    signup_cr = f"<@&{signup_cfg.signed_up_role_id}>" if signup_cfg.signed_up_role_id else "*(not configured)*"
-                    signup_line = (
-                        f"  Signup: {on} | Channel: {signup_ch} | "
-                        f"Base role: {signup_br} | Complete role: {signup_cr}"
-                    )
+                    signup_line = f"  Signup: {on} | Channel: {signup_ch}"
                 else:
                     signup_line = f"  Signup: {on}"
             else:
@@ -1759,6 +1754,7 @@ class SeasonCog(commands.Cog):
                 f"  Images: {on if images_on else off}",
                 "",
             ]
+            header_lines += await self._league_roles_review_lines()
 
             # ── Image module (FR-033, FR-034) ─────────────────────────
             # When disabled, report that and omit the detail. When enabled, render the
@@ -2439,15 +2435,20 @@ class SeasonCog(commands.Cog):
         faults: list[str] = []
 
         # ── Signup ─────────────────────────────────────────────────────────────
+        # The two roles are the league's (issue #276), but only the signup module needs
+        # them, so they are faults only while it is enabled.
         if await self.bot.module_service.is_signup_enabled():  # type: ignore[attr-defined]
             signup_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
+            server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
             if signup_cfg is None or signup_cfg.signup_channel_id is None:
                 faults.append("The signup module has no **signup channel** — `/signup channel`.")
-            if signup_cfg is None or signup_cfg.base_role_id is None:
-                faults.append("The signup module has no **base role** — `/signup base-role`.")
-            if signup_cfg is None or signup_cfg.signed_up_role_id is None:
+            if server_cfg is None or server_cfg.base_role_id is None:
                 faults.append(
-                    "The signup module has no **complete role** — `/signup complete-role`."
+                    "The signup module needs the league's **base role** — `/bot base-role`."
+                )
+            if server_cfg is None or server_cfg.driver_role_id is None:
+                faults.append(
+                    "The signup module needs the league's **driver role** — `/bot driver-role`."
                 )
 
         # ── Team names ─────────────────────────────────────────────────────────
@@ -2499,14 +2500,31 @@ class SeasonCog(commands.Cog):
             "",
         ]
 
+    async def _league_roles_review_lines(self) -> list[str]:
+        """The league's base role and driver role, as both reviews report them.
+
+        Shown whatever modules are enabled, the roles being the league's rather than the
+        signup module's (issue #276). Whether their absence is a fault is the signup
+        module's to say; see `_configuration_faults`.
+        """
+        server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+
+        def _role(role_id: int | None) -> str:
+            return f"<@&{role_id}>" if role_id else "*(not configured)*"
+
+        return [
+            "**Roles**",
+            f"  Base role: {_role(server_cfg.base_role_id if server_cfg else None)}",
+            f"  Driver role: {_role(server_cfg.driver_role_id if server_cfg else None)}",
+            "",
+        ]
+
     async def _signup_review_lines(self) -> list[str]:
         """The signup module's configuration, as both reviews report it."""
         _s_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
         _s_settings = await self.bot.signup_module_service.get_settings()  # type: ignore[attr-defined]
         _s_slots = await self.bot.signup_module_service.get_slots()  # type: ignore[attr-defined]
         _signup_ch = f"<#{_s_cfg.signup_channel_id}>" if _s_cfg and _s_cfg.signup_channel_id else "*(not configured)*"
-        _signup_br = f"<@&{_s_cfg.base_role_id}>" if _s_cfg and _s_cfg.base_role_id else "*(not configured)*"
-        _signup_cr = f"<@&{_s_cfg.signed_up_role_id}>" if _s_cfg and _s_cfg.signed_up_role_id else "*(not configured)*"
         _time_type = _s_settings.time_type.replace("_", " ").title()
         _time_img = "Required" if _s_settings.time_image_required else "Not required"
         _nationality = "Required" if _s_settings.nationality_required else "Not required"
@@ -2514,8 +2532,6 @@ class SeasonCog(commands.Cog):
         return [
             "**Signup Config**",
             f"  • Channel: {_signup_ch}",
-            f"  • Base role: {_signup_br}",
-            f"  • Sign-up role: {_signup_cr}",
             f"  • Time type: {_time_type}",
             f"  • Time image: {_time_img}",
             f"  • Nationality: {_nationality}",
@@ -2648,6 +2664,7 @@ class SeasonCog(commands.Cog):
                 f"  Images: {on if await module.is_images_enabled() else off}",
                 "",
             ]
+            lines += await self._league_roles_review_lines()
             teams = await self.bot.team_service.get_teams_with_roles()  # type: ignore[attr-defined]
             lines.append("**Teams**")
             for team in teams:
@@ -6166,16 +6183,18 @@ class SeasonCog(commands.Cog):
                 return
 
         # ── Gate 2b: signup module config prerequisites ───────────────────────
+        # The two roles are the league's (issue #276), required while signup is enabled.
         if await self.bot.module_service.is_signup_enabled():
             signup_cfg = await self.bot.signup_module_service.get_config()
+            server_cfg = await self.bot.config_service.get_server_config()
             if signup_cfg:
                 missing: list[str] = []
                 if signup_cfg.signup_channel_id is None:
                     missing.append("**Signup channel** (use `/signup channel`)")
-                if signup_cfg.base_role_id is None:
-                    missing.append("**Base role** (use `/signup base-role`)")
-                if signup_cfg.signed_up_role_id is None:
-                    missing.append("**Complete role** (use `/signup complete-role`)")
+                if server_cfg is None or server_cfg.base_role_id is None:
+                    missing.append("**Base role** (use `/bot base-role`)")
+                if server_cfg is None or server_cfg.driver_role_id is None:
+                    missing.append("**Driver role** (use `/bot driver-role`)")
                 if missing:
                     bullet_list = "\n\u2022 ".join(missing)
                     msg = (

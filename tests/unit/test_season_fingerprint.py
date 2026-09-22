@@ -263,6 +263,16 @@ async def test_the_signup_area(season):
     )
 
 
+@pytest.mark.parametrize("column", ["base_role_id", "driver_role_id"])
+async def test_changing_a_league_role_is_named_as_the_roles_changing(season, column):
+    """The two roles are the league's (issue #276), not the signup configuration: a change
+    to one names them, and does not tell a league its signup settings moved."""
+    before = await _take(season)
+    await _assert_only(
+        season, before, "roles", f"UPDATE server_configs SET {column} = 4242",
+    )
+
+
 async def test_the_attendance_area(season):
     """Changed on an existing row, so the module switch it shares with `modules` is not
     also disturbed — inserting the row would move both, correctly but less precisely."""

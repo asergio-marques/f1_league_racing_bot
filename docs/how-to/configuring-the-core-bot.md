@@ -253,7 +253,7 @@ The bot posts the configuration to the channel, a message per subject: test mode
 
 | The check | Only with |
 |---|---|
-| The signup channel, base role and complete role are set | `signup` |
+| The signup channel, and the league's base role and driver role, are set | `signup` |
 | Every team name can be used | — |
 | A points configuration is attached, every attached one exists, and each is in order | `results` |
 | Inkscape is installed, every template a switched-on output draws is valid, every colour slot a drawing uses has a colour, and the driver-photo setting could fetch something | `images` |
