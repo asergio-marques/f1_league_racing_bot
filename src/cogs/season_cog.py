@@ -2624,11 +2624,23 @@ class SeasonCog(commands.Cog):
                 ephemeral=True,
             )
             return
-        unsettled, _ = await self._placement_confirmation_faults(season.id)
-        if unsettled:
-            bullets = "\n".join(f"\u2022 {line}" for line in unsettled)
+        # Judged afresh, as the first confirmation judges Gate S (#374). The review withholds
+        # its button on each of these, but it stands five minutes, and a channel deleted from
+        # the server meanwhile changes nothing the fingerprint reads. The lineups are not
+        # drawn again: the fingerprint proves the images configuration and the artwork
+        # unchanged since the review drew them.
+        unsettled, channel_faults = await self._placement_confirmation_faults(
+            season.id, interaction.guild
+        )
+        faults = [
+            *(f"Unsettled signup: {line}" for line in unsettled),
+            *channel_faults,
+            *await self._mid_season_configuration_faults(),
+        ]
+        if faults:
+            bullets = "\n".join(f"• {line}" for line in faults)
             for chunk in _chunk_message(
-                f"\u26d4 Every signup must be settled first:\n{bullets}\n"
+                f"⛔ Placements cannot be confirmed:\n{bullets}\n"
                 "**Nothing has been confirmed.**"
             ):
                 await interaction.followup.send(chunk, ephemeral=True)

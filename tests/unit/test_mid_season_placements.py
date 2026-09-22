@@ -151,9 +151,7 @@ async def test_the_review_is_refused_in_the_other_ongoing_stages(db_path, stage)
 
 
 async def test_confirming_returns_the_season_to_ongoing(db_path):
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE driver_profiles SET current_state = 'ASSIGNED'")
-        await db.commit()
+    await _settle_every_signup(db_path)
     cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
     interaction = _interaction()
 
@@ -175,6 +173,64 @@ async def test_confirming_refuses_while_a_signup_is_unsettled(db_path):
     cog.bot.placement_service.commit_mid_season_placements.assert_not_awaited()
     cog.bot.season_service.set_stage.assert_not_awaited()
     assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
+
+
+async def test_confirming_refuses_a_deleted_channel_and_commits_nothing(db_path):
+    """The review stands five minutes, and a channel deleted from the server meanwhile
+    changes nothing the fingerprint reads (#374)."""
+    import discord
+
+    await _settle_every_signup(db_path)
+    cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
+    interaction = _interaction()
+    interaction.guild.get_channel = MagicMock(
+        side_effect=lambda cid: None if cid == 700 else MagicMock()
+    )
+    interaction.guild.fetch_channel = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
+    )
+
+    await cog._do_confirm_mid_season_placements(interaction)
+
+    refusal = interaction.followup.send.await_args.args[0]
+    assert "**Pro**'s lineup channel is no longer on the server" in refusal
+    assert "Nothing has been confirmed" in refusal
+    cog.bot.placement_service.commit_mid_season_placements.assert_not_awaited()
+    cog.bot.season_service.set_stage.assert_not_awaited()
+
+
+async def test_confirming_refuses_an_image_fault_and_commits_nothing(db_path):
+    await _settle_every_signup(db_path)
+    cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
+    cog._mid_season_configuration_faults = AsyncMock(
+        return_value=["Inkscape is not installed on this host."]
+    )
+    interaction = _interaction()
+
+    await cog._do_confirm_mid_season_placements(interaction)
+
+    refusal = interaction.followup.send.await_args.args[0]
+    assert "Inkscape is not installed on this host." in refusal
+    assert "Nothing has been confirmed" in refusal
+    cog.bot.placement_service.commit_mid_season_placements.assert_not_awaited()
+
+
+async def test_confirming_names_every_fault_at_once(db_path):
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE driver_profiles SET current_state = 'UNASSIGNED' WHERE id = 3")
+        await db.commit()
+    cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
+    cog._mid_season_configuration_faults = AsyncMock(
+        return_value=["Inkscape is not installed on this host."]
+    )
+    interaction = _interaction()
+
+    await cog._do_confirm_mid_season_placements(interaction)
+
+    refusal = interaction.followup.send.await_args.args[0]
+    assert "Unsettled signup: " in refusal
+    assert "**Pro** has no lineup channel" in refusal
+    assert "Inkscape is not installed on this host." in refusal
 
 
 async def test_confirming_a_season_no_longer_placing_confirms_nothing(db_path):
@@ -470,9 +526,7 @@ async def test_confirming_after_the_season_moved_on_still_reports_the_placements
     """The placements are committed either way; only the stage move is skipped."""
     from models.season import InvalidStageTransition
 
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE driver_profiles SET current_state = 'ASSIGNED'")
-        await db.commit()
+    await _settle_every_signup(db_path)
     cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
     cog.bot.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
     interaction = _interaction()
@@ -492,8 +546,13 @@ async def test_confirming_after_the_season_moved_on_still_reports_the_placements
 
 
 async def _settle_every_signup(db_path) -> None:
+    """Every signup settled, and the division given the channels it posts to (#374), so the
+    confirmation has nothing to refuse on."""
     async with get_connection(db_path) as db:
         await db.execute("UPDATE driver_profiles SET current_state = 'ASSIGNED'")
+        await db.execute(
+            "UPDATE divisions SET lineup_channel_id = 700, calendar_channel_id = 701"
+        )
         await db.commit()
 
 
