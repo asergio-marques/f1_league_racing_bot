@@ -110,7 +110,12 @@ def _role_name(guild: Any, role_id: int | None, fallback: str) -> str:
     return f"**{role.name}**" if role is not None else fallback
 
 
-def role_grant_refusal(role: Any) -> str | None:
+def role_grant_refusal(
+    role: Any,
+    *,
+    stands_for: str = "a team",
+    remedy: str = "Choose a role of the team's own.",
+) -> str | None:
     """Why the bot could not grant *role* to a driver, or None where it can (#381).
 
     A team's role is granted to every driver placed in it and revoked when they leave, and
@@ -126,17 +131,21 @@ def role_grant_refusal(role: Any) -> str | None:
 
     The hierarchy and the permission can change after this, so this is a check at the moment of
     setting and not a guarantee; it catches the misconfiguration a league can see and fix.
+
+    The league's driver role is granted on the same terms (#374), so *stands_for* and *remedy*
+    let the first two refusals say what the role is for and how to choose another. The last two
+    name their own remedy, which is the same whatever the role is for.
     """
     if getattr(role, "is_default", None) is not None and role.is_default():
         return (
-            "`@everyone` is everybody on the server, so it cannot stand for a team. "
-            "Choose a role of the team's own."
+            f"`@everyone` is everybody on the server, so it cannot stand for {stands_for}. "
+            f"{remedy}"
         )
     if getattr(role, "managed", False):
         mention = getattr(role, "mention", None) or getattr(role, "name", "that role")
         return (
             f"{mention} is managed by an integration — a bot, a subscription or a linked "
-            "role — so Discord will not let me grant it. Choose a role of the team's own."
+            f"role — so Discord will not let me grant it. {remedy}"
         )
 
     me = getattr(getattr(role, "guild", None), "me", None)
