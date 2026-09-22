@@ -361,27 +361,42 @@ class BotCog(commands.Cog):
         each is audited with the role it replaced: a league that finds its members locked
         out needs to know which role used to hold the access, and nothing else keeps it
         once it is overwritten.
+
+        **A role gone from the server may be replaced while it is fixed** (decided 2026-09-22,
+        #374). The roles are fixed so that no driver is left holding one the season's end will
+        not revoke; nobody holds a deleted role, so that reason is spent, and refusing would
+        leave a season unable to open a window until it ended. The replacement is granted to
+        every driver, who lost the old one with it — the base role too, the one time the bot
+        grants it: it knows its drivers, and the reply tells the league its other members need
+        the role by hand.
         """
         from services.season_lifecycle_service import configuration_fixed
 
         season_number = await configuration_fixed(self.bot.db_path)  # type: ignore[attr-defined]
-        if season_number is not None:
+        config = await self.bot.config_service.get_server_config()
+        old_role_id = getattr(config, column) if config is not None else None
+        replacing_gone = (
+            season_number is not None
+            and old_role_id is not None
+            and interaction.guild is not None
+            and interaction.guild.get_role(old_role_id) is None
+        )
+        if season_number is not None and not replacing_gone:
             await interaction.response.send_message(
                 f"❌ The league's roles are fixed for Season {season_number} now that its "
                 f"configuration has been confirmed. `{command}` is available again once the "
-                "season has ended, or while a new season is in configuration.",
+                "season has ended, or while a new season is in configuration — or at once, "
+                "should the role be deleted from the server.",
                 ephemeral=True,
             )
             return
 
-        config = await self.bot.config_service.get_server_config()
         if config is None:
             await interaction.response.send_message(
                 "⛔ This server is not configured yet — run `/bot init` first.",
                 ephemeral=True,
             )
             return
-        old_role_id = getattr(config, column)
 
         # The driver role is granted at every approval, and `wizard_service.approve_signup`
         # only logs a grant Discord refuses (#374). The base role is granted by the league.
@@ -420,14 +435,56 @@ class BotCog(commands.Cog):
             {"role_id": role.id},
         )
 
-        await interaction.followup.send(
-            f"✅ **{label}** set to {role.mention}.", ephemeral=True
-        )
-        await self.bot.output_router.post_log(
+        reply = f"✅ **{label}** set to {role.mention}."
+        log_line = (
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | {command} | Success\n"
-            f"  role: {role.name} (<@&{role.id}>)",
+            f"  role: {role.name} (<@&{role.id}>)"
         )
+        if replacing_gone:
+            given, given_log = await self._give_replaced_role_to_every_driver(
+                interaction.guild, role, column
+            )
+            reply += (
+                f"\nThe role it replaces is no longer on the server, so it could be replaced "
+                f"although Season {season_number}'s configuration is fixed.\n{given}"
+            )
+            log_line += f"\n  replaced: a role no longer on the server\n{given_log}"
+
+        await interaction.followup.send(reply, ephemeral=True)
+        await self.bot.output_router.post_log(log_line)
         log.info("%s set %s", interaction.user, column)
+
+    async def _give_replaced_role_to_every_driver(
+        self, guild: discord.Guild, role: discord.Role, column: str
+    ) -> tuple[str, str]:
+        """Grant a replaced league role to every driver: what to tell the manager and the log.
+
+        `@everyone` is held by everybody already, so a base role set to it is granted to
+        nobody. Otherwise every driver who could not be given it is named, for the league to
+        give it by hand, and a replaced base role reminds the league that the bot knows only
+        its drivers.
+        """
+        if role.is_default():
+            return "Everybody holds it already.", "  given to: everybody, as @everyone"
+        outcome = await self.bot.placement_service.grant_to_every_driver(  # type: ignore[attr-defined]
+            guild, role.id
+        )
+        told = f"It has been given to {outcome.granted} driver(s)."
+        if outcome.not_granted:
+            told += (
+                " It could not be given to "
+                + ", ".join(f"<@{uid}>" for uid in outcome.not_granted)
+                + " — give it to them by hand."
+            )
+        if column == "base_role_id":
+            told += (
+                " The league's other members need it too: give it to them by hand, the bot "
+                "knowing only its drivers."
+            )
+        logged = f"  given to: {outcome.granted} driver(s)" + "".join(
+            f"\n  not given to: <@{uid}>" for uid in outcome.not_granted
+        )
+        return told, logged
 
     @group.command(
         name="base-role",
