@@ -282,11 +282,11 @@ it only to place it; the rules governing it belong to its own specification.
     - The season shall move to Ongoing and take its number, before any role is granted or anything posted. Every command shall treat it as ongoing from then on, while the grants and postings below are still under way: a round may be amended, and nothing added. Decided 2026-09-22.
     - Every placed driver shall be granted their division's role and their team's role.
     - Each division's lineup, calendar and opening classification shall be posted. A posting that fails shall be reported and shall not refuse the confirmation.
-    - The member who confirmed shall be told privately that the season is approved. Where that cannot be delivered to them, the channel the review was read in shall be told instead, naming the member, that the season is approved, and that the log channel carries what they would have been told; the log channel shall carry it. Decided 2026-09-22.
 - Where the season is in Ongoing, placements:
     - Every driver whose placement is committed by it shall be granted their division's role and their team's role.
     - The lineup of each division holding such a driver shall be posted once.
     - The season shall move to Ongoing.
+- The member who confirmed shall be told privately that the placements are confirmed. Where that cannot be delivered to them, the channel the review was read in shall be told instead, naming the member, that the placements are confirmed, and that the log channel carries what they would have been told; the log channel shall carry it. Decided 2026-09-22.
 
 ### The ongoing states
 - In Ongoing, a signup window may be opened, moving the season to Ongoing, signups open. A signup window shall be opened from no other ongoing state.

@@ -519,6 +519,8 @@ The same list goes to the log channel.
 
 > **If your confirmation never arrives**, look in the channel you ran the review in. Discord gives the bot fifteen minutes to answer a button, and a long approval can outlast them. When it does, the bot posts one line there instead, mentioning you: the season is approved, and the log channel has what the confirmation said.
 
+**Confirming a mid-season window's placements works the same way.** The placements stand once confirmed. Anything left undone is listed in your confirmation: a driver the bot could not give their roles, whom you give them by hand, or a season it could not return to ongoing, which you put right by running `/season placements-review` and confirming again. The same one-line notice stands in for a confirmation that cannot reach you.
+
 > **The opening classification needs the results and attendance modules, not the images module.**
 > Steps 3 and 4 draw nothing without `/images`; step 5 posts either way — as a drawing where the
 > `standings` and `attendance` outputs are switched on, and as the ordinary text tables where they
