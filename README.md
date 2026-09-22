@@ -1195,6 +1195,8 @@ Adds the team to the server's default team list and saves its role mapping (gran
 | `name` | String | ✅ | Name of the new team (max 50 chars) |
 | `role` | Role | ✅ | Discord role to grant drivers placed into this team |
 
+**One role per team.** A role belongs to one team only, the Reserve team included — a results submission names a team by its role, so a role two teams shared would name either. A role another team already holds is refused, naming that team, and the team is not added.
+
 **Naming.** A team name has to survive being turned into an image **filename**, so it is checked when you set it. The bot lowercases the name, strips accents, and replaces every run of anything that is not a letter or a digit with a single underscore — `Red Bull` becomes `red_bull`, `Force India (B)` becomes `force_india_b`. That is the name of the badge file every graphic showing that team looks for. The name is rejected if that result:
 
 - is empty (a name of nothing but punctuation);
@@ -1235,7 +1237,9 @@ Points a team of the server list at a different Discord role. Unlike the list it
 
 > **Refused once every division is done.** Nothing is raced in pending completion, and completing the season revokes every team role a few steps later — so a mapping repaired there would be undone before anyone wore it. Repair it once the season has ended, for the next one. With no season at all the mapping is the server's own and free to change.
 
-**The team's drivers follow its role.** Every driver seated in the team whose placement is confirmed has the old role taken away — unless another team still maps to it — and the new one granted, in every division of the season being raced. The reply says how many drivers were moved.
+**The team's drivers follow its role.** Every driver seated in the team whose placement is confirmed has the old role taken away and the new one granted, in every division of the season being raced. The reply says how many drivers were moved.
+
+**One role per team.** A role another team already holds, the Reserve team included, is refused, naming that team; nothing changes and no driver is moved.
 
 **Its results stay with it.** A result records the team, not the role it was submitted under, so every round raced before the change remains the team's: the team standings keep it as one entry with all its points, and the results and standings already posted go on naming it. Posted results and standings always name a team by its name, never by a mention of its role.
 
@@ -1262,7 +1266,7 @@ Displays the placed drivers for each team seat in the active season. If a divisi
 #### `/team reserve-role` — Set or clear the Reserve team's Discord role
 *Access: League manager*
 
-Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping. As with `/team role`, the drivers already seated in Reserve with a confirmed placement follow the change: the old role is taken and the new one, where given, granted — and, as with `/team role`, it is refused once the season is pending completion.
+Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping. As with `/team role`, the drivers already seated in Reserve with a confirmed placement follow the change: the old role is taken and the new one, where given, granted — and, as with `/team role`, it is refused once the season is pending completion, and refuses a role another team already holds.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
