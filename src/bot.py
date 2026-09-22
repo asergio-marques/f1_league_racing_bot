@@ -14,6 +14,27 @@ from utils.log_filters import install_late_autocomplete_filter
 
 load_dotenv()
 
+#: The oldest discord.py the bot runs on. `/team add` and `/team modify` take their input in a
+#: modal carrying a role picker, which needs ``discord.ui.Label`` — new in 2.6 (#381). A host
+#: installing discord.py from apt rather than into a virtualenv gets an older one, and would
+#: otherwise fail deep inside the team cog with an AttributeError naming no cause.
+MINIMUM_DISCORD_PY: tuple[int, int] = (2, 6)
+
+
+def require_discord_py(version_info=None) -> None:
+    """Refuse to start on a discord.py older than :data:`MINIMUM_DISCORD_PY`, saying so."""
+    found = tuple(version_info or discord.version_info)[:2]
+    if found < MINIMUM_DISCORD_PY:
+        wanted = ".".join(str(part) for part in MINIMUM_DISCORD_PY)
+        raise RuntimeError(
+            f"This bot needs discord.py {wanted} or later, but {'.'.join(str(p) for p in found)}"
+            f" is installed. Install the pinned requirements into a virtualenv "
+            f"(`pip install -r requirements.txt`) and run it with that interpreter."
+        )
+
+
+require_discord_py()
+
 TOKEN: str = os.environ["BOT_TOKEN"]
 DB_PATH: str = os.getenv("DB_PATH", "bot.db")
 #: The scheduler's job store, kept apart from the league database on purpose — see the
