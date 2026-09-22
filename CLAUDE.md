@@ -97,6 +97,7 @@ later polish phase.
   test, the version scheme, when each bump is due — are in `CONTRIBUTING.md`, under "Pull
   requests" and "Releases", and the required check `pr-label-check` refuses a pull request
   that breaks them. Label a pull request as you open it, not afterwards. Go-live is `v1.0.0`.
+  `VERSION` holds a placeholder GitHub fills in on download (#258): never write a value into it.
 - `poc/` is **gitignored scratch** — the proof of concept, plus the sample assets and the
   earlier template copies. Not a design input, and never something to port code from. The
   one exception is a *rule* it already encodes: `normalize()` in `poc/build_poc.py` calls

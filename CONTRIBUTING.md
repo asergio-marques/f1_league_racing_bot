@@ -183,6 +183,12 @@ of exactly that form names a version.
 | **patch** | Fixes that should reach a host between minor releases. A Critical fix is released on its own, without waiting for anything else |
 | **major** | Before go-live, go-live itself and nothing else. After it, a release that takes away or changes a command, a setting or a file convention a league relies on, or one a host cannot install without doing something by hand |
 
+**A build between releases is `vMAJOR.MINOR.PATCH-N`**, the last release and the number of
+changes merged since it, so `v0.4.0-230` follows `v0.4.0-229`. Pull requests are squash-merged,
+one commit each on `main`, which is what keeps the number in merge order. Nobody stamps it:
+`VERSION` holds a placeholder that GitHub fills in whenever it packages the code, and a clone
+asks git instead. **Never write a value into `VERSION`** — see `src/utils/version.py`.
+
 **Go-live is `v1.0.0`.** Every release before it is marked a pre-release. From `v1.0.0` on the
 migration baseline is frozen, and every schema change is a new migration (see `run_migrations`
 in `src/db/database.py`).
