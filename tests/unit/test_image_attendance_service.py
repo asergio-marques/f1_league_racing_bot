@@ -627,3 +627,20 @@ def test_the_row_count_reported_is_the_driver_count():
     )
     spec = build_fill_spec(drawing, _sheet_svg(rows=5))
     assert spec.row_count == 2
+
+
+# ── The name drawn and the artwork key part company (#381) ────────────────
+
+
+def test_a_row_carries_the_shorthand_its_team_s_artwork_is_found_by():
+    drawing = resolve_drawing(
+        division_name="D",
+        round_number=3,
+        records=_records((1, 5, {}, False)),
+        display_names={1: "Ayrton"},
+        team_names={1: "Oracle Red Bull Racing"},
+        team_keys={1: "RBR"},
+    )
+
+    assert drawing.entries[0].team_name == "Oracle Red Bull Racing"
+    assert drawing.entries[0].team_key == "RBR"

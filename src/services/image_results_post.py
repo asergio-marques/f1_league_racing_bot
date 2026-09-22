@@ -235,14 +235,25 @@ async def _team_names(bot, guild, division_id: int, team_ids: list[int]) -> dict
     """The name of each division team a session records, keyed by the team's id.
 
     A session records the division's **team** an entry drove for, never its Discord role
-    (#375), so the name — what the graphic draws, and what the team image is looked up by —
-    is read from the team itself. Nothing asks Discord: a role replaced mid-season, or since
+    (#375), so the name the graphic draws is read from the team itself; the team image is
+    looked up by its shorthand, from ``_team_keys`` (#381). Nothing asks Discord: a role replaced mid-season, or since
     deleted, has no bearing on the rounds recorded under it. *guild* and *division_id* are
     kept for the callers' symmetry with the driver lookups beside this one.
     """
     from services.team_service import team_names_for_instances
 
     return await team_names_for_instances(bot.db_path, team_ids)
+
+
+async def _team_keys(bot, team_ids: list[int]) -> dict[int, str]:
+    """The shorthand of each division team a session records, which its artwork is found by.
+
+    Apart from the name drawn (#381): a team is drawn by its full name, and its badge file is
+    named after its shorthand.
+    """
+    from services.team_service import team_artwork_keys_for_instances
+
+    return await team_artwork_keys_for_instances(bot.db_path, team_ids)
 
 
 async def build_drawing(
@@ -286,6 +297,7 @@ async def build_drawing(
         team_names=await _team_names(
             bot, guild, session_result.division_id, team_ids
         ),
+        team_keys=await _team_keys(bot, team_ids),
         nationalities=await _nationalities(
             bot, user_ids, division_id=session_result.division_id
         ),

@@ -1237,6 +1237,7 @@ async def _sheet_attachment(
         # generation** — the reserve team for a reserve — and never the team whose car they
         # drove in any one round (FR-020).
         team_names = await _seat_team_names(db_path, division_id, user_ids)
+        team_keys = await _seat_team_keys(db_path, division_id, user_ids)
 
         for row in sorted_drivers:
             key = int(row["discord_user_id"])
@@ -1263,6 +1264,7 @@ async def _sheet_attachment(
             records=records,
             display_names=display_names,
             team_names=team_names,
+            team_keys=team_keys,
             nationalities=nationalities,
             rounds=headings,
             autoreserve_threshold=(cfg_row["autoreserve_threshold"] if cfg_row else None),
@@ -1400,9 +1402,25 @@ async def _seat_team_names(
     """The team of the division seating each driver **now**, keyed by Discord user id.
 
     A reserve driver's team is the reserve team, which is what the sheet draws for them —
-    not the team whose car they drove in some round (FR-020). The team's name is also what the
-    badge is looked up by, so one lookup serves both.
+    not the team whose car they drove in some round (FR-020). This is the name drawn; the
+    badge is looked up by the team's shorthand, from ``_seat_team_keys`` (#381).
     """
+    return await _seat_team_field(db_path, division_id, user_ids, "name")
+
+
+async def _seat_team_keys(
+    db_path: str, division_id: int, user_ids: list[int]
+) -> dict[int, str]:
+    """The shorthand of the team seating each driver now, which its badge is found by (#381)."""
+    return await _seat_team_field(db_path, division_id, user_ids, "name")
+
+
+async def _seat_team_field(
+    db_path: str, division_id: int, user_ids: list[int], field: str
+) -> dict[int, str]:
+    """One field of the team seating each driver now — ``name`` or ``full_name``."""
+    if field not in ("name", "full_name"):
+        raise ValueError(f"not a team name field: {field}")
     if not user_ids:
         return {}
     placeholders = ",".join("?" * len(user_ids))
@@ -1410,7 +1428,7 @@ async def _seat_team_names(
         async with get_connection(db_path) as db:
             rows = await (
                 await db.execute(
-                    f"SELECT dp.discord_user_id AS uid, ti.name AS name "
+                    f"SELECT dp.discord_user_id AS uid, ti.{field} AS name "
                     f"FROM driver_profiles dp "
                     f"JOIN driver_season_assignments dsa "
                     f"  ON dsa.driver_profile_id = dp.id AND dsa.division_id = ? "

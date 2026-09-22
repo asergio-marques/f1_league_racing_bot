@@ -438,3 +438,19 @@ def test_a_display_name_left_empty_falls_through_to_the_next_link():
 def test_a_name_that_cleans_to_nothing_everywhere_falls_to_the_user_id():
     assert resolve_driver_name(discord_user_id="7", display_name="\U0001F3C1") == "7"
 
+
+# ── The name drawn and the artwork key part company (#381) ────────────────
+
+
+def test_a_team_is_drawn_by_its_full_name_and_found_by_its_shorthand():
+    drawing = _draw([NS(name="RBR", full_name="Oracle Red Bull Racing", is_reserve=False, seats=[])])
+
+    assert drawing.teams[0].display_name == "Oracle Red Bull Racing"
+    assert drawing.teams[0].image_datum == "RBR"
+
+
+def test_a_team_with_no_full_name_is_drawn_by_its_shorthand():
+    drawing = _draw([_team("RBR", [])])
+
+    assert drawing.teams[0].display_name == "RBR"
+    assert drawing.teams[0].image_datum == "RBR"

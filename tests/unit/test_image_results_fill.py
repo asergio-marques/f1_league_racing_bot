@@ -275,6 +275,17 @@ def test_the_team_image_is_resolved_from_the_team_name():
     assert spec.image_data["row_1_team_image"] == ("team", "Team 1")
 
 
+def test_the_team_image_is_resolved_from_the_shorthand_while_the_full_name_is_drawn():
+    """A team is drawn by its full name and its artwork found by its shorthand (#381)."""
+    root = _template(1, _QUALIFYING_ROW)
+    entry = _entry(1, team_name="Oracle Red Bull Racing", team_key="RBR")
+
+    spec = build_fill_spec(_drawing(QUALIFYING_TEMPLATE_KEY, [entry]), root)
+
+    assert spec.text["row_1_team_name"] == "Oracle Red Bull Racing"
+    assert spec.image_data["row_1_team_image"] == ("team", "RBR")
+
+
 def test_a_recorded_nationality_resolves_a_flag():
     root = _template(1, _QUALIFYING_ROW)
     spec = build_fill_spec(_drawing(QUALIFYING_TEMPLATE_KEY, [_entry(1)]), root)

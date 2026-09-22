@@ -388,3 +388,38 @@ async def test_text_mentioning_nobody_reads_no_names_at_all(tmp_path, monkeypatc
     await _draw(db_path, _Guild(), justification="Video evidence reviewed.")
 
     assert calls == [], "no mention is no read"
+
+
+# ── The name drawn and the artwork key part company (#381) ────────────────
+
+
+@pytest.mark.asyncio
+async def test_the_badge_is_found_by_the_shorthand_while_the_full_name_is_drawn(tmp_path):
+    """A verdict names the team whose car was driven by its full name, and finds its badge by
+    the shorthand — the divergence ``team_slug_source`` was kept for."""
+    from services.image_verdict_post import build_drawing
+
+    db_path = str(tmp_path / "test.db")
+    await _seed(db_path, [(ALICE, "Alice Smith", None)])
+
+    drawing = await build_drawing(
+        _Bot(db_path),
+        guild=_Guild(),
+        db_path=db_path,
+        round_id=ROUND_ID,
+        kind=VerdictKind.PENALTY,
+        season_number=1,
+        division_name="Pro Division",
+        round_number=8,
+        session_label="Race",
+        driver_name="Alice Smith",
+        driver_discord_id=ALICE,
+        penalty_description="5 seconds added",
+        description_text="Collision.",
+        justification_text="Contact at turn 3.",
+        team_name="Oracle Red Bull Racing",
+        team_key="RBR",
+    )
+
+    assert drawing.team_name == "Oracle Red Bull Racing"
+    assert drawing.team_datum == "RBR"

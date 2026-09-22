@@ -252,3 +252,23 @@ def test_nationality_collection_switched_off_is_carried_on_the_drawing():
     drawing = _resolve([_qual(1, 10)], nationality_collected=False)
     assert drawing.nationality_collected is False
     assert drawing.entries[0].nationality is None
+
+
+# ── The name drawn and the artwork key part company (#381) ────────────────
+
+
+def test_an_entry_carries_the_shorthand_its_artwork_is_found_by():
+    drawing = _resolve(
+        [_qual(1, 10)],
+        team_names={901: "Oracle Red Bull Racing"},
+        team_keys={901: "RBR"},
+    )
+
+    assert drawing.entries[0].team_name == "Oracle Red Bull Racing"
+    assert drawing.entries[0].team_key == "RBR"
+
+
+def test_an_entry_with_no_shorthand_is_found_by_the_name_drawn():
+    drawing = _resolve([_qual(1, 10)], team_names={901: "Apex"})
+
+    assert drawing.entries[0].team_key is None

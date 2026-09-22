@@ -632,3 +632,27 @@ def test_the_final_sheet_keeps_the_last_round_s_phase():
     assert drawing.result_status_label == "Final Results"
 
 
+# ── The name drawn and the artwork key part company (#381) ────────────────
+
+
+def test_a_constructors_row_carries_the_shorthand_its_artwork_is_found_by():
+    drawing = _constructors_drawing(
+        display_names={10: "Oracle Red Bull Racing"},
+        team_names={10: "Oracle Red Bull Racing"},
+        team_keys={10: "RBR"},
+    )
+
+    assert drawing.entries[0].team_name == "Oracle Red Bull Racing"
+    assert drawing.entries[0].team_key == "RBR"
+
+
+def test_a_drivers_row_carries_the_shorthand_of_the_team_seating_the_driver():
+    drawing = _drivers_drawing(
+        team_names={1: "Oracle Red Bull Racing", 2: "Meridian GP"},
+        team_keys={1: "RBR", 2: "MER"},
+    )
+
+    assert [(e.team_name, e.team_key) for e in drawing.entries] == [
+        ("Oracle Red Bull Racing", "RBR"),
+        ("Meridian GP", "MER"),
+    ]
