@@ -9,8 +9,9 @@ prerequisite gates that sit between.
 lineups, calendars and the opening classifications are consequences of the approval, not part of
 it. A failure in any of them is logged and stepped over: refusing at this point would leave a
 season committed to the database, its schedule armed, and a manager told it was not approved.
-Every one of the four is tested for it, because the guards are `try`/`except` blocks that read
-like defensive clutter to anyone who has not met the alternative.
+Every one of the four is tested for it, and so are the two database reads they depend on and
+the closing log line (issue #387), because the guards are `try`/`except` blocks that read like
+defensive clutter to anyone who has not met the alternative.
 
 **One division's failure never stops the others.** The loops catch per division, so a league
 with four divisions and one broken template posts three calendars rather than none.
@@ -236,7 +237,13 @@ def _attendance_config(*, rsvp=700, attendance=701):
 
 
 async def _approve(
-    cog, interaction, *, calendar_posting=None, calendar_error=None, tracks_error=None
+    cog,
+    interaction,
+    *,
+    calendar_posting=None,
+    calendar_error=None,
+    tracks_error=None,
+    classification_error=None,
 ):
     """Run the approval with every posting service stubbed, returning the stubs."""
     posting = calendar_posting or SimpleNamespace(notices=[], problem=None)
@@ -248,7 +255,7 @@ async def _approve(
         new=AsyncMock(return_value=posting, side_effect=calendar_error),
     ) as calendar, patch(
         "services.season_classification_service.post_opening_classifications",
-        new=AsyncMock(return_value=[]),
+        new=AsyncMock(return_value=[], side_effect=classification_error),
     ) as classification:
         await SeasonCog._do_approve(cog, interaction)
     return {"calendar": calendar, "classification": classification}
@@ -989,10 +996,41 @@ async def _fail_the_circuits_read(cog, db_path) -> dict:
     return {"tracks_error": sqlite3.OperationalError("database is locked")}
 
 
+async def _fail_the_closing_log_line(cog, db_path) -> dict:
+    """`post_log` reads the server configuration to find the channel, and can raise."""
+
+    async def _post_log(text):
+        if "Placements confirmed" in str(text):
+            raise sqlite3.OperationalError("database is locked")
+
+    cog.bot.output_router.post_log = AsyncMock(side_effect=_post_log)
+    return {}
+
+
+async def _fail_every_lineup(cog, db_path) -> dict:
+    cog.bot.placement_service._refresh_lineup_post = AsyncMock(
+        side_effect=RuntimeError("Discord is down")
+    )
+    return {}
+
+
+async def _fail_every_calendar(cog, db_path) -> dict:
+    return {"calendar_error": RuntimeError("template will not draw")}
+
+
+async def _fail_the_opening_classifications(cog, db_path) -> dict:
+    return {"classification_error": RuntimeError("template will not draw")}
+
+
 #: Each step after the commit, made to fail. Returns what `_approve` needs to fail it.
+#: The last four were guarded before issue #387 and are pinned here beside the rest.
 _FAILURES = {
     "the placed drivers read": _fail_the_placements_read,
     "the circuits read": _fail_the_circuits_read,
+    "the closing log line": _fail_the_closing_log_line,
+    "every lineup": _fail_every_lineup,
+    "every calendar": _fail_every_calendar,
+    "the opening classifications": _fail_the_opening_classifications,
 }
 
 
@@ -1047,6 +1085,22 @@ async def test_no_calendar_is_posted_when_the_circuits_cannot_be_read(db_path):
     # A division with no calendar channel was never going to receive one.
     assert "**Am**" not in replied
     assert "not done: No calendar was posted for **Pro**" in _logged(cog)
+
+
+async def test_a_report_too_long_for_one_message_is_sent_in_pieces(db_path):
+    """A line per division can outgrow Discord's limit, and a reply refused for its length
+    would raise out of an approval already made."""
+    cog = _cog(db_path, divisions=[_division(i, f"Division {i}") for i in range(1, 16)])
+    interaction = _interaction()
+    await _break_the_placements_read(db_path)
+
+    await _approve(cog, interaction)
+
+    sent = [str(call.args[0]) for call in interaction.followup.send.await_args_list]
+    assert len(sent) > 1
+    assert all(len(chunk) <= 2000 for chunk in sent)
+    assert "Season approved" in sent[0]
+    assert "**Division 15** — its placed drivers could not be read" in sent[-1]
 
 
 async def test_a_clean_approval_reports_nothing_undone(db_path):

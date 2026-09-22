@@ -6006,6 +6006,14 @@ class SeasonCog(commands.Cog):
         *deadline* is when the review stops being approvable, carried in from the view so
         the backup question below can be given what is left of that window rather than a
         fresh one. Omitted, the question is skipped — there is no window to divide.
+
+        **Nothing after the commit may raise out of here** (issue #387). From
+        `transition_to_active` on, the season is running. An exception reaching the view's
+        error handler would tell the manager the approval did not finish, skip every grant
+        and posting not yet reached, and leave the review standing to expire. So every step
+        after it is guarded on its own, and what one could not do is named in the reply and
+        the log line. The residual is the reply itself: a Discord that refuses it would
+        refuse the error report the same way.
         """
         # Defer immediately — approval involves heavy work (scheduling, role grants,
         # lineup/calendar posts) that can exceed Discord's 3-second response window.
@@ -6680,17 +6688,23 @@ class SeasonCog(commands.Cog):
             msg += f"\n\n\u26a0\ufe0f **Calendar images**\n{_cal_report.splitlines()[0]}"
             msg += "\n" + "\n".join(_cal_report.splitlines()[1:])
             self._calendar_report = None
-        if interaction.response.is_done():
-            await interaction.followup.send(msg, ephemeral=True)
-        else:
-            await interaction.response.send_message(msg, ephemeral=True)
+        # Chunked: the sections above make a reply over Discord's limit reachable, and a
+        # send refused for its length would raise out of an approval already made.
+        for _chunk in _chunk_message(msg):
+            if interaction.response.is_done():
+                await interaction.followup.send(_chunk, ephemeral=True)
+            else:
+                await interaction.response.send_message(_chunk, ephemeral=True)
 
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season placements-review | Placements confirmed\n"
-            f"  season: {cfg.season_number}\n"
-            f"  season_id: {cfg.season_id}"
-            + "".join(f"\n  not done: {line}" for line in _not_done),
-        )
+        try:
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season placements-review | Placements confirmed\n"
+                f"  season: {cfg.season_number}\n"
+                f"  season_id: {cfg.season_id}"
+                + "".join(f"\n  not done: {line}" for line in _not_done),
+            )
+        except Exception:  # noqa: BLE001 — the season is committed and the manager told
+            log.exception("_do_approve: could not log the approval")
         log.info("Season %s activated by %s", cfg.season_id, interaction.user)
 
     # ------------------------------------------------------------------
