@@ -901,7 +901,12 @@ class SignupCog(commands.Cog):
             if server_cfg and server_cfg.league_admin_role_id
             else None
         )
-        base_role = guild.get_role(cfg.base_role_id) if cfg.base_role_id else None
+        # The base role is the league's, not this module's (issue #276).
+        base_role = (
+            guild.get_role(server_cfg.base_role_id)
+            if server_cfg and server_cfg.base_role_id
+            else None
+        )
         overwrites: dict = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
@@ -1553,14 +1558,16 @@ class SignupCog(commands.Cog):
             )
             return
 
-        # Guard: all three config values must be set
+        # Guard: the channel and the league's two roles must all be set (issue #276)
+        base_role_id = server_cfg.base_role_id if server_cfg is not None else None
+        driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
         missing = []
         if cfg.signup_channel_id is None:
             missing.append("`signup channel` (use `/signup channel`)")
-        if cfg.base_role_id is None:
-            missing.append("`base role` (use `/signup base-role`)")
-        if cfg.signed_up_role_id is None:
-            missing.append("`complete role` (use `/signup complete-role`)")
+        if base_role_id is None:
+            missing.append("`base role` (use `/bot base-role`)")
+        if driver_role_id is None:
+            missing.append("`driver role` (use `/bot driver-role`)")
         if missing:
             await interaction.response.send_message(
                 "❌ Signup module is missing required configuration:\n"
@@ -1610,7 +1617,7 @@ class SignupCog(commands.Cog):
         guild = interaction.guild
         assert guild is not None
         signup_channel = guild.get_channel(cfg.signup_channel_id) if cfg.signup_channel_id else None
-        base_role = guild.get_role(cfg.base_role_id) if cfg.base_role_id else None
+        base_role = guild.get_role(base_role_id) if base_role_id else None
         if signup_channel is None or not isinstance(signup_channel, discord.TextChannel):
             await interaction.followup.send(
                 "❌ Configured signup channel not found.", ephemeral=True

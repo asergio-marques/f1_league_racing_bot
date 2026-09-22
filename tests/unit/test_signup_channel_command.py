@@ -35,15 +35,14 @@ async def db_path(tmp_path):
     path = str(tmp_path / "signup.db")
     await run_migrations(path)
     async with get_connection(path) as db:
+        # The base role is the league's, on the server configuration (issue #276).
         await db.execute(
             "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, ?, 100, 101)",
-            (SERVER_ID, INTERACTION_ROLE),
+            "interaction_channel_id, log_channel_id, base_role_id) "
+            "VALUES (?, ?, 100, 101, ?)",
+            (SERVER_ID, INTERACTION_ROLE, BASE_ROLE),
         )
-        await db.execute(
-            "INSERT INTO signup_module_config (id, base_role_id) VALUES (?, ?)",
-            (1, BASE_ROLE),
-        )
+        await db.execute("INSERT INTO signup_module_config (id) VALUES (1)")
         await db.commit()
     return path
 

@@ -31,7 +31,7 @@ A driver's status lives on the driver, not on their signup form. "Reserve" is an
 
 ## Before you start
 
-**The bot must already be set up.** You need the interaction channel, the interaction role and the log channel in place. If you have not got that far, follow [Setting up the bot for your league](configuring-the-core-bot.md) first; this guide picks up from there.
+**The bot must already be set up.** You need the interaction channel, the interaction role and the log channel in place, and your league's **base role** and **driver role** set with `/bot base-role` and `/bot driver-role`. If you have not got that far, follow [Setting up the bot for your league](configuring-the-core-bot.md#step-1--tell-the-bot-who-is-in-charge) first; this guide picks up from there.
 
 **Both privileged intents must be on.** The signup module is the one part of the bot that needs both. Without **Server Members** it cannot grant or revoke a single role; without **Message Content** the wizard never sees a word your drivers type, and every signup stalls on question one. See [Privileged Gateway Intents](../../README.md#privileged-gateway-intents).
 
@@ -43,7 +43,7 @@ A driver's status lives on the driver, not on their signup form. "Reserve" is an
 |---|---|
 | `/module enable signup` and `/module disable signup` | The **league admin role** |
 | `/driver sack` | The **league admin role** |
-| Everything under `/signup`, including `/signup channel`, `/signup base-role` and `/signup complete-role` | The **interaction role** |
+| Everything under `/signup`, including `/signup channel` | The **interaction role** |
 | `/driver assign`, `/driver unassign`, `/driver reject`, `/driver move`, `/driver release`, `/driver reassign` | The **interaction role** |
 
 > **Both tiers are roles, and Discord's permissions are not one of them.** Someone holding Administrator but neither role is refused every command here, and so is anyone running one outside the interaction channel. Being the server owner does not get you past it — give yourself one of the two roles instead.
@@ -60,37 +60,33 @@ A driver's status lives on the driver, not on their signup form. "Reserve" is an
 
 The signup module can be switched on or off only while no season is live, or while the season is in configuration. Confirming the season's configuration fixes it, on or off, until that season ends — so decide before then.
 
-Nothing is configured yet. The bot creates an empty configuration record and tells you the three commands to run next, which are step 2. The question settings are not written at this point at all — until you change one, the bot simply falls back to its defaults.
+Nothing is configured yet. The bot creates an empty configuration record and tells you what to run next: `/signup channel`, which is step 2, and `/bot base-role` or `/bot driver-role` if either role is not set yet. The question settings are not written at this point at all — until you change one, the bot simply falls back to its defaults.
 
-Turning the module off force-closes an open window, hands back the permissions it applied to your signup channel, and forgets your channel and your two roles.
+Turning the module off force-closes an open window, hands back the permissions it applied to your signup channel, and forgets your channel.
 
-> **Turning it off keeps more than it says it does.** The bot reports that all signup configuration has been cleared. Your time slots, your three question settings, and every signup drivers have already submitted all survive. Only the channel and the two roles are actually forgotten. Switch the module back on and you will find your old slots waiting — which is convenient, but not what the message led you to expect.
+> **Turning it off keeps more than you might expect.** Your time slots, your three question settings, and every signup drivers have already submitted all survive, and so do the league's two roles, which were never the module's. Only the channel is forgotten, and the bot's reply says so. Switch the module back on and you will find your old slots waiting.
 
 ---
 
-## Step 2 — Give it a channel and two roles
+## Step 2 — Give it a channel
 
 ```
 /signup channel channel:#signups
-/signup base-role role:@League Member
-/signup complete-role role:@Driver
 ```
 
-Three things, and the module does nothing at all until it has all three. They ask for the interaction role like the rest of `/signup` — naming a channel and two roles is configuring a module, not governing the bot.
+The module does nothing at all until it has a channel, and the league's two roles beside it. The command asks for the interaction role like the rest of `/signup` — naming a channel is configuring a module, not governing the bot.
 
 **The channel** is where the Sign Up button gets posted. Setting it rewrites the channel's permissions: everyone loses sight of it, the base role can see it but cannot type in it, and holders of either league role can see and type. That is deliberate — the only thing a driver should be doing in there is pressing the button.
 
-**The base role** is who the signups are for. It decides who can see the channel, and it is the role that gets pinged when you open the window.
-
-**The complete role** is the reward. The bot grants it the moment you approve a driver, so it is the badge that says someone is through the door.
+**The two roles are your league's, not this module's**, and are set in the [core guide](configuring-the-core-bot.md#step-1--tell-the-bot-who-is-in-charge). Here is what signups do with them. **The base role** is who the signups are for: it decides who can see the channel, and it is the role that gets pinged when you open the window. Change it and the bot moves the channel's permissions to the new role. **The driver role** is the reward: the bot grants it the moment you approve a driver, so it is the badge that says someone is through the door.
 
 > **Use a channel of its own, and nothing else.** Setting the signup channel replaces every permission override on it, and moving the signup channel elsewhere strips the old one bare on the way out. Any permissions you had set up by hand go with them.
 
 > **The signup channel cannot be your bot command channel.** The bot refuses outright. They are doing opposite jobs — one is for drivers who may not type, the other is for admins who must.
 
-> **Do not use `/signup config channel`.** The old command is broken and fails with an error whatever you pass it. `/signup channel` is the one that works. `/signup config roles` still works and sets both roles at once, but it does not fix up the channel's permissions, so prefer the separate commands.
+> **Do not use `/signup config channel`.** The old command is broken and fails with an error whatever you pass it. `/signup channel` is the one that works.
 
-**These three block a season.** While the signup module is on, `/season config-review` withholds its button until all three are set, and names the ones that are missing. If you are not going to use signups this season, turn the module off rather than leaving it half-configured.
+**These three block a season.** While the signup module is on, `/season config-review` withholds its button until the channel and both roles are set, and names the ones that are missing. If you are not going to use signups this season, turn the module off rather than leaving it half-configured.
 
 ---
 
@@ -201,7 +197,7 @@ Question 6 offers your team list, so **add your teams before you confirm the sea
 
 When a driver finishes, the bot posts a **Signup Review** panel in their channel summarising every answer, tells them to wait for an admin, and gives you three buttons.
 
-**Approve** grants the complete role, adds up their lap times, and moves them to Unassigned. They are now in the queue for step 9.
+**Approve** grants the driver role, adds up their lap times, and moves them to Unassigned. They are now in the queue for step 9.
 
 **Request Changes** sends them back for one field. You type a reason, then pick which of the nine answers they should redo, and only that question is asked again. When they answer, they come straight back to you.
 
@@ -281,13 +277,13 @@ Then settle every one of them:
 
 `division` takes either the tier number or the division name; `team` must match the team name exactly. These work only while the season is **in placements**, or mid-season while the drivers of a closed window are placed — the divisions have to exist first, and building them is core setup; see [Setting up the bot for your league](configuring-the-core-bot.md#step-8--build-the-season).
 
-**Every signup must be settled before placements are confirmed.** Place each Unassigned driver with `/driver assign`, or turn them down with `/driver reject`, which returns them to Not Signed Up and takes the complete role back; their signup stays with the season. A signup still in review is settled from its review panel. `/season placements-review` names anyone left, and withholds its button until nobody is.
+**Every signup must be settled before placements are confirmed.** Place each Unassigned driver with `/driver assign`, or turn them down with `/driver reject`, which returns them to Not Signed Up and takes the driver role back; their signup stays with the season. A signup still in review is settled from its review panel. `/season placements-review` names anyone left, and withholds its button until nobody is.
 
 A driver can hold one seat per division, and a team runs out of seats. The Reserve team is the exception: it has room for everyone.
 
 `/driver assign` is refused while test mode is active — a real driver is never seated under test. Fake drivers are placed by `/test-mode roster add` and are unaffected.
 
-**Nothing is granted or posted when you assign.** A placement stands outside the championship until placements are confirmed from `/season placements-review`: that is when every placed driver is granted their division and team roles, and every lineup is posted. Until then `/driver unassign` takes a placement back without trace, returning the driver to the queue. The complete role is not part of this — it is granted when you approve the signup.
+**Nothing is granted or posted when you assign.** A placement stands outside the championship until placements are confirmed from `/season placements-review`: that is when every placed driver is granted their division and team roles, and every lineup is posted. Until then `/driver unassign` takes a placement back without trace, returning the driver to the queue. The driver role is not part of this — it is granted when you approve the signup.
 
 **Once placements are confirmed, the lineup changes differently.** `/driver move` moves a driver to another team or division, `/driver release` takes them out of one division while they keep their others, and `/driver sack` removes them from the season. Each takes effect at once, roles and lineup included. Sacking deletes nobody: a sacked driver may sign up again in a later window.
 
@@ -313,11 +309,11 @@ The one thing you cannot fake is a second person pressing the button, so it is w
 
 **A summary and a wait.** When they finish, everything they entered is read back to them with a note to wait for an admin to check it.
 
-**One of three endings.** Approved, and they get the complete role and are told so. Sent back for one answer, with your reason. Or rejected, with your reason. In every case the channel disappears a day later.
+**One of three endings.** Approved, and they get the driver role and are told so. Sent back for one answer, with your reason. Or rejected, with your reason. In every case the channel disappears a day later.
 
 **A lineup post**, once placements are confirmed, in whichever channel that division uses.
 
-**The same button next season.** When a season ends they return to Not Signed Up, lose the complete role, and sign up again for the next one.
+**The same button next season.** When a season ends they return to Not Signed Up, lose the driver role, and sign up again for the next one.
 
 They never see the queue, their seed, or anyone else's lap times.
 
@@ -351,7 +347,7 @@ Worth running through before you confirm the season's configuration, which fixes
 - [ ] `/module enable signup` has been run
 - [ ] Both privileged intents are on, Message Content especially
 - [ ] The signup channel is a channel of its own, not one with permissions you care about
-- [ ] The base role and the complete role are both set, and are two different roles — one is who may sign up, the other is who got through
+- [ ] The base role and the driver role are both set, and are two different roles — one is who may sign up, the other is who got through
 - [ ] Your teams are added, so the preferred-team question has something to offer
 - [ ] Every slot you might race in is on the list, in UTC, and you are happy with it — because the list is fixed once the season's configuration is confirmed
 - [ ] You have decided about lap times, and have the track IDs to hand if you want them

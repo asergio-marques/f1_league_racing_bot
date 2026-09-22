@@ -42,13 +42,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.signup_cog import SignupCog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
+from services.config_service import ConfigService  # noqa: E402
 from services.signup_module_service import SignupModuleService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 9008
 CHANNEL_ID = 777001
 BASE_ROLE_ID = 555001
-SIGNED_UP_ROLE_ID = 555002
+DRIVER_ROLE_ID = 555002
 
 
 def _future(days: int = 7) -> str:
@@ -67,7 +68,7 @@ async def _seed(
     signups_open: bool = False,
     channel: int | None = CHANNEL_ID,
     base_role: int | None = BASE_ROLE_ID,
-    signed_up_role: int | None = SIGNED_UP_ROLE_ID,
+    driver_role: int | None = DRIVER_ROLE_ID,
     slots: int = 1,
     close_at: str | None = None,
     test_mode: bool = False,
@@ -77,25 +78,18 @@ async def _seed(
     db_path = os.path.join(str(tmp_path), "signup_open.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
+        # The two roles are the league's, on the server configuration (issue #276).
         await db.execute(
             "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id, test_mode_active) "
-            "VALUES (?, 900, 100, 101, ?)",
-            (SERVER_ID, int(test_mode)),
+            "interaction_channel_id, log_channel_id, test_mode_active, base_role_id, "
+            "driver_role_id) VALUES (?, 900, 100, 101, ?, ?, ?)",
+            (SERVER_ID, int(test_mode), base_role, driver_role),
         )
         if config:
             await db.execute(
                 "INSERT INTO signup_module_config (id, signup_channel_id, "
-                "base_role_id, signed_up_role_id, signups_open, close_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    1,
-                    channel,
-                    base_role,
-                    signed_up_role,
-                    int(signups_open),
-                    close_at,
-                ),
+                "signups_open, close_at) VALUES (?, ?, ?, ?)",
+                (1, channel, int(signups_open), close_at),
             )
         # The table holds only the day and the time; the durable id, the display ordinal
         # and the label are all derived from those (issue #126), so seeding them here
@@ -131,19 +125,10 @@ def _cog(db_path: str) -> SignupCog:
     bot = MagicMock()
     bot.db_path = db_path
     bot.signup_module_service = SignupModuleService(db_path)
-    bot.config_service = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    bot.config_service = ConfigService(db_path)
     bot.scheduler_service = MagicMock()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
-
-    async def _server_config():
-        async with get_connection(db_path) as db:
-            cursor = await db.execute("SELECT test_mode_active FROM server_configs")
-            row = await cursor.fetchone()
-        return MagicMock(test_mode_active=bool(row["test_mode_active"])) if row else None
-
-    bot.config_service.get_server_config = AsyncMock(side_effect=_server_config)
 
     cog = SignupCog.__new__(SignupCog)
     cog.bot = bot
@@ -248,23 +233,23 @@ async def test_signups_already_open_are_not_opened_again(tmp_path):
 async def test_every_missing_setting_is_named_at_once(tmp_path):
     """Naming only the first would send a manager round the loop three times, and each
     refusal names the command that fixes it."""
-    db_path = await _seed(tmp_path, channel=None, base_role=None, signed_up_role=None)
+    db_path = await _seed(tmp_path, channel=None, base_role=None, driver_role=None)
     interaction = _interaction()
 
     await _open(_cog(db_path), interaction)
 
     replied = _replied(interaction)
     assert "/signup channel" in replied
-    assert "/signup base-role" in replied
-    assert "/signup complete-role" in replied
+    assert "/bot base-role" in replied
+    assert "/bot driver-role" in replied
 
 
 @pytest.mark.parametrize(
     "missing,expected",
     [
         ("channel", "/signup channel"),
-        ("base_role", "/signup base-role"),
-        ("signed_up_role", "/signup complete-role"),
+        ("base_role", "/bot base-role"),
+        ("driver_role", "/bot driver-role"),
     ],
 )
 async def test_each_setting_alone_is_enough_to_refuse(tmp_path, missing, expected):

@@ -67,6 +67,7 @@ it only to place it; the rules governing it belong to its own specification.
     - The driver role shall be granted when a driver's signup is approved, and revoked whenever the driver returns to Not Signed Up.
 - Each shall be set by a command of its own, a league manager's.
 - Confirming a season's configuration shall fix both until the season ends. A driver role changed mid-season would leave every driver holding the old one, the season's end revoking only the new.
+- Disabling a module shall clear neither.
 
 ### Channels
 - Three channels shall be configured for the server — the interaction channel, the log channel and the signup channel — and eight for each division: its weather forecasts, its lineup, its calendar, its results, its standings, its verdicts, its check-in calls and its attendance.
