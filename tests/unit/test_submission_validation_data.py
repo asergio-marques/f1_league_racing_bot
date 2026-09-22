@@ -277,7 +277,7 @@ async def test_a_division_with_no_teams_yields_nothing():
     rather than accepting all of them."""
     result = await _build([], {})
 
-    assert result == (set(), {}, None, {}, set(), {})
+    assert result == (set(), {}, None, {}, set(), {}, {})
 
 
 async def test_every_team_that_can_be_named_carries_its_name():

@@ -223,7 +223,7 @@ async def _amend(
     patches = [
         patch(
             "services.result_submission_service._build_division_validation_data",
-            new=AsyncMock(return_value=({101, 102}, {3001: 3001}, None, {101: 3001}, set(), {})),
+            new=AsyncMock(return_value=({101, 102}, {3001: 3001}, None, {101: 3001}, set(), {}, {})),
         ),
         patch(
             "services.result_submission_service.other_active_team_assignments",

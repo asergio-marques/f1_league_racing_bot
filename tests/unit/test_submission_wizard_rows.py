@@ -135,12 +135,22 @@ def test_a_driver_that_is_not_a_member_mention_is_refused(driver):
     assert "Driver" in result
 
 
-@pytest.mark.parametrize("team", ["Alpha", "<@5353>", ""])
-def test_a_team_that_is_not_a_role_mention_is_refused(team):
-    result = _validate_qualifying_row_wizard(_qualifying(team=team))
+def test_an_empty_team_is_refused():
+    result = _validate_qualifying_row_wizard(_qualifying(team=""))
 
     assert _refused(result)
     assert "Team" in result
+
+
+@pytest.mark.parametrize("team", ["Alpha", "<@5353>"])
+def test_a_team_that_is_not_a_role_mention_is_carried_as_typed(team):
+    """A team may be typed by its shorthand (#381), and which team a text names is the
+    division's business: `validate_submission_block` resolves it, and refuses what names none,
+    `<@5353>` included."""
+    result = _validate_qualifying_row_wizard(_qualifying(team=team))
+
+    assert result.team_typed == team
+    assert result.team_role_id is None
 
 
 def test_a_valid_row_carries_the_ids_through():

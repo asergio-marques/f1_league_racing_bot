@@ -5528,7 +5528,7 @@ class SeasonCog(commands.Cog):
 
         (
             driver_ids, team_of_role, reserve_role_id, driver_team_map, reserve_driver_ids,
-            team_names,
+            team_names, team_of_shorthand,
         ) = await _build_division_validation_data(div.id, interaction.client)
         config_names = await get_season_config_names(self.bot.db_path, season.id)
 
@@ -5626,6 +5626,7 @@ class SeasonCog(commands.Cog):
                 other_active_assignments=other_assignments,
                 current_of=current_of,
                 team_names=team_names,
+                team_of_shorthand=team_of_shorthand,
             )
             try:
                 await msg.delete()

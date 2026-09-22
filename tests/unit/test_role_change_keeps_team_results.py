@@ -20,6 +20,8 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
@@ -132,6 +134,7 @@ async def _validate(
         data.reserve_driver_ids,
         other_active_assignments=other,
         team_names=data.team_names,
+        team_of_shorthand=data.team_of_shorthand,
     )
 
 
@@ -277,7 +280,7 @@ async def test_submission_rejects_a_role_of_no_team_in_the_division(tmp_path):
         ],
     )
 
-    assert "Row 2: <@&4242> is not a valid team role for this division." in errors
+    assert "Row 2: <@&4242> is not the role of a team of this division." in errors
 
 
 async def test_a_replaced_role_no_longer_names_the_team(tmp_path):
@@ -289,7 +292,7 @@ async def test_a_replaced_role_no_longer_names_the_team(tmp_path):
         db_path, [f"1, <@{FERRARI_DRIVER}>, <@&{OLD_ROLE}>, 46:23.569, 1:14.523, N/A"]
     )
 
-    assert f"Row 1: <@&{OLD_ROLE}> is not a valid team role for this division." in errors
+    assert f"Row 1: <@&{OLD_ROLE}> is not the role of a team of this division." in errors
 
 
 async def test_a_refusal_names_the_team_a_driver_is_seated_in(tmp_path):
@@ -336,3 +339,89 @@ async def test_a_refusal_names_the_team_an_earlier_session_recorded_across_a_rol
         f"Row 1: driver <@{FERRARI_DRIVER}> was recorded under **Ferrari** in Feature "
         f"Qualifying of this round, but is submitted here as <@&{RIVAL_ROLE}>."
     ) in errors
+
+
+# ── A team may be typed by its shorthand (#381) ───────────────────────────
+
+
+async def test_submission_names_a_team_by_its_shorthand(tmp_path):
+    """The role identifies a team; its shorthand is an alias a league may type instead, in any
+    case. Either resolves to the same division team."""
+    db_path, teams = await _league(tmp_path)
+
+    parsed = await _validate(
+        db_path,
+        [
+            f"1, <@{FERRARI_DRIVER}>, FERRARI, 46:23.569, 1:14.523, N/A",
+            f"2, <@{RIVAL_DRIVER}>, <@&{RIVAL_ROLE}>, +5.000, 1:14.600, N/A",
+        ],
+    )
+
+    assert [row.team_instance_id for row in parsed] == [teams["Ferrari"], teams["Rival"]]
+
+
+async def test_submission_refuses_the_shorthand_of_a_team_with_no_role(tmp_path):
+    """Decided 2026-09-22: the role is what identifies a team, and the shorthand only an alias
+    for it, so a team with no role stays out of a submission by either name."""
+    db_path, _teams = await _league(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM team_role_configs WHERE team_name = 'Ferrari'")
+        await db.commit()
+
+    errors = await _validate(
+        db_path, [f"1, <@{RIVAL_DRIVER}>, Ferrari, 46:23.569, 1:14.523, N/A"]
+    )
+
+    assert any("No team of this division has the shorthand `Ferrari`" in e for e in errors)
+
+
+async def test_submission_refuses_the_reserve_team_by_its_shorthand(tmp_path):
+    """A reserve stands in for a team's car and is recorded under that team."""
+    db_path, _teams = await _league(tmp_path)
+
+    errors = await _validate(
+        db_path, [f"1, <@{RIVAL_DRIVER}>, Reserve, 46:23.569, 1:14.523, N/A"]
+    )
+
+    assert any("`Reserve`" in e for e in errors)
+
+
+@pytest.mark.parametrize(
+    "typed,said",
+    [
+        ("@everyone", "`@everyone` is not a team"),
+        ("@here", "`@here` is not a team"),
+        ("<@102>", "<@102> is a member, not a team"),
+        ("123456789012345678", "is a Discord ID, not a team"),
+    ],
+)
+async def test_submission_refuses_everyone_here_and_a_user_mention_as_a_team(
+    tmp_path, typed, said
+):
+    db_path, _teams = await _league(tmp_path)
+
+    errors = await _validate(
+        db_path, [f"1, <@{RIVAL_DRIVER}>, {typed}, 46:23.569, 1:14.523, N/A"]
+    )
+
+    assert any(e.startswith("Row 1: ") and said in e for e in errors)
+
+
+async def test_an_empty_team_column_is_refused(tmp_path):
+    db_path, _teams = await _league(tmp_path)
+
+    errors = await _validate(db_path, [f"1, <@{RIVAL_DRIVER}>, , 46:23.569, 1:14.523, N/A"])
+
+    assert errors == ["Row 1: Team must be named, by its role or its shorthand."]
+
+
+async def test_a_refusal_echoes_the_shorthand_as_typed(tmp_path):
+    db_path, _teams = await _league(tmp_path)
+
+    errors = await _validate(
+        db_path, [f"1, <@{FERRARI_DRIVER}>, rival, 46:23.569, 1:14.523, N/A"]
+    )
+
+    assert errors == [
+        f"Row 1: driver <@{FERRARI_DRIVER}> submitted as rival but is assigned to **Ferrari**."
+    ]

@@ -187,7 +187,7 @@ async def _run(
     patches = {
         "validation": patch(
             "services.result_submission_service._build_division_validation_data",
-            new=AsyncMock(return_value=({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {})),
+            new=AsyncMock(return_value=({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {}, {})),
         ),
         "create": patch(
             "services.result_submission_service.create_submission_channel",
