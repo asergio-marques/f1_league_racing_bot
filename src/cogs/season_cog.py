@@ -2408,7 +2408,16 @@ class SeasonCog(commands.Cog):
             interaction.followup.send = original_followup
 
     async def _do_confirm_mid_season_placements(self, interaction: discord.Interaction) -> None:
-        """Commit the new placements and return the season to Ongoing."""
+        """Commit the new placements and return the season to Ongoing.
+
+        **Nothing after the commit may raise out of here** (issue #387), as at approval. The
+        placements are committed by then, and a raise reaching the view's error handler would
+        tell the manager the confirmation did not finish and leave the review standing to
+        expire. So every step after it is guarded on its own. What was left undone — a driver
+        not given their roles, a season not returned to Ongoing — is named in the reply and
+        the log line, with its repair. A season not moved on to Pending completion is only
+        logged: `/season complete` moves it there itself.
+        """
         from models.season import InvalidStageTransition
 
         await interaction.response.defer(ephemeral=True)
@@ -2433,26 +2442,67 @@ class SeasonCog(commands.Cog):
             season.id, interaction.guild
         )
         committed = outcome.placements
+
+        # What the confirmation could not do, told to the manager and the log channel below.
+        not_done: list[str] = []
+        if outcome.ungranted:
+            who = ", ".join(f"<@{user_id}>" for user_id in outcome.ungranted)
+            not_done.append(
+                f"{who} \u2014 their roles could not be granted. Give them their division's "
+                f"and team's roles by hand."
+            )
+
+        returned = False
         try:
             await self.bot.season_service.set_stage(season.id, SeasonStage.ONGOING)  # type: ignore[attr-defined]
         except InvalidStageTransition:
             log.warning("mid-season placements: season %s had already moved on", season.id)
+        except Exception:  # noqa: BLE001 — the placements are committed
+            # Confirming again repairs it: the review offers its button with nothing left
+            # to commit, and the confirmation then makes this move alone.
+            log.exception(
+                "mid-season placements: could not return season %s to Ongoing", season.id
+            )
+            not_done.append(
+                "The season could not be returned to Ongoing \u2014 run "
+                "`/season placements-review` and confirm again."
+            )
         else:
+            returned = True
             from services.season_lifecycle_service import advance_to_pending_completion
 
             # Rounds may have finished every division while the new drivers were placed.
-            await advance_to_pending_completion(self.bot.db_path, season.id)  # type: ignore[attr-defined]
+            try:
+                await advance_to_pending_completion(self.bot.db_path, season.id)  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001 — `/season complete` makes this move itself
+                log.exception(
+                    "mid-season placements: could not check whether season %s is done",
+                    season.id,
+                )
 
-        await interaction.followup.send(
-            f"\u2705 {len(committed)} placement(s) confirmed. The season is ongoing again.",
-            ephemeral=True,
+        msg = f"\u2705 {len(committed)} placement(s) confirmed."
+        if returned:
+            msg += " The season is ongoing again."
+        await _confirm_privately(
+            interaction,
+            msg + _not_done_section(not_done),
+            fallback=(
+                f"\u2705 <@{interaction.user.id}> \u2014 the placements are confirmed"
+                + (" and the season is ongoing again" if returned else "")
+                + ". Your confirmation could not be sent to you privately; the log channel "
+                "has what it said."
+            ),
         )
-        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-            f"/season placements-review | Confirmed\n"
-            f"  season: Season #{season.season_number}\n"
-            f"  placements: {len(committed)}",
-        )
+        try:
+            await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+                f"/season placements-review | Confirmed\n"
+                f"  season: Season #{season.season_number}\n"
+                f"  placements: {len(committed)}"
+                + "".join(f"\n  not done: {line}" for line in not_done),
+            )
+        except Exception:  # noqa: BLE001 — the placements are committed and the manager told
+            log.exception("mid-season placements: could not log the confirmation")
 
     # ------------------------------------------------------------------
     # /season config-review — confirming the configuration (issue #220)
