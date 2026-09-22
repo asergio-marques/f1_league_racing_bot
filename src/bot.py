@@ -77,10 +77,17 @@ async def main() -> None:
     # The version is read once, here, and never when a command runs (#258): it belongs to
     # the code this process loaded. See `utils/version.py`.
     from utils.paths import PROJECT_ROOT
-    from utils.version import read_version
+    from utils.version import read_version, read_version_date
 
-    bot.running_version = read_version(PROJECT_ROOT)  # type: ignore[attr-defined]
-    log.info("Running %s", bot.running_version or "an unknown version")  # type: ignore[attr-defined]
+    version = read_version(PROJECT_ROOT)
+    made = read_version_date(PROJECT_ROOT)
+    bot.running_version = version  # type: ignore[attr-defined]
+    bot.running_version_date = made  # type: ignore[attr-defined]
+    log.info(
+        "Running %s%s",
+        version or "an unknown version",
+        f", made {made.isoformat()}" if made is not None else "",
+    )
 
     # Registers the hub's About option, core's one, before `on_ready` recovers the hub and
     # routes the panel's buttons (#258).
