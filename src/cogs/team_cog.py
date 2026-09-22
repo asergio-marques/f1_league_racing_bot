@@ -592,9 +592,10 @@ class TeamCog(commands.Cog):
         interaction: discord.Interaction,
         role: discord.Role | None = None,
     ) -> None:
-        """Set or clear the Reserve team's role, on the same terms as `/team role`.
+        """Set or clear the Reserve team's role, on the same terms `/team modify` sets a team's.
 
-        Refused once the season is pending completion, for the reason given there.
+        Refused once the season is pending completion, for the reason given there, and refuses
+        a role the bot cannot grant as every team command does (#381).
         """
         if await self._refuse_once_the_season_is_done(interaction, "reserve-role"):
             return
