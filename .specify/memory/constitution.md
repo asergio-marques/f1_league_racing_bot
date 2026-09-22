@@ -1,6 +1,37 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-22 — v14.2.1 → v14.3.0: MINOR — the hub channel, and the panel buttons that ask no tier (issue #279)]
+  Version change    : 14.2.1 → 14.3.0
+  Bump rationale    : MINOR, decided with the user in planning #279: guidance is added within
+                      two existing principles and none is removed or redefined. Principle VII
+                      gains a channel category and Principle I a class of button; nothing that
+                      complied before fails to comply now.
+
+  Modified sections :
+    - Principle I (Trusted Configuration Authority) — new paragraph, "The hub's panel asks no
+      tier": a hub button asks no tier, who may see the hub being who may press it; the
+      options are the modules', offered while enabled; a press on one no longer offered is
+      refused. It stands beside the rule that a driver's buttons in their own channel ask
+      nothing, and adds no third tier: the channel's visibility is the gate.
+    - Principle VII (Output Channel Discipline) — a third category, the hub channel: one for
+      the league, optional, set by a league manager, receiving only the hub's panel.
+
+  Why the constitution moved:
+    - Branch feature/279-hub-channel adds `/bot hub-channel` and the panel it keeps. Principle
+      VII lists the channels the bot may post to, and without this the panel would be a post
+      to an unregistered channel; Principle I asks every button to ask the tier of its action,
+      and the hub's buttons belong to no tier.
+    - `docs/wip-specs/core_specification.md`, "The hub", is the governing statement of the
+      rules; this document records only what governs them.
+    - Principle VII's list was already incomplete before this amendment — it names the
+      forecast and log channels but not the calendar and lineup channels core posts to. That
+      is left as it stood, for the architecture review (#282) rather than widened here.
+
+  Added sections    : none — both are additions inside existing principles.
+  Removed sections  : none.
+  Deferred items    : none.
+
 [2026-09-22 — v14.2.0 → v14.2.1: PATCH — the base role and the driver role are the league's, not the signup module's (issue #276)]
   Version change    : 14.2.0 → 14.2.1
   Bump rationale    : PATCH, decided with the user in planning #276. A data listing is
@@ -4828,6 +4859,13 @@ MUST be opened to the league admin role on the same terms, so that a league admi
 what they are entitled to act upon. A button offered to a driver in their own channel MUST
 ask nothing, a driver needing no role.
 
+**The hub's panel asks no tier (v14.3.0).** A button of the panel the bot keeps in the hub
+channel MUST ask no tier: who may see the hub — holders of the base role, or every member where
+the league has set none, and holders of both tier roles — is who may press it. The panel's
+options are the modules', each offered while its module is enabled; a press on an option no
+longer offered MUST be refused, seen by the presser alone. The hub is how the broader league
+membership reaches the bot, and it adds no third tier: the channel's visibility is the gate.
+
 The bot MUST refuse an out-of-channel command visibly, the refusal being seen by the
 invoking member alone rather than passing silently — save the five setup commands and the
 factory reset exempted above, which MUST run from any channel. The bot MUST reject unauthorized configuration
@@ -5067,6 +5105,10 @@ unless explicitly permitted by an active module (see below):
    enabled.
 2. **Calculation log channel** (one for the league, configured at bot setup): receives all phase
    computation logs, configuration mutation confirmations, and audit trail entries.
+3. **Hub channel** (one for the league, optional, set by a league manager with
+   `/bot hub-channel`): receives only the hub's panel, which the bot edits in place and posts
+   again where it has been deleted. It is a core channel, not one a module introduces, and no
+   member but the bot may post in it (v14.3.0).
 
 **Module-introduced channels**: Optional modules (Principle X) MAY register additional
 channel categories (e.g., a general signup channel, per-driver signup channels). Each such
@@ -8232,4 +8274,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.2.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-22
+**Version**: 14.3.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-22
