@@ -547,7 +547,7 @@ class BotCog(commands.Cog):
             {"channel_id": channel.id},
         )
 
-        reply =f"✅ **Hub channel** set to {channel.mention}."
+        reply = f"✅ **Hub channel** set to {channel.mention}."
         if faults:
             reply += "\n⚠️ " + "\n⚠️ ".join(faults)
         await interaction.followup.send(reply, ephemeral=True)
