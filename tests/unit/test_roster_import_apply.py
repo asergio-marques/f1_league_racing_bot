@@ -196,6 +196,23 @@ async def test_an_unknown_team_seats_nobody(season):
     assert any("ferrari" in problem.lower() for problem in errors)
 
 
+async def test_a_team_is_named_by_its_shorthand_in_any_case(season):
+    """A roster names a team by its shorthand (#381), as a submission does."""
+    seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", team="ALPINE")))
+
+    assert errors == []
+    assert seated == 1
+
+
+@pytest.mark.parametrize("team", ["<@&123456789012345678>", "@everyone", "<@123456789012345678>"])
+async def test_a_team_named_any_other_way_seats_nobody_and_says_why(season, team):
+    """A role is only for mentioning a team, and a member or `@everyone` is none at all."""
+    seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", team=team)))
+
+    assert seated == 0
+    assert any(problem.startswith("Line ") and "shorthand" in problem for problem in errors)
+
+
 async def test_a_bad_nationality_seats_nobody(season):
     seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", nat="Martian")))
 

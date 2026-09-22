@@ -826,7 +826,7 @@ class TestModeCog(commands.Cog):
     )
     @app_commands.describe(
         driver_name="Display name for the fake driver.",
-        team_name="Team to assign the driver to (must exist in the division).",
+        team_name="The shorthand of the team the driver is seated in.",
         division="Name of the division.",
         nationality="Optional. A nationality (e.g. British), a country name (e.g. United Kingdom), or 'other'.",
     )

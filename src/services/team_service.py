@@ -712,25 +712,23 @@ def resolve_team_reference(
     return TeamReference(team=match)
 
 
-async def resolve_division_team(db_path: str, division_id: int, text: str | None) -> TeamReference:
-    """The team of the division whose shorthand *text* is.
+async def division_team_references(db, division_id: int) -> list[dict]:
+    """Every team of the division, as ``resolve_team_reference`` reads a team, on *db*.
 
-    Each team carries ``id``, ``name`` (its shorthand), ``full_name``, ``is_reserve`` and
-    ``role_id`` — the last through the server's mapping, which is keyed by the shorthand. A
-    team with no role is found like any other: the Reserve team's role may be cleared, and a
-    driver must still be placed into it.
+    Each carries ``id``, ``name`` (its shorthand), ``full_name``, ``is_reserve`` and
+    ``role_id`` — the last through the server's mapping, which is keyed by the shorthand, and
+    None for a team with no role.
     """
-    async with get_connection(db_path) as db:
-        rows = await (
-            await db.execute(
-                "SELECT ti.id, ti.name, ti.full_name, ti.is_reserve, trc.role_id "
-                "FROM team_instances ti "
-                "LEFT JOIN team_role_configs trc ON trc.team_name = ti.name "
-                "WHERE ti.division_id = ? ORDER BY ti.is_reserve, ti.id",
-                (division_id,),
-            )
-        ).fetchall()
-    teams = [
+    rows = await (
+        await db.execute(
+            "SELECT ti.id, ti.name, ti.full_name, ti.is_reserve, trc.role_id "
+            "FROM team_instances ti "
+            "LEFT JOIN team_role_configs trc ON trc.team_name = ti.name "
+            "WHERE ti.division_id = ? ORDER BY ti.is_reserve, ti.id",
+            (division_id,),
+        )
+    ).fetchall()
+    return [
         {
             "id": r["id"],
             "name": r["name"],
@@ -740,6 +738,16 @@ async def resolve_division_team(db_path: str, division_id: int, text: str | None
         }
         for r in rows
     ]
+
+
+async def resolve_division_team(db_path: str, division_id: int, text: str | None) -> TeamReference:
+    """The team of the division whose shorthand *text* is.
+
+    A team with no role is found like any other: the Reserve team's role may be cleared, and a
+    driver must still be placed into it.
+    """
+    async with get_connection(db_path) as db:
+        teams = await division_team_references(db, division_id)
     return resolve_team_reference(text, teams, scope=" of this division")
 
 

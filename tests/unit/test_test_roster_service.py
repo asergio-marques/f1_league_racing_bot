@@ -217,6 +217,18 @@ class TestSeating:
         assert isinstance(result, str)
         assert "Nowhere" in result
 
+    async def test_a_team_is_named_by_its_shorthand_in_any_case(self, db_path):
+        result = await _add(db_path, team="REDLINE")
+
+        assert not isinstance(result, str), result
+
+    async def test_a_role_mention_is_refused_saying_to_use_the_shorthand(self, db_path):
+        """A role is only for mentioning a team, never for naming one (#381)."""
+        result = await _add(db_path, team="<@&123456789012345678>")
+
+        assert isinstance(result, str)
+        assert "Name a team by its shorthand." in result
+
 
 # ── A mock driver's name is held to the rules every typed name is (#362) ──
 

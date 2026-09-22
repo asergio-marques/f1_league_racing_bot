@@ -19,6 +19,11 @@ from typing import TypedDict
 
 from db.database import get_connection
 from models.points_config import SessionType
+from services.team_service import (
+    division_team_references,
+    resolve_division_team,
+    resolve_team_reference,
+)
 from utils.input_validator import NAME, parse_nationality
 
 log = logging.getLogger(__name__)
@@ -173,16 +178,17 @@ async def add_test_driver(
     if division_id is None:
         return f"Division '{division_name}' not found in the active season."
 
+    # A team is typed by its shorthand (#381); a role, a member or a name no team has is refused.
+    reference = await resolve_division_team(db_path, division_id, team_name)
+    if reference.team is None:
+        return f"{reference.refusal} (division '{division_name}')"
+
     async with get_connection(db_path) as db:
-        # Find the team instance in this division (case-insensitive name match)
         cursor = await db.execute(
-            "SELECT id, name, max_seats, is_reserve FROM team_instances "
-            "WHERE division_id = ? AND LOWER(name) = LOWER(?)",
-            (division_id, team_name),
+            "SELECT id, name, max_seats, is_reserve FROM team_instances WHERE id = ?",
+            (reference.team["id"],),
         )
         team_row = await cursor.fetchone()
-        if team_row is None:
-            return f"Team '{team_name}' not found in division '{division_name}'."
 
         team_instance_id: int = team_row["id"]
         is_reserve: bool = bool(team_row["is_reserve"])
@@ -363,16 +369,34 @@ async def add_test_drivers_in_bulk(
                     f"already on this server."
                 )
 
+        # A team is typed by its shorthand (#381), and a line naming it any other way — a
+        # role, a member — is refused on that line. Each division's teams are read once.
+        teams_of: dict[int, list[dict]] = {
+            division_id: await division_team_references(db, division_id)
+            for division_id in division_ids.values()
+        }
+        team_key_of_line: dict[int, str] = {}
+        for driver in drivers:
+            division_id = division_ids.get(driver.division_name)
+            if division_id is None:
+                continue
+            reference = resolve_team_reference(
+                driver.team_name, teams_of[division_id], scope=" of this division"
+            )
+            if reference.team is None:
+                errors.append(f"Line {driver.line}: {reference.refusal}")
+                continue
+            team_key_of_line[driver.line] = reference.team["name"].lower()
+
         # Teams and their seats, counted across the whole import: two drivers of one team
         # need two seats, and each row passing on its own would still overfill it.
         wanted: dict[tuple[int, str], int] = {}
         for driver in drivers:
             division_id = division_ids.get(driver.division_name)
-            if division_id is None:
+            team_key = team_key_of_line.get(driver.line)
+            if division_id is None or team_key is None:
                 continue
-            wanted[(division_id, driver.team_name.lower())] = (
-                wanted.get((division_id, driver.team_name.lower()), 0) + 1
-            )
+            wanted[(division_id, team_key)] = wanted.get((division_id, team_key), 0) + 1
 
         seats: dict[tuple[int, str], list[int]] = {}
         # Per division, the drivers each of its teams is given, under the team's own name.
@@ -424,7 +448,7 @@ async def add_test_drivers_in_bulk(
         seated = 0
         for driver in drivers:
             division_id = division_ids[driver.division_name]
-            key = (division_id, driver.team_name.lower())
+            key = (division_id, team_key_of_line[driver.line])
             free = seats[key]
             if free:
                 seat_id = free.pop(0)
@@ -433,7 +457,7 @@ async def add_test_drivers_in_bulk(
                 # since every other shortfall was refused above.
                 cursor = await db.execute(
                     "SELECT id FROM team_instances WHERE division_id = ? AND LOWER(name) = ?",
-                    (division_id, driver.team_name.lower()),
+                    key,
                 )
                 team_row = await cursor.fetchone()
                 max_cursor = await db.execute(
