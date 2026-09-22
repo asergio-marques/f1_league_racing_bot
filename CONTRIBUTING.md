@@ -108,6 +108,12 @@ that; reimplementing is not the fallback. `tests/unit/test_no_inline_reimplement
 the least visible form of this, where a test branches on production state and then performs the
 action itself.
 
+**A test builds its schema from the migrations.** Call `run_migrations` and seed the rows the test
+needs; never write a `CREATE TABLE` for a table the migrations already declare. A hand-written
+copy has the columns and none of the constraints, defaults or triggers, so a test on it passes on
+data the bot refuses. `tests/unit/test_migration_steps.py` refuses one, and names the few tests
+whose subject is the schema itself.
+
 No test may require a live Discord bot. Anything needing a running bot, a real gateway connection
 or a real server belongs to full system testing, done by hand outside this repo.
 
