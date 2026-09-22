@@ -173,7 +173,8 @@ async def take_fingerprint(bot, season_id: int) -> SeasonFingerprint:
             areas["teams"] = _digest(
                 await _rows(
                     db,
-                    "SELECT ti.division_id, ti.id, ti.name, ti.max_seats, ti.is_reserve, "
+                    "SELECT ti.division_id, ti.id, ti.name, ti.full_name, ti.max_seats, "
+                    "       ti.is_reserve, "
                     "       ts.seat_number "
                     "FROM team_instances ti "
                     "JOIN divisions d ON d.id = ti.division_id "
@@ -282,7 +283,7 @@ async def take_fingerprint(bot, season_id: int) -> SeasonFingerprint:
                 [
                     await _rows(
                         db,
-                        "SELECT name, max_seats, is_reserve FROM default_teams "
+                        "SELECT name, full_name, max_seats, is_reserve FROM default_teams "
                         " ORDER BY name",
                     ),
                     await _rows(
