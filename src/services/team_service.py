@@ -1,10 +1,12 @@
 """TeamService — default team and season team CRUD, plus division seeding."""
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from db.database import get_connection
 from models.team import DefaultTeam, TeamInstance
@@ -321,6 +323,88 @@ class TeamService:
                 (new_name, row["id"]),
             )
             await db.commit()
+
+    async def modify_default_team(
+        self,
+        current_name: str,
+        *,
+        shorthand: str | None = None,
+        full_name: str | None = None,
+        actor_id: int = 0,
+        actor_name: str = "system",
+    ) -> dict:
+        """Change a team's shorthand, its full name, or both (#381). Returns both as they stand.
+
+        Everything is checked before anything is written, so a refusal leaves the team exactly
+        as it was. As on a rename, only the **new** names are validated: a team named before a
+        rule existed must still be correctable (FR-011). The Reserve team is protected.
+
+        The change is recorded in the audit log. A role change is recorded by
+        ``PlacementService.set_team_role_config``, and a team whose shorthand changes has its
+        role mapping re-keyed by ``rename_team_role_config`` — this writes neither.
+        """
+        if current_name == _RESERVE_NAME:
+            raise ValueError(
+                f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
+            )
+        async with get_connection(self._db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT id, name, full_name, is_reserve FROM default_teams WHERE name = ?",
+                    (current_name,),
+                )
+            ).fetchone()
+            if row is None:
+                raise ValueError(f'No default team named "{current_name}" found.')
+            if row["is_reserve"]:
+                raise ValueError(
+                    f'The team "{current_name}" is protected and cannot be managed.'
+                )
+
+            new_shorthand = (shorthand or row["name"]).strip()
+            new_full_name = (full_name or row["full_name"]).strip()
+
+            if new_shorthand != row["name"]:
+                conflict = await (
+                    await db.execute(
+                        "SELECT 1 FROM default_teams WHERE name = ?", (new_shorthand,)
+                    )
+                ).fetchone()
+                if conflict:
+                    raise ValueError(f'A default team named "{new_shorthand}" already exists.')
+                problem = validate_team_name(
+                    new_shorthand, await self._server_keys(db, exclude=current_name)
+                )
+                if problem is not None:
+                    raise ValueError(problem)
+
+            if new_full_name != row["full_name"]:
+                problem = validate_full_name(
+                    new_full_name, await self._server_full_names(db, exclude_id=row["id"])
+                )
+                if problem is not None:
+                    raise ValueError(problem)
+
+            await db.execute(
+                "UPDATE default_teams SET name = ?, full_name = ? WHERE id = ?",
+                (new_shorthand, new_full_name, row["id"]),
+            )
+            if (new_shorthand, new_full_name) != (row["name"], row["full_name"]):
+                now = datetime.now(timezone.utc).isoformat()
+                await db.execute(
+                    "INSERT INTO audit_entries "
+                    "(actor_id, actor_name, division_id, change_type, "
+                    "old_value, new_value, timestamp) "
+                    "VALUES (?, ?, NULL, 'TEAM_NAMES', ?, ?, ?)",
+                    (
+                        actor_id, actor_name,
+                        json.dumps({"shorthand": row["name"], "full_name": row["full_name"]}),
+                        json.dumps({"shorthand": new_shorthand, "full_name": new_full_name}),
+                        now,
+                    ),
+                )
+            await db.commit()
+        return {"name": new_shorthand, "full_name": new_full_name}
 
     async def remove_default_team(self, name: str) -> None:
         """Remove a default team.  Raises ValueError if protected or not found."""
