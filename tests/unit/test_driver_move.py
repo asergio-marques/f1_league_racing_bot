@@ -336,23 +336,6 @@ async def test_an_unconfirmed_driver_of_the_team_is_left_alone(db_path):
     service._grant_roles.assert_not_awaited()
 
 
-async def test_a_role_another_team_still_maps_to_is_not_taken(db_path):
-    await _seat(db_path, PRO, "Alpha")
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE team_role_configs SET role_id = ? WHERE team_name = 'Bravo'", (ROLES["Alpha"],)
-        )
-        await db.commit()
-    service = _service(db_path)
-
-    await service.swap_team_role(
-        "Alpha", ROLES["Alpha"], 777, _role_guild({4242: MagicMock()})
-    )
-
-    service._revoke_roles.assert_not_awaited()
-    service._grant_roles.assert_awaited_once()
-
-
 async def test_a_role_cleared_is_taken_and_nothing_granted(db_path):
     await _seat(db_path, PRO, "Reserve")
     service = _service(db_path)

@@ -61,6 +61,7 @@ def _make_bot(
     bot.placement_service.delete_team_role_config = AsyncMock()
     bot.placement_service.rename_team_role_config = AsyncMock()
     bot.placement_service.swap_team_role = AsyncMock(return_value=0)
+    bot.placement_service.team_holding_role = AsyncMock(return_value=None)
     bot.season_service.get_setup_season = AsyncMock(return_value=setup_season)
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=live_season)
     bot.output_router.post_log = AsyncMock()
@@ -139,8 +140,10 @@ class TestTeamAdd:
         bot = _make_bot(add_default_team_side_effect=ValueError('A default team named "Alpine" already exists.'))
         cog = TeamCog(bot)
         interaction = _make_interaction()
+        role = MagicMock()
+        role.id = 555
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=None)
+        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=role)
 
         args, kwargs = interaction.response.send_message.call_args
         content = args[0] if args else kwargs["content"]
@@ -478,6 +481,85 @@ class TestTeamReserveRole:
         bot.placement_service.swap_team_role.assert_awaited_once_with(
             "Reserve", 555, 999, interaction.guild
         )
+
+
+# ---------------------------------------------------------------------------
+# A role belongs to one team only (decided 2026-09-22, with #375)
+#
+# A submission names a team by its role, and a result records the team the role resolves to,
+# so a role two teams held would name either. Every command that sets a team's role refuses
+# one another team holds, names that team, and changes nothing.
+# ---------------------------------------------------------------------------
+
+class TestOneRolePerTeam:
+    @staticmethod
+    def _role(role_id: int = 111):
+        role = MagicMock()
+        role.id = role_id
+        role.mention = f"<@&{role_id}>"
+        return role
+
+    async def test_a_team_is_not_added_under_a_role_another_team_holds(self):
+        from cogs.team_cog import TeamCog
+        bot = _make_bot()
+        bot.placement_service.team_holding_role = AsyncMock(return_value="Ferrari")
+        cog = TeamCog(bot)
+        interaction = _make_interaction()
+
+        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=self._role())
+
+        bot.team_service.add_default_team.assert_not_awaited()
+        bot.placement_service.set_team_role_config.assert_not_awaited()
+        content = interaction.response.send_message.call_args.args[0]
+        assert content.startswith("⛔") and '"Ferrari"' in content
+
+    async def test_a_role_taken_at_the_last_moment_takes_the_new_team_away_again(self):
+        """The check and the write are separate, so the write refuses too; the team it
+        would have left behind without a role is removed."""
+        from cogs.team_cog import TeamCog
+        bot = _make_bot()
+        bot.placement_service.set_team_role_config = AsyncMock(
+            side_effect=ValueError('<@&111> is already the role of "Ferrari".')
+        )
+        cog = TeamCog(bot)
+        interaction = _make_interaction()
+
+        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=self._role())
+
+        bot.team_service.remove_default_team.assert_awaited_once_with("Alpine")
+        assert interaction.response.send_message.call_args.args[0].startswith("⛔")
+
+    async def test_a_team_is_not_given_a_role_another_team_holds(self):
+        from cogs.team_cog import TeamCog
+        bot = _make_bot(teams_with_roles=[
+            {"name": "Alpine", "max_seats": 2, "is_reserve": False, "role_id": 222},
+        ])
+        bot.placement_service.set_team_role_config = AsyncMock(
+            side_effect=ValueError('<@&111> is already the role of "Ferrari".')
+        )
+        cog = TeamCog(bot)
+        interaction = _make_interaction()
+
+        await _unwrap(cog.team_role)(cog, interaction, name="Alpine", role=self._role())
+
+        bot.placement_service.swap_team_role.assert_not_awaited()
+        bot.output_router.post_log.assert_not_awaited()
+        assert '"Ferrari"' in interaction.followup.send.call_args.args[0]
+
+    async def test_the_reserve_is_not_given_a_role_another_team_holds(self):
+        from cogs.team_cog import TeamCog
+        bot = _make_bot()
+        bot.placement_service.set_team_role_config = AsyncMock(
+            side_effect=ValueError('<@&111> is already the role of "Ferrari".')
+        )
+        cog = TeamCog(bot)
+        interaction = _make_interaction()
+
+        await _unwrap(cog.team_reserve_role)(cog, interaction, role=self._role())
+
+        bot.placement_service.swap_team_role.assert_not_awaited()
+        bot.output_router.post_log.assert_not_awaited()
+        assert '"Ferrari"' in interaction.followup.send.call_args.args[0]
 
 
 # ---------------------------------------------------------------------------

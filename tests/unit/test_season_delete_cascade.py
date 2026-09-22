@@ -98,6 +98,12 @@ async def _seed_season(db, season_id, division_id, round_id, *, number: int):
         "VALUES (?, ?, ?, 1, 555)",
         (division_id, season_id, f"Division {number}"),
     )
+    # The division's team, created first so its results can name it (#375).
+    cursor = await db.execute(
+        "INSERT INTO team_instances (division_id, name, is_reserve) VALUES (?, 'Red', 0)",
+        (division_id,),
+    )
+    team_instance = cursor.lastrowid
     await db.execute(
         "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format) "
         "VALUES (?, ?, 1, '2026-02-01T18:00:00+00:00', 'NORMAL')",
@@ -117,8 +123,8 @@ async def _seed_season(db, season_id, division_id, round_id, *, number: int):
     )
     await db.execute(
         "INSERT INTO team_standings_snapshots "
-        "(round_id, division_id, team_role_id, standing_position) VALUES (?, ?, 3001, 1)",
-        (round_id, division_id),
+        "(round_id, division_id, team_instance_id, standing_position) VALUES (?, ?, ?, 1)",
+        (round_id, division_id, team_instance),
     )
     for session_type in ("FULL_QUALIFYING", "FULL_RACE"):
         cursor = await db.execute(
@@ -132,9 +138,9 @@ async def _seed_season(db, season_id, division_id, round_id, *, number: int):
             else "race_session_results"
         )
         await db.execute(
-            f"INSERT INTO {child} (session_result_id, driver_user_id, team_role_id, "
-            "finishing_position) VALUES (?, 101, 3001, 1)",
-            (cursor.lastrowid,),
+            f"INSERT INTO {child} (session_result_id, driver_user_id, team_instance_id, "
+            "finishing_position) VALUES (?, 101, ?, 1)",
+            (cursor.lastrowid, team_instance),
         )
     await db.execute(
         "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "
@@ -174,11 +180,6 @@ async def _seed_season(db, season_id, division_id, round_id, *, number: int):
         (str(2000 + number),),
     )
     test_profile = cursor.lastrowid
-    cursor = await db.execute(
-        "INSERT INTO team_instances (division_id, name, is_reserve) VALUES (?, 'Red', 0)",
-        (division_id,),
-    )
-    team_instance = cursor.lastrowid
     await db.execute(
         "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
         "VALUES (?, 1, ?)",

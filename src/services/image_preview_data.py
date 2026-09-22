@@ -105,7 +105,7 @@ def sessions_for(round_format) -> list[SessionType]:
 # ── Classifications (FR-023, FR-024) ──────────────────────────────────────
 
 
-def fabricate_qualifying_rows(drivers, team_role_ids, points_map):
+def fabricate_qualifying_rows(drivers, team_keys, points_map):
     """A believable qualifying classification over *drivers*.
 
     Every driver appears exactly once, positions run 1..n with no gap, and the best laps
@@ -141,7 +141,7 @@ def fabricate_qualifying_rows(drivers, team_role_ids, points_map):
                 id=position,
                 session_result_id=1,
                 driver_user_id=driver.key,
-                team_role_id=team_role_ids.get(driver.team_name, 0),
+                team_instance_id=team_keys.get(driver.team_name, 0),
                 finishing_position=position,
                 outcome=outcome,
                 tyre=tyre,
@@ -152,7 +152,7 @@ def fabricate_qualifying_rows(drivers, team_role_ids, points_map):
     return rows
 
 
-def fabricate_race_rows(drivers, team_role_ids, points_map, *, fastest_lap_position=2):
+def fabricate_race_rows(drivers, team_keys, points_map, *, fastest_lap_position=2):
     """A believable race classification over *drivers*.
 
     The leader carries a total race time; everyone else an interval growing with position.
@@ -184,7 +184,7 @@ def fabricate_race_rows(drivers, team_role_ids, points_map, *, fastest_lap_posit
                 id=position,
                 session_result_id=1,
                 driver_user_id=driver.key,
-                team_role_id=team_role_ids.get(driver.team_name, 0),
+                team_instance_id=team_keys.get(driver.team_name, 0),
                 finishing_position=position,
                 outcome=outcome,
                 base_time_ms=base_time_ms,
@@ -250,7 +250,7 @@ def _coprime(a: int, b: int) -> bool:
     return a == 1
 
 
-def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team_role_ids):
+def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team_keys):
     """Session results for every round already run, over the division's own drivers.
 
     Reuses ``fabricate_qualifying_rows``/``fabricate_race_rows`` — the same builders the
@@ -282,11 +282,11 @@ def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team
             )
             field = _scattered(drivers, ordinal, index)
             rows = (
-                fabricate_qualifying_rows(field, team_role_ids, points_map)
+                fabricate_qualifying_rows(field, team_keys, points_map)
                 if session_type.is_qualifying
                 else fabricate_race_rows(
                     field,
-                    team_role_ids,
+                    team_keys,
                     points_map,
                     fastest_lap_position=_FASTEST_LAP_PLACES[
                         ordinal % len(_FASTEST_LAP_PLACES)

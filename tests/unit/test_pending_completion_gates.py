@@ -113,6 +113,7 @@ def _bot(db_path: str, stage: SeasonStage | None):
     bot.placement_service.set_team_role_config = AsyncMock()
     bot.placement_service.delete_team_role_config = AsyncMock()
     bot.placement_service.swap_team_role = AsyncMock(return_value=0)
+    bot.placement_service.team_holding_role = AsyncMock(return_value=None)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
     return bot

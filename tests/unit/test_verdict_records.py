@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
 from services.verdict_records import delete_verdicts, select_verdicts  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 ROUND_ID = 21
 OTHER_ROUND_ID = 22
@@ -38,6 +39,7 @@ async def _db(tmp_path) -> tuple[str, dict[str, int]]:
             "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
             "VALUES (11, 1, 'Pro', 1, 555)"
         )
+        await seed_team_instances(db, 11, 3001)
         for round_id, number in ((ROUND_ID, 3), (OTHER_ROUND_ID, 4)):
             await db.execute(
                 "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
@@ -58,7 +60,7 @@ async def _db(tmp_path) -> tuple[str, dict[str, int]]:
             is_quali = session_type.endswith("QUALIFYING")
             result = await db.execute(
                 f"INSERT INTO {'qualifying' if is_quali else 'race'}_session_results "
-                "(session_result_id, driver_user_id, team_role_id, finishing_position) "
+                "(session_result_id, driver_user_id, team_instance_id, finishing_position) "
                 "VALUES (?, ?, 3001, 1)",
                 (session.lastrowid, driver),
             )

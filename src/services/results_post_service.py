@@ -27,6 +27,7 @@ from services.channel_registry_service import (
     missing_channel_fault,
     unpostable_channel_fault,
 )
+from services.team_service import team_names_for_instances
 from utils import results_formatter
 
 log = logging.getLogger(__name__)
@@ -334,18 +335,6 @@ async def recompute_standings_from_round(
     )
 
 
-async def _build_team_display(
-    guild: discord.Guild,
-    role_ids: list[int],
-) -> dict[int, str]:
-    """Return {role_id: role_name} for the given IDs."""
-    result: dict[int, str] = {}
-    for rid in role_ids:
-        role = guild.get_role(rid)
-        result[rid] = role.name if role else f"Role {rid}"
-    return result
-
-
 async def _get_heading_context(
     db_path: str, round_id: int
 ) -> tuple[int | None, str]:
@@ -492,6 +481,10 @@ async def post_session_results(
 
     user_ids = [r.driver_user_id for r in driver_rows]
     test_display = await _build_test_driver_display(db_path, user_ids)
+    # A team is printed by name, never as a mention of the role it was typed by (#375).
+    team_display = await team_names_for_instances(
+        db_path, [r.team_instance_id for r in driver_rows]
+    )
 
     # Which rows were disqualified, and in which phase, is read from the verdict tables rather
     # than taken from the caller: every posting happens after the decisions are committed, the
@@ -504,12 +497,12 @@ async def post_session_results(
     if session_type.is_qualifying:
         table = results_formatter.format_qualifying_table(
             driver_rows, points_map, member_display=test_display or None,
-            dsq_phase_map=dsq_phase_map,
+            team_display=team_display, dsq_phase_map=dsq_phase_map,
         )
     else:
         table = results_formatter.format_race_table(
             driver_rows, points_map, member_display=test_display or None,
-            dsq_phase_map=dsq_phase_map,
+            team_display=team_display, dsq_phase_map=dsq_phase_map,
         )
 
     season_number, division_name = await _get_heading_context(db_path, session_result.round_id)
@@ -651,7 +644,10 @@ async def post_standings(
     driver_text = results_formatter.format_driver_standings(
         driver_snapshots, reserve_user_ids, show_reserves, driver_display=test_display or None
     )
-    team_text = results_formatter.format_team_standings(team_snapshots)
+    team_text = results_formatter.format_team_standings(
+        team_snapshots,
+        await team_names_for_instances(db_path, [s.team_instance_id for s in team_snapshots]),
+    )
 
     season_number, division_name = await _get_heading_context(db_path, round_id)
     season_prefix = f"Season {season_number} " if season_number is not None else ""
@@ -1123,7 +1119,7 @@ async def _load_driver_rows(
     if session_type.is_qualifying:
         async with get_connection(db_path) as db:
             cursor = await db.execute(
-                "SELECT id, session_result_id, driver_user_id, team_role_id, finishing_position, "
+                "SELECT id, session_result_id, driver_user_id, team_instance_id, finishing_position, "
                 "outcome, tyre, best_lap, points_awarded, driver_profile_id "
                 "FROM qualifying_session_results WHERE session_result_id = ? "
                 "ORDER BY finishing_position",
@@ -1135,7 +1131,7 @@ async def _load_driver_rows(
                 id=r["id"],
                 session_result_id=r["session_result_id"],
                 driver_user_id=current_of.get(r["driver_user_id"], r["driver_user_id"]),
-                team_role_id=r["team_role_id"],
+                team_instance_id=r["team_instance_id"],
                 finishing_position=r["finishing_position"],
                 outcome=OutcomeModifier(r["outcome"]),
                 tyre=r["tyre"],
@@ -1149,7 +1145,7 @@ async def _load_driver_rows(
     # Race session
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id, session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "SELECT id, session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
             "postrace_time_penalties_ms, appeal_time_penalties_ms, fastest_lap, "
             "fastest_lap_bonus, points_awarded, driver_profile_id "
@@ -1163,7 +1159,7 @@ async def _load_driver_rows(
             id=r["id"],
             session_result_id=r["session_result_id"],
             driver_user_id=current_of.get(r["driver_user_id"], r["driver_user_id"]),
-            team_role_id=r["team_role_id"],
+            team_instance_id=r["team_instance_id"],
             finishing_position=r["finishing_position"],
             outcome=OutcomeModifier(r["outcome"]),
             base_time_ms=r["base_time_ms"],

@@ -22,6 +22,7 @@ from db.database import get_connection, run_migrations
 from models.points_config import SessionType
 from services.penalty_wizard import PenaltyReviewState
 from services.penalty_service import StagedPenalty
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +49,7 @@ async def _bootstrap(db_path: str) -> tuple[int, int, int]:
             (season_id,),
         )
         division_id = cursor.lastrowid
+        await seed_team_instances(db, division_id, 100, 200)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
             "VALUES (?, 1, 'STANDARD', 'AWAITING_RESULTS', '2026-01-01T18:00:00')",
@@ -81,7 +83,7 @@ async def _insert_session_with_drivers(db_path: str, round_id: int, division_id:
         sr_id = cursor.lastrowid
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, "
             "appeal_time_penalties_ms, points_awarded, fastest_lap_bonus) "
             "VALUES (?, 1, 100, 1, 'CLASSIFIED', 1200000, 0, 0, 0, 25, 0)",
@@ -89,7 +91,7 @@ async def _insert_session_with_drivers(db_path: str, round_id: int, division_id:
         )
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_role_id, finishing_position, "
+            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, "
             "appeal_time_penalties_ms, points_awarded, fastest_lap_bonus) "
             "VALUES (?, 2, 200, 2, 'CLASSIFIED', 1210000, 0, 0, 0, 18, 0)",

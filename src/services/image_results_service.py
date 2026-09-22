@@ -31,6 +31,7 @@ from models.image_catalogues import (
 from models.points_config import SessionType
 from utils.results_formatter import (
     NOT_APPLICABLE,
+    UNKNOWN_TEAM,
     build_qualifying_rows,
     build_race_rows,
     fastest_lap_holder,
@@ -242,7 +243,7 @@ def resolve_drawing(
                 ResultsEntry(
                     ordinal=ordinal,
                     driver_name=named(row.driver_user_id),
-                    team_name=teams.get(row.team_role_id) or f"Role {row.team_role_id}",
+                    team_name=teams.get(row.team_instance_id) or UNKNOWN_TEAM,
                     points=str(row.points),
                     postrace_penalty=_sanction(
                         row.postrace_penalty, phase_closed=penalty_closed
@@ -265,7 +266,7 @@ def resolve_drawing(
                 ResultsEntry(
                     ordinal=ordinal,
                     driver_name=named(row.driver_user_id),
-                    team_name=teams.get(row.team_role_id) or f"Role {row.team_role_id}",
+                    team_name=teams.get(row.team_instance_id) or UNKNOWN_TEAM,
                     points=str(row.points),
                     postrace_penalty=_sanction(
                         row.postrace_penalty, phase_closed=penalty_closed

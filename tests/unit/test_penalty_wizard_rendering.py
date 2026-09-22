@@ -47,6 +47,7 @@ from services.penalty_wizard import (  # noqa: E402
     _render_prompt_content,
     _require_lm,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 9508
 ROUND_ID = 5
@@ -197,6 +198,7 @@ async def _make_db(tmp_path, *, attendees=(), test_names=None) -> str:
             "VALUES (?, 1, 'Division 1', 1, 555)",
             (DIVISION_ID,),
         )
+        await seed_team_instances(db, DIVISION_ID, 0)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
             "scheduled_at) VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01')",
@@ -212,7 +214,7 @@ async def _make_db(tmp_path, *, attendees=(), test_names=None) -> str:
             for index, uid in enumerate(attendees, start=1):
                 await db.execute(
                     "INSERT INTO race_session_results "
-                    "(id, session_result_id, driver_user_id, team_role_id, "
+                    "(id, session_result_id, driver_user_id, team_instance_id, "
                     " finishing_position, outcome) VALUES (?, 1, ?, 0, ?, 'FINISHED')",
                     (index, uid, index),
                 )

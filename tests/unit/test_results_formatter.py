@@ -28,7 +28,7 @@ from utils.results_formatter import (
 def _make_qual(
     position: int,
     driver_user_id: int = 100,
-    team_role_id: int = 200,
+    team_instance_id: int = 200,
     outcome: OutcomeModifier = OutcomeModifier.CLASSIFIED,
     best_lap: str | None = "1:23.456",
 ) -> QualifyingSessionResult:
@@ -37,7 +37,7 @@ def _make_qual(
         session_result_id=1,
         driver_user_id=driver_user_id,
         finishing_position=position,
-        team_role_id=team_role_id,
+        team_instance_id=team_instance_id,
         outcome=outcome,
         tyre="Soft",
         best_lap=best_lap,
@@ -48,7 +48,7 @@ def _make_qual(
 def _make_race(
     position: int,
     driver_user_id: int = 100,
-    team_role_id: int = 200,
+    team_instance_id: int = 200,
     outcome: OutcomeModifier = OutcomeModifier.CLASSIFIED,
     fastest_lap: str | None = "1:23.456",
 ) -> RaceSessionResult:
@@ -57,7 +57,7 @@ def _make_race(
         session_result_id=1,
         driver_user_id=driver_user_id,
         finishing_position=position,
-        team_role_id=team_role_id,
+        team_instance_id=team_instance_id,
         outcome=outcome,
         base_time_ms=5025678,  # 1:23:45.678 in ms
         laps_behind=None,

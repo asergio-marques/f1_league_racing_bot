@@ -766,9 +766,9 @@ async def post_penalty_announcements(
                 bot,
                 getattr(target_channel, "guild", None),
                 division_id=result_ctx["division_id"],
-                role_id=record.get("team_role_id")
+                team_id=record.get("team_instance_id")
                 if hasattr(record, "get")
-                else getattr(record, "team_role_id", None),
+                else getattr(record, "team_instance_id", None),
             )
 
             await head_the_batch()
@@ -925,9 +925,9 @@ async def post_appeal_announcements(
                 bot,
                 getattr(target_channel, "guild", None),
                 division_id=result_ctx["division_id"],
-                role_id=record.get("team_role_id")
+                team_id=record.get("team_instance_id")
                 if hasattr(record, "get")
-                else getattr(record, "team_role_id", None),
+                else getattr(record, "team_instance_id", None),
             )
 
             await head_the_batch()
@@ -1156,7 +1156,7 @@ async def _records_for_round(db_path: str, round_id: int, table: str) -> list[di
             db, table,
             "v.id AS id, v.race_result_id, v.qual_result_id, v.penalty_type, v.time_seconds, "
             "v.description, v.justification, r.driver_user_id AS driver_user_id, "
-            "r.team_role_id AS team_role_id, sr.session_type AS session_type",
+            "r.team_instance_id AS team_instance_id, sr.session_type AS session_type",
             round_id=round_id,
         )
     return sorted(rows, key=lambda r: r["id"])

@@ -97,6 +97,17 @@ class TeamCog(commands.Cog):
     ) -> None:
         if await self._team_list_lock(interaction, "add"):
             return
+        # A role belongs to one team only, and the team is not added where its role is taken.
+        holder = await self.bot.placement_service.team_holding_role(  # type: ignore[attr-defined]
+            role.id
+        )
+        if holder is not None:
+            await interaction.response.send_message(
+                f'⛔ {role.mention} is already the role of "{holder}". A role belongs to one '
+                "team only.",
+                ephemeral=True,
+            )
+            return
         try:
             await self.bot.team_service.add_default_team(  # type: ignore[attr-defined]
                 name
@@ -105,10 +116,16 @@ class TeamCog(commands.Cog):
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
             return
 
-        await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-            name, role.id,
-            actor_id=interaction.user.id, actor_name=str(interaction.user),
-        )
+        try:
+            await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
+                name, role.id,
+                actor_id=interaction.user.id, actor_name=str(interaction.user),
+            )
+        except ValueError as exc:
+            # Taken between the check and the write: the team goes again, so nothing stands.
+            await self.bot.team_service.remove_default_team(name)  # type: ignore[attr-defined]
+            await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
+            return
 
         await interaction.response.send_message(
             f'✅ Team "{name}" added with role {role.mention}.', ephemeral=True
@@ -249,10 +266,15 @@ class TeamCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-            match["name"], role.id,
-            actor_id=interaction.user.id, actor_name=str(interaction.user),
-        )
+        try:
+            await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
+                match["name"], role.id,
+                actor_id=interaction.user.id, actor_name=str(interaction.user),
+            )
+        except ValueError as exc:
+            # Another team holds the role (#375): nothing is changed and no driver moves.
+            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            return
         # The drivers already seated in the team follow its role (issue #220).
         moved = await self.bot.placement_service.swap_team_role(  # type: ignore[attr-defined]
             match["name"], match["role_id"], role.id, interaction.guild
@@ -481,10 +503,15 @@ class TeamCog(commands.Cog):
         teams = await self.bot.team_service.get_teams_with_roles()  # type: ignore[attr-defined]
         old_role_id = next((t["role_id"] for t in teams if t["is_reserve"]), None)
         if role is not None:
-            await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-                "Reserve", role.id,
-                actor_id=interaction.user.id, actor_name=str(interaction.user),
-            )
+            try:
+                await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
+                    "Reserve", role.id,
+                    actor_id=interaction.user.id, actor_name=str(interaction.user),
+                )
+            except ValueError as exc:
+                # Another team holds the role (#375): nothing is changed and no driver moves.
+                await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+                return
             msg = f"✅ Reserve team role set to {role.mention}."
         else:
             await self.bot.placement_service.delete_team_role_config(  # type: ignore[attr-defined]

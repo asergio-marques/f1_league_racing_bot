@@ -34,7 +34,7 @@ def _qual(position: int, user_id: int, *, best_lap: str | None = "1:23.456", tyr
         id=position,
         session_result_id=1,
         driver_user_id=user_id,
-        team_role_id=900 + position,
+        team_instance_id=900 + position,
         finishing_position=position,
         outcome=OutcomeModifier.CLASSIFIED,
         tyre=tyre,
@@ -56,7 +56,7 @@ def _race(
         id=position,
         session_result_id=1,
         driver_user_id=user_id,
-        team_role_id=900 + position,
+        team_instance_id=900 + position,
         finishing_position=position,
         outcome=OutcomeModifier.CLASSIFIED,
         base_time_ms=base_time_ms,
@@ -81,7 +81,7 @@ def _resolve(rows, session_type=SessionType.FEATURE_QUALIFYING, **overrides):
         driver_rows=rows,
         points_map={row.driver_user_id: 25 for row in rows},
         driver_names={row.driver_user_id: f"Driver {row.driver_user_id}" for row in rows},
-        team_names={row.team_role_id: f"Team {row.team_role_id}" for row in rows},
+        team_names={row.team_instance_id: f"Team {row.team_instance_id}" for row in rows},
     )
     kwargs.update(overrides)
     return resolve_drawing(**kwargs)
@@ -167,9 +167,13 @@ def test_entries_are_ordinalled_from_one_in_classification_order():
 # ── Names ─────────────────────────────────────────────────────────────────
 
 
-def test_the_team_name_falls_back_to_the_role_where_the_division_holds_no_team():
+def test_a_team_with_no_name_is_drawn_as_unknown_never_as_a_role():
+    """A result records the division's team, so this marks a fault; a role is not a name
+    the graphic can fall back on (#375)."""
+    from utils.results_formatter import UNKNOWN_TEAM
+
     drawing = _resolve([_qual(1, 10)], team_names={})
-    assert drawing.entries[0].team_name == "Role 901"
+    assert drawing.entries[0].team_name == UNKNOWN_TEAM
 
 
 def test_a_driver_with_no_resolvable_name_is_fatal():

@@ -692,12 +692,13 @@ def _spec_with_faults(build_fill_spec, drawing, context: PreviewContext):
     return _build
 
 
-def _team_role_ids(context: PreviewContext) -> dict[str, int]:
+def _team_keys(context: PreviewContext) -> dict[str, int]:
     """A stable id per team name.
 
-    The results and standings drawings key a team by its Discord role id. A preview draws no
-    role, so the team's position in the division's own team list stands in — the identity
-    only has to be consistent between the rows and the name map.
+    The results and standings drawings key a team by its id in the division (#375). A
+    preview's teams are the division's own or fabricated ones, so their position in the
+    division's team list stands in — the identity only has to be consistent between the rows
+    and the name map.
     """
     return {team.name: index + 1 for index, team in enumerate(context.teams)}
 
@@ -730,11 +731,11 @@ def _racing_teams(context: PreviewContext) -> list:
 def _driver_maps(context: PreviewContext, drivers=None):
     """Names, teams and nationalities keyed as the drawings expect them."""
     drivers = list(context.drivers if drivers is None else drivers)
-    role_of = _team_role_ids(context)
+    team_key_of = _team_keys(context)
     names = {d.key: d.display_name for d in drivers}
-    teams = {role_of[d.team_name]: d.team_name for d in drivers if d.team_name in role_of}
+    teams = {team_key_of[d.team_name]: d.team_name for d in drivers if d.team_name in team_key_of}
     flags = {d.key: d.nationality for d in drivers}
-    return names, teams, flags, role_of
+    return names, teams, flags, team_key_of
 
 
 async def _race_name(bot, context: PreviewContext) -> str:
@@ -844,7 +845,7 @@ async def build_results_preview(bot, context: PreviewContext):
 
     config = await bot.image_config_service.get_config()
     drivers = _racing_drivers(context)
-    names, teams, flags, role_of = _driver_maps(context, drivers)
+    names, teams, flags, team_key_of = _driver_maps(context, drivers)
     round_obj = context.round
 
     # The results module works in its own session vocabulary — Sprint/Feature Qualifying
@@ -869,9 +870,9 @@ async def build_results_preview(bot, context: PreviewContext):
             else {n: max(0, 26 - 2 * (n - 1)) for n in range(1, 14)}
         )
         rows = (
-            fabricate_qualifying_rows(drivers, role_of, points_map)
+            fabricate_qualifying_rows(drivers, team_key_of, points_map)
             if is_qualifying
-            else fabricate_race_rows(drivers, role_of, points_map)
+            else fabricate_race_rows(drivers, team_key_of, points_map)
         )
 
         drawing = resolve_drawing(
@@ -932,7 +933,7 @@ async def build_standings_preview(bot, context: PreviewContext):
     )
 
     drivers = _racing_drivers(context)
-    names, teams, flags, role_of = _driver_maps(context, drivers)
+    names, teams, flags, team_key_of = _driver_maps(context, drivers)
     round_obj = context.round
     racing_teams = _racing_teams(context)
     from services.image_calendar_service import MYSTERY_DATUM
@@ -969,20 +970,20 @@ async def build_standings_preview(bot, context: PreviewContext):
         if int(heading.number) <= int(round_obj.round_number)
     ]
     round_session_results = fabricate_standings_round_results(
-        run_ordinals, round_formats, drivers, role_of
+        run_ordinals, round_formats, drivers, team_key_of
     )
 
     team_seat_assignments = {
-        role_of[team.name]: {
+        team_key_of[team.name]: {
             d.key: d.seat_number for d in drivers if d.team_name == team.name
         }
         for team in racing_teams
-        if team.name in role_of
+        if team.name in team_key_of
     }
     team_seat_counts = {
-        role_of[team.name]: int(getattr(team, "max_seats", 0) or 0)
+        team_key_of[team.name]: int(getattr(team, "max_seats", 0) or 0)
         for team in racing_teams
-        if team.name in role_of
+        if team.name in team_key_of
     }
 
     driver_snapshots = [
@@ -999,14 +1000,14 @@ async def build_standings_preview(bot, context: PreviewContext):
 
     team_snapshots = [
         SimpleNamespace(
-            team_role_id=role_of[team.name],
+            team_instance_id=team_key_of[team.name],
             standing_position=position,
             total_points=max(0, 200 - (position - 1) * 17),
             finish_counts={},
             first_finish_rounds={},
         )
         for position, team in enumerate(racing_teams, start=1)
-        if team.name in role_of
+        if team.name in team_key_of
     ]
 
     # The gap needs no reference round, so a preview draws it in full where it draws no
@@ -1016,7 +1017,7 @@ async def build_standings_preview(bot, context: PreviewContext):
         [(x.driver_user_id, x.standing_position, x.total_points) for x in driver_snapshots]
     )
     team_gaps = standings_service.derive_gaps(
-        [(x.team_role_id, x.standing_position, x.total_points) for x in team_snapshots]
+        [(x.team_instance_id, x.standing_position, x.total_points) for x in team_snapshots]
     )
 
     shared = dict(
@@ -1044,9 +1045,9 @@ async def build_standings_preview(bot, context: PreviewContext):
     constructors_drawing = resolve_drawing(
         template_key=CONSTRUCTORS_TEMPLATE_KEY,
         snapshots=team_snapshots,
-        display_names={role_of[t.name]: t.name for t in racing_teams if t.name in role_of},
-        team_names={role_of[t.name]: t.name for t in racing_teams if t.name in role_of},
-        movements={role_of[t.name]: None for t in racing_teams if t.name in role_of},
+        display_names={team_key_of[t.name]: t.name for t in racing_teams if t.name in team_key_of},
+        team_names={team_key_of[t.name]: t.name for t in racing_teams if t.name in team_key_of},
+        movements={team_key_of[t.name]: None for t in racing_teams if t.name in team_key_of},
         gaps=team_gaps,
         team_seat_assignments=team_seat_assignments,
         team_seat_counts=team_seat_counts,
@@ -1090,7 +1091,7 @@ async def build_attendance_preview(bot, context: PreviewContext):
     )
     from services.image_calendar_service import MYSTERY_DATUM
 
-    names, _teams, flags, _role_of = _driver_maps(context)
+    names, _teams, flags, _team_key_of = _driver_maps(context)
     round_obj = context.round
     rounds = context.rounds
     tracks = await _tracks(bot)

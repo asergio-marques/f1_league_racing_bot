@@ -38,6 +38,7 @@ from services.result_submission_service import (  # noqa: E402
     _apply_points_from_config,
     _apply_points_in_tx,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 12708
 SEASON_ID = 1
@@ -81,6 +82,7 @@ async def _make_db(
             "VALUES (?, ?, 'Division 1', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 0)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
             "scheduled_at) VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01')",
@@ -117,14 +119,14 @@ async def _make_db(
             if session_type.is_qualifying:
                 await db.execute(
                     f"INSERT INTO {table} "  # noqa: S608
-                    "(id, session_result_id, driver_user_id, team_role_id, "
+                    "(id, session_result_id, driver_user_id, team_instance_id, "
                     " finishing_position, outcome) VALUES (?, ?, ?, 0, ?, ?)",
                     (index, SESSION_RESULT_ID, user_id, position, outcome),
                 )
             else:
                 await db.execute(
                     f"INSERT INTO {table} "  # noqa: S608
-                    "(id, session_result_id, driver_user_id, team_role_id, "
+                    "(id, session_result_id, driver_user_id, team_instance_id, "
                     " finishing_position, outcome, fastest_lap) "
                     "VALUES (?, ?, ?, 0, ?, ?, ?)",
                     (index, SESSION_RESULT_ID, user_id, position, outcome, fastest_lap),

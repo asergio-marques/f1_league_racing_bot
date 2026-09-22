@@ -45,7 +45,9 @@ class DriverSessionResult:
     id: int
     session_result_id: int
     driver_user_id: int
-    team_role_id: int
+    #: The division's team the entry drove for — never its Discord role, which a league may
+    #: replace mid-season (#375).
+    team_instance_id: int
     finishing_position: int
     outcome: OutcomeModifier
     tyre: str | None
@@ -72,7 +74,9 @@ class QualifyingSessionResult:
     id: int
     session_result_id: int
     driver_user_id: int
-    team_role_id: int
+    #: The division's team the entry drove for — never its Discord role, which a league may
+    #: replace mid-season (#375).
+    team_instance_id: int
     finishing_position: int
     outcome: OutcomeModifier
     tyre: str | None
@@ -89,7 +93,9 @@ class RaceSessionResult:
     id: int
     session_result_id: int
     driver_user_id: int
-    team_role_id: int
+    #: The division's team the entry drove for — never its Discord role, which a league may
+    #: replace mid-season (#375).
+    team_instance_id: int
     finishing_position: int
     outcome: OutcomeModifier
     # base_time_ms: race time in ms with ingame penalties already subtracted.

@@ -18,6 +18,7 @@ from services.standings_service import (
     opening_driver_standings,
     opening_team_standings,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +37,7 @@ def _make_row(
         session_result_id=1,
         driver_user_id=driver_user_id,
         finishing_position=position,
-        team_role_id=999,
+        team_instance_id=999,
         tyre=None,
         best_lap=None,
         gap=None,
@@ -226,6 +227,7 @@ async def test_compute_driver_standings_countback(db_path):
             (season_id,),
         )
         div_id = cursor.lastrowid
+        await seed_team_instances(db, div_id, 998, 999)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
             "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00')",
@@ -241,13 +243,13 @@ async def test_compute_driver_standings_countback(db_path):
         # Add a second round where B scores 7 pts and A scores 0 → both on 25 pts total
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "(session_result_id, driver_user_id, finishing_position, team_instance_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
             "VALUES (?, 111, 1, 999, 'CLASSIFIED', 25, 0, 0, 0, 0)",
             (sr_id,),
         )
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "(session_result_id, driver_user_id, finishing_position, team_instance_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
             "VALUES (?, 222, 2, 998, 'CLASSIFIED', 18, 0, 0, 0, 0)",
             (sr_id,),
         )
@@ -265,13 +267,13 @@ async def test_compute_driver_standings_countback(db_path):
         sr2_id = cursor.lastrowid
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "(session_result_id, driver_user_id, finishing_position, team_instance_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
             "VALUES (?, 111, 10, 999, 'CLASSIFIED', 0, 0, 0, 0, 0)",
             (sr2_id,),
         )
         await db.execute(
             "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, finishing_position, team_role_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+            "(session_result_id, driver_user_id, finishing_position, team_instance_id, outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
             "VALUES (?, 222, 3, 998, 'CLASSIFIED', 7, 0, 0, 0, 0)",
             (sr2_id,),
         )
@@ -330,10 +332,17 @@ async def _session(db, round_id: int, div_id: int, session_type: str = "FEATURE_
     return cur.lastrowid
 
 
+async def _team_for(db, sr_id: int, team: int) -> None:
+    """Seed *team* in the division of session *sr_id*, for a result to stand under."""
+    cur = await db.execute("SELECT division_id FROM session_results WHERE id = ?", (sr_id,))
+    await seed_team_instances(db, (await cur.fetchone())[0], team)
+
+
 async def _result(db, sr_id: int, uid: int, pos: int, pts: int, team: int = 999) -> None:
+    await _team_for(db, sr_id, team)
     await db.execute(
         "INSERT INTO race_session_results "
-        "(session_result_id, driver_user_id, finishing_position, team_role_id, "
+        "(session_result_id, driver_user_id, finishing_position, team_instance_id, "
         "outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, "
         "postrace_time_penalties_ms, appeal_time_penalties_ms) "
         "VALUES (?, ?, ?, ?, 'CLASSIFIED', ?, 0, 0, 0, 0)",
@@ -418,12 +427,12 @@ async def test_tiebreak_teams_same_hierarchy(db_path):
         div_id, _ = await _bootstrap(db)
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
-        # Same points, different positions — team_role_id differentiates teams
+        # Same points, different positions — the team differentiates them
         await _result(db, sr1, 111, pos=1, pts=25, team=101)  # Team A driver: P1
         await _result(db, sr1, 222, pos=2, pts=25, team=102)  # Team B driver: P2 (same pts)
         await db.commit()
     snaps = await compute_team_standings(db_path, div_id, r1)
-    tid_to_pos = {s.team_role_id: s.standing_position for s in snaps}
+    tid_to_pos = {s.team_instance_id: s.standing_position for s in snaps}
     assert tid_to_pos[101] < tid_to_pos[102], (
         "Team A (Feature Race P1) should rank above Team B (only P2) on equal total points"
     )
@@ -522,29 +531,19 @@ async def test_compute_team_standings_includes_zero_pt_team(db_path):
         div_id, _ = await _bootstrap(db, server_id=12)
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
-        # Team role 555 scores points; team role 666 has a team_instance but no results
+        # Both teams of the division; 555 scores points, 666 has no results
+        for team_id, name in ((555, "TeamA"), (666, "TeamB")):
+            await db.execute(
+                "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, 2, 0)",
+                (team_id, div_id, name),
+            )
         await _result(db, sr1, 111, pos=1, pts=25, team=555)
-        # Register team_role_config for both teams (server_id=12 from _bootstrap)
-        await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES ('TeamA', 555)"
-        )
-        await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES ('TeamB', 666)"
-        )
-        # Create team instances for both in the division
-        await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) VALUES (?, 'TeamA', 2, 0)",
-            (div_id,),
-        )
-        await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) VALUES (?, 'TeamB', 2, 0)",
-            (div_id,),
-        )
         await db.commit()
     snaps = await compute_team_standings(db_path, div_id, r1)
-    role_ids = {s.team_role_id for s in snaps}
-    assert 666 in role_ids, "Zero-point team must appear in team standings"
-    zero_snap = next(s for s in snaps if s.team_role_id == 666)
+    team_ids = {s.team_instance_id for s in snaps}
+    assert 666 in team_ids, "Zero-point team must appear in team standings"
+    zero_snap = next(s for s in snaps if s.team_instance_id == 666)
     assert zero_snap.total_points == 0
 
 
@@ -565,7 +564,7 @@ async def test_compute_team_standings_includes_qualifying_points(db_path):
         await db.commit()
 
     snaps = await compute_team_standings(db_path, div_id, r1)
-    tid_to_pts = {s.team_role_id: s.total_points for s in snaps}
+    tid_to_pts = {s.team_instance_id: s.total_points for s in snaps}
     assert tid_to_pts[555] == 28, f"Team A expected 28 pts (25+3), got {tid_to_pts[555]}"
     assert tid_to_pts[666] == 20, f"Team B expected 20 pts (18+2), got {tid_to_pts[666]}"
 
@@ -577,9 +576,10 @@ async def test_compute_team_standings_includes_qualifying_points(db_path):
 
 async def _result_qual(db, sr_id: int, uid: int, pos: int, pts: int, team: int = 999) -> None:
     """Insert a qualifying result."""
+    await _team_for(db, sr_id, team)
     await db.execute(
         "INSERT INTO qualifying_session_results "
-        "(session_result_id, driver_user_id, finishing_position, team_role_id, "
+        "(session_result_id, driver_user_id, finishing_position, team_instance_id, "
         "outcome, points_awarded) "
         "VALUES (?, ?, ?, ?, 'CLASSIFIED', ?)",
         (sr_id, uid, pos, team, pts),
@@ -588,9 +588,10 @@ async def _result_qual(db, sr_id: int, uid: int, pos: int, pts: int, team: int =
 
 async def _result_dnf(db, sr_id: int, uid: int, pos: int, team: int = 999) -> None:
     """Insert a DNF result (0 points)."""
+    await _team_for(db, sr_id, team)
     await db.execute(
         "INSERT INTO race_session_results "
-        "(session_result_id, driver_user_id, finishing_position, team_role_id, "
+        "(session_result_id, driver_user_id, finishing_position, team_instance_id, "
         "outcome, points_awarded, fastest_lap_bonus, ingame_time_penalties_ms, "
         "postrace_time_penalties_ms, appeal_time_penalties_ms) "
         "VALUES (?, ?, ?, ?, 'DNF', 0, 0, 0, 0, 0)",
@@ -870,12 +871,16 @@ async def test_no_reference_round_returns_none_not_an_empty_mapping(db_path):
 
 
 async def _seat(db, div_id: int, team: str, drivers: list[tuple[int, str]],
-                *, is_reserve: int = 0, role_id: int | None = None) -> int:
-    """Create a team instance holding *drivers* as (discord_user_id, display name)."""
+                *, is_reserve: int = 0, role_id: int | None = None,
+                team_id: int | None = None) -> int:
+    """Create a team instance holding *drivers* as (discord_user_id, display name).
+
+    *team_id* fixes the team's id, for a test that names the team in a result or asserts on it.
+    """
     cur = await db.execute(
-        "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-        "VALUES (?, ?, ?, ?)",
-        (div_id, team, max(len(drivers), 1), is_reserve),
+        "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (team_id, div_id, team, max(len(drivers), 1), is_reserve),
     )
     ti_id = cur.lastrowid
     if role_id is not None:
@@ -968,30 +973,32 @@ async def test_an_unresolved_driver_orders_by_their_id(db_path):
 async def test_the_opening_constructors_are_ordered_by_name(db_path):
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=74)
-        await _seat(db, div_id, "zebra", [(1, "One")], role_id=901)
-        await _seat(db, div_id, "Aardvark", [(2, "Two")], role_id=902)
+        await _seat(db, div_id, "zebra", [(1, "One")], team_id=901)
+        await _seat(db, div_id, "Aardvark", [(2, "Two")], team_id=902)
         await db.commit()
 
     snaps = await opening_team_standings(db_path, div_id)
 
-    assert [s.team_role_id for s in snaps] == [902, 901]
+    assert [s.team_instance_id for s in snaps] == [902, 901]
     assert [s.standing_position for s in snaps] == [1, 2]
     assert [s.total_points for s in snaps] == [0, 0]
 
 
 @pytest.mark.asyncio
-async def test_the_opening_constructors_exclude_reserves_and_unmapped_teams(db_path):
-    """Keyed by role, as a constructors classification always is."""
+async def test_the_opening_constructors_hold_every_team_but_the_reserve(db_path):
+    """Keyed by the division's team, as a constructors classification always is — so a team
+    holds its place whatever role it has, or whether it has one at all (#375)."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=75)
-        await _seat(db, div_id, "Alpha", [(1, "One")], role_id=901)
-        await _seat(db, div_id, "Reserve", [(9, "Nine")], is_reserve=1, role_id=903)
-        await _seat(db, div_id, "Unmapped", [(2, "Two")])
+        await _seat(db, div_id, "Alpha", [(1, "One")], role_id=901, team_id=901)
+        await _seat(db, div_id, "Reserve", [(9, "Nine")], is_reserve=1, role_id=903,
+                    team_id=903)
+        await _seat(db, div_id, "Unmapped", [(2, "Two")], team_id=902)
         await db.commit()
 
     snaps = await opening_team_standings(db_path, div_id)
 
-    assert [s.team_role_id for s in snaps] == [901]
+    assert [s.team_instance_id for s in snaps] == [901, 902]
 
 
 @pytest.mark.asyncio
@@ -999,7 +1006,7 @@ async def test_neither_opening_function_persists_anything(db_path):
     """There is no round for a snapshot row to key to (see the module comment)."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=76)
-        await _seat(db, div_id, "Alpha", [(1, "One")], role_id=901)
+        await _seat(db, div_id, "Alpha", [(1, "One")], team_id=901)
         await db.commit()
 
     await opening_driver_standings(db_path, div_id, {1: "One"})
@@ -1197,24 +1204,24 @@ async def test_tied_teams_are_ordered_by_name(db_path):
     """No round has been run, so the constructors are separated by name alone."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=89)
-        await _seat(db, div_id, "zebra", [(1, "one")], role_id=501)
-        await _seat(db, div_id, "Aardvark", [(2, "two")], role_id=502)
+        await _seat(db, div_id, "zebra", [(1, "one")], team_id=501)
+        await _seat(db, div_id, "Aardvark", [(2, "two")], team_id=502)
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
     snaps = await compute_team_standings(db_path, div_id, r1)
 
-    assert [s.team_role_id for s in snaps] == [502, 501]
+    assert [s.team_instance_id for s in snaps] == [502, 501]
 
 
 @pytest.mark.asyncio
 async def test_a_tied_reserve_team_comes_after_the_named_teams(db_path):
-    """Last whatever it is called, and whatever its role id."""
+    """Last whatever it is called, and whatever its id."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=90)
-        await _seat(db, div_id, "zebra", [(1, "one")], role_id=602)
+        await _seat(db, div_id, "zebra", [(1, "one")], team_id=602)
         await _seat(db, div_id, "Aardvark reserves", [(2, "two")],
-                    is_reserve=1, role_id=601)
+                    is_reserve=1, team_id=601)
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
         # The reserve team is only in the standings because its driver raced.
@@ -1223,43 +1230,50 @@ async def test_a_tied_reserve_team_comes_after_the_named_teams(db_path):
 
     snaps = await compute_team_standings(db_path, div_id, r1)
 
-    assert [s.team_role_id for s in snaps] == [602, 601]
+    assert [s.team_instance_id for s in snaps] == [602, 601]
 
 
 @pytest.mark.asyncio
-async def test_tied_teams_sharing_a_name_order_by_ascending_role_id(db_path):
-    """The name is compared case-insensitively, so it can tie; the role id makes it total."""
+async def test_tied_teams_sharing_a_name_order_by_the_team_added_first(db_path):
+    """The name is compared case-insensitively, so it can tie; the team's id makes it total.
+
+    Seeded against the answer's alphabetical order, so a sort that fell through to the name's
+    case would fail.
+    """
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=91)
-        await _seat(db, div_id, "Alpha", [(1, "one")], role_id=702)
-        await _seat(db, div_id, "alpha", [(2, "two")], role_id=701)
+        first = await _seat(db, div_id, "alpha", [(1, "one")])
+        second = await _seat(db, div_id, "Alpha", [(2, "two")])
         r1 = await _round(db, div_id, 1)
         await db.commit()
 
     snaps = await compute_team_standings(db_path, div_id, r1)
 
-    assert [s.team_role_id for s in snaps] == [701, 702]
+    assert [s.team_instance_id for s in snaps] == [first, second]
 
 
 @pytest.mark.asyncio
-async def test_a_tied_role_the_division_holds_no_team_for_ranks_last(db_path):
-    """A role that reached the standings through a result alone has no name to order on."""
+async def test_a_tied_team_of_another_division_ranks_last(db_path):
+    """A result names a team of its own division, which a submission guarantees; one that
+    somehow named another division's team has no place in this one to order on."""
     async with get_connection(db_path) as db:
-        div_id, _ = await _bootstrap(db, server_id=93)
-        await _seat(db, div_id, "zebra", [(1, "one")], role_id=752)
+        div_id, season_id = await _bootstrap(db, server_id=93)
+        cur = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id) "
+            "VALUES (?, 'Beta', 778, 889)",
+            (season_id,),
+        )
+        await _seat(db, cur.lastrowid, "Aardvark", [(3, "three")], team_id=751)
+        await _seat(db, div_id, "zebra", [(1, "one")], team_id=752)
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
-        await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) "
-            "VALUES ('Departed', 751)"
-        )
         await _result_dnf(db, sr1, 1, pos=19, team=752)
         await _result_dnf(db, sr1, 3, pos=20, team=751)
         await db.commit()
 
     snaps = await compute_team_standings(db_path, div_id, r1)
 
-    assert [s.team_role_id for s in snaps] == [752, 751]
+    assert [s.team_instance_id for s in snaps] == [752, 751]
 
 
 @pytest.mark.asyncio
@@ -1267,8 +1281,8 @@ async def test_the_team_final_tiebreak_never_outranks_the_countback(db_path):
     """A team ahead on points stays ahead of one with an earlier name."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=92)
-        await _seat(db, div_id, "zebra", [(1, "one")], role_id=801)
-        await _seat(db, div_id, "Aardvark", [(2, "two")], role_id=802)
+        await _seat(db, div_id, "zebra", [(1, "one")], team_id=801)
+        await _seat(db, div_id, "Aardvark", [(2, "two")], team_id=802)
         r1 = await _round(db, div_id, 1)
         sr1 = await _session(db, r1, div_id)
         await _result(db, sr1, 1, pos=1, pts=25, team=801)
@@ -1277,7 +1291,7 @@ async def test_the_team_final_tiebreak_never_outranks_the_countback(db_path):
 
     snaps = await compute_team_standings(db_path, div_id, r1)
 
-    assert [s.team_role_id for s in snaps] == [801, 802]
+    assert [s.team_instance_id for s in snaps] == [801, 802]
 
 
 # ---------------------------------------------------------------------------

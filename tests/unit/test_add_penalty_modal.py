@@ -53,6 +53,7 @@ from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
 from services.penalty_service import StagedPenalty  # noqa: E402
 from services.penalty_wizard import AddPenaltyModal, PenaltyReviewState  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 11208
 SEASON_ID = 1
@@ -93,6 +94,7 @@ async def _make_db(
             "VALUES (?, ?, 'Division 1', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 0)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
             "scheduled_at) VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01')",
@@ -106,14 +108,14 @@ async def _make_db(
         if qualifying:
             await db.execute(
                 "INSERT INTO qualifying_session_results "
-                "(id, session_result_id, driver_user_id, team_role_id, finishing_position, "
+                "(id, session_result_id, driver_user_id, team_instance_id, finishing_position, "
                 " outcome) VALUES (1, 1, ?, 0, 1, 'CLASSIFIED')",
                 (DRIVER,),
             )
         else:
             await db.execute(
                 "INSERT INTO race_session_results "
-                "(id, session_result_id, driver_user_id, team_role_id, finishing_position, "
+                "(id, session_result_id, driver_user_id, team_instance_id, finishing_position, "
                 " outcome, base_time_ms, ingame_time_penalties_ms) "
                 "VALUES (1, 1, ?, 0, 1, 'CLASSIFIED', ?, ?)",
                 (DRIVER, base_time_ms, ingame_ms),

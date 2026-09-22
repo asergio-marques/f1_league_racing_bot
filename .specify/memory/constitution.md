@@ -1,6 +1,36 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-22 — v14.4.0 → v14.4.1: PATCH — a result records the division's team, never its role (issue #375)]
+  Version change    : 14.4.0 → 14.4.1
+  Bump rationale    : PATCH, on the precedent of v14.2.1: three statements of where the data
+                      lives are corrected to match the model, and no principle is added,
+                      removed or redefined. A team was always the subject of a result and of a
+                      standings row; the role was only how it had been stored.
+
+  Modified sections :
+    - Principle XII (Race Results & Championship Integrity), Result Submission — the row
+      carries the team of the division the entry drove for, never its Discord role; the role
+      typed in a submission is resolved to the team once, when typed.
+    - Principle XII, Standings Computation, the final tiebreak — two teams otherwise level
+      stand in the order they were added to the division, in place of ascending role ID.
+    - Principle XIV (Image Generation Discipline), Rule 16, the name of an entity of the
+      server — a team is named by the name the league gave it; the fallback to the name of
+      the Discord role is withdrawn, the record naming the team and never its role.
+
+  Why the constitution moved:
+    - Branch fix/375-results-keep-the-team-not-its-role. Results and team standings recorded
+      the Discord role, so a team whose role was replaced mid-season with `/team role` stood
+      twice in the team standings, and its earlier rounds were posted as a deleted role.
+    - `docs/wip-specs/results_module_specification.md` and
+      `docs/wip-specs/image_module_specification.md` are the governing statements of the
+      rules; `docs/wip-specs/core_specification.md`, "Teams", records that a team's results
+      stay with it when its role changes.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred items    : none.
+
 [2026-09-22 — v14.3.0 → v14.4.0: MINOR — core's About option on the hub's panel (issue #258)]
   Version change    : 14.3.0 → 14.4.0
   Bump rationale    : MINOR, sized in proportion as this project does: guidance is added inside
@@ -5567,8 +5597,10 @@ governs the **Results & Standings optional module** (Principle X).
   at the scheduled round start time, notifying league managers to enter results. This channel
   is a module-introduced channel category registered per Principle VII.
 - Each session result row MUST carry: session type, round ID, division ID, driver Discord
-  User ID, finishing position (1-indexed positive integer), team role, tyre (qualifying)
-  or total race time and fastest lap (race), and an outcome modifier. Permitted modifiers:
+  User ID, finishing position (1-indexed positive integer), the team of the division the
+  entry drove for — never its Discord role, the role typed in a submission being resolved to
+  the team once, when typed — tyre (qualifying) or total race time and fastest lap (race),
+  and an outcome modifier. Permitted modifiers:
   CLASSIFIED (eligible for points), DNF / DNS / DSQ (0 points, ineligible for fastest-lap
   bonus except as noted). A special CANCELLED result MAY be recorded for sessions not run.
 - After a session's results are accepted, the bot presents one button per named seasonal
@@ -5651,8 +5683,9 @@ governs the **Results & Standings optional module** (Principle X).
   the reserve team after every named team and an entry belonging to no team of the division
   after the reserves — then, for drivers, the driver's name within the team, alphabetically
   and case-insensitively, taken on the name the standings are posted under; then the
-  ascending identifier, the driver's Discord user ID or the team's role ID. The ordering MUST
-  be total: no pair of entries may be left for an implementation detail to separate.
+  ascending identifier, the driver's Discord user ID or, for two teams, the team added to the
+  division first. The ordering MUST be total: no pair of entries may be left for an
+  implementation detail to separate.
 - **Team standings**: teams ranked by the same hierarchy applied to the aggregate points and
   Feature Race finishes of all drivers scoring under that team's banner in each session.
   A reserve driver's points and finishes accrue to whichever team they drove for in each
@@ -7263,12 +7296,12 @@ draws it on the graphic, so that a picture saved or forwarded away from the mess
 says which phase it stands after. Nothing is resolved away here and nothing is lost; the rule is
 about what the graphic must give up, not about what the message must keep to itself.
 
-Where the element names an **entity of the server** — a person, or a team reached through a Discord
-role — the fixed rendering is that entity's **name on the server at the moment of generation**. For a
-person that is their display name; for a team it is the name the league gave the team holding the
-role, falling back to the name of the role itself. An image type MUST state the chain by which a name
-is reached where the first is unavailable, and MUST reach the same name wherever it draws that
-entity, so that one driver is not two names on one graphic.
+Where the element names an **entity of the server** — a person, or a team — the fixed rendering is
+that entity's **name on the server at the moment of generation**. For a person that is their display
+name; for a team it is the name the league gave the team, the record drawn naming the team and never
+its Discord role (v14.4.1). An image type MUST state the chain by which a name is reached where the
+first is unavailable, and MUST reach the same name wherever it draws that entity, so that one driver
+is not two names on one graphic.
 
 **A person's name is cleaned before it is drawn** (v14.1.0). A Discord display name is the one text a
 graphic draws that the league cannot control, so every link of a person's chain MUST be drawn without
@@ -8305,4 +8338,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.4.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-22
+**Version**: 14.4.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-22

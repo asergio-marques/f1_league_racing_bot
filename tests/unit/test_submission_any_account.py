@@ -23,6 +23,7 @@ from services.result_submission_service import (  # noqa: E402
     other_active_team_assignments,
     validate_submission_block,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 PAST, NOW, OTHER = 100, 150, 200
 TEAM_A, TEAM_B = 300, 400
@@ -33,7 +34,7 @@ def _validate(lines: list[str]):
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={NOW, OTHER},
-        team_role_ids={TEAM_A, TEAM_B},
+        team_of_role={TEAM_A: TEAM_A, TEAM_B: TEAM_B},
         reserve_team_role_id=None,
         driver_team_map={NOW: TEAM_A, OTHER: TEAM_B},
         current_of={PAST: NOW},
@@ -81,6 +82,7 @@ async def _db_with_a_session_under_the_past_account(tmp_path) -> tuple[str, int]
             "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
             "VALUES (1, 1, 'Pro', 1001, 1)"
         )
+        await seed_team_instances(db, 1, TEAM_A, TEAM_B)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
             "VALUES (1, 1, 1, 'NORMAL', '2026-09-20T18:00:00')"
@@ -91,7 +93,7 @@ async def _db_with_a_session_under_the_past_account(tmp_path) -> tuple[str, int]
         )
         await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (1, ?, ?, 1)",
+            "team_instance_id, finishing_position) VALUES (1, ?, ?, 1)",
             (PAST, TEAM_A),
         )
         cursor = await db.execute(

@@ -5526,9 +5526,10 @@ class SeasonCog(commands.Cog):
         from services.result_submission_service import AmendedSession
         from services.season_points_service import get_season_config_names
 
-        driver_ids, team_role_ids, reserve_role_id, driver_team_map, reserve_driver_ids = await _build_division_validation_data(
-            div.id, interaction.client
-        )
+        (
+            driver_ids, team_of_role, reserve_role_id, driver_team_map, reserve_driver_ids,
+            team_names,
+        ) = await _build_division_validation_data(div.id, interaction.client)
         config_names = await get_season_config_names(self.bot.db_path, season.id)
 
         async def _cleanup_channel() -> None:
@@ -5612,18 +5613,19 @@ class SeasonCog(commands.Cog):
             for earlier in collected:
                 for row in earlier.driver_rows:
                     other_assignments.setdefault(
-                        row.driver_user_id, (row.team_role_id, earlier.session_type.value)
+                        row.driver_user_id, (row.team_instance_id, earlier.session_type.value)
                     )
             parsed = validate_submission_block(
                 lines_raw,
                 st,
                 driver_ids,
-                team_role_ids,
+                team_of_role,
                 reserve_role_id,
                 driver_team_map,
                 reserve_driver_ids,
                 other_active_assignments=other_assignments,
                 current_of=current_of,
+                team_names=team_names,
             )
             try:
                 await msg.delete()

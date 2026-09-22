@@ -172,7 +172,7 @@ def _result(
         id=user_id,
         session_result_id=1,
         driver_user_id=user_id,
-        team_role_id=0,
+        team_instance_id=0,
         finishing_position=position,
         outcome=outcome,
         tyre=None,

@@ -121,12 +121,42 @@ class PlacementService:
             updated_at=row["updated_at"],
         )
 
+    async def team_holding_role(
+        self, role_id: int, *, other_than: str | None = None
+    ) -> str | None:
+        """The team of the server's list mapped to *role_id*, other than *other_than*, or None."""
+        async with get_connection(self._db_path) as db:
+            return await self._team_holding_role(db, role_id, other_than)
+
+    @staticmethod
+    async def _team_holding_role(db, role_id: int, other_than: str | None) -> str | None:
+        cursor = await db.execute(
+            "SELECT team_name FROM team_role_configs WHERE role_id = ? AND team_name != ? "
+            "LIMIT 1",
+            (role_id, other_than or ""),
+        )
+        row = await cursor.fetchone()
+        return row["team_name"] if row else None
+
     async def set_team_role_config(
         self, team_name: str, role_id: int,
         actor_id: int = 0, actor_name: str = "system",
     ) -> None:
-        """Upsert a team → role mapping and write an audit entry."""
+        """Upsert a team → role mapping and write an audit entry.
+
+        **A role belongs to one team only** (decided 2026-09-22, with #375). A submission names
+        a team by its role, and a result records the team the role resolves to, so a role two
+        teams held would name either. Raises ``ValueError`` naming the team that holds it, and
+        writes nothing; re-setting a team's own role is allowed. The schema's unique index on
+        ``role_id`` is the backstop.
+        """
         async with get_connection(self._db_path) as db:
+            holder = await self._team_holding_role(db, role_id, team_name)
+            if holder is not None:
+                raise ValueError(
+                    f'<@&{role_id}> is already the role of "{holder}". A role belongs to '
+                    "one team only."
+                )
             # Read existing before upsert for audit old_value
             cursor = await db.execute(
                 "SELECT role_id FROM team_role_configs WHERE team_name = ?",
@@ -189,9 +219,10 @@ class PlacementService:
         The team's role is never fixed (issue #220): a league repoints it when the role is
         deleted or replaced, and the drivers already seated in the team — in any division of
         the season being raced, their placements confirmed — follow it. The old role is taken
-        from each where one was mapped and no other team still maps to it; the new one is
-        granted where one is given. A driver created by test mode holds no roles and is left
-        alone. Returns how many drivers were reached.
+        from each where one was mapped; the new one is granted where one is given. A role
+        belongs to one team only (#375), so the old role is nobody else's to keep. A driver
+        created by test mode holds no roles and is left alone. Returns how many drivers were
+        reached.
         """
         from services.season_lifecycle_service import uncommitted_seat_excluded
 
@@ -214,14 +245,6 @@ class PlacementService:
                 (team_name,),
             )
             user_ids = [row["discord_user_id"] for row in await cursor.fetchall()]
-            still_mapped = False
-            if old_role_id is not None:
-                cursor = await db.execute(
-                    "SELECT 1 FROM team_role_configs WHERE role_id = ? "
-                    "AND team_name != ? LIMIT 1",
-                    (old_role_id, team_name),
-                )
-                still_mapped = await cursor.fetchone() is not None
 
         reached = 0
         for user_id in user_ids:
@@ -231,7 +254,7 @@ class PlacementService:
                     member = await guild.fetch_member(int(user_id))
                 except discord.HTTPException:
                     continue
-            if old_role_id is not None and not still_mapped:
+            if old_role_id is not None:
                 await self._revoke_roles(member, old_role_id)
             if new_role_id is not None:
                 await self._grant_roles(member, new_role_id)

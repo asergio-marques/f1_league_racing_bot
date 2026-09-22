@@ -231,45 +231,18 @@ async def _nationalities(
     return {int(row["discord_user_id"]): (row["nationality"] or None) for row in rows}
 
 
-async def _team_names(
-    bot, guild, division_id: int, role_ids: list[int]
-) -> dict[int, str]:
-    """The name of the division's team holding each role, falling back to the role's own.
+async def _team_names(bot, guild, division_id: int, team_ids: list[int]) -> dict[int, str]:
+    """The name of each division team a session records, keyed by the team's id.
 
-    A session records the Discord **role** an entry drove for, not a name. A role is mapped
-    to a team *name* at server scope by ``team_role_configs``, and the division holds a team
-    instance of that name; that instance's name is what the graphic draws, and what the team
-    image is looked up by. Where the division holds no such team, the role's own name stands
-    in — the honest fallback, and the one the textual table already uses.
+    A session records the division's **team** an entry drove for, never its Discord role
+    (#375), so the name — what the graphic draws, and what the team image is looked up by —
+    is read from the team itself. Nothing asks Discord: a role replaced mid-season, or since
+    deleted, has no bearing on the rounds recorded under it. *guild* and *division_id* are
+    kept for the callers' symmetry with the driver lookups beside this one.
     """
-    names: dict[int, str] = {}
-    if not role_ids:
-        return names
+    from services.team_service import team_names_for_instances
 
-    placeholders = ",".join("?" * len(role_ids))
-    async with get_connection(bot.db_path) as db:
-        rows = await (
-            await db.execute(
-                f"SELECT trc.role_id AS role_id, ti.name AS name "
-                f"FROM team_role_configs trc "
-                f"JOIN team_instances ti "
-                f"  ON ti.name = trc.team_name AND ti.division_id = ? "
-                f"WHERE trc.role_id IN ({placeholders})",
-                [division_id, *role_ids],
-            )
-        ).fetchall()
-    for row in rows:
-        try:
-            names[int(row["role_id"])] = row["name"]
-        except (TypeError, ValueError):
-            continue
-
-    for role_id in role_ids:
-        if role_id in names:
-            continue
-        role = guild.get_role(role_id) if guild is not None else None
-        names[role_id] = role.name if role is not None else f"Role {role_id}"
-    return names
+    return await team_names_for_instances(bot.db_path, team_ids)
 
 
 async def build_drawing(
@@ -292,7 +265,7 @@ async def build_drawing(
     from services.image_results_service import resolve_drawing
 
     user_ids = [row.driver_user_id for row in driver_rows]
-    role_ids = [row.team_role_id for row in driver_rows]
+    team_ids = [row.team_instance_id for row in driver_rows]
 
     config = await bot.image_config_service.get_config()
 
@@ -311,7 +284,7 @@ async def build_drawing(
             bot, guild, user_ids, division_id=session_result.division_id
         ),
         team_names=await _team_names(
-            bot, guild, session_result.division_id, role_ids
+            bot, guild, session_result.division_id, team_ids
         ),
         nationalities=await _nationalities(
             bot, user_ids, division_id=session_result.division_id

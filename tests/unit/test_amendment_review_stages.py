@@ -32,6 +32,7 @@ from services.penalty_service import StagedPenalty  # noqa: E402
 from services.result_submission_service import (  # noqa: E402
     run_amendment_review_stages,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SEASON_ID = 31
 DIVISION_ID = 41
@@ -53,6 +54,7 @@ async def _db(tmp_path, name: str) -> tuple[str, int]:
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 3001)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
             "VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL', 'FINAL')",
@@ -65,7 +67,7 @@ async def _db(tmp_path, name: str) -> tuple[str, int]:
         )
         cursor = await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, 101, 3001, 1)",
+            "team_instance_id, finishing_position) VALUES (?, 101, 3001, 1)",
             (session.lastrowid,),
         )
         await db.commit()

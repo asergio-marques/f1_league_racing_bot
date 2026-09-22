@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from db.database import get_connection, run_migrations  # noqa: E402
 from services import driver_service  # noqa: E402
 from services.driver_service import DriverService  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 2440
 A, B, C = "6501", "6502", "6503"
@@ -50,6 +51,7 @@ async def _make_db(tmp_path) -> str:
                 "VALUES (?, ?, ?, 1001, 1)",
                 (division, season, name),
             )
+            await seed_team_instances(db, division, 501)
             await db.execute(
                 "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
                 "VALUES (?, ?, 1, 'NORMAL', '2026-01-20T18:00:00')",
@@ -92,7 +94,7 @@ async def _raced(db_path: str, account: str, division: int, profile_id: int | No
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, driver_profile_id) VALUES (?, ?, 501, 1, ?)",
+            "team_instance_id, finishing_position, driver_profile_id) VALUES (?, ?, 501, 1, ?)",
             (division, int(account), profile_id),
         )
         await db.commit()

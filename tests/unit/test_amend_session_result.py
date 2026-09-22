@@ -49,6 +49,7 @@ from services.result_submission_service import (  # noqa: E402
     amend_round_results,
 )
 from services.season_service import SeasonImmutableError  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 12908
 SEASON_ID = 1
@@ -81,6 +82,7 @@ async def _make_db(tmp_path, *, name: str = "amend_result", season_status: str =
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 3001)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
             "status) VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL', 'FINAL')",
@@ -96,7 +98,7 @@ async def _make_db(tmp_path, *, name: str = "amend_result", season_status: str =
         for position, (driver, profile_id) in enumerate(((101, 31), (102, 32)), start=1):
             await db.execute(
                 "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-                "team_role_id, finishing_position, driver_profile_id) VALUES (?, ?, 3001, ?, ?)",
+                "team_instance_id, finishing_position, driver_profile_id) VALUES (?, ?, 3001, ?, ?)",
                 (race.lastrowid, driver, position, profile_id),
             )
         quali = await db.execute(
@@ -106,7 +108,7 @@ async def _make_db(tmp_path, *, name: str = "amend_result", season_status: str =
         )
         await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, driver_profile_id) VALUES (?, 101, 3001, 1, 31)",
+            "team_instance_id, finishing_position, driver_profile_id) VALUES (?, 101, 3001, 1, 31)",
             (quali.lastrowid,),
         )
         for profile_id, driver in ((31, 101), (32, 102), (33, 103)):
@@ -122,7 +124,7 @@ async def _make_db(tmp_path, *, name: str = "amend_result", season_status: str =
 def _race_row(driver: int, position: int, *, total_time: str = "1:30:00.000", **extra):
     row = {
         "driver_user_id": driver,
-        "team_role_id": 3001,
+        "team_instance_id": 3001,
         "position": position,
         "outcome": "CLASSIFIED",
         "total_time": total_time,
@@ -278,7 +280,7 @@ async def test_amending_qualifying_clears_only_qualifying_rows(tmp_path):
 
     await _amend(
         db_path,
-        [{"driver_user_id": 102, "team_role_id": 3001, "position": 1, "best_lap": "1:19.000"}],
+        [{"driver_user_id": 102, "team_instance_id": 3001, "position": 1, "best_lap": "1:19.000"}],
         session_type=SessionType.FEATURE_QUALIFYING,
     )
 
@@ -295,8 +297,8 @@ async def test_a_row_without_a_position_takes_its_place_in_the_paste(tmp_path):
     put every driver in P0."""
     db_path = await _make_db(tmp_path, name="amend_implicit")
     rows = [
-        {"driver_user_id": 102, "team_role_id": 3001, "total_time": "1:30:00.000"},
-        {"driver_user_id": 101, "team_role_id": 3001, "total_time": "+5.000"},
+        {"driver_user_id": 102, "team_instance_id": 3001, "total_time": "1:30:00.000"},
+        {"driver_user_id": 101, "team_instance_id": 3001, "total_time": "+5.000"},
     ]
 
     await _amend(db_path, rows)
@@ -310,7 +312,7 @@ async def test_a_parsed_row_object_is_read_like_a_dict(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_objects")
     row = SimpleNamespace(
         driver_user_id=103,
-        team_role_id=3001,
+        team_instance_id=3001,
         position=1,
         outcome="CLASSIFIED",
         tyre=None,
@@ -459,7 +461,7 @@ async def test_another_session_of_the_same_round_marks_a_driver(tmp_path):
         )
         await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, driver_profile_id) VALUES (?, 103, 3001, 1, 33)",
+            "team_instance_id, finishing_position, driver_profile_id) VALUES (?, 103, 3001, 1, 33)",
             (other.lastrowid,),
         )
         await db.commit()
@@ -807,7 +809,7 @@ async def test_a_qualifying_verdict_is_re_pointed_on_its_own_column(tmp_path):
 
     await _amend(
         db_path,
-        [{"driver_user_id": 101, "team_role_id": 3001, "position": 1,
+        [{"driver_user_id": 101, "team_instance_id": 3001, "position": 1,
           "outcome": "CLASSIFIED", "best_lap": "1:20.000"}],
         session_type=SessionType.FEATURE_QUALIFYING,
     )
@@ -921,7 +923,7 @@ async def test_a_verdict_follows_a_driver_who_has_changed_account(tmp_path):
 
 
 def _quali_row(driver: int, position: int, best_lap: str = "1:19.000") -> dict:
-    return {"driver_user_id": driver, "team_role_id": 3001, "position": position,
+    return {"driver_user_id": driver, "team_instance_id": 3001, "position": position,
             "best_lap": best_lap}
 
 

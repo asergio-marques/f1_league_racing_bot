@@ -202,7 +202,7 @@ Each module then has its own configuration, which is not covered here. Start fro
 /team list
 ```
 
-A team belongs to the **server**, not to a season, so you do this once and it carries forward. Every team needs a Discord role — that role is granted to a driver when you seat them and taken away when you do not.
+A team belongs to the **server**, not to a season, so you do this once and it carries forward. Every team needs a Discord role of its own — that role is granted to a driver when you seat them and taken away when you do not. **One role, one team:** a role another team already holds, the Reserve team included, is refused, because a results submission names a team by its role.
 
 The rules for a team's **name** are checked the moment you set it, and are listed in full under [`/team add`](../../README.md#team-commands). The short version: a name has to stay distinct from every other team once punctuation and accents are stripped, so `Red Bull` and `Red  Bull!` cannot both exist — they would draw the same badge file. A name may start with a digit; `2 Fast` is fine. It cannot hold an emoji, Discord formatting, a role mention, `@everyone` or `@here`: a picture cannot show them the way a message does.
 
@@ -216,7 +216,7 @@ The rules for a team's **name** are checked the moment you set it, and are liste
 
 This is easy to forget and the bot warns you about it at every season review, because a driver sitting in Reserve without it will be rejected when results are submitted.
 
-Every division you create later is built from this list, each team with **two seats**. Build the list before you confirm a season's configuration: from that moment until the season ends, `/team add`, `/team remove` and `/team rename` are refused. A team's role is the exception — if a role is deleted from the server, point the team at its replacement with `/team role`, in any state but pending completion. (By then nothing is being raced and completing the season revokes every team role anyway, so the repair waits for the next season.) Every driver already seated in the team moves to the new role with it. Use `/team list` to see the whole list with its roles, and `/team lineup` once drivers are placed.
+Every division you create later is built from this list, each team with **two seats**. Build the list before you confirm a season's configuration: from that moment until the season ends, `/team add`, `/team remove` and `/team rename` are refused. A team's role is the exception — if a role is deleted from the server, point the team at its replacement with `/team role`, in any state but pending completion. (By then nothing is being raced and completing the season revokes every team role anyway, so the repair waits for the next season.) Every driver already seated in the team moves to the new role with it, and the rounds the team has already raced stay its own — a result records the team, never its role. Use `/team list` to see the whole list with its roles, and `/team lineup` once drivers are placed.
 
 ---
 

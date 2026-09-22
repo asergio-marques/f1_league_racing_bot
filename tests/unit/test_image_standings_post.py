@@ -592,10 +592,11 @@ async def _seed_league(tmp_path):
                 "VALUES (?, ?)",
                 (team_name, role_id),
             )
+            # The team takes its role's number, so the results below name it either way.
             cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, 2, 0)",
-                (division_id, team_name),
+                "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, 2, 0)",
+                (role_id, division_id, team_name),
             )
             instance_id = cursor.lastrowid
             for user_id, seat_number in drivers:
@@ -618,7 +619,7 @@ async def _seed_league(tmp_path):
                 )
                 await db.execute(
                     "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-                    "team_role_id, finishing_position, outcome, points_awarded) "
+                    "team_instance_id, finishing_position, outcome, points_awarded) "
                     "VALUES (?, ?, ?, ?, 'CLASSIFIED', 10)",
                     (session_id, user_id, role_id, seat_number),
                 )
@@ -648,7 +649,7 @@ def _snapshots(round_id, division_id):
             id=i,
             round_id=round_id,
             division_id=division_id,
-            team_role_id=role_id,
+            team_instance_id=role_id,
             standing_position=i,
             total_points=50 - i,
             finish_counts={},
@@ -1278,7 +1279,7 @@ async def _highlighted_svg(tmp_path):
         for user_id, role_id, position in ((11, 900, 1), (12, 900, 2), (13, 901, 1)):
             await db.execute(
                 "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-                "team_role_id, finishing_position, outcome, points_awarded) "
+                "team_instance_id, finishing_position, outcome, points_awarded) "
                 "VALUES (?, ?, ?, ?, 'CLASSIFIED', 3)",
                 (qualifying_id, user_id, role_id, position),
             )

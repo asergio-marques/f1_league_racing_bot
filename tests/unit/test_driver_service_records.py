@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.driver_profile import DriverState  # noqa: E402
 from services.driver_service import DriverService  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 9108
 OLD_USER = "4242"
@@ -118,14 +119,15 @@ async def _seed_snapshot(
 async def _seed_results(db_path: str, user_id: str = OLD_USER, league: int = LEAGUE) -> None:
     """One race result and one qualifying result for *user_id* in *league*'s race session."""
     async with get_connection(db_path) as db:
+        await seed_team_instances(db, league, 501)
         await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, points_awarded) VALUES (?, ?, 501, 2, 18)",
+            "team_instance_id, finishing_position, points_awarded) VALUES (?, ?, 501, 2, 18)",
             (league, user_id),
         )
         await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, ?, 501, 3)",
+            "team_instance_id, finishing_position) VALUES (?, ?, 501, 3)",
             (league, user_id),
         )
         await db.commit()

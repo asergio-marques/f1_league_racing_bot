@@ -293,7 +293,7 @@ def status_label(result_status: str | None) -> str:
 
 
 def _entry_key(snapshot, *, drivers: bool) -> int:
-    return snapshot.driver_user_id if drivers else snapshot.team_role_id
+    return snapshot.driver_user_id if drivers else snapshot.team_instance_id
 
 
 def resolve_drawing(
@@ -335,7 +335,7 @@ def resolve_drawing(
     round **absent** from the mapping is not yet run or was cancelled, and every cell of it
     is emptied (FR-022); a session type present in the outer mapping's value but absent from
     an entry means that round holds no session of that type. *team_seat_assignments* and
-    *team_seat_counts* (keyed by ``team_role_id``, matching *team_names*) are
+    *team_seat_counts* (keyed by ``team_instance_id``, matching *team_names*) are
     constructors-only: the first feeds the car allocation of FR-026, the second the trim a
     team's own seat count applies over the template's declared room. *driver_display_names*
     names the drivers a constructors car draws — keyed by ``driver_user_id``, unlike
@@ -385,11 +385,11 @@ def resolve_drawing(
         )
 
     # Named by team, since that is what a row carries — the drawing addresses a row by its
-    # ordinal, never by the role id resolve_drawing itself took the classification's keys from.
+    # ordinal, never by the team id resolve_drawing itself took the classification's keys from.
     seat_counts_by_name = {
-        team_names[role_id]: count
-        for role_id, count in (team_seat_counts or {}).items()
-        if role_id in team_names
+        team_names[team_id]: count
+        for team_id, count in (team_seat_counts or {}).items()
+        if team_id in team_names
     }
 
     return StandingsDrawing(
@@ -475,14 +475,14 @@ def _driver_round_cells(
     }
 
 
-def _drivers_for_team(team_role_id: int, session_map: Mapping[str, Sequence] | None) -> list[int]:
+def _drivers_for_team(team_instance_id: int, session_map: Mapping[str, Sequence] | None) -> list[int]:
     """The distinct drivers a team's session results record for one round, id-ascending."""
     if not session_map:
         return []
     found: set[int] = set()
     for rows in session_map.values():
         for row in rows:
-            if row.team_role_id == team_role_id:
+            if row.team_instance_id == team_instance_id:
                 found.add(row.driver_user_id)
     return sorted(found)
 
@@ -515,7 +515,7 @@ def _allocate_cars(drivers_who_drove: Sequence[int], seat_map: Mapping[int, int]
 
 
 def _constructor_round_cells(
-    team_role_id: int,
+    team_instance_id: int,
     rounds: Sequence[RoundHeading],
     round_session_results: Mapping[int, Mapping[str, Sequence]] | None,
     seat_map: Mapping[int, int],
@@ -526,7 +526,7 @@ def _constructor_round_cells(
     out: dict[int, RoundCells] = {}
     for heading in rounds:
         session_map = results.get(heading.ordinal)
-        drivers_who_drove = _drivers_for_team(team_role_id, session_map)
+        drivers_who_drove = _drivers_for_team(team_instance_id, session_map)
         allocation = _allocate_cars(drivers_who_drove, seat_map)
         out[heading.ordinal] = RoundCells(
             cars={

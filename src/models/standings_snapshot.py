@@ -70,7 +70,8 @@ class TeamStandingsSnapshot:
     id: int
     round_id: int
     division_id: int
-    team_role_id: int
+    #: The division's team the row ranks, never its Discord role (#375).
+    team_instance_id: int
     standing_position: int
     total_points: int
     finish_counts: dict[str, int]
@@ -82,7 +83,7 @@ class TeamStandingsSnapshot:
             id=row[0],
             round_id=row[1],
             division_id=row[2],
-            team_role_id=row[3],
+            team_instance_id=row[3],
             standing_position=row[4],
             total_points=row[5],
             finish_counts=json.loads(row[6]),

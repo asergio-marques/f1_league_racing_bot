@@ -252,12 +252,12 @@ CREATE TABLE team_standings_snapshots (
                             ON DELETE CASCADE,
     division_id         INTEGER NOT NULL
                             REFERENCES divisions(id),
-    team_role_id        INTEGER NOT NULL,
+    team_instance_id    INTEGER NOT NULL REFERENCES team_instances(id),
     standing_position   INTEGER NOT NULL,
     total_points        INTEGER NOT NULL DEFAULT 0,
     finish_counts       TEXT    NOT NULL DEFAULT '{}',
     first_finish_rounds TEXT    NOT NULL DEFAULT '{}',
-    UNIQUE (round_id, division_id, team_role_id)
+    UNIQUE (round_id, division_id, team_instance_id)
 );
 
 -- round_submission_channels
@@ -352,7 +352,9 @@ CREATE TABLE qualifying_session_results (
                             REFERENCES session_results(id)
                             ON DELETE CASCADE,
     driver_user_id      INTEGER NOT NULL,
-    team_role_id        INTEGER NOT NULL,
+    -- The division's team the entry drove for, never its Discord role: a role is resolved
+    -- to the team once, when typed, so a team given another role keeps its results (#375).
+    team_instance_id    INTEGER NOT NULL REFERENCES team_instances(id),
     finishing_position  INTEGER NOT NULL,
     outcome             TEXT    NOT NULL DEFAULT 'CLASSIFIED',
     tyre                TEXT,
@@ -372,7 +374,8 @@ CREATE TABLE race_session_results (
                                     REFERENCES session_results(id)
                                     ON DELETE CASCADE,
     driver_user_id              INTEGER NOT NULL,
-    team_role_id                INTEGER NOT NULL,
+    -- The division's team, as in qualifying_session_results (#375).
+    team_instance_id            INTEGER NOT NULL REFERENCES team_instances(id),
     finishing_position          INTEGER NOT NULL,
     outcome                     TEXT    NOT NULL DEFAULT 'CLASSIFIED',
     -- base_time_ms: race time in ms with ingame penalties already subtracted.
@@ -816,6 +819,8 @@ CREATE TABLE "team_role_configs" (
     role_id     INTEGER NOT NULL,
     updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+-- A role belongs to one team only: a submission names a team by its role (#375).
+CREATE UNIQUE INDEX uq_team_role_configs_role_id ON team_role_configs(role_id);
 
 -- seasons
 CREATE TABLE "seasons" (

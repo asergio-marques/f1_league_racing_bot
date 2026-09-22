@@ -54,6 +54,7 @@ from services.penalty_wizard import (  # noqa: E402
     PenaltyReviewState,
     StagedPardon,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 11008
 SEASON_ID = 1
@@ -98,6 +99,7 @@ async def _make_db(
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 3001)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
             "status) VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL', ?)",
@@ -126,7 +128,7 @@ async def _make_db(
                 else "qualifying_session_results"
             )
             await db.execute(
-                f"INSERT INTO {table} (session_result_id, driver_user_id, team_role_id, "
+                f"INSERT INTO {table} (session_result_id, driver_user_id, team_instance_id, "
                 f"finishing_position, driver_profile_id) VALUES (?, ?, 3001, 1, ?)",
                 (cursor.lastrowid, DRIVER_USER_ID, PROFILE_ID),
             )

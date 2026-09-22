@@ -23,6 +23,7 @@ from services.result_submission_service import (
     validate_submission_block,
 )
 from utils.tyre_compound import TYRE_COMPOUNDS
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +212,7 @@ def _make_qual_block(lines: list[str]) -> list[ParsedQualifyingRow | ParsedRaceR
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={100, 200},
-        team_role_ids={300, 400},
+        team_of_role={300: 300, 400: 400},
         reserve_team_role_id=None,
         driver_team_map={100: 300, 200: 400},
     )
@@ -284,7 +285,7 @@ def test_validate_submission_block_rejects_a_reserve_recorded_for_a_different_te
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={500, 200},
-        team_role_ids={300, 400},
+        team_of_role={300: 300, 400: 400},
         reserve_team_role_id=None,
         driver_team_map={200: 300},
         reserve_driver_ids={500},
@@ -304,7 +305,7 @@ def test_validate_submission_block_accepts_a_reserve_recorded_for_the_same_team(
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={500, 200},
-        team_role_ids={300, 400},
+        team_of_role={300: 300, 400: 400},
         reserve_team_role_id=None,
         driver_team_map={200: 400},
         reserve_driver_ids={500},
@@ -324,7 +325,7 @@ def test_validate_submission_block_rejects_the_same_conflict_for_a_non_reserve_d
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={100, 200},
-        team_role_ids={300, 400},
+        team_of_role={300: 300, 400: 400},
         reserve_team_role_id=None,
         driver_team_map={100: 300, 200: 400},
         other_active_assignments={100: (400, "FEATURE_RACE")},
@@ -344,7 +345,7 @@ def test_validate_submission_block_with_no_other_sessions_is_unaffected():
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={100, 200},
-        team_role_ids={300, 400},
+        team_of_role={300: 300, 400: 400},
         reserve_team_role_id=None,
         driver_team_map={100: 300, 200: 400},
         other_active_assignments={},
@@ -443,7 +444,7 @@ def _make_qual_block_3(lines):
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={100, 200, 300},
-        team_role_ids={400, 500, 600},
+        team_of_role={400: 400, 500: 500, 600: 600},
         reserve_team_role_id=None,
         driver_team_map={100: 400, 200: 500, 300: 600},
     )
@@ -473,7 +474,7 @@ def test_dnf_best_lap_not_derived_without_valid_gap():
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={100, 200},
-        team_role_ids={400, 500},
+        team_of_role={400: 400, 500: 500},
         reserve_team_role_id=None,
         driver_team_map={100: 400, 200: 500},
     )
@@ -500,7 +501,7 @@ def test_qualify_ordering_dsq_must_be_last():
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={100, 200},
-        team_role_ids={300, 400},
+        team_of_role={300: 300, 400: 400},
         reserve_team_role_id=None,
         driver_team_map={100: 300, 200: 400},
     )
@@ -520,7 +521,7 @@ def test_qualify_ordering_dsq_after_classified_valid():
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={100, 200},
-        team_role_ids={300, 400},
+        team_of_role={300: 300, 400: 400},
         reserve_team_role_id=None,
         driver_team_map={100: 300, 200: 400},
     )
@@ -539,7 +540,7 @@ def test_qualify_ordering_dnf_before_dns_valid():
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={100, 200, 300},
-        team_role_ids={300, 400, 500},
+        team_of_role={300: 300, 400: 400, 500: 500},
         reserve_team_role_id=None,
         driver_team_map={100: 300, 200: 400, 300: 500},
     )
@@ -558,7 +559,7 @@ def test_qualify_ordering_dns_before_dnf_rejected():
         lines,
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={100, 200, 300},
-        team_role_ids={300, 400, 500},
+        team_of_role={300: 300, 400: 400, 500: 500},
         reserve_team_role_id=None,
         driver_team_map={100: 300, 200: 400, 300: 500},
     )
@@ -752,7 +753,7 @@ def _make_race_block(lines):
         lines,
         session_type=SessionType.FEATURE_RACE,
         division_driver_ids={100, 200, 300, 400},
-        team_role_ids={500, 600, 700, 800},
+        team_of_role={500: 500, 600: 600, 700: 700, 800: 800},
         reserve_team_role_id=None,
         driver_team_map={100: 500, 200: 600, 300: 700, 400: 800},
     )
@@ -949,6 +950,7 @@ async def _seed_round(db) -> int:
         (season_id, "Main"),
     )
     division_id = cursor.lastrowid
+    await seed_team_instances(db, division_id, 300, 301, 999)
     cursor = await db.execute(
         "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
         (division_id,),
@@ -979,7 +981,7 @@ async def test_other_active_team_assignments_reads_other_active_sessions_only(tm
         qual_id = cursor.lastrowid
         await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, outcome, tyre, best_lap, points_awarded) "
+            "team_instance_id, finishing_position, outcome, tyre, best_lap, points_awarded) "
             "VALUES (?, 500, 300, 1, 'CLASSIFIED', 'Soft', '1:23.456', 25)",
             (qual_id,),
         )
@@ -993,7 +995,7 @@ async def test_other_active_team_assignments_reads_other_active_sessions_only(tm
         cancelled_id = cursor.lastrowid
         await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, outcome, base_time_ms, laps_behind, "
+            "team_instance_id, finishing_position, outcome, base_time_ms, laps_behind, "
             "ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms, "
             "fastest_lap, fastest_lap_bonus, points_awarded) "
             "VALUES (?, 500, 999, 1, 'CLASSIFIED', 3700000, NULL, 0, 0, 0, NULL, 0, 0)",
@@ -1026,7 +1028,7 @@ async def test_other_active_team_assignments_excludes_the_session_being_validate
         qual_id = cursor.lastrowid
         await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position, outcome, tyre, best_lap, points_awarded) "
+            "team_instance_id, finishing_position, outcome, tyre, best_lap, points_awarded) "
             "VALUES (?, 500, 300, 1, 'CLASSIFIED', 'Soft', '1:23.456', 25)",
             (qual_id,),
         )
@@ -1064,7 +1066,7 @@ async def test_other_active_team_assignments_leaves_out_the_sessions_an_amendmen
             )
             table = "race_session_results" if "RACE" in session_type else "qualifying_session_results"
             await db.execute(
-                f"INSERT INTO {table} (session_result_id, driver_user_id, team_role_id, "
+                f"INSERT INTO {table} (session_result_id, driver_user_id, team_instance_id, "
                 "finishing_position) VALUES (?, ?, ?, 1)",
                 (cursor.lastrowid, driver, team),
             )

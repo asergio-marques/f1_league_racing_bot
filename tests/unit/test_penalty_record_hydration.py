@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
 from services.penalty_service import load_staged_from_records  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 ROUND_ID = 41
 DIVISION_ID = 21
@@ -50,6 +51,7 @@ async def _seed(tmp_path, name: str = "hydrate") -> tuple[str, dict]:
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 3001)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
             "VALUES (?, ?, 2, '2026-02-01T18:00:00+00:00', 'NORMAL', 'FINAL')",
@@ -63,7 +65,7 @@ async def _seed(tmp_path, name: str = "hydrate") -> tuple[str, dict]:
         for position, driver in enumerate((101, 102), start=1):
             cursor = await db.execute(
                 "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-                "team_role_id, finishing_position) VALUES (?, ?, 3001, ?)",
+                "team_instance_id, finishing_position) VALUES (?, ?, 3001, ?)",
                 (race.lastrowid, driver, position),
             )
             ids[f"race_{driver}"] = cursor.lastrowid
@@ -74,7 +76,7 @@ async def _seed(tmp_path, name: str = "hydrate") -> tuple[str, dict]:
         )
         cursor = await db.execute(
             "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, 101, 3001, 1)",
+            "team_instance_id, finishing_position) VALUES (?, 101, 3001, 1)",
             (quali.lastrowid,),
         )
         ids["qual_101"] = cursor.lastrowid
@@ -257,7 +259,7 @@ async def test_another_rounds_verdicts_are_not_picked_up(tmp_path):
         )
         cursor = await db.execute(
             "INSERT INTO race_session_results (session_result_id, driver_user_id, "
-            "team_role_id, finishing_position) VALUES (?, 101, 3001, 1)",
+            "team_instance_id, finishing_position) VALUES (?, 101, 3001, 1)",
             (other.lastrowid,),
         )
         other_row = cursor.lastrowid

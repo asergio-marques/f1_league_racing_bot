@@ -29,6 +29,7 @@ from services.result_submission_service import (  # noqa: E402
     replace_round_results,
 )
 from services.season_service import SeasonImmutableError  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 14210
 SEASON_ID = 1
@@ -42,7 +43,7 @@ NEW_B = 102
 def _race_row(user_id: int, position: int) -> dict:
     return {
         "driver_user_id": user_id,
-        "team_role_id": 3001,
+        "team_instance_id": 3001,
         "finishing_position": position,
         "outcome": "CLASSIFIED",
         "total_time": "1:30:00.000" if position == 1 else "+5.000",
@@ -54,7 +55,7 @@ def _race_row(user_id: int, position: int) -> dict:
 def _qualifying_row(user_id: int, position: int) -> dict:
     return {
         "driver_user_id": user_id,
-        "team_role_id": 3001,
+        "team_instance_id": 3001,
         "finishing_position": position,
         "outcome": "CLASSIFIED",
         "tyre": "Soft",
@@ -99,6 +100,7 @@ async def _make_db(tmp_path, *, name: str, season_status: str = "ACTIVE") -> str
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 3001)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
             "VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL', 'AWAITING_REPORT_VERDICTS')",
@@ -119,7 +121,7 @@ async def _make_db(tmp_path, *, name: str, season_status: str = "ACTIVE") -> str
             (ROUND_ID, DIVISION_ID),
         )
         await db.execute(
-            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_role_id, "
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, team_instance_id, "
             "finishing_position, points_awarded) VALUES (1, ?, 3001, 1, 25)",
             (OLD_DRIVER,),
         )

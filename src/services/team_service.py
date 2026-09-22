@@ -529,6 +529,7 @@ class TeamService:
                     )
                 ).fetchall()
                 teams.append({
+                    "id": inst["id"],
                     "name": inst["name"],
                     "max_seats": inst["max_seats"],
                     "is_reserve": bool(inst["is_reserve"]),
@@ -542,6 +543,33 @@ class TeamService:
                     ],
                 })
         return teams
+
+
+# ---------------------------------------------------------------------------
+# Naming a recorded team
+# ---------------------------------------------------------------------------
+
+async def team_names_for_instances(db_path: str, instance_ids) -> dict[int, str]:
+    """The name of each division team in *instance_ids*, keyed by its id.
+
+    A result, and a constructors row, record the division's **team**, never its Discord role
+    (issue #375): a role is resolved to the team once, when a submission types it, and a
+    league may replace it mid-season. So every post and graphic names a recorded team from
+    here, and none asks Discord about a role that may since have been deleted. An id holding
+    no team is simply absent from the answer.
+    """
+    ids = sorted({int(i) for i in instance_ids})
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    async with get_connection(db_path) as db:
+        rows = await (
+            await db.execute(
+                f"SELECT id, name FROM team_instances WHERE id IN ({marks})",  # noqa: S608
+                ids,
+            )
+        ).fetchall()
+    return {int(r["id"]): r["name"] for r in rows}
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, NamedTuple
 
 import discord
 
@@ -3120,7 +3120,7 @@ async def _write_amended_session_in_tx(
         fp = _get(dr, "position") or _get(dr, "finishing_position") or i
         rows_normalised.append({
             "driver_user_id": driver_user_id,
-            "team_role_id": _get(dr, "team_role_id"),
+            "team_instance_id": _get(dr, "team_instance_id"),
             "finishing_position": fp,
             "outcome": _get(dr, "outcome", OutcomeModifier.CLASSIFIED.value),
             "tyre": _get(dr, "tyre"),
@@ -3184,6 +3184,9 @@ class ParsedQualifyingRow:
     best_lap: str           # time string or DNS/DNF/DSQ (in-game result)
     gap: str                # delta string or "N/A"
     outcome: OutcomeModifier  # derived from best_lap
+    #: The division's team *team_role_id* names, set by ``validate_submission_block``. The role
+    #: is only what was typed; the team is what is stored (#375).
+    team_instance_id: int | None = None
 
 
 @dataclass
@@ -3197,6 +3200,8 @@ class ParsedRaceRow:
     outcome: OutcomeModifier  # derived from total_time
     # No post-race or appeal sanction: those are decided in the review stages, never pasted —
     # an amendment included, since #345 withdrew the two columns it used to take.
+    #: As on ParsedQualifyingRow: the team the typed role resolved to (#375).
+    team_instance_id: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -3410,12 +3415,13 @@ def validate_submission_block(
     lines: list[str],
     session_type: SessionType,
     division_driver_ids: set[int],
-    team_role_ids: set[int],
+    team_of_role: Mapping[int, int],
     reserve_team_role_id: int | None,
     driver_team_map: dict[int, int],
     reserve_driver_ids: set[int] | None = None,
     other_active_assignments: dict[int, tuple[int, str]] | None = None,
     current_of: Mapping[int, int] | None = None,
+    team_names: Mapping[int, str] | None = None,
 ) -> list[ParsedQualifyingRow | ParsedRaceRow] | list[str]:
     """Validate all result lines for a session.
 
@@ -3425,6 +3431,14 @@ def validate_submission_block(
     max 2 drivers per team per session; and, where *other_active_assignments* is given, that
     no driver disagrees with another ACTIVE session of the same round about which team they
     raced for.
+
+    **A team is compared as the division's team, never as its role** (#375). *team_of_role*
+    maps each non-reserve team's role to that team's id, and each row's typed role is resolved
+    through it once, onto ``team_instance_id``; *driver_team_map* and
+    *other_active_assignments* name teams by the same id. A league may give a team another
+    role mid-season, and the rounds recorded before stay the team's all the same. So a
+    refusal names a team by its name, from *team_names*: the role a driver's team holds now is
+    not necessarily the one a round was recorded under. What was typed is echoed as typed.
 
     *current_of* maps a driver's past accounts to their current one (issue #243). Any account
     names the driver, so each row is moved onto the current account before anything is
@@ -3494,11 +3508,19 @@ def validate_submission_block(
                 "is not registered in this division."
             )
 
-    # Each submitted team role must be a valid non-reserve team role.
-    # Reserves sub *into* a real team, so the reserve team role is never a valid
-    # submission role.
+    # Each submitted team role must be a valid non-reserve team role, and is resolved here to
+    # the division's team it names (#375). Reserves sub *into* a real team, so the reserve
+    # team role is never a valid submission role.
+    role_of_team = {team: role for role, team in team_of_role.items()}
+
+    def _team(team_id: int) -> str:
+        # By name where one is known, as every caller supplies; the team's role otherwise.
+        name = (team_names or {}).get(team_id)
+        return f"**{name}**" if name else f"<@&{role_of_team.get(team_id)}>"
+
     for row in parsed_rows:
-        if row.team_role_id not in team_role_ids:
+        row.team_instance_id = team_of_role.get(row.team_role_id)
+        if row.team_instance_id is None:
             errors.append(
                 f"Row {row.position}: <@&{row.team_role_id}> "
                 "is not a valid team role for this division."
@@ -3514,11 +3536,11 @@ def validate_submission_block(
         mapped_team = driver_team_map.get(row.driver_user_id)
         if mapped_team is None:
             continue  # already reported above as "not in division"
-        if row.team_role_id != mapped_team:
+        if row.team_instance_id != mapped_team:
             errors.append(
                 f"Row {row.position}: driver <@{row.driver_user_id}> "
                 f"submitted as <@&{row.team_role_id}> "
-                f"but is assigned to <@&{mapped_team}>."
+                f"but is assigned to {_team(mapped_team)}."
             )
 
     # A driver already recorded under a different team by another ACTIVE session of this
@@ -3529,24 +3551,26 @@ def validate_submission_block(
     if other_active_assignments:
         for row in parsed_rows:
             existing = other_active_assignments.get(row.driver_user_id)
-            if existing is not None and existing[0] != row.team_role_id:
+            if existing is not None and existing[0] != row.team_instance_id:
                 existing_team, existing_session = existing
                 existing_label = existing_session.replace("_", " ").title()
                 errors.append(
                     f"Row {row.position}: driver <@{row.driver_user_id}> was recorded under "
-                    f"<@&{existing_team}> in {existing_label} of this round, but is "
+                    f"{_team(existing_team)} in {existing_label} of this round, but is "
                     f"submitted here as <@&{row.team_role_id}>."
                 )
 
     # Max 2 drivers per team (counting reserve subs)
     team_driver_counts: dict[int, int] = {}
     for row in parsed_rows:
-        if row.team_role_id in team_role_ids:
-            team_driver_counts[row.team_role_id] = team_driver_counts.get(row.team_role_id, 0) + 1
-    for role_id, count in team_driver_counts.items():
+        if row.team_instance_id is not None:
+            team_driver_counts[row.team_instance_id] = (
+                team_driver_counts.get(row.team_instance_id, 0) + 1
+            )
+    for team, count in team_driver_counts.items():
         if count > 2:
             errors.append(
-                f"Team <@&{role_id}> has {count} drivers submitted — maximum is 2."
+                f"Team {_team(team)} has {count} drivers submitted — maximum is 2."
             )
 
     if errors:
@@ -3769,19 +3793,29 @@ async def _get_round_context(db_path: str, round_id: int) -> dict:
     return dict(row)
 
 
-async def _build_division_validation_data(
-    division_id: int,
-    bot,
-) -> tuple[set[int], set[int], int | None, dict[int, int], set[int]]:
+class DivisionValidationData(NamedTuple):
+    """What a division's seats say a submission may record, as ``validate_submission_block``
+    reads it. Every team is named by its id in the division (#375)."""
+
+    division_driver_ids: set[int]
+    #: Each non-reserve team's Discord role -> that team's id: the one place a role typed in a
+    #: submission is resolved to the team it names.
+    team_of_role: dict[int, int]
+    reserve_team_role_id: int | None
+    #: Seated driver -> the id of the team they sit in.
+    driver_team_map: dict[int, int]
+    #: Drivers seated in the reserve team. They appear in ``division_driver_ids`` and
+    #: ``driver_team_map`` too, but may stand in for any team.
+    reserve_driver_ids: set[int]
+    #: Team id -> its name, for the messages that name a team.
+    team_names: dict[int, str]
+
+
+async def _build_division_validation_data(division_id: int, bot) -> DivisionValidationData:
     """Build validation structures for the given division.
 
-    Returns:
-        (division_driver_ids, team_role_ids, reserve_team_role_id, driver_team_map,
-         reserve_driver_ids)
-
-    ``reserve_driver_ids`` contains the user IDs of drivers currently seated in the
-    reserve team.  They appear in ``division_driver_ids`` and ``driver_team_map`` but
-    must be treated differently during submission validation.
+    A team whose role is not mapped cannot be typed, and is left out. Its drivers are then
+    outside ``division_driver_ids`` too, and refused as not in the division.
     """
     # Only drivers whose placements are confirmed may be scored (issue #220).
     div_teams = await bot.team_service.get_division_teams(division_id, committed_only=True)
@@ -3794,29 +3828,34 @@ async def _build_division_validation_data(
     }
 
     division_driver_ids: set[int] = set()
-    team_role_ids: set[int] = set()
+    team_of_role: dict[int, int] = {}
     reserve_team_role_id: int | None = None
     driver_team_map: dict[int, int] = {}
     reserve_driver_ids: set[int] = set()
+    team_names: dict[int, str] = {}
 
     for team in div_teams:
         role_id = name_to_role.get(team["name"])
         if role_id is None:
             continue
+        team_names[team["id"]] = team["name"]
         if team["is_reserve"]:
             reserve_team_role_id = role_id
         else:
-            team_role_ids.add(role_id)
+            team_of_role[role_id] = team["id"]
         for seat in team["seats"]:
             uid_str = seat.get("discord_user_id")
             if uid_str is not None:
                 uid = int(uid_str)
                 division_driver_ids.add(uid)
-                driver_team_map[uid] = role_id
+                driver_team_map[uid] = team["id"]
                 if team["is_reserve"]:
                     reserve_driver_ids.add(uid)
 
-    return division_driver_ids, team_role_ids, reserve_team_role_id, driver_team_map, reserve_driver_ids
+    return DivisionValidationData(
+        division_driver_ids, team_of_role, reserve_team_role_id, driver_team_map,
+        reserve_driver_ids, team_names,
+    )
 
 
 async def other_active_team_assignments(
@@ -3826,7 +3865,7 @@ async def other_active_team_assignments(
     *,
     also_exclude: "tuple[SessionType, ...] | list[SessionType]" = (),
 ) -> dict[int, tuple[int, str]]:
-    """driver_user_id -> (team_role_id, session_type value) recorded by another ACTIVE
+    """driver_user_id -> (team_instance_id, session_type value) recorded by another ACTIVE
     session of *round_id*.
 
     Feeds the cross-session team check in ``validate_submission_block``: a driver's team
@@ -3841,12 +3880,12 @@ async def other_active_team_assignments(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"""
-            SELECT sr.session_type, x.driver_user_id, x.team_role_id
+            SELECT sr.session_type, x.driver_user_id, x.team_instance_id
             FROM session_results sr
             JOIN qualifying_session_results x ON x.session_result_id = sr.id
             WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND sr.session_type NOT IN ({marks})
             UNION ALL
-            SELECT sr.session_type, x.driver_user_id, x.team_role_id
+            SELECT sr.session_type, x.driver_user_id, x.team_instance_id
             FROM session_results sr
             JOIN race_session_results x ON x.session_result_id = sr.id
             WHERE sr.round_id = ? AND sr.status = 'ACTIVE' AND sr.session_type NOT IN ({marks})
@@ -3872,7 +3911,7 @@ async def other_active_team_assignments(
     result: dict[int, tuple[int, str]] = {}
     for row in rows:
         uid = current_of.get(row["driver_user_id"], row["driver_user_id"])
-        result.setdefault(uid, (row["team_role_id"], row["session_type"]))
+        result.setdefault(uid, (row["team_instance_id"], row["session_type"]))
     return result
 
 
@@ -3947,7 +3986,7 @@ async def _apply_points_in_tx(
     # Load driver result rows for this session
     if session_type.is_qualifying:
         dsr_cursor = await db.execute(
-            "SELECT id, driver_user_id, team_role_id, finishing_position, "
+            "SELECT id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, NULL AS fastest_lap "
             "FROM qualifying_session_results "
             "WHERE session_result_id = ?",
@@ -3955,7 +3994,7 @@ async def _apply_points_in_tx(
         )
     else:
         dsr_cursor = await db.execute(
-            "SELECT id, driver_user_id, team_role_id, finishing_position, "
+            "SELECT id, driver_user_id, team_instance_id, finishing_position, "
             "outcome, fastest_lap "
             "FROM race_session_results "
             "WHERE session_result_id = ?",
@@ -4003,7 +4042,7 @@ async def _apply_points_in_tx(
             id=r["id"],
             session_result_id=session_result_id,
             driver_user_id=r["driver_user_id"],
-            team_role_id=r["team_role_id"],
+            team_instance_id=r["team_instance_id"],
             finishing_position=r["finishing_position"],
             outcome=OutcomeModifier(r["outcome"]),
             tyre=None,
@@ -4049,7 +4088,7 @@ async def _apply_points_in_tx(
 def _row_dict_from_qualifying(row: ParsedQualifyingRow) -> dict:
     return {
         "driver_user_id": row.driver_user_id,
-        "team_role_id": row.team_role_id,
+        "team_instance_id": row.team_instance_id,
         "finishing_position": row.position,
         "outcome": row.outcome.value,
         "tyre": row.tyre,
@@ -4063,7 +4102,7 @@ def _row_dict_from_race(row: ParsedRaceRow) -> dict:
     ip = row.ingame_penalties if row.ingame_penalties.upper() != "N/A" else None
     return {
         "driver_user_id": row.driver_user_id,
-        "team_role_id": row.team_role_id,
+        "team_instance_id": row.team_instance_id,
         "finishing_position": row.position,
         "outcome": row.outcome.value,
         "total_time": row.total_time,
@@ -4082,7 +4121,7 @@ async def _insert_new_tables_in_tx(
     """Insert rows into qualifying_session_results or race_session_results.
 
     Must be called inside an open transaction; caller is responsible for commit.
-    *rows* must be plain dicts with keys: driver_user_id, team_role_id,
+    *rows* must be plain dicts with keys: driver_user_id, team_instance_id,
     finishing_position, outcome, and for qualifying: tyre, best_lap;
     for race: total_time, ingame_penalties, fastest_lap.
 
@@ -4096,14 +4135,14 @@ async def _insert_new_tables_in_tx(
             await db.execute(
                 """
                 INSERT INTO qualifying_session_results
-                    (session_result_id, driver_user_id, team_role_id, finishing_position,
+                    (session_result_id, driver_user_id, team_instance_id, finishing_position,
                      outcome, tyre, best_lap, points_awarded, driver_profile_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_result_id,
                     uid,
-                    row["team_role_id"],
+                    row["team_instance_id"],
                     row["finishing_position"],
                     row.get("outcome", OutcomeModifier.CLASSIFIED.value),
                     row.get("tyre"),
@@ -4150,7 +4189,7 @@ async def _insert_new_tables_in_tx(
             await db.execute(
                 """
                 INSERT INTO race_session_results
-                    (session_result_id, driver_user_id, team_role_id, finishing_position,
+                    (session_result_id, driver_user_id, team_instance_id, finishing_position,
                      outcome, base_time_ms, laps_behind,
                      ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms,
                      fastest_lap, fastest_lap_bonus, points_awarded, driver_profile_id)
@@ -4159,7 +4198,7 @@ async def _insert_new_tables_in_tx(
                 (
                     session_result_id,
                     uid,
-                    row["team_role_id"],
+                    row["team_instance_id"],
                     row["finishing_position"],
                     outcome_str,
                     base_time_ms,
@@ -4307,10 +4346,11 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     try:
         (
             division_driver_ids,
-            team_role_ids,
+            team_of_role,
             reserve_team_role_id,
             driver_team_map,
             reserve_driver_ids,
+            team_names,
         ) = await _build_division_validation_data(division_id, bot)
     except Exception:
         log.exception(
@@ -4448,12 +4488,13 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 lines,
                 session_type,
                 division_driver_ids,
-                team_role_ids,
+                team_of_role,
                 reserve_team_role_id,
                 driver_team_map,
                 reserve_driver_ids,
                 other_active_assignments=other_assignments,
                 current_of=current_of,
+                team_names=team_names,
             )
 
             if isinstance(result[0] if result else None, str):
@@ -4885,7 +4926,7 @@ def _collected_team_assignments(
 ) -> dict[int, tuple[int, str]]:
     """What `other_active_team_assignments` answers, read from a resubmission in progress.
 
-    driver_user_id -> (team_role_id, session_type value) from every ACTIVE session collected so
+    driver_user_id -> (team_instance_id, session_type value) from every ACTIVE session collected so
     far other than *exclude_session_type*.
     """
     result: dict[int, tuple[int, str]] = {}
@@ -4894,7 +4935,7 @@ def _collected_team_assignments(
             continue
         for row in session.driver_rows:
             result.setdefault(
-                row["driver_user_id"], (row["team_role_id"], session.session_type.value)
+                row["driver_user_id"], (row["team_instance_id"], session.session_type.value)
             )
     return result
 
@@ -4962,10 +5003,11 @@ async def _resubmit_collection_task(
     try:
         (
             division_driver_ids,
-            team_role_ids,
+            team_of_role,
             reserve_team_role_id,
             driver_team_map,
             reserve_driver_ids,
+            team_names,
         ) = await _build_division_validation_data(division_id, bot)
     except Exception:
         log.exception("_resubmit_collection_task: failed to build validation data for round %s", round_id)
@@ -5040,10 +5082,11 @@ async def _resubmit_collection_task(
             # that made the manager resubmit.
             other_assignments = _collected_team_assignments(collected, session_type)
             result = validate_submission_block(
-                lines, session_type, division_driver_ids, team_role_ids,
+                lines, session_type, division_driver_ids, team_of_role,
                 reserve_team_role_id, driver_team_map, reserve_driver_ids,
                 other_active_assignments=other_assignments,
                 current_of=current_of,
+                team_names=team_names,
             )
 
             if isinstance(result[0] if result else None, str):
