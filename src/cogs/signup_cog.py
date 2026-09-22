@@ -1180,9 +1180,9 @@ class SignupCog(commands.Cog):
 
         Returns True when the command replied and must stop.
         """
-        from services.season_lifecycle_service import signup_configuration_fixed
+        from services.season_lifecycle_service import configuration_fixed
 
-        season_number = await signup_configuration_fixed(self.bot.db_path)
+        season_number = await configuration_fixed(self.bot.db_path)
         if season_number is None:
             return False
         await interaction.response.send_message(

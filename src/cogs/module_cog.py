@@ -342,11 +342,11 @@ class ModuleCog(commands.Cog):
         """
         from services.season_lifecycle_service import (
             modules_frozen_for_completion,
-            signup_configuration_fixed,
+            configuration_fixed,
         )
 
         if module == "signup":
-            season_number = await signup_configuration_fixed(self.bot.db_path)
+            season_number = await configuration_fixed(self.bot.db_path)
             if season_number is not None:
                 await interaction.response.send_message(
                     f"❌ The signup module is fixed for Season {season_number} now that its "

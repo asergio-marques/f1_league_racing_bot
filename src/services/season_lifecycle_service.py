@@ -265,13 +265,17 @@ async def wind_down_ongoing(bot) -> bool:
     return final_stage == SeasonStage.PENDING_COMPLETION.value
 
 
-async def signup_configuration_fixed(db_path: str) -> int | None:
-    """The number of the season holding the signup module fixed, or None where it is free.
+async def configuration_fixed(db_path: str) -> int | None:
+    """The number of the season whose confirmed configuration is fixed, or None where it is free.
 
     The signup module is enabled, disabled and configured only while the server holds no
     active season, or while its season stands in Configuration. From the confirmation of
-    that configuration to the season's end, it is fixed: its time slots, its questions and
-    its roles are what that season's signups were made under.
+    that configuration to the season's end, it is fixed: its time slots and its questions are
+    what that season's signups were made under.
+
+    The league's base role and driver role are fixed by the same rule, though they are core's
+    and not the module's (issue #276). A driver role changed mid-season would leave every
+    driver holding the old one for good, the season's end revoking only the new.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
