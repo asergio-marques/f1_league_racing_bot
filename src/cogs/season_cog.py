@@ -6555,9 +6555,27 @@ class SeasonCog(commands.Cog):
             if _guild is not None:
                 from services import calendar_post_service as _calendar
 
-                _tracks_by_name = await _calendar.tracks_by_name(self.bot.db_path)
                 _calendar_notices: list[str] = []
                 _calendar_problems: list[str] = []
+
+                # The circuits are what a graphic is drawn from, so without them no calendar
+                # is posted (issue #387). An empty registry would fall every graphic back to
+                # text under a problem blaming each round's track for being unknown, which is
+                # false; `/division calendar-sync` draws each one properly afterwards.
+                try:
+                    _tracks_by_name = await _calendar.tracks_by_name(self.bot.db_path)
+                except Exception:  # noqa: BLE001 — the season is committed
+                    log.exception(
+                        "_do_approve: could not read the circuits, so no calendar was posted"
+                    )
+                    _tracks_by_name = None
+                    _unposted = [d.name for d in divisions if d.calendar_channel_id]
+                    if _unposted:
+                        _names = ", ".join(f"**{n}**" for n in _unposted)
+                        _not_done.append(
+                            f"No calendar was posted for {_names} — the circuits could not "
+                            f"be read. Run `/division calendar-sync` for each."
+                        )
 
                 if not cfg.season_number:
                     log.warning(
@@ -6567,7 +6585,7 @@ class SeasonCog(commands.Cog):
                     )
 
                 for _div in divisions:
-                    if not _div.calendar_channel_id:
+                    if _tracks_by_name is None or not _div.calendar_channel_id:
                         continue
                     try:
                         _posting = await _calendar.post_division_calendar(

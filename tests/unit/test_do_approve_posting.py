@@ -890,12 +890,11 @@ async def test_a_round_can_still_be_moved_after_a_posting_failure(db_path):
     cog = _cog(db_path)
     _hold_the_setup(cog)
 
-    with pytest.raises(sqlite3.OperationalError):
-        await _approve(
-            cog,
-            _interaction(),
-            tracks_error=sqlite3.OperationalError("database is locked"),
-        )
+    await _approve(
+        cog,
+        _interaction(),
+        tracks_error=sqlite3.OperationalError("database is locked"),
+    )
 
     amend = _interaction()
     await _move_round_one(cog, amend)
@@ -986,9 +985,14 @@ async def _fail_the_placements_read(cog, db_path) -> dict:
     return {}
 
 
+async def _fail_the_circuits_read(cog, db_path) -> dict:
+    return {"tracks_error": sqlite3.OperationalError("database is locked")}
+
+
 #: Each step after the commit, made to fail. Returns what `_approve` needs to fail it.
 _FAILURES = {
     "the placed drivers read": _fail_the_placements_read,
+    "the circuits read": _fail_the_circuits_read,
 }
 
 
@@ -1022,6 +1026,27 @@ async def test_every_division_whose_drivers_cannot_be_read_is_named(db_path):
     assert "not done: **Am**" in _logged(cog)
     # And what follows the grants is still done.
     assert cog.bot.placement_service._refresh_lineup_post.await_count == 2
+
+
+async def test_no_calendar_is_posted_when_the_circuits_cannot_be_read(db_path):
+    """A calendar graphic is drawn from the circuits, and an empty registry would fall it
+    back to text blaming every track for being unknown. So none is posted, the manager is
+    pointed at the command that draws each one, and the rest of the approval carries on."""
+    cog = _cog(db_path, divisions=[_division(1, "Pro"), _division(2, "Am", calendar=None)])
+    interaction = _interaction()
+
+    stubs = await _approve(
+        cog, interaction, tracks_error=sqlite3.OperationalError("database is locked")
+    )
+
+    stubs["calendar"].assert_not_awaited()
+    stubs["classification"].assert_awaited()
+    replied = _replied(interaction)
+    assert "No calendar was posted for **Pro** — the circuits could not be read" in replied
+    assert "/division calendar-sync" in replied
+    # A division with no calendar channel was never going to receive one.
+    assert "**Am**" not in replied
+    assert "not done: No calendar was posted for **Pro**" in _logged(cog)
 
 
 async def test_a_clean_approval_reports_nothing_undone(db_path):
