@@ -125,7 +125,7 @@ When inviting the bot, grant it the following OAuth2 bot permissions. All are us
 | Permission | Why it's needed |
 |---|---|
 | **View Channels** | Required before any channel operation — the bot must be able to see forecast channels, log channels, and signup wizard channels before it can read or write them |
-| **Send Messages** | Posts weather forecasts to division channels, signup wizard messages to private channels, and audit logs to the log channel |
+| **Send Messages** | Posts weather forecasts to division channels, signup wizard messages to private channels, the hub's panel to the hub, and audit logs to the log channel |
 | **Send Messages in Threads** | Required if any configured channels are threads |
 | **Embed Links** | Posts the signup module info embed (the button drivers click to start a signup) |
 | **Manage Channels** | Creates private signup wizard channels; applies and removes channel permission overwrites for the signup module, the hub and per-driver wizard channels; deletes the channels it created during a `/bot factory-reset` |
@@ -174,6 +174,8 @@ This registers:
 - **Log channel** -- where computation audit logs are posted
 
 The league's two roles — the **base role** its members hold and the **driver role** its drivers hold — are set afterwards with [`/bot base-role` and `/bot driver-role`](#bot-base-role-bot-driver-role--set-the-leagues-two-roles). Neither is needed until you turn the signup module on.
+
+A **hub** — one channel every member can use the bot from — can be set with [`/bot hub-channel`](#bot-hub-channel--set-the-hub). It is optional, and offers nothing yet.
 
 > **Setting a league up for the first time?** This README is the reference — every command, in its own right. For the order to do them in, from an invited bot to an approved season, follow [Configuring the core bot](docs/how-to/configuring-the-core-bot.md).
 

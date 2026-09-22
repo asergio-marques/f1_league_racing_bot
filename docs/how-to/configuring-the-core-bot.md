@@ -29,6 +29,8 @@ You do not need to read those first. Start here.
 
 **Base role** and **driver role** — the league's roles for its people, as against the interaction and league admin roles, which are for the people who run it. The base role is who your members are, and the driver role is who your drivers are right now. See [step 1](#step-1--tell-the-bot-who-is-in-charge).
 
+**Hub** — the one channel every member of your league can use the bot from, rather than only the people running it. The bot keeps a panel of buttons there; see [step 1](#step-1--tell-the-bot-who-is-in-charge).
+
 **Stage** — where a season has got to. This matters more than anything else in this guide, because it decides which commands will even run. A season moves through them in one direction:
 
 | Stage | What happens in it | How it ends |
