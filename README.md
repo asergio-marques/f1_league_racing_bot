@@ -302,6 +302,22 @@ If the bot has never been configured on the server, these refuse and point you a
 
 ---
 
+### `/bot base-role`, `/bot driver-role` — Set the league's two roles
+*Access: League manager*
+
+| Command | Parameter | Sets |
+|---|---|---|
+| `/bot base-role` | `role` | The role the league's members hold. Where the signup module is enabled, only it and the two league roles can see the signup channel, and opening signups pings it |
+| `/bot driver-role` | `role` | The role the league's drivers hold. The bot grants it when a signup is approved, and takes it back whenever the driver returns to Not Signed Up |
+
+Both roles are the league's, not the signup module's. Disabling a module does not clear them.
+
+Setting a new base role moves the signup channel's permissions to it, and the role it replaces loses its access. If Discord refuses the permission change, the role is still set and the channel can be fixed by hand. The driver role touches no channel.
+
+**Both are fixed once a season's configuration is confirmed**, until that season ends. A driver role changed mid-season would leave every current driver holding the old one. Each change is recorded in the log channel and audited with the role it replaced. Unlike the four settings above, these are ordinary commands, given in the interaction channel.
+
+---
+
 ### `/clean-bot` — Delete recent bot messages in this channel
 *Access: League admin*
 

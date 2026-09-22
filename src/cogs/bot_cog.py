@@ -13,6 +13,12 @@ settings they exist to repair would lock a league out of the exact failure they 
 deleted interaction channel, or a league admin role removed from the server, would otherwise
 be unrecoverable short of wiping the configuration.
 
+`/bot base-role` and `/bot driver-role` set the league's two roles (issue #276), which were the
+signup module's until a second module needed the base role. They are a league manager's, as
+they were under `/signup`, and are given in the interaction channel like any other: they
+repair nothing the guards read. Confirming a season's configuration fixes both until the
+season ends.
+
 `/bot pack` is a league admin's command and is given in the interaction channel like any
 other: it releases the settings rather than repairing them. `/bot factory-reset` is the server
 owner's alone, from any channel; see `utils.channel_guard.server_owner_only`.
@@ -21,7 +27,9 @@ owner's alone, from any channel; see `utils.channel_guard.server_owner_only`.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
@@ -30,7 +38,12 @@ from discord.ext import commands
 from db.database import get_connection
 from models.server_config import ServerConfig
 from services import backup_service, factory_reset_service, pack_service
-from utils.channel_guard import bot_setup_only, league_admin_only, server_owner_only
+from utils.channel_guard import (
+    bot_setup_only,
+    league_admin_only,
+    league_manager_only,
+    server_owner_only,
+)
 
 log = logging.getLogger(__name__)
 
@@ -295,6 +308,138 @@ class BotCog(commands.Cog):
             command="/bot admin-role",
             label="League admin role",
             mention=f"<@&{role.id}>",
+        )
+
+    # ------------------------------------------------------------------
+    # The league's two roles (issue #276)
+    # ------------------------------------------------------------------
+
+    async def _set_league_role(
+        self,
+        interaction: discord.Interaction,
+        *,
+        column: str,
+        role: discord.Role,
+        command: str,
+        label: str,
+        change_type: str,
+    ) -> None:
+        """Shared body of `/bot base-role` and `/bot driver-role`.
+
+        Not `_set_one`, whose commands repair the settings the guards read and so run from
+        any channel on the Administrator permission. These are ordinary league manager
+        commands, refused once a season's configuration is confirmed, and audited with the
+        role they replaced: a league that finds its members locked out needs to know which
+        role used to hold the access, and nothing else keeps it once it is overwritten.
+        """
+        from services.season_lifecycle_service import configuration_fixed
+
+        season_number = await configuration_fixed(self.bot.db_path)  # type: ignore[attr-defined]
+        if season_number is not None:
+            await interaction.response.send_message(
+                f"❌ The league's roles are fixed for Season {season_number} now that its "
+                f"configuration has been confirmed. `{command}` is available again once the "
+                "season has ended, or while a new season is in configuration.",
+                ephemeral=True,
+            )
+            return
+
+        config = await self.bot.config_service.get_server_config()
+        if config is None:
+            await interaction.response.send_message(
+                "⛔ This server is not configured yet — run `/bot init` first.",
+                ephemeral=True,
+            )
+            return
+        old_role_id = getattr(config, column)
+
+        # Two permission edits on the signup channel outrun Discord's three seconds.
+        await interaction.response.defer(ephemeral=True)
+
+        if not await self.bot.config_service.set_core_setting(column, role.id):
+            await interaction.followup.send(
+                "⛔ This server is not configured yet — run `/bot init` first.",
+                ephemeral=True,
+            )
+            return
+
+        if column == "base_role_id" and interaction.guild is not None:
+            await self.bot.signup_module_service.move_base_role_overwrite(  # type: ignore[attr-defined]
+                interaction.guild, old_role_id, role
+            )
+
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
+                "timestamp) VALUES (?, ?, NULL, ?, ?, ?, ?)",
+                (
+                    interaction.user.id,
+                    str(interaction.user),
+                    change_type,
+                    json.dumps({"role_id": old_role_id}),
+                    json.dumps({"role_id": role.id}),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            await db.commit()
+
+        await interaction.followup.send(
+            f"✅ **{label}** set to {role.mention}.", ephemeral=True
+        )
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | {command} | Success\n"
+            f"  role: {role.name} (<@&{role.id}>)",
+        )
+        log.info("%s set %s", interaction.user, column)
+
+    @group.command(
+        name="base-role",
+        description="Set the role the league's members hold.",
+    )
+    @app_commands.describe(role="The role every member of the league holds.")
+    @league_manager_only
+    async def handle_base_role(
+        self, interaction: discord.Interaction, role: discord.Role
+    ) -> None:
+        """Set the base role: who the league's members are.
+
+        Where the signup module is enabled it decides who may see the signup channel, and
+        is the role the opening of signups calls upon.
+        """
+        await self._set_league_role(
+            interaction,
+            column="base_role_id",
+            role=role,
+            command="/bot base-role",
+            label="Base role",
+            change_type="BASE_ROLE_SET",
+        )
+
+    @group.command(
+        name="driver-role",
+        description="Set the role the league's drivers hold.",
+    )
+    @app_commands.describe(
+        role="The role granted when a signup is approved, and taken back when the driver leaves."
+    )
+    @league_manager_only
+    async def handle_driver_role(
+        self, interaction: discord.Interaction, role: discord.Role
+    ) -> None:
+        """Set the driver role: who the league's drivers are.
+
+        Granted when a signup is approved, and revoked whenever the driver returns to Not
+        Signed Up. It is granted to a person, not applied to a place, so it touches no
+        channel.
+        """
+        await self._set_league_role(
+            interaction,
+            column="driver_role_id",
+            role=role,
+            command="/bot driver-role",
+            label="Driver role",
+            change_type="DRIVER_ROLE_SET",
         )
 
     # ------------------------------------------------------------------

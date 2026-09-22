@@ -61,6 +61,13 @@ it only to place it; the rules governing it belong to its own specification.
 - A button the bot offers a driver in their own channel shall ask nothing, a driver needing no role.
 - A command given in a channel other than the interaction channel shall be refused, and the refusal shall be seen by the member alone.
 
+### The league's roles
+- Two roles shall describe a member's standing in the league, whichever modules are enabled: the **base role**, held by the league's members, and the **driver role**, held by its drivers.
+    - The base role shall be granted by the league and never by the bot. A module that reads it states what it governs.
+    - The driver role shall be granted when a driver's signup is approved, and revoked whenever the driver returns to Not Signed Up.
+- Each shall be set by a command of its own, a league manager's.
+- Confirming a season's configuration shall fix both until the season ends. A driver role changed mid-season would leave every driver holding the old one, the season's end revoking only the new.
+
 ### Channels
 - Three channels shall be configured for the server — the interaction channel, the log channel and the signup channel — and eight for each division: its weather forecasts, its lineup, its calendar, its results, its standings, its verdicts, its check-in calls and its attendance.
 - A channel shall serve one purpose upon a server. Every command setting a channel shall refuse a channel already set as any of the others, and shall name what holds it.
@@ -187,7 +194,7 @@ it only to place it; the rules governing it belong to its own specification.
     - every team name to be usable as the filename of that team's artwork, whether or not the image module is enabled;
     - every requirement an enabled module states of its configuration alone — its points configurations and its templates among them — as that module's own specification sets out.
 - Every check the configuration review makes shall be made again when placements are confirmed, the configuration of a module other than signup being able to change in between.
-- Confirming the configuration shall fix, for the rest of the season, the team list, the game edition, test mode, and whether the signup module is enabled and how it is configured.
+- Confirming the configuration shall fix, for the rest of the season, the team list, the game edition, test mode, the league's base role and driver role, and whether the signup module is enabled and how it is configured.
 
 ### Waiting and signups
 - A season in Waiting shall wait for the signup window to be opened, and shall move to Signups when it is.

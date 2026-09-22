@@ -126,6 +126,20 @@ To move your league to another server, or to start over from nothing, see [Start
 
 > **A command run in the wrong channel is refused, not ignored.** You get a short message only you can see. If a command seems to do nothing, check which channel you are in first.
 
+**Two more roles, the league's own.** The base role is who your league's members are, and the driver role is who its drivers are right now:
+
+```
+/bot base-role role:@Members
+/bot driver-role role:@Driver
+```
+
+| Role | What it means |
+|---|---|
+| **Base role** | Who your league's members are. You hand it out, never the bot. With signups on, it decides who can see the signup channel, and it is pinged when signups open |
+| **Driver role** | Who your drivers are. The bot grants it when you approve a signup, and takes it back whenever a driver returns to Not Signed Up — turned down, sacked, or at the end of the season |
+
+These are ordinary commands: the interaction role runs them, in the command channel. **Once a season's configuration is confirmed they are fixed until that season ends**, so set them first. Make them two different roles: one is who may sign up, the other is who got through.
+
 **One team already exists.** `/bot init` creates the **Reserve** team, which has unlimited seats and belongs to every division. You cannot remove or rename it. Nothing else is created — your team list starts empty apart from it.
 
 ---
