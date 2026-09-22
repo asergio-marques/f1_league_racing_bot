@@ -773,6 +773,31 @@ async def test_nothing_is_posted_without_a_guild(db_path):
 
 
 # ---------------------------------------------------------------------------
+# The setup held in memory ends with the setup (issue #262)
+#
+# The season is active from `transition_to_active` on, and the posting that follows takes
+# a while — several renders per division on the Pi. The copy of the setup the round
+# commands read used to be dropped only once all of it was done, so a round moved in that
+# window was refused as a fault, and a posting that failed left the copy behind until a
+# restart: every `/round amend` of the running season was refused until then.
+# ---------------------------------------------------------------------------
+
+
+async def test_the_setup_is_let_go_of_before_anything_is_posted(db_path):
+    cog = _cog(db_path)
+    held: list[dict] = []
+
+    async def lineup_post(guild, division_id):
+        held.append(dict(cog._pending))
+
+    cog.bot.placement_service._refresh_lineup_post = AsyncMock(side_effect=lineup_post)
+
+    await _approve(cog, _interaction())
+
+    assert held == [{}]
+
+
+# ---------------------------------------------------------------------------
 # What approval schedules
 #
 # Issue #185. The choice between the two schedulers had a test that never made it:
