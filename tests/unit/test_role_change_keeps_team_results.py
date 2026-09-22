@@ -28,7 +28,9 @@ from models.session_result import SessionResult  # noqa: E402
 from services.placement_service import PlacementService  # noqa: E402
 from services.result_submission_service import (  # noqa: E402
     _build_division_validation_data,
+    _row_dict_from_qualifying,
     _row_dict_from_race,
+    other_active_team_assignments,
     save_session_result,
     validate_submission_block,
 )
@@ -116,16 +118,20 @@ def _bot(db_path: str):
     return SimpleNamespace(db_path=db_path, team_service=TeamService(db_path))
 
 
-async def _validate(db_path: str, lines: list[str]):
+async def _validate(
+    db_path: str, lines: list[str], session_type=SessionType.FEATURE_RACE, *, other=None
+):
     data = await _build_division_validation_data(DIVISION_ID, _bot(db_path))
     return validate_submission_block(
         lines,
-        SessionType.FEATURE_RACE,
+        session_type,
         data.division_driver_ids,
         data.team_of_role,
         data.reserve_team_role_id,
         data.driver_team_map,
         data.reserve_driver_ids,
+        other_active_assignments=other,
+        team_names=data.team_names,
     )
 
 
@@ -284,3 +290,49 @@ async def test_a_replaced_role_no_longer_names_the_team(tmp_path):
     )
 
     assert f"Row 1: <@&{OLD_ROLE}> is not a valid team role for this division." in errors
+
+
+async def test_a_refusal_names_the_team_a_driver_is_seated_in(tmp_path):
+    """By name, while echoing the role that was typed."""
+    db_path, _teams = await _league(tmp_path)
+
+    errors = await _validate(
+        db_path, [f"1, <@{FERRARI_DRIVER}>, <@&{RIVAL_ROLE}>, 46:23.569, 1:14.523, N/A"]
+    )
+
+    assert errors == [
+        f"Row 1: driver <@{FERRARI_DRIVER}> submitted as <@&{RIVAL_ROLE}> "
+        "but is assigned to **Ferrari**."
+    ]
+
+
+async def test_a_refusal_names_the_team_an_earlier_session_recorded_across_a_role_change(
+    tmp_path,
+):
+    """Qualifying stood under Ferrari's old role. Once the role is replaced, that role names
+    nothing — the refusal names the team the session recorded, which is Ferrari still."""
+    db_path, _teams = await _league(tmp_path)
+    parsed = await _validate(
+        db_path,
+        [f"1, <@{FERRARI_DRIVER}>, <@&{OLD_ROLE}>, Soft, 1:23.456, N/A"],
+        SessionType.FEATURE_QUALIFYING,
+    )
+    await save_session_result(
+        db_path, ROUNDS[0], DIVISION_ID, SessionType.FEATURE_QUALIFYING, "ACTIVE", None, 77,
+        [_row_dict_from_qualifying(row) for row in parsed],
+    )
+    await _replace_ferrari_role(db_path)
+    other = await other_active_team_assignments(
+        db_path, ROUNDS[0], SessionType.FEATURE_RACE
+    )
+
+    errors = await _validate(
+        db_path,
+        [f"1, <@{FERRARI_DRIVER}>, <@&{RIVAL_ROLE}>, 46:23.569, 1:14.523, N/A"],
+        other=other,
+    )
+
+    assert (
+        f"Row 1: driver <@{FERRARI_DRIVER}> was recorded under **Ferrari** in Feature "
+        f"Qualifying of this round, but is submitted here as <@&{RIVAL_ROLE}>."
+    ) in errors

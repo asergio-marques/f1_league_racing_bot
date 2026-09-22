@@ -3421,6 +3421,7 @@ def validate_submission_block(
     reserve_driver_ids: set[int] | None = None,
     other_active_assignments: dict[int, tuple[int, str]] | None = None,
     current_of: Mapping[int, int] | None = None,
+    team_names: Mapping[int, str] | None = None,
 ) -> list[ParsedQualifyingRow | ParsedRaceRow] | list[str]:
     """Validate all result lines for a session.
 
@@ -3435,7 +3436,9 @@ def validate_submission_block(
     maps each non-reserve team's role to that team's id, and each row's typed role is resolved
     through it once, onto ``team_instance_id``; *driver_team_map* and
     *other_active_assignments* name teams by the same id. A league may give a team another
-    role mid-season, and the rounds recorded before stay the team's all the same.
+    role mid-season, and the rounds recorded before stay the team's all the same. So a
+    refusal names a team by its name, from *team_names*: the role a driver's team holds now is
+    not necessarily the one a round was recorded under. What was typed is echoed as typed.
 
     *current_of* maps a driver's past accounts to their current one (issue #243). Any account
     names the driver, so each row is moved onto the current account before anything is
@@ -3509,6 +3512,12 @@ def validate_submission_block(
     # the division's team it names (#375). Reserves sub *into* a real team, so the reserve
     # team role is never a valid submission role.
     role_of_team = {team: role for role, team in team_of_role.items()}
+
+    def _team(team_id: int) -> str:
+        # By name where one is known, as every caller supplies; the team's role otherwise.
+        name = (team_names or {}).get(team_id)
+        return f"**{name}**" if name else f"<@&{role_of_team.get(team_id)}>"
+
     for row in parsed_rows:
         row.team_instance_id = team_of_role.get(row.team_role_id)
         if row.team_instance_id is None:
@@ -3531,7 +3540,7 @@ def validate_submission_block(
             errors.append(
                 f"Row {row.position}: driver <@{row.driver_user_id}> "
                 f"submitted as <@&{row.team_role_id}> "
-                f"but is assigned to <@&{role_of_team.get(mapped_team)}>."
+                f"but is assigned to {_team(mapped_team)}."
             )
 
     # A driver already recorded under a different team by another ACTIVE session of this
@@ -3547,8 +3556,8 @@ def validate_submission_block(
                 existing_label = existing_session.replace("_", " ").title()
                 errors.append(
                     f"Row {row.position}: driver <@{row.driver_user_id}> was recorded under "
-                    f"<@&{role_of_team.get(existing_team)}> in {existing_label} of this "
-                    f"round, but is submitted here as <@&{row.team_role_id}>."
+                    f"{_team(existing_team)} in {existing_label} of this round, but is "
+                    f"submitted here as <@&{row.team_role_id}>."
                 )
 
     # Max 2 drivers per team (counting reserve subs)
@@ -3561,7 +3570,7 @@ def validate_submission_block(
     for team, count in team_driver_counts.items():
         if count > 2:
             errors.append(
-                f"Team <@&{role_of_team[team]}> has {count} drivers submitted — maximum is 2."
+                f"Team {_team(team)} has {count} drivers submitted — maximum is 2."
             )
 
     if errors:
@@ -4485,6 +4494,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 reserve_driver_ids,
                 other_active_assignments=other_assignments,
                 current_of=current_of,
+                team_names=team_names,
             )
 
             if isinstance(result[0] if result else None, str):
@@ -5076,6 +5086,7 @@ async def _resubmit_collection_task(
                 reserve_team_role_id, driver_team_map, reserve_driver_ids,
                 other_active_assignments=other_assignments,
                 current_of=current_of,
+                team_names=team_names,
             )
 
             if isinstance(result[0] if result else None, str):

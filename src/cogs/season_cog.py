@@ -5625,6 +5625,7 @@ class SeasonCog(commands.Cog):
                 reserve_driver_ids,
                 other_active_assignments=other_assignments,
                 current_of=current_of,
+                team_names=team_names,
             )
             try:
                 await msg.delete()
