@@ -1237,6 +1237,8 @@ Points a team of the server list at a different Discord role. Unlike the list it
 
 **The team's drivers follow its role.** Every driver seated in the team whose placement is confirmed has the old role taken away — unless another team still maps to it — and the new one granted, in every division of the season being raced. The reply says how many drivers were moved.
 
+**Its results stay with it.** A result records the team, not the role it was submitted under, so every round raced before the change remains the team's: the team standings keep it as one entry with all its points, and the results and standings already posted go on naming it. Posted results and standings always name a team by its name, never by a mention of its role.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Exact name of the team |

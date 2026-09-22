@@ -234,6 +234,7 @@
 - The bot shall read the inputs of the league manager to create the data entry for the results of the session. The expected format depends on the type of session, but will always require Position, Driver, and Team.
 - For the driver column, a driver holding a committed placement in that division must be tagged. If the driver holds no committed placement in the division, or if there is no driver tagged at all, then the input will fail.
 - For the team column, a team role must be tagged as well. This will allow easy identification of the team.
+    - The role shall be read as naming the team of the division that holds it, and the result shall be recorded against that team, not against the role. A team whose role is changed shall keep every result recorded before the change (#375).
 - The team tagged in the Team column shall never be the reserve team. A reserve stands in for a team's car and is recorded under that team; the reserve team fields no cars of its own.
 - No more than two drivers shall be recorded under any one team within a single session, counting a reserve standing in for that team against its two.
 - If the results input for any session within a round are not valid, then they shall be requested once more.
@@ -241,7 +242,7 @@
 - All inputs pertaining to round results must be logged in the log channel configured for the server. The season number, division and round number shall be explicited for each raw result input logged for easy search.
 - Once the results introduced to a given session are attributed, the bot shall post buttons, each containing the name of a points configuration in the season, for the user to choose one. This will be saved together with the results of a session. So for each session, there's one chosen configuration from which to get the points-per-position information. This information shall be persisted.
     - Where exactly one configuration is attached to the season, it shall be chosen without asking and the choice stated.
-- A driver shall be recorded under one team role across every session of a round; see "One driver, one team, for the whole of a round" below.
+- A driver shall be recorded under one team across every session of a round; see "One driver, one team, for the whole of a round" below.
 - The channel shall be private to the server's admin role, and shall be deleted once the round is settled.
 - <MODIFIED COMMAND> There is a "round cancel" command initially implemented in the scope of the weather module. Its functionality shall be enhanced to also cancel the request for round results specified by the first bullet point. If this request for round results has already been triggered, the "round cancel" command will fail. It shall equally fail once any results exist for the round.
 - Where a round, a division or a season is cancelled, the bot shall post to the division's results channel a note that no results shall be posted for that round, or no further results for that division or season. The note shall be posted silently, mentioning nobody and notifying nobody, the notification being the attendance module's to carry, and only while the module is enabled. Decided 2026-09-19 (#175).
@@ -326,7 +327,7 @@
 - The fastest-lap bonus is normally awarded to the driver whose Fastest Lap time is the lowest across all valid entries in the submitted block. In the rare case where two or more drivers share the exact same fastest-lap time, an optional **FL override header** may prepended to the submission block on its own line, in the format `FL: <@user_id>`, to explicitly designate the fastest-lap holder. The override bypasses time-based comparison entirely and does not change or replace any of the per-driver Fastest Lap fields. If the override names a driver not present in the submitted results, the submission is rejected. If no override is provided and a tie occurs, the driver whose row appears first in the submission (i.e. with the lower finishing position) receives the bonus implicitly. The FL override is race-only; it has no effect on qualifying submissions.
 
 #### One driver, one team, for the whole of a round
-- A driver shall be recorded under one team role across every session of a round. A submission recording a driver under a team role different from the one another active session of that round already records for them shall be rejected, naming the driver, the team already recorded and the session recording it.
+- A driver shall be recorded under one team across every session of a round. A submission recording a driver under a team different from the one another active session of that round already records for them shall be rejected, naming the driver, the team already recorded by its name, and the session recording it.
 - The criteria above tie a driver seated in a team to the team they are seated in, but are applied to one session at a time and against the seats as they stand at that moment, and a driver of the reserve team is tied to no team at all, being free to stand in for any. Neither closes this case, and a reserve standing in for two different teams within one round would otherwise be recorded.
 - The constructor standings graphic places each driver who drove a team's cars in a round upon one of those cars, and cannot place one driver upon the cars of two teams. That is guaranteed here, at the moment the input is given and where it can be named and corrected, rather than discovered when a graphic is drawn.
 
@@ -334,6 +335,7 @@
 - Once the results for all sessions in a round are submitted and validated, the results shall be output into the configured results channel for the division in a prettier table-like format. The results to be output are as follows:
     - Qualifying sessions: Position, Discord display name, Team, Tyre, Best Lap, Gap, Points Gained
     - Race sessions: Position, Discord display name, Team, Total Time, Fastest Lap, Time Penalties, Points Gained (if any)
+- Every posting of results or standings shall name a team by its name, never by a mention of its role.
 - The points conferred to each driver will be determined by the points configuration applied to each session: points are attributed by finishing position and, depending on the settings of the configuration (points for fastest lap and placement limit for fastest lap points), for the lowest lap time as well.
 - A driver who did not start, or was disqualified, receives neither position points nor the fastest-lap bonus. A driver who did not finish receives no position points but remains eligible for the bonus.
 
@@ -476,12 +478,13 @@ Committing either review stage, and amending a submitted session, republish the 
     - 4th - If equal, then 3rd place finishes is compared, and so on until a difference arises.
     - 5th - If at the end both drivers are still tied, then the first to take the highest position will win the tie-breaker (e.g. 0 1st finishes, 1 2nd finish for both drivers, first one to have gotten 2nd wins).
     - 6th - If both are still tied, an entry that has taken part in at least one session shall rank above one that has taken part in none.
-    - 7th - The final tiebreak, applied where every criterion above has failed to separate two entries: alphabetically by the name of the team, with the reserve team after every named team and a driver holding no seat in the division after the reserves; alphabetically by the name of the driver within a team; and, where two drivers carry the same name or two teams the same name, the smaller identifier first — the driver's Discord user ID, or the team's role. Drivers are ordered on the name the standings are drawn under, so that the order and the sheet agree. The name is the one resolved at the moment the standings are computed: where a driver has since been renamed, a round reposted later may place two entries tied on everything the other way about, which is accepted and is not a fault. The last step is what makes the order total: display names are not unique on Discord and two drivers can genuinely share one.
+    - 7th - The final tiebreak, applied where every criterion above has failed to separate two entries: alphabetically by the name of the team, with the reserve team after every named team and a driver holding no seat in the division after the reserves; alphabetically by the name of the driver within a team; and, where two drivers carry the same name or two teams the same name, the smaller identifier first — the driver's Discord user ID, or, for two teams, the team added to the division first. Drivers are ordered on the name the standings are drawn under, so that the order and the sheet agree. The name is the one resolved at the moment the standings are computed: where a driver has since been renamed, a round reposted later may place two entries tied on everything the other way about, which is accepted and is not a fault. The last step is what makes the order total: display names are not unique on Discord and two drivers can genuinely share one.
     - NOTE: For countback tiebreakers, only Feature Race sessions are relevant.
 - A driver who has appeared in a division's driver standings shall remain in them for the rest of the season, whether or not they still hold a seat in the division.
 - In driver standings, all drivers that have partaken in a division are ranked according to their total accrued points and finishes in each round of said division.
 - In team standings, all teams are ranked according to the total points and finishes accrued by those driving their cars in each round of said division.
     - This means that, in the case of Reserve drivers who may drive for Team A in one round and Team B in another, will have their points and finishes in the first go to Team A in the standings, and to Team B in the latter.
+    - A team shall stand as one entry for the whole season, whatever role it has held: a change of its role shall neither split it nor move its points.
 - Both standings are recalculated after the results of each round are submitted and validated, with the points obtained in that round added to the total.
 - Beyond the postings after each round, both standings shall be posted on the two occasions that bracket a season:
     - Upon the season's placements being first confirmed, an **opening classification** shall be posted to the standings channel of each division, holding every driver and every team upon nought points. It is the grid as it stands before a round has been run.
@@ -493,7 +496,7 @@ Committing either review stage, and amending a submitted session, republish the 
 - When the results of a session are amended or when penalties are applied, the standings of all rounds after the one modified (including) shall be recalculated by the bot.
 - A driver's results are specific to one division. Assuming a driver participates in two different divisions, the points gained by driving in Division X are accounted for in the standings for Division X only, and their standing in Division Y is unaffected.
 - Driver and Team standings are to be saved at round-scope: this makes it easier to organize information and to trace the progress of a championship. As such, the following information shall be saved for each driver and team within the standings table recorded in each round (which pertains to the state after a round):
-    - Discord ID (driver standings) / Team role (team standings)
+    - Discord ID (driver standings) / the division's team (team standings)
     - Total points (so far)
     - Finishes place n
     - nth place first obtained on Round Number

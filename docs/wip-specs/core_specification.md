@@ -450,6 +450,7 @@ it only to place it; the rules governing it belong to its own specification.
 - The Reserve team shall always exist upon the server and in every division. It shall not be added, renamed or removed, and it shall have no limit of seats. Its role shall be set by a command of its own.
 - The role of any team may be set at any time, whatever the state of the season, so that a role deleted from the server may be repaired. Pending completion is the one exception: nothing is raced then, and completing the season revokes every team role a few steps later, so the mapping is repaired once the season has ended, for the season that follows.
     - Every driver holding a committed seat in that team shall follow the change: the team's former role shall be revoked from them, save where another team still maps to it, and its new role granted. A driver created by test mode holds no role and shall be left alone.
+    - The team's results and standings shall stay with the team: every round recorded before the change shall remain the team's. Decided 2026-09-22 (#375).
 - Adding, renaming or removing a team shall change the server's list. It shall be permitted while the server holds no active season, or while the active season is in Configuration, and shall be refused otherwise.
 - A team name shall hold no role mention, "@everyone" or "@here", in any case, no emoji and no Discord markup, as a division's name shall not. Decided 2026-09-21 (#362).
 - A team name shall reduce to a usable filename:
