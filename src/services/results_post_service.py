@@ -335,18 +335,6 @@ async def recompute_standings_from_round(
     )
 
 
-async def _build_team_display(
-    guild: discord.Guild,
-    role_ids: list[int],
-) -> dict[int, str]:
-    """Return {role_id: role_name} for the given IDs."""
-    result: dict[int, str] = {}
-    for rid in role_ids:
-        role = guild.get_role(rid)
-        result[rid] = role.name if role else f"Role {rid}"
-    return result
-
-
 async def _get_heading_context(
     db_path: str, round_id: int
 ) -> tuple[int | None, str]:
