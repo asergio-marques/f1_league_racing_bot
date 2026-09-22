@@ -75,7 +75,7 @@ RULES: list[tuple[str, tuple[str, ...]]] = [
     )),
     ("core", (
         "bot.py", "/db/", "module_service", "season_service", "season_lifecycle_service",
-        "channel_registry",
+        "channel_registry", "hub_service",
         "config_service", "output_router", "scheduler_service",
         "backup_service", "retry_service", "init_cog", "bot_cog", "admin_review", "amendment",
         "in_memory_state", "pack_service", "factory_reset_service",
