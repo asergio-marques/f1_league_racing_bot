@@ -1,6 +1,48 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-23 — v14.5.0 → v14.6.0: MINOR — a league role gone from the server may be replaced while fixed (issue #374)]
+  Version change    : 14.5.0 → 14.6.0
+  Bump rationale    : MINOR, on the precedent of v14.5.0: the rule fixing the league's two roles
+                      gains an exception, and the guidance on them is materially expanded. No
+                      principle is removed, and nothing a league could do before is forbidden
+                      save setting a driver role the bot cannot grant, which every approval
+                      would then have failed to grant.
+
+  Modified sections :
+    - Signup module data model, the league's base role and driver role —
+      - the driver role MUST be one the bot can grant, on the terms Principle IX sets for a
+        team's role;
+      - a role gone from the server MAY be replaced while the season's configuration fixes it,
+        the bot granting the replacement to every driver who is not a test driver and is
+        Unassigned or Assigned, and naming each it could not; the base role included, the one
+        time the bot grants it, with a reminder that the league's other members need it;
+      - opening signups and confirming a season's configuration judge both roles upon the
+        server, not merely as stored.
+
+  Added sections    : none — the new rules sit inside the existing bullets.
+  Removed sections  : none.
+
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch feature/374-signup-and-mid-season-checks. Opening signups checked
+                      only that the two roles were stored: a base role since deleted opened a
+                      window nobody could see, and a driver role deleted or out of the bot's
+                      reach let every approval grant nothing, with only the host's log told.
+                      Refusing to open on it without a repair would have left a season in
+                      Waiting with nothing to do but be aborted, the roles being fixed.
+
+  Templates / docs  : `docs/wip-specs/core_specification.md` ("The league's roles", "Configuring
+                      a season") and `docs/wip-specs/signup_module_specification.md` carry the
+                      rules; `README.md` and the core and signup how-to guides carry them for a
+                      league. The same change makes mid-season placements repeat the image,
+                      channel and lineup checks; the constitution states no requirement of
+                      confirming placements beyond tier ordering, so nothing of it lands here.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-22 — v14.4.1 → v14.5.0: MINOR — a team carries a full name, a shorthand and a role (issue #381)]
   Version change    : 14.4.1 → 14.5.0
   Bump rationale    : MINOR, on the precedent of v14.1.0: Principle IX gains three rules where
@@ -7878,10 +7920,22 @@ to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
     module is enabled, it decides who may see and use the signup channel.
   - `driver_role_id` (INTEGER, nullable) — the role the league's drivers hold, granted on
     signup approval and revoked whenever the driver returns to Not Signed Up. It was the
-    "signed-up role" before v14.2.1.
+    "signed-up role" before v14.2.1. It MUST be one the bot can grant, on the terms Principle
+    IX sets for a team's role: `@everyone`, a role managed by an integration, a role at or above
+    the bot's own highest role, and every role while the bot holds no permission to manage
+    roles MUST be refused where it is set, each saying why (v14.6.0).
   - Disabling the signup module MUST clear neither; a pack MUST clear both, a role belonging to
     its server. Confirming a season's configuration fixes both until the season ends. Both are
     required only while the signup module is enabled.
+  - **A role gone from the server MAY be replaced while it is fixed** (v14.6.0). Nobody holds a
+    deleted role, so the reason for fixing it no longer applies. The bot MUST grant the
+    replacement to every driver — every driver not a test driver who is Unassigned or Assigned
+    — and MUST name each it could not grant it to. This holds for the base role too, the one
+    time the bot grants it; a replaced base role MUST remind the league that its other members
+    need it. A role never set stays unset until the season ends.
+  - Opening signups and confirming a season's configuration MUST judge both roles upon the
+    server and not merely as stored: each MUST still be on it, and the driver role MUST be one
+    the bot can grant (v14.6.0).
 
 **TimeSlot** (the league's):
 - `slot_id` (INTEGER, auto-increment PK).
@@ -8405,4 +8459,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.5.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-22
+**Version**: 14.6.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-23
