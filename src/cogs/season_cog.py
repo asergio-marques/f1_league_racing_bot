@@ -482,6 +482,70 @@ def _amendment_open_refusal(division_name: str, open_row) -> str:
     )
 
 
+def _not_done_section(not_done: list[str]) -> str:
+    """What a placements confirmation could not do, as a section of its reply (#387)."""
+    if not not_done:
+        return ""
+    return "\n\n⚠️ **Not everything could be done**\n" + "\n".join(
+        f"• {line}" for line in not_done
+    )
+
+
+def _ungranted_line(user_ids: list[str]) -> str:
+    """The drivers a placements confirmation could not give their roles (#387).
+
+    No command grants them again — at the mid-season confirmation, confirming again finds
+    nothing left to commit — so the manager grants them by hand.
+    """
+    who = ", ".join(f"<@{user_id}>" for user_id in user_ids)
+    return (
+        f"{who} — their roles could not be granted. Give them their division's and team's "
+        f"roles by hand."
+    )
+
+
+def _unposted_lineup_line(division_name: str) -> str:
+    """A division whose lineup a placements confirmation could not post (#387).
+
+    No command posts a lineup again, so the line says when it will be: every change to the
+    division's drivers — assign, unassign, release, move, sack — posts it anew.
+    """
+    return (
+        f"**{division_name}** — its lineup could not be posted. No command posts it again; "
+        f"it is posted with the next change to its drivers."
+    )
+
+
+async def _confirm_privately(
+    interaction: discord.Interaction, text: str, *, fallback: str
+) -> None:
+    """Tell the member *text* privately, or tell the channel *fallback* where that is refused.
+
+    For the confirmation of something already committed, so it never raises (issue #387).
+    Chunked, *text* being free to outgrow Discord's limit. And sent best effort, as
+    `/round results amend` sends its own (#345): the interaction's token lapses after fifteen
+    minutes, which an approval that waited on the backup question and then drew on the Pi can
+    outlast. Where the reply is refused, the channel the interaction came from is told
+    *fallback* instead, through the bot's own token, which does not lapse. *fallback* points
+    at the log channel, which the caller makes carry all that *text* said (decided
+    2026-09-22).
+    """
+    try:
+        for chunk in _chunk_message(text):
+            if interaction.response.is_done():
+                await interaction.followup.send(chunk, ephemeral=True)
+            else:
+                await interaction.response.send_message(chunk, ephemeral=True)
+    except Exception:  # noqa: BLE001 — what is confirmed is committed
+        log.warning("could not send a confirmation privately", exc_info=True)
+        if interaction.channel is None:
+            return
+        try:
+            await interaction.channel.send(fallback)
+        except Exception:  # noqa: BLE001
+            log.exception("could not tell the channel what the confirmation said")
+
+
 class _AmendSessionsView(LeagueView):
     """Choose which of a round's sessions an amendment re-enters (#345, decided 2026-09-21).
 
@@ -2372,7 +2436,16 @@ class SeasonCog(commands.Cog):
             interaction.followup.send = original_followup
 
     async def _do_confirm_mid_season_placements(self, interaction: discord.Interaction) -> None:
-        """Commit the new placements and return the season to Ongoing."""
+        """Commit the new placements and return the season to Ongoing.
+
+        **Nothing after the commit may raise out of here** (issue #387), as at approval. The
+        placements are committed by then, and a raise reaching the view's error handler would
+        tell the manager the confirmation did not finish and leave the review standing to
+        expire. So every step after it is guarded on its own. What was left undone — a driver
+        not given their roles, a lineup not posted, a season not returned to Ongoing — is
+        named in the reply and the log line, with its repair. A season not moved on to Pending completion is only
+        logged: `/season complete` moves it there itself.
+        """
         from models.season import InvalidStageTransition
 
         await interaction.response.defer(ephemeral=True)
@@ -2393,29 +2466,68 @@ class SeasonCog(commands.Cog):
                 await interaction.followup.send(chunk, ephemeral=True)
             return
 
-        committed = await self.bot.placement_service.commit_mid_season_placements(  # type: ignore[attr-defined]
+        outcome = await self.bot.placement_service.commit_mid_season_placements(  # type: ignore[attr-defined]
             season.id, interaction.guild
         )
+        committed = outcome.placements
+
+        # What the confirmation could not do, told to the manager and the log channel below.
+        not_done: list[str] = []
+        if outcome.ungranted:
+            not_done.append(_ungranted_line(outcome.ungranted))
+        not_done += [_unposted_lineup_line(name) for name in outcome.unposted_lineups]
+
+        returned = False
         try:
             await self.bot.season_service.set_stage(season.id, SeasonStage.ONGOING)  # type: ignore[attr-defined]
         except InvalidStageTransition:
             log.warning("mid-season placements: season %s had already moved on", season.id)
+        except Exception:  # noqa: BLE001 — the placements are committed
+            # Confirming again repairs it: the review offers its button with nothing left
+            # to commit, and the confirmation then makes this move alone.
+            log.exception(
+                "mid-season placements: could not return season %s to Ongoing", season.id
+            )
+            not_done.append(
+                "The season could not be returned to Ongoing \u2014 run "
+                "`/season placements-review` and confirm again."
+            )
         else:
+            returned = True
             from services.season_lifecycle_service import advance_to_pending_completion
 
             # Rounds may have finished every division while the new drivers were placed.
-            await advance_to_pending_completion(self.bot.db_path, season.id)  # type: ignore[attr-defined]
+            try:
+                await advance_to_pending_completion(self.bot.db_path, season.id)  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001 — `/season complete` makes this move itself
+                log.exception(
+                    "mid-season placements: could not check whether season %s is done",
+                    season.id,
+                )
 
-        await interaction.followup.send(
-            f"\u2705 {len(committed)} placement(s) confirmed. The season is ongoing again.",
-            ephemeral=True,
+        msg = f"\u2705 {len(committed)} placement(s) confirmed."
+        if returned:
+            msg += " The season is ongoing again."
+        await _confirm_privately(
+            interaction,
+            msg + _not_done_section(not_done),
+            fallback=(
+                f"\u2705 <@{interaction.user.id}> \u2014 the placements are confirmed"
+                + (" and the season is ongoing again" if returned else "")
+                + ". Your confirmation could not be sent to you privately; the log channel "
+                "has what it said."
+            ),
         )
-        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-            f"/season placements-review | Confirmed\n"
-            f"  season: Season #{season.season_number}\n"
-            f"  placements: {len(committed)}",
-        )
+        try:
+            await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+                f"/season placements-review | Confirmed\n"
+                f"  season: Season #{season.season_number}\n"
+                f"  placements: {len(committed)}"
+                + "".join(f"\n  not done: {line}" for line in not_done),
+            )
+        except Exception:  # noqa: BLE001 — the placements are committed and the manager told
+            log.exception("mid-season placements: could not log the confirmation")
 
     # ------------------------------------------------------------------
     # /season config-review — confirming the configuration (issue #220)
@@ -6010,6 +6122,18 @@ class SeasonCog(commands.Cog):
         *deadline* is when the review stops being approvable, carried in from the view so
         the backup question below can be given what is left of that window rather than a
         fresh one. Omitted, the question is skipped — there is no window to divide.
+
+        **Nothing after the commit may raise out of here** (issue #387). From
+        `transition_to_active` on, the season is running. An exception reaching the view's
+        error handler would tell the manager the approval did not finish, skip every grant
+        and posting not yet reached, and leave the review standing to expire. So every step
+        after it is guarded on its own, and what one could not do is named in the reply and
+        the log line: a division's roles, lineup or calendar, or the opening sheets. A role
+        Discord refuses a single driver is only logged, as everywhere roles are granted. The
+        reply itself
+        is best effort, falling back to a notice in the review's channel. Only a Discord
+        refusing both is left, and the log line, retried until delivered, still carries the
+        record.
         """
         # Defer immediately — approval involves heavy work (scheduling, role grants,
         # lineup/calendar posts) that can exceed Discord's 3-second response window.
@@ -6469,29 +6593,58 @@ class SeasonCog(commands.Cog):
         # inside `transition_to_active`, between its commit and its return.
         self._pending.clear()
 
+        # What the approval could not do, told to the manager and the log channel below.
+        _not_done: list[str] = []
+
         # ── T015: Bulk role grant for all ASSIGNED drivers (FR-006) ──────────
         _guild = interaction.guild
         if _guild is not None:
+            _ungranted: list[str] = []
             for _div in divisions:
-                async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
-                    _cur = await _db.execute(
-                        """
-                        SELECT dp.discord_user_id, ti.name AS team_name
-                        FROM driver_season_assignments dsa
-                        JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-                        JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                        JOIN team_instances ti ON ti.id = ts.team_instance_id
-                        WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                          AND dp.is_test_driver = 0
-                        """,
-                        (_div.id,),
+                try:
+                    async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
+                        _cur = await _db.execute(
+                            """
+                            SELECT dp.discord_user_id, ti.name AS team_name
+                            FROM driver_season_assignments dsa
+                            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+                            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                            JOIN team_instances ti ON ti.id = ts.team_instance_id
+                            WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
+                              AND dp.is_test_driver = 0
+                            """,
+                            (_div.id,),
+                        )
+                        _assign_rows = await _cur.fetchall()
+                except Exception:  # noqa: BLE001 — the season is committed (issue #387)
+                    # No command grants a division's roles again, so the division is named
+                    # and the manager grants them by hand.
+                    log.exception(
+                        "_do_approve: could not read the placed drivers of division %s",
+                        _div.id,
                     )
-                    _assign_rows = await _cur.fetchall()
+                    _not_done.append(
+                        f"**{_div.name}** — its placed drivers could not be read, so none "
+                        f"was given their division's or team's role. Grant them by hand; "
+                        f"`/team lineup` lists them."
+                    )
+                    continue
                 for _row in _assign_rows:
                     try:
-                        _member = _guild.get_member(int(_row["discord_user_id"])) or (
-                            await _guild.fetch_member(int(_row["discord_user_id"]))
-                        )
+                        _member = _guild.get_member(int(_row["discord_user_id"]))
+                        if _member is None:
+                            try:
+                                _member = await _guild.fetch_member(
+                                    int(_row["discord_user_id"])
+                                )
+                            except discord.HTTPException:
+                                # Gone from the server: there is nobody to give a role to,
+                                # as at the mid-season confirmation.
+                                log.warning(
+                                    "_do_approve: %s is not in the server; no role granted",
+                                    _row["discord_user_id"],
+                                )
+                                continue
                         _role_ids = [_div.mention_role_id]
                         _team_cfg = await self.bot.placement_service.get_team_role_config(  # type: ignore[attr-defined]
                             _row["team_name"]
@@ -6503,6 +6656,9 @@ class SeasonCog(commands.Cog):
                         log.exception(
                             "_do_approve: role grant failed for user %s", _row["discord_user_id"]
                         )
+                        _ungranted.append(str(_row["discord_user_id"]))
+            if _ungranted:
+                _not_done.append(_ungranted_line(_ungranted))
 
         # All three postings below draw inside their own loops, so the notice covers the
         # set of them rather than sitting inside any one. It goes to the channel the review
@@ -6523,6 +6679,7 @@ class SeasonCog(commands.Cog):
                             log.exception(
                                 "_do_approve: lineup post failed for division %s", _div.id
                             )
+                            _not_done.append(_unposted_lineup_line(_div.name))
 
             # ── T017: Post calendar per division (FR-011) ─────────────────────
             # Conveyed as a graphic where the images module is enabled and the `calendar`
@@ -6542,9 +6699,27 @@ class SeasonCog(commands.Cog):
             if _guild is not None:
                 from services import calendar_post_service as _calendar
 
-                _tracks_by_name = await _calendar.tracks_by_name(self.bot.db_path)
                 _calendar_notices: list[str] = []
                 _calendar_problems: list[str] = []
+
+                # The circuits are what a graphic is drawn from, so without them no calendar
+                # is posted (issue #387). An empty registry would fall every graphic back to
+                # text under a problem blaming each round's track for being unknown, which is
+                # false; `/division calendar-sync` draws each one properly afterwards.
+                try:
+                    _tracks_by_name = await _calendar.tracks_by_name(self.bot.db_path)
+                except Exception:  # noqa: BLE001 — the season is committed
+                    log.exception(
+                        "_do_approve: could not read the circuits, so no calendar was posted"
+                    )
+                    _tracks_by_name = None
+                    _unposted = [d.name for d in divisions if d.calendar_channel_id]
+                    if _unposted:
+                        _names = ", ".join(f"**{n}**" for n in _unposted)
+                        _not_done.append(
+                            f"No calendar was posted for {_names} — the circuits could not "
+                            f"be read. Run `/division calendar-sync` for each."
+                        )
 
                 if not cfg.season_number:
                     log.warning(
@@ -6554,7 +6729,7 @@ class SeasonCog(commands.Cog):
                     )
 
                 for _div in divisions:
-                    if not _div.calendar_channel_id:
+                    if _tracks_by_name is None or not _div.calendar_channel_id:
                         continue
                     try:
                         _posting = await _calendar.post_division_calendar(
@@ -6569,6 +6744,10 @@ class SeasonCog(commands.Cog):
                         # One division must never stop the others being posted.
                         log.exception(
                             "_do_approve: calendar post failed for division %s", _div.id
+                        )
+                        _not_done.append(
+                            f"**{_div.name}** — its calendar could not be posted. Run "
+                            f"`/division calendar-sync`."
                         )
                         continue
 
@@ -6614,6 +6793,13 @@ class SeasonCog(commands.Cog):
                 except Exception:  # noqa: BLE001 — never fail an approval on a picture
                     log.exception("_do_approve: the opening classifications failed")
                     _opening_problems = []
+                    # Raised from outside the service's own per-division guard, so some
+                    # divisions may have been posted and others not.
+                    _not_done.append(
+                        "The opening standings and attendance sheets could not all be "
+                        "posted. No command posts them again; each round's results and "
+                        "attendance post them as usual."
+                    )
 
                 if _opening_problems:
                     _opening_report = "\n".join(
@@ -6638,6 +6824,7 @@ class SeasonCog(commands.Cog):
             f"\u2705 **Season approved and activated!**\n"
             f"Season #{cfg.season_number} (ID: {cfg.season_id})"
         )
+        msg += _not_done_section(_not_done)
         # The manager who approved is told what the calendar generation met, so a
         # template that fell back to text is not discovered only by reading the channel.
         _cal_report = getattr(self, "_calendar_report", None)
@@ -6645,16 +6832,25 @@ class SeasonCog(commands.Cog):
             msg += f"\n\n\u26a0\ufe0f **Calendar images**\n{_cal_report.splitlines()[0]}"
             msg += "\n" + "\n".join(_cal_report.splitlines()[1:])
             self._calendar_report = None
-        if interaction.response.is_done():
-            await interaction.followup.send(msg, ephemeral=True)
-        else:
-            await interaction.response.send_message(msg, ephemeral=True)
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season placements-review | Placements confirmed\n"
-            f"  season: {cfg.season_number}\n"
-            f"  season_id: {cfg.season_id}",
+        await _confirm_privately(
+            interaction,
+            msg,
+            fallback=(
+                f"\u2705 <@{interaction.user.id}> \u2014 Season #{cfg.season_number} is approved and "
+                f"ongoing. Your confirmation could not be sent to you privately; the log "
+                f"channel has what it said."
+            ),
         )
+
+        try:
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season placements-review | Placements confirmed\n"
+                f"  season: {cfg.season_number}\n"
+                f"  season_id: {cfg.season_id}"
+                + "".join(f"\n  not done: {line}" for line in _not_done),
+            )
+        except Exception:  # noqa: BLE001 — the season is committed and the manager told
+            log.exception("_do_approve: could not log the approval")
         log.info("Season %s activated by %s", cfg.season_id, interaction.user)
 
     # ------------------------------------------------------------------
