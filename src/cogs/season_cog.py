@@ -52,6 +52,7 @@ from utils.channel_guard import (
     is_league_manager,
     league_admin_only,
     league_manager_only,
+    league_role_faults,
 )
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from utils.league_server import LeagueModal, LeagueView, is_foreign_guild
@@ -2533,7 +2534,7 @@ class SeasonCog(commands.Cog):
     # /season config-review — confirming the configuration (issue #220)
     # ------------------------------------------------------------------
 
-    async def _configuration_faults(self, season_id: int) -> list[str]:
+    async def _configuration_faults(self, season_id: int, guild=None) -> list[str]:
         """Every fault that stops a season's configuration being confirmed.
 
         The configuration review checks everything that can be checked before the season has
@@ -2542,6 +2543,10 @@ class SeasonCog(commands.Cog):
         again, the configuration of a module other than signup being free to change in
         between — save the league's two roles, which confirming the configuration fixes
         until the season ends (issue #276), and so cannot have changed.
+
+        **The roles are judged upon the server, not merely as stored** (#374), where *guild*
+        is given: both must still be on it, and the driver role must be one the bot can grant.
+        Confirming fixes them, so this is the last moment a league can choose others freely.
 
         **One helper for the review and the confirmation**, so the button is withheld on
         exactly what the confirmation refuses. Each fault is a line a league manager reads,
@@ -2555,16 +2560,19 @@ class SeasonCog(commands.Cog):
         if await self.bot.module_service.is_signup_enabled():  # type: ignore[attr-defined]
             signup_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
             server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+            base_role_id = server_cfg.base_role_id if server_cfg is not None else None
+            driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
             if signup_cfg is None or signup_cfg.signup_channel_id is None:
                 faults.append("The signup module has no **signup channel** — `/signup channel`.")
-            if server_cfg is None or server_cfg.base_role_id is None:
+            if base_role_id is None:
                 faults.append(
                     "The signup module needs the league's **base role** — `/bot base-role`."
                 )
-            if server_cfg is None or server_cfg.driver_role_id is None:
+            if driver_role_id is None:
                 faults.append(
                     "The signup module needs the league's **driver role** — `/bot driver-role`."
                 )
+            faults += league_role_faults(guild, base_role_id, driver_role_id)
 
         # ── Team names ─────────────────────────────────────────────────────────
         # The server's list alone: a season in configuration has no division to check.
@@ -2820,7 +2828,7 @@ class SeasonCog(commands.Cog):
                 for chunk in _chunk_message(body):
                     await interaction.followup.send(chunk, ephemeral=False)
 
-            faults = await self._configuration_faults(cfg.season_id)
+            faults = await self._configuration_faults(cfg.season_id, interaction.guild)
             if faults:
                 body = "\n".join(f"• {fault}" for fault in faults)
                 for chunk in _chunk_message(
@@ -2864,7 +2872,7 @@ class SeasonCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        faults = await self._configuration_faults(cfg.season_id)
+        faults = await self._configuration_faults(cfg.season_id, interaction.guild)
         if faults:
             body = "\n".join(f"• {fault}" for fault in faults)
             await interaction.followup.send(
