@@ -128,7 +128,7 @@ When inviting the bot, grant it the following OAuth2 bot permissions. All are us
 | **Send Messages** | Posts weather forecasts to division channels, signup wizard messages to private channels, and audit logs to the log channel |
 | **Send Messages in Threads** | Required if any configured channels are threads |
 | **Embed Links** | Posts the signup module info embed (the button drivers click to start a signup) |
-| **Manage Channels** | Creates private signup wizard channels; applies and removes channel permission overwrites for the signup module and per-driver wizard channels; deletes the channels it created during a `/bot factory-reset` |
+| **Manage Channels** | Creates private signup wizard channels; applies and removes channel permission overwrites for the signup module, the hub and per-driver wizard channels; deletes the channels it created during a `/bot factory-reset` |
 | **Manage Messages** | Deletes the old forecast message when a newer phase supersedes it (`forecast_cleanup_service`); deletes its own messages for `/clean-bot` and `/bot factory-reset` |
 | **Read Message History** | Reads back through a channel to find its own messages, for `/clean-bot` and `/bot factory-reset` |
 | **Manage Roles** | Grants the driver role on signup approval; grants/revokes division and team roles on driver placement, unassignment, and sacking |
@@ -320,6 +320,23 @@ Setting a new base role moves the signup channel's permissions to it, and the ro
 
 ---
 
+### `/bot hub-channel` — Set the hub
+*Access: League manager*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `channel` | Channel | ✅ | The channel to hold the hub's panel |
+
+The hub is the one channel every member of your league can use the bot from, rather than only its managers. The bot posts a single panel of buttons there, and each button answers whoever presses it; no role is needed beyond being able to see the channel.
+
+**Nothing is offered on the panel yet.** Modules add their options to it as they are built, while they are enabled; until then the panel says that nothing is offered here.
+
+**Who can see it.** Holders of the league's [base role](#bot-base-role-bot-driver-role--set-the-leagues-two-roles), or every member where you have set none, and holders of the interaction role and the league admin role. Nobody but the bot can post there, so the panel stays in view. Setting the hub replaces the channel's own permissions, so use a channel of its own. If the base role you set has since been deleted from the server, the hub stays closed to members and the reply says so.
+
+**Moving it** deletes the panel from the old channel and clears the permissions the bot set there. The hub may not share a channel with anything else the bot posts to. The bot needs **Manage Channel** and **Manage Permissions** on the channel, and refuses before changing anything if it lacks either. Anything else Discord refuses — the panel's post, say — is named in the reply and the log channel, and the hub stays set.
+
+---
+
 ### `/clean-bot` — Delete recent bot messages in this channel
 *Access: League admin*
 
@@ -384,7 +401,7 @@ Erases the league entire and cleans the bot out of this server. Only the server'
 
 A season begins with `/season setup`, in **configuration**: settle the team list, the modules and their settings, and whether the season runs in test mode. `/season config-review` checks that configuration and posts a **✅ Confirm configuration** button. Once confirmed, the season moves on — to waiting for its signup window where the signup module is enabled, or straight to placements where it is not (or under test mode). In placements you add divisions with `/division add` and rounds with `/round add`, then review with `/season placements-review` and press its **Approve** button.
 
-> **A channel does one job.** Every command that sets a channel — the eight `/division …-channel` commands, `/bot interaction-channel`, `/bot log-channel` and `/signup channel` — refuses a channel already set as something else anywhere on this server, naming what holds it. Two divisions cannot share a results channel, and a calendar channel cannot double as a log.
+> **A channel does one job.** Every command that sets a channel — the eight `/division …-channel` commands, `/bot interaction-channel`, `/bot log-channel`, `/bot hub-channel` and `/signup channel` — refuses a channel already set as something else anywhere on this server, naming what holds it. Two divisions cannot share a results channel, and a calendar channel cannot double as a log.
 >
 > This is not tidiness: several postings **replace** the message they last put up, finding it by an id stored against the channel, so two purposes in one channel is how one output deletes another's message. Setting a channel to the value it already holds is refused too, in its own words — nothing else holds it, and nothing changes.
 

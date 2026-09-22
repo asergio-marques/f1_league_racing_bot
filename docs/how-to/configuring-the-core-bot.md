@@ -142,6 +142,14 @@ To move your league to another server, or to start over from nothing, see [Start
 
 These are ordinary commands: the interaction role runs them, in the command channel. **Once a season's configuration is confirmed they are fixed until that season ends**, so set them first. Make them two different roles: one is who may sign up, the other is who got through.
 
+**A hub for your members, if you want one.** Every command here is for the people running the league. The hub is a channel for everybody else: the bot keeps a single panel of buttons there, and anyone who can see the channel can press them.
+
+```
+/bot hub-channel channel:#league-hub
+```
+
+It is visible to your base role — or to every member, if you have not set one — and to both league roles, and nobody but the bot can post there. Give it a channel of its own: setting the hub replaces that channel's permissions. **Nothing is offered on the panel yet**; modules add their options to it as they are built, and it says so until then.
+
 **One team already exists.** `/bot init` creates the **Reserve** team, which has unlimited seats and belongs to every division. You cannot remove or rename it. Nothing else is created — your team list starts empty apart from it.
 
 ---

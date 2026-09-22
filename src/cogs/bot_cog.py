@@ -19,6 +19,9 @@ they were under `/signup`, and are given in the interaction channel like any oth
 repair nothing the guards read. Confirming a season's configuration fixes both until the
 season ends.
 
+`/bot hub-channel` sets the hub (issue #279): the one channel every member may use, holding the
+panel `services.hub_service` keeps. It is a league manager's, like every other channel command.
+
 `/bot pack` is a league admin's command and is given in the interaction channel like any
 other: it releases the settings rather than repairing them. `/bot factory-reset` is the server
 owner's alone, from any channel; see `utils.channel_guard.server_owner_only`.
@@ -443,6 +446,108 @@ class BotCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
+    # /bot hub-channel — the hub (issue #279)
+    # ------------------------------------------------------------------
+
+    @group.command(
+        name="hub-channel",
+        description="Set the channel every member of the league uses the bot from.",
+    )
+    @app_commands.describe(channel="The channel to hold the hub's panel.")
+    @league_manager_only
+    async def handle_hub_channel(
+        self, interaction: discord.Interaction, channel: discord.TextChannel
+    ) -> None:
+        """Point the hub at *channel*: set who may see it, and post its panel there.
+
+        Moving the hub deletes the panel from the old channel and clears the permissions the
+        bot set on it, as moving the signup channel does. Everything that fails after the
+        write — a permission Discord refuses, a panel it will not post — is reported in the
+        reply and the log rather than undoing the setting: the channel is the right one, and
+        the repair is in Discord's settings.
+        """
+        from services import hub_service
+        from services.channel_registry_service import ChannelUse, find_channel_use, refusal
+
+        use = await find_channel_use(self.bot.db_path, channel.id)  # type: ignore[attr-defined]
+        if use is not None:
+            await interaction.response.send_message(
+                refusal(channel.mention, use, same_setting=(use == ChannelUse("hub"))),
+                ephemeral=True,
+            )
+            return
+
+        guild = interaction.guild
+        perms = channel.permissions_for(guild.me)
+        missing = [
+            name
+            for name, held in (
+                ("Manage Channel", perms.manage_channels),
+                ("Manage Permissions", perms.manage_roles),
+            )
+            if not held
+        ]
+        if missing:
+            await interaction.response.send_message(
+                f"❌ The bot needs {' and '.join(f'**{m}**' for m in missing)} on "
+                f"{channel.mention} to set who may see the hub. Nothing was changed.",
+                ephemeral=True,
+            )
+            return
+
+        config = await self.bot.config_service.get_server_config()
+        if config is None:
+            await interaction.response.send_message(
+                "⛔ This server is not configured yet — run `/bot init` first.",
+                ephemeral=True,
+            )
+            return
+        old_channel_id, old_message_id = config.hub_channel_id, config.hub_message_id
+
+        # Permission edits and a post on two channels outrun Discord's three seconds.
+        await interaction.response.defer(ephemeral=True)
+
+        await self.bot.config_service.set_core_setting("hub_channel_id", channel.id)
+        await self.bot.config_service.set_core_setting("hub_message_id", None)
+
+        faults: list[str] = []
+        if old_channel_id is not None and old_channel_id != channel.id:
+            faults += await _stand_down_old_hub(guild, old_channel_id, old_message_id)
+        for fault in (
+            await hub_service.apply_hub_permissions(self.bot, guild, channel),
+            await hub_service.refresh_panel(self.bot),
+        ):
+            if fault is not None:
+                faults.append(fault)
+
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
+                "timestamp) VALUES (?, ?, NULL, 'HUB_CHANNEL_SET', ?, ?, ?)",
+                (
+                    interaction.user.id,
+                    str(interaction.user),
+                    json.dumps({"channel_id": old_channel_id}),
+                    json.dumps({"channel_id": channel.id}),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            await db.commit()
+
+        reply = f"✅ **Hub channel** set to {channel.mention}."
+        if faults:
+            reply += "\n⚠️ " + "\n⚠️ ".join(faults)
+        await interaction.followup.send(reply, ephemeral=True)
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot hub-channel | "
+            f"{'Success' if not faults else 'Success, with faults'}\n"
+            f"  channel: <#{channel.id}>"
+            + "".join(f"\n  {fault}" for fault in faults),
+        )
+        log.info("%s set the hub channel", interaction.user)
+
+    # ------------------------------------------------------------------
     # /bot pack — ready the bot for another server
     # ------------------------------------------------------------------
 
@@ -607,6 +712,32 @@ class BotCog(commands.Cog):
         self._clean_up = asyncio.create_task(
             _clean_up(interaction.guild, bot_user_id, targets, report)
         )
+
+
+async def _stand_down_old_hub(
+    guild: discord.Guild, channel_id: int, message_id: int | None
+) -> list[str]:
+    """Delete the panel from the hub's old channel and clear what the bot set there.
+
+    A panel already deleted, or a channel already gone, is not a fault: there is nothing
+    left to stand down.
+    """
+    old = guild.get_channel(channel_id)
+    if not isinstance(old, discord.TextChannel):
+        return []
+    faults: list[str] = []
+    if message_id is not None:
+        try:
+            await old.get_partial_message(message_id).delete()
+        except discord.NotFound:
+            pass
+        except discord.HTTPException as exc:
+            faults.append(f"The old hub panel in <#{channel_id}> could not be deleted: {exc}")
+    try:
+        await old.edit(overwrites={})
+    except discord.HTTPException as exc:
+        faults.append(f"The permissions on the old hub <#{channel_id}> could not be cleared: {exc}")
+    return faults
 
 
 async def _clean_up(guild, bot_user_id: int, targets, report) -> None:
