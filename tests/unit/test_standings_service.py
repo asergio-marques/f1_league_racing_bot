@@ -18,6 +18,7 @@ from services.standings_service import (
     opening_driver_standings,
     opening_team_standings,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +227,7 @@ async def test_compute_driver_standings_countback(db_path):
             (season_id,),
         )
         div_id = cursor.lastrowid
+        await seed_team_instances(db, div_id, 998, 999)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
             "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00')",
@@ -330,7 +332,14 @@ async def _session(db, round_id: int, div_id: int, session_type: str = "FEATURE_
     return cur.lastrowid
 
 
+async def _team_for(db, sr_id: int, team: int) -> None:
+    """Seed *team* in the division of session *sr_id*, for a result to stand under."""
+    cur = await db.execute("SELECT division_id FROM session_results WHERE id = ?", (sr_id,))
+    await seed_team_instances(db, (await cur.fetchone())[0], team)
+
+
 async def _result(db, sr_id: int, uid: int, pos: int, pts: int, team: int = 999) -> None:
+    await _team_for(db, sr_id, team)
     await db.execute(
         "INSERT INTO race_session_results "
         "(session_result_id, driver_user_id, finishing_position, team_role_id, "
@@ -577,6 +586,7 @@ async def test_compute_team_standings_includes_qualifying_points(db_path):
 
 async def _result_qual(db, sr_id: int, uid: int, pos: int, pts: int, team: int = 999) -> None:
     """Insert a qualifying result."""
+    await _team_for(db, sr_id, team)
     await db.execute(
         "INSERT INTO qualifying_session_results "
         "(session_result_id, driver_user_id, finishing_position, team_role_id, "
@@ -588,6 +598,7 @@ async def _result_qual(db, sr_id: int, uid: int, pos: int, pts: int, team: int =
 
 async def _result_dnf(db, sr_id: int, uid: int, pos: int, team: int = 999) -> None:
     """Insert a DNF result (0 points)."""
+    await _team_for(db, sr_id, team)
     await db.execute(
         "INSERT INTO race_session_results "
         "(session_result_id, driver_user_id, finishing_position, team_role_id, "

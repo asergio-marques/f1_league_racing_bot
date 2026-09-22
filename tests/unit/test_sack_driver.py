@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.driver_profile import DriverState  # noqa: E402
 from services.placement_service import PlacementService  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 10708
 SEASON_ID = 1
@@ -82,6 +83,7 @@ async def _make_db(
             "VALUES (?, ?, 'Pro', 1, 999)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 3001)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format) "
             "VALUES (?, ?, 1, '2026-02-01T18:00:00+00:00', 'NORMAL')",

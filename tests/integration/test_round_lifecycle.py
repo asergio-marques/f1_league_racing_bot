@@ -22,6 +22,7 @@ from db.database import get_connection, run_migrations
 from models.points_config import SessionType
 from services.penalty_wizard import PenaltyReviewState
 from services.penalty_service import StagedPenalty
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +49,7 @@ async def _bootstrap(db_path: str) -> tuple[int, int, int]:
             (season_id,),
         )
         division_id = cursor.lastrowid
+        await seed_team_instances(db, division_id, 100, 200)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
             "VALUES (?, 1, 'STANDARD', 'AWAITING_RESULTS', '2026-01-01T18:00:00')",

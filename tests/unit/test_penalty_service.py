@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from models.points_config import SessionType
 from services.penalty_service import StagedPenalty, validate_penalty_input
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +279,7 @@ async def test_apply_negative_penalty_reorders(tmp_path):
             (season_id, "Main"),
         )
         division_id = cursor.lastrowid
+        await seed_team_instances(db, division_id, 100, 200)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
             (division_id,),
@@ -352,6 +354,7 @@ async def test_apply_negative_penalty_reorders_move_up(tmp_path):
             (season_id, "Main"),
         )
         division_id = cursor.lastrowid
+        await seed_team_instances(db, division_id, 100, 200)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
             (division_id,),
@@ -425,6 +428,7 @@ async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
             (season_id, "Main"),
         )
         division_id = cursor.lastrowid
+        await seed_team_instances(db, division_id, 100, 200)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
             (division_id,),
@@ -504,6 +508,7 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
             (season_id, "Main"),
         )
         division_id = cursor.lastrowid
+        await seed_team_instances(db, division_id, 100, 200)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
             (division_id,),

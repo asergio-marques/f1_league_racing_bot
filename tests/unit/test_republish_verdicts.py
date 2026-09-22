@@ -32,6 +32,7 @@ from db.database import get_connection, run_migrations  # noqa: E402
 from services.verdict_announcement_service import (  # noqa: E402
     republish_verdicts_from_round,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SEASON_ID = 71
 DIVISION_ID = 81
@@ -54,6 +55,7 @@ async def _seed(tmp_path, name: str, *, rounds=(1, 2, 3)) -> tuple[str, dict]:
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 3001)
         for number in rounds:
             await db.execute(
                 "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "

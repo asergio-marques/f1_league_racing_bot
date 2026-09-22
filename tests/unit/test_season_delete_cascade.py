@@ -54,6 +54,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.season_service import SeasonService  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 10308
 SEASON_ID = 1
@@ -98,6 +99,9 @@ async def _seed_season(db, season_id, division_id, round_id, *, number: int):
         "VALUES (?, ?, ?, 1, 555)",
         (division_id, season_id, f"Division {number}"),
     )
+    # A team of this division's own, so deleting another season's teams leaves its results be.
+    team_id = 3000 + division_id
+    await seed_team_instances(db, division_id, team_id)
     await db.execute(
         "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format) "
         "VALUES (?, ?, 1, '2026-02-01T18:00:00+00:00', 'NORMAL')",
@@ -117,8 +121,8 @@ async def _seed_season(db, season_id, division_id, round_id, *, number: int):
     )
     await db.execute(
         "INSERT INTO team_standings_snapshots "
-        "(round_id, division_id, team_role_id, standing_position) VALUES (?, ?, 3001, 1)",
-        (round_id, division_id),
+        "(round_id, division_id, team_role_id, standing_position) VALUES (?, ?, ?, 1)",
+        (round_id, division_id, team_id),
     )
     for session_type in ("FULL_QUALIFYING", "FULL_RACE"):
         cursor = await db.execute(
@@ -133,8 +137,8 @@ async def _seed_season(db, season_id, division_id, round_id, *, number: int):
         )
         await db.execute(
             f"INSERT INTO {child} (session_result_id, driver_user_id, team_role_id, "
-            "finishing_position) VALUES (?, 101, 3001, 1)",
-            (cursor.lastrowid,),
+            "finishing_position) VALUES (?, 101, ?, 1)",
+            (cursor.lastrowid, team_id),
         )
     await db.execute(
         "INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id, "

@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
 from services.penalty_service import load_staged_from_records  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 ROUND_ID = 41
 DIVISION_ID = 21
@@ -50,6 +51,7 @@ async def _seed(tmp_path, name: str = "hydrate") -> tuple[str, dict]:
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 3001)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
             "VALUES (?, ?, 2, '2026-02-01T18:00:00+00:00', 'NORMAL', 'FINAL')",

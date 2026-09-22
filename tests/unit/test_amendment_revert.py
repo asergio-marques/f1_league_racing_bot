@@ -35,6 +35,7 @@ from services.result_submission_service import (  # noqa: E402
     snapshot_before_amendment,
     sweep_expired_amendments,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SEASON_ID = 91
 DIVISION_ID = 92
@@ -66,6 +67,7 @@ async def _db(tmp_path, name: str) -> str:
             "config_name, submitted_by) VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE', 'Standard', 55)",
             (ROUND_ID, DIVISION_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, 3001)
         for position, driver in enumerate((101, 102), start=1):
             await db.execute(
                 "INSERT INTO race_session_results (session_result_id, driver_user_id, "

@@ -36,6 +36,7 @@ from db.database import get_connection, run_migrations  # noqa: E402
 from cogs.module_cog import ModuleCog, _ConfirmDisableResultsView  # noqa: E402
 from services.season_service import SeasonService  # noqa: E402
 from services.results_purge_service import purge_season_results  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 5150
 ACTOR_ID = 4242
@@ -182,6 +183,7 @@ async def _seed(
             (season_id, division_status),
         )
         division_id = cur.lastrowid
+        await seed_team_instances(db, division_id, 7)
         await db.execute(
             "INSERT INTO division_results_config "
             "(division_id, results_channel_id, standings_channel_id) VALUES (?, ?, ?)",

@@ -31,6 +31,7 @@ from db.database import get_connection, run_migrations  # noqa: E402
 from services.result_submission_service import (  # noqa: E402
     recompute_former_drivers_for_round,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -61,6 +62,7 @@ async def _make_db(tmp_path, *, name: str = "former_driver") -> str:
                 "VALUES (?, ?, ?, ?, 555)",
                 (division_id, SEASON_ID, name_, tier),
             )
+            await seed_team_instances(db, division_id, 3001)
         for profile_id, driver in ((31, 101), (32, 102), (33, 103)):
             await db.execute(
                 "INSERT INTO driver_profiles (id, discord_user_id, current_state, "

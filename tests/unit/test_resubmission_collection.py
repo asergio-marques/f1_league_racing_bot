@@ -58,6 +58,7 @@ from services.result_submission_service import (  # noqa: E402
     _resubmit_collection_task,
     enter_resubmit_flow,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 14108
 SEASON_ID = 1
@@ -95,6 +96,7 @@ async def _make_db(tmp_path, *, name="resubmit", fmt="NORMAL"):
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        await seed_team_instances(db, DIVISION_ID, TEAM_ROLE, 3002, 9999)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
             "VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', ?, 'AWAITING_REPORT_VERDICTS')",

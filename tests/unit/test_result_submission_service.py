@@ -23,6 +23,7 @@ from services.result_submission_service import (
     validate_submission_block,
 )
 from utils.tyre_compound import TYRE_COMPOUNDS
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -949,6 +950,7 @@ async def _seed_round(db) -> int:
         (season_id, "Main"),
     )
     division_id = cursor.lastrowid
+    await seed_team_instances(db, division_id, 300, 301, 999)
     cursor = await db.execute(
         "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
         (division_id,),

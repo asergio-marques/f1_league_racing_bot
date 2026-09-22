@@ -13,6 +13,7 @@ from services.verdict_announcement_service import (
     post_penalty_announcements,
     post_appeal_announcements,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +364,7 @@ async def _seed_round(db_path: str) -> dict:
             (season_id,),
         )
         division_id = cursor.lastrowid
+        await seed_team_instances(db, division_id, 888)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
             "VALUES (?, 1, 'STANDARD', 'AWAITING_REPORT_VERDICTS', '2026-01-01T18:00:00')",

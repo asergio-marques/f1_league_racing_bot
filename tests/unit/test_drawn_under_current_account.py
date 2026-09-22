@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
 from services.results_post_service import _load_driver_rows  # noqa: E402
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 2436
 PAST, NOW, OTHER = 9101, 9102, 9103
@@ -40,6 +41,7 @@ async def _completed_season(tmp_path) -> str:
             "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
             "VALUES (1, 1, 'Pro', 1001, 1)"
         )
+        await seed_team_instances(db, 1, 501)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
             "VALUES (1, 1, 1, 'NORMAL', '2026-01-20T18:00:00')"

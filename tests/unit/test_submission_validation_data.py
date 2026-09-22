@@ -56,6 +56,7 @@ from services.result_submission_service import (  # noqa: E402
     _make_slug,
     other_active_team_assignments,
 )
+from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 10208
 SEASON_ID = 1
@@ -116,6 +117,7 @@ async def _seed_session(
             (round_id, DIVISION_ID, session_type.value, status),
         )
         session_id = cursor.lastrowid
+        await seed_team_instances(db, DIVISION_ID, *{role for _driver, role in rows})
         for position, (driver, role) in enumerate(rows, start=1):
             await db.execute(
                 f"INSERT INTO {table} (session_result_id, driver_user_id, team_role_id, "
