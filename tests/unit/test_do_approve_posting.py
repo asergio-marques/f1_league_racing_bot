@@ -938,6 +938,30 @@ async def test_a_round_moved_while_the_approval_posts_is_moved_on_the_ongoing_se
     cog.bot.season_service.sync_pending_config.assert_not_awaited()
 
 
+async def test_a_round_added_while_the_approval_posts_is_answered_as_after_it(db_path):
+    """Nothing is added to a season once it is ongoing, and the posting still under way
+    makes it no less ongoing."""
+    cog = _cog(db_path)
+    _hold_the_setup(cog)
+    add = _interaction()
+    later = datetime.now(timezone.utc) + timedelta(days=44)
+
+    raised = await _while_posting(
+        cog,
+        lambda: undecorate(SeasonCog.round_add)(
+            cog,
+            add,
+            division_name="Pro",
+            format="MYSTERY",
+            scheduled_at=later.strftime("%Y-%m-%dT%H:%M:%S"),
+        ),
+    )
+
+    assert raised == []
+    assert "No pending season setup" in _replied(add)
+    cog.bot.season_service.sync_pending_config.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # What approval schedules
 #
