@@ -1103,6 +1103,49 @@ async def test_a_report_too_long_for_one_message_is_sent_in_pieces(db_path):
     assert "**Division 15** — its placed drivers could not be read" in sent[-1]
 
 
+async def test_a_stumbled_approval_still_clears_its_review(db_path):
+    """What the manager met in #387, driven through the button itself. The approval stopped
+    on a read, so the button's own clean-up never ran: the review stood, and expired five
+    minutes later telling them to run it again for a season already under way."""
+    from cogs.season_cog import _ApproveView
+
+    cog = _cog(db_path)
+    view = _ApproveView(cog, USER_ID)
+    view._season_id = SEASON_ID
+    report = [MagicMock(delete=AsyncMock()), MagicMock(delete=AsyncMock())]
+    view.carries(report)
+    view._message = prompt = MagicMock(delete=AsyncMock())
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO season_review_prompts "
+            "(id, season_id, channel_id, message_id, reviewer_id, posted_at) "
+            "VALUES (1, ?, 700, 800, ?, '2026-03-01T00:00:00+00:00')",
+            (SEASON_ID, USER_ID),
+        )
+        await db.commit()
+    interaction = _interaction()
+
+    with patch(
+        "services.calendar_post_service.tracks_by_name",
+        new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
+    ), patch(
+        "services.calendar_post_service.post_division_calendar", new=AsyncMock()
+    ), patch(
+        "services.season_classification_service.post_opening_classifications",
+        new=AsyncMock(return_value=[]),
+    ):
+        await _ApproveView.approve(view, interaction, MagicMock())
+
+    assert "Season approved" in _replied(interaction)
+    for message in [*report, prompt]:
+        message.delete.assert_awaited_once()
+    # Stopped, so its five minutes can never run out into an expiry notice.
+    assert view.is_finished()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
+        assert (await cursor.fetchone())[0] == 0
+
+
 async def test_a_clean_approval_reports_nothing_undone(db_path):
     """The section has to mean something; one on every approval would be read past."""
     cog = _cog(db_path)
