@@ -40,8 +40,8 @@ async def _seed(db_path: str, *, stage: str = "COMPLETED", test_mode: int = 0) -
         await db.executescript(f"""
             INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id,
                 log_channel_id, league_admin_role_id, test_mode_active,
-                weather_module_enabled, signup_module_enabled)
-            VALUES ({SERVER}, 1, 2, 3, 4, {test_mode}, 1, 1);
+                weather_module_enabled, signup_module_enabled, base_role_id, driver_role_id)
+            VALUES ({SERVER}, 1, 2, 3, 4, {test_mode}, 1, 1, 5, 6);
             INSERT INTO seasons (id, start_date, status, season_number, stage)
             VALUES (1, '2026-01-01', '{status}', 1, '{stage}');
             INSERT INTO divisions (id, season_id, name, mention_role_id, lineup_channel_id,
@@ -68,9 +68,9 @@ async def _seed(db_path: str, *, stage: str = "COMPLETED", test_mode: int = 0) -
             INSERT INTO default_teams (name) VALUES ('Ferrari');
             INSERT INTO team_role_configs (team_name, role_id) VALUES ('Ferrari', 70);
             INSERT INTO points_config_store (config_name) VALUES ('standard');
-            INSERT INTO signup_module_config (id, signup_channel_id, base_role_id,
-                signed_up_role_id, signup_button_message_id, signup_closed_message_id,
-                selected_tracks_json) VALUES (1, 80, 81, 82, 83, 84, '["1"]');
+            INSERT INTO signup_module_config (id, signup_channel_id,
+                signup_button_message_id, signup_closed_message_id,
+                selected_tracks_json) VALUES (1, 80, 83, 84, '["1"]');
             INSERT INTO signup_module_settings (id, time_type) VALUES (1, 'SHORT_QUALI');
             INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id)
             VALUES ('903', 85);
@@ -155,7 +155,7 @@ async def test_pack_frees_the_claim_and_the_four_settings(db_path):
     ) == (None, None, None, None, None)
 
 
-async def test_pack_clears_the_team_roles_and_the_signup_channel_and_roles(db_path):
+async def test_pack_clears_the_team_roles_and_the_signup_channel(db_path):
     await _seed(db_path)
 
     result = await pack(db_path, _scheduler())
@@ -164,9 +164,20 @@ async def test_pack_clears_the_team_roles_and_the_signup_channel_and_roles(db_pa
     assert await _count(db_path, "team_role_configs") == 0
     row = await _one(db_path, "SELECT * FROM signup_module_config")
     assert (
-        row["signup_channel_id"], row["base_role_id"], row["signed_up_role_id"],
+        row["signup_channel_id"],
         row["signup_button_message_id"], row["signup_closed_message_id"],
-    ) == (None, None, None, None, None)
+    ) == (None, None, None)
+
+
+async def test_a_pack_clears_both_league_roles(db_path):
+    """They are the league's (issue #276), but a role belongs to its server: kept, the next
+    server's configuration would name roles that do not exist there."""
+    await _seed(db_path)
+
+    await pack(db_path, _scheduler())
+
+    row = await _one(db_path, "SELECT base_role_id, driver_role_id FROM server_configs")
+    assert (row["base_role_id"], row["driver_role_id"]) == (None, None)
 
 
 async def test_pack_clears_wizards_the_retry_queue_and_the_review_prompt(db_path):

@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.signup_cog import SignupCog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
+from services.config_service import ConfigService  # noqa: E402
 from services.signup_module_service import SignupModuleService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
@@ -42,7 +43,7 @@ SERVER_ID = 8908
 ACTOR_ID = 4242
 CHANNEL_ID = 777001
 BASE_ROLE_ID = 555001
-SIGNED_UP_ROLE_ID = 555002
+DRIVER_ROLE_ID = 555002
 
 
 # ---------------------------------------------------------------------------
@@ -54,18 +55,19 @@ async def _make_db(tmp_path, *, config: bool = True) -> str:
     db_path = os.path.join(str(tmp_path), "signup_config.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
+        # The two roles are the league's, on the server configuration (issue #276).
         await db.execute(
             "INSERT INTO server_configs "
-            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (?, 100, 200, 300)",
-            (SERVER_ID,),
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id, "
+            " base_role_id, driver_role_id) "
+            "VALUES (?, 100, 200, 300, ?, ?)",
+            (SERVER_ID, BASE_ROLE_ID, DRIVER_ROLE_ID),
         )
         if config:
             await db.execute(
                 "INSERT INTO signup_module_config "
-                "(id, signup_channel_id, base_role_id, signed_up_role_id, signups_open) "
-                "VALUES (?, ?, ?, ?, 0)",
-                (1, CHANNEL_ID, BASE_ROLE_ID, SIGNED_UP_ROLE_ID),
+                "(id, signup_channel_id, signups_open) VALUES (?, ?, 0)",
+                (1, CHANNEL_ID),
             )
         await db.commit()
     return db_path
@@ -75,6 +77,7 @@ def _make_cog(db_path: str) -> SignupCog:
     bot = MagicMock()
     bot.db_path = db_path
     bot.signup_module_service = SignupModuleService(db_path)
+    bot.config_service = ConfigService(db_path)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
     return SignupCog(bot)
@@ -252,7 +255,7 @@ async def test_the_configuration_is_reported(tmp_path):
     fields = _fields(interaction)
     assert fields["Channel"] == "#signups"
     assert fields["Base Role"] == "@role"
-    assert fields["Signed-Up Role"] == "@role"
+    assert fields["Driver Role"] == "@role"
     assert fields["Signups Open"] == "No"
 
 
@@ -278,17 +281,15 @@ async def test_a_deleted_role_is_reported_as_not_found(tmp_path):
 
     fields = _fields(interaction)
     assert "not found" in fields["Base Role"]
-    assert "not found" in fields["Signed-Up Role"]
+    assert "not found" in fields["Driver Role"]
 
 
 async def test_an_unconfigured_channel_is_reported_as_not_configured(tmp_path):
     """Distinct from "not found" — nothing was ever set here."""
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE signup_module_config SET signup_channel_id = NULL, base_role_id = NULL "
-            "",
-        )
+        await db.execute("UPDATE signup_module_config SET signup_channel_id = NULL")
+        await db.execute("UPDATE server_configs SET base_role_id = NULL")
         await db.commit()
     cog = _make_cog(db_path)
     interaction = _interaction()
@@ -298,6 +299,7 @@ async def test_an_unconfigured_channel_is_reported_as_not_configured(tmp_path):
     fields = _fields(interaction)
     assert "not configured" in fields["Channel"]
     assert "not configured" in fields["Base Role"]
+    assert "/bot base-role" in fields["Base Role"]
 
 
 async def test_a_server_that_has_configured_nothing_reports_not_set(tmp_path):
@@ -311,6 +313,9 @@ async def test_a_server_that_has_configured_nothing_reports_not_set(tmp_path):
     fields = _fields(interaction)
     assert fields["Channel"] == "Not set"
     assert fields["Signups Open"] == "No"
+    # The league's roles are shown whether or not the module has a configuration.
+    assert fields["Base Role"] == "@role"
+    assert fields["Driver Role"] == "@role"
 
 
 async def test_the_report_names_the_settings_as_well_as_the_channels(tmp_path):

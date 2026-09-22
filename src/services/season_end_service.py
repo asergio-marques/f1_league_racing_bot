@@ -94,7 +94,7 @@ async def execute_season_end(season_id: int, bot: "Bot") -> None:
     # 2. History entries, for every driver holding a committed placement.
     await _write_driver_history_entries(season, bot)
 
-    # 3. The division, team and signup roles of the season's drivers.
+    # 3. The division and team roles, and the driver role, of the season's drivers.
     if guild is not None:
         await _revoke_season_roles(season.id, guild, bot)
 
@@ -310,7 +310,7 @@ async def _revoke_season_roles(
     guild: "discord.Guild",
     bot: "Bot",
 ) -> None:
-    """Revoke division roles, team roles, and the signup 'signed-up' role from
+    """Revoke division roles, team roles, and the league's driver role from
     every non-test driver assigned in *season_id*.
 
     Called on both season completion and cancellation.  All failures are logged
@@ -334,13 +334,11 @@ async def _revoke_season_roles(
         )
         assigned_rows = await cur.fetchall()
 
-        # Fetch the signed-up role once for the whole loop
-        cfg_cur = await db.execute(
-            "SELECT signed_up_role_id FROM signup_module_config",
-        )
+        # Fetch the driver role once for the whole loop
+        cfg_cur = await db.execute("SELECT driver_role_id FROM server_configs")
         cfg_row = await cfg_cur.fetchone()
 
-    signed_up_role_id: int | None = cfg_row["signed_up_role_id"] if cfg_row else None
+    driver_role_id: int | None = cfg_row["driver_role_id"] if cfg_row else None
 
     for row in assigned_rows:
         discord_uid: int = row["discord_user_id"]
@@ -360,10 +358,10 @@ async def _revoke_season_roles(
         await placement_svc.revoke_all_placement_roles(
             driver_profile_id, season_id, member
         )
-        if signed_up_role_id is not None:
-            signed_up_role = guild.get_role(signed_up_role_id)
-            if signed_up_role is not None and signed_up_role in member.roles:
-                await placement_svc._revoke_roles(member, signed_up_role_id)
+        if driver_role_id is not None:
+            driver_role = guild.get_role(driver_role_id)
+            if driver_role is not None and driver_role in member.roles:
+                await placement_svc._revoke_roles(member, driver_role_id)
 
     log.info(
         "_revoke_season_roles: processed %d driver(s) for season %d",

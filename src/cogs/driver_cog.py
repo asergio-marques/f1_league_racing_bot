@@ -624,7 +624,7 @@ class DriverCog(commands.Cog):
 
         Available while the season is in Placements or Ongoing, placements — where the
         drivers of a window are settled. The driver returns to Not Signed Up and loses the
-        signed-up role; their signup is kept with the season.
+        driver role; their signup is kept with the season.
         """
         from models.driver_profile import DriverState
 
@@ -656,15 +656,15 @@ class DriverCog(commands.Cog):
             profile.id
         )
 
-        signup_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
-        role_id = getattr(signup_cfg, "signed_up_role_id", None)
+        server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        role_id = server_cfg.driver_role_id if server_cfg is not None else None
         if role_id and interaction.guild is not None:
             role = interaction.guild.get_role(role_id)
             if role is not None:
                 try:
                     await user.remove_roles(role, reason="Driver rejected")
                 except discord.HTTPException as exc:
-                    log.warning("reject: could not remove the signed-up role: %s", exc)
+                    log.warning("reject: could not remove the driver role: %s", exc)
 
         await interaction.followup.send(
             f"✅ Turned down **{user.display_name}**. They are no longer signed up.",

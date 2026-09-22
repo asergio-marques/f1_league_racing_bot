@@ -27,6 +27,10 @@ again in a state it may refuse.
 **The configuration is deleted, not kept.** Signup is the one module whose disable clears its
 configuration, and re-enabling starts from nothing — which is the opposite of the image module,
 where a re-enable is deliberately lossless. Worth stating, because the two sit in the same file.
+
+**The league's two roles are not the module's configuration** (issue #276). The base role and
+the driver role are core's, read from the server configuration, and survive the disable; only
+the base role's overwrite on the signup channel goes.
 """
 from __future__ import annotations
 
@@ -69,13 +73,16 @@ async def _make_db(tmp_path, *, name: str = "disable_signup") -> str:
     return db_path
 
 
-def _config(*, signups_open: bool = False, channel=SIGNUP_CHANNEL, base_role=BASE_ROLE):
+def _config(*, signups_open: bool = False, channel=SIGNUP_CHANNEL):
     return SimpleNamespace(
         server_id=SERVER_ID,
         signups_open=signups_open,
         signup_channel_id=channel,
-        base_role_id=base_role,
     )
+
+
+def _server_config(*, base_role=BASE_ROLE):
+    return SimpleNamespace(interaction_role_id=INTERACTION_ROLE, base_role_id=base_role)
 
 
 def _channel(*, set_permissions_fails: bool = False):
@@ -138,9 +145,7 @@ def _make_cog(
     bot.config_service = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(interaction_role_id=INTERACTION_ROLE)
-        if server_config is _UNSET
-        else server_config
+        return_value=_server_config() if server_config is _UNSET else server_config
     )
     bot.get_guild = MagicMock(
         return_value=_guild(channel=_channel()) if guild is _UNSET else guild
@@ -261,7 +266,37 @@ async def test_the_configuration_is_cleared(tmp_path):
     await _disable(cog, interaction)
 
     cog.bot.signup_module_service.delete_config.assert_awaited_once_with()
-    assert "configuration has been cleared" in _replied(interaction)
+    assert "Its channel has been cleared" in _replied(interaction)
+
+
+async def test_disabling_signup_keeps_both_roles(tmp_path):
+    """They are the league's, not the module's (issue #276). Disabling signup deleted them
+    with its configuration row, and a league that ran on without signups lost the base role
+    another module reads and the driver role its season's end revokes."""
+    from services.config_service import ConfigService
+    from services.signup_module_service import SignupModuleService
+
+    db_path = await _make_db(tmp_path, name="disable_keeps_roles")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE server_configs SET base_role_id = ?, driver_role_id = 3002", (BASE_ROLE,)
+        )
+        await db.execute(
+            "INSERT INTO signup_module_config (id, signup_channel_id) VALUES (1, ?)",
+            (SIGNUP_CHANNEL,),
+        )
+        await db.commit()
+    cog = _make_cog(db_path)
+    cog.bot.config_service = ConfigService(db_path)
+    cog.bot.signup_module_service = SignupModuleService(db_path)
+    interaction = _interaction()
+
+    await _disable(cog, interaction)
+
+    config = await cog.bot.config_service.get_server_config()
+    assert (config.base_role_id, config.driver_role_id) == (BASE_ROLE, 3002)
+    assert await cog.bot.signup_module_service.get_config() is None
+    assert "base role and driver role" in _replied(interaction)
 
 
 # ---------------------------------------------------------------------------
@@ -379,7 +414,7 @@ async def test_a_league_with_no_base_role_reverts_the_rest(tmp_path):
     """Configuring one is optional; the other three overwrites were still applied."""
     db_path = await _make_db(tmp_path, name="disable_nobase")
     guild = _guild(channel=_channel())
-    cog = _make_cog(db_path, config=_config(base_role=None), guild=guild)
+    cog = _make_cog(db_path, server_config=_server_config(base_role=None), guild=guild)
 
     await _disable(cog, _interaction())
 

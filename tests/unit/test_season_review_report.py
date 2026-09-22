@@ -155,9 +155,7 @@ def _cog(
     modules.is_images_enabled = AsyncMock(return_value=False)
 
     bot.signup_module_service.get_config = AsyncMock(
-        return_value=SimpleNamespace(
-            signup_channel_id=900, base_role_id=901, signed_up_role_id=902
-        )
+        return_value=SimpleNamespace(signup_channel_id=900)
     )
     bot.signup_module_service.get_settings = AsyncMock(
         return_value=SimpleNamespace(
@@ -184,8 +182,11 @@ def _cog(
         return_value=SimpleNamespace(rsvp_channel_id=801, attendance_channel_id=None)
     )
 
+    # The two roles are the league's, on the server configuration (issue #276).
     bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(test_mode_active=test_mode)
+        return_value=SimpleNamespace(
+            test_mode_active=test_mode, base_role_id=901, driver_role_id=902
+        )
     )
     bot.team_service.get_teams_with_roles = AsyncMock(
         return_value=teams_with_roles
@@ -348,6 +349,18 @@ async def test_the_signup_configuration_is_reviewed(db_path):
     assert "Time image: Required" in public
     assert "Nationality: Not required" in public
     assert "Available slots: Sunday 20:00" in public
+
+
+@pytest.mark.parametrize("signup", [True, False])
+async def test_the_placements_review_does_not_repeat_the_league_s_roles(db_path, signup):
+    """Confirming the configuration fixed both roles until the season ends (issue #276), so
+    the configuration review reports them and this one has nothing to add."""
+    cog = _cog(db_path, signup=signup)
+    messages = await _review(cog, _interaction())
+
+    public = _public(messages)
+    assert "<@&901>" not in public
+    assert "<@&902>" not in public
 
 
 async def test_the_attendance_configuration_is_reviewed(db_path):

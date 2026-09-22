@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.module_cog import ModuleCog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
+from services.config_service import ConfigService  # noqa: E402
 
 SERVER_ID = 11408
 ACTOR_ID = 77
@@ -91,6 +92,7 @@ def _make_cog(
 ) -> ModuleCog:
     bot = MagicMock()
     bot.db_path = db_path
+    bot.config_service = ConfigService(db_path)
     bot.module_service = MagicMock()
     bot.module_service.is_images_enabled = AsyncMock(return_value=images_enabled)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
@@ -350,8 +352,26 @@ async def test_enabling_signup_names_the_three_commands_that_follow(tmp_path):
     await cog._enable_signup(interaction)
 
     replied = _replied(interaction)
-    for command in ("/signup channel", "/signup base-role", "/signup complete-role"):
+    for command in ("/signup channel", "/bot base-role", "/bot driver-role"):
         assert command in replied
+
+
+async def test_enabling_signup_does_not_ask_for_roles_the_league_already_set(tmp_path):
+    """The two roles are the league's (issue #276) and outlive the module, so a league
+    re-enabling signup has them already; naming them would send it to redo work."""
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET base_role_id = 1, driver_role_id = 2")
+        await db.commit()
+    cog = _make_cog(db_path, signup_enabled=False)
+    interaction = _interaction()
+
+    await cog._enable_signup(interaction)
+
+    replied = _replied(interaction)
+    assert "/signup channel" in replied
+    assert "/bot base-role" not in replied
+    assert "/bot driver-role" not in replied
 
 
 async def test_enabling_signup_twice_does_no_work(tmp_path):

@@ -47,7 +47,7 @@ ROUND_ID = 21
 PROFILE_ID = 31
 DISCORD_USER_ID = "4242"
 ACTOR_ID = 77
-SIGNED_UP_ROLE = 555
+DRIVER_ROLE = 555
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ async def _make_db(
     state: DriverState = DriverState.ASSIGNED,
     former_driver: bool = True,
     is_test_driver: bool = False,
-    signed_up_role: int | None = SIGNED_UP_ROLE,
+    driver_role: int | None = DRIVER_ROLE,
 ) -> str:
     db_path = os.path.join(str(tmp_path), f"{name}.db")
     await run_migrations(db_path)
@@ -147,11 +147,10 @@ async def _make_db(
             "VALUES (?, ?, 4242, 1, ?)",
             (ROUND_ID, DIVISION_ID, PROFILE_ID),
         )
-        if signed_up_role is not None:
+        if driver_role is not None:
             await db.execute(
-                "INSERT INTO signup_module_config (id, signed_up_role_id) "
-                "VALUES (?, ?)",
-                (1, signed_up_role),
+                "UPDATE server_configs SET driver_role_id = ?",
+                (driver_role,),
             )
         await db.commit()
     return db_path
@@ -160,7 +159,7 @@ async def _make_db(
 def _guild(*, member_missing: bool = False, fetch_fails: bool = False, has_role: bool = True):
     guild = MagicMock()
     role = MagicMock()
-    role.id = SIGNED_UP_ROLE
+    role.id = DRIVER_ROLE
     member = MagicMock()
     member.id = int(DISCORD_USER_ID)
     member.roles = [role] if has_role else []
@@ -445,7 +444,7 @@ async def test_the_roles_go_before_the_assignments_do(tmp_path):
     assert seen["assignments"] == 1  # still there when the roles were revoked
 
 
-async def test_the_signed_up_role_is_revoked(tmp_path):
+async def test_the_driver_role_is_revoked(tmp_path):
     """Granted at approval and not covered by the placement roles, so it would otherwise
     mark a sacked driver as signed up indefinitely."""
     db_path = await _make_db(tmp_path, name="sack_signedup")
@@ -454,10 +453,10 @@ async def test_the_signed_up_role_is_revoked(tmp_path):
     await _sack(service, _guild())
 
     service._revoke_roles.assert_awaited_once()
-    assert service._revoke_roles.await_args.args[1] == SIGNED_UP_ROLE
+    assert service._revoke_roles.await_args.args[1] == DRIVER_ROLE
 
 
-async def test_a_driver_without_the_signed_up_role_is_not_asked_to_lose_it(tmp_path):
+async def test_a_driver_without_the_driver_role_is_not_asked_to_lose_it(tmp_path):
     """Discord refuses a removal of a role the member does not hold, and it would be an
     API call on every sack of a driver who never had one."""
     db_path = await _make_db(tmp_path, name="sack_norole")
@@ -468,8 +467,8 @@ async def test_a_driver_without_the_signed_up_role_is_not_asked_to_lose_it(tmp_p
     service._revoke_roles.assert_not_awaited()
 
 
-async def test_a_league_with_no_signed_up_role_configured_revokes_nothing_extra(tmp_path):
-    db_path = await _make_db(tmp_path, name="sack_noconfig", signed_up_role=None)
+async def test_a_league_with_no_driver_role_configured_revokes_nothing_extra(tmp_path):
+    db_path = await _make_db(tmp_path, name="sack_noconfig", driver_role=None)
     service = _service(db_path)
 
     await _sack(service, _guild())

@@ -221,8 +221,7 @@ async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_
     await _seed_pending_drivers(path)
     async with get_connection(path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (id, signed_up_role_id) VALUES (?, 555)",
-            (1,),
+            "UPDATE server_configs SET driver_role_id = 555"
         )
         await db.commit()
     bot = _wind_down_bot(path)
@@ -240,7 +239,7 @@ async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_
 
     held = [c.args[0] for c in bot.wizard_service._trigger_channel_hold.await_args_list]
     assert held == ["1004"]
-    # The two approved drivers turned down lose the signed-up role; the committed one keeps it.
+    # The two approved drivers turned down lose the driver role; the committed one keeps it.
     assert member.remove_roles.await_count == 2
     assert "pending placements turned down: 3" in bot.output_router.post_log.await_args.args[0]
 

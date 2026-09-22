@@ -55,6 +55,7 @@ AREA_LABELS: dict[str, str] = {
     "team list": "the team list and its roles",
     "points": "the points configurations",
     "signup": "the signup configuration",
+    "roles": "the league's base role and driver role",
     "attendance": "the attendance configuration",
     "weather": "the weather configuration",
     "images": "the image configuration",
@@ -317,11 +318,18 @@ async def take_fingerprint(bot, season_id: int) -> SeasonFingerprint:
                 ]
             )
 
+            # The league's two roles, core's rather than the signup module's (issue #276).
+            # Only the configuration review reports them; confirming the configuration fixes
+            # them, so at placements they cannot differ and this area never trips.
+            areas["roles"] = _digest(
+                await _rows(db, "SELECT base_role_id, driver_role_id FROM server_configs")
+            )
+
             areas["signup"] = _digest(
                 [
                     await _rows(
                         db,
-                        "SELECT signup_channel_id, base_role_id, signed_up_role_id, "
+                        "SELECT signup_channel_id, "
                         "       signups_open, selected_tracks_json, close_at "
                         "FROM signup_module_config",
                     ),

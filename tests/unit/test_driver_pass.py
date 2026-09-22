@@ -152,11 +152,10 @@ async def test_a_signup_in_review_has_its_channel_closed(db_path):
     assert held == ["1004"]
 
 
-async def test_the_signed_up_role_is_revoked_from_a_real_driver(db_path):
+async def test_the_driver_role_is_revoked_from_a_real_driver(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (id, signed_up_role_id) VALUES (?, 555)",
-            (1,),
+            "UPDATE server_configs SET driver_role_id = 555"
         )
         await db.commit()
     role = MagicMock()
@@ -170,6 +169,30 @@ async def test_the_signed_up_role_is_revoked_from_a_real_driver(db_path):
     await run_driver_pass(db_path, guild=guild)
 
     # The two Assigned real drivers and the Unassigned one; not the test driver.
+    assert member.remove_roles.await_count == 3
+
+
+async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db_path):
+    """The driver role is the league's (issue #276). It lived in the signup module's
+    configuration row, which disabling the module deletes, so the season's end then found no
+    role to revoke and every driver carried it into the next season. Here there is no signup
+    configuration at all, as after `/module disable signup`."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET driver_role_id = 555")
+        await db.commit()
+        cursor = await db.execute("SELECT COUNT(*) FROM signup_module_config")
+        assert (await cursor.fetchone())[0] == 0
+    role = MagicMock()
+    member = MagicMock()
+    member.roles = [role]
+    member.remove_roles = AsyncMock()
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=member)
+    guild.get_role = MagicMock(return_value=role)
+
+    await run_driver_pass(db_path, guild=guild)
+
+    guild.get_role.assert_called_with(555)
     assert member.remove_roles.await_count == 3
 
 
@@ -201,8 +224,7 @@ async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass(db_path):
 async def test_a_role_discord_will_not_take_back_does_not_stop_the_pass(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO signup_module_config (id, signed_up_role_id) VALUES (?, 555)",
-            (1,),
+            "UPDATE server_configs SET driver_role_id = 555"
         )
         await db.commit()
     role = MagicMock()

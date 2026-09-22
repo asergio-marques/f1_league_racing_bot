@@ -5,6 +5,8 @@ import json
 import logging
 from datetime import datetime, timezone
 
+import discord
+
 from db.database import get_connection
 from models.signup_module import (
     AvailabilitySlot,
@@ -29,7 +31,7 @@ class SignupModuleService:
     async def get_config(self) -> SignupModuleConfig | None:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT signup_channel_id, base_role_id, signed_up_role_id, "
+                "SELECT signup_channel_id, "
                 "       signups_open, signup_button_message_id, selected_tracks_json, "
                 "       signup_closed_message_id, close_at "
                 "FROM signup_module_config",
@@ -39,8 +41,6 @@ class SignupModuleService:
             return None
         return SignupModuleConfig(
             signup_channel_id=row["signup_channel_id"],
-            base_role_id=row["base_role_id"],
-            signed_up_role_id=row["signed_up_role_id"],
             signups_open=bool(row["signups_open"]),
             signup_button_message_id=row["signup_button_message_id"],
             selected_tracks=json.loads(row["selected_tracks_json"] or "[]"),
@@ -53,14 +53,12 @@ class SignupModuleService:
             await db.execute(
                 """
                 INSERT INTO signup_module_config
-                    (id, signup_channel_id, base_role_id, signed_up_role_id,
+                    (id, signup_channel_id,
                      signups_open, signup_button_message_id, selected_tracks_json,
                      signup_closed_message_id, close_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     signup_channel_id          = excluded.signup_channel_id,
-                    base_role_id               = excluded.base_role_id,
-                    signed_up_role_id          = excluded.signed_up_role_id,
                     signups_open               = excluded.signups_open,
                     signup_button_message_id   = excluded.signup_button_message_id,
                     selected_tracks_json       = excluded.selected_tracks_json,
@@ -70,8 +68,6 @@ class SignupModuleService:
                 (
                     1,
                     cfg.signup_channel_id,
-                    cfg.base_role_id,
-                    cfg.signed_up_role_id,
                     int(cfg.signups_open),
                     cfg.signup_button_message_id,
                     json.dumps(cfg.selected_tracks),
@@ -87,6 +83,43 @@ class SignupModuleService:
                 "DELETE FROM signup_module_config",
             )
             await db.commit()
+
+    async def move_base_role_overwrite(
+        self, guild: discord.Guild, old_role_id: int | None, new_role: discord.Role
+    ) -> None:
+        """Carry the signup channel's base-role overwrite from *old_role_id* to *new_role*.
+
+        The base role is the league's (issue #276), but who may see the signup channel is
+        this module's: the channel is visible to the base role and to nobody else, so a new
+        role without the overwrite would leave members unable to see where they are told to
+        sign up. The old role's overwrite goes in the same breath, or it keeps access it is
+        no longer entitled to. Re-setting the same role touches only the grant: a "remove
+        then add" on one role would briefly revoke it, and outright if the grant failed.
+
+        Nothing is done without a signup channel, which exists only while the module is
+        enabled. A failure is logged and never raised: Discord refuses an overwrite for
+        reasons that have nothing to do with the setting, and the role the league chose is
+        still the right one to have stored. The channel is repairable by hand.
+        """
+        cfg = await self.get_config()
+        if cfg is None or cfg.signup_channel_id is None:
+            return
+        channel = guild.get_channel(cfg.signup_channel_id)
+        if channel is None or not isinstance(channel, discord.TextChannel):
+            return
+        try:
+            if old_role_id and old_role_id != new_role.id:
+                old_role = guild.get_role(old_role_id)
+                if old_role is not None:
+                    await channel.set_permissions(old_role, overwrite=None)
+            await channel.set_permissions(
+                new_role,
+                view_channel=True,
+                send_messages=False,
+                use_application_commands=True,
+            )
+        except Exception:  # noqa: BLE001 — see the docstring
+            log.warning("move_base_role_overwrite: could not update the signup channel")
 
     # ── Settings ──────────────────────────────────────────────────────
 

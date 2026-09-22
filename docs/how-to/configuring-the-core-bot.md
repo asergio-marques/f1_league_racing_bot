@@ -27,6 +27,8 @@ You do not need to read those first. Start here.
 
 **Principal division** — the highest tier division a driver holds a full-time seat in. A driver can race in more than one division at once — full-time in one, a reserve in others — and this is the one the rules name when only one will do. Somebody full-time in tier 2 who reserves in tier 1 has tier 2 as their principal division; somebody who only ever reserves, or who holds no seat, has none. You never set it. The bot works it out from the seats the driver holds, so it follows along when you place, move or release them.
 
+**Base role** and **driver role** — the league's roles for its people, as against the interaction and league admin roles, which are for the people who run it. The base role is who your members are, and the driver role is who your drivers are right now. See [step 1](#step-1--tell-the-bot-who-is-in-charge).
+
 **Stage** — where a season has got to. This matters more than anything else in this guide, because it decides which commands will even run. A season moves through them in one direction:
 
 | Stage | What happens in it | How it ends |
@@ -126,6 +128,20 @@ To move your league to another server, or to start over from nothing, see [Start
 
 > **A command run in the wrong channel is refused, not ignored.** You get a short message only you can see. If a command seems to do nothing, check which channel you are in first.
 
+**Two more roles, the league's own.** The base role is who your league's members are, and the driver role is who its drivers are right now:
+
+```
+/bot base-role role:@Members
+/bot driver-role role:@Driver
+```
+
+| Role | What it means |
+|---|---|
+| **Base role** | Who your league's members are. You hand it out, never the bot. With signups on, it decides who can see the signup channel, and it is pinged when signups open |
+| **Driver role** | Who your drivers are. The bot grants it when you approve a signup, and takes it back whenever a driver returns to Not Signed Up — turned down, sacked, or at the end of the season |
+
+These are ordinary commands: the interaction role runs them, in the command channel. **Once a season's configuration is confirmed they are fixed until that season ends**, so set them first. Make them two different roles: one is who may sign up, the other is who got through.
+
 **One team already exists.** `/bot init` creates the **Reserve** team, which has unlimited seats and belongs to every division. You cannot remove or rename it. Nothing else is created — your team list starts empty apart from it.
 
 ---
@@ -161,7 +177,7 @@ Five modules, **all off to begin with**. The bot works without any of them, but 
 
 > **And if a season is running, turning `results` off destroys that season's championship.** Every classification recorded, every standing computed from them, and every results and standings message already posted are deleted; every round still waiting on results, report verdicts or appeal verdicts is closed as having run without results, which is what lets you complete the season afterwards. Every penalty and appeal verdict already announced is removed from the verdicts channel with them; auto-sack and auto-reserve announcements stay. Your points configurations and your division channels are kept. You are warned and must confirm, and none of it can be undone. See [Configuring the results module](configuring-the-results-module.md).
 
-**Turning a module off clears less than you would expect.** Only the signup module behaves the way the phrase suggests: it forgets its channel and its two roles, though it keeps its time slots and its question settings whatever the message says. Of the rest, `attendance` forgets only which channels each division posts to, and `weather`, `results` and `images` forget no *configuration* at all — every channel, deadline, penalty value and points configuration survives, and the module comes back as it was. What `results` does destroy, where a season is running, is that season's results themselves, which are not configuration; see the call-out above. What weather does do is cancel its own scheduled jobs — the forecasts for every remaining round. Turning a module off stops that module's work and nobody else's: the jobs belonging to the modules you left on go on running.
+**Turning a module off clears less than you would expect.** The signup module forgets its channel, and keeps its time slots and its question settings; the base role and the driver role are the league's, and no module's switch touches them. Of the rest, `attendance` forgets only which channels each division posts to, and `weather`, `results` and `images` forget no *configuration* at all — every channel, deadline, penalty value and points configuration survives, and the module comes back as it was. What `results` does destroy, where a season is running, is that season's results themselves, which are not configuration; see the call-out above. What weather does do is cancel its own scheduled jobs — the forecasts for every remaining round. Turning a module off stops that module's work and nobody else's: the jobs belonging to the modules you left on go on running.
 
 Each module then has its own configuration, which is not covered here. Start from [Slash Commands](../../README.md#slash-commands) in the README and find that module's section.
 
@@ -239,7 +255,7 @@ The bot posts the configuration to the channel, a message per subject: test mode
 
 | The check | Only with |
 |---|---|
-| The signup channel, base role and complete role are set | `signup` |
+| The signup channel, and the league's base role and driver role, are set | `signup` |
 | Every team name can be used | — |
 | A points configuration is attached, every attached one exists, and each is in order | `results` |
 | Inkscape is installed, every template a switched-on output draws is valid, every colour slot a drawing uses has a colour, and the driver-photo setting could fetch something | `images` |
@@ -472,7 +488,7 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 | A division has no calendar channel or no lineup channel | Step 9 |
 | A signup is unsettled | Step 10 |
 
-**And more, depending on what you turned on** — a missing channel for any enabled module, and every check from step 6 made again: a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
+**And more, depending on what you turned on** — a missing channel for any enabled module, and every check from step 6 made again: a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. The base role and the driver role are the exception: confirming the configuration fixed them, so they are not checked again. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
 
 When it goes through, the bot:
 
@@ -672,8 +688,9 @@ you. The old server's channels and roles do not, so you set those again on the n
    new server and takes the four settings afresh; test mode and your module settings are as you
    left them.
 4. **Give each team its role again**, with `/team role` and `/team reserve-role` — the roles on
-   the old server mean nothing on the new one. If the signup module is on, set its channel and
-   roles again too: `/signup channel`, `/signup base-role` and `/signup complete-role`.
+   the old server mean nothing on the new one. Set the league's two roles again with
+   `/bot base-role` and `/bot driver-role`, and if the signup module is on, its channel with
+   `/signup channel`.
 5. **Set up the next season** as normal. Each division takes its role and channels from the new
    server.
 6. **Remove the bot from the old server** when you are ready. Its messages there stay, and their
@@ -721,7 +738,7 @@ command.
 
 | What you see | Usually means |
 |---|---|
-| A command refuses with a short message only you can see | You are not in the command channel, or you hold neither of the two roles. Check the channel first — it is almost always the channel |
+| A command refuses with a short message only you can see | You are not in the command channel, or you hold neither the interaction role nor the league admin role. Check the channel first — it is almost always the channel |
 | A command does not appear in Discord's menu at all | The command list has not reached your server yet. Whoever hosts the bot can push it through immediately with `!sync` |
 | "This command is a league admin's" | It asks for the league admin role, which you do not hold. The table at the top of this guide lists which commands those are; someone holding that role has to run them |
 | "No league admin role is configured" | Your league was set up before the bot had one. A server administrator can put that right from any channel with `/bot admin-role`, and every league admin command works again |

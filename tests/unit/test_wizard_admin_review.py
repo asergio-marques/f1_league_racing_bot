@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 SERVER_ID = 1
 DRIVER_ID = "7"
 CHANNEL_ID = 99
-SIGNED_UP_ROLE_ID = 4242
+DRIVER_ROLE_ID = 4242
 ACTOR_ID = 555
 
 
@@ -101,9 +101,8 @@ def review():
     driver_service.transition = AsyncMock(side_effect=_transition)
 
     signup_svc = MagicMock()
-    signup_svc.get_config = AsyncMock(
-        return_value=SimpleNamespace(signed_up_role_id=SIGNED_UP_ROLE_ID)
-    )
+    # The module's configuration need only exist; the driver role is the league's (#276).
+    signup_svc.get_config = AsyncMock(return_value=SimpleNamespace(signup_channel_id=700))
     signup_svc.get_record = AsyncMock(return_value=_record())
     signup_svc.mark_approved = AsyncMock()
     signup_svc.get_wizard = AsyncMock(return_value=_wizard())
@@ -114,6 +113,9 @@ def review():
     bot.signup_module_service = signup_svc
     bot.placement_service.store_total_lap_ms = AsyncMock(side_effect=_store_total)
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(driver_role_id=DRIVER_ROLE_ID)
+    )
     svc._bot = bot
 
     svc._output_router = MagicMock()
@@ -161,9 +163,10 @@ def _logged(ctx) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def test_an_approved_driver_is_granted_the_signed_up_role(review):
+async def test_an_approved_driver_is_granted_the_driver_role(review):
     await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
+    review.guild.get_role.assert_called_once_with(DRIVER_ROLE_ID)
     review.member.add_roles.assert_awaited_once()
     assert review.member.add_roles.await_args.args[0] is review.role
 
@@ -220,9 +223,9 @@ async def test_a_role_the_bot_cannot_grant_does_not_stop_the_approval(review):
     assert "transition:UNASSIGNED" in review.order
 
 
-async def test_a_league_with_no_signed_up_role_configured_still_approves(review):
-    review.signup_svc.get_config = AsyncMock(
-        return_value=SimpleNamespace(signed_up_role_id=None)
+async def test_a_league_with_no_driver_role_configured_still_approves(review):
+    review.svc._bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(driver_role_id=None)
     )
 
     await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)

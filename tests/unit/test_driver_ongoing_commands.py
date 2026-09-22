@@ -7,7 +7,7 @@ refusal the service raises, and the reply and log line of a move or release that
 The two commands copy that ladder rather than share it, so each rung is tested for both.
 
 The reject command's own ladder is in `test_driver_reject.py`; the one branch it leaves — a
-signed-up role Discord will not take back — is here, because a failed role removal must not
+driver role Discord will not take back — is here, because a failed role removal must not
 undo a rejection already written.
 """
 from __future__ import annotations
@@ -257,7 +257,7 @@ async def test_a_release_is_confirmed_and_logged(stage):
 # ── /driver reject: a role Discord will not take back ─────────────────────────────────
 
 
-async def test_a_rejection_stands_when_the_signed_up_role_cannot_be_removed():
+async def test_a_rejection_stands_when_the_driver_role_cannot_be_removed():
     cog = DriverCog.__new__(DriverCog)
     cog.bot = MagicMock()
     # Any account names the driver (issue #243); these tests name the current one.
@@ -270,8 +270,8 @@ async def test_a_rejection_stands_when_the_signed_up_role_cannot_be_removed():
     )
     cog.bot.driver_service.transition = AsyncMock()
     cog.bot.signup_module_service.withdraw_approval = AsyncMock()
-    cog.bot.signup_module_service.get_config = AsyncMock(
-        return_value=SimpleNamespace(signed_up_role_id=902)
+    cog.bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(driver_role_id=902)
     )
     cog.bot.output_router.post_log = AsyncMock()
     interaction = _interaction()

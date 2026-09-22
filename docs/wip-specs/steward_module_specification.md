@@ -834,7 +834,7 @@
 
 ### Season bans
 - [STW-BAN-047] Whether a driver has a season ban is only determined at the close of a stewarding cycle or a conduct investigation cycle, once the auto-rules have been applied.
-- [STW-BAN-048] A driver who gets a season ban shall be returned to Not Signed Up at once, as a sacking returns them: every seat they hold freed, full-time and reserve alike, across all divisions, and every division, team and signup role revoked.
+- [STW-BAN-048] A driver who gets a season ban shall be returned to Not Signed Up at once, as a sacking returns them: every seat they hold freed, full-time and reserve alike, across all divisions, and every division and team role and the driver role revoked.
 - [STW-BAN-049] If the attendance module is enabled and any driver has a season ban enforced unto them, their vote in any divisions' check-in will be immediately discarded/deleted by the bot if present, and a message shall be posted to the check-in channel informing that they cannot check-in due to a season ban.
 - [STW-BAN-050] If the sign-up module is enabled and any driver has a season ban enforced unto them, any existing sign-ups, completed and uncompleted, will be cancelled and discarded.
 - [STW-BAN-051] If the sign-up module is enabled and any driver has a season ban enforced unto them, they will be unable to engage the sign-up wizard.
@@ -849,7 +849,7 @@
 - [STW-BAN-058] A league ban bars the driver, and so every Discord account they own, the licence being the driver's and not an account's. It bans no account from the server.
 - [STW-BAN-059] The bot cannot know an account that has never been attached to the driver. Where a banned driver returns under such an account, the league shall attach it to them by reassigning or merging as the core specification sets out, and the merged licence shall carry the ban to it.
 - [STW-BAN-060] Whether a driver has a league ban is only determined at the close of a stewarding cycle or a conduct investigation cycle, once the auto-rules have been applied.
-- [STW-BAN-061] A driver who gets a league ban shall be returned to Not Signed Up at once, as a sacking returns them: every seat they hold freed, full-time and reserve alike, across all divisions, and every division, team and signup role revoked.
+- [STW-BAN-061] A driver who gets a league ban shall be returned to Not Signed Up at once, as a sacking returns them: every seat they hold freed, full-time and reserve alike, across all divisions, and every division and team role and the driver role revoked.
 - [STW-BAN-062] If the attendance module is enabled and any driver has a league ban enforced unto them, their vote in any divisions' check-in will be immediately discarded/deleted by the bot if present, and a message shall be posted to the check-in channel informing that they cannot check-in due to a league ban.
 - [STW-BAN-063] If the sign-up module is enabled and any driver has a league ban enforced unto them, any existing sign-ups, completed and uncompleted, will be cancelled and discarded.
 - [STW-BAN-064] If the sign-up module is enabled and any driver has a league ban enforced unto them, they will be unable to engage the sign-up wizard.

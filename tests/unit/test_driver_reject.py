@@ -1,7 +1,7 @@
 """`/driver reject` — turning down an approved driver who has not been placed (issue #220).
 
 Available where a window's drivers are settled: in Placements and in Ongoing, placements. The
-driver returns to Not Signed Up and loses the signed-up role; their signup stays with the season.
+driver returns to Not Signed Up and loses the driver role; their signup stays with the season.
 """
 from __future__ import annotations
 
@@ -36,8 +36,8 @@ def _cog(stage: SeasonStage, state: DriverState = DriverState.UNASSIGNED) -> Dri
     )
     cog.bot.driver_service.transition = AsyncMock()
     cog.bot.signup_module_service.withdraw_approval = AsyncMock()
-    cog.bot.signup_module_service.get_config = AsyncMock(
-        return_value=SimpleNamespace(signed_up_role_id=ROLE_ID)
+    cog.bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(driver_role_id=ROLE_ID)
     )
     cog.bot.output_router.post_log = AsyncMock()
     return cog
@@ -61,7 +61,7 @@ def _member():
 
 
 @pytest.mark.parametrize("stage", [SeasonStage.PLACEMENTS, SeasonStage.ONGOING_PLACEMENTS])
-async def test_an_unassigned_driver_is_turned_down_and_loses_the_signed_up_role(stage):
+async def test_an_unassigned_driver_is_turned_down_and_loses_the_driver_role(stage):
     cog = _cog(stage)
     member = _member()
 

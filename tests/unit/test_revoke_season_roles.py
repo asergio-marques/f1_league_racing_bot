@@ -4,8 +4,8 @@ Issue #208. `_revoke_season_roles` was patched out wherever it was reached, so i
 ran. It is called on both `/season complete` and `/season cancel`, and it is what stops a
 finished season's drivers carrying its division and team roles into the next one.
 
-**Every real driver assigned in the season loses their placement roles and the signed-up role.**
-Placement roles are the division and the team; the signed-up role was granted at approval and
+**Every real driver assigned in the season loses their placement roles and the driver role.**
+Placement roles are the division and the team; the driver role was granted at approval and
 is not a placement role, so it is taken separately — otherwise a league would enter its next
 signup window with half its server still marked as signed up.
 
@@ -15,7 +15,7 @@ and asking Discord for one would be a failed fetch per mock driver.
 **A driver no longer in the server is stepped over.** The roles went with them, and one departed
 member must not stop the rest of the season being cleared.
 
-**A driver without the signed-up role is not asked to lose it**, and a league with no such role
+**A driver without the driver role is not asked to lose it**, and a league with no such role
 configured revokes placement roles only. Each is a Discord call that would fail or do nothing.
 
 **Only this season's assignments are read.** A driver who raced last season and has not been
@@ -38,10 +38,10 @@ from services.season_end_service import _revoke_season_roles  # noqa: E402
 SERVER_ID = 13908
 SEASON_ID = 1
 OTHER_SEASON_ID = 2
-SIGNED_UP_ROLE = 555
+DRIVER_ROLE = 555
 
 
-async def _make_db(tmp_path, *, name="revoke_roles", signed_up_role=SIGNED_UP_ROLE, drivers=None):
+async def _make_db(tmp_path, *, name="revoke_roles", driver_role=DRIVER_ROLE, drivers=None):
     """*drivers* are ``(profile_id, discord_user_id, is_test, season_id)``."""
     drivers = drivers if drivers is not None else [(31, 101, 0, SEASON_ID), (32, 102, 0, SEASON_ID)]
     db_path = os.path.join(str(tmp_path), f"{name}.db")
@@ -74,25 +74,25 @@ async def _make_db(tmp_path, *, name="revoke_roles", signed_up_role=SIGNED_UP_RO
                 "division_id) VALUES (?, ?, ?)",
                 (profile_id, season_id, season_id * 10),
             )
-        if signed_up_role is not None:
+        if driver_role is not None:
             await db.execute(
-                "INSERT INTO signup_module_config (id, signed_up_role_id) VALUES (?, ?)",
-                (1, signed_up_role),
+                "UPDATE server_configs SET driver_role_id = ?",
+                (driver_role,),
             )
         await db.commit()
     return db_path
 
 
 #: One object for the role, as Discord's own role equality is by id: a member "holds" it by
-#: carrying this same object, which is what `signed_up_role in member.roles` tests.
-_SIGNED_UP = MagicMock()
-_SIGNED_UP.id = SIGNED_UP_ROLE
+#: carrying this same object, which is what `driver_role in member.roles` tests.
+_DRIVER = MagicMock()
+_DRIVER.id = DRIVER_ROLE
 
 
-def _member(uid, *, has_signed_up=True):
+def _member(uid, *, has_driver_role=True):
     member = MagicMock()
     member.id = uid
-    member.roles = [_SIGNED_UP] if has_signed_up else []
+    member.roles = [_DRIVER] if has_driver_role else []
     return member
 
 
@@ -106,7 +106,7 @@ def _guild(members: dict, *, missing=(), fetch_fails=()):
         return members.get(uid)
 
     guild.fetch_member = AsyncMock(side_effect=_fetch)
-    guild.get_role = MagicMock(return_value=_SIGNED_UP)
+    guild.get_role = MagicMock(return_value=_DRIVER)
     return guild
 
 
@@ -134,7 +134,7 @@ async def test_every_driver_loses_their_placement_roles(tmp_path):
     assert all(c.args[1] == SEASON_ID for c in bot.placement_service.revoke_all_placement_roles.await_args_list)
 
 
-async def test_the_signed_up_role_is_taken_back_too(tmp_path):
+async def test_the_driver_role_is_taken_back_too(tmp_path):
     """Otherwise a league enters its next signup window with half its server still marked
     as signed up."""
     db_path = await _make_db(tmp_path, name="revoke_signedup")
@@ -144,21 +144,21 @@ async def test_the_signed_up_role_is_taken_back_too(tmp_path):
     await _revoke_season_roles(SEASON_ID, _guild(members), bot)
 
     assert bot.placement_service._revoke_roles.await_count == 2
-    assert all(c.args[1] == SIGNED_UP_ROLE for c in bot.placement_service._revoke_roles.await_args_list)
+    assert all(c.args[1] == DRIVER_ROLE for c in bot.placement_service._revoke_roles.await_args_list)
 
 
-async def test_a_driver_without_the_signed_up_role_is_not_asked_to_lose_it(tmp_path):
+async def test_a_driver_without_the_driver_role_is_not_asked_to_lose_it(tmp_path):
     db_path = await _make_db(tmp_path, name="revoke_norole")
     bot = _bot(db_path)
-    members = {101: _member(101), 102: _member(102, has_signed_up=False)}
+    members = {101: _member(101), 102: _member(102, has_driver_role=False)}
 
     await _revoke_season_roles(SEASON_ID, _guild(members), bot)
 
     assert bot.placement_service._revoke_roles.await_count == 1
 
 
-async def test_a_league_with_no_signed_up_role_revokes_placement_only(tmp_path):
-    db_path = await _make_db(tmp_path, name="revoke_noconfig", signed_up_role=None)
+async def test_a_league_with_no_driver_role_revokes_placement_only(tmp_path):
+    db_path = await _make_db(tmp_path, name="revoke_noconfig", driver_role=None)
     bot = _bot(db_path)
     members = {101: _member(101), 102: _member(102)}
 

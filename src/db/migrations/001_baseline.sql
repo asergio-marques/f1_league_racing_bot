@@ -18,7 +18,11 @@ CREATE TABLE server_configs (
     interaction_role_id    INTEGER,
     interaction_channel_id INTEGER,
     log_channel_id         INTEGER
-, test_mode_active INTEGER NOT NULL DEFAULT 0, weather_module_enabled INTEGER NOT NULL DEFAULT 0, signup_module_enabled INTEGER NOT NULL DEFAULT 0, test_mode_nationality_required INTEGER NOT NULL DEFAULT 1, league_admin_role_id INTEGER);
+, test_mode_active INTEGER NOT NULL DEFAULT 0, weather_module_enabled INTEGER NOT NULL DEFAULT 0, signup_module_enabled INTEGER NOT NULL DEFAULT 0, test_mode_nationality_required INTEGER NOT NULL DEFAULT 1, league_admin_role_id INTEGER,
+    -- The league's two roles (#276): who its members are and who its drivers are. Core's,
+    -- not the signup module's, so disabling signup keeps them; a pack clears them.
+    base_role_id           INTEGER,
+    driver_role_id         INTEGER);
 
 -- sessions
 CREATE TABLE sessions (
@@ -676,8 +680,6 @@ CREATE TABLE "signup_module_settings" (
 CREATE TABLE "signup_module_config" (
     id                          INTEGER PRIMARY KEY CHECK (id = 1),
     signup_channel_id           INTEGER,
-    base_role_id                INTEGER,
-    signed_up_role_id           INTEGER,
     signups_open                INTEGER NOT NULL DEFAULT 0,
     signup_button_message_id    INTEGER,
     selected_tracks_json        TEXT    NOT NULL DEFAULT '[]',

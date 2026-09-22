@@ -11,14 +11,14 @@ existing whether or not this module is enabled.
 ## Enabling signup flow
 - The signup module shall be enabled, disabled and configured only while the server holds no active season, or while its active season is in Configuration. Every command below that enables, disables or configures the module shall be refused otherwise, and confirming a season's configuration fixes all of it for that season.
 - A "module enable signup" command shall be a league admin's and shall enable signup functionality. This command shall take the module name and nothing else.
-- The general sign up channel, the "base role" and the "signed up" role shall each be set by a command of their own: "signup channel", "signup base-role" and "signup complete-role".
-    - Setting the sign up channel shall apply the channel permissions described below. Setting the base role shall re-apply them, removing the overwrite of the role it replaces.
-    - Until all three are set, it shall not be possible to open signups.
-    - While the signup module is enabled, confirming a season's configuration shall be refused until all three are set, and the bot shall name each one that is missing.
+- The general sign up channel shall be set by a "signup channel" command. The module shall use the league's base role and driver role, which are core's and set by core's own commands, as the core specification sets out.
+    - Setting the sign up channel shall apply the channel permissions described below. Setting the base role, while the module is enabled, shall re-apply them, removing the overwrite of the role it replaces.
+    - Until the channel and both roles are set, it shall not be possible to open signups.
+    - While the signup module is enabled, confirming a season's configuration shall be refused until the channel and both roles are set, and the bot shall name each one that is missing.
 - The general sign up channel shall be visible only to holders of the interaction role, holders of the league admin role, and those with the base role.
 - The general sign up channel may not be the bot interaction channel.
 - The bot shall modify the permissions of the channel configured as general sign-up channel so that it is only visible to holders of the league admin role, holders of the interaction role, and users with the "base role". No other interaction aside from pressing a button shall be possible in this channel, for those of the "base role".
-- <NEW COMMAND> A "module disable signup" command shall be a league admin's and will disable signup functionality, clearing all settings from the previous enabling. The signups kept with each season, and the signup configuration kept beside them, shall not be cleared.
+- <NEW COMMAND> A "module disable signup" command shall be a league admin's and will disable signup functionality, clearing the sign up channel and removing the permissions the bot applied to it. The time slots and the question settings shall not be cleared, and shall stand again when the module is next enabled. Neither shall the signups kept with each season, the signup configuration kept beside them, nor the league's base role and driver role, which are core's.
 
 ## Signup module configuration
 - A "signup nationality" command shall be made available which will toggle on and off whether a driver's nationality is requested during the signups. By default, the nationality will be requested.

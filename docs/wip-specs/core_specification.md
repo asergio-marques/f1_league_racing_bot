@@ -61,6 +61,15 @@ it only to place it; the rules governing it belong to its own specification.
 - A button the bot offers a driver in their own channel shall ask nothing, a driver needing no role.
 - A command given in a channel other than the interaction channel shall be refused, and the refusal shall be seen by the member alone.
 
+### The league's roles
+- Two roles shall describe a member's standing in the league, whichever modules are enabled: the **base role**, held by the league's members, and the **driver role**, held by its drivers.
+    - The base role shall be granted by the league and never by the bot. A module that reads it states what it governs.
+    - The driver role shall be granted when a driver's signup is approved, and revoked whenever the driver returns to Not Signed Up.
+- Each shall be set by a command of its own, a league manager's.
+- Neither shall be required unless a module requires it. The signup module requires both, as its own specification sets out.
+- Confirming a season's configuration shall fix both until the season ends. A driver role changed mid-season would leave every driver holding the old one, the season's end revoking only the new.
+- Disabling a module shall clear neither. A pack shall clear both, a role belonging to its server.
+
 ### Channels
 - Three channels shall be configured for the server — the interaction channel, the log channel and the signup channel — and eight for each division: its weather forecasts, its lineup, its calendar, its results, its standings, its verdicts, its check-in calls and its attendance.
 - A channel shall serve one purpose upon a server. Every command setting a channel shall refuse a channel already set as any of the others, and shall name what holds it.
@@ -102,7 +111,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A pack shall keep what belongs to the league rather than the server: every driver profile with its accounts, history and portrait, test drivers among them; every completed and cancelled season; the team list; the points configurations; test mode; and every module setting that is not a channel or a role.
 - A pack shall clear everything tied to the server:
     - the four settings, which frees the bot's claim on the server;
-    - the role of every team, and the signup channel and signup roles;
+    - the league's base role and driver role, the role of every team, and the signup channel;
     - every signup wizard, every undelivered message awaiting a retry, and the season review prompt;
     - the record of which messages the bot posted, by which it edits them;
     - every piece of scheduled work, but the daily refresh of driver portraits.
@@ -179,15 +188,15 @@ it only to place it; the rules governing it belong to its own specification.
 - The signup module shall be enabled, disabled and configured only while its season is in Configuration, or while the server holds no active season.
 - Every other module may be enabled until the season's placements are first confirmed, or while the server holds no active season. Its settings may be changed at any time before then; once placements are confirmed, on the terms its own specification sets for a season being raced.
 - The configuration shall be confirmed through a configuration review, run by the configuration review command.
-    - The review shall report the season, whether it runs in test mode, the team list and each team's role, the modules enabled upon it and the configuration of each, and every fault that would prevent the configuration being confirmed.
-    - It shall post its report as the placements review posts the subsections preceding its divisions — the season and its modules, the signup configuration, the attendance configuration, the points configurations, the weather configuration and the image outputs, one message each, in the same words — a subsection holding nothing not being posted.
+    - The review shall report the season, whether it runs in test mode, the modules enabled upon it, the league's base role and driver role, the team list and each team's role, the configuration of each enabled module, and every fault that would prevent the configuration being confirmed.
+    - It shall post its report as the placements review posts the subsections preceding its divisions — the season and its modules, the signup configuration, the attendance configuration, the points configurations, the weather configuration and the image outputs, one message each, in the same words — a subsection holding nothing not being posted. The first subsection shall report the league's base role and driver role besides, which the placements review does not.
     - The review shall end with a button confirming the configuration, which shall be withheld while any fault stands. The button shall be governed as the button confirming placements is: who may press it, how long it stands, the evidence it is confirmed upon, and what becomes of a review that expires or is refused.
 - The configuration review shall check everything that can be checked before the season has divisions: every check the placements review makes shall be made here too, save those concerning divisions, lineups, calendars and division channels. Confirming the configuration shall require, among them:
-    - where the signup module is enabled, its signup channel, its base role and its signed-up role each to be set, every one missing being named;
+    - where the signup module is enabled, its signup channel and the league's base role and driver role each to be set, every one missing being named with the command that sets it;
     - every team name to be usable as the filename of that team's artwork, whether or not the image module is enabled;
     - every requirement an enabled module states of its configuration alone — its points configurations and its templates among them — as that module's own specification sets out.
-- Every check the configuration review makes shall be made again when placements are confirmed, the configuration of a module other than signup being able to change in between.
-- Confirming the configuration shall fix, for the rest of the season, the team list, the game edition, test mode, and whether the signup module is enabled and how it is configured.
+- Every check the configuration review makes shall be made again when placements are confirmed, the configuration of a module other than signup being able to change in between — save those on the league's base role and driver role, which confirming the configuration fixes.
+- Confirming the configuration shall fix, for the rest of the season, the team list, the game edition, test mode, the league's base role and driver role, and whether the signup module is enabled and how it is configured.
 
 ### Waiting and signups
 - A season in Waiting shall wait for the signup window to be opened, and shall move to Signups when it is.
@@ -274,7 +283,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A season in any of the three ongoing states shall move to Pending completion as soon as every one of its divisions is finished or cancelled. There being no round left to place a driver into, a season leaving Ongoing, signups open or Ongoing, placements shall first:
     - close its signup window, where one is open;
     - discard every placement not yet committed;
-    - return to Not Signed Up every driver whose signup is unsettled and every driver whose placements were all uncommitted, as the reject command would: an approved driver loses the signed-up role, and a signup in review has its channel closed.
+    - return to Not Signed Up every driver whose signup is unsettled and every driver whose placements were all uncommitted, as the reject command would: an approved driver loses the driver role, and a signup in review has its channel closed.
 - Pending completion is the last moment a season's record may change, and nothing is being raced: every division is finished or cancelled, so a grid, a lineup and a calendar no longer describe anything anyone will drive under. Three things may be done with the season and no others:
     - the results of a round already final may be amended, with everything that follows from it — the round's results and standings reposted, the attendance recalculated, and the attendance sanctions re-checked. The sanctions shall fire: a sanction is part of that round's record, and suppressing it would make the last round different from every other;
     - the channels of a division may be set and repointed, so that a channel lost before the season ends may be repaired;
@@ -290,7 +299,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Completing a season shall, in this order:
     1. post each division's final classification;
     2. record a history entry for every division each driver took part in;
-    3. revoke the division, team and signup roles of the season's drivers;
+    3. revoke the division roles, the team roles and the driver role of the season's drivers;
     4. close the signup window, where one is open, so that no signup begins after the driver pass has gone by;
     5. run the driver pass;
     6. switch test mode off, deleting every driver created by test mode;
@@ -314,7 +323,7 @@ it only to place it; the rules governing it belong to its own specification.
 #### Aborting a season
 - An abort command shall be a league admin's, shall require the word `CONFIRM`, and shall be refused in any state but Configuration, Waiting, Signups and Placements.
 - Aborting a season shall delete the season and every record belonging to it, its signups included. The season shall take no number and shall leave nothing in the archive.
-- Aborting shall close the signup window where one is open, revoke the signup roles of the season's drivers, run the driver pass without recording any history, and switch test mode off, deleting every driver created by test mode.
+- Aborting shall close the signup window where one is open, revoke the driver role of the season's drivers, run the driver pass without recording any history, and switch test mode off, deleting every driver created by test mode.
 - Once aborted, the server shall hold no active season.
 
 ### The archive
@@ -477,7 +486,7 @@ it only to place it; the rules governing it belong to its own specification.
     - A driver pending deletion shall not be deleted at once. They shall be deleted by the driver pass of the season's completion, cancellation or abort.
     - Until then the profile shall stand at Not Signed Up and may sign up again. Whether to accept them is the league's to decide.
 - A driver whose flag is true and who reaches Not Signed Up shall be retained, with nothing of their profile or their signups cleared, so that the results they raced for remain attributed.
-- A committed driver may be sacked, only while the season is in one of the three ongoing states. A driver who is not committed shall not be sacked: an uncommitted placement is removed by the command removing a driver from a division, and an Unassigned driver is turned down by the reject command. Sacking shall free every seat they hold, revoke every division, team and signup role, and return them to Not Signed Up.
+- A committed driver may be sacked, only while the season is in one of the three ongoing states. A driver who is not committed shall not be sacked: an uncommitted placement is removed by the command removing a driver from a division, and an Unassigned driver is turned down by the reject command. Sacking shall free every seat they hold, revoke every division and team role and the driver role, and return them to Not Signed Up.
 
 ### Placement into a division and team
 - A placement shall be **committed** once placements have been confirmed with it standing, and uncommitted until then. A driver holding a committed placement is a **committed driver**; a driver placed or awaiting placement who holds none is an **uncommitted driver**.
@@ -508,7 +517,7 @@ it only to place it; the rules governing it belong to its own specification.
     - The division's role shall be revoked. The team's role shall be revoked only where the driver holds no other seat, across all divisions, mapping to that role. The division's lineup shall be posted again.
 - A command shall reject a driver who is Unassigned.
     - The season shall stand in Placements or in Ongoing, placements.
-    - The driver shall return to Not Signed Up and lose the signed-up role.
+    - The driver shall return to Not Signed Up and lose the driver role.
 - A placement or a move shall be refused where it would carry a division beyond what its lineup, its attendance sheet or its standings graphic can draw, and nothing shall be changed by the refusal.
 - Every successful move, release and sacking shall cause the lineup of each division it touches to be deleted and posted again in its lineup channel, once.
 

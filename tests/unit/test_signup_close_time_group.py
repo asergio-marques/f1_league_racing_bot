@@ -408,13 +408,13 @@ class TestOneRuleForTheCloseTime:
         db_path = await _seed(tmp_path, signups_open=False)
         cog = _cog(db_path)
         cog.bot.config_service.get_server_config = AsyncMock(
-            return_value=MagicMock(test_mode_active=False)
+            return_value=MagicMock(test_mode_active=False, base_role_id=2, driver_role_id=3)
         )
         cog.bot.signup_module_service.get_slots = AsyncMock(
             return_value=[MagicMock(display_label="Friday 20:00")]
         )
         cfg = await cog.bot.signup_module_service.get_config()
-        cfg.signup_channel_id, cfg.base_role_id, cfg.signed_up_role_id = 1, 2, 3
+        cfg.signup_channel_id = 1
         cog.bot.signup_module_service.get_config = AsyncMock(return_value=cfg)
 
         interaction = _interaction()

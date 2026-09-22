@@ -342,11 +342,11 @@ class ModuleCog(commands.Cog):
         """
         from services.season_lifecycle_service import (
             modules_frozen_for_completion,
-            signup_configuration_fixed,
+            configuration_fixed,
         )
 
         if module == "signup":
-            season_number = await signup_configuration_fixed(self.bot.db_path)
+            season_number = await configuration_fixed(self.bot.db_path)
             if season_number is not None:
                 await interaction.response.send_message(
                     f"❌ The signup module is fixed for Season {season_number} now that its "
@@ -900,12 +900,10 @@ class ModuleCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        # Upsert a bare config row — channel/role fields all NULL
+        # Upsert a bare config row — its channel NULL. The league's roles are core's (#276).
         from models.signup_module import SignupModuleConfig
         new_cfg = SignupModuleConfig(
             signup_channel_id=None,
-            base_role_id=None,
-            signed_up_role_id=None,
             signups_open=False,
             signup_button_message_id=None,
             selected_tracks=[],
@@ -928,12 +926,16 @@ class ModuleCog(commands.Cog):
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable signup | Success",
         )
+        # The two roles are the league's (issue #276): named only where still to be set.
+        server_cfg = await self.bot.config_service.get_server_config()
+        steps = ["  • `/signup channel <channel>`"]
+        if server_cfg is None or server_cfg.base_role_id is None:
+            steps.append("  • `/bot base-role <role>`")
+        if server_cfg is None or server_cfg.driver_role_id is None:
+            steps.append("  • `/bot driver-role <role>`")
         await interaction.followup.send(
             "✅ Signup module enabled.\n"
-            "Next steps — configure with:\n"
-            "  • `/signup channel <channel>`\n"
-            "  • `/signup base-role <role>`\n"
-            "  • `/signup complete-role <role>`",
+            "Next steps — configure with:\n" + "\n".join(steps),
             ephemeral=True,
         )
 
@@ -966,11 +968,13 @@ class ModuleCog(commands.Cog):
                 channel = guild.get_channel(signup_cfg.signup_channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
                     targets_to_revert = [guild.default_role, guild.me]
-                    if signup_cfg.base_role_id is not None:
-                        base_role = guild.get_role(signup_cfg.base_role_id)
+                    # The base role is the league's and outlives the module (issue #276):
+                    # only its overwrite on this channel goes.
+                    server_cfg = await self.bot.config_service.get_server_config()
+                    if server_cfg and server_cfg.base_role_id is not None:
+                        base_role = guild.get_role(server_cfg.base_role_id)
                         if base_role:
                             targets_to_revert.append(base_role)
-                    server_cfg = await self.bot.config_service.get_server_config()
                     if server_cfg:
                         interaction_role = guild.get_role(server_cfg.interaction_role_id)
                         if interaction_role:
@@ -1019,6 +1023,7 @@ class ModuleCog(commands.Cog):
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable signup | Success",
         )
         await interaction.followup.send(
-            "✅ Signup module disabled. All signup configuration has been cleared.",
+            "✅ Signup module disabled. Its channel has been cleared; its time slots and "
+            "question settings are kept, and so are the league's base role and driver role.",
             ephemeral=True,
         )

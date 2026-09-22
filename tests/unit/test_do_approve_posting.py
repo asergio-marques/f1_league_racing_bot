@@ -143,6 +143,7 @@ def _cog(
     attendance_enabled: bool = False,
     attendance_config=None,
     results_enabled: bool = False,
+    roles=(3001, 3002),
 ):
     cog = SeasonCog.__new__(SeasonCog)
     # Member by member, not one whole-bot ``AsyncMock`` (issue #240): every unstubbed
@@ -199,9 +200,11 @@ def _cog(
 
     # Not a MagicMock attribute: `test_mode_active` reads truthy on one, and the results
     # gate then seeds a points configuration rather than refusing for the want of one.
+    # The league's two roles are core's (issue #276).
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(
-            test_mode_active=False, interaction_role_id=1, league_admin_role_id=None
+            test_mode_active=False, interaction_role_id=1, league_admin_role_id=None,
+            base_role_id=roles[0], driver_role_id=roles[1],
         )
     )
     cog.bot.attendance_service.get_or_create_config = AsyncMock(
@@ -216,12 +219,8 @@ def _cog(
     return cog
 
 
-def _signup_config(*, channel=700, base_role=3001, complete_role=3002):
-    return SimpleNamespace(
-        signup_channel_id=channel,
-        base_role_id=base_role,
-        signed_up_role_id=complete_role,
-    )
+def _signup_config(*, channel=700):
+    return SimpleNamespace(signup_channel_id=channel)
 
 
 def _attendance_config(*, rsvp=700, attendance=701):
@@ -272,44 +271,34 @@ async def test_a_configured_signup_module_does_not_block_approval(db_path):
     cog.bot.season_service.transition_to_active.assert_awaited_once()
 
 
-@pytest.mark.parametrize(
-    "missing,fragment",
-    [
-        ({"channel": None}, "/signup channel"),
-        ({"base_role": None}, "/signup base-role"),
-        ({"complete_role": None}, "/signup complete-role"),
-    ],
-)
-async def test_an_unconfigured_signup_module_blocks_approval(db_path, missing, fragment):
-    """Approving without them arms a season whose signups open into nothing — a module
+async def test_an_unconfigured_signup_module_blocks_approval(db_path):
+    """Approving without a channel arms a season whose signups open into nothing — a module
     failing to produce output while switched on."""
-    cog = _cog(db_path, signup_enabled=True, signup_config=_signup_config(**missing))
+    cog = _cog(db_path, signup_enabled=True, signup_config=_signup_config(channel=None))
     interaction = _interaction()
 
     await _approve(cog, interaction)
 
     replied = _replied(interaction)
     assert "signup module is enabled but" in replied
-    assert fragment in replied
+    assert "/signup channel" in replied
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
-async def test_the_signup_refusal_lists_everything_missing(db_path):
-    """A manager fixing one setting per refused approval is three attempts at a season
-    they are trying to start."""
+async def test_the_league_s_roles_are_not_checked_again_at_placements(db_path):
+    """Confirming the configuration required both roles while signup was enabled, and
+    fixed them until the season ends (issue #276): they cannot have gone missing since."""
     cog = _cog(
-        db_path,
-        signup_enabled=True,
-        signup_config=_signup_config(channel=None, base_role=None, complete_role=None),
+        db_path, signup_enabled=True, signup_config=_signup_config(), roles=(None, None)
     )
     interaction = _interaction()
 
     await _approve(cog, interaction)
 
-    replied = _replied(interaction)
-    assert "/signup channel" in replied
-    assert "/signup base-role" in replied
-    assert "/signup complete-role" in replied
+    assert "/bot" not in _replied(interaction)
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
 
 
 async def test_a_signup_module_with_no_configuration_row_does_not_block(db_path):
