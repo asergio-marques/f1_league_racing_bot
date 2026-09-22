@@ -963,6 +963,79 @@ async def test_a_round_added_while_the_approval_posts_is_answered_as_after_it(db
 
 
 # ---------------------------------------------------------------------------
+# Nothing after the commit escapes the approval (issue #387)
+#
+# From `transition_to_active` on, the season is running, so anything raised out of what
+# follows reaches the view's error handler. That told the manager the approval "did not
+# finish", skipped every grant and posting not yet reached, and left the review standing to
+# expire with a notice to run it again. Two database reads sat outside the guards every
+# other step has: the placed drivers each division's roles are granted to, and the circuits
+# the calendars are drawn from.
+# ---------------------------------------------------------------------------
+
+
+async def _break_the_placements_read(db_path: str) -> None:
+    """Make the role grants' read of the placed drivers fail, as a real database error."""
+    async with get_connection(db_path) as db:
+        await db.execute("DROP TABLE driver_season_assignments")
+        await db.commit()
+
+
+async def _fail_the_placements_read(cog, db_path) -> dict:
+    await _break_the_placements_read(db_path)
+    return {}
+
+
+#: Each step after the commit, made to fail. Returns what `_approve` needs to fail it.
+_FAILURES = {
+    "the placed drivers read": _fail_the_placements_read,
+}
+
+
+@pytest.mark.parametrize("failure", sorted(_FAILURES))
+async def test_nothing_after_the_commit_escapes_the_approval(db_path, failure):
+    cog = _cog(db_path)
+    interaction = _interaction()
+    approve_kwargs = await _FAILURES[failure](cog, db_path)
+
+    await _approve(cog, interaction, **approve_kwargs)
+
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    assert "Season approved" in _replied(interaction)
+    assert "Placements confirmed" in _logged(cog)
+
+
+async def test_every_division_whose_drivers_cannot_be_read_is_named(db_path):
+    """Guarded per division, as every posting below it is. No command grants a division's
+    roles again, so the division named is the manager's whole remedy — and a league with two
+    is told about both, not the first alone."""
+    cog = _cog(db_path, divisions=[_division(1, "Pro"), _division(2, "Am")])
+    interaction = _interaction()
+    await _break_the_placements_read(db_path)
+
+    await _approve(cog, interaction)
+
+    replied = _replied(interaction)
+    assert "Not everything could be done" in replied
+    assert "**Pro** — its placed drivers could not be read" in replied
+    assert "**Am** — its placed drivers could not be read" in replied
+    assert "not done: **Am**" in _logged(cog)
+    # And what follows the grants is still done.
+    assert cog.bot.placement_service._refresh_lineup_post.await_count == 2
+
+
+async def test_a_clean_approval_reports_nothing_undone(db_path):
+    """The section has to mean something; one on every approval would be read past."""
+    cog = _cog(db_path)
+    interaction = _interaction()
+
+    await _approve(cog, interaction)
+
+    assert "Not everything could be done" not in _replied(interaction)
+    assert "not done" not in _logged(cog)
+
+
+# ---------------------------------------------------------------------------
 # What approval schedules
 #
 # Issue #185. The choice between the two schedulers had a test that never made it:

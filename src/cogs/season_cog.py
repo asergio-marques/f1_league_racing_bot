@@ -6465,24 +6465,41 @@ class SeasonCog(commands.Cog):
         # inside `transition_to_active`, between its commit and its return.
         self._pending.clear()
 
+        # What the approval could not do, told to the manager and the log channel below.
+        _not_done: list[str] = []
+
         # ── T015: Bulk role grant for all ASSIGNED drivers (FR-006) ──────────
         _guild = interaction.guild
         if _guild is not None:
             for _div in divisions:
-                async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
-                    _cur = await _db.execute(
-                        """
-                        SELECT dp.discord_user_id, ti.name AS team_name
-                        FROM driver_season_assignments dsa
-                        JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-                        JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                        JOIN team_instances ti ON ti.id = ts.team_instance_id
-                        WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                          AND dp.is_test_driver = 0
-                        """,
-                        (_div.id,),
+                try:
+                    async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
+                        _cur = await _db.execute(
+                            """
+                            SELECT dp.discord_user_id, ti.name AS team_name
+                            FROM driver_season_assignments dsa
+                            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+                            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                            JOIN team_instances ti ON ti.id = ts.team_instance_id
+                            WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
+                              AND dp.is_test_driver = 0
+                            """,
+                            (_div.id,),
+                        )
+                        _assign_rows = await _cur.fetchall()
+                except Exception:  # noqa: BLE001 — the season is committed (issue #387)
+                    # No command grants a division's roles again, so the division is named
+                    # and the manager grants them by hand.
+                    log.exception(
+                        "_do_approve: could not read the placed drivers of division %s",
+                        _div.id,
                     )
-                    _assign_rows = await _cur.fetchall()
+                    _not_done.append(
+                        f"**{_div.name}** — its placed drivers could not be read, so none "
+                        f"was given their division's or team's role. Grant them by hand; "
+                        f"`/team lineup` lists them."
+                    )
+                    continue
                 for _row in _assign_rows:
                     try:
                         _member = _guild.get_member(int(_row["discord_user_id"])) or (
@@ -6634,6 +6651,10 @@ class SeasonCog(commands.Cog):
             f"\u2705 **Season approved and activated!**\n"
             f"Season #{cfg.season_number} (ID: {cfg.season_id})"
         )
+        if _not_done:
+            msg += "\n\n\u26a0\ufe0f **Not everything could be done**\n" + "\n".join(
+                f"\u2022 {line}" for line in _not_done
+            )
         # The manager who approved is told what the calendar generation met, so a
         # template that fell back to text is not discovered only by reading the channel.
         _cal_report = getattr(self, "_calendar_report", None)
@@ -6649,7 +6670,8 @@ class SeasonCog(commands.Cog):
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season placements-review | Placements confirmed\n"
             f"  season: {cfg.season_number}\n"
-            f"  season_id: {cfg.season_id}",
+            f"  season_id: {cfg.season_id}"
+            + "".join(f"\n  not done: {line}" for line in _not_done),
         )
         log.info("Season %s activated by %s", cfg.season_id, interaction.user)
 
