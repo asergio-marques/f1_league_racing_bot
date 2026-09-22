@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from models.season import ONGOING_STAGES, SeasonStage
+from utils.autocomplete import bounded_autocomplete, team_autocomplete
 from utils.channel_guard import league_admin_only, league_manager_only
 from utils.input_validator import parse_user_id
 from services.season_service import SeasonImmutableError
@@ -760,3 +761,17 @@ class DriverCog(commands.Cog):
             "sack: user=%s by %s",
             user.id, actor_name,
         )
+
+    # ------------------------------------------------------------------
+    # The team parameter's autocomplete (#381)
+    # ------------------------------------------------------------------
+
+    @bounded_autocomplete()
+    async def _team_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """A team is typed by its shorthand; offered under both its names, Reserve included."""
+        return await team_autocomplete(self.bot, current, include_reserve=True)
+
+    assign.autocomplete("team")(_team_autocomplete)
+    move.autocomplete("team")(_team_autocomplete)
