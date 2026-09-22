@@ -77,12 +77,18 @@ async def current_season(db) -> tuple[int, str | None] | None:
 
 
 async def pack(
-    db_path: str, scheduler_service: "SchedulerService", bot: Any | None = None
+    db_path: str,
+    scheduler_service: "SchedulerService",
+    bot: Any | None = None,
+    *,
+    actor_id: int,
+    actor_name: str,
 ) -> PackResult:
     """Clear everything tied to this server and free the claim. Raises `PackRefused`.
 
     *bot*, where given, has its in-memory league state dropped too; the command passes it,
-    and a test of the database alone need not.
+    and a test of the database alone need not. *actor_id* and *actor_name* are the member
+    who packed, and have no default: nothing but a member's command packs the bot.
     """
     async with get_connection(db_path) as db:
         await db.execute("BEGIN IMMEDIATE")

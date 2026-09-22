@@ -605,6 +605,8 @@ class BotCog(commands.Cog):
                 self.bot.db_path,  # type: ignore[attr-defined]
                 self.bot.scheduler_service,  # type: ignore[attr-defined]
                 self.bot,
+                actor_id=interaction.user.id,
+                actor_name=str(interaction.user),
             )
         except pack_service.PackRefused as refused:
             await self.bot.output_router.post_log(  # type: ignore[attr-defined]

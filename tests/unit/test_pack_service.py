@@ -21,6 +21,9 @@ from services.scheduler_service import PORTRAIT_REFRESH_JOB_ID  # noqa: E402
 
 SERVER = 4242
 
+#: The member who packs. Nothing but a member's command packs the bot, so it is required.
+ACTOR = {"actor_id": 7, "actor_name": "admin"}
+
 
 def _scheduler() -> MagicMock:
     scheduler = MagicMock()
@@ -113,7 +116,7 @@ async def test_pack_is_refused_while_a_season_is_current(db_path, stage):
     scheduler = _scheduler()
 
     with pytest.raises(PackRefused) as refused:
-        await pack(db_path, scheduler)
+        await pack(db_path, scheduler, **ACTOR)
 
     assert refused.value.stage == stage
     assert refused.value.season_number == 1
@@ -126,7 +129,7 @@ async def test_pack_is_refused_while_a_season_is_current(db_path, stage):
 async def test_pack_proceeds_once_the_season_is_over(db_path, stage):
     await _seed(db_path, stage=stage)
 
-    await pack(db_path, _scheduler())
+    await pack(db_path, _scheduler(), **ACTOR)
 
     assert (await _one(db_path, "SELECT server_id FROM server_configs"))[0] is None
 
@@ -135,7 +138,7 @@ async def test_pack_proceeds_in_test_mode(db_path):
     """Decided 2026-09-19: test drivers travel with the league like every other profile."""
     await _seed(db_path, test_mode=1)
 
-    await pack(db_path, _scheduler())
+    await pack(db_path, _scheduler(), **ACTOR)
 
     assert (await _one(db_path, "SELECT test_mode_active FROM server_configs"))[0] == 1
     assert await _count(db_path, "driver_profiles") == 2
@@ -147,7 +150,7 @@ async def test_pack_proceeds_in_test_mode(db_path):
 async def test_pack_frees_the_claim_and_the_four_settings(db_path):
     await _seed(db_path)
 
-    await pack(db_path, _scheduler())
+    await pack(db_path, _scheduler(), **ACTOR)
 
     row = await _one(db_path, "SELECT * FROM server_configs")
     assert (
@@ -159,7 +162,7 @@ async def test_pack_frees_the_claim_and_the_four_settings(db_path):
 async def test_pack_clears_the_team_roles_and_the_signup_channel(db_path):
     await _seed(db_path)
 
-    result = await pack(db_path, _scheduler())
+    result = await pack(db_path, _scheduler(), **ACTOR)
 
     assert result.team_roles == 1
     assert await _count(db_path, "team_role_configs") == 0
@@ -175,7 +178,7 @@ async def test_a_pack_clears_both_league_roles(db_path):
     server's configuration would name roles that do not exist there."""
     await _seed(db_path)
 
-    await pack(db_path, _scheduler())
+    await pack(db_path, _scheduler(), **ACTOR)
 
     row = await _one(db_path, "SELECT base_role_id, driver_role_id FROM server_configs")
     assert (row["base_role_id"], row["driver_role_id"]) == (None, None)
@@ -186,7 +189,7 @@ async def test_a_pack_clears_the_hub_and_the_record_of_its_panel(db_path):
     there: the next server's hub is set afresh."""
     await _seed(db_path)
 
-    await pack(db_path, _scheduler())
+    await pack(db_path, _scheduler(), **ACTOR)
 
     row = await _one(db_path, "SELECT hub_channel_id, hub_message_id FROM server_configs")
     assert (row["hub_channel_id"], row["hub_message_id"]) == (None, None)
@@ -195,7 +198,7 @@ async def test_a_pack_clears_the_hub_and_the_record_of_its_panel(db_path):
 async def test_pack_clears_wizards_the_retry_queue_and_the_review_prompt(db_path):
     await _seed(db_path)
 
-    result = await pack(db_path, _scheduler())
+    result = await pack(db_path, _scheduler(), **ACTOR)
 
     assert (result.wizards, result.queued_messages) == (1, 1)
     assert await _count(db_path, "signup_wizard_records") == 0
@@ -206,7 +209,7 @@ async def test_pack_clears_wizards_the_retry_queue_and_the_review_prompt(db_path
 async def test_pack_clears_the_message_ids_the_bot_edits_by(db_path):
     await _seed(db_path)
 
-    await pack(db_path, _scheduler())
+    await pack(db_path, _scheduler(), **ACTOR)
 
     assert await _count(db_path, "forecast_messages") == 0
     assert await _count(db_path, "rsvp_embed_messages") == 0
@@ -223,7 +226,7 @@ async def test_pack_clears_the_scheduled_work_but_the_portrait_refresh(db_path):
     await _seed(db_path)
     scheduler = _scheduler()
 
-    result = await pack(db_path, scheduler)
+    result = await pack(db_path, scheduler, **ACTOR)
 
     scheduler.cancel_all.assert_called_once_with(keep=KEPT_JOBS)
     assert KEPT_JOBS == frozenset({PORTRAIT_REFRESH_JOB_ID})
@@ -238,7 +241,7 @@ async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
     )
     bot = object()
 
-    await pack(db_path, _scheduler(), bot)
+    await pack(db_path, _scheduler(), bot, **ACTOR)
 
     assert cleared == [bot]
 
@@ -249,7 +252,7 @@ async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
 async def test_pack_keeps_every_driver_with_their_accounts_history_and_portrait(db_path):
     await _seed(db_path)
 
-    await pack(db_path, _scheduler())
+    await pack(db_path, _scheduler(), **ACTOR)
 
     assert await _count(db_path, "driver_profiles") == 2
     account = await _one(
@@ -263,7 +266,7 @@ async def test_pack_keeps_every_driver_with_their_accounts_history_and_portrait(
 async def test_pack_keeps_the_past_season_whole(db_path):
     await _seed(db_path)
 
-    await pack(db_path, _scheduler())
+    await pack(db_path, _scheduler(), **ACTOR)
 
     assert await _count(db_path, "seasons") == 1
     assert await _count(db_path, "divisions") == 1
@@ -276,7 +279,7 @@ async def test_pack_keeps_the_past_season_whole(db_path):
 async def test_pack_keeps_the_teams_points_and_module_settings(db_path):
     await _seed(db_path)
 
-    await pack(db_path, _scheduler())
+    await pack(db_path, _scheduler(), **ACTOR)
 
     assert await _count(db_path, "default_teams") == 1
     assert await _count(db_path, "points_config_store") == 1
