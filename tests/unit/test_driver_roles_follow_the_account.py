@@ -1,7 +1,7 @@
 """A driver's roles belong to their current account (issue #243).
 
 `PlacementService.driver_role_ids` reads what the driver's standing entitles them to — the
-signed-up role while Unassigned or Assigned, and the division and team roles of each confirmed
+driver role while Unassigned or Assigned, and the division and team roles of each confirmed
 placement in the live season — from the league's own record, so it answers even when the
 account holding the roles has left. `move_driver_roles` gives them to the new current account
 and takes them from the one it replaced where that one is still in the server (E21, E22).
@@ -20,7 +20,7 @@ from db.database import get_connection, run_migrations  # noqa: E402
 from services.placement_service import PlacementService  # noqa: E402
 
 SERVER_ID = 2438
-SIGNED_UP_ROLE, DIVISION_ROLE, TEAM_ROLE = 7001, 7002, 7003
+DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE = 7001, 7002, 7003
 OLD, NEW = "6301", "6302"
 
 
@@ -36,8 +36,8 @@ async def _league(tmp_path, *, state: str = "ASSIGNED", committed: int = 1,
             (SERVER_ID,),
         )
         await db.execute(
-            "INSERT INTO signup_module_config (id, signed_up_role_id) VALUES (?, ?)",
-            (1, SIGNED_UP_ROLE),
+            "UPDATE server_configs SET driver_role_id = ?",
+            (DRIVER_ROLE,),
         )
         await db.execute(
             "INSERT INTO seasons (id, start_date, status, season_number) "
@@ -76,19 +76,19 @@ async def _league(tmp_path, *, state: str = "ASSIGNED", committed: int = 1,
     return db_path, profile_id
 
 
-async def test_an_assigned_driver_holds_signed_up_division_and_team_roles(tmp_path):
+async def test_an_assigned_driver_holds_driver_division_and_team_roles(tmp_path):
     db_path, pid = await _league(tmp_path)
     assert await PlacementService(db_path).driver_role_ids(pid) == {
-        SIGNED_UP_ROLE, DIVISION_ROLE, TEAM_ROLE
+        DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE
     }
 
 
 async def test_an_unconfirmed_placement_grants_no_division_or_team_role(tmp_path):
     db_path, pid = await _league(tmp_path, state="UNASSIGNED", committed=0)
-    assert await PlacementService(db_path).driver_role_ids(pid) == {SIGNED_UP_ROLE}
+    assert await PlacementService(db_path).driver_role_ids(pid) == {DRIVER_ROLE}
 
 
-async def test_a_driver_not_signed_up_holds_no_signed_up_role(tmp_path):
+async def test_a_driver_not_signed_up_holds_no_driver_role(tmp_path):
     """E22."""
     db_path, pid = await _league(tmp_path, state="NOT_SIGNED_UP", committed=0)
     assert await PlacementService(db_path).driver_role_ids(pid) == set()
@@ -106,7 +106,7 @@ def _role(role_id: int) -> MagicMock:
 
 
 def _guild(members: dict[str, MagicMock]) -> MagicMock:
-    roles = {rid: _role(rid) for rid in (SIGNED_UP_ROLE, DIVISION_ROLE, TEAM_ROLE)}
+    roles = {rid: _role(rid) for rid in (DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE)}
     guild = MagicMock()
     guild.get_role = MagicMock(side_effect=roles.get)
     guild.get_member = MagicMock(side_effect=lambda uid: members.get(str(uid)))
@@ -137,7 +137,7 @@ async def test_the_roles_move_from_the_replaced_account_to_the_current_one(tmp_p
     assert problems == []
     granted = {r.id for r in new_member.add_roles.await_args.args}
     removed = {r.id for r in old_member.remove_roles.await_args.args}
-    assert granted == removed == {SIGNED_UP_ROLE, DIVISION_ROLE, TEAM_ROLE}
+    assert granted == removed == {DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE}
 
 
 async def test_a_replaced_account_that_has_left_is_skipped_quietly(tmp_path):
@@ -150,7 +150,7 @@ async def test_a_replaced_account_that_has_left_is_skipped_quietly(tmp_path):
 
     assert problems == []
     assert {r.id for r in new_member.add_roles.await_args.args} == {
-        SIGNED_UP_ROLE, DIVISION_ROLE, TEAM_ROLE
+        DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE
     }
 
 

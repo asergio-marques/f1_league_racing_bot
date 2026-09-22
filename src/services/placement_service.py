@@ -1597,7 +1597,7 @@ class PlacementService:
     async def driver_role_ids(self, driver_profile_id: int) -> set[int]:
         """The roles the driver's standing entitles them to, read from state, not from Discord.
 
-        The signed-up role while they are Unassigned or Assigned, and the division and team
+        The driver role while they are Unassigned or Assigned, and the division and team
         roles of every confirmed placement in the live season — exactly what approval and
         confirming placements grant. A test-mode driver holds no roles. Read from the league's
         own record so that it answers even when the account holding the roles has left.
@@ -1614,12 +1614,10 @@ class PlacementService:
             if profile["current_state"] in (
                 DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value
             ):
-                cursor = await db.execute(
-                    "SELECT signed_up_role_id FROM signup_module_config",
-                )
+                cursor = await db.execute("SELECT driver_role_id FROM server_configs")
                 row = await cursor.fetchone()
-                if row is not None and row["signed_up_role_id"]:
-                    roles.add(int(row["signed_up_role_id"]))
+                if row is not None and row["driver_role_id"]:
+                    roles.add(int(row["driver_role_id"]))
             cursor = await db.execute(
                 """
                 SELECT d.mention_role_id AS division_role, trc.role_id AS team_role
@@ -1762,16 +1760,14 @@ class PlacementService:
 
         if member is not None and not is_test_driver:
             await self.revoke_all_placement_roles(driver_profile_id, season_id, member)
-            # Revoke the signed-up role granted at approval
+            # Revoke the driver role granted at approval
             async with get_connection(self._db_path) as db:
-                cur = await db.execute(
-                    "SELECT signed_up_role_id FROM signup_module_config",
-                )
+                cur = await db.execute("SELECT driver_role_id FROM server_configs")
                 cfg_row = await cur.fetchone()
-            if cfg_row and cfg_row["signed_up_role_id"]:
-                signed_up_role = guild.get_role(cfg_row["signed_up_role_id"])
-                if signed_up_role is not None and signed_up_role in member.roles:
-                    await self._revoke_roles(member, signed_up_role.id)
+            if cfg_row and cfg_row["driver_role_id"]:
+                driver_role = guild.get_role(cfg_row["driver_role_id"])
+                if driver_role is not None and driver_role in member.roles:
+                    await self._revoke_roles(member, driver_role.id)
 
         async with get_connection(self._db_path) as db:
             # The seats of this season alone: a former driver's seats in a completed season

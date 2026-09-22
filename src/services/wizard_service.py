@@ -646,23 +646,25 @@ class WizardService:
     ) -> None:
         """Admin approves the signup (T032).
 
-        Grants the signed-up role, transitions driver to UNASSIGNED,
+        Grants the driver role, transitions driver to UNASSIGNED,
         and holds the channel for 24 hours before deletion.
-        FR-040.
+        FR-040. The driver role is the league's, read from core (issue #276).
         """
         signup_cfg = await self._signup_svc.get_config()
         if signup_cfg is None:
             return
 
-        # Grant signed-up role
+        # Grant the driver role
+        server_cfg = await self._bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
         member = guild.get_member(int(discord_user_id))
-        if member is not None and signup_cfg.signed_up_role_id:
-            role = guild.get_role(signup_cfg.signed_up_role_id)
+        if member is not None and driver_role_id:
+            role = guild.get_role(driver_role_id)
             if role is not None:
                 try:
                     await member.add_roles(role, reason="Signup approved")
                 except discord.HTTPException:
-                    log.warning("approve_signup: could not add signed-up role for %s", discord_user_id)
+                    log.warning("approve_signup: could not add the driver role for %s", discord_user_id)
 
         # Compute and persist total_lap_ms before transitioning state
         signup_record = await self._signup_svc.get_record(discord_user_id)

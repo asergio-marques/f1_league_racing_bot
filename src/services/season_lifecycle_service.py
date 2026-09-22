@@ -147,7 +147,7 @@ async def turn_down_pending_placements(bot, season_id: int, guild) -> list[int]:
     Pending are the unsettled signups — Unassigned, awaiting approval or mid-correction — and
     every placement not yet committed. Each such placement is discarded, and each such driver
     returns to Not Signed Up: a signup in review has its channel closed, an approved driver
-    loses the signed-up role. A driver without the former-driver flag is thereby pending
+    loses the driver role. A driver without the former-driver flag is thereby pending
     deletion. Returns the profile ids turned down.
     """
     from models.driver_profile import DriverState
@@ -170,13 +170,11 @@ async def turn_down_pending_placements(bot, season_id: int, guild) -> list[int]:
             (*UNSETTLED_STATES, season_id, season_id),
         )
         drivers = [dict(r) for r in await cursor.fetchall()]
-        cursor = await db.execute(
-            "SELECT signed_up_role_id FROM signup_module_config",
-        )
+        cursor = await db.execute("SELECT driver_role_id FROM server_configs")
         cfg_row = await cursor.fetchone()
 
     await _close_driver_signups(
-        drivers, cfg_row["signed_up_role_id"] if cfg_row else None,
+        drivers, cfg_row["driver_role_id"] if cfg_row else None,
         bot=bot, guild=guild,
         notice="🔒 Every division of this season is done, so its signups are closed. "
         "This channel will be automatically deleted in 24 hours.",
@@ -363,7 +361,7 @@ _SIGNUP_IN_PROGRESS: frozenset[str] = frozenset({
 
 async def _close_driver_signups(
     drivers: list[dict],
-    signed_up_role_id: int | None,
+    driver_role_id: int | None,
     *,
     bot,
     guild,
@@ -373,7 +371,7 @@ async def _close_driver_signups(
     """The Discord side of returning *drivers* to Not Signed Up: their signups and their role.
 
     A signup still in progress or in review has its channel told *notice* and set to be
-    deleted, and its inactivity timeout cancelled; an approved real driver loses the signed-up
+    deleted, and its inactivity timeout cancelled; an approved real driver loses the driver
     role. Each driver is a row with ``discord_user_id``, ``current_state`` and
     ``is_test_driver``. Nothing here is worth the caller's work: every failure is logged.
     """
@@ -395,17 +393,17 @@ async def _close_driver_signups(
                 log.exception("closing signups: could not close the signup of %s", uid)
         if (
             guild is not None
-            and signed_up_role_id
+            and driver_role_id
             and not driver["is_test_driver"]
             and driver["current_state"] in ("UNASSIGNED", "ASSIGNED")
         ):
             member = guild.get_member(int(uid))
-            role = guild.get_role(signed_up_role_id)
+            role = guild.get_role(driver_role_id)
             if member is not None and role is not None and role in member.roles:
                 try:
                     await member.remove_roles(role, reason=reason)
                 except Exception:  # noqa: BLE001 — a role is never worth the pass
-                    log.warning("closing signups: could not revoke the signed-up role of %s", uid)
+                    log.warning("closing signups: could not revoke the driver role of %s", uid)
 
 
 async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bool) -> None:
@@ -453,7 +451,7 @@ async def run_driver_pass(db_path: str, *, bot=None, guild=None) -> dict:
     1. Every driver Unassigned, Assigned, mid-signup or in review returns to Not Signed Up. A
        signup still in progress or in review is cancelled: its inactivity timeout is cancelled
        and, where a guild is to hand, its channel is told and set to be deleted.
-    2. The signed-up role is revoked from every such real driver, where a guild is to hand.
+    2. The driver role is revoked from every such real driver, where a guild is to hand.
     3. Every real driver at Not Signed Up without the former-driver flag — pending deletion —
        is deleted, with their placements and history entries. Their signups remain.
 
@@ -468,14 +466,12 @@ async def run_driver_pass(db_path: str, *, bot=None, guild=None) -> dict:
             (*DRIVER_PASS_STATES,),
         )
         to_reset = [dict(r) for r in await cursor.fetchall()]
-        cursor = await db.execute(
-            "SELECT signed_up_role_id FROM signup_module_config",
-        )
+        cursor = await db.execute("SELECT driver_role_id FROM server_configs")
         cfg_row = await cursor.fetchone()
-    signed_up_role_id = cfg_row["signed_up_role_id"] if cfg_row else None
+    driver_role_id = cfg_row["driver_role_id"] if cfg_row else None
 
     await _close_driver_signups(
-        to_reset, signed_up_role_id, bot=bot, guild=guild,
+        to_reset, driver_role_id, bot=bot, guild=guild,
         notice="🔒 This season has ended. This channel will be automatically deleted in 24 hours.",
         reason="Season ended",
     )
