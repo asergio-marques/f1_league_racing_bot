@@ -300,7 +300,7 @@ It also seeds the team list with the **Reserve** team, which has unlimited seats
 | `/bot interaction-role` | `role` | The role permitted to use bot commands |
 | `/bot admin-role` | `role` | The role that governs the bot and may undo a league entire |
 
-Each changes **one** setting and leaves everything else exactly as it stands — the other three settings, your module switches, and test mode.
+Each changes **one** setting and leaves everything else exactly as it stands — the other three settings, your module switches, and test mode. Each change is recorded in the log channel and audited with the value it replaced, as `/bot init` is with the four settings it takes.
 
 > **These are deliberately usable from any channel, and by a server administrator as well as by a league admin.** They exist for when one of the four settings is wrong — a log channel deleted, an interaction channel archived, either role removed by mistake. Requiring the interaction channel or a league role to run them would lock you out of the very failure they repair, and requiring the league admin role would leave a server that has lost it with no way to set one. These five commands are the only place Discord's Administrator permission reaches the bot at all.
 

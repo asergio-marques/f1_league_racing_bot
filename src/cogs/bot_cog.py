@@ -135,14 +135,14 @@ class BotCog(commands.Cog):
             )
             return
 
-        cfg = ServerConfig(
-            server_id=server_id,
-            interaction_role_id=interaction_role.id,
-            league_admin_role_id=league_admin_role.id,
-            interaction_channel_id=interaction_channel.id,
-            log_channel_id=log_channel.id,
-        )
-        created = await self.bot.config_service.save_server_config(cfg)
+        claimed = {
+            "server_id": server_id,
+            "interaction_role_id": interaction_role.id,
+            "league_admin_role_id": league_admin_role.id,
+            "interaction_channel_id": interaction_channel.id,
+            "log_channel_id": log_channel.id,
+        }
+        created = await self.bot.config_service.save_server_config(ServerConfig(**claimed))
         if not created:
             # Lost a race with a concurrent /bot init. Report the refusal that fits whoever
             # won rather than claiming a success that wrote nothing.
@@ -155,6 +155,12 @@ class BotCog(commands.Cog):
                 ephemeral=True,
             )
             return
+
+        # Audited as replacing nothing (issue #371): the claim is taken only where no server
+        # holds it, so a first run finds no row and a run after a pack finds all five cleared.
+        await _audit(
+            self.bot, interaction.user, "BOT_INITIALISED", dict.fromkeys(claimed), claimed
+        )
 
         # Seed default F1 teams + Reserve for this server if none exist yet
         await self.bot.team_service.seed_default_teams_if_empty()  # type: ignore[attr-defined]
@@ -175,7 +181,7 @@ class BotCog(commands.Cog):
         log.info("Bot configured by %s", interaction.user)
 
     # ------------------------------------------------------------------
-    # The three settings, each written on its own
+    # The four settings, each written on its own
     # ------------------------------------------------------------------
 
     async def _set_one(
@@ -187,11 +193,15 @@ class BotCog(commands.Cog):
         command: str,
         label: str,
         mention: str,
+        change_type: str,
     ) -> None:
-        """Shared body of the three setting commands.
+        """Shared body of the four setting commands.
 
         Writes a single column, so nothing else in the row — test mode, the module flags,
-        the other two settings — can be carried over stale from a half-built model.
+        the other three settings — can be carried over stale from a half-built model.
+
+        Audited with the value it replaced (issue #371): these decide who may command and
+        govern the bot, and once a setting is overwritten nothing else keeps what it was.
         """
 
         # A channel does one job (decided 2026-09-06). Keyed on the column, because this
@@ -215,6 +225,9 @@ class BotCog(commands.Cog):
                 )
                 return
 
+        config = await self.bot.config_service.get_server_config()
+        old_value = None if config is None else getattr(config, column)
+
         changed = await self.bot.config_service.set_core_setting(column, value)
         if not changed:
             await interaction.response.send_message(
@@ -222,6 +235,11 @@ class BotCog(commands.Cog):
                 ephemeral=True,
             )
             return
+
+        key = "channel_id" if _setting is not None else "role_id"
+        await _audit(
+            self.bot, interaction.user, change_type, {key: old_value}, {key: value}
+        )
 
         await interaction.response.send_message(
             f"✅ **{label}** set to {mention}.", ephemeral=True
@@ -252,6 +270,7 @@ class BotCog(commands.Cog):
             command="/bot log-channel",
             label="Log channel",
             mention=f"<#{channel.id}>",
+            change_type="LOG_CHANNEL_SET",
         )
 
     @group.command(
@@ -270,6 +289,7 @@ class BotCog(commands.Cog):
             command="/bot interaction-channel",
             label="Interaction channel",
             mention=f"<#{channel.id}>",
+            change_type="INTERACTION_CHANNEL_SET",
         )
 
     @group.command(
@@ -288,6 +308,7 @@ class BotCog(commands.Cog):
             command="/bot interaction-role",
             label="Interaction role",
             mention=f"<@&{role.id}>",
+            change_type="INTERACTION_ROLE_SET",
         )
 
     @group.command(
@@ -313,6 +334,7 @@ class BotCog(commands.Cog):
             command="/bot admin-role",
             label="League admin role",
             mention=f"<@&{role.id}>",
+            change_type="LEAGUE_ADMIN_ROLE_SET",
         )
 
     # ------------------------------------------------------------------
@@ -333,9 +355,10 @@ class BotCog(commands.Cog):
 
         Not `_set_one`, whose commands repair the settings the guards read and so run from
         any channel on the Administrator permission. These are ordinary league manager
-        commands, refused once a season's configuration is confirmed, and audited with the
-        role they replaced: a league that finds its members locked out needs to know which
-        role used to hold the access, and nothing else keeps it once it is overwritten.
+        commands, refused once a season's configuration is confirmed. Like `_set_one`'s,
+        each is audited with the role it replaced: a league that finds its members locked
+        out needs to know which role used to hold the access, and nothing else keeps it
+        once it is overwritten.
         """
         from services.season_lifecycle_service import configuration_fixed
 
@@ -375,21 +398,13 @@ class BotCog(commands.Cog):
             # The hub is seen by the base role, or by everyone where there is none (#279).
             await _reapply_hub_permissions(self.bot)
 
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
-                "timestamp) VALUES (?, ?, NULL, ?, ?, ?, ?)",
-                (
-                    interaction.user.id,
-                    str(interaction.user),
-                    change_type,
-                    json.dumps({"role_id": old_role_id}),
-                    json.dumps({"role_id": role.id}),
-                    datetime.now(timezone.utc).isoformat(),
-                ),
-            )
-            await db.commit()
+        await _audit(
+            self.bot,
+            interaction.user,
+            change_type,
+            {"role_id": old_role_id},
+            {"role_id": role.id},
+        )
 
         await interaction.followup.send(
             f"✅ **{label}** set to {role.mention}.", ephemeral=True
@@ -524,20 +539,13 @@ class BotCog(commands.Cog):
             if fault is not None:
                 faults.append(fault)
 
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
-                "timestamp) VALUES (?, ?, NULL, 'HUB_CHANNEL_SET', ?, ?, ?)",
-                (
-                    interaction.user.id,
-                    str(interaction.user),
-                    json.dumps({"channel_id": old_channel_id}),
-                    json.dumps({"channel_id": channel.id}),
-                    datetime.now(timezone.utc).isoformat(),
-                ),
-            )
-            await db.commit()
+        await _audit(
+            self.bot,
+            interaction.user,
+            "HUB_CHANNEL_SET",
+            {"channel_id": old_channel_id},
+            {"channel_id": channel.id},
+        )
 
         reply = f"✅ **Hub channel** set to {channel.mention}."
         if faults:
@@ -716,6 +724,29 @@ class BotCog(commands.Cog):
         self._clean_up = asyncio.create_task(
             _clean_up(interaction.guild, bot_user_id, targets, report)
         )
+
+
+async def _audit(bot, user, change_type: str, old: dict, new: dict) -> None:
+    """Write the audit entry for a change to the bot's configuration upon its server.
+
+    The other half of the log line each command posts: a configuration change is recorded
+    in both (issue #371). None of these belongs to a division.
+    """
+    async with get_connection(bot.db_path) as db:
+        await db.execute(
+            "INSERT INTO audit_entries "
+            "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
+            "timestamp) VALUES (?, ?, NULL, ?, ?, ?, ?)",
+            (
+                user.id,
+                str(user),
+                change_type,
+                json.dumps(old),
+                json.dumps(new),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        await db.commit()
 
 
 async def _reapply_hub_permissions(bot) -> None:
