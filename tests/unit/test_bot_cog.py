@@ -167,6 +167,35 @@ async def test_bot_init_configures_an_unconfigured_server(tmp_path):
     bot.team_service.seed_default_teams_if_empty.assert_awaited_once_with()
 
 
+async def test_bot_init_is_audited_with_the_four_settings(tmp_path):
+    """Issue #371. Nothing stood before the claim, so every value it replaced is null."""
+    db_path = await _make_db(tmp_path)
+    cog = BotCog(_bot(db_path))
+
+    await _unwrap(cog.handle_bot_init)(
+        cog,
+        _interaction(),
+        _role(CONFIGURED_ROLE),
+        _role(CONFIGURED_ADMIN_ROLE),
+        _channel(CONFIGURED_CHANNEL),
+        _channel(CONFIGURED_LOG),
+    )
+
+    (row,) = await _audit_rows(db_path)
+    assert row["change_type"] == "BOT_INITIALISED"
+    assert row["actor_id"] == 7
+    assert row["division_id"] is None
+    new = {
+        "server_id": SERVER_ID,
+        "interaction_role_id": CONFIGURED_ROLE,
+        "league_admin_role_id": CONFIGURED_ADMIN_ROLE,
+        "interaction_channel_id": CONFIGURED_CHANNEL,
+        "log_channel_id": CONFIGURED_LOG,
+    }
+    assert json.loads(row["new_value"]) == new
+    assert json.loads(row["old_value"]) == dict.fromkeys(new)
+
+
 async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
@@ -191,6 +220,7 @@ async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_pat
     assert row["interaction_channel_id"] == CONFIGURED_CHANNEL
     assert row["log_channel_id"] == CONFIGURED_LOG
     bot.team_service.seed_default_teams_if_empty.assert_not_awaited()
+    assert await _audit_rows(db_path) == []
 
 
 async def test_a_second_bot_init_does_not_switch_test_mode_off(tmp_path):
@@ -230,6 +260,7 @@ async def test_bot_init_on_a_second_server_is_refused_and_writes_nothing(tmp_pat
         rows = await (await db.execute("SELECT server_id FROM server_configs")).fetchall()
     assert [r["server_id"] for r in rows] == [SERVER_ID]
     bot.team_service.seed_default_teams_if_empty.assert_not_awaited()
+    assert await _audit_rows(db_path) == []
 
 
 async def test_a_pack_frees_the_server_for_another(tmp_path):

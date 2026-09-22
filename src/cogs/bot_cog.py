@@ -135,14 +135,14 @@ class BotCog(commands.Cog):
             )
             return
 
-        cfg = ServerConfig(
-            server_id=server_id,
-            interaction_role_id=interaction_role.id,
-            league_admin_role_id=league_admin_role.id,
-            interaction_channel_id=interaction_channel.id,
-            log_channel_id=log_channel.id,
-        )
-        created = await self.bot.config_service.save_server_config(cfg)
+        claimed = {
+            "server_id": server_id,
+            "interaction_role_id": interaction_role.id,
+            "league_admin_role_id": league_admin_role.id,
+            "interaction_channel_id": interaction_channel.id,
+            "log_channel_id": log_channel.id,
+        }
+        created = await self.bot.config_service.save_server_config(ServerConfig(**claimed))
         if not created:
             # Lost a race with a concurrent /bot init. Report the refusal that fits whoever
             # won rather than claiming a success that wrote nothing.
@@ -155,6 +155,12 @@ class BotCog(commands.Cog):
                 ephemeral=True,
             )
             return
+
+        # Audited as replacing nothing (issue #371): the claim is taken only where no server
+        # holds it, so a first run finds no row and a run after a pack finds all five cleared.
+        await _audit(
+            self.bot, interaction.user, "BOT_INITIALISED", dict.fromkeys(claimed), claimed
+        )
 
         # Seed default F1 teams + Reserve for this server if none exist yet
         await self.bot.team_service.seed_default_teams_if_empty()  # type: ignore[attr-defined]
