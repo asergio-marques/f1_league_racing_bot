@@ -1,6 +1,33 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-22 — v14.3.0 → v14.4.0: MINOR — core's About option on the hub's panel (issue #258)]
+  Version change    : 14.3.0 → 14.4.0
+  Bump rationale    : MINOR, sized in proportion as this project does: guidance is added inside
+                      an existing rule and nothing is removed or redefined. The panel's options
+                      stay the modules' but for one named exception, and nothing that complied
+                      before fails to comply now.
+
+  Modified sections :
+    - Principle I (Trusted Configuration Authority), "The hub's panel asks no tier" — the
+      options are the modules' save core's About, offered always and after every module's,
+      answering the presser alone with the bot's name, the version it runs as read at start-up
+      (a release; the latest release and the changes merged since it; or unknown), the date
+      and time that version was made where known, and a link to the project's repository.
+
+  Why the constitution moved:
+    - The user decided on 2026-09-22, planning #258, that core adds exactly one option of its
+      own. v14.3.0 had given the panel's options to the modules alone, the same day, when the
+      hub was built for #279 with an empty panel.
+    - `docs/wip-specs/core_specification.md`, "The hub", is the governing statement of the
+      rules; this document records only what governs them.
+    - Principle VII is unchanged: About answers the presser alone, so the hub still receives
+      nothing but its panel.
+
+  Added sections    : none — an exception inside an existing paragraph.
+  Removed sections  : none.
+  Deferred items    : none.
+
 [2026-09-22 — v14.2.1 → v14.3.0: MINOR — the hub channel, and the panel buttons that ask no tier (issue #279)]
   Version change    : 14.2.1 → 14.3.0
   Bump rationale    : MINOR, decided with the user in planning #279: guidance is added within
@@ -4862,9 +4889,13 @@ ask nothing, a driver needing no role.
 **The hub's panel asks no tier (v14.3.0).** A button of the panel the bot keeps in the hub
 channel MUST ask no tier: who may see the hub — holders of the base role, or every member where
 the league has set none, and holders of both tier roles — is who may press it. The panel's
-options are the modules', each offered while its module is enabled; a press on an option no
-longer offered MUST be refused, seen by the presser alone. The hub is how the broader league
-membership reaches the bot, and it adds no third tier: the channel's visibility is the gate.
+options are the modules', each offered while its module is enabled, save one: core's
+**About**, offered always and placed after every module's option, which MUST answer the presser
+alone with the bot's name, the version it is running as read when it started — a release, or
+the latest release and the number of changes merged since it, or unknown — the date and time
+that version was made, where known, and a link to the project's repository (v14.4.0). A press on an option no longer offered MUST be refused, seen by
+the presser alone. The hub is how the broader league membership reaches the bot, and it adds no
+third tier: the channel's visibility is the gate.
 
 The bot MUST refuse an out-of-channel command visibly, the refusal being seen by the
 invoking member alone rather than passing silently — save the five setup commands and the
@@ -8274,4 +8305,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.3.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-22
+**Version**: 14.4.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-22
