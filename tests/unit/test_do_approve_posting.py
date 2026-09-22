@@ -1203,6 +1203,119 @@ async def test_a_stumbled_approval_still_clears_its_review(db_path):
         assert (await cursor.fetchone())[0] == 0
 
 
+async def _seat_a_driver(db_path: str, *, discord_user_id: str = "5001") -> None:
+    """One real driver placed in division 1, for the role grants to read."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
+            "VALUES (1, ?, 'Pro', 3001, 1)",
+            (SEASON_ID,),
+        )
+        cursor = await db.execute(
+            "INSERT INTO driver_profiles (discord_user_id, current_state) "
+            "VALUES (?, 'ASSIGNED')",
+            (discord_user_id,),
+        )
+        profile_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO team_instances (division_id, name) VALUES (1, 'Alpha')"
+        )
+        cursor = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (?, 1, ?)",
+            (cursor.lastrowid, profile_id),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id, committed) "
+            "VALUES (?, ?, 1, ?, 1)",
+            (profile_id, SEASON_ID, cursor.lastrowid),
+        )
+        await db.commit()
+
+
+async def test_each_placed_driver_is_granted_their_division_s_role(db_path):
+    await _seat_a_driver(db_path)
+    cog = _cog(db_path)
+    interaction = _interaction()
+
+    await _approve(cog, interaction)
+
+    grant = cog.bot.placement_service._grant_roles
+    grant.assert_awaited_once()
+    assert grant.await_args.args[1:] == (3001,)
+
+
+async def test_a_driver_whose_roles_could_not_be_granted_is_named(db_path):
+    """As at the mid-season confirmation: nothing grants them later, so the manager does."""
+    await _seat_a_driver(db_path)
+    cog = _cog(db_path)
+    cog.bot.placement_service.get_team_role_config = AsyncMock(
+        side_effect=sqlite3.OperationalError("database is locked")
+    )
+    interaction = _interaction()
+
+    await _approve(cog, interaction)
+
+    assert "<@5001> — their roles could not be granted" in _replied(interaction)
+    assert "not done: <@5001>" in _logged(cog)
+
+
+async def test_a_driver_no_longer_in_the_server_is_passed_over(db_path):
+    """There is nobody to give a role to, and nothing for the manager to do about it."""
+    await _seat_a_driver(db_path)
+    cog = _cog(db_path)
+    interaction = _interaction()
+    interaction.guild.get_member = MagicMock(return_value=None)
+    interaction.guild.fetch_member = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Member")
+    )
+
+    await _approve(cog, interaction)
+
+    cog.bot.placement_service._grant_roles.assert_not_awaited()
+    assert "Not everything could be done" not in _replied(interaction)
+
+
+async def test_a_lineup_that_could_not_be_posted_is_named(db_path):
+    """No command posts a lineup again, so the line says when it will be."""
+    cog = _cog(db_path)
+    cog.bot.placement_service._refresh_lineup_post = AsyncMock(
+        side_effect=RuntimeError("Discord is down")
+    )
+    interaction = _interaction()
+
+    await _approve(cog, interaction)
+
+    assert "**Pro** — its lineup could not be posted" in _replied(interaction)
+    assert "the next change to its drivers" in _replied(interaction)
+    assert "not done: **Pro** — its lineup could not be posted" in _logged(cog)
+
+
+async def test_a_calendar_that_could_not_be_posted_is_named_with_its_repair(db_path):
+    cog = _cog(db_path)
+    interaction = _interaction()
+
+    await _approve(cog, interaction, calendar_error=RuntimeError("Discord is down"))
+
+    replied = _replied(interaction)
+    assert "**Pro** — its calendar could not be posted. Run `/division calendar-sync`." in replied
+    assert "not done: **Pro** — its calendar could not be posted" in _logged(cog)
+
+
+async def test_opening_sheets_that_could_not_be_posted_are_named(db_path):
+    """Raised from outside the service's own per-division guard, so some may be posted."""
+    cog = _cog(db_path)
+    interaction = _interaction()
+
+    await _approve(cog, interaction, classification_error=RuntimeError("Discord is down"))
+
+    assert "opening standings and attendance sheets could not all be posted" in (
+        _replied(interaction)
+    )
+    assert "not done: The opening standings" in _logged(cog)
+
+
 async def test_a_clean_approval_reports_nothing_undone(db_path):
     """The section has to mean something; one on every approval would be read past."""
     cog = _cog(db_path)

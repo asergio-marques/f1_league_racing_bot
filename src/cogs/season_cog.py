@@ -491,6 +491,31 @@ def _not_done_section(not_done: list[str]) -> str:
     )
 
 
+def _ungranted_line(user_ids: list[str]) -> str:
+    """The drivers a placements confirmation could not give their roles (#387).
+
+    No command grants them again — at the mid-season confirmation, confirming again finds
+    nothing left to commit — so the manager grants them by hand.
+    """
+    who = ", ".join(f"<@{user_id}>" for user_id in user_ids)
+    return (
+        f"{who} — their roles could not be granted. Give them their division's and team's "
+        f"roles by hand."
+    )
+
+
+def _unposted_lineup_line(division_name: str) -> str:
+    """A division whose lineup a placements confirmation could not post (#387).
+
+    No command posts a lineup again, so the line says when it will be: every change to the
+    division's drivers — assign, unassign, release, move, sack — posts it anew.
+    """
+    return (
+        f"**{division_name}** — its lineup could not be posted. No command posts it again; "
+        f"it is posted with the next change to its drivers."
+    )
+
+
 async def _confirm_privately(
     interaction: discord.Interaction, text: str, *, fallback: str
 ) -> None:
@@ -6101,8 +6126,10 @@ class SeasonCog(commands.Cog):
         `transition_to_active` on, the season is running. An exception reaching the view's
         error handler would tell the manager the approval did not finish, skip every grant
         and posting not yet reached, and leave the review standing to expire. So every step
-        after it is guarded on its own. Where a read the grants or the calendars depend on
-        fails, what was left undone is named in the reply and the log line. The reply itself
+        after it is guarded on its own, and what one could not do is named in the reply and
+        the log line: a division's roles, lineup or calendar, or the opening sheets. A role
+        Discord refuses a single driver is only logged, as everywhere roles are granted. The
+        reply itself
         is best effort, falling back to a notice in the review's channel. Only a Discord
         refusing both is left, and the log line, retried until delivered, still carries the
         record.
@@ -6571,6 +6598,7 @@ class SeasonCog(commands.Cog):
         # ── T015: Bulk role grant for all ASSIGNED drivers (FR-006) ──────────
         _guild = interaction.guild
         if _guild is not None:
+            _ungranted: list[str] = []
             for _div in divisions:
                 try:
                     async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
@@ -6602,9 +6630,20 @@ class SeasonCog(commands.Cog):
                     continue
                 for _row in _assign_rows:
                     try:
-                        _member = _guild.get_member(int(_row["discord_user_id"])) or (
-                            await _guild.fetch_member(int(_row["discord_user_id"]))
-                        )
+                        _member = _guild.get_member(int(_row["discord_user_id"]))
+                        if _member is None:
+                            try:
+                                _member = await _guild.fetch_member(
+                                    int(_row["discord_user_id"])
+                                )
+                            except discord.HTTPException:
+                                # Gone from the server: there is nobody to give a role to,
+                                # as at the mid-season confirmation.
+                                log.warning(
+                                    "_do_approve: %s is not in the server; no role granted",
+                                    _row["discord_user_id"],
+                                )
+                                continue
                         _role_ids = [_div.mention_role_id]
                         _team_cfg = await self.bot.placement_service.get_team_role_config(  # type: ignore[attr-defined]
                             _row["team_name"]
@@ -6616,6 +6655,9 @@ class SeasonCog(commands.Cog):
                         log.exception(
                             "_do_approve: role grant failed for user %s", _row["discord_user_id"]
                         )
+                        _ungranted.append(str(_row["discord_user_id"]))
+            if _ungranted:
+                _not_done.append(_ungranted_line(_ungranted))
 
         # All three postings below draw inside their own loops, so the notice covers the
         # set of them rather than sitting inside any one. It goes to the channel the review
@@ -6636,6 +6678,7 @@ class SeasonCog(commands.Cog):
                             log.exception(
                                 "_do_approve: lineup post failed for division %s", _div.id
                             )
+                            _not_done.append(_unposted_lineup_line(_div.name))
 
             # ── T017: Post calendar per division (FR-011) ─────────────────────
             # Conveyed as a graphic where the images module is enabled and the `calendar`
@@ -6701,6 +6744,10 @@ class SeasonCog(commands.Cog):
                         log.exception(
                             "_do_approve: calendar post failed for division %s", _div.id
                         )
+                        _not_done.append(
+                            f"**{_div.name}** — its calendar could not be posted. Run "
+                            f"`/division calendar-sync`."
+                        )
                         continue
 
                     _calendar_notices.extend(
@@ -6745,6 +6792,13 @@ class SeasonCog(commands.Cog):
                 except Exception:  # noqa: BLE001 — never fail an approval on a picture
                     log.exception("_do_approve: the opening classifications failed")
                     _opening_problems = []
+                    # Raised from outside the service's own per-division guard, so some
+                    # divisions may have been posted and others not.
+                    _not_done.append(
+                        "The opening standings and attendance sheets could not all be "
+                        "posted. No command posts them again; each round's results and "
+                        "attendance post them as usual."
+                    )
 
                 if _opening_problems:
                     _opening_report = "\n".join(
