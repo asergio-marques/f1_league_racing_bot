@@ -424,7 +424,7 @@ Creates a season tied to today's date, in **configuration**. Its divisions and r
 No parameters. Posts a report of the season in configuration — test mode, the enabled modules, the league's base role and driver role, the team list with its roles (warning where the Reserve team has none), and the configuration of each enabled module in the words of `/season placements-review`: the signup settings, the attendance settings, the attached points configurations, the weather deadlines and the image outputs — and checks everything that can be checked before the season has divisions:
 
 - where the signup module is enabled, its channel and the league's base role and driver role, each fault naming the command that sets it;
-- every team name, as a filename;
+- every team's shorthand, as a filename;
 - where the results module is enabled, that a points configuration is attached, that each attached one exists, and that its tables are in order;
 - where the images module is enabled, that the rasteriser is installed, that every template an enabled output draws is valid, the per-tier colours and the driver portrait settings.
 
