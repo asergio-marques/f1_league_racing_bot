@@ -228,7 +228,7 @@ async def compute_driver_standings(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"""
-            SELECT dp.discord_user_id, ti.name AS team_name, ti.is_reserve
+            SELECT dp.discord_user_id, ti.full_name AS team_name, ti.is_reserve
             FROM team_seats ts
             JOIN team_instances ti ON ti.id = ts.team_instance_id
             JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
@@ -391,9 +391,11 @@ async def compute_team_standings(
     # Every team of the division, reserves included. Two jobs, one query: the non-reserve
     # teams join the standings without having scored, and every team supplies the name the
     # final tiebreak orders on — a reserve team whose driver scored is in the set already.
+    # That name is the full name, the one a reader sees the table ordered by (#381).
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id, name AS team_name, is_reserve FROM team_instances WHERE division_id = ?",
+            "SELECT id, full_name AS team_name, is_reserve FROM team_instances "
+            "WHERE division_id = ?",
             (division_id,),
         )
         team_rows = await cursor.fetchall()
@@ -488,7 +490,7 @@ async def opening_driver_standings(
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             f"""
-            SELECT dp.discord_user_id, ti.name AS team_name
+            SELECT dp.discord_user_id, ti.full_name AS team_name
             FROM team_seats ts
             JOIN team_instances ti ON ti.id = ts.team_instance_id
             JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
@@ -543,7 +545,7 @@ async def opening_team_standings(
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id, name AS team_name FROM team_instances "
+            "SELECT id, full_name AS team_name FROM team_instances "
             "WHERE division_id = ? AND is_reserve = 0",
             (division_id,),
         )

@@ -141,7 +141,9 @@ def fabricate_qualifying_rows(drivers, team_keys, points_map):
                 id=position,
                 session_result_id=1,
                 driver_user_id=driver.key,
-                team_instance_id=team_keys.get(driver.team_name, 0),
+                team_instance_id=team_keys.get(
+                    getattr(driver, "team_key", "") or driver.team_name, 0
+                ),
                 finishing_position=position,
                 outcome=outcome,
                 tyre=tyre,
@@ -184,7 +186,9 @@ def fabricate_race_rows(drivers, team_keys, points_map, *, fastest_lap_position=
                 id=position,
                 session_result_id=1,
                 driver_user_id=driver.key,
-                team_instance_id=team_keys.get(driver.team_name, 0),
+                team_instance_id=team_keys.get(
+                    getattr(driver, "team_key", "") or driver.team_name, 0
+                ),
                 finishing_position=position,
                 outcome=outcome,
                 base_time_ms=base_time_ms,

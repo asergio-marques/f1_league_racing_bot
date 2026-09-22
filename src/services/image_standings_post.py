@@ -277,7 +277,7 @@ async def _seats(bot, division_id: int):
     async with get_connection(bot.db_path) as db:
         rows = await (
             await db.execute(
-                "SELECT ti.id AS team_id, ti.name AS team_name, ti.name AS team_key, "
+                "SELECT ti.id AS team_id, ti.full_name AS team_name, ti.name AS team_key, "
                 "       ti.max_seats AS max_seats, "
                 "       ts.seat_number AS seat_number, "
                 "       dp.discord_user_id AS discord_user_id "

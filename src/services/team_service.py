@@ -756,10 +756,10 @@ async def resolve_division_team(db_path: str, division_id: int, text: str | None
 # ---------------------------------------------------------------------------
 
 async def team_names_for_instances(db_path: str, instance_ids) -> dict[int, str]:
-    """The name of each division team in *instance_ids*, keyed by its id.
+    """The full name of each division team in *instance_ids*, keyed by its id.
 
-    A graphic finds the team's artwork by its shorthand, from ``team_artwork_keys_for_instances``,
-    and never from this (#381).
+    The full name is what every post and graphic shows (#381). A graphic finds the team's
+    artwork by its shorthand instead, from ``team_artwork_keys_for_instances``.
 
     A result, and a constructors row, record the division's **team**, never its Discord role
     (issue #375): a role is resolved to the team once, when a submission types it, and a
@@ -774,11 +774,11 @@ async def team_names_for_instances(db_path: str, instance_ids) -> dict[int, str]
     async with get_connection(db_path) as db:
         rows = await (
             await db.execute(
-                f"SELECT id, name FROM team_instances WHERE id IN ({marks})",  # noqa: S608
+                f"SELECT id, full_name FROM team_instances WHERE id IN ({marks})",  # noqa: S608
                 ids,
             )
         ).fetchall()
-    return {int(r["id"]): r["name"] for r in rows}
+    return {int(r["id"]): r["full_name"] for r in rows}
 
 
 async def team_artwork_keys_for_instances(db_path: str, instance_ids) -> dict[int, str]:

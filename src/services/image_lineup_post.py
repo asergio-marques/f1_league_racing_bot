@@ -122,7 +122,7 @@ async def build_drawing(bot, guild, division_id: int):
 
         instances = await (
             await db.execute(
-                "SELECT id, name, max_seats, is_reserve FROM team_instances "
+                "SELECT id, name, full_name, max_seats, is_reserve FROM team_instances "
                 "WHERE division_id = ? ORDER BY is_reserve ASC, id ASC",
                 (division_id,),
             )
@@ -155,6 +155,7 @@ async def build_drawing(bot, guild, division_id: int):
             teams.append(
                 SimpleNamespace(
                     name=instance["name"],
+                    full_name=instance["full_name"],
                     is_reserve=bool(instance["is_reserve"]),
                     seats=[
                         SimpleNamespace(

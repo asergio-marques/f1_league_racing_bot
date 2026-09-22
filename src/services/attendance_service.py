@@ -1405,7 +1405,7 @@ async def _seat_team_names(
     not the team whose car they drove in some round (FR-020). This is the name drawn; the
     badge is looked up by the team's shorthand, from ``_seat_team_keys`` (#381).
     """
-    return await _seat_team_field(db_path, division_id, user_ids, "name")
+    return await _seat_team_field(db_path, division_id, user_ids, "full_name")
 
 
 async def _seat_team_keys(
