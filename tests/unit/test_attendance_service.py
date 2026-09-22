@@ -17,56 +17,21 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 @pytest.fixture
 async def db_path(tmp_path):
-    """Temp SQLite DB with the minimal schema needed by AttendanceService."""
+    """A migrated database: the league's server_configs row, one season, and its divisions
+    10 and 11. No attendance_config row, which is how a league that has never enabled the
+    module stands."""
+    from db.database import get_connection, run_migrations
+
     path = str(tmp_path / "test.db")
-    async with aiosqlite.connect(path) as db:
-        db.row_factory = aiosqlite.Row
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute("INSERT INTO server_configs (server_id) VALUES (1)")
         await db.execute(
-            """
-            CREATE TABLE server_configs (
-                server_id INTEGER PRIMARY KEY
-            )
-            """
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, '2026-01-01', 'SETUP')"
         )
-        await db.execute(
-            "INSERT INTO server_configs (server_id) VALUES (1)"
-        )
-        await db.execute(
-            """
-            CREATE TABLE divisions (
-                id        INTEGER PRIMARY KEY
-            )
-            """
-        )
-        await db.execute("INSERT INTO divisions (id) VALUES (10)")
-        await db.execute("INSERT INTO divisions (id) VALUES (11)")
-        await db.execute(
-            """
-            CREATE TABLE attendance_config (
-                id                       INTEGER PRIMARY KEY CHECK (id = 1),
-                module_enabled           INTEGER NOT NULL DEFAULT 0,
-                rsvp_notice_days         INTEGER NOT NULL DEFAULT 5,
-                rsvp_last_notice_hours   INTEGER NOT NULL DEFAULT 24,
-                rsvp_deadline_hours      INTEGER NOT NULL DEFAULT 2,
-                no_rsvp_penalty          INTEGER NOT NULL DEFAULT 1,
-                absent_penalty           INTEGER NOT NULL DEFAULT 1,
-                no_show_penalty      INTEGER NOT NULL DEFAULT 1,
-                autoreserve_threshold    INTEGER,
-                autosack_threshold       INTEGER
-            )
-            """
-        )
-        await db.execute(
-            """
-            CREATE TABLE attendance_division_config (
-                division_id               INTEGER PRIMARY KEY
-                                              REFERENCES divisions(id)
-                                              ON DELETE CASCADE,
-                rsvp_channel_id           TEXT,
-                attendance_channel_id     TEXT,
-                attendance_message_id     TEXT
-            )
-            """
+        await db.executemany(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id) VALUES (?, 1, ?, ?)",
+            [(10, "Pro", 3010), (11, "Am", 3011)],
         )
         await db.commit()
     return path
