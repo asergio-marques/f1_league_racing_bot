@@ -212,11 +212,12 @@ class _RecordedView:
         _RecordedView.made.append(self)
 
 
-def _report_cog(*, placements, unsettled=()):
+def _report_cog(*, placements, unsettled=(), channels=(), configuration=(), divisions=None):
     cog = _cog(":memory:", SeasonStage.ONGOING_PLACEMENTS)
     cog.bot.placement_service.uncommitted_placements = AsyncMock(return_value=placements)
     cog.bot.season_service.get_divisions = AsyncMock(
-        return_value=[
+        return_value=divisions
+        or [
             SimpleNamespace(id=DIVISION_ID, name="Pro", status="ACTIVE"),
             SimpleNamespace(id=99, name="Old", status="CANCELLED"),
         ]
@@ -227,8 +228,19 @@ def _report_cog(*, placements, unsettled=()):
             {"name": "Reserve", "seats": [{"discord_user_id": None}]},
         ]
     )
-    cog._placement_confirmation_faults = AsyncMock(return_value=(list(unsettled), []))
+    cog._placement_confirmation_faults = AsyncMock(
+        return_value=(list(unsettled), list(channels))
+    )
+    cog._mid_season_configuration_faults = AsyncMock(return_value=list(configuration))
     return cog
+
+
+def _placement(uid: str, *, division_id: int = DIVISION_ID, team="Alpha", test_name=None):
+    return {
+        "test_display_name": test_name, "discord_user_id": uid, "team_name": team,
+        "team_full_name": f"{team} Racing" if team != "Reserve" else team,
+        "division_id": division_id, "division_name": "Pro",
+    }
 
 
 async def _mid_season_report(cog, monkeypatch):
@@ -246,10 +258,8 @@ async def _mid_season_report(cog, monkeypatch):
 async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the_button(monkeypatch):
     cog = _report_cog(
         placements=[
-            {"test_display_name": None, "discord_user_id": "1002",
-             "team_name": "Alpha", "team_full_name": "Alpha Racing", "division_name": "Pro"},
-            {"test_display_name": "Test Bravo", "discord_user_id": "9000",
-             "team_name": "Reserve", "team_full_name": "Reserve", "division_name": "Pro"},
+            _placement("1002"),
+            _placement("9000", team="Reserve", test_name="Test Bravo"),
         ]
     )
 
@@ -287,6 +297,173 @@ async def test_an_unsettled_signup_withholds_the_mid_season_button(monkeypatch):
     listing = [text for text, private in messages if not private and "Unsettled signups" in text]
     assert listing and "**Racer** — awaiting approval" in listing[0]
     assert _RecordedView.made == []
+
+
+# ── What else withholds the mid-season button (#374) ───────────────────────────────
+
+
+def _private(messages) -> str:
+    return "\n".join(text for text, private in messages if private)
+
+
+async def test_a_deleted_channel_withholds_the_mid_season_button(monkeypatch):
+    """Nothing clears a channel's id when Discord deletes it, and the confirmation posts each
+    affected lineup: a lineup channel gone would take the post with it, the log alone told."""
+    gone = "**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`."
+    cog = _report_cog(placements=[_placement("1002")], channels=[gone])
+
+    messages = await _mid_season_report(cog, monkeypatch)
+
+    assert "Every division needs every channel it posts to" in _private(messages)
+    assert gone in _private(messages)
+    assert _RecordedView.made == []
+
+
+async def test_the_channels_are_judged_upon_the_review_s_own_server(monkeypatch):
+    cog = _report_cog(placements=[_placement("1002")])
+    import cogs.season_cog as season_cog
+
+    monkeypatch.setattr(season_cog, "_ConfirmMidSeasonPlacementsView", _RecordedView)
+    interaction = _interaction()
+    interaction.followup.send = AsyncMock(return_value=MagicMock())
+
+    await undecorate(SeasonCog.season_review)(cog, interaction)
+
+    assert cog._placement_confirmation_faults.await_args.args == (1, interaction.guild)
+
+
+async def test_an_image_fault_withholds_the_mid_season_button(monkeypatch):
+    """Templates, artwork and image settings may all change while a season is raced."""
+    cog = _report_cog(
+        placements=[_placement("1002")],
+        configuration=["Template **Lineup**: the file is missing."],
+    )
+
+    messages = await _mid_season_report(cog, monkeypatch)
+
+    assert "image module is not correctly configured" in _private(messages)
+    assert "Template **Lineup**: the file is missing." in _private(messages)
+    assert _RecordedView.made == []
+
+
+async def test_every_fault_is_named_at_once(monkeypatch):
+    cog = _report_cog(
+        placements=[_placement("1002")],
+        unsettled=["**Racer** — awaiting approval"],
+        channels=["**Pro** has no lineup channel — `/division lineup-channel`."],
+        configuration=["Inkscape is not installed on this host."],
+    )
+
+    private = _private(await _mid_season_report(cog, monkeypatch))
+
+    assert "Every signup must be settled" in private
+    assert "Every division needs every channel" in private
+    assert "Inkscape is not installed" in private
+
+
+async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_its_text(
+    monkeypatch,
+):
+    """Only a division holding a new driver has its lineup posted by confirming, so only its
+    graphic is drawn here — with the new drivers in it, as it will be posted."""
+    import cogs.season_cog as season_cog
+
+    divisions = [
+        SimpleNamespace(id=DIVISION_ID, name="Pro", status="ACTIVE"),
+        SimpleNamespace(id=77, name="Am", status="ACTIVE"),
+    ]
+    cog = _report_cog(placements=[_placement("1002")], divisions=divisions)
+    cog._prerender_mid_season_lineups = AsyncMock()
+    cog._post_review_lineup_image = AsyncMock(return_value=season_cog.REVIEW_IMAGE_DREW)
+
+    messages = await _mid_season_report(cog, monkeypatch)
+    text = "\n".join(m for m, _ in messages)
+
+    (call,) = cog._post_review_lineup_image.await_args_list
+    assert call.args[1].id == DIVISION_ID
+    assert call.kwargs["include_uncommitted"] is True
+    assert "**Pro** — lineup once confirmed" not in text, "the graphic stands in its place"
+    assert "**Am** — lineup once confirmed" in text, "a division with no new driver stays text"
+    assert len(_RecordedView.made) == 1
+
+
+async def test_a_lineup_that_will_not_draw_withholds_the_mid_season_button(monkeypatch):
+    """Confirming would post it, and a lineup that falls back to text is a fault the manager
+    reading this is the one person able to fix."""
+    import cogs.season_cog as season_cog
+
+    cog = _report_cog(placements=[_placement("1002")])
+    cog._prerender_mid_season_lineups = AsyncMock()
+    cog._post_review_lineup_image = AsyncMock(return_value=season_cog.REVIEW_IMAGE_FAULT)
+
+    messages = await _mid_season_report(cog, monkeypatch)
+    text = "\n".join(m for m, _ in messages)
+
+    assert "could not be drawn" in _private(messages)
+    assert "**Pro** — lineup once confirmed" in text, "the text stands in for the graphic"
+    assert _RecordedView.made == []
+
+
+async def test_the_lineups_are_drawn_first_with_their_new_drivers(monkeypatch):
+    import services.image_lineup_post as post
+
+    cog = _report_cog(placements=[_placement("1002")])
+    outcome = SimpleNamespace(png_path=None)
+    render = AsyncMock(return_value=outcome)
+    monkeypatch.setattr(post, "lineup_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(post, "render_for_command", render)
+    interaction = _interaction()
+    interaction.channel.send = AsyncMock(return_value=MagicMock(delete=AsyncMock()))
+    prepared: dict = {}
+
+    await cog._prerender_mid_season_lineups(
+        interaction, [SimpleNamespace(id=DIVISION_ID)], prepared
+    )
+
+    render.assert_awaited_once_with(
+        cog.bot, interaction.guild, DIVISION_ID, include_uncommitted=True
+    )
+
+
+async def test_nothing_is_drawn_or_announced_where_the_lineup_graphic_is_off(monkeypatch):
+    import services.image_lineup_post as post
+
+    cog = _report_cog(placements=[_placement("1002")])
+    render = AsyncMock()
+    monkeypatch.setattr(post, "lineup_enabled", AsyncMock(return_value=False))
+    monkeypatch.setattr(post, "render_for_command", render)
+    interaction = _interaction()
+    interaction.channel.send = AsyncMock()
+
+    await cog._prerender_mid_season_lineups(interaction, [SimpleNamespace(id=DIVISION_ID)], {})
+
+    render.assert_not_awaited()
+    interaction.channel.send.assert_not_awaited()
+
+
+async def test_only_the_image_checks_of_the_configuration_review_are_repeated():
+    """The season settled the rest (#374): its roles, its signup configuration and its team
+    list are fixed, and its points were recorded upon it. A server points configuration
+    removed or reordered mid-season must not stop drivers being placed."""
+    cog = _cog(":memory:", SeasonStage.ONGOING_PLACEMENTS)
+    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    cog.bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+    cog._image_configuration_faults = AsyncMock(return_value=["Inkscape is not installed."])
+    cog._missing_points_config_problems = AsyncMock(return_value=["Standrad"])
+    cog._points_ordering_problems = AsyncMock(return_value=["P2 beats P1"])
+    cog._team_name_problems = AsyncMock(return_value=["a bad name"])
+
+    assert await cog._mid_season_configuration_faults() == ["Inkscape is not installed."]
+    cog._missing_points_config_problems.assert_not_awaited()
+    cog._points_ordering_problems.assert_not_awaited()
+
+
+async def test_no_image_check_is_made_while_the_module_is_off():
+    cog = _cog(":memory:", SeasonStage.ONGOING_PLACEMENTS)
+    cog._image_configuration_faults = AsyncMock(return_value=["Inkscape is not installed."])
+
+    assert await cog._mid_season_configuration_faults() == []
 
 
 async def test_confirming_after_the_season_moved_on_still_reports_the_placements(db_path):

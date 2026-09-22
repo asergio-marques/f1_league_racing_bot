@@ -959,7 +959,9 @@ class SeasonCog(commands.Cog):
             discard_render(getattr(outcome, "png_path", None))
         prepared.clear()
 
-    async def _post_review_lineup_image(self, interaction, division, *, prepared=None) -> str:
+    async def _post_review_lineup_image(
+        self, interaction, division, *, prepared=None, include_uncommitted: bool = False
+    ) -> str:
         """Post the lineup graphic for `/season placements-review`, **in place of** the text lineup.
 
         Returns one of :data:`REVIEW_IMAGE_DREW`, :data:`REVIEW_IMAGE_TEXT` or
@@ -973,6 +975,9 @@ class SeasonCog(commands.Cog):
         this division. Where it is given the render is not repeated; where it is None the
         graphic is drawn here, which is both the budget-exceeded fallback and what every
         other caller of this method gets.
+
+        *include_uncommitted* draws the placements not yet confirmed mid-season, so the
+        review shows the lineup confirming will post (#374).
         """
         try:
             import discord as _discord
@@ -986,7 +991,10 @@ class SeasonCog(commands.Cog):
             outcome = prepared
             if outcome is None:
                 outcome = await render_for_command(
-                    self.bot, interaction.guild, division.id
+                    self.bot,
+                    interaction.guild,
+                    division.id,
+                    include_uncommitted=include_uncommitted,
                 )
             if outcome.png_path is None:
                 # A commanded render that would not draw. The manager is told what is at
@@ -2441,10 +2449,19 @@ class SeasonCog(commands.Cog):
         Mid-season placements only affect lineups — no division or round can be added — so
         the review reports the drivers of the window just closed, each division's lineup with
         them in it, and every signup still unsettled.
+
+        **It withholds its button on what would stop the confirmation** (#374), as the first
+        review does: an unsettled signup, a channel a division posts to that is not set or no
+        longer on the server, a fault of the image configuration, and a lineup confirming
+        would post that will not draw. The lineup of each division holding a new driver is
+        drawn with them in it and shown in place of its text, so what is judged here is what
+        the league will receive; the confirmation does not draw it again, the fingerprint
+        proving nothing it is drawn from has changed since.
         """
         await interaction.response.defer(ephemeral=False)
         posted_messages: list = []
         original_followup = self._recording_followup(interaction, posted_messages)
+        prepared: dict = {}
         try:
             placements = await self.bot.placement_service.uncommitted_placements(season.id)  # type: ignore[attr-defined]
             lines = [
@@ -2465,9 +2482,29 @@ class SeasonCog(commands.Cog):
             for chunk in _chunk_message("\n".join(lines)):
                 await interaction.followup.send(chunk, ephemeral=False)
 
-            for division in await self.bot.season_service.get_divisions(season.id):  # type: ignore[attr-defined]
-                if division.status == "CANCELLED":
-                    continue
+            divisions = [
+                division
+                for division in await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+                if division.status != "CANCELLED"
+            ]
+            # The divisions whose lineup confirming posts: those holding a new driver.
+            posted = {p["division_id"] for p in placements}
+            await self._prerender_mid_season_lineups(
+                interaction, [d for d in divisions if d.id in posted], prepared
+            )
+
+            lineup_faulted = False
+            for division in divisions:
+                if division.id in posted:
+                    state = await self._post_review_lineup_image(
+                        interaction,
+                        division,
+                        prepared=prepared.pop(division.id, None),
+                        include_uncommitted=True,
+                    )
+                    lineup_faulted = lineup_faulted or state == REVIEW_IMAGE_FAULT
+                    if state == REVIEW_IMAGE_DREW:
+                        continue
                 teams = await self.bot.team_service.get_division_teams(division.id)  # type: ignore[attr-defined]
                 block = [f"\U0001f4c2 **{division.name}** — lineup once confirmed"]
                 for team in teams:
@@ -2480,20 +2517,43 @@ class SeasonCog(commands.Cog):
                 for chunk in _chunk_message("\n".join(block)):
                     await interaction.followup.send(chunk, ephemeral=False)
 
-            unsettled, _ = await self._placement_confirmation_faults(season.id)
+            unsettled, channel_faults = await self._placement_confirmation_faults(
+                season.id, interaction.guild
+            )
+            configuration_faults = await self._mid_season_configuration_faults()
             if unsettled:
                 for chunk in _chunk_message(
-                    "\u26a0\ufe0f **Unsettled signups** — each is to be placed with "
+                    "⚠️ **Unsettled signups** — each is to be placed with "
                     "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
-                    + "\n".join(f"\u2022 {line}" for line in unsettled)
+                    + "\n".join(f"• {line}" for line in unsettled)
                 ):
                     await interaction.followup.send(chunk, ephemeral=False)
                 await interaction.followup.send(
-                    "\u26d4 **Every signup must be settled before placements are confirmed.** "
+                    "⛔ **Every signup must be settled before placements are confirmed.** "
                     f"{len(unsettled)} signup(s) are not, each named in the review above. "
                     "Settle them, then run `/season placements-review` again.",
                     ephemeral=True,
                 )
+            if channel_faults:
+                await self._send_channel_faults(interaction, channel_faults)
+            if configuration_faults:
+                body = "\n".join(f"• {fault}" for fault in configuration_faults)
+                for chunk in _chunk_message(
+                    "⛔ **The image module is not correctly configured.**\n"
+                    f"{body}\n"
+                    "The placements are **not** offered for confirmation while that stands. "
+                    "Put it right, then run `/season placements-review` again."
+                ):
+                    await interaction.followup.send(chunk, ephemeral=True)
+            if lineup_faulted:
+                await interaction.followup.send(
+                    "⛔ **A lineup confirming would post could not be drawn** with its new "
+                    "drivers in it. The fault is reported above, and the lineup was shown as "
+                    "text instead. Correct the template or the assets it names, then run "
+                    "`/season placements-review` again.",
+                    ephemeral=True,
+                )
+            if unsettled or channel_faults or configuration_faults or lineup_faulted:
                 return
 
             view = _ConfirmMidSeasonPlacementsView(self, interaction.user.id)
@@ -2510,7 +2570,38 @@ class SeasonCog(commands.Cog):
             view.carries(posted_messages)
             await view.bind(message)
         finally:
+            self._discard_prepared_review_images(prepared)
             interaction.followup.send = original_followup
+
+    async def _prerender_mid_season_lineups(self, interaction, divisions, prepared: dict) -> None:
+        """Draw, before posting any, the lineup of each division confirming will post (#374).
+
+        The mid-season counterpart of `_prerender_review_images`, and holding to its terms:
+        each outcome that drew is kept in *prepared* under the division's id, a render that
+        failed is left for the posting helper to draw and report, and the batch announces
+        itself. Nothing is drawn, nor announced, where the lineup graphic is not wanted.
+        """
+        from services.image_lineup_post import lineup_enabled
+        from services.image_lineup_post import render_for_command as render_lineup
+
+        if not divisions or not await lineup_enabled(self.bot):
+            return
+        async with batch_notice(
+            interaction.channel,
+            "\U0001f3a8 Drawing the graphics for this review — one moment.",
+        ):
+            for division in divisions:
+                self._hold(
+                    prepared,
+                    division.id,
+                    await self._safe_render(
+                        render_lineup,
+                        self.bot,
+                        interaction.guild,
+                        division.id,
+                        include_uncommitted=True,
+                    ),
+                )
 
     async def _do_confirm_mid_season_placements(self, interaction: discord.Interaction) -> None:
         """Commit the new placements and return the season to Ongoing.
@@ -2685,6 +2776,30 @@ class SeasonCog(commands.Cog):
             faults += await self._image_configuration_faults()
 
         return faults
+
+    async def _mid_season_configuration_faults(self) -> list[str]:
+        """The configuration review's checks that confirming mid-season placements repeats.
+
+        Every check the configuration review makes is made again when placements are
+        confirmed mid-season (#374, decided 2026-09-22), save those whose answer the season
+        has already settled:
+
+        * the league's two roles and the signup configuration, which confirming the
+          configuration fixed (issue #276);
+        * the team names, the team list being fixed with them;
+        * the points configurations, recorded upon the season when its placements were first
+          confirmed and changed since only by an amendment of the season's points, which
+          judges its own table. The review's check reads the server's configurations instead,
+          which the season no longer uses — and one removed from the server would refuse
+          with a remedy, `/results config detach`, that is refused once a season is
+          confirmed.
+
+        What is left is the image module's, whose templates, artwork and settings may all
+        change while a season is raced.
+        """
+        if not await self.bot.module_service.is_images_enabled():  # type: ignore[attr-defined]
+            return []
+        return await self._image_configuration_faults()
 
     async def _weather_review_lines(self) -> list[str]:
         """The weather deadlines, as both reviews report them."""
