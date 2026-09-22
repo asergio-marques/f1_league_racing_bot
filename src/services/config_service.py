@@ -40,7 +40,7 @@ class ConfigService:
                 "       log_channel_id, league_admin_role_id, test_mode_active, "
                 "       test_mode_nationality_required, "
                 "       weather_module_enabled, signup_module_enabled, "
-                "       base_role_id, driver_role_id "
+                "       base_role_id, driver_role_id, hub_channel_id, hub_message_id "
                 "FROM server_configs WHERE server_id IS NOT NULL",
             )
             row = await cursor.fetchone()
@@ -59,6 +59,8 @@ class ConfigService:
             signup_module_enabled=bool(row["signup_module_enabled"]),
             base_role_id=row["base_role_id"],
             driver_role_id=row["driver_role_id"],
+            hub_channel_id=row["hub_channel_id"],
+            hub_message_id=row["hub_message_id"],
         )
 
     async def get_league_server_id(self) -> int | None:
@@ -139,8 +141,9 @@ class ConfigService:
             await db.commit()
             return cursor.rowcount > 0
 
-    #: The four settings `/bot init` establishes and the four commands beside it repair, and
-    #: the league's two roles, which `/bot base-role` and `/bot driver-role` set (issue #276).
+    #: The four settings `/bot init` establishes and the four commands beside it repair, the
+    #: league's two roles, which `/bot base-role` and `/bot driver-role` set (issue #276), and
+    #: the hub's channel and the panel posted there (issue #279).
     #: Named here rather than interpolated from the caller so that no command can reach a
     #: column of its own choosing.
     _SETTABLE_COLUMNS = {
@@ -150,9 +153,11 @@ class ConfigService:
         "league_admin_role_id",
         "base_role_id",
         "driver_role_id",
+        "hub_channel_id",
+        "hub_message_id",
     }
 
-    async def set_core_setting(self, column: str, value: int) -> bool:
+    async def set_core_setting(self, column: str, value: int | None) -> bool:
         """Write one core-config column, leaving every other column untouched.
 
         One column at a time is the point: test mode, the module flags, the league's two

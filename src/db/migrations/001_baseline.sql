@@ -22,7 +22,11 @@ CREATE TABLE server_configs (
     -- The league's two roles (#276): who its members are and who its drivers are. Core's,
     -- not the signup module's, so disabling signup keeps them; a pack clears them.
     base_role_id           INTEGER,
-    driver_role_id         INTEGER);
+    driver_role_id         INTEGER,
+    -- The hub (#279): the channel every member may use, and the panel posted in it, whose
+    -- id is kept so the panel is edited in place. The server's, so a pack clears both.
+    hub_channel_id         INTEGER,
+    hub_message_id         INTEGER);
 
 -- sessions
 CREATE TABLE sessions (
