@@ -22,6 +22,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from db.database import get_connection, run_migrations  # noqa: E402
 from services import attendance_service  # noqa: E402
 from services.attendance_service import (  # noqa: E402
     derive_checkin_deadline,
@@ -133,87 +134,61 @@ def _fake_attachment(sentinel):
 
 @pytest.fixture
 async def sheet_db(tmp_path):
-    """The smallest schema ``post_attendance_sheet`` reads."""
+    """Division 7 of an active season: round 3 not yet run and round 9 cancelled, thresholds
+    of 10 and 20, and one driver — Discord user 111 — seated in Apex Racing with 4 attendance
+    points after round 3."""
     path = str(tmp_path / "sheet.db")
-    async with aiosqlite.connect(path) as db:
-        await db.executescript(
-            """
-            CREATE TABLE attendance_division_config (
-                division_id           INTEGER PRIMARY KEY,
-                rsvp_channel_id       TEXT,
-                attendance_channel_id TEXT,
-                attendance_message_id TEXT
-            );
-            CREATE TABLE driver_round_attendance (
-                id                 INTEGER PRIMARY KEY,
-                round_id           INTEGER,
-                division_id        INTEGER,
-                driver_profile_id  INTEGER,
-                assigned_team_id   INTEGER,
-                total_points_after INTEGER
-            );
-            CREATE TABLE driver_season_assignments (
-                driver_profile_id INTEGER,
-                team_seat_id      INTEGER,
-                season_id         INTEGER,
-                committed         INTEGER
-            );
-            CREATE TABLE team_seats (
-                id                INTEGER PRIMARY KEY,
-                team_instance_id  INTEGER,
-                driver_profile_id INTEGER
-            );
-            CREATE TABLE team_instances (
-                id          INTEGER PRIMARY KEY,
-                division_id INTEGER,
-                is_reserve  INTEGER,
-                name        TEXT,
-                full_name   TEXT
-            );
-            CREATE TABLE driver_profiles (
-                id                INTEGER PRIMARY KEY,
-                discord_user_id   TEXT,
-                test_display_name TEXT
-            );
-            CREATE TABLE attendance_config (
-                id                    INTEGER PRIMARY KEY CHECK (id = 1),
-                autoreserve_threshold INTEGER,
-                autosack_threshold    INTEGER
-            );
-            CREATE TABLE seasons  (id INTEGER PRIMARY KEY, status TEXT);
-            CREATE TABLE divisions(id INTEGER PRIMARY KEY, season_id INTEGER, name TEXT);
-            CREATE TABLE rounds (
-                id           INTEGER PRIMARY KEY,
-                division_id  INTEGER,
-                round_number INTEGER,
-                format       TEXT,
-                track_name   TEXT,
-                status       TEXT DEFAULT 'ACTIVE'
-            );
-
-            INSERT INTO seasons  VALUES (1, 'ACTIVE');
-            INSERT INTO divisions VALUES (7, 1, 'Division 1');
-            INSERT INTO rounds VALUES (3, 7, 3, 'NORMAL', 'Silverstone Circuit', 'NOT_RUN');
-            INSERT INTO rounds VALUES (9, 7, 9, 'NORMAL', 'Circuit Zandvoort', 'CANCELLED');
-            INSERT INTO attendance_config VALUES (1, 10, 20);
-            INSERT INTO team_instances VALUES (100, 7, 0, 'Apex', 'Apex Racing');
-            INSERT INTO team_seats     VALUES (200, 100, 1);
-            INSERT INTO driver_profiles VALUES (1, '111', NULL);
-            INSERT INTO driver_season_assignments VALUES (1, 200, 1, 1);
-            INSERT INTO driver_round_attendance
-                (round_id, division_id, driver_profile_id, assigned_team_id, total_points_after)
-                VALUES (3, 7, 1, NULL, 4);
-            """
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, '2026-01-01', 'ACTIVE')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id) "
+            "VALUES (7, 1, 'Division 1', 3001)"
+        )
+        await db.executemany(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (?, 7, ?, 'NORMAL', ?, ?, ?)",
+            [
+                (3, 3, "Silverstone Circuit", "2026-06-07T18:00:00", "NOT_RUN"),
+                (9, 9, "Circuit Zandvoort", "2026-08-09T18:00:00", "CANCELLED"),
+            ],
+        )
+        await db.execute(
+            "INSERT INTO attendance_config (id, autoreserve_threshold, autosack_threshold) "
+            "VALUES (1, 10, 20)"
+        )
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name) "
+            "VALUES (100, 7, 'Apex', 'Apex Racing')"
+        )
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (1, '111', 'ASSIGNED')"
+        )
+        await db.execute(
+            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (200, 100, 1, 1)"
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id) VALUES (1, 1, 7, 200)"
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(round_id, division_id, driver_profile_id, total_points_after) VALUES (3, 7, 1, 4)"
         )
         await db.commit()
     return path
 
 
 async def _config(db_path, *, prior: str | None):
-    async with aiosqlite.connect(db_path) as db:
+    async with get_connection(db_path) as db:
         await db.execute("DELETE FROM attendance_division_config")
         await db.execute(
-            "INSERT INTO attendance_division_config VALUES (7, NULL, '900', ?)",
+            "INSERT INTO attendance_division_config "
+            "(division_id, attendance_channel_id, attendance_message_id) VALUES (7, '900', ?)",
             (prior,),
         )
         await db.commit()
@@ -446,10 +421,11 @@ async def test_a_cancelled_round_posts_nothing_and_generates_nothing(sheet_db):
 @pytest.mark.asyncio
 async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db):
     """FR-046: where the textual flow posts nothing, nothing happens at all."""
-    async with aiosqlite.connect(sheet_db) as db:
+    async with get_connection(sheet_db) as db:
         await db.execute("DELETE FROM attendance_division_config")
         await db.execute(
-            "INSERT INTO attendance_division_config VALUES (7, NULL, NULL, '4242')"
+            "INSERT INTO attendance_division_config (division_id, attendance_message_id) "
+            "VALUES (7, '4242')"
         )
         await db.commit()
 
