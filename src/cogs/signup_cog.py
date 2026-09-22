@@ -38,7 +38,7 @@ from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from services import track_service
 from utils.input_validator import parse_datetime
 from utils.time_parsing import parse_time_of_day
-from utils.channel_guard import league_manager_only
+from utils.channel_guard import league_manager_only, league_role_faults
 from utils.league_server import LeagueView, is_foreign_guild
 from utils.message_builder import discord_ts
 
@@ -1427,7 +1427,10 @@ class SignupCog(commands.Cog):
             )
             return
 
-        # Guard: the channel and the league's two roles must all be set (issue #276)
+        # Guard: the channel and the league's two roles must all be set (issue #276), and both
+        # roles still on the server, the driver role one the bot can grant (#374). A base role
+        # gone pings nobody and opens a channel nobody can see; a driver role gone or refused
+        # lets every approval of the window grant nothing, with only the host's log told.
         base_role_id = server_cfg.base_role_id if server_cfg is not None else None
         driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
         missing = []
@@ -1437,9 +1440,11 @@ class SignupCog(commands.Cog):
             missing.append("`base role` (use `/bot base-role`)")
         if driver_role_id is None:
             missing.append("`driver role` (use `/bot driver-role`)")
+        missing += league_role_faults(interaction.guild, base_role_id, driver_role_id)
         if missing:
             await interaction.response.send_message(
-                "❌ Signup module is missing required configuration:\n"
+                "❌ Signups cannot be opened until the signup module's configuration is "
+                "put right:\n"
                 + "\n".join(f"  • {m}" for m in missing),
                 ephemeral=True,
             )

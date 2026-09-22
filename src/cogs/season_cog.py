@@ -52,6 +52,7 @@ from utils.channel_guard import (
     is_league_manager,
     league_admin_only,
     league_manager_only,
+    league_role_faults,
 )
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from utils.league_server import LeagueModal, LeagueView, is_foreign_guild
@@ -504,6 +505,24 @@ def _ungranted_line(user_ids: list[str]) -> str:
     )
 
 
+async def _channel_on_server(guild, channel_id: int) -> bool:
+    """Whether *channel_id* is still a channel of *guild*, only NotFound answering no (#374).
+
+    The cache is asked first and the API second, the cache holding no channel it has not
+    seen. Any failure but NotFound answers yes: a check that could not tell must not be the
+    thing that refuses a season.
+    """
+    if guild.get_channel(channel_id) is not None:
+        return True
+    try:
+        await guild.fetch_channel(channel_id)
+    except discord.NotFound:
+        return False
+    except Exception as exc:  # noqa: BLE001 — cannot tell, so not a fault
+        log.warning("channel check: could not fetch channel %s: %s", channel_id, exc)
+    return True
+
+
 def _unposted_lineup_line(division_name: str) -> str:
     """A division whose lineup a placements confirmation could not post (#387).
 
@@ -940,7 +959,9 @@ class SeasonCog(commands.Cog):
             discard_render(getattr(outcome, "png_path", None))
         prepared.clear()
 
-    async def _post_review_lineup_image(self, interaction, division, *, prepared=None) -> str:
+    async def _post_review_lineup_image(
+        self, interaction, division, *, prepared=None, include_uncommitted: bool = False
+    ) -> str:
         """Post the lineup graphic for `/season placements-review`, **in place of** the text lineup.
 
         Returns one of :data:`REVIEW_IMAGE_DREW`, :data:`REVIEW_IMAGE_TEXT` or
@@ -954,6 +975,9 @@ class SeasonCog(commands.Cog):
         this division. Where it is given the render is not repeated; where it is None the
         graphic is drawn here, which is both the budget-exceeded fallback and what every
         other caller of this method gets.
+
+        *include_uncommitted* draws the placements not yet confirmed mid-season, so the
+        review shows the lineup confirming will post (#374).
         """
         try:
             import discord as _discord
@@ -967,7 +991,10 @@ class SeasonCog(commands.Cog):
             outcome = prepared
             if outcome is None:
                 outcome = await render_for_command(
-                    self.bot, interaction.guild, division.id
+                    self.bot,
+                    interaction.guild,
+                    division.id,
+                    include_uncommitted=include_uncommitted,
                 )
             if outcome.png_path is None:
                 # A commanded render that would not draw. The manager is told what is at
@@ -2164,7 +2191,7 @@ class SeasonCog(commands.Cog):
             # Named in the public report, every one of them, so that whoever reads the review
             # sees who is still to be placed or turned down — not merely how many.
             unsettled, channel_faults = await self._placement_confirmation_faults(
-                cfg.season_id
+                cfg.season_id, interaction.guild
             )
             if unsettled:
                 for chunk in _chunk_message(
@@ -2237,14 +2264,7 @@ class SeasonCog(commands.Cog):
                     ephemeral=True,
                 )
             if channel_faults:
-                body = "\n".join(f"\u2022 {line}" for line in channel_faults)
-                await interaction.followup.send(
-                    "\u26d4 **Every division needs its lineup and calendar channels.**\n"
-                    f"{body}\n"
-                    "Set them with `/division lineup-channel` and `/division calendar-channel`, "
-                    "then run `/season placements-review` again.",
-                    ephemeral=True,
-                )
+                await self._send_channel_faults(interaction, channel_faults)
             no_divisions = not await self._season_has_divisions(cfg.season_id)
             if no_divisions:
                 await interaction.followup.send(
@@ -2299,14 +2319,83 @@ class SeasonCog(commands.Cog):
         divisions = await self.bot.season_service.get_divisions(season_id)  # type: ignore[attr-defined]
         return any(division.status != "CANCELLED" for division in divisions)
 
+    #: Every channel a division posts to, in the order a manager reads them: the column that
+    #: holds it, what a league calls it, the command that sets it, and the module that needs
+    #: it — None where every season does.
+    _DIVISION_CHANNELS = (
+        ("lineup_channel_id", "lineup channel", "/division lineup-channel", None),
+        ("calendar_channel_id", "calendar channel", "/division calendar-channel", None),
+        ("forecast_channel_id", "weather channel", "/division weather-channel", "weather"),
+        ("results_channel_id", "results channel", "/division results-channel", "results"),
+        ("standings_channel_id", "standings channel", "/division standings-channel", "results"),
+        ("penalty_channel_id", "verdicts channel", "/division verdicts-channel", "results"),
+        ("rsvp_channel_id", "RSVP channel", "/division rsvp-channel", "attendance"),
+        (
+            "attendance_channel_id",
+            "attendance channel",
+            "/division attendance-channel",
+            "attendance",
+        ),
+    )
+
+    async def _division_channel_faults(self, season_id: int, guild=None) -> list[str]:
+        """Every channel a division of the season posts to that is not set, or not on the server.
+
+        **Both confirmations ask this** (#374): the first, and the one mid-season. Nothing
+        clears a channel's id when Discord deletes the channel, and no module can be enabled
+        once a season is under way, so mid-season every channel is still *set*; the question
+        worth asking is whether it is still *there*. Asked at both, so the two cannot come to
+        disagree about what a division needs.
+
+        A channel is looked for in the cache and then fetched, a fetch answering NotFound
+        being the one proof it is gone. Any other failure is **not** a fault: a check that
+        could not tell must not be what refuses a season. With no *guild*, only whether each
+        channel is set is judged. A cancelled division posts nothing and is passed over.
+        """
+        modules = self.bot.module_service  # type: ignore[attr-defined]
+        enabled = {
+            None: True,
+            "weather": await modules.is_weather_enabled(),
+            "results": await modules.is_results_enabled(),
+            "attendance": await modules.is_attendance_enabled(),
+        }
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            cursor = await db.execute(
+                "SELECT d.name, d.lineup_channel_id, d.calendar_channel_id, "
+                "       d.forecast_channel_id, rc.results_channel_id, "
+                "       rc.standings_channel_id, rc.penalty_channel_id, "
+                "       ac.rsvp_channel_id, ac.attendance_channel_id "
+                "FROM divisions d "
+                "LEFT JOIN division_results_config rc ON rc.division_id = d.id "
+                "LEFT JOIN attendance_division_config ac ON ac.division_id = d.id "
+                "WHERE d.season_id = ? AND d.status != 'CANCELLED' ORDER BY d.tier",
+                (season_id,),
+            )
+            rows = await cursor.fetchall()
+
+        faults: list[str] = []
+        for row in rows:
+            for column, label, command, module in self._DIVISION_CHANNELS:
+                if not enabled[module]:
+                    continue
+                value = row[column]
+                if not value:
+                    faults.append(f"**{row['name']}** has no {label} — `{command}`.")
+                elif guild is not None and not await _channel_on_server(guild, int(value)):
+                    faults.append(
+                        f"**{row['name']}**'s {label} is no longer on the server — `{command}`."
+                    )
+        return faults
+
     async def _placement_confirmation_faults(
-        self, season_id: int
+        self, season_id: int, guild=None
     ) -> tuple[list[str], list[str]]:
         """What stops placements being confirmed that no older gate checks (issue #220).
 
-        Returns ``(unsettled, channels)``: the unsettled signups, named, and each division
-        missing its lineup or calendar channel. The review withholds its button on either,
-        and the confirmation refuses on either, from this one reading.
+        Returns ``(unsettled, channels)``: the unsettled signups, named, and every channel a
+        division posts to that is not set or no longer on the server (#374). The review
+        withholds its button on either, and the confirmation refuses on either, from this one
+        reading — mid-season as at the first confirmation.
         """
         from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL
         from services.season_lifecycle_service import UNSETTLED_STATES
@@ -2322,12 +2411,6 @@ class SeasonCog(commands.Cog):
                 (*UNSETTLED_STATES,),
             )
             unsettled_rows = await cursor.fetchall()
-            cursor = await db.execute(
-                "SELECT name, lineup_channel_id, calendar_channel_id FROM divisions "
-                "WHERE season_id = ? AND status != 'CANCELLED' ORDER BY tier",
-                (season_id,),
-            )
-            division_rows = await cursor.fetchall()
 
         state_labels = {
             "UNASSIGNED": "not yet placed",
@@ -2340,19 +2423,21 @@ class SeasonCog(commands.Cog):
             f"{state_labels.get(row['current_state'], row['current_state'])}"
             for row in unsettled_rows
         ]
-        channels: list[str] = []
-        for row in division_rows:
-            missing = [
-                label
-                for label, value in (
-                    ("lineup channel", row["lineup_channel_id"]),
-                    ("calendar channel", row["calendar_channel_id"]),
-                )
-                if not value
-            ]
-            if missing:
-                channels.append(f"**{row['name']}** has no {' and no '.join(missing)}")
-        return unsettled, channels
+        return unsettled, await self._division_channel_faults(season_id, guild)
+
+    @staticmethod
+    async def _send_channel_faults(interaction, channel_faults: list[str]) -> None:
+        """Tell the reviewer, privately, which division channels withhold the button.
+
+        One message for both reviews, each fault naming the command that puts it right.
+        """
+        body = "\n".join(f"• {line}" for line in channel_faults)
+        for chunk in _chunk_message(
+            "⛔ **Every division needs every channel it posts to.**\n"
+            f"{body}\n"
+            "Set each with the command named, then run `/season placements-review` again."
+        ):
+            await interaction.followup.send(chunk, ephemeral=True)
 
     # ------------------------------------------------------------------
     # /season placements-review mid-season — Ongoing, placements (issue #220)
@@ -2364,10 +2449,19 @@ class SeasonCog(commands.Cog):
         Mid-season placements only affect lineups — no division or round can be added — so
         the review reports the drivers of the window just closed, each division's lineup with
         them in it, and every signup still unsettled.
+
+        **It withholds its button on what would stop the confirmation** (#374), as the first
+        review does: an unsettled signup, a channel a division posts to that is not set or no
+        longer on the server, a fault of the image configuration, and a lineup confirming
+        would post that will not draw. The lineup of each division holding a new driver is
+        drawn with them in it and shown in place of its text, so what is judged here is what
+        the league will receive; the confirmation does not draw it again, the fingerprint
+        proving nothing it is drawn from has changed since.
         """
         await interaction.response.defer(ephemeral=False)
         posted_messages: list = []
         original_followup = self._recording_followup(interaction, posted_messages)
+        prepared: dict = {}
         try:
             placements = await self.bot.placement_service.uncommitted_placements(season.id)  # type: ignore[attr-defined]
             lines = [
@@ -2388,9 +2482,29 @@ class SeasonCog(commands.Cog):
             for chunk in _chunk_message("\n".join(lines)):
                 await interaction.followup.send(chunk, ephemeral=False)
 
-            for division in await self.bot.season_service.get_divisions(season.id):  # type: ignore[attr-defined]
-                if division.status == "CANCELLED":
-                    continue
+            divisions = [
+                division
+                for division in await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+                if division.status != "CANCELLED"
+            ]
+            # The divisions whose lineup confirming posts: those holding a new driver.
+            posted = {p["division_id"] for p in placements}
+            await self._prerender_mid_season_lineups(
+                interaction, [d for d in divisions if d.id in posted], prepared
+            )
+
+            lineup_faulted = False
+            for division in divisions:
+                if division.id in posted:
+                    state = await self._post_review_lineup_image(
+                        interaction,
+                        division,
+                        prepared=prepared.pop(division.id, None),
+                        include_uncommitted=True,
+                    )
+                    lineup_faulted = lineup_faulted or state == REVIEW_IMAGE_FAULT
+                    if state == REVIEW_IMAGE_DREW:
+                        continue
                 teams = await self.bot.team_service.get_division_teams(division.id)  # type: ignore[attr-defined]
                 block = [f"\U0001f4c2 **{division.name}** — lineup once confirmed"]
                 for team in teams:
@@ -2403,20 +2517,43 @@ class SeasonCog(commands.Cog):
                 for chunk in _chunk_message("\n".join(block)):
                     await interaction.followup.send(chunk, ephemeral=False)
 
-            unsettled, _ = await self._placement_confirmation_faults(season.id)
+            unsettled, channel_faults = await self._placement_confirmation_faults(
+                season.id, interaction.guild
+            )
+            configuration_faults = await self._mid_season_configuration_faults()
             if unsettled:
                 for chunk in _chunk_message(
-                    "\u26a0\ufe0f **Unsettled signups** — each is to be placed with "
+                    "⚠️ **Unsettled signups** — each is to be placed with "
                     "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
-                    + "\n".join(f"\u2022 {line}" for line in unsettled)
+                    + "\n".join(f"• {line}" for line in unsettled)
                 ):
                     await interaction.followup.send(chunk, ephemeral=False)
                 await interaction.followup.send(
-                    "\u26d4 **Every signup must be settled before placements are confirmed.** "
+                    "⛔ **Every signup must be settled before placements are confirmed.** "
                     f"{len(unsettled)} signup(s) are not, each named in the review above. "
                     "Settle them, then run `/season placements-review` again.",
                     ephemeral=True,
                 )
+            if channel_faults:
+                await self._send_channel_faults(interaction, channel_faults)
+            if configuration_faults:
+                body = "\n".join(f"• {fault}" for fault in configuration_faults)
+                for chunk in _chunk_message(
+                    "⛔ **The image module is not correctly configured.**\n"
+                    f"{body}\n"
+                    "The placements are **not** offered for confirmation while that stands. "
+                    "Put it right, then run `/season placements-review` again."
+                ):
+                    await interaction.followup.send(chunk, ephemeral=True)
+            if lineup_faulted:
+                await interaction.followup.send(
+                    "⛔ **A lineup confirming would post could not be drawn** with its new "
+                    "drivers in it. The fault is reported above, and the lineup was shown as "
+                    "text instead. Correct the template or the assets it names, then run "
+                    "`/season placements-review` again.",
+                    ephemeral=True,
+                )
+            if unsettled or channel_faults or configuration_faults or lineup_faulted:
                 return
 
             view = _ConfirmMidSeasonPlacementsView(self, interaction.user.id)
@@ -2433,7 +2570,38 @@ class SeasonCog(commands.Cog):
             view.carries(posted_messages)
             await view.bind(message)
         finally:
+            self._discard_prepared_review_images(prepared)
             interaction.followup.send = original_followup
+
+    async def _prerender_mid_season_lineups(self, interaction, divisions, prepared: dict) -> None:
+        """Draw, before posting any, the lineup of each division confirming will post (#374).
+
+        The mid-season counterpart of `_prerender_review_images`, and holding to its terms:
+        each outcome that drew is kept in *prepared* under the division's id, a render that
+        failed is left for the posting helper to draw and report, and the batch announces
+        itself. Nothing is drawn, nor announced, where the lineup graphic is not wanted.
+        """
+        from services.image_lineup_post import lineup_enabled
+        from services.image_lineup_post import render_for_command as render_lineup
+
+        if not divisions or not await lineup_enabled(self.bot):
+            return
+        async with batch_notice(
+            interaction.channel,
+            "\U0001f3a8 Drawing the graphics for this review — one moment.",
+        ):
+            for division in divisions:
+                self._hold(
+                    prepared,
+                    division.id,
+                    await self._safe_render(
+                        render_lineup,
+                        self.bot,
+                        interaction.guild,
+                        division.id,
+                        include_uncommitted=True,
+                    ),
+                )
 
     async def _do_confirm_mid_season_placements(self, interaction: discord.Interaction) -> None:
         """Commit the new placements and return the season to Ongoing.
@@ -2456,11 +2624,23 @@ class SeasonCog(commands.Cog):
                 ephemeral=True,
             )
             return
-        unsettled, _ = await self._placement_confirmation_faults(season.id)
-        if unsettled:
-            bullets = "\n".join(f"\u2022 {line}" for line in unsettled)
+        # Judged afresh, as the first confirmation judges Gate S (#374). The review withholds
+        # its button on each of these, but it stands five minutes, and a channel deleted from
+        # the server meanwhile changes nothing the fingerprint reads. The lineups are not
+        # drawn again: the fingerprint proves the images configuration and the artwork
+        # unchanged since the review drew them.
+        unsettled, channel_faults = await self._placement_confirmation_faults(
+            season.id, interaction.guild
+        )
+        faults = [
+            *(f"Unsettled signup: {line}" for line in unsettled),
+            *channel_faults,
+            *await self._mid_season_configuration_faults(),
+        ]
+        if faults:
+            bullets = "\n".join(f"• {line}" for line in faults)
             for chunk in _chunk_message(
-                f"\u26d4 Every signup must be settled first:\n{bullets}\n"
+                f"⛔ Placements cannot be confirmed:\n{bullets}\n"
                 "**Nothing has been confirmed.**"
             ):
                 await interaction.followup.send(chunk, ephemeral=True)
@@ -2533,7 +2713,7 @@ class SeasonCog(commands.Cog):
     # /season config-review — confirming the configuration (issue #220)
     # ------------------------------------------------------------------
 
-    async def _configuration_faults(self, season_id: int) -> list[str]:
+    async def _configuration_faults(self, season_id: int, guild=None) -> list[str]:
         """Every fault that stops a season's configuration being confirmed.
 
         The configuration review checks everything that can be checked before the season has
@@ -2542,6 +2722,10 @@ class SeasonCog(commands.Cog):
         again, the configuration of a module other than signup being free to change in
         between — save the league's two roles, which confirming the configuration fixes
         until the season ends (issue #276), and so cannot have changed.
+
+        **The roles are judged upon the server, not merely as stored** (#374), where *guild*
+        is given: both must still be on it, and the driver role must be one the bot can grant.
+        Confirming fixes them, so this is the last moment a league can choose others freely.
 
         **One helper for the review and the confirmation**, so the button is withheld on
         exactly what the confirmation refuses. Each fault is a line a league manager reads,
@@ -2555,16 +2739,19 @@ class SeasonCog(commands.Cog):
         if await self.bot.module_service.is_signup_enabled():  # type: ignore[attr-defined]
             signup_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
             server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+            base_role_id = server_cfg.base_role_id if server_cfg is not None else None
+            driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
             if signup_cfg is None or signup_cfg.signup_channel_id is None:
                 faults.append("The signup module has no **signup channel** — `/signup channel`.")
-            if server_cfg is None or server_cfg.base_role_id is None:
+            if base_role_id is None:
                 faults.append(
                     "The signup module needs the league's **base role** — `/bot base-role`."
                 )
-            if server_cfg is None or server_cfg.driver_role_id is None:
+            if driver_role_id is None:
                 faults.append(
                     "The signup module needs the league's **driver role** — `/bot driver-role`."
                 )
+            faults += league_role_faults(guild, base_role_id, driver_role_id)
 
         # ── Team names ─────────────────────────────────────────────────────────
         # The server's list alone: a season in configuration has no division to check.
@@ -2601,6 +2788,30 @@ class SeasonCog(commands.Cog):
             faults += await self._image_configuration_faults()
 
         return faults
+
+    async def _mid_season_configuration_faults(self) -> list[str]:
+        """The configuration review's checks that confirming mid-season placements repeats.
+
+        Every check the configuration review makes is made again when placements are
+        confirmed mid-season (#374, decided 2026-09-22), save those whose answer the season
+        has already settled:
+
+        * the league's two roles and the signup configuration, which confirming the
+          configuration fixed (issue #276);
+        * the team names, the team list being fixed with them;
+        * the points configurations, recorded upon the season when its placements were first
+          confirmed and changed since only by an amendment of the season's points, which
+          judges its own table. The review's check reads the server's configurations instead,
+          which the season no longer uses — and one removed from the server would refuse
+          with a remedy, `/results config detach`, that is refused once a season is
+          confirmed.
+
+        What is left is the image module's, whose templates, artwork and settings may all
+        change while a season is raced.
+        """
+        if not await self.bot.module_service.is_images_enabled():  # type: ignore[attr-defined]
+            return []
+        return await self._image_configuration_faults()
 
     async def _weather_review_lines(self) -> list[str]:
         """The weather deadlines, as both reviews report them."""
@@ -2820,7 +3031,7 @@ class SeasonCog(commands.Cog):
                 for chunk in _chunk_message(body):
                     await interaction.followup.send(chunk, ephemeral=False)
 
-            faults = await self._configuration_faults(cfg.season_id)
+            faults = await self._configuration_faults(cfg.season_id, interaction.guild)
             if faults:
                 body = "\n".join(f"• {fault}" for fault in faults)
                 for chunk in _chunk_message(
@@ -2864,7 +3075,7 @@ class SeasonCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        faults = await self._configuration_faults(cfg.season_id)
+        faults = await self._configuration_faults(cfg.season_id, interaction.guild)
         if faults:
             body = "\n".join(f"• {fault}" for fault in faults)
             await interaction.followup.send(
@@ -6169,9 +6380,10 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # ── Gate S: every signup settled, every division's own channels set (#220) ──
+        # ── Gate S: every signup settled, and every channel a division posts to set and on
+        # the server (#220, #374) ──
         unsettled, channel_faults = await self._placement_confirmation_faults(
-            cfg.season_id
+            cfg.season_id, interaction.guild
         )
         if unsettled or channel_faults:
             bullets = "\n".join(f"\u2022 {line}" for line in [*unsettled, *channel_faults])
@@ -6231,19 +6443,12 @@ class SeasonCog(commands.Cog):
                 await season_svc.create_sessions_for_round(rnd.id, rnd.format)
                 all_rounds.append(rnd)
 
-        # ── Gate 1: weather channel prerequisite (FR-011) ──────────────────────
-        if await self.bot.module_service.is_weather_enabled():
-            missing_weather = [d.name for d in divisions if not d.forecast_channel_id]
-            if missing_weather:
-                names = ", ".join(f"**{n}**" for n in missing_weather)
-                msg = (
-                    f"\u274c Season cannot be approved \u2014 the following divisions are missing a "
-                    f"weather forecast channel: {names}. Assign a weather channel to each division first."
-                )
-                await interaction.followup.send(msg, ephemeral=True)
-                return
+        # Every channel a division posts to — the weather, results, standings, verdicts, RSVP
+        # and attendance channels among them — is judged at Gate S above, by the helper the
+        # review withholds its button on (#374). The gates that checked them one module at a
+        # time here could no longer be reached, and are withdrawn.
 
-        # ── Gate 2: R&S channel and points-config prerequisites (FR-013) ───────
+        # ── Gate 2: points-config prerequisites (FR-013) ───────────────────────
         if await self.bot.module_service.is_results_enabled():
             # Auto-seed point configs if test mode is active and none are attached yet
             server_config = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
@@ -6261,19 +6466,7 @@ class SeasonCog(commands.Cog):
                         db_path=self.bot.db_path,  # type: ignore[attr-defined]
                     )
 
-            divs_rs = await season_svc.get_divisions_with_results_config(cfg.season_id)
             errors: list[str] = []
-            for d in divs_rs:
-                if not d.results_channel_id:
-                    errors.append(f"**{d.name}** is missing a results channel")
-                if not d.standings_channel_id:
-                    errors.append(f"**{d.name}** is missing a standings channel")
-                if not d.penalty_channel_id:
-                    errors.append(
-                        f"**{d.name}** is missing a verdicts channel \u2014 "
-                        f"run /division verdicts-channel {d.name} <channel>"
-                    )
-
             async with get_connection(self.bot.db_path) as _db:
                 cursor = await _db.execute(
                     "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
@@ -6334,30 +6527,6 @@ class SeasonCog(commands.Cog):
                     )
                     await interaction.followup.send(msg, ephemeral=True)
                     return
-
-        # ── Gate 2c: attendance module channel prerequisites ──────────────────
-        if await self.bot.module_service.is_attendance_enabled():
-            att_errors: list[str] = []
-            for _div in divisions:
-                att_div_cfg = await self.bot.attendance_service.get_division_config(_div.id)  # type: ignore[attr-defined]
-                if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
-                    att_errors.append(
-                        f"**{_div.name}** is missing an RSVP channel "
-                        f"(use `/division rsvp-channel {_div.name} <channel>`)"
-                    )
-                if att_div_cfg is None or not att_div_cfg.attendance_channel_id:
-                    att_errors.append(
-                        f"**{_div.name}** is missing an attendance channel "
-                        f"(use `/division attendance-channel {_div.name} <channel>`)"
-                    )
-            if att_errors:
-                bullet_list = "\n\u2022 ".join(att_errors)
-                msg = (
-                    f"\u274c Season cannot be approved \u2014 attendance module is enabled but "
-                    f"missing required channel configuration:\n\u2022 {bullet_list}"
-                )
-                await interaction.followup.send(msg, ephemeral=True)
-                return
 
         # ── Gate 2d: no round may already have run, nor be inside a window (#121, #122, #181)
         #

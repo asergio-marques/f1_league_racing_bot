@@ -21,9 +21,10 @@ division's own channel** (Constitution XIV.4). The drivers read that channel; a 
 graphic would not render is a maintenance matter and would be noise to them.
 
 **A module enabled but not configured blocks approval.** Signup needs its channel and both
-roles; attendance needs an RSVP and an attendance channel per division. Approving without them
-arms a schedule that will post into nothing — which is a module failing to produce output while
-switched on, and the refusal is what prevents it.
+roles; the results module a points configuration. Approving without them arms a schedule that
+will post into nothing — which is a module failing to produce output while switched on, and the
+refusal is what prevents it. The channels a module needs of each division are judged with every
+other division channel at Gate S (#374), and tested in `test_placements_confirmation.py`.
 
 **Every refusal lists all of what is missing.** A manager fixing one setting per refused
 approval is four attempts at a season they are trying to start.
@@ -359,63 +360,6 @@ async def test_a_configured_attendance_module_does_not_block_approval(db_path):
     cog.bot.season_service.transition_to_active.assert_awaited_once()
 
 
-@pytest.mark.parametrize(
-    "missing,fragment",
-    [
-        ({"rsvp": None}, "/division rsvp-channel"),
-        ({"attendance": None}, "/division attendance-channel"),
-    ],
-)
-async def test_a_division_missing_an_attendance_channel_blocks_approval(
-    db_path, missing, fragment
-):
-    """The check-in call fires at a configured distance before the round and posts into
-    that channel; without it the call simply never arrives."""
-    cog = _cog(
-        db_path,
-        attendance_enabled=True,
-        attendance_config=_attendance_config(**missing),
-    )
-    interaction = _interaction()
-
-    await _approve(cog, interaction)
-
-    replied = _replied(interaction)
-    assert "attendance module is enabled but" in replied
-    assert fragment in replied
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
-
-
-async def test_a_division_with_no_attendance_configuration_blocks_approval(db_path):
-    """Both channels are missing, and both are named — the division has nothing set up."""
-    cog = _cog(db_path, attendance_enabled=True, attendance_config=None)
-    interaction = _interaction()
-
-    await _approve(cog, interaction)
-
-    replied = _replied(interaction)
-    assert "rsvp-channel" in replied
-    assert "attendance-channel" in replied
-
-
-async def test_the_refusal_names_the_division_and_the_command_to_fix_it(db_path):
-    """A league with four divisions needs to know which one, and typing the command from
-    the refusal is faster than looking it up."""
-    cog = _cog(
-        db_path,
-        divisions=[_division(1, "Pro"), _division(2, "Am")],
-        attendance_enabled=True,
-        attendance_config=_attendance_config(rsvp=None),
-    )
-    interaction = _interaction()
-
-    await _approve(cog, interaction)
-
-    replied = _replied(interaction)
-    assert "/division rsvp-channel Pro" in replied
-    assert "/division rsvp-channel Am" in replied
-
-
 async def test_a_disabled_attendance_module_is_not_checked(db_path):
     cog = _cog(db_path, attendance_enabled=False, attendance_config=None)
     interaction = _interaction()
@@ -428,59 +372,6 @@ async def test_a_disabled_attendance_module_is_not_checked(db_path):
 # ---------------------------------------------------------------------------
 # The results module's prerequisites
 # ---------------------------------------------------------------------------
-
-
-async def test_a_division_missing_a_verdicts_channel_blocks_approval(db_path):
-    """Verdicts are posted where the drivers who lodged the reports can read them, and a
-    division without the channel has nowhere for a steward's decision to go."""
-    cog = _cog(db_path, results_enabled=True)
-    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
-        return_value=[
-            SimpleNamespace(
-                name="Pro",
-                results_channel_id=700,
-                standings_channel_id=701,
-                penalty_channel_id=None,
-            )
-        ]
-    )
-    interaction = _interaction()
-
-    await _approve(cog, interaction)
-
-    replied = _replied(interaction)
-    assert "missing a verdicts channel" in replied
-    assert "/division verdicts-channel Pro" in replied
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
-
-
-@pytest.mark.parametrize(
-    "missing,fragment",
-    [
-        ("results_channel_id", "missing a results channel"),
-        ("standings_channel_id", "missing a standings channel"),
-    ],
-)
-async def test_a_division_missing_a_results_channel_blocks_approval(
-    db_path, missing, fragment
-):
-    cog = _cog(db_path, results_enabled=True)
-    config = {
-        "name": "Pro",
-        "results_channel_id": 700,
-        "standings_channel_id": 701,
-        "penalty_channel_id": 702,
-    }
-    config[missing] = None
-    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
-        return_value=[SimpleNamespace(**config)]
-    )
-    interaction = _interaction()
-
-    await _approve(cog, interaction)
-
-    assert fragment in _replied(interaction)
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
 async def test_a_season_with_no_points_configuration_attached_is_refused(db_path):
@@ -501,58 +392,17 @@ async def test_a_disabled_results_module_is_not_checked(db_path):
     Issue #185. This was the one claim the since-deleted `test_season_approval_gates.py`
     made that nothing else did — and it made it against a copy of the gate rather than
     the gate itself, so the `if results_enabled` guard could have been dropped from the
-    cog entirely without a single test noticing. The division below has no channels of
-    any kind and the season has no points configuration attached: every one of the
-    refusals above would fire if the gate were consulted, so the approval going through
-    is the guard working.
+    cog entirely without a single test noticing. The season has no points configuration
+    attached, so the refusal above would fire if the gate were consulted, and the approval
+    going through is the guard working. The results module's channels are judged with every
+    other division channel, and only while it is enabled, by
+    `test_placements_confirmation.test_a_module_s_channels_are_needed_only_while_it_is_enabled`.
     """
     cog = _cog(db_path, results_enabled=False)
-    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
-        return_value=[
-            SimpleNamespace(
-                name="Pro",
-                results_channel_id=None,
-                standings_channel_id=None,
-                penalty_channel_id=None,
-            )
-        ]
-    )
 
     await _approve(cog, _interaction())
 
     cog.bot.season_service.transition_to_active.assert_awaited_once()
-
-
-async def test_the_results_refusal_lists_every_fault_at_once(db_path):
-    """Four settings wrong is one refusal, not four attempts at starting a season."""
-    cog = _cog(db_path, results_enabled=True)
-    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
-        return_value=[
-            SimpleNamespace(
-                name="Pro",
-                results_channel_id=None,
-                standings_channel_id=701,
-                penalty_channel_id=702,
-            ),
-            SimpleNamespace(
-                name="Academy",
-                results_channel_id=800,
-                standings_channel_id=None,
-                penalty_channel_id=None,
-            ),
-        ]
-    )
-    interaction = _interaction()
-
-    await _approve(cog, interaction)
-
-    replied = _replied(interaction)
-    assert "Pro" in replied and "missing a results channel" in replied
-    assert "Academy" in replied and "missing a standings channel" in replied
-    assert "missing a verdicts channel" in replied
-    # The points configuration is unattached too, and is named in the same breath.
-    assert "no points configuration is attached" in replied
-    cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

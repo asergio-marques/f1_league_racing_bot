@@ -85,3 +85,54 @@ async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
         if seat.discord_user_id is not None
     ]
     assert sorted(seated) == ["1001"]
+
+
+async def test_the_mid_season_review_draws_the_lineup_as_it_will_stand(db_path):
+    """The review of mid-season placements draws what confirming will post, with the new
+    drivers in it, so a lineup that will not draw withholds its button (#374). A seat with no
+    placement row at all is still empty."""
+    from services.image_lineup_post import build_drawing
+    from unittest.mock import patch
+
+    captured = {}
+
+    def _resolve(**kwargs):
+        captured.update(kwargs)
+        return "drawing"
+
+    bot = SimpleNamespace(db_path=db_path)
+    with patch("services.image_lineup_service.resolve_drawing", side_effect=_resolve):
+        await build_drawing(bot, None, DIVISION_ID, include_uncommitted=True)
+
+    seated = [
+        seat.discord_user_id
+        for team in captured["teams"]
+        for seat in team.seats
+        if seat.discord_user_id is not None
+    ]
+    assert sorted(seated) == ["1001", "1002"]
+
+
+@pytest.mark.parametrize("asked", [True, False])
+async def test_the_command_render_hands_the_request_down_to_the_drawing(monkeypatch, asked):
+    """`render_for_command` is the review's way in, and a flag dropped on the way down would
+    draw the lineup of record while claiming to check the one confirming posts."""
+    from unittest.mock import AsyncMock
+
+    import services.image_lineup_post as post
+
+    seen = {}
+
+    async def _build(bot, guild, division_id, *, include_uncommitted=False):
+        seen["include_uncommitted"] = include_uncommitted
+        raise RuntimeError("drawn far enough")
+
+    monkeypatch.setattr(post, "lineup_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(post, "build_drawing", _build)
+
+    outcome = await post.render_for_command(
+        SimpleNamespace(), object(), DIVISION_ID, include_uncommitted=asked
+    )
+
+    assert seen == {"include_uncommitted": asked}
+    assert outcome.action == post.REJECTED

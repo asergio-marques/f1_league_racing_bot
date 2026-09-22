@@ -33,6 +33,10 @@ once the configuration is overwritten.
 **Both are fixed once a season's configuration is confirmed.** A driver role changed mid-season
 would leave every current driver holding the old one for good, the season's end revoking only
 the new.
+
+**Save a role deleted from the server** (#374), which nobody holds any longer. It may be replaced
+while fixed, and the replacement is given to every driver — the base role too, the one time the
+bot grants it — for without it a season could open no signup window until it ended.
 """
 from __future__ import annotations
 
@@ -49,6 +53,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from cogs.bot_cog import BotCog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.config_service import ConfigService  # noqa: E402
+from services.placement_service import PlacementService  # noqa: E402
 from services.signup_module_service import SignupModuleService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
@@ -75,6 +80,7 @@ async def _make_db(
     signup_channel=SIGNUP_CHANNEL,
     stage: str | None = None,
     claimed: bool = True,
+    drivers: tuple[tuple[str, str], ...] = (),
 ) -> str:
     db_path = os.path.join(str(tmp_path), "league_roles.db")
     await run_migrations(db_path)
@@ -97,6 +103,11 @@ async def _make_db(
                 "VALUES ('2026-01-01', ?, 4, ?)",
                 ("SETUP" if stage == "CONFIGURATION" else "ACTIVE", stage),
             )
+        for user_id, state in drivers:
+            await db.execute(
+                "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES (?, ?)",
+                (user_id, state),
+            )
         await db.commit()
     return db_path
 
@@ -106,16 +117,22 @@ def _make_cog(db_path: str) -> BotCog:
     bot.db_path = db_path
     bot.config_service = ConfigService(db_path)
     bot.signup_module_service = SignupModuleService(db_path)
+    bot.placement_service = PlacementService(db_path)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
     return BotCog(bot)
 
 
-def _role(role_id: int = NEW_ROLE, name: str = "Drivers"):
+def _role(role_id: int = NEW_ROLE, name: str = "Drivers", *, above_the_bot: bool = False):
+    """A role the bot can grant, unless *above_the_bot* says otherwise."""
     role = MagicMock(spec=discord.Role)
     role.id = role_id
     role.name = name
     role.mention = f"<@&{role_id}>"
+    role.is_default.return_value = False
+    role.managed = False
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, _other: not above_the_bot
     return role
 
 
@@ -279,6 +296,145 @@ async def test_a_role_is_refused_once_the_configuration_is_confirmed(
     assert (await _stored(db_path))[column] == OLD_ROLE
     assert await _audit_rows(db_path) == []
     assert _permission_calls(interaction) == []
+
+
+def _gone_old_role(interaction, new_role):
+    """The stored role deleted from the server, and *new_role* on it."""
+    interaction.guild.get_role = MagicMock(
+        side_effect=lambda role_id: new_role if role_id == new_role.id else None
+    )
+
+
+def _members(interaction, *, refusing: tuple[int, ...] = ()) -> dict:
+    members = {
+        uid: MagicMock(
+            add_roles=AsyncMock(
+                side_effect=discord.Forbidden(MagicMock(status=403), "no")
+                if uid in refusing
+                else None
+            )
+        )
+        for uid in (5001, 5002)
+    }
+    interaction.guild.get_member = MagicMock(side_effect=members.get)
+    return members
+
+
+_TWO_DRIVERS = (("5001", "ASSIGNED"), ("5002", "UNASSIGNED"), ("5003", "NOT_SIGNED_UP"))
+
+
+@pytest.mark.parametrize("run,column,change_type", _BOTH)
+async def test_a_role_gone_from_the_server_may_be_replaced_while_fixed(
+    tmp_path, run, column, change_type
+):
+    """Nobody holds a deleted role, so the reason for fixing it is spent — and refusing would
+    leave the season unable to open a window until it ended."""
+    db_path = await _make_db(tmp_path, stage="ONGOING")
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+    role = _role()
+    _gone_old_role(interaction, role)
+
+    await run(cog, interaction, role=role)
+
+    assert (await _stored(db_path))[column] == NEW_ROLE
+    assert "no longer on the server" in _replied(interaction)
+    assert [r["change_type"] for r in await _audit_rows(db_path)] == [change_type]
+    assert "replaced: a role no longer on the server" in str(
+        cog.bot.output_router.post_log.await_args.args[0]
+    )
+
+
+@pytest.mark.parametrize("run,column,change_type", _BOTH)
+async def test_a_role_never_set_stays_fixed(tmp_path, run, column, change_type):
+    """Not set is not gone: a league that ran its season with no signup module chose no role."""
+    db_path = await _make_db(tmp_path, stage="ONGOING", base_role=None, driver_role=None)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+    _gone_old_role(interaction, _role())
+
+    await run(cog, interaction)
+
+    assert "fixed for Season 4" in _replied(interaction)
+    assert (await _stored(db_path))[column] is None
+
+
+@pytest.mark.parametrize("run,column,change_type", _BOTH)
+async def test_the_replacement_is_given_to_every_driver(tmp_path, run, column, change_type):
+    """Every driver lost the old role with it. Whoever the driver role belongs to is given the
+    replacement — the base role too, the one time the bot grants it."""
+    db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+    role = _role()
+    _gone_old_role(interaction, role)
+    members = _members(interaction)
+
+    await run(cog, interaction, role=role)
+
+    for member in members.values():
+        member.add_roles.assert_awaited_once_with(role, reason="League role replaced")
+    assert "given to 2 driver(s)" in _replied(interaction)
+    assert "given to: 2 driver(s)" in str(cog.bot.output_router.post_log.await_args.args[0])
+
+
+@pytest.mark.parametrize("run,column,change_type", _BOTH)
+async def test_a_driver_who_could_not_be_given_it_is_named(tmp_path, run, column, change_type):
+    db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+    role = _role()
+    _gone_old_role(interaction, role)
+    _members(interaction, refusing=(5002,))
+
+    await run(cog, interaction, role=role)
+
+    assert "could not be given to <@5002> — give it to them by hand" in _replied(interaction)
+    assert "not given to: <@5002>" in str(cog.bot.output_router.post_log.await_args.args[0])
+
+
+async def test_a_replaced_base_role_says_the_other_members_need_it(tmp_path):
+    """The bot knows its drivers and nobody else the league counts as a member."""
+    db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+    role = _role()
+    _gone_old_role(interaction, role)
+    _members(interaction)
+
+    await _base_role(cog, interaction, role=role)
+
+    assert "other members need it too" in _replied(interaction)
+
+
+async def test_a_replaced_driver_role_says_nothing_of_other_members(tmp_path):
+    db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+    role = _role()
+    _gone_old_role(interaction, role)
+    _members(interaction)
+
+    await _driver_role(cog, interaction, role=role)
+
+    assert "other members" not in _replied(interaction)
+
+
+async def test_a_base_role_replaced_by_everyone_is_given_to_nobody(tmp_path):
+    """Everybody holds @everyone already."""
+    db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+    role = _role()
+    role.is_default.return_value = True
+    _gone_old_role(interaction, role)
+    members = _members(interaction)
+
+    await _base_role(cog, interaction, role=role)
+
+    assert "Everybody holds it already" in _replied(interaction)
+    for member in members.values():
+        member.add_roles.assert_not_awaited()
 
 
 @pytest.mark.parametrize("run,column,change_type", _BOTH)
@@ -452,6 +608,33 @@ async def test_the_driver_role_touches_no_channel(tmp_path):
     await _driver_role(cog, interaction)
 
     assert _permission_calls(interaction) == []
+
+
+async def test_a_driver_role_the_bot_cannot_grant_is_refused(tmp_path):
+    """It is granted at every approval, and `wizard_service.approve_signup` only logs a grant
+    Discord refuses — so a role the bot cannot grant costs every driver of the window their
+    role with nobody told (#374). Setting it is the moment a league is there to choose another,
+    as `/team role` holds since #381."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _driver_role(cog, interaction, role=_role(above_the_bot=True))
+
+    assert "Move my role above it" in _replied(interaction)
+    assert (await _stored(db_path))["driver_role_id"] == OLD_ROLE
+    assert await _audit_rows(db_path) == []
+
+
+async def test_a_base_role_the_bot_cannot_grant_is_still_set(tmp_path):
+    """The league grants the base role, not the bot, so where it sits in the role list is not
+    the bot's concern."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+
+    await _base_role(cog, _interaction(), role=_role(above_the_bot=True))
+
+    assert (await _stored(db_path))["base_role_id"] == NEW_ROLE
 
 
 def test_nothing_current_names_a_withdrawn_signup_role_command():

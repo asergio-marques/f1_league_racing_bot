@@ -90,8 +90,27 @@ def _cog(bot: MagicMock) -> SeasonCog:
     return cog
 
 
+def _grantable_role(*, above_the_bot: bool = False) -> MagicMock:
+    role = MagicMock(managed=False)
+    role.is_default.return_value = False
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, _other: not above_the_bot
+    return role
+
+
+def _guild(*, gone: tuple[int, ...] = (), driver_above_the_bot: bool = False) -> MagicMock:
+    """The server, holding the league's two roles (2 and 3) unless told one is *gone*."""
+    roles = {2: _grantable_role(), 3: _grantable_role(above_the_bot=driver_above_the_bot)}
+    for role_id in gone:
+        roles.pop(role_id)
+    guild = MagicMock()
+    guild.get_role = MagicMock(side_effect=roles.get)
+    return guild
+
+
 def _interaction() -> MagicMock:
     interaction = MagicMock()
+    interaction.guild = _guild()
     interaction.guild_id = SERVER_ID
     interaction.user.id = REVIEWER
     interaction.user.display_name = "Manager"
@@ -127,6 +146,50 @@ async def test_a_disabled_signup_module_is_not_checked():
     """Nor are the league's roles: only the signup module needs them."""
     bot = _bot(signup=False, signup_config=_signup_config(channel=None), roles=(None, None))
     assert await _cog(bot)._configuration_faults(SEASON_ID) == []
+
+
+@pytest.mark.parametrize(
+    "gone,expected",
+    [(2, "**base role** is no longer on the server"), (3, "**driver role** is no longer on the server")],
+)
+async def test_a_league_role_gone_from_the_server_is_a_fault(gone, expected):
+    """Confirming fixes both roles, so this is the last moment a league can choose another
+    freely (#374). Stored is not enough."""
+    cog = _cog(_bot(signup=True))
+
+    (fault,) = await cog._configuration_faults(SEASON_ID, _guild(gone=(gone,)))
+
+    assert expected in fault
+
+
+async def test_a_driver_role_the_bot_cannot_grant_is_a_fault():
+    cog = _cog(_bot(signup=True))
+
+    (fault,) = await cog._configuration_faults(
+        SEASON_ID, _guild(driver_above_the_bot=True)
+    )
+
+    assert "Move my role above it" in fault
+
+
+async def test_the_roles_upon_the_server_are_not_judged_while_signup_is_disabled():
+    cog = _cog(_bot(signup=False))
+
+    assert await cog._configuration_faults(SEASON_ID, _guild(gone=(2, 3))) == []
+
+
+async def test_confirming_refuses_a_driver_role_gone_from_the_server():
+    bot = _bot(signup=True)
+    cog = _cog(bot)
+    interaction = _interaction()
+    interaction.guild = _guild(gone=(3,))
+
+    await cog._do_confirm_configuration(interaction)
+
+    bot.season_service.set_stage.assert_not_awaited()
+    assert "**driver role** is no longer on the server" in (
+        interaction.followup.send.await_args.args[0]
+    )
 
 
 async def test_team_names_of_the_server_list_are_checked():

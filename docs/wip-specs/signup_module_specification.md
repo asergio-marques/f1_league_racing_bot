@@ -13,8 +13,8 @@ existing whether or not this module is enabled.
 - A "module enable signup" command shall be a league admin's and shall enable signup functionality. This command shall take the module name and nothing else.
 - The general sign up channel shall be set by a "signup channel" command. The module shall use the league's base role and driver role, which are core's and set by core's own commands, as the core specification sets out.
     - Setting the sign up channel shall apply the channel permissions described below. Setting the base role, while the module is enabled, shall re-apply them, removing the overwrite of the role it replaces.
-    - Until the channel and both roles are set, it shall not be possible to open signups.
-    - While the signup module is enabled, confirming a season's configuration shall be refused until the channel and both roles are set, and the bot shall name each one that is missing.
+    - Until the channel and both roles are set, it shall not be possible to open signups. Nor shall it be while either role is no longer on the server, or while the driver role is one the bot cannot grant, as the core specification sets out; every fault shall be named at once, with the command that puts it right. Decided 2026-09-22.
+    - While the signup module is enabled, confirming a season's configuration shall be refused until the channel and both roles are set, both roles are on the server and the driver role is one the bot can grant, and the bot shall name each fault.
 - The general sign up channel shall be visible only to holders of the interaction role, holders of the league admin role, and those with the base role.
 - The general sign up channel may not be the bot interaction channel.
 - The bot shall modify the permissions of the channel configured as general sign-up channel so that it is only visible to holders of the league admin role, holders of the interaction role, and users with the "base role". No other interaction aside from pressing a button shall be possible in this channel, for those of the "base role".

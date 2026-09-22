@@ -139,10 +139,14 @@ To move your league to another server, or to start over from nothing, see [Start
 
 | Role | What it means |
 |---|---|
-| **Base role** | Who your league's members are. You hand it out, never the bot. With signups on, it decides who can see the signup channel, and it is pinged when signups open |
+| **Base role** | Who your league's members are. You hand it out — the bot only ever does when it replaces a deleted one, below. With signups on, it decides who can see the signup channel, and it is pinged when signups open |
 | **Driver role** | Who your drivers are. The bot grants it when you approve a signup, and takes it back whenever a driver returns to Not Signed Up — turned down, sacked, or at the end of the season |
 
 These are ordinary commands: the interaction role runs them, in the command channel. **Once a season's configuration is confirmed they are fixed until that season ends**, so set them first. Make them two different roles: one is who may sign up, the other is who got through.
+
+**The bot must be able to grant the driver role.** Put the bot's own role above it in your server's role list, and give the bot **Manage Roles**. `/bot driver-role` refuses a role it cannot grant — `@everyone`, a role a bot or subscription manages, or one above its own — and says why.
+
+> **A role deleted from the server can be replaced, even mid-season.** Nobody holds a deleted role, so the lock above does not apply to it: run `/bot base-role` or `/bot driver-role` with its replacement. The bot gives the new role to every current driver and names anyone it could not give it to. For the base role, give it to your other members yourself — the bot knows only its drivers. Until you do, signups cannot be opened: `/signup open` refuses while either role is gone, or while the bot cannot grant the driver role.
 
 **A hub for your members, if you want one.** Every command here is for the people running the league. The hub is a channel for everybody else: the bot keeps a single panel of buttons there, and anyone who can see the channel can press them.
 
@@ -279,7 +283,7 @@ The bot posts the configuration to the channel, a message per subject: test mode
 
 | The check | Only with |
 |---|---|
-| The signup channel, and the league's base role and driver role, are set | `signup` |
+| The signup channel, and the league's base role and driver role, are set; both roles are still on the server; the bot can grant the driver role | `signup` |
 | Every team's shorthand can be used | — |
 | A points configuration is attached, every attached one exists, and each is in order | `results` |
 | Inkscape is installed, every template a switched-on output draws is valid, every colour slot a drawing uses has a colour, and the driver-photo setting could fetch something | `images` |
@@ -418,7 +422,7 @@ The other six belong to modules. Set the ones whose module you turned on in step
 | `/division rsvp-channel` | `attendance` | Check-in calls |
 | `/division attendance-channel` | `attendance` | The attendance sheet |
 
-**Confirming placements will refuse a season that is missing any of these** — the calendar and lineup channels for every division, and the six for every enabled module — so it is cheaper to do them all now than to discover it at step 12.
+**Confirming placements will refuse a season that is missing any of these** — the calendar and lineup channels for every division, and the six for every enabled module — so it is cheaper to do them all now than to discover it at step 12. A channel set and since deleted from the server counts as missing, and confirming a mid-season window's placements checks them all again.
 
 > **A channel can be repointed at any stage of the season.** If one is deleted mid-season, run the same command with its replacement; nothing about the season has to be undone. The channels belong to that season: once it ends they no longer count, and the next season's divisions are given their own.
 
@@ -509,10 +513,10 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 | A division has no rounds at all | Add one, or delete the division |
 | Two rounds in a division share a date and time | Reschedule one |
 | A team's shorthand cannot be used | Change it with `/team modify` — the message names every offender at once |
-| A division has no calendar channel or no lineup channel | Step 9 |
+| A division is missing a channel it posts to — its calendar or lineup channel, or one an enabled module needs — or one has been deleted from the server | Step 9 — the message names the division, the channel and the command |
 | A signup is unsettled | Step 10 |
 
-**And more, depending on what you turned on** — a missing channel for any enabled module, and every check from step 6 made again: a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. The base role and the driver role are the exception: confirming the configuration fixed them, so they are not checked again. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
+**And more, depending on what you turned on** — every check from step 6 made again: a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. The base role and the driver role are the exception: confirming the configuration fixed them, so they are not checked again. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
 
 When it goes through, the bot:
 
@@ -631,6 +635,8 @@ Things to know before you run it:
 ### Signing up drivers mid-season
 
 A signup window can be opened again while the season is ongoing. The same two steps follow it: closing the window moves the season to **Ongoing, placements** where anyone is left to settle — place or reject them as in step 10, then run `/season placements-review`, which in this stage reviews only the lineups and the drivers to confirm. Confirming grants the new drivers their roles, posts each lineup that changed once, and returns the season to ongoing. No division or round can be added mid-season.
+
+**The mid-season review checks what can have changed since the season started.** It withholds its button, telling you why, while a signup is unsettled, a channel a division posts to has been deleted, the image module's configuration is at fault — the rasteriser, a template, the tier colours or the portrait settings — or a lineup it will post does not draw with the new drivers in it. Where lineups are pictures, it shows you each one it will post, new drivers included. It does not check the roles, the signup settings, the team list or the points again: the season settled those at the start. A deleted channel is put back as in step 9; nothing else about the season has to change.
 
 Where the window closes with nobody left to settle, the season goes straight back to ongoing.
 

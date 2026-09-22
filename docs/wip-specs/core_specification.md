@@ -64,11 +64,14 @@ it only to place it; the rules governing it belong to its own specification.
 
 ### The league's roles
 - Two roles shall describe a member's standing in the league, whichever modules are enabled: the **base role**, held by the league's members, and the **driver role**, held by its drivers.
-    - The base role shall be granted by the league and never by the bot. A module that reads it states what it governs.
+    - The base role shall be granted by the league and never by the bot, save where it is replaced as set out below. A module that reads it states what it governs.
     - The driver role shall be granted when a driver's signup is approved, and revoked whenever the driver returns to Not Signed Up.
 - Each shall be set by a command of its own, a league manager's.
+    - The driver role shall be one the bot can grant. The command setting it shall refuse `@everyone`, a role managed by an integration, a role at or above the bot's own highest, and any role while the bot lacks the permission to manage roles, saying why.
 - Neither shall be required unless a module requires it. The signup module requires both, as its own specification sets out.
 - Confirming a season's configuration shall fix both until the season ends. A driver role changed mid-season would leave every driver holding the old one, the season's end revoking only the new.
+    - A role no longer on the server may nonetheless be replaced while it is fixed. The replacement shall be granted to every driver — every driver who is not a test driver and is Unassigned or Assigned — the base role included, and every driver it could not be given to shall be named. A replaced base role shall remind the league that its other members need it too. Decided 2026-09-22.
+    - A role never set shall stay unset until the season ends.
 - Disabling a module shall clear neither. A pack shall clear both, a role belonging to its server.
 
 ### Channels
@@ -209,10 +212,11 @@ it only to place it; the rules governing it belong to its own specification.
     - It shall post its report as the placements review posts the subsections preceding its divisions — the season and its modules, the signup configuration, the attendance configuration, the points configurations, the weather configuration and the image outputs, one message each, in the same words — a subsection holding nothing not being posted. The first subsection shall report the league's base role and driver role besides, which the placements review does not.
     - The review shall end with a button confirming the configuration, which shall be withheld while any fault stands. The button shall be governed as the button confirming placements is: who may press it, how long it stands, the evidence it is confirmed upon, and what becomes of a review that expires or is refused.
 - The configuration review shall check everything that can be checked before the season has divisions: every check the placements review makes shall be made here too, save those concerning divisions, lineups, calendars and division channels. Confirming the configuration shall require, among them:
-    - where the signup module is enabled, its signup channel and the league's base role and driver role each to be set, every one missing being named with the command that sets it;
+    - where the signup module is enabled, its signup channel and the league's base role and driver role each to be set, both roles to be on the server, and the driver role to be one the bot can grant, every fault being named with the command that puts it right;
     - every team name to be usable as the filename of that team's artwork, whether or not the image module is enabled;
     - every requirement an enabled module states of its configuration alone — its points configurations and its templates among them — as that module's own specification sets out.
 - Every check the configuration review makes shall be made again when placements are confirmed, the configuration of a module other than signup being able to change in between — save those on the league's base role and driver role, which confirming the configuration fixes.
+    - Where placements are confirmed mid-season, only the image module's checks shall be made again. The league's roles, the signup configuration and the team list are fixed, and the season's points were recorded upon it when its placements were first confirmed and are changed only by an amendment of its points, which judges them itself. Decided 2026-09-22.
 - Confirming the configuration shall fix, for the rest of the season, the team list, the game edition, test mode, the league's base role and driver role, and whether the signup module is enabled and how it is configured.
 
 ### Waiting and signups
@@ -229,6 +233,8 @@ it only to place it; the rules governing it belong to its own specification.
 - The placements review shall be run by any holder of the interaction role. Reading what a season is configured to be is not an administrative act.
 - Run while the season is in Placements, the review shall post its report publicly, as one message per subsection and not as one message carrying them all. The subsections are, in this order: the season and the modules enabled upon it; the signup configuration; the attendance configuration; the points configurations; the weather configuration; and the image outputs. The blocks describing each division follow them.
 - Run while the season is in Ongoing, placements, the review shall report the lineups alone: every division's lineup as it will stand once placements are confirmed, and, publicly, every signup still unsettled.
+    - The lineup of each division holding a driver whose placement confirming will commit shall be shown as the league will receive it, with those drivers in it: drawn, where the lineup is posted as a graphic. A lineup that will not draw shall be shown as text, and its fault named.
+    - The review shall withhold its question where anything would prevent the placements being confirmed, naming each fault privately to the reviewer, as the review in Placements does. Decided 2026-09-22.
 - A subsection holding nothing shall not be posted.
 - Each subsection shall further be divided across as many messages as its own length requires.
 - The validations that belong to the season rather than to a module shall be posted with the first subsection, whatever modules are enabled.
@@ -260,9 +266,10 @@ it only to place it; the rules governing it belong to its own specification.
 
 #### What confirming placements requires
 - No signup of the season shall be unsettled: every driver who signed up shall be placed or rejected.
+- Every division not cancelled shall have set every channel the season will post to — its lineup channel, its calendar channel, and every channel an enabled module requires of it — and each shall still be on the server. Each one missing shall be named with its division and the command that sets it. A channel that cannot be looked up for any reason but its absence shall not be counted missing. Decided 2026-09-22.
+- Every check the configuration review makes shall pass, save those the section above exempts.
+- Where the season is in Ongoing, placements, additionally, each lineup the confirmation will post shall have been drawn by the review. The confirmation shall not draw it again.
 - Where the season is in Placements, additionally:
-    - Every check the configuration review makes shall pass.
-    - Every division shall have set every channel the season will post to: its lineup channel, its calendar channel, and every channel an enabled module requires of it. Each one missing shall be named with its division.
     - The season shall hold at least one division that is not cancelled.
     - The tiers of a season's divisions shall form a sequence from 1 with no gaps.
     - Every division shall hold at least one round.

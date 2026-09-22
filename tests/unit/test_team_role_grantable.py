@@ -68,6 +68,28 @@ def test_every_role_is_refused_while_the_bot_lacks_manage_roles():
     assert "Manage Roles" in refusal
 
 
+@pytest.mark.parametrize("fault", [{"default": True}, {"managed": True}])
+def test_a_team_s_role_is_told_to_choose_one_of_the_team_s_own(fault):
+    """The default wording is a team's, for every caller that sets one."""
+    assert "Choose a role of the team's own." in role_grant_refusal(_role(**fault))
+
+
+@pytest.mark.parametrize("fault", [{"default": True}, {"managed": True}])
+def test_a_role_standing_for_something_else_says_so_and_names_its_own_remedy(fault):
+    """The league's driver role is granted on the same terms (#374), and a refusal telling a
+    league to choose "a role of the team's own" for it would send them to the wrong command."""
+    refusal = role_grant_refusal(
+        _role(**fault),
+        stands_for="the league's drivers",
+        remedy="Choose another with `/bot driver-role`.",
+    )
+
+    assert "team" not in refusal
+    assert refusal.endswith("Choose another with `/bot driver-role`.")
+    if fault.get("default"):
+        assert "cannot stand for the league's drivers" in refusal
+
+
 def test_a_role_carrying_no_guild_is_judged_on_itself_alone():
     """Every caller passes a real role, but nothing here fails on a double that answers less."""
     role = MagicMock()

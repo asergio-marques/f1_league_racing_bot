@@ -45,6 +45,19 @@ class PlacementsCommitted:
     unposted_lineups: list[str] = field(default_factory=list)
 
 
+@dataclass
+class RoleGrantOutcome:
+    """What granting one role to every driver did (#374).
+
+    *granted* counts the drivers given it. *not_granted* is the Discord id of each driver
+    Discord would not give it to; a driver no longer in the server is in neither, there being
+    nobody to give it to.
+    """
+
+    granted: int = 0
+    not_granted: list[str] = field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -100,6 +113,51 @@ class PlacementService:
                 await member.add_roles(role, reason="Driver placement")
             except discord.HTTPException as exc:
                 log.warning("_grant_roles: failed to add role %s to %s: %s", role_id, member.id, exc)
+
+    async def grant_to_every_driver(
+        self, guild: discord.Guild, role_id: int
+    ) -> RoleGrantOutcome:
+        """Grant *role_id* to every driver of the league, and say what came of it (#374).
+
+        Called when a league role deleted from the server is replaced while the season's
+        configuration is fixed. Nobody holds a deleted role, so every driver who held it lost it
+        with the role; this gives them its replacement. **Every driver** is whoever the driver
+        role belongs to — a real driver, Unassigned or Assigned — which is the set
+        `driver_role_ids` grants it on.
+
+        Each driver is granted on their own and a failure is recorded, not raised: the role is
+        already stored by the time this runs, and one member Discord refuses must not cost the
+        rest theirs. A driver no longer in the server is passed over.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT discord_user_id FROM driver_profiles "
+                "WHERE is_test_driver = 0 AND current_state IN (?, ?) "
+                "ORDER BY discord_user_id",
+                (DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value),
+            )
+            user_ids = [row["discord_user_id"] for row in await cursor.fetchall()]
+
+        outcome = RoleGrantOutcome()
+        role = guild.get_role(role_id)
+        if role is None:
+            outcome.not_granted = list(user_ids)
+            return outcome
+        for user_id in user_ids:
+            try:
+                member = guild.get_member(int(user_id))
+                if member is None:
+                    try:
+                        member = await guild.fetch_member(int(user_id))
+                    except discord.NotFound:
+                        continue
+                await member.add_roles(role, reason="League role replaced")
+            except Exception:  # noqa: BLE001 — the role is stored; the rest still get it
+                log.exception("grant_to_every_driver: could not grant %s to %s", role_id, user_id)
+                outcome.not_granted.append(str(user_id))
+            else:
+                outcome.granted += 1
+        return outcome
 
     async def _revoke_roles(self, member: discord.Member, *role_ids: int) -> None:
         """Revoke Discord roles from member. Logs failures but does not raise."""
