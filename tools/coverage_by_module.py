@@ -87,6 +87,7 @@ RULES: list[tuple[str, tuple[str, ...]]] = [
         "season_points",
         "test_roster_service", "track_service",
         "autocomplete", "date_formatting", "time_parsing", "input_validator", "timezones",
+        "utils/version.py",
         "log_filters",
         "paths", "batch_notice", "round_import", "xml_import", "models/",
     )),

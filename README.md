@@ -41,6 +41,13 @@ to run a release instead, check out its tag — `git checkout v0.4.0`. Every rel
 `v1.0.0` is a pre-release. Where an upgrade needs you to do something, this README says so
 beside the behaviour concerned and names the version it applies from.
 
+**Which version is running.** The bot writes it to its log as it starts — `Running v0.5.0`
+for a release, or `Running v0.4.0-230` for a copy taken between releases, the number
+counting the changes merged since `v0.4.0`. Quote that line when you report a problem. A copy
+downloaded from GitHub, as a release's zip or with **Download ZIP**, carries its version in
+the `VERSION` file and needs nothing else; a copy made with `git clone` asks git for it
+instead. Where neither can tell, the log says `Running an unknown version`.
+
 ### 2. Configure environment
 
 ```bash

@@ -74,6 +74,14 @@ async def main() -> None:
 
     bot = create_bot()
 
+    # The version is read once, here, and never when a command runs (#258): it belongs to
+    # the code this process loaded. See `utils/version.py`.
+    from utils.paths import PROJECT_ROOT
+    from utils.version import read_version
+
+    bot.running_version = read_version(PROJECT_ROOT)  # type: ignore[attr-defined]
+    log.info("Running %s", bot.running_version or "an unknown version")  # type: ignore[attr-defined]
+
     # Services are attached to bot for cog access
     from services.driver_service import DriverService
     from services.team_service import TeamService

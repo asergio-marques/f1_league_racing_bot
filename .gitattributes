@@ -1,0 +1,3 @@
+# GitHub fills in VERSION's placeholder whenever it packages the code — a release's zip or
+# tarball, or "Download ZIP" — so a downloaded copy knows its version without git (#258).
+VERSION export-subst
