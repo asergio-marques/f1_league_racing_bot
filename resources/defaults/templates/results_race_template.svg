@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      xmlns:xlink="http://www.w3.org/1999/xlink"
      xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-     width="1200" height="1084" viewBox="0 0 1200 1084"
+     width="1300" height="1084" viewBox="0 0 1300 1084"
      font-family="Inter, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif">
 
   <!-- ===================================================================
@@ -28,7 +28,13 @@
        A row is one line, where a standings row is two. The standings stack the
        driver over their team because a twelve round grid leaves the
        classification 190 px; no grid stands here, so the driver column takes
-       262 px and the team column 224 px and both are read across.
+       262 px and the team column 300 px and both are read across.
+
+       The canvas is 1300 px wide, where every other template is 1200. The extra
+       100 px are the team column's: a team is drawn by its **full name** since
+       #381, up to 32 characters of it, and at 224 px a name that long was set
+       down until it could not be read. Nothing else moved — the ladder right of
+       the team column is the same ladder, 100 px further across.
 
        Column positions are dimensioned for DejaVu Sans, not for the Inter the
        root asks for. Inter is on no host by default: this file renders in Segoe
@@ -94,7 +100,7 @@
           a name wider than its column is set down in size until it fits,
           rather than painted over the column beside it. It is never cut.  */
       .dname    { font-size:13px; fill:#F2F5F8; font-weight:600; inline-size:262px; max-lines:1 }
-      .tname    { font-size:13px; fill:#AEB8C4; inline-size:224px; max-lines:1 }
+      .tname    { font-size:13px; fill:#AEB8C4; inline-size:300px; max-lines:1 }
       .val      { font-size:13px; fill:#E4E9EF; font-weight:600 }
       .pen      { font-size:12px; fill:#8A94A3; font-weight:600 }
       .pts      { font-size:15px; fill:#F2F5F8; font-weight:700 }
@@ -104,7 +110,7 @@
     </style>
   </defs>
 
-  <rect x="0" y="0" width="1200" height="1084" fill="#0B0D10"/>
+  <rect x="0" y="0" width="1300" height="1084" fill="#0B0D10"/>
 
   <!--  heading band (identical across the image module's templates)  -->
   <!--  Each of the two heading values carries its own group, so that a template
@@ -119,8 +125,8 @@
     <text class="eyebrow" x="184" y="36"><tspan>TIER&#160;</tspan><tspan id="division_tier" inkscape:label="division_tier">1</tspan></text>
   </g>
   <text id="division_name" inkscape:label="division_name" class="title" x="48" y="76">Division Name</text>
-  <text id="result_status" inkscape:label="result_status" class="phase" x="1152" y="72" text-anchor="end">Final Results</text>
-  <rect x="0" y="93" width="1200" height="3" fill="#E8113C"/>
+  <text id="result_status" inkscape:label="result_status" class="phase" x="1252" y="72" text-anchor="end">Final Results</text>
+  <rect x="0" y="93" width="1300" height="3" fill="#E8113C"/>
 
   <!--  round block  -->
   <text class="roundlbl" x="48" y="140">
@@ -128,34 +134,34 @@
   </text>
   <text id="session_name" inkscape:label="session_name" class="track" x="48" y="188">Session Name</text>
   <text id="race_name" inkscape:label="race_name" class="sub" x="48" y="220">Grand Prix Name</text>
-  <line x1="48" y1="252" x2="1152" y2="252" stroke="#262B33" stroke-width="1"/>
+  <line x1="48" y1="252" x2="1252" y2="252" stroke="#262B33" stroke-width="1"/>
 
   <!--  fastest lap of the session: the holder of the bonus, not a column  -->
   <g id="fastest_lap_group" inkscape:label="fastest_lap_group">
-    <rect x="792" y="108" width="360" height="120" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
-    <text class="statlbl" x="1128" y="137" text-anchor="end">FASTEST LAP</text>
-    <text id="fastest_lap_driver_name" inkscape:label="fastest_lap_driver_name" class="fldrv" x="1128" y="173" text-anchor="end">Driver Name</text>
-    <text id="fastest_lap_time" inkscape:label="fastest_lap_time" class="fltime" x="1128" y="207" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <rect x="892" y="108" width="360" height="120" rx="12" fill="#14171C" stroke="#262B33" stroke-width="1"/>
+    <text class="statlbl" x="1228" y="137" text-anchor="end">FASTEST LAP</text>
+    <text id="fastest_lap_driver_name" inkscape:label="fastest_lap_driver_name" class="fldrv" x="1228" y="173" text-anchor="end">Driver Name</text>
+    <text id="fastest_lap_time" inkscape:label="fastest_lap_time" class="fltime" x="1228" y="207" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
   </g>
 
   <!--  column headers  -->
   <text class="colhead" x="80" y="318" text-anchor="end">POS</text>
   <text class="colhead" x="124" y="318">DRIVER</text>
   <text class="colhead" x="424" y="318">TEAM</text>
-  <text class="colhead" x="744" y="318" text-anchor="end">TIME</text>
-  <text class="colhead" x="856" y="318" text-anchor="end">FAST LAP</text>
-  <text class="colhead" x="940" y="318" text-anchor="end">IN-GAME</text>
+  <text class="colhead" x="844" y="318" text-anchor="end">TIME</text>
+  <text class="colhead" x="956" y="318" text-anchor="end">FAST LAP</text>
+  <text class="colhead" x="1040" y="318" text-anchor="end">IN-GAME</text>
   <!--  Each sanction heading carries its own group, removed while the phase
         it stands for is still open. The cells below belong to their rows and
         are emptied rather than removed, a node having one parent.  -->
   <g id="postrace_penalty_group" inkscape:label="postrace_penalty_group">
-    <text class="colhead" x="1024" y="318" text-anchor="end">PENALTY</text>
+    <text class="colhead" x="1124" y="318" text-anchor="end">PENALTY</text>
   </g>
   <g id="appeal_penalty_group" inkscape:label="appeal_penalty_group">
-    <text class="colhead" x="1104" y="318" text-anchor="end">APPEAL</text>
+    <text class="colhead" x="1204" y="318" text-anchor="end">APPEAL</text>
   </g>
-  <text class="colhead" x="1152" y="318" text-anchor="end">PTS</text>
-  <line x1="48" y1="326" x2="1152" y2="326" stroke="#262B33" stroke-width="1"/>
+  <text class="colhead" x="1252" y="318" text-anchor="end">PTS</text>
+  <line x1="48" y1="326" x2="1252" y2="326" stroke="#262B33" stroke-width="1"/>
 
   <!-- ================= rows ================= -->
   <g id="row_1_group" inkscape:label="row_1_group">
@@ -165,27 +171,27 @@
     <text id="row_1_driver_name" inkscape:label="row_1_driver_name" class="dname" x="124" y="357">Driver Name</text>
     <image id="row_1_team_image" inkscape:label="row_1_team_image" x="396" y="343" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_1_team_name" inkscape:label="row_1_team_name" class="tname" x="424" y="357">Team Name</text>
-    <text id="row_1_time" inkscape:label="row_1_time" class="val" x="744" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_1_fastest_lap" inkscape:label="row_1_fastest_lap" class="val" x="856" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_1_ingame_penalty" inkscape:label="row_1_ingame_penalty" class="pen" x="940" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_1_postrace_penalty" inkscape:label="row_1_postrace_penalty" class="pen" x="1024" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_1_appeal_penalty" inkscape:label="row_1_appeal_penalty" class="pen" x="1104" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_1_points" inkscape:label="row_1_points" class="pts" x="1152" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_1_time" inkscape:label="row_1_time" class="val" x="844" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_1_fastest_lap" inkscape:label="row_1_fastest_lap" class="val" x="956" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_1_ingame_penalty" inkscape:label="row_1_ingame_penalty" class="pen" x="1040" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_1_postrace_penalty" inkscape:label="row_1_postrace_penalty" class="pen" x="1124" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_1_appeal_penalty" inkscape:label="row_1_appeal_penalty" class="pen" x="1204" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_1_points" inkscape:label="row_1_points" class="pts" x="1252" y="357" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_2_group" inkscape:label="row_2_group">
       <rect id="row_2_vertical_crop_point" inkscape:label="row_2_vertical_crop_point" x="0" y="444" width="1" height="0" fill="none"/>
-    <rect x="48" y="368" width="1104" height="32" fill="#14171C"/>
+    <rect x="48" y="368" width="1204" height="32" fill="#14171C"/>
     <text id="row_2_position" inkscape:label="row_2_position" class="pos" x="80" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">2</text>
     <image id="row_2_driver_flag" inkscape:label="row_2_driver_flag" x="92" y="377" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_2_driver_name" inkscape:label="row_2_driver_name" class="dname" x="124" y="389">Driver Name</text>
     <image id="row_2_team_image" inkscape:label="row_2_team_image" x="396" y="375" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_2_team_name" inkscape:label="row_2_team_name" class="tname" x="424" y="389">Team Name</text>
-    <text id="row_2_time" inkscape:label="row_2_time" class="val" x="744" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_2_fastest_lap" inkscape:label="row_2_fastest_lap" class="val" x="856" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_2_ingame_penalty" inkscape:label="row_2_ingame_penalty" class="pen" x="940" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_2_postrace_penalty" inkscape:label="row_2_postrace_penalty" class="pen" x="1024" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_2_appeal_penalty" inkscape:label="row_2_appeal_penalty" class="pen" x="1104" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_2_points" inkscape:label="row_2_points" class="pts" x="1152" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_2_time" inkscape:label="row_2_time" class="val" x="844" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_2_fastest_lap" inkscape:label="row_2_fastest_lap" class="val" x="956" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_2_ingame_penalty" inkscape:label="row_2_ingame_penalty" class="pen" x="1040" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_2_postrace_penalty" inkscape:label="row_2_postrace_penalty" class="pen" x="1124" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_2_appeal_penalty" inkscape:label="row_2_appeal_penalty" class="pen" x="1204" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_2_points" inkscape:label="row_2_points" class="pts" x="1252" y="389" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_3_group" inkscape:label="row_3_group">
       <rect id="row_3_vertical_crop_point" inkscape:label="row_3_vertical_crop_point" x="0" y="476" width="1" height="0" fill="none"/>
@@ -194,27 +200,27 @@
     <text id="row_3_driver_name" inkscape:label="row_3_driver_name" class="dname" x="124" y="421">Driver Name</text>
     <image id="row_3_team_image" inkscape:label="row_3_team_image" x="396" y="407" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_3_team_name" inkscape:label="row_3_team_name" class="tname" x="424" y="421">Team Name</text>
-    <text id="row_3_time" inkscape:label="row_3_time" class="val" x="744" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_3_fastest_lap" inkscape:label="row_3_fastest_lap" class="val" x="856" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_3_ingame_penalty" inkscape:label="row_3_ingame_penalty" class="pen" x="940" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_3_postrace_penalty" inkscape:label="row_3_postrace_penalty" class="pen" x="1024" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_3_appeal_penalty" inkscape:label="row_3_appeal_penalty" class="pen" x="1104" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_3_points" inkscape:label="row_3_points" class="pts" x="1152" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_3_time" inkscape:label="row_3_time" class="val" x="844" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_3_fastest_lap" inkscape:label="row_3_fastest_lap" class="val" x="956" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_3_ingame_penalty" inkscape:label="row_3_ingame_penalty" class="pen" x="1040" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_3_postrace_penalty" inkscape:label="row_3_postrace_penalty" class="pen" x="1124" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_3_appeal_penalty" inkscape:label="row_3_appeal_penalty" class="pen" x="1204" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_3_points" inkscape:label="row_3_points" class="pts" x="1252" y="421" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_4_group" inkscape:label="row_4_group">
       <rect id="row_4_vertical_crop_point" inkscape:label="row_4_vertical_crop_point" x="0" y="508" width="1" height="0" fill="none"/>
-    <rect x="48" y="432" width="1104" height="32" fill="#14171C"/>
+    <rect x="48" y="432" width="1204" height="32" fill="#14171C"/>
     <text id="row_4_position" inkscape:label="row_4_position" class="pos" x="80" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">4</text>
     <image id="row_4_driver_flag" inkscape:label="row_4_driver_flag" x="92" y="441" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_4_driver_name" inkscape:label="row_4_driver_name" class="dname" x="124" y="453">Driver Name</text>
     <image id="row_4_team_image" inkscape:label="row_4_team_image" x="396" y="439" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_4_team_name" inkscape:label="row_4_team_name" class="tname" x="424" y="453">Team Name</text>
-    <text id="row_4_time" inkscape:label="row_4_time" class="val" x="744" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_4_fastest_lap" inkscape:label="row_4_fastest_lap" class="val" x="856" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_4_ingame_penalty" inkscape:label="row_4_ingame_penalty" class="pen" x="940" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_4_postrace_penalty" inkscape:label="row_4_postrace_penalty" class="pen" x="1024" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_4_appeal_penalty" inkscape:label="row_4_appeal_penalty" class="pen" x="1104" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_4_points" inkscape:label="row_4_points" class="pts" x="1152" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_4_time" inkscape:label="row_4_time" class="val" x="844" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_4_fastest_lap" inkscape:label="row_4_fastest_lap" class="val" x="956" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_4_ingame_penalty" inkscape:label="row_4_ingame_penalty" class="pen" x="1040" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_4_postrace_penalty" inkscape:label="row_4_postrace_penalty" class="pen" x="1124" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_4_appeal_penalty" inkscape:label="row_4_appeal_penalty" class="pen" x="1204" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_4_points" inkscape:label="row_4_points" class="pts" x="1252" y="453" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_5_group" inkscape:label="row_5_group">
       <rect id="row_5_vertical_crop_point" inkscape:label="row_5_vertical_crop_point" x="0" y="540" width="1" height="0" fill="none"/>
@@ -223,27 +229,27 @@
     <text id="row_5_driver_name" inkscape:label="row_5_driver_name" class="dname" x="124" y="485">Driver Name</text>
     <image id="row_5_team_image" inkscape:label="row_5_team_image" x="396" y="471" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_5_team_name" inkscape:label="row_5_team_name" class="tname" x="424" y="485">Team Name</text>
-    <text id="row_5_time" inkscape:label="row_5_time" class="val" x="744" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_5_fastest_lap" inkscape:label="row_5_fastest_lap" class="val" x="856" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_5_ingame_penalty" inkscape:label="row_5_ingame_penalty" class="pen" x="940" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_5_postrace_penalty" inkscape:label="row_5_postrace_penalty" class="pen" x="1024" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_5_appeal_penalty" inkscape:label="row_5_appeal_penalty" class="pen" x="1104" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_5_points" inkscape:label="row_5_points" class="pts" x="1152" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_5_time" inkscape:label="row_5_time" class="val" x="844" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_5_fastest_lap" inkscape:label="row_5_fastest_lap" class="val" x="956" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_5_ingame_penalty" inkscape:label="row_5_ingame_penalty" class="pen" x="1040" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_5_postrace_penalty" inkscape:label="row_5_postrace_penalty" class="pen" x="1124" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_5_appeal_penalty" inkscape:label="row_5_appeal_penalty" class="pen" x="1204" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_5_points" inkscape:label="row_5_points" class="pts" x="1252" y="485" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_6_group" inkscape:label="row_6_group">
       <rect id="row_6_vertical_crop_point" inkscape:label="row_6_vertical_crop_point" x="0" y="572" width="1" height="0" fill="none"/>
-    <rect x="48" y="496" width="1104" height="32" fill="#14171C"/>
+    <rect x="48" y="496" width="1204" height="32" fill="#14171C"/>
     <text id="row_6_position" inkscape:label="row_6_position" class="pos" x="80" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">6</text>
     <image id="row_6_driver_flag" inkscape:label="row_6_driver_flag" x="92" y="505" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_6_driver_name" inkscape:label="row_6_driver_name" class="dname" x="124" y="517">Driver Name</text>
     <image id="row_6_team_image" inkscape:label="row_6_team_image" x="396" y="503" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_6_team_name" inkscape:label="row_6_team_name" class="tname" x="424" y="517">Team Name</text>
-    <text id="row_6_time" inkscape:label="row_6_time" class="val" x="744" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_6_fastest_lap" inkscape:label="row_6_fastest_lap" class="val" x="856" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_6_ingame_penalty" inkscape:label="row_6_ingame_penalty" class="pen" x="940" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_6_postrace_penalty" inkscape:label="row_6_postrace_penalty" class="pen" x="1024" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_6_appeal_penalty" inkscape:label="row_6_appeal_penalty" class="pen" x="1104" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_6_points" inkscape:label="row_6_points" class="pts" x="1152" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_6_time" inkscape:label="row_6_time" class="val" x="844" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_6_fastest_lap" inkscape:label="row_6_fastest_lap" class="val" x="956" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_6_ingame_penalty" inkscape:label="row_6_ingame_penalty" class="pen" x="1040" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_6_postrace_penalty" inkscape:label="row_6_postrace_penalty" class="pen" x="1124" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_6_appeal_penalty" inkscape:label="row_6_appeal_penalty" class="pen" x="1204" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_6_points" inkscape:label="row_6_points" class="pts" x="1252" y="517" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_7_group" inkscape:label="row_7_group">
       <rect id="row_7_vertical_crop_point" inkscape:label="row_7_vertical_crop_point" x="0" y="604" width="1" height="0" fill="none"/>
@@ -252,27 +258,27 @@
     <text id="row_7_driver_name" inkscape:label="row_7_driver_name" class="dname" x="124" y="549">Driver Name</text>
     <image id="row_7_team_image" inkscape:label="row_7_team_image" x="396" y="535" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_7_team_name" inkscape:label="row_7_team_name" class="tname" x="424" y="549">Team Name</text>
-    <text id="row_7_time" inkscape:label="row_7_time" class="val" x="744" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_7_fastest_lap" inkscape:label="row_7_fastest_lap" class="val" x="856" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_7_ingame_penalty" inkscape:label="row_7_ingame_penalty" class="pen" x="940" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_7_postrace_penalty" inkscape:label="row_7_postrace_penalty" class="pen" x="1024" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_7_appeal_penalty" inkscape:label="row_7_appeal_penalty" class="pen" x="1104" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_7_points" inkscape:label="row_7_points" class="pts" x="1152" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_7_time" inkscape:label="row_7_time" class="val" x="844" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_7_fastest_lap" inkscape:label="row_7_fastest_lap" class="val" x="956" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_7_ingame_penalty" inkscape:label="row_7_ingame_penalty" class="pen" x="1040" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_7_postrace_penalty" inkscape:label="row_7_postrace_penalty" class="pen" x="1124" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_7_appeal_penalty" inkscape:label="row_7_appeal_penalty" class="pen" x="1204" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_7_points" inkscape:label="row_7_points" class="pts" x="1252" y="549" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_8_group" inkscape:label="row_8_group">
       <rect id="row_8_vertical_crop_point" inkscape:label="row_8_vertical_crop_point" x="0" y="636" width="1" height="0" fill="none"/>
-    <rect x="48" y="560" width="1104" height="32" fill="#14171C"/>
+    <rect x="48" y="560" width="1204" height="32" fill="#14171C"/>
     <text id="row_8_position" inkscape:label="row_8_position" class="pos" x="80" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">8</text>
     <image id="row_8_driver_flag" inkscape:label="row_8_driver_flag" x="92" y="569" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_8_driver_name" inkscape:label="row_8_driver_name" class="dname" x="124" y="581">Driver Name</text>
     <image id="row_8_team_image" inkscape:label="row_8_team_image" x="396" y="567" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_8_team_name" inkscape:label="row_8_team_name" class="tname" x="424" y="581">Team Name</text>
-    <text id="row_8_time" inkscape:label="row_8_time" class="val" x="744" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_8_fastest_lap" inkscape:label="row_8_fastest_lap" class="val" x="856" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_8_ingame_penalty" inkscape:label="row_8_ingame_penalty" class="pen" x="940" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_8_postrace_penalty" inkscape:label="row_8_postrace_penalty" class="pen" x="1024" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_8_appeal_penalty" inkscape:label="row_8_appeal_penalty" class="pen" x="1104" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_8_points" inkscape:label="row_8_points" class="pts" x="1152" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_8_time" inkscape:label="row_8_time" class="val" x="844" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_8_fastest_lap" inkscape:label="row_8_fastest_lap" class="val" x="956" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_8_ingame_penalty" inkscape:label="row_8_ingame_penalty" class="pen" x="1040" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_8_postrace_penalty" inkscape:label="row_8_postrace_penalty" class="pen" x="1124" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_8_appeal_penalty" inkscape:label="row_8_appeal_penalty" class="pen" x="1204" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_8_points" inkscape:label="row_8_points" class="pts" x="1252" y="581" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_9_group" inkscape:label="row_9_group">
       <rect id="row_9_vertical_crop_point" inkscape:label="row_9_vertical_crop_point" x="0" y="668" width="1" height="0" fill="none"/>
@@ -281,27 +287,27 @@
     <text id="row_9_driver_name" inkscape:label="row_9_driver_name" class="dname" x="124" y="613">Driver Name</text>
     <image id="row_9_team_image" inkscape:label="row_9_team_image" x="396" y="599" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_9_team_name" inkscape:label="row_9_team_name" class="tname" x="424" y="613">Team Name</text>
-    <text id="row_9_time" inkscape:label="row_9_time" class="val" x="744" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_9_fastest_lap" inkscape:label="row_9_fastest_lap" class="val" x="856" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_9_ingame_penalty" inkscape:label="row_9_ingame_penalty" class="pen" x="940" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_9_postrace_penalty" inkscape:label="row_9_postrace_penalty" class="pen" x="1024" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_9_appeal_penalty" inkscape:label="row_9_appeal_penalty" class="pen" x="1104" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_9_points" inkscape:label="row_9_points" class="pts" x="1152" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_9_time" inkscape:label="row_9_time" class="val" x="844" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_9_fastest_lap" inkscape:label="row_9_fastest_lap" class="val" x="956" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_9_ingame_penalty" inkscape:label="row_9_ingame_penalty" class="pen" x="1040" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_9_postrace_penalty" inkscape:label="row_9_postrace_penalty" class="pen" x="1124" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_9_appeal_penalty" inkscape:label="row_9_appeal_penalty" class="pen" x="1204" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_9_points" inkscape:label="row_9_points" class="pts" x="1252" y="613" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_10_group" inkscape:label="row_10_group">
       <rect id="row_10_vertical_crop_point" inkscape:label="row_10_vertical_crop_point" x="0" y="700" width="1" height="0" fill="none"/>
-    <rect x="48" y="624" width="1104" height="32" fill="#14171C"/>
+    <rect x="48" y="624" width="1204" height="32" fill="#14171C"/>
     <text id="row_10_position" inkscape:label="row_10_position" class="pos" x="80" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">10</text>
     <image id="row_10_driver_flag" inkscape:label="row_10_driver_flag" x="92" y="633" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_10_driver_name" inkscape:label="row_10_driver_name" class="dname" x="124" y="645">Driver Name</text>
     <image id="row_10_team_image" inkscape:label="row_10_team_image" x="396" y="631" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_10_team_name" inkscape:label="row_10_team_name" class="tname" x="424" y="645">Team Name</text>
-    <text id="row_10_time" inkscape:label="row_10_time" class="val" x="744" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_10_fastest_lap" inkscape:label="row_10_fastest_lap" class="val" x="856" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_10_ingame_penalty" inkscape:label="row_10_ingame_penalty" class="pen" x="940" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_10_postrace_penalty" inkscape:label="row_10_postrace_penalty" class="pen" x="1024" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_10_appeal_penalty" inkscape:label="row_10_appeal_penalty" class="pen" x="1104" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_10_points" inkscape:label="row_10_points" class="pts" x="1152" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_10_time" inkscape:label="row_10_time" class="val" x="844" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_10_fastest_lap" inkscape:label="row_10_fastest_lap" class="val" x="956" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_10_ingame_penalty" inkscape:label="row_10_ingame_penalty" class="pen" x="1040" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_10_postrace_penalty" inkscape:label="row_10_postrace_penalty" class="pen" x="1124" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_10_appeal_penalty" inkscape:label="row_10_appeal_penalty" class="pen" x="1204" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_10_points" inkscape:label="row_10_points" class="pts" x="1252" y="645" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_11_group" inkscape:label="row_11_group">
       <rect id="row_11_vertical_crop_point" inkscape:label="row_11_vertical_crop_point" x="0" y="732" width="1" height="0" fill="none"/>
@@ -310,27 +316,27 @@
     <text id="row_11_driver_name" inkscape:label="row_11_driver_name" class="dname" x="124" y="677">Driver Name</text>
     <image id="row_11_team_image" inkscape:label="row_11_team_image" x="396" y="663" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_11_team_name" inkscape:label="row_11_team_name" class="tname" x="424" y="677">Team Name</text>
-    <text id="row_11_time" inkscape:label="row_11_time" class="val" x="744" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_11_fastest_lap" inkscape:label="row_11_fastest_lap" class="val" x="856" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_11_ingame_penalty" inkscape:label="row_11_ingame_penalty" class="pen" x="940" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_11_postrace_penalty" inkscape:label="row_11_postrace_penalty" class="pen" x="1024" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_11_appeal_penalty" inkscape:label="row_11_appeal_penalty" class="pen" x="1104" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_11_points" inkscape:label="row_11_points" class="pts" x="1152" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_11_time" inkscape:label="row_11_time" class="val" x="844" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_11_fastest_lap" inkscape:label="row_11_fastest_lap" class="val" x="956" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_11_ingame_penalty" inkscape:label="row_11_ingame_penalty" class="pen" x="1040" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_11_postrace_penalty" inkscape:label="row_11_postrace_penalty" class="pen" x="1124" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_11_appeal_penalty" inkscape:label="row_11_appeal_penalty" class="pen" x="1204" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_11_points" inkscape:label="row_11_points" class="pts" x="1252" y="677" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_12_group" inkscape:label="row_12_group">
       <rect id="row_12_vertical_crop_point" inkscape:label="row_12_vertical_crop_point" x="0" y="764" width="1" height="0" fill="none"/>
-    <rect x="48" y="688" width="1104" height="32" fill="#14171C"/>
+    <rect x="48" y="688" width="1204" height="32" fill="#14171C"/>
     <text id="row_12_position" inkscape:label="row_12_position" class="pos" x="80" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">12</text>
     <image id="row_12_driver_flag" inkscape:label="row_12_driver_flag" x="92" y="697" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_12_driver_name" inkscape:label="row_12_driver_name" class="dname" x="124" y="709">Driver Name</text>
     <image id="row_12_team_image" inkscape:label="row_12_team_image" x="396" y="695" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_12_team_name" inkscape:label="row_12_team_name" class="tname" x="424" y="709">Team Name</text>
-    <text id="row_12_time" inkscape:label="row_12_time" class="val" x="744" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_12_fastest_lap" inkscape:label="row_12_fastest_lap" class="val" x="856" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_12_ingame_penalty" inkscape:label="row_12_ingame_penalty" class="pen" x="940" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_12_postrace_penalty" inkscape:label="row_12_postrace_penalty" class="pen" x="1024" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_12_appeal_penalty" inkscape:label="row_12_appeal_penalty" class="pen" x="1104" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_12_points" inkscape:label="row_12_points" class="pts" x="1152" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_12_time" inkscape:label="row_12_time" class="val" x="844" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_12_fastest_lap" inkscape:label="row_12_fastest_lap" class="val" x="956" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_12_ingame_penalty" inkscape:label="row_12_ingame_penalty" class="pen" x="1040" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_12_postrace_penalty" inkscape:label="row_12_postrace_penalty" class="pen" x="1124" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_12_appeal_penalty" inkscape:label="row_12_appeal_penalty" class="pen" x="1204" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_12_points" inkscape:label="row_12_points" class="pts" x="1252" y="709" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_13_group" inkscape:label="row_13_group">
       <rect id="row_13_vertical_crop_point" inkscape:label="row_13_vertical_crop_point" x="0" y="796" width="1" height="0" fill="none"/>
@@ -339,27 +345,27 @@
     <text id="row_13_driver_name" inkscape:label="row_13_driver_name" class="dname" x="124" y="741">Driver Name</text>
     <image id="row_13_team_image" inkscape:label="row_13_team_image" x="396" y="727" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_13_team_name" inkscape:label="row_13_team_name" class="tname" x="424" y="741">Team Name</text>
-    <text id="row_13_time" inkscape:label="row_13_time" class="val" x="744" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_13_fastest_lap" inkscape:label="row_13_fastest_lap" class="val" x="856" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_13_ingame_penalty" inkscape:label="row_13_ingame_penalty" class="pen" x="940" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_13_postrace_penalty" inkscape:label="row_13_postrace_penalty" class="pen" x="1024" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_13_appeal_penalty" inkscape:label="row_13_appeal_penalty" class="pen" x="1104" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_13_points" inkscape:label="row_13_points" class="pts" x="1152" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_13_time" inkscape:label="row_13_time" class="val" x="844" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_13_fastest_lap" inkscape:label="row_13_fastest_lap" class="val" x="956" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_13_ingame_penalty" inkscape:label="row_13_ingame_penalty" class="pen" x="1040" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_13_postrace_penalty" inkscape:label="row_13_postrace_penalty" class="pen" x="1124" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_13_appeal_penalty" inkscape:label="row_13_appeal_penalty" class="pen" x="1204" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_13_points" inkscape:label="row_13_points" class="pts" x="1252" y="741" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_14_group" inkscape:label="row_14_group">
       <rect id="row_14_vertical_crop_point" inkscape:label="row_14_vertical_crop_point" x="0" y="828" width="1" height="0" fill="none"/>
-    <rect x="48" y="752" width="1104" height="32" fill="#14171C"/>
+    <rect x="48" y="752" width="1204" height="32" fill="#14171C"/>
     <text id="row_14_position" inkscape:label="row_14_position" class="pos" x="80" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">14</text>
     <image id="row_14_driver_flag" inkscape:label="row_14_driver_flag" x="92" y="761" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_14_driver_name" inkscape:label="row_14_driver_name" class="dname" x="124" y="773">Driver Name</text>
     <image id="row_14_team_image" inkscape:label="row_14_team_image" x="396" y="759" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_14_team_name" inkscape:label="row_14_team_name" class="tname" x="424" y="773">Team Name</text>
-    <text id="row_14_time" inkscape:label="row_14_time" class="val" x="744" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_14_fastest_lap" inkscape:label="row_14_fastest_lap" class="val" x="856" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_14_ingame_penalty" inkscape:label="row_14_ingame_penalty" class="pen" x="940" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_14_postrace_penalty" inkscape:label="row_14_postrace_penalty" class="pen" x="1024" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_14_appeal_penalty" inkscape:label="row_14_appeal_penalty" class="pen" x="1104" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_14_points" inkscape:label="row_14_points" class="pts" x="1152" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_14_time" inkscape:label="row_14_time" class="val" x="844" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_14_fastest_lap" inkscape:label="row_14_fastest_lap" class="val" x="956" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_14_ingame_penalty" inkscape:label="row_14_ingame_penalty" class="pen" x="1040" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_14_postrace_penalty" inkscape:label="row_14_postrace_penalty" class="pen" x="1124" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_14_appeal_penalty" inkscape:label="row_14_appeal_penalty" class="pen" x="1204" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_14_points" inkscape:label="row_14_points" class="pts" x="1252" y="773" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_15_group" inkscape:label="row_15_group">
       <rect id="row_15_vertical_crop_point" inkscape:label="row_15_vertical_crop_point" x="0" y="860" width="1" height="0" fill="none"/>
@@ -368,27 +374,27 @@
     <text id="row_15_driver_name" inkscape:label="row_15_driver_name" class="dname" x="124" y="805">Driver Name</text>
     <image id="row_15_team_image" inkscape:label="row_15_team_image" x="396" y="791" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_15_team_name" inkscape:label="row_15_team_name" class="tname" x="424" y="805">Team Name</text>
-    <text id="row_15_time" inkscape:label="row_15_time" class="val" x="744" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_15_fastest_lap" inkscape:label="row_15_fastest_lap" class="val" x="856" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_15_ingame_penalty" inkscape:label="row_15_ingame_penalty" class="pen" x="940" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_15_postrace_penalty" inkscape:label="row_15_postrace_penalty" class="pen" x="1024" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_15_appeal_penalty" inkscape:label="row_15_appeal_penalty" class="pen" x="1104" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_15_points" inkscape:label="row_15_points" class="pts" x="1152" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_15_time" inkscape:label="row_15_time" class="val" x="844" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_15_fastest_lap" inkscape:label="row_15_fastest_lap" class="val" x="956" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_15_ingame_penalty" inkscape:label="row_15_ingame_penalty" class="pen" x="1040" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_15_postrace_penalty" inkscape:label="row_15_postrace_penalty" class="pen" x="1124" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_15_appeal_penalty" inkscape:label="row_15_appeal_penalty" class="pen" x="1204" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_15_points" inkscape:label="row_15_points" class="pts" x="1252" y="805" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_16_group" inkscape:label="row_16_group">
       <rect id="row_16_vertical_crop_point" inkscape:label="row_16_vertical_crop_point" x="0" y="892" width="1" height="0" fill="none"/>
-    <rect x="48" y="816" width="1104" height="32" fill="#14171C"/>
+    <rect x="48" y="816" width="1204" height="32" fill="#14171C"/>
     <text id="row_16_position" inkscape:label="row_16_position" class="pos" x="80" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">16</text>
     <image id="row_16_driver_flag" inkscape:label="row_16_driver_flag" x="92" y="825" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_16_driver_name" inkscape:label="row_16_driver_name" class="dname" x="124" y="837">Driver Name</text>
     <image id="row_16_team_image" inkscape:label="row_16_team_image" x="396" y="823" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_16_team_name" inkscape:label="row_16_team_name" class="tname" x="424" y="837">Team Name</text>
-    <text id="row_16_time" inkscape:label="row_16_time" class="val" x="744" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_16_fastest_lap" inkscape:label="row_16_fastest_lap" class="val" x="856" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_16_ingame_penalty" inkscape:label="row_16_ingame_penalty" class="pen" x="940" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_16_postrace_penalty" inkscape:label="row_16_postrace_penalty" class="pen" x="1024" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_16_appeal_penalty" inkscape:label="row_16_appeal_penalty" class="pen" x="1104" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_16_points" inkscape:label="row_16_points" class="pts" x="1152" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_16_time" inkscape:label="row_16_time" class="val" x="844" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_16_fastest_lap" inkscape:label="row_16_fastest_lap" class="val" x="956" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_16_ingame_penalty" inkscape:label="row_16_ingame_penalty" class="pen" x="1040" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_16_postrace_penalty" inkscape:label="row_16_postrace_penalty" class="pen" x="1124" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_16_appeal_penalty" inkscape:label="row_16_appeal_penalty" class="pen" x="1204" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_16_points" inkscape:label="row_16_points" class="pts" x="1252" y="837" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_17_group" inkscape:label="row_17_group">
       <rect id="row_17_vertical_crop_point" inkscape:label="row_17_vertical_crop_point" x="0" y="924" width="1" height="0" fill="none"/>
@@ -397,27 +403,27 @@
     <text id="row_17_driver_name" inkscape:label="row_17_driver_name" class="dname" x="124" y="869">Driver Name</text>
     <image id="row_17_team_image" inkscape:label="row_17_team_image" x="396" y="855" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_17_team_name" inkscape:label="row_17_team_name" class="tname" x="424" y="869">Team Name</text>
-    <text id="row_17_time" inkscape:label="row_17_time" class="val" x="744" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_17_fastest_lap" inkscape:label="row_17_fastest_lap" class="val" x="856" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_17_ingame_penalty" inkscape:label="row_17_ingame_penalty" class="pen" x="940" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_17_postrace_penalty" inkscape:label="row_17_postrace_penalty" class="pen" x="1024" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_17_appeal_penalty" inkscape:label="row_17_appeal_penalty" class="pen" x="1104" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_17_points" inkscape:label="row_17_points" class="pts" x="1152" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_17_time" inkscape:label="row_17_time" class="val" x="844" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_17_fastest_lap" inkscape:label="row_17_fastest_lap" class="val" x="956" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_17_ingame_penalty" inkscape:label="row_17_ingame_penalty" class="pen" x="1040" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_17_postrace_penalty" inkscape:label="row_17_postrace_penalty" class="pen" x="1124" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_17_appeal_penalty" inkscape:label="row_17_appeal_penalty" class="pen" x="1204" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_17_points" inkscape:label="row_17_points" class="pts" x="1252" y="869" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_18_group" inkscape:label="row_18_group">
       <rect id="row_18_vertical_crop_point" inkscape:label="row_18_vertical_crop_point" x="0" y="956" width="1" height="0" fill="none"/>
-    <rect x="48" y="880" width="1104" height="32" fill="#14171C"/>
+    <rect x="48" y="880" width="1204" height="32" fill="#14171C"/>
     <text id="row_18_position" inkscape:label="row_18_position" class="pos" x="80" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">18</text>
     <image id="row_18_driver_flag" inkscape:label="row_18_driver_flag" x="92" y="889" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_18_driver_name" inkscape:label="row_18_driver_name" class="dname" x="124" y="901">Driver Name</text>
     <image id="row_18_team_image" inkscape:label="row_18_team_image" x="396" y="887" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_18_team_name" inkscape:label="row_18_team_name" class="tname" x="424" y="901">Team Name</text>
-    <text id="row_18_time" inkscape:label="row_18_time" class="val" x="744" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_18_fastest_lap" inkscape:label="row_18_fastest_lap" class="val" x="856" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_18_ingame_penalty" inkscape:label="row_18_ingame_penalty" class="pen" x="940" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_18_postrace_penalty" inkscape:label="row_18_postrace_penalty" class="pen" x="1024" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_18_appeal_penalty" inkscape:label="row_18_appeal_penalty" class="pen" x="1104" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_18_points" inkscape:label="row_18_points" class="pts" x="1152" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_18_time" inkscape:label="row_18_time" class="val" x="844" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_18_fastest_lap" inkscape:label="row_18_fastest_lap" class="val" x="956" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_18_ingame_penalty" inkscape:label="row_18_ingame_penalty" class="pen" x="1040" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_18_postrace_penalty" inkscape:label="row_18_postrace_penalty" class="pen" x="1124" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_18_appeal_penalty" inkscape:label="row_18_appeal_penalty" class="pen" x="1204" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_18_points" inkscape:label="row_18_points" class="pts" x="1252" y="901" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_19_group" inkscape:label="row_19_group">
       <rect id="row_19_vertical_crop_point" inkscape:label="row_19_vertical_crop_point" x="0" y="988" width="1" height="0" fill="none"/>
@@ -426,27 +432,27 @@
     <text id="row_19_driver_name" inkscape:label="row_19_driver_name" class="dname" x="124" y="933">Driver Name</text>
     <image id="row_19_team_image" inkscape:label="row_19_team_image" x="396" y="919" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_19_team_name" inkscape:label="row_19_team_name" class="tname" x="424" y="933">Team Name</text>
-    <text id="row_19_time" inkscape:label="row_19_time" class="val" x="744" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_19_fastest_lap" inkscape:label="row_19_fastest_lap" class="val" x="856" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_19_ingame_penalty" inkscape:label="row_19_ingame_penalty" class="pen" x="940" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_19_postrace_penalty" inkscape:label="row_19_postrace_penalty" class="pen" x="1024" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_19_appeal_penalty" inkscape:label="row_19_appeal_penalty" class="pen" x="1104" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_19_points" inkscape:label="row_19_points" class="pts" x="1152" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_19_time" inkscape:label="row_19_time" class="val" x="844" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_19_fastest_lap" inkscape:label="row_19_fastest_lap" class="val" x="956" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_19_ingame_penalty" inkscape:label="row_19_ingame_penalty" class="pen" x="1040" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_19_postrace_penalty" inkscape:label="row_19_postrace_penalty" class="pen" x="1124" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_19_appeal_penalty" inkscape:label="row_19_appeal_penalty" class="pen" x="1204" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_19_points" inkscape:label="row_19_points" class="pts" x="1252" y="933" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_20_group" inkscape:label="row_20_group">
       <rect id="row_20_vertical_crop_point" inkscape:label="row_20_vertical_crop_point" x="0" y="1020" width="1" height="0" fill="none"/>
-    <rect x="48" y="944" width="1104" height="32" fill="#14171C"/>
+    <rect x="48" y="944" width="1204" height="32" fill="#14171C"/>
     <text id="row_20_position" inkscape:label="row_20_position" class="pos" x="80" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">20</text>
     <image id="row_20_driver_flag" inkscape:label="row_20_driver_flag" x="92" y="953" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_20_driver_name" inkscape:label="row_20_driver_name" class="dname" x="124" y="965">Driver Name</text>
     <image id="row_20_team_image" inkscape:label="row_20_team_image" x="396" y="951" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_20_team_name" inkscape:label="row_20_team_name" class="tname" x="424" y="965">Team Name</text>
-    <text id="row_20_time" inkscape:label="row_20_time" class="val" x="744" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_20_fastest_lap" inkscape:label="row_20_fastest_lap" class="val" x="856" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_20_ingame_penalty" inkscape:label="row_20_ingame_penalty" class="pen" x="940" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_20_postrace_penalty" inkscape:label="row_20_postrace_penalty" class="pen" x="1024" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_20_appeal_penalty" inkscape:label="row_20_appeal_penalty" class="pen" x="1104" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_20_points" inkscape:label="row_20_points" class="pts" x="1152" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_20_time" inkscape:label="row_20_time" class="val" x="844" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_20_fastest_lap" inkscape:label="row_20_fastest_lap" class="val" x="956" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_20_ingame_penalty" inkscape:label="row_20_ingame_penalty" class="pen" x="1040" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_20_postrace_penalty" inkscape:label="row_20_postrace_penalty" class="pen" x="1124" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_20_appeal_penalty" inkscape:label="row_20_appeal_penalty" class="pen" x="1204" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_20_points" inkscape:label="row_20_points" class="pts" x="1252" y="965" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_21_group" inkscape:label="row_21_group">
       <rect id="row_21_vertical_crop_point" inkscape:label="row_21_vertical_crop_point" x="0" y="1052" width="1" height="0" fill="none"/>
@@ -455,39 +461,39 @@
     <text id="row_21_driver_name" inkscape:label="row_21_driver_name" class="dname" x="124" y="997">Driver Name</text>
     <image id="row_21_team_image" inkscape:label="row_21_team_image" x="396" y="983" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_21_team_name" inkscape:label="row_21_team_name" class="tname" x="424" y="997">Team Name</text>
-    <text id="row_21_time" inkscape:label="row_21_time" class="val" x="744" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_21_fastest_lap" inkscape:label="row_21_fastest_lap" class="val" x="856" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_21_ingame_penalty" inkscape:label="row_21_ingame_penalty" class="pen" x="940" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_21_postrace_penalty" inkscape:label="row_21_postrace_penalty" class="pen" x="1024" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_21_appeal_penalty" inkscape:label="row_21_appeal_penalty" class="pen" x="1104" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_21_points" inkscape:label="row_21_points" class="pts" x="1152" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_21_time" inkscape:label="row_21_time" class="val" x="844" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_21_fastest_lap" inkscape:label="row_21_fastest_lap" class="val" x="956" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_21_ingame_penalty" inkscape:label="row_21_ingame_penalty" class="pen" x="1040" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_21_postrace_penalty" inkscape:label="row_21_postrace_penalty" class="pen" x="1124" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_21_appeal_penalty" inkscape:label="row_21_appeal_penalty" class="pen" x="1204" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_21_points" inkscape:label="row_21_points" class="pts" x="1252" y="997" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
   <g id="row_22_group" inkscape:label="row_22_group">
       <rect id="row_22_vertical_crop_point" inkscape:label="row_22_vertical_crop_point" x="0" y="1084" width="1" height="0" fill="none"/>
-    <rect x="48" y="1008" width="1104" height="32" fill="#14171C"/>
+    <rect x="48" y="1008" width="1204" height="32" fill="#14171C"/>
     <text id="row_22_position" inkscape:label="row_22_position" class="pos" x="80" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">22</text>
     <image id="row_22_driver_flag" inkscape:label="row_22_driver_flag" x="92" y="1017" width="21" height="14" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_22_driver_name" inkscape:label="row_22_driver_name" class="dname" x="124" y="1029">Driver Name</text>
     <image id="row_22_team_image" inkscape:label="row_22_team_image" x="396" y="1015" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
     <text id="row_22_team_name" inkscape:label="row_22_team_name" class="tname" x="424" y="1029">Team Name</text>
-    <text id="row_22_time" inkscape:label="row_22_time" class="val" x="744" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
-    <text id="row_22_fastest_lap" inkscape:label="row_22_fastest_lap" class="val" x="856" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
-    <text id="row_22_ingame_penalty" inkscape:label="row_22_ingame_penalty" class="pen" x="940" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_22_postrace_penalty" inkscape:label="row_22_postrace_penalty" class="pen" x="1024" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_22_appeal_penalty" inkscape:label="row_22_appeal_penalty" class="pen" x="1104" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
-    <text id="row_22_points" inkscape:label="row_22_points" class="pts" x="1152" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
+    <text id="row_22_time" inkscape:label="row_22_time" class="val" x="844" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">0:00.000</text>
+    <text id="row_22_fastest_lap" inkscape:label="row_22_fastest_lap" class="val" x="956" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums;fill:#E4E9EF">0:00.000</text>
+    <text id="row_22_ingame_penalty" inkscape:label="row_22_ingame_penalty" class="pen" x="1040" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_22_postrace_penalty" inkscape:label="row_22_postrace_penalty" class="pen" x="1124" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_22_appeal_penalty" inkscape:label="row_22_appeal_penalty" class="pen" x="1204" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">&#8212;</text>
+    <text id="row_22_points" inkscape:label="row_22_points" class="pts" x="1252" y="1029" text-anchor="end" style="font-variant-numeric:tabular-nums">000</text>
   </g>
 
   <!--  footer  -->
   <g id="footer_group" inkscape:label="footer_group">
-    <line x1="48" y1="1046" x2="1152" y2="1046" stroke="#262B33" stroke-width="1"/>
+    <line x1="48" y1="1046" x2="1252" y2="1046" stroke="#262B33" stroke-width="1"/>
     <text class="foot" x="48" y="1072">RACE CLASSIFICATION</text>
     <!--  the legend of the marking, which is true only where the marking is. It carries
           its own group rather than sitting inside fastest_lap_group, because it is drawn
           in this band and rides up with it when the canvas is cropped, and a node cannot
           be in two groups. The race service removes the two together.  -->
     <g id="fastest_lap_legend_group" inkscape:label="fastest_lap_legend_group">
-      <text class="foot" x="1152" y="1072" text-anchor="end">FASTEST LAP MARKED IN COLOUR</text>
+      <text class="foot" x="1252" y="1072" text-anchor="end">FASTEST LAP MARKED IN COLOUR</text>
     </g>
   </g>
 </svg>

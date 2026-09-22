@@ -50,7 +50,10 @@ LEFT_MARGIN = 48
 
 #: Where the season grid begins. Everything to the left of this — the classification block,
 #: its positions, names, points and gaps — is not this script's business and does not move.
-GRID_LEFT = 360
+#:
+#: Moved out from 360 by #381, which gave a team a **full name** to be drawn by: the team
+#: column took the 100px, and the grid and the canvas followed it out.
+GRID_LEFT = 460
 
 #: One session column. 54 clears the 45.6px widest pair with 8.4px to spare, which is the
 #: headroom a font narrower or wider than DejaVu needs.
