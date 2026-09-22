@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.driver_cog import DriverCog  # noqa: E402
 from services.season_service import SeasonImmutableError  # noqa: E402
+from tests.support.teams import resolves_as_typed  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 8808
@@ -94,6 +95,8 @@ def _make_cog(
     bot.season_service.assert_season_mutable = AsyncMock(
         side_effect=None if mutable else SeasonImmutableError("archived")
     )
+
+    bot.team_service.resolve_division_team = resolves_as_typed()
 
     bot.placement_service = MagicMock()
     bot.placement_service.resolve_division = AsyncMock(return_value=division)
@@ -425,6 +428,38 @@ async def test_a_driver_is_assigned_to_the_named_team_and_division(tmp_path):
     assert kwargs["team_name"] == "Alpha"
     assert kwargs["season_id"] == SEASON_ID
     assert "Assigned" in _replied(interaction)
+
+
+async def test_assign_seats_the_driver_in_the_team_its_shorthand_names(tmp_path):
+    """A team is typed by its shorthand (#381), resolved in the division before anything is
+    written; the placement is made under the shorthand as the team holds it."""
+    from services.team_service import TeamReference
+
+    cog = _make_cog(season=_season())
+    cog.bot.team_service.resolve_division_team = AsyncMock(
+        return_value=TeamReference(team={"id": 7, "name": "ALP", "full_name": "Alpha Racing"})
+    )
+    interaction = _interaction()
+
+    await _assign(cog, interaction, team="alp")
+
+    cog.bot.team_service.resolve_division_team.assert_awaited_once_with(DIVISION_ID, "alp")
+    assert cog.bot.placement_service.assign_driver.await_args.kwargs["team_name"] == "ALP"
+
+
+async def test_assign_refuses_a_team_the_division_does_not_have(tmp_path):
+    from services.team_service import TeamReference
+
+    cog = _make_cog(season=_season())
+    cog.bot.team_service.resolve_division_team = AsyncMock(
+        return_value=TeamReference(refusal="`@everyone` is not a team.")
+    )
+    interaction = _interaction()
+
+    await _assign(cog, interaction, team="@everyone")
+
+    assert "`@everyone` is not a team." in _replied(interaction)
+    cog.bot.placement_service.assign_driver.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

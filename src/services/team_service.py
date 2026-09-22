@@ -560,6 +560,10 @@ class TeamService:
             for r in rows
         ]
 
+    async def resolve_division_team(self, division_id: int, text: str | None) -> TeamReference:
+        """The team of the division whose shorthand *text* is."""
+        return await resolve_division_team(self._db_path, division_id, text)
+
     async def resolve_server_team(self, text: str | None) -> TeamReference:
         """The team of the server's list whose shorthand *text* is."""
         return resolve_team_reference(
