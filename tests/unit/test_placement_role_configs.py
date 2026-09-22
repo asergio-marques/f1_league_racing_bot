@@ -347,3 +347,67 @@ async def test_a_change_made_by_the_bot_itself_is_attributed_to_it(tmp_path):
     await PlacementService(db_path).set_team_role_config("Alpha", ROLE_ID)
 
     assert (await _audit(db_path))[0]["actor_name"] == "system"
+
+
+# ---------------------------------------------------------------------------
+# A role belongs to one team only (decided 2026-09-22, with #375)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_role_another_team_holds_is_refused_and_nothing_written(tmp_path):
+    """A submission names a team by its role, so a role two teams held would name either."""
+    db_path = await _make_db(tmp_path)
+    service = PlacementService(db_path)
+    await service.set_team_role_config("Alpha", ROLE_ID)
+    await service.set_team_role_config("Beta", OTHER_ROLE_ID)
+
+    with pytest.raises(ValueError, match='already the role of "Alpha"'):
+        await service.set_team_role_config("Beta", ROLE_ID)
+
+    assert (await service.get_team_role_config("Beta")).role_id == OTHER_ROLE_ID
+    assert len(await _audit(db_path)) == 2
+
+
+async def test_the_reserve_s_role_is_one_no_other_team_may_hold(tmp_path):
+    db_path = await _make_db(tmp_path)
+    service = PlacementService(db_path)
+    await service.set_team_role_config("Reserve", ROLE_ID)
+
+    with pytest.raises(ValueError, match='"Reserve"'):
+        await service.set_team_role_config("Alpha", ROLE_ID)
+
+
+async def test_a_team_may_be_given_the_role_it_already_holds(tmp_path):
+    db_path = await _make_db(tmp_path)
+    service = PlacementService(db_path)
+    await service.set_team_role_config("Alpha", ROLE_ID)
+
+    await service.set_team_role_config("Alpha", ROLE_ID)
+
+    assert (await service.get_team_role_config("Alpha")).role_id == ROLE_ID
+
+
+async def test_the_team_holding_a_role_is_named_but_never_the_team_asking(tmp_path):
+    db_path = await _make_db(tmp_path)
+    service = PlacementService(db_path)
+    await service.set_team_role_config("Alpha", ROLE_ID)
+
+    assert await service.team_holding_role(ROLE_ID) == "Alpha"
+    assert await service.team_holding_role(ROLE_ID, other_than="Alpha") is None
+    assert await service.team_holding_role(OTHER_ROLE_ID) is None
+
+
+async def test_the_schema_refuses_two_teams_one_role(tmp_path):
+    """The backstop behind the refusal, for any writer that goes around the service."""
+    import sqlite3
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO team_role_configs (team_name, role_id) VALUES ('Alpha', ?)", (ROLE_ID,)
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            await db.execute(
+                "INSERT INTO team_role_configs (team_name, role_id) VALUES ('Beta', ?)",
+                (ROLE_ID,),
+            )

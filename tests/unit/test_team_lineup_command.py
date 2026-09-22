@@ -92,6 +92,7 @@ def _make_cog(
     bot.placement_service.set_team_role_config = AsyncMock(return_value=None)
     bot.placement_service.delete_team_role_config = AsyncMock(return_value=None)
     bot.placement_service.swap_team_role = AsyncMock(return_value=0)
+    bot.placement_service.team_holding_role = AsyncMock(return_value=None)
     bot.team_service = MagicMock()
     bot.team_service.get_teams_with_roles = AsyncMock(return_value=[])
     bot.team_service.get_division_teams = AsyncMock(

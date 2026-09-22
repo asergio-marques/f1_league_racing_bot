@@ -121,12 +121,42 @@ class PlacementService:
             updated_at=row["updated_at"],
         )
 
+    async def team_holding_role(
+        self, role_id: int, *, other_than: str | None = None
+    ) -> str | None:
+        """The team of the server's list mapped to *role_id*, other than *other_than*, or None."""
+        async with get_connection(self._db_path) as db:
+            return await self._team_holding_role(db, role_id, other_than)
+
+    @staticmethod
+    async def _team_holding_role(db, role_id: int, other_than: str | None) -> str | None:
+        cursor = await db.execute(
+            "SELECT team_name FROM team_role_configs WHERE role_id = ? AND team_name != ? "
+            "LIMIT 1",
+            (role_id, other_than or ""),
+        )
+        row = await cursor.fetchone()
+        return row["team_name"] if row else None
+
     async def set_team_role_config(
         self, team_name: str, role_id: int,
         actor_id: int = 0, actor_name: str = "system",
     ) -> None:
-        """Upsert a team → role mapping and write an audit entry."""
+        """Upsert a team → role mapping and write an audit entry.
+
+        **A role belongs to one team only** (decided 2026-09-22, with #375). A submission names
+        a team by its role, and a result records the team the role resolves to, so a role two
+        teams held would name either. Raises ``ValueError`` naming the team that holds it, and
+        writes nothing; re-setting a team's own role is allowed. The schema's unique index on
+        ``role_id`` is the backstop.
+        """
         async with get_connection(self._db_path) as db:
+            holder = await self._team_holding_role(db, role_id, team_name)
+            if holder is not None:
+                raise ValueError(
+                    f'<@&{role_id}> is already the role of "{holder}". A role belongs to '
+                    "one team only."
+                )
             # Read existing before upsert for audit old_value
             cursor = await db.execute(
                 "SELECT role_id FROM team_role_configs WHERE team_name = ?",
