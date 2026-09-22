@@ -505,6 +505,24 @@ def _ungranted_line(user_ids: list[str]) -> str:
     )
 
 
+async def _channel_on_server(guild, channel_id: int) -> bool:
+    """Whether *channel_id* is still a channel of *guild*, only NotFound answering no (#374).
+
+    The cache is asked first and the API second, the cache holding no channel it has not
+    seen. Any failure but NotFound answers yes: a check that could not tell must not be the
+    thing that refuses a season.
+    """
+    if guild.get_channel(channel_id) is not None:
+        return True
+    try:
+        await guild.fetch_channel(channel_id)
+    except discord.NotFound:
+        return False
+    except Exception as exc:  # noqa: BLE001 — cannot tell, so not a fault
+        log.warning("channel check: could not fetch channel %s: %s", channel_id, exc)
+    return True
+
+
 def _unposted_lineup_line(division_name: str) -> str:
     """A division whose lineup a placements confirmation could not post (#387).
 
@@ -2165,7 +2183,7 @@ class SeasonCog(commands.Cog):
             # Named in the public report, every one of them, so that whoever reads the review
             # sees who is still to be placed or turned down — not merely how many.
             unsettled, channel_faults = await self._placement_confirmation_faults(
-                cfg.season_id
+                cfg.season_id, interaction.guild
             )
             if unsettled:
                 for chunk in _chunk_message(
@@ -2238,14 +2256,7 @@ class SeasonCog(commands.Cog):
                     ephemeral=True,
                 )
             if channel_faults:
-                body = "\n".join(f"\u2022 {line}" for line in channel_faults)
-                await interaction.followup.send(
-                    "\u26d4 **Every division needs its lineup and calendar channels.**\n"
-                    f"{body}\n"
-                    "Set them with `/division lineup-channel` and `/division calendar-channel`, "
-                    "then run `/season placements-review` again.",
-                    ephemeral=True,
-                )
+                await self._send_channel_faults(interaction, channel_faults)
             no_divisions = not await self._season_has_divisions(cfg.season_id)
             if no_divisions:
                 await interaction.followup.send(
@@ -2300,14 +2311,83 @@ class SeasonCog(commands.Cog):
         divisions = await self.bot.season_service.get_divisions(season_id)  # type: ignore[attr-defined]
         return any(division.status != "CANCELLED" for division in divisions)
 
+    #: Every channel a division posts to, in the order a manager reads them: the column that
+    #: holds it, what a league calls it, the command that sets it, and the module that needs
+    #: it — None where every season does.
+    _DIVISION_CHANNELS = (
+        ("lineup_channel_id", "lineup channel", "/division lineup-channel", None),
+        ("calendar_channel_id", "calendar channel", "/division calendar-channel", None),
+        ("forecast_channel_id", "weather channel", "/division weather-channel", "weather"),
+        ("results_channel_id", "results channel", "/division results-channel", "results"),
+        ("standings_channel_id", "standings channel", "/division standings-channel", "results"),
+        ("penalty_channel_id", "verdicts channel", "/division verdicts-channel", "results"),
+        ("rsvp_channel_id", "RSVP channel", "/division rsvp-channel", "attendance"),
+        (
+            "attendance_channel_id",
+            "attendance channel",
+            "/division attendance-channel",
+            "attendance",
+        ),
+    )
+
+    async def _division_channel_faults(self, season_id: int, guild=None) -> list[str]:
+        """Every channel a division of the season posts to that is not set, or not on the server.
+
+        **Both confirmations ask this** (#374): the first, and the one mid-season. Nothing
+        clears a channel's id when Discord deletes the channel, and no module can be enabled
+        once a season is under way, so mid-season every channel is still *set*; the question
+        worth asking is whether it is still *there*. Asked at both, so the two cannot come to
+        disagree about what a division needs.
+
+        A channel is looked for in the cache and then fetched, a fetch answering NotFound
+        being the one proof it is gone. Any other failure is **not** a fault: a check that
+        could not tell must not be what refuses a season. With no *guild*, only whether each
+        channel is set is judged. A cancelled division posts nothing and is passed over.
+        """
+        modules = self.bot.module_service  # type: ignore[attr-defined]
+        enabled = {
+            None: True,
+            "weather": await modules.is_weather_enabled(),
+            "results": await modules.is_results_enabled(),
+            "attendance": await modules.is_attendance_enabled(),
+        }
+        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            cursor = await db.execute(
+                "SELECT d.name, d.lineup_channel_id, d.calendar_channel_id, "
+                "       d.forecast_channel_id, rc.results_channel_id, "
+                "       rc.standings_channel_id, rc.penalty_channel_id, "
+                "       ac.rsvp_channel_id, ac.attendance_channel_id "
+                "FROM divisions d "
+                "LEFT JOIN division_results_config rc ON rc.division_id = d.id "
+                "LEFT JOIN attendance_division_config ac ON ac.division_id = d.id "
+                "WHERE d.season_id = ? AND d.status != 'CANCELLED' ORDER BY d.tier",
+                (season_id,),
+            )
+            rows = await cursor.fetchall()
+
+        faults: list[str] = []
+        for row in rows:
+            for column, label, command, module in self._DIVISION_CHANNELS:
+                if not enabled[module]:
+                    continue
+                value = row[column]
+                if not value:
+                    faults.append(f"**{row['name']}** has no {label} — `{command}`.")
+                elif guild is not None and not await _channel_on_server(guild, int(value)):
+                    faults.append(
+                        f"**{row['name']}**'s {label} is no longer on the server — `{command}`."
+                    )
+        return faults
+
     async def _placement_confirmation_faults(
-        self, season_id: int
+        self, season_id: int, guild=None
     ) -> tuple[list[str], list[str]]:
         """What stops placements being confirmed that no older gate checks (issue #220).
 
-        Returns ``(unsettled, channels)``: the unsettled signups, named, and each division
-        missing its lineup or calendar channel. The review withholds its button on either,
-        and the confirmation refuses on either, from this one reading.
+        Returns ``(unsettled, channels)``: the unsettled signups, named, and every channel a
+        division posts to that is not set or no longer on the server (#374). The review
+        withholds its button on either, and the confirmation refuses on either, from this one
+        reading — mid-season as at the first confirmation.
         """
         from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL
         from services.season_lifecycle_service import UNSETTLED_STATES
@@ -2323,12 +2403,6 @@ class SeasonCog(commands.Cog):
                 (*UNSETTLED_STATES,),
             )
             unsettled_rows = await cursor.fetchall()
-            cursor = await db.execute(
-                "SELECT name, lineup_channel_id, calendar_channel_id FROM divisions "
-                "WHERE season_id = ? AND status != 'CANCELLED' ORDER BY tier",
-                (season_id,),
-            )
-            division_rows = await cursor.fetchall()
 
         state_labels = {
             "UNASSIGNED": "not yet placed",
@@ -2341,19 +2415,21 @@ class SeasonCog(commands.Cog):
             f"{state_labels.get(row['current_state'], row['current_state'])}"
             for row in unsettled_rows
         ]
-        channels: list[str] = []
-        for row in division_rows:
-            missing = [
-                label
-                for label, value in (
-                    ("lineup channel", row["lineup_channel_id"]),
-                    ("calendar channel", row["calendar_channel_id"]),
-                )
-                if not value
-            ]
-            if missing:
-                channels.append(f"**{row['name']}** has no {' and no '.join(missing)}")
-        return unsettled, channels
+        return unsettled, await self._division_channel_faults(season_id, guild)
+
+    @staticmethod
+    async def _send_channel_faults(interaction, channel_faults: list[str]) -> None:
+        """Tell the reviewer, privately, which division channels withhold the button.
+
+        One message for both reviews, each fault naming the command that puts it right.
+        """
+        body = "\n".join(f"• {line}" for line in channel_faults)
+        for chunk in _chunk_message(
+            "⛔ **Every division needs every channel it posts to.**\n"
+            f"{body}\n"
+            "Set each with the command named, then run `/season placements-review` again."
+        ):
+            await interaction.followup.send(chunk, ephemeral=True)
 
     # ------------------------------------------------------------------
     # /season placements-review mid-season — Ongoing, placements (issue #220)
@@ -6177,9 +6253,10 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # ── Gate S: every signup settled, every division's own channels set (#220) ──
+        # ── Gate S: every signup settled, and every channel a division posts to set and on
+        # the server (#220, #374) ──
         unsettled, channel_faults = await self._placement_confirmation_faults(
-            cfg.season_id
+            cfg.season_id, interaction.guild
         )
         if unsettled or channel_faults:
             bullets = "\n".join(f"\u2022 {line}" for line in [*unsettled, *channel_faults])

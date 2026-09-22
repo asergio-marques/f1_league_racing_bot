@@ -607,17 +607,30 @@ async def test_an_unsettled_signup_withholds_approval_and_is_named(db_path):
     assert "`/driver reject`" in _private(messages)
 
 
-async def test_a_division_without_its_lineup_or_calendar_channel_withholds_approval(db_path):
-    """The two channels every division posts to are required at confirmation (issue #220)."""
+async def test_a_division_missing_a_channel_it_posts_to_withholds_approval(db_path):
+    """Every channel a division posts to is required at confirmation (issues #220, #374) —
+    a module's as well as the lineup's and the calendar's, so the review withholds its button
+    on what the press would refuse."""
     cog = _cog(db_path)
     cog._placement_confirmation_faults = AsyncMock(
-        return_value=([], ["**Pro** has no lineup channel and no calendar channel"])
+        return_value=([], ["**Pro** has no results channel — `/division results-channel`."])
     )
     messages = await _review(cog, _interaction())
 
     cog._post_approval_prompt.assert_not_awaited()
-    assert "Every division needs its lineup and calendar channels" in _private(messages)
-    assert "**Pro** has no lineup channel" in _private(messages)
+    assert "Every division needs every channel it posts to" in _private(messages)
+    assert "**Pro** has no results channel — `/division results-channel`." in _private(messages)
+
+
+async def test_the_review_judges_the_channels_upon_its_own_server(db_path):
+    """A channel deleted from the server is found only where the server is asked (#374)."""
+    cog = _cog(db_path)
+    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    interaction = _interaction()
+
+    await _review(cog, interaction)
+
+    assert cog._placement_confirmation_faults.await_args.args[1] is interaction.guild
 
 
 async def test_a_phantom_points_configuration_withholds_approval(db_path):

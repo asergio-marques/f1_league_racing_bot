@@ -120,6 +120,11 @@ def _cog(db_path, stage: SeasonStage) -> SeasonCog:
         return_value=PlacementsCommitted(placements=[{}])
     )
     cog.bot.output_router.post_log = AsyncMock()
+    # No module on: the season's lineup and calendar channels are the only ones it posts to.
+    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     return cog
 
 
