@@ -78,7 +78,7 @@ The module does nothing at all until it has a channel, and the league's two role
 
 **The channel** is where the Sign Up button gets posted. Setting it rewrites the channel's permissions: everyone loses sight of it, the base role can see it but cannot type in it, and holders of either league role can see and type. That is deliberate — the only thing a driver should be doing in there is pressing the button.
 
-**The two roles are your league's, not this module's**, and are set in the [core guide](configuring-the-core-bot.md#step-1--tell-the-bot-who-is-in-charge). Here is what signups do with them. **The base role** is who the signups are for: it decides who can see the channel, and it is the role that gets pinged when you open the window. Change it and the bot moves the channel's permissions to the new role. **The driver role** is the reward: the bot grants it the moment you approve a driver, so it is the badge that says someone is through the door.
+**The two roles are your league's, not this module's**, and are set in the [core guide](configuring-the-core-bot.md#step-1--tell-the-bot-who-is-in-charge). Here is what signups do with them. **The base role** is who the signups are for: it decides who can see the channel, and it is the role that gets pinged when you open the window. Change it and the bot moves the channel's permissions to the new role. **The driver role** is the reward: the bot grants it the moment you approve a driver, so it is the badge that says someone is through the door. That means the bot has to be able to grant it — its own role must sit above the driver role in your server's role list, and it needs **Manage Roles** — and `/bot driver-role` refuses one it cannot. If either role is later deleted from the server, you can replace it even mid-season; the core guide says how.
 
 > **Use a channel of its own, and nothing else.** Setting the signup channel replaces every permission override on it, and moving the signup channel elsewhere strips the old one bare on the way out. Any permissions you had set up by hand go with them.
 
@@ -159,7 +159,7 @@ Both parameters are optional.
 
 **The window belongs to a season.** You can open it once the season's configuration is confirmed and it is waiting for its signup window, or mid-season while it is ongoing with no placements left to confirm. Opening it moves the season on — to signups, or mid-season to ongoing, signups.
 
-The bot checks things in order and stops at the first problem: test mode must be off, the module must be configured, the window must not already be open, the season must be waiting or ongoing, all three of channel and roles must be set, there must be at least one slot, the close time must parse and be in the future, and every track ID must exist.
+The bot checks things in order and stops at the first problem: test mode must be off, the module must be configured, the window must not already be open, the season must be waiting or ongoing, all three of channel and roles must be set — with both roles still on the server and the driver role one the bot can grant, every fault among these named together — there must be at least one slot, the close time must parse and be in the future, and every track ID must exist.
 
 > **A test-mode season never opens a window.** No real driver may sign up while the server is in test mode — the Sign Up button refuses them too — and a season confirmed in test mode goes straight to placements. Test mode is set in configuration and switched off when the season ends; see Step 10.
 
@@ -287,7 +287,7 @@ A driver can hold one seat per division, and a team runs out of seats. The Reser
 
 **Once placements are confirmed, the lineup changes differently.** `/driver move` moves a driver to another team or division, `/driver release` takes them out of one division while they keep their others, and `/driver sack` removes them from the season. Each takes effect at once, roles and lineup included. Sacking deletes nobody: a sacked driver may sign up again in a later window.
 
-The lineup channel is set per division with `/division lineup-channel` — see step 9 of the [core guide](configuring-the-core-bot.md). Confirming placements refuses a division without one.
+The lineup channel is set per division with `/division lineup-channel` — see step 9 of the [core guide](configuring-the-core-bot.md). Confirming placements refuses a division without one, or whose lineup channel has since been deleted from the server — mid-season too, since the confirmation posts the lineup of every division a new driver joins.
 
 ---
 
@@ -348,12 +348,13 @@ Worth running through before you confirm the season's configuration, which fixes
 - [ ] Both privileged intents are on, Message Content especially
 - [ ] The signup channel is a channel of its own, not one with permissions you care about
 - [ ] The base role and the driver role are both set, and are two different roles — one is who may sign up, the other is who got through
+- [ ] The bot's own role sits above the driver role in your server's role list, so it can grant it
 - [ ] Your teams are added, so the preferred-team question has something to offer
 - [ ] Every slot you might race in is on the list, in UTC, and you are happy with it — because the list is fixed once the season's configuration is confirmed
 - [ ] You have decided about lap times, and have the track IDs to hand if you want them
 - [ ] `/signup config view` shows what you expect
 - [ ] `close_time` is the date you meant, if you are setting one — `/signup close-time modify` moves it later if not
-- [ ] Once the window closes: each division has a lineup channel, and every signup is settled before you confirm placements
+- [ ] Once the window closes: each division has every channel it posts to, and every signup is settled before you confirm placements
 
 ---
 
@@ -363,7 +364,9 @@ Worth running through before you confirm the season's configuration, which fixes
 |---|---|
 | Every `/signup` command refused | You are outside the interaction channel, or you hold neither the interaction role nor the league admin role. Discord's Administrator permission does not get you past either |
 | `/signup open` refused | Something in the chain is missing — the channel, one of the roles, or any time slot at all — or the season is not waiting for a window: its configuration is unconfirmed, or it is mid-way through placements. The reply names it |
-| `/season config-review` offers no button | The signup module is on but missing its channel or a role. The review names which |
+| `/signup open` refused, naming a role no longer on the server | That role was deleted. Replace it with `/bot base-role` or `/bot driver-role` — allowed mid-season for a deleted role — and the bot gives the new one to every driver |
+| `/signup open` refused, saying the driver role sits above the bot's | Move the bot's own role above the driver role in your server's role list, then open again |
+| `/season config-review` offers no button | The signup module is on but missing its channel or a role, a role has been deleted, or the bot cannot grant the driver role. The review names which |
 | `/season placements-review` offers no button, naming drivers | Those signups are unsettled. Place or reject each driver, or finish reviewing their signup |
 | Drivers press the button and nothing happens after | The Message Content intent is off, so the bot cannot see anything they type |
 | The preferred-team question offers nothing but "No Preference" | No teams have been added yet |
