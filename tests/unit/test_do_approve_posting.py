@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -40,8 +41,15 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
+from cogs.season_cog import (  # noqa: E402
+    PendingConfig,
+    PendingDivision,
+    SeasonCog,
+    _ConfirmView,
+)
 from db.database import get_connection, run_migrations  # noqa: E402
+from models.round import Round, RoundFormat  # noqa: E402
+from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 12608
 SEASON_ID = 11
@@ -227,11 +235,14 @@ def _attendance_config(*, rsvp=700, attendance=701):
     return SimpleNamespace(rsvp_channel_id=rsvp, attendance_channel_id=attendance)
 
 
-async def _approve(cog, interaction, *, calendar_posting=None, calendar_error=None):
+async def _approve(
+    cog, interaction, *, calendar_posting=None, calendar_error=None, tracks_error=None
+):
     """Run the approval with every posting service stubbed, returning the stubs."""
     posting = calendar_posting or SimpleNamespace(notices=[], problem=None)
     with patch(
-        "services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})
+        "services.calendar_post_service.tracks_by_name",
+        new=AsyncMock(return_value={}, side_effect=tracks_error),
     ), patch(
         "services.calendar_post_service.post_division_calendar",
         new=AsyncMock(return_value=posting, side_effect=calendar_error),
@@ -795,6 +806,103 @@ async def test_the_setup_is_let_go_of_before_anything_is_posted(db_path):
     await _approve(cog, _interaction())
 
     assert held == [{}]
+
+
+def _hold_the_setup(cog) -> None:
+    """The setup as the bot holds it in memory, and the season as the database holds it.
+
+    One division, Pro, with one round a month out, in naive UTC as a round is stored.
+    `_get_pending` is the real one here, not the fixture's stand-in, so what the round
+    commands find is what the store holds.
+    """
+    moment = (datetime.now(timezone.utc) + timedelta(days=30)).replace(tzinfo=None)
+    cog._pending = {
+        USER_ID: PendingConfig(
+            season_id=SEASON_ID,
+            season_number=1,
+            divisions=[
+                PendingDivision(
+                    name="Pro",
+                    role_id=3001,
+                    tier=1,
+                    rounds=[{
+                        "round_number": 1,
+                        "format": RoundFormat.NORMAL,
+                        "track_name": "Silverstone",
+                        "scheduled_at": moment,
+                    }],
+                )
+            ],
+        )
+    }
+    del cog._get_pending
+
+    season_svc = cog.bot.season_service
+    # What the database answers once the season has left setup.
+    season_svc.sync_pending_config = AsyncMock(
+        side_effect=ValueError(
+            f"season {SEASON_ID} is ACTIVE, not in setup; "
+            "its configuration can no longer be synced"
+        )
+    )
+    season_svc.get_confirmed_season = AsyncMock(
+        return_value=SimpleNamespace(id=SEASON_ID)
+    )
+    season_svc.get_division_rounds = AsyncMock(
+        side_effect=lambda div_id: [
+            Round(
+                id=div_id * 10,
+                division_id=div_id,
+                round_number=1,
+                format=RoundFormat.NORMAL,
+                track_name="Silverstone",
+                scheduled_at=moment,
+            )
+        ]
+    )
+
+
+async def _move_round_one(cog, interaction) -> None:
+    """`/round amend` moving Pro's round 1 a week later — still ahead, so allowed."""
+    later = datetime.now(timezone.utc) + timedelta(days=37)
+    await undecorate(SeasonCog.round_amend)(
+        cog,
+        interaction,
+        division_name="Pro",
+        round_number=1,
+        scheduled_at=later.strftime("%Y-%m-%dT%H:%M:%S"),
+    )
+
+
+def _offered_the_move(interaction) -> bool:
+    """Whether the running season's confirmation was offered for round 1 of Pro."""
+    return any(
+        "**Amend Round 1** in division **Pro**" in str(call.args[0])
+        and isinstance(call.kwargs.get("view"), _ConfirmView)
+        for call in interaction.followup.send.await_args_list
+        if call.args
+    )
+
+
+async def test_a_round_can_still_be_moved_after_a_posting_failure(db_path):
+    """The season is running and a round has to move: nothing about the approval having
+    stumbled over its posting may stand in the way of that until the bot restarts."""
+    cog = _cog(db_path)
+    _hold_the_setup(cog)
+
+    with pytest.raises(sqlite3.OperationalError):
+        await _approve(
+            cog,
+            _interaction(),
+            tracks_error=sqlite3.OperationalError("database is locked"),
+        )
+
+    amend = _interaction()
+    await _move_round_one(cog, amend)
+
+    assert _offered_the_move(amend)
+    assert "pending setup" not in _replied(amend)
+    cog.bot.season_service.sync_pending_config.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
