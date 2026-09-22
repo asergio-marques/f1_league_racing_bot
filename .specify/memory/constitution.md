@@ -1,6 +1,34 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-22 — v14.2.0 → v14.2.1: PATCH — the base role and the driver role are the league's, not the signup module's (issue #276)]
+  Version change    : 14.2.0 → 14.2.1
+  Bump rationale    : PATCH, decided with the user in planning #276. A data listing is
+                      corrected to match an ownership move; no principle is added, removed or
+                      redefined. The two roles kept their meaning: the base role still decides
+                      who sees the signup channel, and the driver role is still granted on
+                      approval and revoked on the return to Not Signed Up.
+
+  Modified sections :
+    - Data & State Management, SignupConfiguration — `base_role_id` and `signedup_role_id` are
+      removed from the entity, which the signup module owns. A note in their place records
+      both as the league's, held on the server configuration: `base_role_id`, and
+      `driver_role_id`, the signed-up role renamed. Disabling the module clears neither, a
+      pack clears both, confirming a season's configuration fixes both, and both are required
+      only while the module is enabled.
+
+  Why the constitution moved:
+    - Branch feature/276-league-roles-in-core moves both roles onto the server configuration,
+      sets them with `/bot base-role` and `/bot driver-role`, and withdraws the `/signup`
+      commands that set them. The stewarding module and the hub (#279) need the base role
+      whether or not signup is enabled, and disabling signup used to delete both.
+    - `docs/wip-specs/core_specification.md`, "The league's roles", is the governing
+      statement of the rules; this document now only records where the data lives.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred items    : none.
+
 [2026-09-21 — v14.1.0 → v14.2.0: MINOR — the former-driver flag is set by a round's final results, and is two-way (issue #216)]
   Version change    : 14.1.0 → 14.2.0
   Bump rationale    : MINOR, decided with the user. Principle VIII's former-driver rule gains
@@ -7668,11 +7696,19 @@ to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
 - `signups_open` (BOOLEAN, default false).
 - `signup_tracks` (JSON array of track IDs, nullable — empty means no tracks shown).
 - `general_signup_channel_id` (TEXT, nullable).
-- `base_role_id` (TEXT, nullable) — Discord role that can see and use the signup channel.
-- `signedup_role_id` (TEXT, nullable) — Discord role granted on signup approval.
 - `close_at` (TEXT, nullable) — ISO 8601 UTC timestamp; set when signups are opened with
   an optional close duration; cleared on manual or automatic close; re-armed on bot restart
   if non-null (Principle XI, signup close timer).
+- The **base role** and the **driver role** the module reads are not its own. They are the
+  league's, held on the server configuration beside the bot's own settings (v14.2.1):
+  - `base_role_id` (INTEGER, nullable) — the role the league's members hold; where the signup
+    module is enabled, it decides who may see and use the signup channel.
+  - `driver_role_id` (INTEGER, nullable) — the role the league's drivers hold, granted on
+    signup approval and revoked whenever the driver returns to Not Signed Up. It was the
+    "signed-up role" before v14.2.1.
+  - Disabling the signup module MUST clear neither; a pack MUST clear both, a role belonging to
+    its server. Confirming a season's configuration fixes both until the season ends. Both are
+    required only while the signup module is enabled.
 
 **TimeSlot** (the league's):
 - `slot_id` (INTEGER, auto-increment PK).
@@ -8196,4 +8232,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.2.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-21
+**Version**: 14.2.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-22
