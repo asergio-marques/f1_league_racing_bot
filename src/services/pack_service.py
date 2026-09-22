@@ -104,6 +104,12 @@ async def pack(
                 "signup_button_message_id = NULL, signup_closed_message_id = NULL"
             )
 
+            # The league's two roles are core's (issue #276), but a role belongs to its
+            # server: the next server's `/bot init` finds none, as it finds no team role.
+            await db.execute(
+                "UPDATE server_configs SET base_role_id = NULL, driver_role_id = NULL"
+            )
+
             # The message ids the bot keeps to edit its own posts.
             await db.execute("DELETE FROM forecast_messages")
             await db.execute("DELETE FROM rsvp_embed_messages")

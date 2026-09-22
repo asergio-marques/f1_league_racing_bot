@@ -68,7 +68,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Each shall be set by a command of its own, a league manager's.
 - Neither shall be required unless a module requires it. The signup module requires both, as its own specification sets out.
 - Confirming a season's configuration shall fix both until the season ends. A driver role changed mid-season would leave every driver holding the old one, the season's end revoking only the new.
-- Disabling a module shall clear neither.
+- Disabling a module shall clear neither. A pack shall clear both, a role belonging to its server.
 
 ### Channels
 - Three channels shall be configured for the server — the interaction channel, the log channel and the signup channel — and eight for each division: its weather forecasts, its lineup, its calendar, its results, its standings, its verdicts, its check-in calls and its attendance.
@@ -111,7 +111,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A pack shall keep what belongs to the league rather than the server: every driver profile with its accounts, history and portrait, test drivers among them; every completed and cancelled season; the team list; the points configurations; test mode; and every module setting that is not a channel or a role.
 - A pack shall clear everything tied to the server:
     - the four settings, which frees the bot's claim on the server;
-    - the role of every team, and the signup channel and signup roles;
+    - the league's base role and driver role, the role of every team, and the signup channel;
     - every signup wizard, every undelivered message awaiting a retry, and the season review prompt;
     - the record of which messages the bot posted, by which it edits them;
     - every piece of scheduled work, but the daily refresh of driver portraits.

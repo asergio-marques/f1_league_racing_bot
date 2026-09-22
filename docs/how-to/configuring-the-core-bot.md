@@ -686,8 +686,9 @@ you. The old server's channels and roles do not, so you set those again on the n
    new server and takes the four settings afresh; test mode and your module settings are as you
    left them.
 4. **Give each team its role again**, with `/team role` and `/team reserve-role` — the roles on
-   the old server mean nothing on the new one. If the signup module is on, set its channel and
-   roles again too: `/signup channel`, `/signup base-role` and `/signup complete-role`.
+   the old server mean nothing on the new one. Set the league's two roles again with
+   `/bot base-role` and `/bot driver-role`, and if the signup module is on, its channel with
+   `/signup channel`.
 5. **Set up the next season** as normal. Each division takes its role and channels from the new
    server.
 6. **Remove the bot from the old server** when you are ready. Its messages there stay, and their

@@ -503,8 +503,9 @@ class BotCog(commands.Cog):
 
         await interaction.followup.send(
             "✅ The bot no longer serves this server.\n"
-            f"Cleared: the four bot settings, **{result.team_roles}** team role(s), the "
-            f"signup channel and roles, **{result.wizards}** signup wizard(s), "
+            f"Cleared: the four bot settings, the base role and the driver role, "
+            f"**{result.team_roles}** team role(s), the signup channel, "
+            f"**{result.wizards}** signup wizard(s), "
             f"**{result.queued_messages}** undelivered message(s) and "
             f"**{result.scheduled_jobs}** scheduled job(s).\n"
             "Kept: every driver, past seasons, the team list, points configurations and "
