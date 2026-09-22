@@ -11,36 +11,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 # ---------------------------------------------------------------------------
-# Fixtures — in-memory aiosqlite database with tracks table
+# Fixtures — the registry the baseline seeds
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-async def db():
-    """An in-memory aiosqlite DB with a seeded tracks table."""
-    import aiosqlite
-    async with aiosqlite.connect(":memory:") as connection:
-        connection.row_factory = aiosqlite.Row
-        await connection.execute(
-            """
-            CREATE TABLE tracks (
-                id      INTEGER PRIMARY KEY NOT NULL,
-                name    TEXT    NOT NULL UNIQUE,
-                gp_name TEXT    NOT NULL,
-                location TEXT   NOT NULL,
-                country  TEXT   NOT NULL,
-                mu      REAL    NOT NULL,
-                sigma   REAL    NOT NULL
-            )
-            """
-        )
-        await connection.executemany(
-            "INSERT INTO tracks (id, name, gp_name, location, country, mu, sigma) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [
-                (5, "Belgium", "Belgian Grand Prix", "Spa-Francorchamps", "Belgium", 0.38, 0.12),
-                (3, "Australia", "Australian Grand Prix", "Melbourne", "Australia", 0.15, 0.07),
-            ],
-        )
-        await connection.commit()
+async def db(tmp_path):
+    """A connection to a migrated database, whose registry is the one every league starts
+    with: 1 is Albert Park Circuit, 5 Jeddah Corniche Circuit, 13 Spa-Francorchamps."""
+    from db.database import get_connection, run_migrations
+
+    path = str(tmp_path / "tracks.db")
+    await run_migrations(path)
+    async with get_connection(path) as connection:
         yield connection
 
 
@@ -49,10 +31,12 @@ async def db():
 # ---------------------------------------------------------------------------
 
 class TestGetAllTracks:
-    async def test_returns_rows(self, db) -> None:
+    async def test_returns_every_row(self, db) -> None:
         from services.track_service import get_all_tracks
         rows = await get_all_tracks(db)
-        assert len(rows) == 2
+        (count,) = await (await db.execute("SELECT COUNT(*) FROM tracks")).fetchone()
+        assert count > 0
+        assert len(rows) == count
 
     async def test_ordered_by_id(self, db) -> None:
         from services.track_service import get_all_tracks
@@ -64,11 +48,12 @@ class TestGetAllTracks:
         from services.track_service import get_all_tracks
         rows = await get_all_tracks(db)
         row = rows[0]
-        assert row["id"] == 3
-        assert row["name"] == "Australia"
+        assert row["id"] == 1
+        assert row["name"] == "Albert Park Circuit"
         assert row["gp_name"] == "Australian Grand Prix"
-        assert row["mu"] == pytest.approx(0.15)
-        assert row["sigma"] == pytest.approx(0.07)
+        assert row["country"] == "Australia"
+        assert row["mu"] == pytest.approx(0.1)
+        assert row["sigma"] == pytest.approx(0.05)
 
 
 # ---------------------------------------------------------------------------
@@ -78,10 +63,10 @@ class TestGetAllTracks:
 class TestGetTrackByName:
     async def test_found(self, db) -> None:
         from services.track_service import get_track_by_name
-        row = await get_track_by_name(db, "Belgium")
+        row = await get_track_by_name(db, "Circuit de Spa-Francorchamps")
         assert row is not None
-        assert row["id"] == 5
-        assert row["mu"] == pytest.approx(0.38)
+        assert row["id"] == 13
+        assert row["mu"] == pytest.approx(0.3)
 
     async def test_not_found(self, db) -> None:
         from services.track_service import get_track_by_name
@@ -95,48 +80,51 @@ class TestGetTrackByName:
 # resolve_track_name
 # ---------------------------------------------------------------------------
 
+JEDDAH = "Jeddah Corniche Circuit"  # id 5, one digit, so the label pads it
+
+
 class TestResolveTrackName:
     """The forms `/round add track:` and `/round amend track:` actually receive.
 
-    The autocomplete offers "05 - Belgium" as the display label and "Belgium" as the
-    value, so picking a suggestion sends the name. Typing or pasting the label — or
+    The autocomplete offers "05 - Jeddah Corniche Circuit" as the display label and the
+    name as the value, so picking a suggestion sends the name. Typing or pasting the label — or
     editing a previous command in place — sends the label, which used to be rejected
     as an unknown track even though it is exactly what the bot had just displayed.
     """
 
     async def test_bare_id(self, db) -> None:
         from services.track_service import resolve_track_name
-        assert await resolve_track_name(db, "5") == "Belgium"
+        assert await resolve_track_name(db, "5") == JEDDAH
 
     async def test_zero_padded_id_as_the_label_shows_it(self, db) -> None:
         from services.track_service import resolve_track_name
-        assert await resolve_track_name(db, "05") == "Belgium"
+        assert await resolve_track_name(db, "05") == JEDDAH
 
     async def test_canonical_name(self, db) -> None:
         from services.track_service import resolve_track_name
-        assert await resolve_track_name(db, "Belgium") == "Belgium"
+        assert await resolve_track_name(db, JEDDAH) == JEDDAH
 
     async def test_name_in_any_case(self, db) -> None:
         from services.track_service import resolve_track_name
-        assert await resolve_track_name(db, "bELGIUM") == "Belgium"
+        assert await resolve_track_name(db, "jEDDAH cORNICHE cIRCUIT") == JEDDAH
 
     async def test_the_autocomplete_label_with_an_en_dash(self, db) -> None:
         """The bug: the label the autocomplete itself displays was refused."""
         from services.track_service import resolve_track_name
-        assert await resolve_track_name(db, "05 \u2013 Belgium") == "Belgium"
+        assert await resolve_track_name(db, f"05 \u2013 {JEDDAH}") == JEDDAH
 
     async def test_the_label_with_a_hyphen_a_keyboard_produces(self, db) -> None:
         from services.track_service import resolve_track_name
-        assert await resolve_track_name(db, "5 - Belgium") == "Belgium"
+        assert await resolve_track_name(db, f"5 - {JEDDAH}") == JEDDAH
 
     async def test_the_id_wins_over_a_mismatched_name_beside_it(self, db) -> None:
         """The id is authoritative; the text after the dash was only ever displayed."""
         from services.track_service import resolve_track_name
-        assert await resolve_track_name(db, "3 \u2013 Belgium") == "Australia"
+        assert await resolve_track_name(db, f"1 \u2013 {JEDDAH}") == "Albert Park Circuit"
 
     async def test_surrounding_whitespace_is_ignored(self, db) -> None:
         from services.track_service import resolve_track_name
-        assert await resolve_track_name(db, "  Belgium  ") == "Belgium"
+        assert await resolve_track_name(db, f"  {JEDDAH}  ") == JEDDAH
 
     async def test_unknown_name(self, db) -> None:
         from services.track_service import resolve_track_name
