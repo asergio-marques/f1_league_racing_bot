@@ -83,8 +83,11 @@ class PreviewDriver:
 
     key: int
     display_name: str
+    #: The team's full name, which is what a graphic draws (#381).
     team_name: str
     seat_number: int
+    #: The team's shorthand, which its artwork is found by, and the key its team is held under.
+    team_key: str = ""
     nationality: str | None = None
     fabricated: bool = False
 
@@ -167,7 +170,9 @@ _FABRICATED_NATIONALITIES = (
 )
 
 
-def _fabricated_driver(index: int, team_name: str, seat_number: int, *, collected: bool):
+def _fabricated_driver(
+    index: int, team_name: str, seat_number: int, *, collected: bool, team_key: str = ""
+):
     """One invented driver. Deterministic in *index*, so a picture is reproducible."""
     from services.image_preview_data import LONG_DRIVER_NAME
 
@@ -182,6 +187,7 @@ def _fabricated_driver(index: int, team_name: str, seat_number: int, *, collecte
         key=_FABRICATED_KEY_BASE + index,
         display_name=name,
         team_name=team_name,
+        team_key=team_key or team_name,
         seat_number=seat_number,
         nationality=(
             _FABRICATED_NATIONALITIES[index % len(_FABRICATED_NATIONALITIES)]
@@ -365,7 +371,7 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
     async with get_connection(bot.db_path) as db:
         instances = await (
             await db.execute(
-                "SELECT id, name, max_seats, is_reserve FROM team_instances "
+                "SELECT id, name, full_name, max_seats, is_reserve FROM team_instances "
                 "WHERE division_id = ? ORDER BY is_reserve ASC, id ASC",
                 (context.division_id,),
             )
@@ -403,6 +409,7 @@ async def _load_teams_and_drivers(bot, context: PreviewContext, *, guild=None) -
             teams.append(
                 SimpleNamespace(
                     name=instance["name"],
+                    full_name=instance["full_name"],
                     is_reserve=bool(instance["is_reserve"]),
                     max_seats=instance["max_seats"],
                     seats=[
@@ -487,7 +494,8 @@ def _drivers_from_teams(
                 PreviewDriver(
                     key=int(key),
                     display_name=name,
-                    team_name=team.name,
+                    team_name=getattr(team, "full_name", "") or team.name,
+                    team_key=team.name,
                     seat_number=int(seat.seat_number),
                     nationality=seat.nationality if collected else None,
                     fabricated=False,
@@ -502,7 +510,11 @@ def _drivers_from_teams(
     for team in teams:
         for seat in team.seats:
             driver = _fabricated_driver(
-                index, team.name, int(seat.seat_number), collected=collected
+                index,
+                getattr(team, "full_name", "") or team.name,
+                int(seat.seat_number),
+                collected=collected,
+                team_key=team.name,
             )
             fabricated.append(driver)
 
@@ -714,7 +726,7 @@ def _racing_drivers(context: PreviewContext) -> list[PreviewDriver]:
     reserve_teams = {
         team.name for team in context.teams if getattr(team, "is_reserve", False)
     }
-    racing = [d for d in context.drivers if d.team_name not in reserve_teams]
+    racing = [d for d in context.drivers if (d.team_key or d.team_name) not in reserve_teams]
     return racing or list(context.drivers)
 
 
@@ -733,7 +745,11 @@ def _driver_maps(context: PreviewContext, drivers=None):
     drivers = list(context.drivers if drivers is None else drivers)
     team_key_of = _team_keys(context)
     names = {d.key: d.display_name for d in drivers}
-    teams = {team_key_of[d.team_name]: d.team_name for d in drivers if d.team_name in team_key_of}
+    teams = {
+        team_key_of[d.team_key or d.team_name]: d.team_name
+        for d in drivers
+        if (d.team_key or d.team_name) in team_key_of
+    }
     flags = {d.key: d.nationality for d in drivers}
     return names, teams, flags, team_key_of
 
@@ -886,6 +902,11 @@ async def build_results_preview(bot, context: PreviewContext):
             points_map={row.driver_user_id: row.points_awarded for row in rows},
             driver_names=names,
             team_names=teams,
+            team_keys={
+                team_key_of[d.team_key or d.team_name]: (d.team_key or d.team_name)
+                for d in drivers
+                if (d.team_key or d.team_name) in team_key_of
+            },
             nationalities=flags,
             division_tier=context.division_tier,
             season_number=context.season_number,
@@ -975,7 +996,7 @@ async def build_standings_preview(bot, context: PreviewContext):
 
     team_seat_assignments = {
         team_key_of[team.name]: {
-            d.key: d.seat_number for d in drivers if d.team_name == team.name
+            d.key: d.seat_number for d in drivers if (d.team_key or d.team_name) == team.name
         }
         for team in racing_teams
         if team.name in team_key_of
@@ -1037,6 +1058,7 @@ async def build_standings_preview(bot, context: PreviewContext):
         snapshots=driver_snapshots,
         display_names=names,
         team_names={d.key: d.team_name for d in drivers},
+        team_keys={d.key: (d.team_key or d.team_name) for d in drivers},
         movements={d.key: None for d in drivers},
         gaps=driver_gaps,
         nationalities=flags,
@@ -1045,8 +1067,17 @@ async def build_standings_preview(bot, context: PreviewContext):
     constructors_drawing = resolve_drawing(
         template_key=CONSTRUCTORS_TEMPLATE_KEY,
         snapshots=team_snapshots,
-        display_names={team_key_of[t.name]: t.name for t in racing_teams if t.name in team_key_of},
-        team_names={team_key_of[t.name]: t.name for t in racing_teams if t.name in team_key_of},
+        display_names={
+            team_key_of[t.name]: (getattr(t, "full_name", "") or t.name)
+            for t in racing_teams
+            if t.name in team_key_of
+        },
+        team_names={
+            team_key_of[t.name]: (getattr(t, "full_name", "") or t.name)
+            for t in racing_teams
+            if t.name in team_key_of
+        },
+        team_keys={team_key_of[t.name]: t.name for t in racing_teams if t.name in team_key_of},
         movements={team_key_of[t.name]: None for t in racing_teams if t.name in team_key_of},
         gaps=team_gaps,
         team_seat_assignments=team_seat_assignments,
@@ -1132,6 +1163,7 @@ async def build_attendance_preview(bot, context: PreviewContext):
         records=records,
         display_names=names,
         team_names={d.key: d.team_name for d in context.drivers},
+        team_keys={d.key: (d.team_key or d.team_name) for d in context.drivers},
         nationalities=flags,
         rounds=headings,
         # One threshold, because a league can only have one: the two config commands refuse
@@ -1203,7 +1235,7 @@ async def build_verdict_preview(bot, context: PreviewContext):
             session_name=case["session_name"],
             team_name=driver.team_name,
             driver_nationality=driver.nationality,
-            team_slug_source=driver.team_name,
+            team_slug_source=driver.team_key or driver.team_name,
             nationality_collected=context.nationality_collected,
         )
         requests.append(

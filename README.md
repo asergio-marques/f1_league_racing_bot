@@ -424,7 +424,7 @@ Creates a season tied to today's date, in **configuration**. Its divisions and r
 No parameters. Posts a report of the season in configuration — test mode, the enabled modules, the league's base role and driver role, the team list with its roles (warning where the Reserve team has none), and the configuration of each enabled module in the words of `/season placements-review`: the signup settings, the attendance settings, the attached points configurations, the weather deadlines and the image outputs — and checks everything that can be checked before the season has divisions:
 
 - where the signup module is enabled, its channel and the league's base role and driver role, each fault naming the command that sets it;
-- every team name, as a filename;
+- every team's shorthand, as a filename;
 - where the results module is enabled, that a points configuration is attached, that each attached one exists, and that its tables are in order;
 - where the images module is enabled, that the rasteriser is installed, that every template an enabled output draws is valid, the per-tier colours and the driver portrait settings.
 
@@ -667,7 +667,7 @@ refuses while a round's results are being amended, naming the round and its amen
 final classification would carry corrections nobody has approved yet. Finish or cancel the
 amendment first.
 
-> **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then there are three things left, and no others: **amending the results of a round already final**, **repairing a division's channels** — completing posts the final classification and the final attendance sheet to them, so one deleted has to be repointed — and **completing the season**. Everything else that would act on the season is refused and says so: `/division calendar-sync`, `/team role`, `/team reserve-role`, `/results standings sync`, `/results rounds sync`, `/results reserves toggle` and every `/results amend` command. No module can be disabled either. Nothing is being raced by then, so a grid, a lineup and a calendar no longer describe anything anyone will drive under. A season with a signup window open, or mid-season placements still to confirm, moves there too: there is no round left to place anyone into, so the window is closed, every placement not yet confirmed is discarded, and every driver still unplaced, unconfirmed, awaiting approval or mid-correction returns to Not Signed Up as `/driver reject` would. Once every
+> **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then there are three things left, and no others: **amending the results of a round already final**, **repairing a division's channels** — completing posts the final classification and the final attendance sheet to them, so one deleted has to be repointed — and **completing the season**. Everything else that would act on the season is refused and says so: `/division calendar-sync`, `/team modify`, `/team reserve-role`, `/results standings sync`, `/results rounds sync`, `/results reserves toggle` and every `/results amend` command. No module can be disabled either. Nothing is being raced by then, so a grid, a lineup and a calendar no longer describe anything anyone will drive under. A season with a signup window open, or mid-season placements still to confirm, moves there too: there is no round left to place anyone into, so the window is closed, every placement not yet confirmed is discarded, and every driver still unplaced, unconfirmed, awaiting approval or mid-correction returns to Not Signed Up as `/driver reject` would. Once every
 division is done it ends the season, in this order: each division's final classification is posted;
 a history entry is written for every division each driver took part in, whether or not they still sit in it — a driver moved, released or sacked mid-season keeps an entry for every division they held a confirmed seat in; the division and team
 roles and the driver role are revoked; an open signup window is closed; every driver who was Unassigned, placed,
@@ -895,7 +895,7 @@ Creates a synthetic driver profile occupying a real seat, so a division can be f
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `driver_name` | String | ✅ | Display name for the fake driver. Held to the rules a division's name is: no role mention, `@everyone`, `@here`, emoji or formatting |
-| `team_name` | String | ✅ | Team to seat them in (must exist in the division) |
+| `team_name` | String | ✅ | The shorthand of the team to seat them in — suggested as you type |
 | `division` | String | ✅ | Division name |
 | `nationality` | String | ❌ | A nationality (`British`), a country name (`United Kingdom`), or `other` — the same forms the signup wizard accepts |
 
@@ -908,7 +908,7 @@ A fake driver has no signup record behind it, so the nationality is recorded on 
 
 No parameters. Opens a box; paste the `roster.csv` the roster generator writes, header row and all, and every driver in it is seated across every division it names.
 
-**The IDs in the file are the IDs written**, unlike `roster add`, which allocates its own. The generator's other scripts — results, check-ins — name drivers by those IDs, so importing the CSV keeps a generated results file lined up with the grid.
+**Its team column takes a team's shorthand**, as a results submission does; nothing else names a team there. **The IDs in the file are the IDs written**, unlike `roster add`, which allocates its own. The generator's other scripts — results, check-ins — name drivers by those IDs, so importing the CSV keeps a generated results file lined up with the grid.
 
 > **A division that already holds drivers is refused.** The file describes a whole grid, so importing over a seated division would leave drivers somewhere the file does not describe. Clear it with `/test-mode roster clear` first. Only the division named is refused, so the rest of a split roster still lands.
 
@@ -1121,7 +1121,7 @@ Refused while test mode is active: a real driver is never seated in a division u
 |-----------|------|----------|-------------|
 | `user` | Member | ✅ | The driver to assign |
 | `division` | String | ✅ | Division tier number or name (e.g. `1` or `Pro`) |
-| `team` | String | ✅ | Exact team name as it appears in the division |
+| `team` | String | ✅ | The team's shorthand — suggested as you type |
 
 #### `/driver unassign` — Remove a driver from a division
 *Access: League manager*
@@ -1144,7 +1144,7 @@ Available while the season is ongoing (including while a mid-season signup windo
 |-----------|------|----------|-------------|
 | `user` | Member | ✅ | The driver to move |
 | `from_division` | String | ✅ | Division tier number or name the driver is moved from |
-| `team` | String | ✅ | Exact team name the driver is moved into |
+| `team` | String | ✅ | The shorthand of the team the driver is moved into — suggested as you type |
 | `to_division` | String | — | Division tier number or name moved into; omit to stay in the same division |
 
 #### `/driver release` — Release a confirmed driver from one division
@@ -1183,33 +1183,55 @@ Revokes all placement roles and the driver role, removes the driver's placements
 
 ### Team Commands
 
-#### `/team add` — Add a team to the server list
-*Access: League manager*
+#### A team's three names
 
-Adds the team to the server's default team list and saves its role mapping (granted/revoked on driver placement). Every division created afterwards is seeded with it, with 2 seats.
+Every team carries three, and each has one job:
 
-> **The team list is fixed once a season's configuration is confirmed.** `/team add`, `/team remove` and `/team rename` work while no season is active, or while the active season is still in configuration, and are refused from confirmation until the season ends. The signup wizard offers this list as the preferred teams, and every division is built from it. A team's **role** is never fixed — see `/team role`.
+| | What it is for |
+|---|---|
+| **Full name** | What is **shown**: every results and standings post, every graphic, the lineup, the attendance sheet, verdicts, the check-in, the reviews and the replies to your commands. |
+| **Shorthand** | What is **typed**: commands, the team column of a results submission, and a test roster. It is also the filename the team's artwork is looked for under. |
+| **Role** | What the team's **drivers are granted**, and what you mention the team by. It never names a team where one is typed. |
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | String | ✅ | Name of the new team (max 50 chars) |
-| `role` | Role | ✅ | Discord role to grant drivers placed into this team |
+> **A role does not name a team.** Typing a role mention where a team is asked for is refused, saying to use the team's shorthand — and so are `@everyone`, `@here`, a mention of a member and a Discord ID typed out. A command that takes a team suggests the shorthands as you type, showing the full name beside each one and matching either.
 
-**One role per team.** A role belongs to one team only, the Reserve team included — a results submission names a team by its role, so a role two teams shared would name either. A role another team already holds is refused, naming that team, and the team is not added.
+**The names are checked when you set them:**
 
-**Naming.** A team name has to survive being turned into an image **filename**, so it is checked when you set it. The bot lowercases the name, strips accents, and replaces every run of anything that is not a letter or a digit with a single underscore — `Red Bull` becomes `red_bull`, `Force India (B)` becomes `force_india_b`. That is the name of the badge file every graphic showing that team looks for. The name is rejected if that result:
+| | Limit |
+|---|---|
+| Full name | 1 to 32 characters, and unique across the list whatever the case — two teams shown alike could not be told apart. The drawings give a team column exactly this much room, so a longer name would be shrunk past reading. |
+| Shorthand | 1 to 16 characters, and **no comma**: a shorthand is typed into rows that are split on commas. |
 
-- is empty (a name of nothing but punctuation);
+Neither name may hold a role mention, `@everyone`, `@here`, an emoji, Discord formatting, or a mention of a member — a team's names are posted every time the team is named.
+
+**The shorthand also has to survive being turned into an image filename.** The bot lowercases it, strips accents, and replaces every run of anything that is not a letter or a digit with a single underscore — `Red Bull` becomes `red_bull`, `Force India (B)` becomes `force_india_b`. That is the badge file every graphic showing that team looks for. The shorthand is rejected if that result:
+
+- is empty (a shorthand of nothing but punctuation);
 - matches another team in the same scope (`Red Bull` and `Red  Bull!` collide — both would draw the same badge);
 - is `reserve`, which belongs to the Reserve team of every division.
 
-Before any of that, a team name cannot hold a role mention, `@everyone` or `@here`, an emoji, or Discord formatting, being posted as text and drawn on graphics, the same as a division's name.
-
-> **A name may begin with a digit.** `2 Fast` is accepted and draws `2_fast.svg`. Earlier versions refused it, because the name had to serve as an identifier inside the lineup template; it names a file now, and a filename may start with anything.
+> **A shorthand may begin with a digit.** `2 Fast` is accepted and draws `2_fast.svg`.
 
 > These checks apply whether or not the image module is enabled. A name is only cheap to fix at the moment you set it, and a league that turns the module on later would otherwise be stuck with names it cannot correct without losing that team's history.
 
-> Only the **new** name is checked by `/team rename`, and `/team remove` checks nothing. A team named before these rules existed stays renameable and removable.
+> Only the **new** names are checked when you change a team, and `/team remove` checks nothing. A team named before these rules existed stays changeable and removable.
+
+#### `/team add` — Add a team to the server list
+*Access: League manager*
+
+Opens a form taking the team's shorthand, its full name and its role together. The team joins the server's default team list, and every division created afterwards is seeded with it, with 2 seats. The two names are bounded as you type them.
+
+> **The team list is fixed once a season's configuration is confirmed.** `/team add` and `/team remove` work while no season is active, or while the active season is still in configuration, and are refused from confirmation until the season ends. The signup wizard offers this list as the preferred teams, and every division is built from it. A team's **role** is never fixed — see `/team modify`.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| Shorthand | ✅ | What you type to name the team, and its artwork's filename (max 16) |
+| Full name | ✅ | What every post and graphic shows (max 32) |
+| Role | ✅ | Discord role granted to drivers placed into this team |
+
+**One role per team.** A role belongs to one team only, the Reserve team included. A role another team already holds is refused, naming that team, and the team is not added.
+
+**The role must be one the bot can grant**, since it is granted to every driver placed in the team. Each of these is refused when you choose it, saying why: `@everyone`; a role managed by an integration (a bot's own role, Server Booster, a linked role); a role at or above the bot's own highest role — move the bot's above it; and any role at all while the bot has no **Manage Roles** permission.
 
 #### `/team remove` — Remove a team from the server list
 *Access: League admin*
@@ -1218,40 +1240,40 @@ Removes the team from the server's default list and clears its role mapping. Ref
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `name` | String | ✅ | Exact name of the team to remove |
+| `name` | String | ✅ | The team's shorthand — suggested as you type |
 
-#### `/team rename` — Rename a team
+#### `/team modify` — Change a team's names or its role
 *Access: League manager*
 
-Renames the team in the server's default list and updates its role mapping key. Refused once a season's configuration is confirmed, until that season ends.
+Replaces `/team rename` and `/team role`. Name the team by its shorthand, and it opens a form filled with what the team holds now: change what you like, submit, and everything else stays as it was. Submitting it untouched changes nothing.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `current_name` | String | ✅ | Exact current name of the team |
-| `new_name` | String | ✅ | Replacement name (max 50 chars) |
+| `team` | String | ✅ | The team's shorthand — suggested as you type |
 
-#### `/team role` — Set a team's Discord role
-*Access: League manager*
+**What may change, and when:**
 
-Points a team of the server list at a different Discord role. Unlike the list itself, a team's role can be changed **in any season state but pending completion** — nothing stops a role being deleted from the server mid-season, and this is how you repair it. The Reserve team's role is set with `/team reserve-role`.
+| Field | When |
+|-------|------|
+| Shorthand and full name | Only while the team list may be changed: no active season, or one still in configuration. Once a season's configuration is confirmed, the form offers neither. |
+| Role | In any season state **but pending completion**, where the command is refused outright. Nothing is raced then, and completing the season revokes every team role a few steps later. |
 
-> **Refused once every division is done.** Nothing is raced in pending completion, and completing the season revokes every team role a few steps later — so a mapping repaired there would be undone before anyone wore it. Repair it once the season has ended, for the next one. With no season at all the mapping is the server's own and free to change.
+> **A submission naming a field that may no longer change is refused whole.** The form can sit open while a season moves on, so everything is checked again when you submit: if the team list was fixed in the meantime and you changed a name, nothing at all is written — not even the role.
 
 **The team's drivers follow its role.** Every driver seated in the team whose placement is confirmed has the old role taken away and the new one granted, in every division of the season being raced. The reply says how many drivers were moved.
 
-**One role per team.** A role another team already holds, the Reserve team included, is refused, naming that team; nothing changes and no driver is moved.
+**A role another team already holds is refused**, naming that team; nothing changes and no driver is moved. The role must also be one the bot can grant, on the same terms as `/team add`.
 
-**Its results stay with it.** A result records the team, not the role it was submitted under, so every round raced before the change remains the team's: the team standings keep it as one entry with all its points, and the results and standings already posted go on naming it. Posted results and standings always name a team by its name, never by a mention of its role.
+**Changing the shorthand changes the artwork filename**, and the reply tells you the old name and the new one so you can rename the file in your team image directory.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | String | ✅ | Exact name of the team |
-| `role` | Role | ✅ | Discord role to grant drivers placed into this team |
+**Its results stay with it.** A result records the team, not the role or the name it was submitted under, so every round raced before a change remains the team's: the team standings keep it as one entry with all its points. Posted results and standings name a team by its full name, never by a mention of its role.
 
-#### `/team list` — List all teams and their role mappings
+**The Reserve team** is sent to `/team reserve-role`; its names are not a league's to change.
+
+#### `/team list` — List all teams, with all three of their names
 *Access: League manager*
 
-Displays all teams on the server's default list alongside their configured Discord roles. If a SETUP season is active and its team list differs from the server default, the divergence is shown with a warning.
+Displays every team of the server's default list as *full name — `shorthand` → @role*. If a SETUP season is active and its team list differs from the server default, the divergence is shown with a warning.
 
 #### `/team lineup` — Show the confirmed team lineups of the season being raced
 *Access: League manager*
@@ -1266,7 +1288,7 @@ Displays the placed drivers for each team seat in the active season. If a divisi
 #### `/team reserve-role` — Set or clear the Reserve team's Discord role
 *Access: League manager*
 
-Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping. As with `/team role`, the drivers already seated in Reserve with a confirmed placement follow the change: the old role is taken and the new one, where given, granted — and, as with `/team role`, it is refused once the season is pending completion, and refuses a role another team already holds.
+Sets the Discord role granted to (and revoked from) drivers placed in the Reserve team. Omit the `role` parameter to clear any existing mapping. As with `/team modify`, the drivers already seated in Reserve with a confirmed placement follow the change: the old role is taken and the new one, where given, granted — and, as with `/team modify`, it is refused once the season is pending completion, refuses a role another team already holds, and refuses a role the bot cannot grant.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1404,7 +1426,7 @@ No parameters. Displays every unsettled signup in an ephemeral reply. Drivers in
 
 After them come the drivers still in review — awaiting approval, or correcting an answer — marked with that state instead of a seed. They are listed because placements cannot be confirmed while any of them stands.
 
-Each driver's block carries their platform, driver type, lap total, **availability**, preferred teams, preferred teammate and any notes. Availability names every slot the driver picked, in your own chronological slot order — none are elided, however many they ticked. A driver who picked none shows an em dash, and an answer naming a slot you have since removed reads `Unknown slot`.
+Each driver's block carries their platform, driver type, lap total, **availability**, preferred teams (by their full names, as the driver was offered them), preferred teammate and any notes. Availability names every slot the driver picked, in your own chronological slot order — none are elided, however many they ticked. A driver who picked none shows an em dash, and an answer naming a slot you have since removed reads `Unknown slot`.
 
 #### `/signup unassigned export` — Export Unassigned drivers to CSV
 *Access: League manager*
@@ -1602,14 +1624,14 @@ Each line of a race submission block represents one driver. The number of fields
 
 **Event submission (6 fields):**
 ```
-{pos}, {driver}, {team role}, {total time / gap}, {fastest lap}, {time penalties}
+{pos}, {driver}, {team}, {total time / gap}, {fastest lap}, {time penalties}
 ```
 
 | Field | Description |
 |-------|-------------|
 | `pos` | Finishing position (integer) |
 | `driver` | Discord member mention (e.g. `<@123456789>`) |
-| `team role` | Discord role mention (e.g. `<@&987654321>`) |
+| `team` | The team's **shorthand** (e.g. `RBR`), read whatever the case. A role mention is refused, saying to use the shorthand |
 | `total time / gap` | `H:MM:SS.mmm` for P1; `+M:SS.mmm` or `+SS.mmm` delta for others; `+N Lap(s)` for lapped drivers; `DNF`, `DNS`, or `DSQ` for non-classified entries |
 | `fastest lap` | Lap time string (e.g. `1:24.000`) or `N/A` |
 | `time penalties` | `N/A`, or an in-game time penalty in `M:SS.mmm` or `SS.mmm` format (e.g. `0:05.000`) |
@@ -1618,7 +1640,7 @@ Each line of a race submission block represents one driver. The number of fields
 
 **Results amend (8 fields):**
 ```
-{pos}, {driver}, {team role}, {total time / gap}, {fastest lap}, {ingame penalties}, {postrace penalty}, {appeal penalty}
+{pos}, {driver}, {team}, {total time / gap}, {fastest lap}, {ingame penalties}, {postrace penalty}, {appeal penalty}
 ```
 
 All fields above apply, plus:
@@ -1632,23 +1654,23 @@ All fields above apply, plus:
 **Race ordering rules:**
 - Rows must be ordered: classified entries (lead-lap or lapped times) → `DNF` → `DNS` → `DSQ`. Any violation is rejected.
 - Among lapped drivers, the lap count must not decrease as the position increases — a driver two laps down cannot be placed ahead of one a single lap down.
-- No team role may appear on more than two rows, and the reserve role is never a valid entry in the team column: a reserve is submitted under the team whose car they drove. A seated driver must be submitted under their own team.
+- No team may appear on more than two rows, and the Reserve team is never a valid entry in the team column: a reserve is submitted under the team whose car they drove. A seated driver must be submitted under their own team. A team with no role cannot be entered at all.
 - Setting both `postrace penalty` **and** `appeal penalty` to `DSQ` on the same row is invalid (amend only).
 - A driver whose either penalty field is `DSQ` has their outcome recorded as `DSQ` regardless of the `total time` value.
 
 **Example (event submission):**
 ```
-1, @Driver,  @TeamRole, 1:23:45.678, 1:24.000, N/A
-2, @Other,   @TeamRole, +5.321,      1:24.000, N/A
-3, @Driver3, @TeamRole, +12.450,     1:25.100, N/A
+1, @Driver,  RBR,       1:23:45.678, 1:24.000, N/A
+2, @Other,   RBR,       +5.321,      1:24.000, N/A
+3, @Driver3, RBR,       +12.450,     1:25.100, N/A
 ```
 
 **Example (results amend):**
 ```
-1, @Driver,  @TeamRole, 1:23:45.678, 1:24.000, N/A,       N/A,   N/A
-2, @Other,   @TeamRole, +5.321,      1:24.000, 0:05.000,  N/A,   N/A
-3, @Driver3, @TeamRole, +12.450,     1:25.100, N/A,       5.000, N/A
-4, @Driver4, @TeamRole, DNF,         N/A,      N/A,       DSQ,   N/A
+1, @Driver,  RBR,       1:23:45.678, 1:24.000, N/A,       N/A,   N/A
+2, @Other,   RBR,       +5.321,      1:24.000, 0:05.000,  N/A,   N/A
+3, @Driver3, RBR,       +12.450,     1:25.100, N/A,       5.000, N/A
+4, @Driver4, RBR,       DNF,         N/A,      N/A,       DSQ,   N/A
 ```
 
 ---
@@ -1659,21 +1681,21 @@ Each line of a qualifying submission block represents one driver. The number of 
 
 **Event submission (6 fields):**
 ```
-{pos}, {driver}, {team role}, {tyre}, {best lap}, {gap}
+{pos}, {driver}, {team}, {tyre}, {best lap}, {gap}
 ```
 
 | Field | Description |
 |-------|-------------|
 | `pos` | Qualifying position (integer) |
 | `driver` | Discord member mention (e.g. `<@123456789>`) |
-| `team role` | Discord role mention (e.g. `<@&987654321>`) |
+| `team` | The team's **shorthand** (e.g. `RBR`), read whatever the case. A role mention is refused, saying to use the shorthand |
 | `tyre` | Tyre compound used on the fastest lap — `Soft`, `Medium`, `Hard`, `Intermediate` or `Wet`. Leave it blank, or put `N/A`, where none was recorded. See the callout below for the shorthands accepted |
 | `best lap` | Lap time string (e.g. `1:20.456`); or `DNF`, `DNS`, `DSQ` for non-classified entries |
 | `gap` | `N/A` for P1; delta time (e.g. `+0.456`) for all other classified entries |
 
 **Results amend (8 fields):**
 ```
-{pos}, {driver}, {team role}, {tyre}, {best lap}, {gap}, {postrace penalty}, {appeal penalty}
+{pos}, {driver}, {team}, {tyre}, {best lap}, {gap}, {postrace penalty}, {appeal penalty}
 ```
 
 All fields above apply, plus:
@@ -1691,25 +1713,25 @@ All fields above apply, plus:
 
 **Ordering rules (both formats):**
 - Rows must be ordered: classified entries (valid lap time) → `DNF` → `DNS` → `DSQ`. Any violation is rejected.
-- No team role may appear on more than two rows, and the reserve role is never a valid entry in the team column: a reserve is submitted under the team whose car they drove. A seated driver must be submitted under their own team.
+- No team may appear on more than two rows, and the Reserve team is never a valid entry in the team column: a reserve is submitted under the team whose car they drove. A seated driver must be submitted under their own team. A team with no role cannot be entered at all.
 - Setting both `postrace penalty` **and** `appeal penalty` to `DSQ` on the same row is invalid (amend only).
 - A driver whose either penalty field is `DSQ` has their outcome recorded as `DSQ` regardless of the `best lap` value (amend only).
 
 **Example (event submission):**
 ```
-1, @Driver,  @TeamRole, Soft,   1:20.456, N/A
-2, @Other,   @TeamRole, Medium, 1:20.789, +0.333
-3, @Driver3, @TeamRole, Soft,   DNF,      N/A
-4, @Driver4, @TeamRole, Hard,   DNS,      N/A
+1, @Driver,  RBR,       Soft,   1:20.456, N/A
+2, @Other,   RBR,       Medium, 1:20.789, +0.333
+3, @Driver3, RBR,       Soft,   DNF,      N/A
+4, @Driver4, RBR,       Hard,   DNS,      N/A
 ```
 
 **Example (results amend):**
 ```
-1, @Driver,  @TeamRole, Soft,   1:20.456, N/A,    N/A, N/A
-2, @Other,   @TeamRole, Medium, 1:20.789, +0.333, N/A, N/A
-3, @Driver3, @TeamRole, Soft,   DNF,      N/A,    N/A, N/A
-4, @Driver4, @TeamRole, Hard,   DNS,      N/A,    N/A, N/A
-5, @Driver5, @TeamRole, Soft,   1:19.000, N/A,    DSQ, N/A
+1, @Driver,  RBR,       Soft,   1:20.456, N/A,    N/A, N/A
+2, @Other,   RBR,       Medium, 1:20.789, +0.333, N/A, N/A
+3, @Driver3, RBR,       Soft,   DNF,      N/A,    N/A, N/A
+4, @Driver4, RBR,       Hard,   DNS,      N/A,    N/A, N/A
+5, @Driver5, RBR,       Soft,   1:19.000, N/A,    DSQ, N/A
 ```
 
 ---
@@ -1763,8 +1785,8 @@ The fastest-lap bonus is awarded to the driver with the lowest Fastest Lap time 
 
 ```
 FL: @Driver
-1, @Driver, @TeamRole, 1:23:45.678, 1:24.000, N/A
-2, @Other,  @TeamRole, +5.321,       1:24.000, N/A
+1, @Driver, RBR,       1:23:45.678, 1:24.000, N/A
+2, @Other,  RBR,       +5.321,       1:24.000, N/A
 ...
 ```
 
@@ -2371,7 +2393,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 >
 > **What counts as a points qualifying position is, again, your configuration.** A league that awards no qualifying points sees no qualifying mark below the podium, and one that awards none at all sees none whatever — the same rule as the race, applied to the session before it.
 
-> **The standings grids are 1728 px wide.** They were 1200 and 1128, and the columns were too narrow for the widest thing a cell can hold — a `DSQ` with another outcome raised beside it — which overran into the next round with nothing said about it. Each session column is now 54 px. If you have re-laid a standings template of your own, give your columns the same room; nothing checks it for you, because SVG text simply overruns and reports nothing.
+> **The standings grids are 1828 px wide.** They were 1200 and 1128 before their columns were widened for the widest thing a cell can hold — a `DSQ` with another outcome raised beside it — and 1728 until a team's **full name** took the team column out by another 100 px (#381). Each session column is 54 px. If you have re-laid a standings template of your own, give your columns the same room; nothing checks it for you, because SVG text simply overruns and reports nothing.
 
 #### `/images config <directory>` — Where files are searched for
 *Access: League manager*

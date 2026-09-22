@@ -43,6 +43,9 @@ class Rule(Enum):
     GROUP_MENTIONS = "group mentions"
     EMOJI = "emoji"
     MARKUP = "markup"
+    #: A mention of a member. Refused in a team's names only (decided 2026-09-22, #381): the
+    #: other names a league types, and every free text, may name a driver. Never stripped.
+    USER_MENTIONS = "user mentions"
 
 
 class Mode(Enum):
@@ -161,6 +164,16 @@ def _group_mention_refusal(field_label: str, text: str) -> str | None:
     )
 
 
+def _user_mention_refusal(field_label: str, text: str) -> str | None:
+    match = re.search(USER_MENTION, text)
+    if match is None:
+        return None
+    return (
+        f"A mention of a member in the {field_label} would notify them wherever it is posted. "
+        "Remove it, then try again."
+    )
+
+
 def _emoji_refusal(field_label: str, text: str) -> str | None:
     match = _EMOJI_RE.search(text)
     if match is None:
@@ -231,11 +244,12 @@ def _tidy(text: str) -> str:
 #: The order a text is read in. Refusing names the first thing found, a mention before an emoji
 #: before markup, as #204 did. Stripping takes emoji first, so that a server emoji's own markup
 #: (``<:a_b_:1>``) goes whole before the markup rules could read an underscore pair inside it.
-_REFUSE_ORDER = (Rule.GROUP_MENTIONS, Rule.EMOJI, Rule.MARKUP)
+_REFUSE_ORDER = (Rule.GROUP_MENTIONS, Rule.USER_MENTIONS, Rule.EMOJI, Rule.MARKUP)
 _STRIP_ORDER = (Rule.EMOJI, Rule.GROUP_MENTIONS, Rule.MARKUP)
 
 _REFUSERS = {
     Rule.GROUP_MENTIONS: _group_mention_refusal,
+    Rule.USER_MENTIONS: _user_mention_refusal,
     Rule.EMOJI: _emoji_refusal,
     Rule.MARKUP: _markup_refusal,
 }
@@ -269,7 +283,9 @@ class InputValidator:
         return Checked(_tidy(text))
 
 
-_ALL = frozenset(Rule)
+#: The three rules every name a league types is held to. Named rather than taken as every
+#: ``Rule``, so that one added for a single input does not reach every other.
+_ALL = frozenset({Rule.GROUP_MENTIONS, Rule.EMOJI, Rule.MARKUP})
 
 #: A steward's description and justification of a penalty, and the justification of a pardon.
 STEWARD_TEXT = InputValidator(_ALL, Mode.REJECT)
@@ -277,6 +293,11 @@ STEWARD_TEXT = InputValidator(_ALL, Mode.REJECT)
 #: A name a league types: a division, a team, a test driver, a points configuration. Each is
 #: posted as text and drawn on graphics.
 NAME = InputValidator(_ALL, Mode.REJECT)
+
+#: A team's shorthand and its full name (#381): a name, and no mention of a member either. The
+#: shorthand is typed wherever a team is entered and the full name is shown on every post, so a
+#: member mentioned in either would be notified every time the team is named.
+TEAM_NAME = InputValidator(_ALL | {Rule.USER_MENTIONS}, Mode.REJECT)
 
 #: A driver's own signup answers — notes, preferred teammate, platform ID. They are shown only in
 #: text, where an emoji or markup reads as intended, so only a group mention is refused: the

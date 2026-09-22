@@ -210,9 +210,9 @@ async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the
     cog = _report_cog(
         placements=[
             {"test_display_name": None, "discord_user_id": "1002",
-             "team_name": "Alpha", "division_name": "Pro"},
+             "team_name": "Alpha", "team_full_name": "Alpha Racing", "division_name": "Pro"},
             {"test_display_name": "Test Bravo", "discord_user_id": "9000",
-             "team_name": "Reserve", "division_name": "Pro"},
+             "team_name": "Reserve", "team_full_name": "Reserve", "division_name": "Pro"},
         ]
     )
 
@@ -220,7 +220,7 @@ async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the
     text = "\n".join(m for m, _ in messages)
 
     assert "Placements Review (Season #1) — mid-season" in text
-    assert "<@1002> → **Alpha** in **Pro**" in text
+    assert "<@1002> → **Alpha Racing** in **Pro**" in text
     assert "Test Bravo → **Reserve** in **Pro**" in text
     assert "**Alpha**: <@1001>, <@1002>" in text
     assert "**Reserve**: *(empty)*" in text

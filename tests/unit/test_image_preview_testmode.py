@@ -104,9 +104,9 @@ async def _seed_test_season(
             )
         for team_name in ("Redline", "Bluewave"):
             cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, 2, 0)",
-                (division_id, team_name),
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, 2, 0)",
+                (division_id, team_name, team_name),
             )
             team_id = cursor.lastrowid
             for seat_number in (1, 2):

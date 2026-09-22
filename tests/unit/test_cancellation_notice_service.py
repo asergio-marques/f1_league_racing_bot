@@ -523,7 +523,7 @@ async def _distribute(db_path) -> None:
     """Two reserves, one sent to a team and one left standing by."""
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_instances (id, division_id, name) VALUES (51, ?, 'Ferrari')",
+            "INSERT INTO team_instances (id, division_id, name, full_name) VALUES (51, ?, 'Ferrari', 'Ferrari')",
             (DIVISION_ID,),
         )
         for profile_id, user_id, team, standby in ((3, "103", 51, 0), (4, "104", None, 1)):

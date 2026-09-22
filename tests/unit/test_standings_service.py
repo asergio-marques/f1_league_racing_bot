@@ -480,7 +480,7 @@ async def test_compute_driver_standings_includes_zero_pt_non_reserve(db_path):
         )
         dp_id = cur.lastrowid
         cur = await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) VALUES (?, 'Alpha', 2, 0)",
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) VALUES (?, 'Alpha', 'Alpha', 2, 0)",
             (div_id,),
         )
         ti_id = cur.lastrowid
@@ -510,7 +510,7 @@ async def test_compute_driver_standings_excludes_zero_pt_reserve(db_path):
         )
         dp_id = cur.lastrowid
         cur = await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) VALUES (?, 'Reserve', 2, 1)",
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) VALUES (?, 'Reserve', 'Reserve', 2, 1)",
             (div_id,),
         )
         ti_id = cur.lastrowid
@@ -534,9 +534,9 @@ async def test_compute_team_standings_includes_zero_pt_team(db_path):
         # Both teams of the division; 555 scores points, 666 has no results
         for team_id, name in ((555, "TeamA"), (666, "TeamB")):
             await db.execute(
-                "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, ?, 2, 0)",
-                (team_id, div_id, name),
+                "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, ?, 2, 0)",
+                (team_id, div_id, name, name),
             )
         await _result(db, sr1, 111, pos=1, pts=25, team=555)
         await db.commit()
@@ -633,7 +633,7 @@ async def test_dnf_driver_ranks_above_non_participant(db_path):
         )
         dp_id = cur.lastrowid
         cur = await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) VALUES (?, 'Alpha', 2, 0)",
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) VALUES (?, 'Alpha', 'Alpha', 2, 0)",
             (div_id,),
         )
         ti_id = cur.lastrowid
@@ -878,9 +878,9 @@ async def _seat(db, div_id: int, team: str, drivers: list[tuple[int, str]],
     *team_id* fixes the team's id, for a test that names the team in a result or asserts on it.
     """
     cur = await db.execute(
-        "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (team_id, div_id, team, max(len(drivers), 1), is_reserve),
+        "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (team_id, div_id, team, team, max(len(drivers), 1), is_reserve),
     )
     ti_id = cur.lastrowid
     if role_id is not None:

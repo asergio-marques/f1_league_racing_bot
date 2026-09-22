@@ -151,8 +151,8 @@ class VerdictDrawing:
     #: The datum a flag is resolved from — the nationality, never a path.
     driver_nationality: str | None = None
 
-    #: The datum a badge is resolved from. Equals ``team_name`` in every case the module
-    #: can currently produce; kept separate so a divergence stays representable.
+    #: The datum a badge is resolved from: the team's shorthand, where ``team_name`` is its full
+    #: name (#381). The drawn name stands in where None.
     team_slug_source: str | None = None
 
     #: False where the league switched nationality collection off at its source. The

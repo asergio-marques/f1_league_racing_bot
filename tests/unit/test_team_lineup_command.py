@@ -55,9 +55,11 @@ def _division(div_id: int, name: str, tier: int):
     return SimpleNamespace(id=div_id, name=name, tier=tier)
 
 
-def _team(name: str, max_seats: int, seats: list[tuple[int, int | None, str | None]]):
+def _team(name: str, max_seats: int, seats: list[tuple[int, int | None, str | None]], *,
+           full_name: str | None = None):
     return {
         "name": name,
+        "full_name": full_name or name,
         "max_seats": max_seats,
         "is_reserve": name == "Reserve",
         "seats": [
@@ -362,10 +364,15 @@ async def test_a_drawn_lineup_is_sent_as_files(tmp_path):
 async def test_the_reserve_role_is_set(tmp_path):
     cog = _make_cog()
     interaction = _interaction()
+    # A team's role must be one the bot can grant (#381), so the double answers that check.
     role = MagicMock()
     role.id = 4242
     role.name = "Reserves"
     role.mention = "@Reserves"
+    role.is_default.return_value = False
+    role.managed = False
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, _other: True
 
     await undecorate(TeamCog.team_reserve_role)(cog, interaction, role)
 
@@ -392,10 +399,15 @@ async def test_omitting_the_role_clears_the_mapping(tmp_path):
 async def test_setting_the_reserve_role_is_logged_with_the_role(tmp_path):
     cog = _make_cog()
     interaction = _interaction()
+    # A team's role must be one the bot can grant (#381), so the double answers that check.
     role = MagicMock()
     role.id = 4242
     role.name = "Reserves"
     role.mention = "@Reserves"
+    role.is_default.return_value = False
+    role.managed = False
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, _other: True
 
     await undecorate(TeamCog.team_reserve_role)(cog, interaction, role)
 
@@ -411,3 +423,16 @@ async def test_clearing_the_reserve_role_is_logged_as_cleared(tmp_path):
     await undecorate(TeamCog.team_reserve_role)(cog, interaction, None)
 
     assert "cleared" in cog.bot.output_router.post_log.await_args.args[0]
+
+
+async def test_the_lineup_names_each_team_by_its_full_name():
+    """A team is shown by its full name and typed by its shorthand (#381)."""
+    cog = _make_cog(
+        teams=[_team("RBR", 2, [(1, 7, "900"), (2, None, None)], full_name="Oracle Red Bull Racing")]
+    )
+    interaction = _interaction()
+
+    with _no_graphic():
+        await _lineup(cog, interaction)
+
+    assert "Oracle Red Bull Racing" in _sent(interaction)

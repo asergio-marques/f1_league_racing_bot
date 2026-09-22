@@ -62,9 +62,9 @@ async def _seed_season(db_path):
         division_id = cursor.lastrowid
         for name, seats, reserve in (("Redline", 2, 0), ("Reserve", 0, 1)):
             cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, ?, ?)",
-                (division_id, name, seats, reserve),
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (division_id, name, name, seats, reserve),
             )
             team_id = cursor.lastrowid
             for seat_number in range(1, seats + 1):
@@ -216,6 +216,18 @@ class TestSeating:
 
         assert isinstance(result, str)
         assert "Nowhere" in result
+
+    async def test_a_team_is_named_by_its_shorthand_in_any_case(self, db_path):
+        result = await _add(db_path, team="REDLINE")
+
+        assert not isinstance(result, str), result
+
+    async def test_a_role_mention_is_refused_saying_to_use_the_shorthand(self, db_path):
+        """A role is only for mentioning a team, never for naming one (#381)."""
+        result = await _add(db_path, team="<@&123456789012345678>")
+
+        assert isinstance(result, str)
+        assert "Name a team by its shorthand." in result
 
 
 # ── A mock driver's name is held to the rules every typed name is (#362) ──

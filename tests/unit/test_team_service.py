@@ -36,6 +36,7 @@ async def db_path(tmp_path):
             CREATE TABLE default_teams (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 name       TEXT    NOT NULL,
+                full_name  TEXT    NOT NULL,
                 max_seats  INTEGER NOT NULL DEFAULT 2,
                 is_reserve INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(name)
@@ -64,6 +65,7 @@ async def db_path(tmp_path):
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 division_id INTEGER NOT NULL REFERENCES divisions(id),
                 name        TEXT    NOT NULL,
+                full_name   TEXT    NOT NULL,
                 max_seats   INTEGER NOT NULL DEFAULT 2,
                 is_reserve  INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(division_id, name)
@@ -76,8 +78,8 @@ async def db_path(tmp_path):
 async def _add_default_team(db_path: str, name: str, is_reserve: int = 0) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT INTO default_teams (name, max_seats, is_reserve) VALUES (?, 2, ?)",
-            (name, is_reserve),
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) VALUES (?, ?, 2, ?)",
+            (name, name, is_reserve),
         )
         await db.commit()
 
@@ -108,8 +110,8 @@ async def _add_team_instance(db_path: str, season_id: int, team_name: str, is_re
         div_rows = await (await db.execute("SELECT id FROM divisions WHERE season_id = ?", (season_id,))).fetchall()
         for div in div_rows:
             await db.execute(
-                "INSERT OR IGNORE INTO team_instances (division_id, name, max_seats, is_reserve) VALUES (?, ?, 2, ?)",
-                (div[0], team_name, is_reserve),
+                "INSERT OR IGNORE INTO team_instances (division_id, name, full_name, max_seats, is_reserve) VALUES (?, ?, ?, 2, ?)",
+                (div[0], team_name, team_name, is_reserve),
             )
         await db.commit()
 

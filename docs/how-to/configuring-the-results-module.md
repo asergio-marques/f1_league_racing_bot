@@ -473,7 +473,7 @@ Worth knowing so you do not go looking for the setting.
 | No submission channel when a round started | The module is off, the division has no results channel, or the round was cancelled. The log channel says which |
 | A submission channel opened but nobody was pinged | The interaction role cannot be mentioned by the bot. Give the bot **Mention @everyone, @here, and All Roles** — see [Required Permissions](../../README.md#required-permissions) — or let anyone mention the role |
 | No submission channel for a round you moved | `/round amend` re-arms the round's submission whatever your modules. If one still does not open, check the round actually reached its scheduled time |
-| A submission rejected over a team role | The Reserve role in a team column, three lines under one team, or a driver under a different team from the one another session of the round already records |
+| A submission rejected over a team | A role mention where the team's shorthand belongs, the Reserve team in a team column, three lines under one team, or a driver under a different team from the one another session of the round already records |
 | A submission rejected over a driver | Not mentioned, or not seated in that division — a driver placed mid-season whose placement is not yet confirmed counts as not seated. A reserve also needs `/team reserve-role` set |
 | Everything you pasted gone after a restart | Known: a part-finished submission is discarded and reopened from the first session. A part-finished *resubmission* is dropped too, but the round keeps the results it had |
 | Results posted but no standings | Every session of the round was cancelled, so there was nothing to score |

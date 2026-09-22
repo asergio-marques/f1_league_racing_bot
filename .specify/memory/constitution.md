@@ -1,6 +1,48 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-22 — v14.4.1 → v14.5.0: MINOR — a team carries a full name, a shorthand and a role (issue #381)]
+  Version change    : 14.4.1 → 14.5.0
+  Bump rationale    : MINOR, on the precedent of v14.1.0: Principle IX gains three rules where
+                      it carried one, and the guidance inside it is materially expanded. No
+                      principle is removed and nothing already permitted becomes forbidden for
+                      a league that keeps one name per team — the shorthand is the name it
+                      already had.
+
+  Modified sections :
+    - Principle IX (Team & Division Structural Integrity), "Team name validity" — replaced by
+      four rules: **a team's three names** (what each is for, and that only the shorthand is
+      typed); **full name validity** (non-empty, at most 32 characters, unique ignoring case);
+      **shorthand validity** (at most 16 characters, no comma, the filename rules it already
+      carried); and **a grantable role** (@everyone, a managed role, a role above the bot's
+      own, and any role without Manage Roles are refused where the role is chosen).
+    - Principle IX, Configurable teams — a team's names and role are changed through a single
+      command, `team rename` and `team role` having been retired in its favour.
+    - Principle XII (Race Results & Championship Integrity), Result Submission — the team
+      column takes the team's shorthand; a role mention in it is refused.
+    - Principle XIV (Image Generation Discipline), Rule 13's normalisation — the datum a team's
+      badge is found by is its **shorthand**, where the full name is what is drawn.
+
+  Added sections    : none — the new rules sit inside Principle IX.
+  Removed sections  : none.
+
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch feature/381-team-full-name-and-references. A team had one name
+                      doing three jobs — printed on every graphic, typed into every command
+                      and results submission, and used as its artwork's filename — so a league
+                      that wanted a full official name paid for it in what it had to type, and
+                      a short typed name was what every posting showed.
+
+  Templates / docs  : `docs/wip-specs/core_specification.md` ("Teams") carries the three names
+                      and the rules each is held to; the results, image and signup specs carry
+                      the consequences in their own modules; `README.md` and
+                      `docs/how-to/configuring-the-core-bot.md` carry them for a league.
+-->
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-22 — v14.4.0 → v14.4.1: PATCH — a result records the division's team, never its role (issue #375)]
   Version change    : 14.4.0 → 14.4.1
   Bump rationale    : PATCH, on the precedent of v14.2.1: three statements of where the data
@@ -5307,30 +5349,52 @@ point:
   removable, renameable, or otherwise modified by any user command. Its seat count is
   unlimited. It MUST likewise exist in the **server's team configuration**, and MUST be created
   whenever that configuration is read or written and none is present.
-- **Team name validity**: A team name MUST normalise (Principle XIV.13) to a **filename** that is
+- **A team's three names**: A team MUST carry a **full name**, a **shorthand** and a **role**,
+  and each MUST do one job and no other. The **full name** is what is shown wherever a team is
+  named to a league. The **shorthand** is the only text by which a team is typed — in a command,
+  in the team column of a results submission, and in a test roster — and is the datum its artwork
+  is named after. The **role** is granted to the team's drivers and is what the team is mentioned
+  by; it MUST NOT name a team where one is typed. A command taking a team SHOULD offer the
+  shorthands as the manager types, each suggestion carrying the full name beside it. Text that is
+  not a shorthand — a role mention, `@everyone`, `@here`, a mention of a member, a Discord ID
+  typed out — MUST be refused saying what it is rather than as a shorthand no team holds.
+- **Full name validity**: A full name MUST be non-empty, MUST be at most 32 characters, and MUST
+  be unique across the server's team list ignoring case: two teams shown alike cannot be told
+  apart in a classification. The bound is the room every template gives a team column, a longer
+  name being set down until it cannot be read.
+- **Shorthand validity**: A shorthand MUST be at most 16 characters, MUST hold no comma — being
+  typed into comma-separated rows — and MUST normalise (Principle XIV.13) to a **filename** that is
   non-empty, is unique within its scope — the server for the server's team configuration, the
   division for the teams of a season — and is not `reserve`, which is reserved for the Reserve
-  team. `team add` and `team rename` MUST reject a name failing any of these with
+  team. Both names MUST hold no group mention, no emoji, no Discord markup and no mention of a
+  member. `team add` and `team modify` MUST reject a name failing any of these with
   a clear diagnostic, and `season config-review` and `season placements-review` MUST fail
-  validation of a season any team of which fails them, naming every offending team. Of the two names `team rename` takes, only the **new**
-  one is validated: the current name identifies a team that already exists, and validating it
-  would leave a team named before this rule impossible to rename or to remove. The same holds for
+  validation of a season any team of which fails them, naming every offending team. Of the names `team modify` takes, only the **new**
+  ones are validated: the name identifying the team names one that already exists, and validating
+  it would leave a team named before this rule impossible to change or to remove. The same holds for
   the name taken by `team remove`. Seasons whose placements are confirmed MUST NOT be re-validated against this
   rule, and no team may be renamed or removed by its introduction.
 
-  A name **beginning with a digit is admitted**. The requirement that it begin with a letter held
-  only while the normalised form had to serve as the `@id` of a node in an XML document, and is
-  withdrawn together with that use of it (Principle XIV.11).
+  A shorthand **beginning with a digit is admitted**. The requirement that it begin with a letter
+  held only while the normalised form had to serve as the `@id` of a node in an XML document, and
+  is withdrawn together with that use of it (Principle XIV.11).
 
-  This constraint binds **whether or not the Image generation module is enabled**. The normalised
-  name is the **filename** under which every graphic drawing a team badge seeks that team's image
-  (Principle XIV.13), and a name is cheapest to constrain at the one moment it is set; a league
-  enabling the module later would otherwise hold names it cannot clean up without losing that
-  team's history.
+  These constraints bind **whether or not the Image generation module is enabled**. The normalised
+  shorthand is the **filename** under which every graphic drawing a team badge seeks that team's
+  image (Principle XIV.13), and a name is cheapest to constrain at the one moment it is set; a
+  league enabling the module later would otherwise hold names it cannot clean up without losing
+  that team's history.
+- **A grantable role**: A team's role MUST be one the bot can grant, being granted to every
+  driver placed in the team and failing silently where it cannot be. `@everyone`, a role managed
+  by an integration, a role at or above the bot's own highest role, and every role while the bot
+  holds no permission to manage roles MUST be refused at the moment the role is chosen, each
+  saying why.
+
 - **Configurable teams**: The standard ten constructor teams (Alpine, Aston Martin, Ferrari,
   Haas, McLaren, Mercedes, Racing Bulls, Red Bull, Sauber, Williams) each carry exactly 2 seats
-  by default. A league manager MAY add or rename configurable teams in the league's
-  default set, and a league admin MAY remove one — a removed team taking its seats with it,
+  by default. A league manager MAY add a configurable team to the league's
+  default set and MAY change its names and its role through a single command, and a
+  league admin MAY remove one — a removed team taking its seats with it,
   and nothing putting it back — only while no season is live or while the live season is in
   **Configuration**. From the confirmation of a season's configuration to that season's end the
   team list MUST NOT change. A team's Discord role MAY be changed in every stage save
@@ -5598,8 +5662,9 @@ governs the **Results & Standings optional module** (Principle X).
   is a module-introduced channel category registered per Principle VII.
 - Each session result row MUST carry: session type, round ID, division ID, driver Discord
   User ID, finishing position (1-indexed positive integer), the team of the division the
-  entry drove for — never its Discord role, the role typed in a submission being resolved to
-  the team once, when typed — tyre (qualifying) or total race time and fastest lap (race),
+  entry drove for — never its Discord role, the team's **shorthand** typed in a submission
+  being resolved to the team once, when typed, and a role mention in the team column being
+  refused — tyre (qualifying) or total race time and fastest lap (race),
   and an outcome modifier. Permitted modifiers:
   CLASSIFIED (eligible for points), DNF / DNS / DSQ (0 points, ineligible for fastest-lap
   bonus except as noted). A special CANCELLED result MAY be recorded for sessions not run.
@@ -7062,8 +7127,10 @@ asset class. Resolution MUST be deterministic and documented:
   lowercase, decompose and strip diacritics, replace every run of characters that is neither a
   letter nor a digit with a single **underscore**, and drop leading and trailing underscores.
   `Red Bull Racing` resolves to `red_bull_racing.svg`; `São Paulo` to `sao_paulo.svg`.
-- **One rule serves every class**: a team name, a country, a track, a tyre compound and a
-  condition of weather are all normalised by it. A second normalisation rule would be a second way
+- **One rule serves every class**: a team's **shorthand**, a country, a track, a tyre
+  compound and a condition of weather are all normalised by it. A team is **drawn** by its
+  full name and its badge **found** by its shorthand, the two being read apart wherever a
+  team is drawn. A second normalisation rule would be a second way
   for two spellings of one datum to disagree.
 - The normalised form names a **file** and never a **field** of a template, every field of every
   collection being addressed by an ordinal (Rule 11). It is therefore bound by what a filename
@@ -8338,4 +8405,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.4.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-22
+**Version**: 14.5.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-22

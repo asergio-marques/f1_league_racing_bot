@@ -198,13 +198,23 @@ Each module then has its own configuration, which is not covered here. Start fro
 ## Step 3 — Build your team list
 
 ```
-/team add name:Red Bull role:@Red Bull
+/team add
 /team list
 ```
 
-A team belongs to the **server**, not to a season, so you do this once and it carries forward. Every team needs a Discord role of its own — that role is granted to a driver when you seat them and taken away when you do not. **One role, one team:** a role another team already holds, the Reserve team included, is refused, because a results submission names a team by its role.
+`/team add` opens a form. It asks for three things, and each does one job:
 
-The rules for a team's **name** are checked the moment you set it, and are listed in full under [`/team add`](../../README.md#team-commands). The short version: a name has to stay distinct from every other team once punctuation and accents are stripped, so `Red Bull` and `Red  Bull!` cannot both exist — they would draw the same badge file. A name may start with a digit; `2 Fast` is fine. It cannot hold an emoji, Discord formatting, a role mention, `@everyone` or `@here`: a picture cannot show them the way a message does.
+| | What it is for |
+|---|---|
+| **Shorthand** — `RBR` | What you **type**: commands, the team column of a results submission, a test roster. It is also the filename of the team's badge. At most 16 characters, and no comma. |
+| **Full name** — `Oracle Red Bull Racing` | What is **shown**: every post, every graphic, every reply. At most 32 characters, and no two teams may share one. |
+| **Role** — `@Red Bull` | Granted to a driver when you seat them, taken away when you do not. |
+
+A team belongs to the **server**, not to a season, so you do this once and it carries forward. **One role, one team:** a role another team already holds, the Reserve team included, is refused. The role must also be one the bot can grant — not `@everyone`, not a role managed by an integration, and not one sitting above the bot's own highest role; each is refused as you choose it, saying why.
+
+> **You never type a role to name a team.** Every command that takes a team suggests the shorthands as you type, showing the full name beside each, and a role mention typed in its place is refused.
+
+The rules for a team's names are checked the moment you set them, and are listed in full under [the team commands](../../README.md#team-commands). The short version: a **shorthand** has to stay distinct from every other team's once punctuation and accents are stripped, so `Red Bull` and `Red  Bull!` cannot both exist — they would draw the same badge file. It may start with a digit; `2 Fast` is fine. Neither name may hold an emoji, Discord formatting, a role mention, a mention of a member, `@everyone` or `@here`: a picture cannot show them the way a message does.
 
 > **These rules apply whether or not you ever use pictures.** A name is only cheap to fix at the moment you set it, so the bot constrains it then, rather than leaving you stuck with a name you cannot correct without losing that team's history.
 
@@ -216,7 +226,11 @@ The rules for a team's **name** are checked the moment you set it, and are liste
 
 This is easy to forget and the bot warns you about it at every season review, because a driver sitting in Reserve without it will be rejected when results are submitted.
 
-Every division you create later is built from this list, each team with **two seats**. Build the list before you confirm a season's configuration: from that moment until the season ends, `/team add`, `/team remove` and `/team rename` are refused. A team's role is the exception — if a role is deleted from the server, point the team at its replacement with `/team role`, in any state but pending completion. (By then nothing is being raced and completing the season revokes every team role anyway, so the repair waits for the next season.) Every driver already seated in the team moves to the new role with it, and the rounds the team has already raced stay its own — a result records the team, never its role. Use `/team list` to see the whole list with its roles, and `/team lineup` once drivers are placed.
+Every division you create later is built from this list, each team with **two seats**, and keeps the names the team held then. Build the list before you confirm a season's configuration: from that moment until the season ends, `/team add` and `/team remove` are refused, and so are the two names in `/team modify`.
+
+**`/team modify` is how a team changes.** Name the team by its shorthand and it opens a form filled with what the team holds now; change what you like and submit. The two names may change only while the list is open, as above. A team's role is the exception — if a role is deleted from the server, point the team at its replacement in any state but pending completion. (By then nothing is being raced and completing the season revokes every team role anyway, so the repair waits for the next season.) Every driver already seated in the team moves to the new role with it, and the rounds the team has already raced stay its own — a result records the team, never its role or its name. If you change the shorthand, the reply tells you the badge filename to rename.
+
+Use `/team list` to see the whole list — each team as *full name — `shorthand` → @role* — and `/team lineup` once drivers are placed.
 
 ---
 
@@ -246,7 +260,7 @@ The season is now **in configuration**. Nothing you do from here is live until i
 
 **This is the last moment steps 2 and 3 are open.** Configuration is where the season's settings are decided, and confirming it fixes them until the season ends:
 
-- the **team list** — `/team add`, `/team remove` and `/team rename`;
+- the **team list** — `/team add`, `/team remove`, and the two names in `/team modify`;
 - the **signup module** — turning it on or off, and every setting in [its guide](configuring-the-signup-module.md);
 - **test mode**, which can be switched on or off only now — see [Testing with test mode](test-mode.md);
 - and the game edition you just gave.
@@ -266,7 +280,7 @@ The bot posts the configuration to the channel, a message per subject: test mode
 | The check | Only with |
 |---|---|
 | The signup channel, and the league's base role and driver role, are set | `signup` |
-| Every team name can be used | — |
+| Every team's shorthand can be used | — |
 | A points configuration is attached, every attached one exists, and each is in order | `results` |
 | Inkscape is installed, every template a switched-on output draws is valid, every colour slot a drawing uses has a colour, and the driver-photo setting could fetch something | `images` |
 
@@ -494,7 +508,7 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 | Division tiers are not 1, 2, 3… with no gaps | `/division amend` the tiers |
 | A division has no rounds at all | Add one, or delete the division |
 | Two rounds in a division share a date and time | Reschedule one |
-| A team name cannot be used | Rename it — the message names every offender at once |
+| A team's shorthand cannot be used | Change it with `/team modify` — the message names every offender at once |
 | A division has no calendar channel or no lineup channel | Step 9 |
 | A signup is unsettled | Step 10 |
 
@@ -615,7 +629,7 @@ Where the window closes with nobody left to settle, the season goes straight bac
 /season complete
 ```
 
-**Nothing ends a season by itself.** Once every division is finished or cancelled, the season moves to **pending completion** on its own, and `/season complete` is what ends it. Before then the bot refuses, listing the outstanding rounds. It refuses as well while a round's results are being amended, naming the round and its channel — finish or cancel that amendment first. A mid-season signup window does not hold it up: with every division done there is no round left to place anyone into, so the window is closed and every pending placement turned down — each unplaced or unconfirmed driver returns to Not Signed Up, as `/driver reject` would. From pending completion there are three things left and no others: **amending the results of a round already final**, **repairing a division's channels** — the final classification and the final attendance sheet are posted to them, so one deleted has to be repointed — and completing the season. `/division calendar-sync`, `/team role`, `/team reserve-role`, the `/results` syncs, the reserves toggle and every `/results amend` command are refused, and no module can be turned off. Completing then ends the season: each division's **final classification** is posted, a history entry is written for every division each driver took part in (one they were moved or released from included), the season's roles are revoked, an open signup window is closed, and every driver returns to **Not Signed Up** — ready to sign up for the next season. Drivers who never raced are deleted at this point, their signups kept with the season; former drivers are kept. Test mode is switched off, and the season is archived and announced in the log channel.
+**Nothing ends a season by itself.** Once every division is finished or cancelled, the season moves to **pending completion** on its own, and `/season complete` is what ends it. Before then the bot refuses, listing the outstanding rounds. It refuses as well while a round's results are being amended, naming the round and its channel — finish or cancel that amendment first. A mid-season signup window does not hold it up: with every division done there is no round left to place anyone into, so the window is closed and every pending placement turned down — each unplaced or unconfirmed driver returns to Not Signed Up, as `/driver reject` would. From pending completion there are three things left and no others: **amending the results of a round already final**, **repairing a division's channels** — the final classification and the final attendance sheet are posted to them, so one deleted has to be repointed — and completing the season. `/division calendar-sync`, `/team modify`, `/team reserve-role`, the `/results` syncs, the reserves toggle and every `/results amend` command are refused, and no module can be turned off. Completing then ends the season: each division's **final classification** is posted, a history entry is written for every division each driver took part in (one they were moved or released from included), the season's roles are revoked, an open signup window is closed, and every driver returns to **Not Signed Up** — ready to sign up for the next season. Drivers who never raced are deleted at this point, their signups kept with the season; former drivers are kept. Test mode is switched off, and the season is archived and announced in the log channel.
 
 > **What "finalised" means here.** A round is finished once its **appeals review is approved** —
 > not when you submit its results, and not when you approve its penalties. Each stage in between
@@ -697,7 +711,7 @@ you. The old server's channels and roles do not, so you set those again on the n
 3. **Invite the bot to the new server** and run `/bot init` there, as in step 1. It claims the
    new server and takes the four settings afresh; test mode and your module settings are as you
    left them.
-4. **Give each team its role again**, with `/team role` and `/team reserve-role` — the roles on
+4. **Give each team its role again**, with `/team modify` and `/team reserve-role` — the roles on
    the old server mean nothing on the new one. Set the league's two roles again with
    `/bot base-role` and `/bot driver-role`, the hub with `/bot hub-channel` if you had one,
    and if the signup module is on, its channel with `/signup channel`.

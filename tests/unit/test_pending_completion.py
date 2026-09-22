@@ -134,8 +134,8 @@ async def _seed_pending_drivers(path):
     """Driver 1 committed, 2 placed but uncommitted, 3 Unassigned, 4 awaiting approval."""
     async with get_connection(path) as db:
         await db.execute(
-            "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-            "VALUES (10, 1, 'Alpha', 4, 0)"
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (10, 1, 'Alpha', 'Alpha', 4, 0)"
         )
         for pid, state, committed in ((1, "ASSIGNED", 1), (2, "ASSIGNED", 0),
                                       (3, "UNASSIGNED", None), (4, "PENDING_ADMIN_APPROVAL", None)):

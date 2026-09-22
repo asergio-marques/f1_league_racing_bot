@@ -184,7 +184,7 @@ You do not have to do anything to keep the window running. Drivers press the but
 | 3 | Platform ID | Typing | — |
 | 4 | Availability | Typing slot numbers, e.g. `1 3 5` | — |
 | 5 | Full-Time or Reserve | Buttons | — |
-| 6 | Up to three preferred teams, ranked | Buttons, one per team | The driver chose Reserve |
+| 6 | Up to three preferred teams, ranked | Buttons, one per team, each showing the team's full name | The driver chose Reserve |
 | 7 | Preferred teammate | Typing, or a No Preference button | — |
 | 8 | A lap time per track | Typing, plus a screenshot if required | You opened with no tracks |
 | 9 | Notes, 50 characters | Typing, or a No Notes button | — |
@@ -275,7 +275,7 @@ Then settle every one of them:
 /driver reject user:@Bob
 ```
 
-`division` takes either the tier number or the division name; `team` must match the team name exactly. These work only while the season is **in placements**, or mid-season while the drivers of a closed window are placed — the divisions have to exist first, and building them is core setup; see [Setting up the bot for your league](configuring-the-core-bot.md#step-8--build-the-season).
+`division` takes either the tier number or the division name; `team` takes the team's **shorthand**, which the command suggests as you type. These work only while the season is **in placements**, or mid-season while the drivers of a closed window are placed — the divisions have to exist first, and building them is core setup; see [Setting up the bot for your league](configuring-the-core-bot.md#step-8--build-the-season).
 
 **Every signup must be settled before placements are confirmed.** Place each Unassigned driver with `/driver assign`, or turn them down with `/driver reject`, which returns them to Not Signed Up and takes the driver role back; their signup stays with the season. A signup still in review is settled from its review panel. `/season placements-review` names anyone left, and withholds its button until nobody is.
 

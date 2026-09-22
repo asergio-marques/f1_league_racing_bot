@@ -115,6 +115,7 @@ class SheetEntry:
     ordinal: int
     driver_name: str
     points: str
+    #: What is drawn: the team's full name (#381).
     team_name: str = ""
     nationality: str | None = None
     sanction: str = ""
@@ -125,6 +126,8 @@ class SheetEntry:
     mark: str | None = None
     #: Round ordinal → the cell's text. An empty string is zero and is drawn empty.
     round_points: Mapping[int, str] = field(default_factory=dict)
+    #: What the team's artwork is found by: its shorthand (#381). The drawn name where None.
+    team_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -246,6 +249,7 @@ def resolve_drawing(
     team_names: Mapping[int, str] | None = None,
     nationalities: Mapping[int, str | None] | None = None,
     rounds: Sequence[RoundHeading] | None = None,
+    team_keys: Mapping[int, str] | None = None,
     autoreserve_threshold: int | None = None,
     autosack_threshold: int | None = None,
     division_tier: str | int | None = None,
@@ -262,6 +266,9 @@ def resolve_drawing(
 
     Raises :class:`AttendanceDataError` where the division holds no driver at all — the floor
     of XIV.12, raised here against the data and before any template is in view.
+
+    *team_keys* holds the shorthand of each driver's team, keyed as *team_names* is, which the
+    team's artwork is found by apart from the full name drawn (#381).
     """
     if not records:
         raise AttendanceDataError(
@@ -270,6 +277,7 @@ def resolve_drawing(
         )
 
     team_map = team_names or {}
+    key_map = team_keys or {}
     nationality_map = nationalities or {}
 
     # The one limit the plate names and the marks are measured against, decided once so a
@@ -293,6 +301,7 @@ def resolve_drawing(
                 driver_name=display_names.get(record.key, str(record.key)),
                 points=str(record.total or 0),
                 team_name=team_map.get(record.key, ""),
+                team_key=key_map.get(record.key),
                 nationality=nationality_map.get(record.key),
                 sanction=SANCTION_ANNOTATION if record.sanctioned else "",
                 mark=mark_for(record.total, limit[1] if limit else None),
@@ -463,7 +472,7 @@ def build_fill_spec(
 
         if f"{stem}_team_image" in declared:
             if entry.team_name:
-                image_data[f"{stem}_team_image"] = ("team", entry.team_name)
+                image_data[f"{stem}_team_image"] = ("team", entry.team_key or entry.team_name)
             else:
                 remove.append(f"{stem}_team_image")
 

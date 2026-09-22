@@ -15,6 +15,24 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _make_role(role_id: int = 555, *, grantable: bool = True) -> MagicMock:
+    """A role the bot can grant, unless *grantable* is False.
+
+    A team's role must be one the bot can grant (#381), so a double has to answer the four
+    questions that check asks: is it @everyone, is it managed, does the bot hold Manage Roles,
+    and is the bot's own role above it. *grantable* False leaves it above the bot's own, which
+    is the case a command test uses; the other three are `test_team_role_grantable.py`'s.
+    """
+    role = MagicMock()
+    role.id = role_id
+    role.mention = f"<@&{role_id}>"
+    role.is_default.return_value = False
+    role.managed = False
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, other: grantable
+    return role
+
+
 def _make_interaction(guild_id: int = 1) -> MagicMock:
     interaction = MagicMock()
     interaction.guild_id = guild_id
@@ -50,6 +68,14 @@ def _make_bot(
 ) -> MagicMock:
     bot = MagicMock()
     bot.team_service.add_default_team = AsyncMock(side_effect=add_default_team_side_effect)
+    # A team is named by its shorthand (#381); the resolver is covered by its own tests.
+    from services.team_service import TeamReference
+
+    bot.team_service.resolve_server_team = AsyncMock(
+        side_effect=lambda text: TeamReference(
+            team={"name": text, "full_name": text, "is_reserve": False, "role_id": None}
+        )
+    )
     bot.team_service.remove_default_team = AsyncMock(side_effect=remove_default_team_side_effect)
     bot.team_service.rename_default_team = AsyncMock(side_effect=rename_default_team_side_effect)
     bot.team_service.season_team_add = AsyncMock(return_value=season_team_add_return)
@@ -83,13 +109,12 @@ class TestTeamAdd:
         bot = _make_bot(setup_season=None)
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 555
+        role = _make_role(555)
         role.mention = "<@&555>"
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=role)
+        await cog.add_team(interaction, shorthand="Alpine", full_name="Alpine Racing", role=role)
 
-        bot.team_service.add_default_team.assert_awaited_once_with("Alpine")
+        bot.team_service.add_default_team.assert_awaited_once_with("Alpine", full_name="Alpine Racing")
         bot.placement_service.set_team_role_config.assert_awaited_once()
         bot.team_service.season_team_add.assert_not_awaited()
         args, kwargs = interaction.response.send_message.call_args
@@ -105,13 +130,12 @@ class TestTeamAdd:
         bot = _make_bot(live_season=season)
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 555
+        role = _make_role(555)
         role.mention = "<@&555>"
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=role)
+        await cog.add_team(interaction, shorthand="Alpine", full_name="Alpine Racing", role=role)
 
-        bot.team_service.add_default_team.assert_awaited_once_with("Alpine")
+        bot.team_service.add_default_team.assert_awaited_once_with("Alpine", full_name="Alpine Racing")
         bot.team_service.season_team_add.assert_not_awaited()
         args, kwargs = interaction.response.send_message.call_args
         content = args[0] if args else kwargs["content"]
@@ -126,7 +150,9 @@ class TestTeamAdd:
         cog = TeamCog(bot)
         interaction = _make_interaction()
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=MagicMock())
+        await cog.add_team(
+            interaction, shorthand="Alpine", full_name="Alpine Racing", role=_make_role()
+        )
 
         bot.team_service.add_default_team.assert_not_awaited()
         bot.placement_service.set_team_role_config.assert_not_awaited()
@@ -140,10 +166,9 @@ class TestTeamAdd:
         bot = _make_bot(add_default_team_side_effect=ValueError('A default team named "Alpine" already exists.'))
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 555
+        role = _make_role(555)
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=role)
+        await cog.add_team(interaction, shorthand="Alpine", full_name="Alpine Racing", role=role)
 
         args, kwargs = interaction.response.send_message.call_args
         content = args[0] if args else kwargs["content"]
@@ -202,67 +227,6 @@ class TestTeamRemove:
 
 
 # ---------------------------------------------------------------------------
-# /team rename
-# ---------------------------------------------------------------------------
-
-class TestTeamRename:
-    async def test_no_season_renames_server_list(self):
-        from cogs.team_cog import TeamCog
-        bot = _make_bot(setup_season=None)
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await _unwrap(cog.team_rename)(cog, interaction, current_name="Alpine", new_name="BWT Alpine")
-
-        bot.team_service.rename_default_team.assert_awaited_once_with("Alpine", "BWT Alpine")
-        bot.placement_service.rename_team_role_config.assert_awaited_once()
-        bot.team_service.season_team_rename.assert_not_awaited()
-        args, kwargs = interaction.response.send_message.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "✅" in content
-
-    async def test_refused_once_the_configuration_is_confirmed(self):
-        from cogs.team_cog import TeamCog
-        season = _make_season(season_number=3)
-        bot = _make_bot(live_season=season)
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await _unwrap(cog.team_rename)(cog, interaction, current_name="Alpine", new_name="BWT Alpine")
-
-        bot.team_service.rename_default_team.assert_not_awaited()
-        bot.placement_service.rename_team_role_config.assert_not_awaited()
-        args, kwargs = interaction.response.send_message.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "⛔" in content
-
-    async def test_current_name_not_found_returns_error(self):
-        from cogs.team_cog import TeamCog
-        bot = _make_bot(rename_default_team_side_effect=ValueError('No default team named "Ghost" found.'))
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await _unwrap(cog.team_rename)(cog, interaction, current_name="Ghost", new_name="NewName")
-
-        args, kwargs = interaction.response.send_message.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "⛔" in content
-        bot.placement_service.rename_team_role_config.assert_not_awaited()
-
-    async def test_new_name_conflict_returns_error(self):
-        from cogs.team_cog import TeamCog
-        bot = _make_bot(rename_default_team_side_effect=ValueError('A default team named "Ferrari" already exists.'))
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await _unwrap(cog.team_rename)(cog, interaction, current_name="Alpine", new_name="Ferrari")
-
-        args, kwargs = interaction.response.send_message.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "⛔" in content
-
-
-# ---------------------------------------------------------------------------
 # /team list
 # ---------------------------------------------------------------------------
 
@@ -283,8 +247,8 @@ class TestTeamList:
     async def test_teams_no_season_shows_server_list(self):
         from cogs.team_cog import TeamCog
         teams = [
-            {"name": "Ferrari", "max_seats": 2, "is_reserve": False, "role_id": 111},
-            {"name": "Alpine", "max_seats": 2, "is_reserve": False, "role_id": None},
+            {"name": "Ferrari", "full_name": "Ferrari Racing", "max_seats": 2, "is_reserve": False, "role_id": 111},
+            {"name": "Alpine", "full_name": "Alpine Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
         ]
         bot = _make_bot(teams_with_roles=teams, setup_season=None)
         cog = TeamCog(bot)
@@ -302,8 +266,8 @@ class TestTeamList:
     async def test_setup_season_matching_shows_unified_header(self):
         from cogs.team_cog import TeamCog
         teams = [
-            {"name": "Ferrari", "max_seats": 2, "is_reserve": False, "role_id": None},
-            {"name": "Alpine", "max_seats": 2, "is_reserve": False, "role_id": None},
+            {"name": "Ferrari", "full_name": "Ferrari Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
+            {"name": "Alpine", "full_name": "Alpine Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
         ]
         season = _make_season(season_number=3)
         bot = _make_bot(
@@ -324,8 +288,8 @@ class TestTeamList:
     async def test_setup_season_divergent_shows_warning(self):
         from cogs.team_cog import TeamCog
         teams = [
-            {"name": "Ferrari", "max_seats": 2, "is_reserve": False, "role_id": None},
-            {"name": "Alpine", "max_seats": 2, "is_reserve": False, "role_id": None},
+            {"name": "Ferrari", "full_name": "Ferrari Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
+            {"name": "Alpine", "full_name": "Alpine Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
         ]
         season = _make_season(season_number=3)
         bot = _make_bot(
@@ -348,83 +312,6 @@ class TestTeamList:
 
 
 # ---------------------------------------------------------------------------
-# /team role — available in every state, so a deleted role can be repaired
-# ---------------------------------------------------------------------------
-
-class TestTeamRole:
-    _TEAMS = [
-        {"name": "Ferrari", "max_seats": 2, "is_reserve": False, "role_id": 111},
-        {"name": "Reserve", "max_seats": 0, "is_reserve": True, "role_id": None},
-    ]
-
-    async def test_sets_the_role_while_the_season_is_ongoing(self):
-        from cogs.team_cog import TeamCog
-        from models.season import SeasonStage
-        bot = _make_bot(
-            teams_with_roles=self._TEAMS,
-            live_season=_make_season(stage=SeasonStage.ONGOING),
-        )
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 222
-        role.mention = "<@&222>"
-
-        await _unwrap(cog.team_role)(cog, interaction, name="ferrari", role=role)
-
-        bot.placement_service.set_team_role_config.assert_awaited_once()
-        call_args = bot.placement_service.set_team_role_config.call_args
-        assert call_args.args[0:2] == ("Ferrari", 222)
-        args, kwargs = interaction.followup.send.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "✅" in content
-        assert "<@&222>" in content
-
-    async def test_the_drivers_seated_in_the_team_follow_its_new_role(self):
-        """Issue #220: every driver of the team has the old role taken and the new granted."""
-        from cogs.team_cog import TeamCog
-        bot = _make_bot(teams_with_roles=self._TEAMS)
-        bot.placement_service.swap_team_role = AsyncMock(return_value=3)
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 222
-        role.mention = "<@&222>"
-
-        await _unwrap(cog.team_role)(cog, interaction, name="Ferrari", role=role)
-
-        bot.placement_service.swap_team_role.assert_awaited_once_with(
-            "Ferrari", 111, 222, interaction.guild
-        )
-        assert "3 seated driver(s) moved to the new role" in interaction.followup.send.call_args.args[0]
-        assert "seated drivers moved: 3" in bot.output_router.post_log.call_args.args[0]
-
-    async def test_refuses_a_team_not_in_the_list(self):
-        from cogs.team_cog import TeamCog
-        bot = _make_bot(teams_with_roles=self._TEAMS)
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await _unwrap(cog.team_role)(cog, interaction, name="Ghost", role=MagicMock())
-
-        bot.placement_service.set_team_role_config.assert_not_awaited()
-        args, kwargs = interaction.response.send_message.call_args
-        assert "⛔" in (args[0] if args else kwargs["content"])
-
-    async def test_points_the_reserve_team_at_its_own_command(self):
-        from cogs.team_cog import TeamCog
-        bot = _make_bot(teams_with_roles=self._TEAMS)
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await _unwrap(cog.team_role)(cog, interaction, name="Reserve", role=MagicMock())
-
-        bot.placement_service.set_team_role_config.assert_not_awaited()
-        args, kwargs = interaction.response.send_message.call_args
-        assert "reserve-role" in (args[0] if args else kwargs["content"])
-
-
-# ---------------------------------------------------------------------------
 # /team reserve-role
 # ---------------------------------------------------------------------------
 
@@ -434,8 +321,7 @@ class TestTeamReserveRole:
         bot = _make_bot()
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 999
+        role = _make_role(999)
         role.mention = "<@&999>"
 
         await _unwrap(cog.team_reserve_role)(cog, interaction, role=role)
@@ -468,12 +354,11 @@ class TestTeamReserveRole:
     async def test_the_drivers_seated_in_reserve_follow_its_new_role(self):
         from cogs.team_cog import TeamCog
         bot = _make_bot(teams_with_roles=[
-            {"name": "Reserve", "max_seats": 0, "is_reserve": True, "role_id": 555},
+            {"name": "Reserve", "full_name": "Reserve Racing", "max_seats": 0, "is_reserve": True, "role_id": 555},
         ])
         cog = TeamCog(bot)
         interaction = _make_interaction()
-        role = MagicMock()
-        role.id = 999
+        role = _make_role(999)
         role.mention = "<@&999>"
 
         await _unwrap(cog.team_reserve_role)(cog, interaction, role=role)
@@ -494,10 +379,7 @@ class TestTeamReserveRole:
 class TestOneRolePerTeam:
     @staticmethod
     def _role(role_id: int = 111):
-        role = MagicMock()
-        role.id = role_id
-        role.mention = f"<@&{role_id}>"
-        return role
+        return _make_role(role_id)
 
     async def test_a_team_is_not_added_under_a_role_another_team_holds(self):
         from cogs.team_cog import TeamCog
@@ -506,7 +388,9 @@ class TestOneRolePerTeam:
         cog = TeamCog(bot)
         interaction = _make_interaction()
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=self._role())
+        await cog.add_team(
+            interaction, shorthand="Alpine", full_name="Alpine Racing", role=self._role()
+        )
 
         bot.team_service.add_default_team.assert_not_awaited()
         bot.placement_service.set_team_role_config.assert_not_awaited()
@@ -524,27 +408,12 @@ class TestOneRolePerTeam:
         cog = TeamCog(bot)
         interaction = _make_interaction()
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", role=self._role())
+        await cog.add_team(
+            interaction, shorthand="Alpine", full_name="Alpine Racing", role=self._role()
+        )
 
         bot.team_service.remove_default_team.assert_awaited_once_with("Alpine")
         assert interaction.response.send_message.call_args.args[0].startswith("⛔")
-
-    async def test_a_team_is_not_given_a_role_another_team_holds(self):
-        from cogs.team_cog import TeamCog
-        bot = _make_bot(teams_with_roles=[
-            {"name": "Alpine", "max_seats": 2, "is_reserve": False, "role_id": 222},
-        ])
-        bot.placement_service.set_team_role_config = AsyncMock(
-            side_effect=ValueError('<@&111> is already the role of "Ferrari".')
-        )
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await _unwrap(cog.team_role)(cog, interaction, name="Alpine", role=self._role())
-
-        bot.placement_service.swap_team_role.assert_not_awaited()
-        bot.output_router.post_log.assert_not_awaited()
-        assert '"Ferrari"' in interaction.followup.send.call_args.args[0]
 
     async def test_the_reserve_is_not_given_a_role_another_team_holds(self):
         from cogs.team_cog import TeamCog

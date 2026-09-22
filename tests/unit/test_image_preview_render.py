@@ -150,9 +150,9 @@ async def league(db_path):
         # the reserve team is seated alongside them.
         for team_name in PACKAGED_TEAMS + ("Reserve",):
             cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, 2, ?)",
-                (division_id, team_name, int(team_name == "Reserve")),
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, 2, ?)",
+                (division_id, team_name, team_name, int(team_name == "Reserve")),
             )
             team_id = cursor.lastrowid
             for seat_number in (1, 2):

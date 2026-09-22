@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from models.season import ONGOING_STAGES, SeasonStage
+from utils.autocomplete import bounded_autocomplete, team_autocomplete
 from utils.channel_guard import league_admin_only, league_manager_only
 from utils.input_validator import parse_user_id
 from services.season_service import SeasonImmutableError
@@ -257,7 +258,7 @@ class DriverCog(commands.Cog):
     @app_commands.describe(
         user="The Discord member to assign.",
         division="Division tier number or name.",
-        team="Exact team name as it appears in the division.",
+        team="The team's shorthand.",
     )
     @league_manager_only
     async def assign(
@@ -302,6 +303,14 @@ class DriverCog(commands.Cog):
             return
         division_id, division_name = resolved
 
+        # A team is typed by its shorthand (#381).
+        reference = await self.bot.team_service.resolve_division_team(  # type: ignore[attr-defined]
+            division_id, team
+        )
+        if reference.team is None:
+            await interaction.followup.send(f"⛔ {reference.refusal}", ephemeral=True)
+            return
+
         # Fetch the driver profile
         profile = await self.bot.driver_service.get_profile(  # type: ignore[attr-defined]
             str(user.id)
@@ -316,7 +325,7 @@ class DriverCog(commands.Cog):
             result = await self.bot.placement_service.assign_driver(  # type: ignore[attr-defined]
                 driver_profile_id=profile.id,
                 division_id=division_id,
-                team_name=team,
+                team_name=reference.team["name"],
                 season_id=season.id,
                 acting_user_id=actor_id,
                 acting_user_name=actor_name,
@@ -448,7 +457,7 @@ class DriverCog(commands.Cog):
     @app_commands.describe(
         user="The Discord member to move.",
         from_division="Division tier number or name the driver is moved from.",
-        team="Exact team name the driver is moved into.",
+        team="The shorthand of the team the driver is moved into.",
         to_division="Division tier number or name moved into. Omit for the same division.",
     )
     @league_manager_only
@@ -500,6 +509,14 @@ class DriverCog(commands.Cog):
                 )
                 return
 
+        # A team is typed by its shorthand (#381), in the division moved into.
+        reference = await self.bot.team_service.resolve_division_team(  # type: ignore[attr-defined]
+            resolved_to[0], team
+        )
+        if reference.team is None:
+            await interaction.followup.send(f"⛔ {reference.refusal}", ephemeral=True)
+            return
+
         profile = await self.bot.driver_service.get_profile(str(user.id))  # type: ignore[attr-defined]
         if profile is None:
             await interaction.followup.send(
@@ -513,7 +530,7 @@ class DriverCog(commands.Cog):
                 season_id=season.id,
                 from_division_id=resolved_from[0],
                 to_division_id=resolved_to[0],
-                team_name=team,
+                team_name=reference.team["name"],
                 acting_user_id=interaction.user.id,
                 acting_user_name=str(interaction.user),
                 guild=interaction.guild,
@@ -744,3 +761,17 @@ class DriverCog(commands.Cog):
             "sack: user=%s by %s",
             user.id, actor_name,
         )
+
+    # ------------------------------------------------------------------
+    # The team parameter's autocomplete (#381)
+    # ------------------------------------------------------------------
+
+    @bounded_autocomplete()
+    async def _team_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """A team is typed by its shorthand; offered under both its names, Reserve included."""
+        return await team_autocomplete(self.bot, current, include_reserve=True)
+
+    assign.autocomplete("team")(_team_autocomplete)
+    move.autocomplete("team")(_team_autocomplete)

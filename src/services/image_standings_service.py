@@ -212,7 +212,7 @@ class StandingsEntry:
     position: str
     #: The team drawn on this row. On the drivers graphic that is the team of the division
     #: **seating the driver at the moment of generation** — the reserve team for a reserve —
-    #: and never the team whose car they drove in any one round (FR-020).
+    #: and never the team whose car they drove in any one round (FR-020). Its full name (#381).
     team_name: str
     points: str
     #: Drivers graphic only; None on the constructors graphic, which names no driver here.
@@ -228,6 +228,8 @@ class StandingsEntry:
     movement: object | None = None
     #: Round ordinal → its cells. Empty on a template declaring no round.
     cells: dict[int, RoundCells] = field(default_factory=dict)
+    #: What the team's artwork is found by: its shorthand (#381). The drawn name where None.
+    team_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -320,6 +322,7 @@ def resolve_drawing(
     team_seat_assignments: Mapping[int, Mapping[int, int]] | None = None,
     team_seat_counts: Mapping[int, int] | None = None,
     driver_display_names: Mapping[int, str] | None = None,
+    team_keys: Mapping[int, str] | None = None,
 ) -> StandingsDrawing:
     """Resolve every value a standings graphic draws.
 
@@ -341,6 +344,10 @@ def resolve_drawing(
     names the drivers a constructors car draws — keyed by ``driver_user_id``, unlike
     *display_names* itself, which on the constructors graphic names its rows (the teams) and
     cannot also name the drivers inside their cars.
+
+    *team_keys* holds each row's team shorthand, keyed as *team_names* is, which the team's
+    artwork is found by apart from the full name drawn (#381). A row absent from it is found by
+    the name drawn.
     """
     drivers = template_key == DRIVERS_TEMPLATE_KEY
     reserves = reserve_user_ids or set()
@@ -381,6 +388,7 @@ def resolve_drawing(
                 gap_to_leader=gap_map.get(key),
                 movement=movements.get(key),
                 cells=cells,
+                team_key=(team_keys or {}).get(key),
             )
         )
 
@@ -821,7 +829,7 @@ def build_fill_spec(
             put(f"{stem}_driver_name", entry.driver_name)
 
         if f"{stem}_team_image" in declared:
-            image_data[f"{stem}_team_image"] = ("team", entry.team_name)
+            image_data[f"{stem}_team_image"] = ("team", entry.team_key or entry.team_name)
 
         # The flag, in its three states. A nationality the league collects but this driver
         # did not state is an ordinary emptied optional and reports as one; a league that

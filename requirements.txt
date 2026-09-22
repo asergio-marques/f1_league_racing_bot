@@ -7,8 +7,12 @@
 # the interpreter imports whatever the distribution ships no matter what this file says.
 # Raspberry Pi OS as of 2026-08 carries discord.py 2.5.0, and lxml 5.4.0 linked against
 # system libxml2 2.9.14 — both older than the pins below, and both behave differently.
-# Install into a virtualenv to be governed by this file (see README, Setup). The tests are
-# written not to depend on which of the two you get; that is deliberate and worth keeping.
+# Install into a virtualenv to be governed by this file (see README, Setup).
+#
+# discord.py 2.6 is now a **minimum**, not a preference (#381): `/team add` and `/team modify`
+# take their input in a modal carrying a role picker, which needs `discord.ui.Label`. `bot.py`
+# refuses to start below it rather than failing inside the team cog. So apt's 2.5 no longer
+# runs the bot or its tests, and the tests are written to depend on neither host's lxml.
 
 discord.py==2.7.1
 apscheduler==3.11.3

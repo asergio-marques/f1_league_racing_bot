@@ -1,12 +1,17 @@
 """TeamService — default team and season team CRUD, plus division seeding."""
 from __future__ import annotations
 
+import json
 import logging
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from db.database import get_connection
 from models.team import DefaultTeam, TeamInstance
 from utils.asset_resolver import normalise
-from utils.input_validator import NAME
+from utils.input_validator import TEAM_NAME, parse_role_mention, parse_user_mention
 
 log = logging.getLogger(__name__)
 
@@ -17,11 +22,26 @@ _RESERVE_NAME = "Reserve"
 #: would seek the same badge file (Constitution IX, XIV.11).
 _RESERVE_KEY = "reserve"
 
+#: The longest a team's shorthand may be (decided 2026-09-22, #381). A shorthand is a short alias
+#: typed wherever a team is entered, and names the team's artwork file.
+SHORTHAND_MAX = 16
+
+#: The longest a team's full name may be (decided 2026-09-22, #381, lowered from 64 the same
+#: day). It is what every post and graphic shows, and a name longer than this was set down on a
+#: results row until it could not be read — the templates carry a team column sized for exactly
+#: this much. The signup wizard's buttons, whose labels Discord caps at 80, are nowhere near it.
+FULL_NAME_MAX = 32
+
 
 def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -> str | None:
-    """Why *name* cannot become an asset **filename**, or None where it can.
+    """Why *name* cannot be a team's **shorthand**, or None where it can.
 
-    The normalised team name is the filename under which every graphic that draws a team
+    The shorthand is the team's short alias (#381): typed wherever a team is entered, and the
+    name of its artwork file. So it is held to two rules of its own besides the filename rules
+    below — at most ``SHORTHAND_MAX`` characters, and no comma, because a shorthand is typed
+    into the comma-separated rows of a results submission and a test roster.
+
+    The normalised shorthand is the filename under which every graphic that draws a team
     badge seeks that team's image (Constitution XIV.13) — the lineup, both results graphics,
     both standings graphics, the attendance sheet and the verdict. Constraining the datum is
     the business of the module that owns it (Principle IX); discovering the collision at
@@ -43,15 +63,28 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
     teams of a season. Omit it to check only the properties of the name itself.
 
     Before any of them, the name is held to the rules every name a league types is held to
-    (#362): no group mention, no emoji and no markup, being posted as text and drawn on graphics.
+    (#362): no group mention, no emoji and no markup, being posted as text and drawn on graphics
+    — and, as a team's name, no mention of a member either (``TEAM_NAME``, #381).
 
     Returns a message ready to show a user, or None.
     """
     trimmed = (name or "").strip()
     if not trimmed:
-        return "A team name cannot be empty."
+        return "A team's shorthand cannot be empty."
 
-    refusal = NAME.check("team name", trimmed).refusal
+    if len(trimmed) > SHORTHAND_MAX:
+        return (
+            f'"{trimmed}" is {len(trimmed)} characters long. A shorthand may be at most '
+            f"{SHORTHAND_MAX}."
+        )
+
+    if "," in trimmed:
+        return (
+            f'"{trimmed}" holds a comma. A shorthand is typed into the comma-separated rows '
+            "of a results submission and a test roster, so it cannot hold one."
+        )
+
+    refusal = TEAM_NAME.check("shorthand", trimmed).refusal
     if refusal is not None:
         return refusal
 
@@ -74,6 +107,40 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
             f'"{trimmed}" and "{clash}" both reduce to "{key}", so both would draw the '
             f"same team image. Choose a more distinct name."
         )
+
+    return None
+
+
+def validate_full_name(full_name: str, taken: dict[str, str] | None = None) -> str | None:
+    """Why *full_name* cannot be a team's **full name**, or None where it can.
+
+    The full name is what every post and graphic shows (#381). It is never typed to name a
+    team, so it holds no rule of a reference: only the rules a team's names are held to
+    (``TEAM_NAME``: #362's, and no mention of a member), a length, and uniqueness — two teams
+    showing the same name could not be told apart in a standings table.
+
+    *taken* maps an already-taken full name, casefolded, to the full name that holds it, the
+    Reserve team's included. Omit it to check only the properties of the name itself.
+
+    Returns a message ready to show a user, or None.
+    """
+    trimmed = (full_name or "").strip()
+    if not trimmed:
+        return "A team's full name cannot be empty."
+
+    if len(trimmed) > FULL_NAME_MAX:
+        return (
+            f"The full name is {len(trimmed)} characters long. A full name may be at most "
+            f"{FULL_NAME_MAX}."
+        )
+
+    refusal = TEAM_NAME.check("full name", trimmed).refusal
+    if refusal is not None:
+        return refusal
+
+    clash = (taken or {}).get(trimmed.casefold())
+    if clash is not None:
+        return f'"{clash}" is already the full name of a team. A full name names one team only.'
 
     return None
 
@@ -119,6 +186,20 @@ class TeamService:
             if r["name"] != exclude and normalise(r["name"])
         }
 
+    @staticmethod
+    async def _server_full_names(db, *, exclude_id: int | None = None) -> dict[str, str]:
+        """Casefolded full name → full name, across the server's team list, Reserve included.
+
+        *exclude_id* drops one team, so a team keeping its own full name does not clash with
+        itself.
+        """
+        rows = await (await db.execute("SELECT id, full_name FROM default_teams")).fetchall()
+        return {
+            r["full_name"].casefold(): r["full_name"]
+            for r in rows
+            if r["id"] != exclude_id
+        }
+
     # ------------------------------------------------------------------
     # Default teams (US4)
     # ------------------------------------------------------------------
@@ -141,9 +222,9 @@ class TeamService:
         if found:
             return False
         await db.execute(
-            "INSERT INTO default_teams (name, max_seats, is_reserve) "
-            "VALUES (?, -1, 1)",
-            (_RESERVE_NAME,),
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, -1, 1)",
+            (_RESERVE_NAME, _RESERVE_NAME),
         )
         return True
 
@@ -153,16 +234,19 @@ class TeamService:
             if await self._ensure_reserve(db):
                 await db.commit()
             cursor = await db.execute(
-                "SELECT id, name, max_seats, is_reserve "
+                "SELECT id, name, full_name, max_seats, is_reserve "
                 "FROM default_teams ORDER BY is_reserve ASC, name ASC",
             )
             rows = await cursor.fetchall()
         return [_row_to_default_team(r) for r in rows]
 
     async def add_default_team(
-        self, name: str, max_seats: int = 2
+        self, name: str, *, full_name: str, max_seats: int = 2
     ) -> DefaultTeam:
-        """Add a new default team.  Raises ValueError on duplicate or Reserve name."""
+        """Add a team to the server's list under its shorthand *name* and its *full_name*.
+
+        Raises ValueError on a duplicate or the Reserve name.
+        """
         if name == _RESERVE_NAME:
             raise ValueError(
                 f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
@@ -180,23 +264,40 @@ class TeamService:
             # (Principle IX). Scope: the server's own team list.
             problem = validate_team_name(
                 name, await self._server_keys(db, exclude=name)
-            )
+            ) or validate_full_name(full_name, await self._server_full_names(db))
             if problem is not None:
                 raise ValueError(problem)
 
             cursor = await db.execute(
-                "INSERT INTO default_teams (name, max_seats, is_reserve) "
-                "VALUES (?, ?, 0)",
-                (name, max_seats),
+                "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, 0)",
+                (name, full_name, max_seats),
             )
             await db.commit()
             row_id = cursor.lastrowid
-        return DefaultTeam(id=row_id, name=name, max_seats=max_seats, is_reserve=False)
+        return DefaultTeam(
+            id=row_id, name=name, full_name=full_name, max_seats=max_seats, is_reserve=False
+        )
 
-    async def rename_default_team(
-        self, current_name: str, new_name: str
-    ) -> None:
-        """Rename a default team.  Raises ValueError if protected or name conflict."""
+    async def modify_default_team(
+        self,
+        current_name: str,
+        *,
+        shorthand: str | None = None,
+        full_name: str | None = None,
+        actor_id: int = 0,
+        actor_name: str = "system",
+    ) -> dict:
+        """Change a team's shorthand, its full name, or both (#381). Returns both as they stand.
+
+        Everything is checked before anything is written, so a refusal leaves the team exactly
+        as it was. As on a rename, only the **new** names are validated: a team named before a
+        rule existed must still be correctable (FR-011). The Reserve team is protected.
+
+        The change is recorded in the audit log. A role change is recorded by
+        ``PlacementService.set_team_role_config``, and a team whose shorthand changes has its
+        role mapping re-keyed by ``rename_team_role_config`` — this writes neither.
+        """
         if current_name == _RESERVE_NAME:
             raise ValueError(
                 f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
@@ -204,8 +305,7 @@ class TeamService:
         async with get_connection(self._db_path) as db:
             row = await (
                 await db.execute(
-                    "SELECT id, is_reserve FROM default_teams "
-                    "WHERE name = ?",
+                    "SELECT id, name, full_name, is_reserve FROM default_teams WHERE name = ?",
                     (current_name,),
                 )
             ).fetchone()
@@ -215,29 +315,51 @@ class TeamService:
                 raise ValueError(
                     f'The team "{current_name}" is protected and cannot be managed.'
                 )
-            conflict = await (
-                await db.execute(
-                    "SELECT 1 FROM default_teams WHERE name = ?",
-                    (new_name,),
-                )
-            ).fetchone()
-            if conflict:
-                raise ValueError(f'A default team named "{new_name}" already exists.')
 
-            # Only the **new** name is validated. The current name identifies a team that
-            # already exists, and validating it would leave a team named before this rule
-            # impossible to rename or to remove (FR-011).
-            problem = validate_team_name(
-                new_name, await self._server_keys(db, exclude=current_name)
-            )
-            if problem is not None:
-                raise ValueError(problem)
+            new_shorthand = (shorthand or row["name"]).strip()
+            new_full_name = (full_name or row["full_name"]).strip()
+
+            if new_shorthand != row["name"]:
+                conflict = await (
+                    await db.execute(
+                        "SELECT 1 FROM default_teams WHERE name = ?", (new_shorthand,)
+                    )
+                ).fetchone()
+                if conflict:
+                    raise ValueError(f'A default team named "{new_shorthand}" already exists.')
+                problem = validate_team_name(
+                    new_shorthand, await self._server_keys(db, exclude=current_name)
+                )
+                if problem is not None:
+                    raise ValueError(problem)
+
+            if new_full_name != row["full_name"]:
+                problem = validate_full_name(
+                    new_full_name, await self._server_full_names(db, exclude_id=row["id"])
+                )
+                if problem is not None:
+                    raise ValueError(problem)
 
             await db.execute(
-                "UPDATE default_teams SET name = ? WHERE id = ?",
-                (new_name, row["id"]),
+                "UPDATE default_teams SET name = ?, full_name = ? WHERE id = ?",
+                (new_shorthand, new_full_name, row["id"]),
             )
+            if (new_shorthand, new_full_name) != (row["name"], row["full_name"]):
+                now = datetime.now(timezone.utc).isoformat()
+                await db.execute(
+                    "INSERT INTO audit_entries "
+                    "(actor_id, actor_name, division_id, change_type, "
+                    "old_value, new_value, timestamp) "
+                    "VALUES (?, ?, NULL, 'TEAM_NAMES', ?, ?, ?)",
+                    (
+                        actor_id, actor_name,
+                        json.dumps({"shorthand": row["name"], "full_name": row["full_name"]}),
+                        json.dumps({"shorthand": new_shorthand, "full_name": new_full_name}),
+                        now,
+                    ),
+                )
             await db.commit()
+        return {"name": new_shorthand, "full_name": new_full_name}
 
     async def remove_default_team(self, name: str) -> None:
         """Remove a default team.  Raises ValueError if protected or not found."""
@@ -267,14 +389,22 @@ class TeamService:
     # ------------------------------------------------------------------
 
     async def seed_division_teams(self, division_id: int) -> None:
-        """Copy default_teams into team_instances and pre-create seats for the division."""
+        """Copy default_teams into team_instances and pre-create seats for the division.
+
+        Both names are copied, so the division keeps the names its season ran under whatever
+        becomes of the server's list afterwards (#381).
+        """
         defaults = await self.get_default_teams()
         async with get_connection(self._db_path) as db:
             for team in defaults:
                 cursor = await db.execute(
-                    "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                    "VALUES (?, ?, ?, ?)",
-                    (division_id, team.name, team.max_seats, int(team.is_reserve)),
+                    "INSERT INTO team_instances "
+                    "(division_id, name, full_name, max_seats, is_reserve) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        division_id, team.name, team.full_name, team.max_seats,
+                        int(team.is_reserve),
+                    ),
                 )
                 instance_id = cursor.lastrowid
                 if not team.is_reserve:
@@ -301,9 +431,9 @@ class TeamService:
             if existing:
                 return
             await db.execute(
-                "INSERT INTO default_teams (name, max_seats, is_reserve) "
-                "VALUES (?, -1, 1)",
-                (_RESERVE_NAME,),
+                "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, -1, 1)",
+                (_RESERVE_NAME, _RESERVE_NAME),
             )
             await db.commit()
 
@@ -336,7 +466,7 @@ class TeamService:
         return [r["id"] for r in div_rows]
 
     async def season_team_add(
-        self, season_id: int, name: str, max_seats: int = 2
+        self, season_id: int, name: str, *, full_name: str, max_seats: int = 2
     ) -> int:
         """Add a team to all divisions of a SETUP season.  Returns division count."""
         if name == _RESERVE_NAME:
@@ -364,9 +494,10 @@ class TeamService:
                     raise ValueError(problem)
             for div_id in division_ids:
                 cursor = await db.execute(
-                    "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                    "VALUES (?, ?, ?, 0)",
-                    (div_id, name, max_seats),
+                    "INSERT INTO team_instances "
+                    "(division_id, name, full_name, max_seats, is_reserve) "
+                    "VALUES (?, ?, ?, ?, 0)",
+                    (div_id, name, full_name, max_seats),
                 )
                 instance_id = cursor.lastrowid
                 for seat_num in range(1, max_seats + 1):
@@ -442,13 +573,14 @@ class TeamService:
     async def get_teams_with_roles(self) -> list[dict]:
         """Return all server teams joined with their optional role mapping.
 
-        Each entry: {name, max_seats, is_reserve, role_id} where role_id is int | None.
+        Each entry: {name, full_name, max_seats, is_reserve, role_id} where role_id is
+        int | None, and ``name`` is the team's shorthand.
         Ordered: non-reserve alphabetically first, Reserve last.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 """
-                SELECT dt.name, dt.max_seats, dt.is_reserve, trc.role_id
+                SELECT dt.name, dt.full_name, dt.max_seats, dt.is_reserve, trc.role_id
                 FROM default_teams dt
                 LEFT JOIN team_role_configs trc
                        ON trc.team_name = dt.name
@@ -459,12 +591,23 @@ class TeamService:
         return [
             {
                 "name": r["name"],
+                "full_name": r["full_name"],
                 "max_seats": r["max_seats"],
                 "is_reserve": bool(r["is_reserve"]),
                 "role_id": r["role_id"],
             }
             for r in rows
         ]
+
+    async def resolve_division_team(self, division_id: int, text: str | None) -> TeamReference:
+        """The team of the division whose shorthand *text* is."""
+        return await resolve_division_team(self._db_path, division_id, text)
+
+    async def resolve_server_team(self, text: str | None) -> TeamReference:
+        """The team of the server's list whose shorthand *text* is."""
+        return resolve_team_reference(
+            text, await self.get_teams_with_roles(), scope=" in the server's list"
+        )
 
     async def get_setup_season_team_names(
         self, season_id: int
@@ -509,7 +652,7 @@ class TeamService:
         async with get_connection(self._db_path) as db:
             instance_rows = await (
                 await db.execute(
-                    "SELECT id, name, max_seats, is_reserve "
+                    "SELECT id, name, full_name, max_seats, is_reserve "
                     "FROM team_instances WHERE division_id = ? ORDER BY is_reserve ASC, id ASC",
                     (division_id,),
                 )
@@ -531,6 +674,7 @@ class TeamService:
                 teams.append({
                     "id": inst["id"],
                     "name": inst["name"],
+                    "full_name": inst["full_name"],
                     "max_seats": inst["max_seats"],
                     "is_reserve": bool(inst["is_reserve"]),
                     "seats": [
@@ -546,17 +690,142 @@ class TeamService:
 
 
 # ---------------------------------------------------------------------------
+# Finding a team from what a league typed (#381)
+# ---------------------------------------------------------------------------
+
+#: A Discord ID typed out: 17 to 20 digits. Longer than any shorthand may be, so never one.
+_DISCORD_ID_RE = re.compile(r"^\d{17,20}$", re.ASCII)
+
+_HOW_TO_NAME_A_TEAM = "Name a team by its shorthand."
+
+
+@dataclass(frozen=True)
+class TeamReference:
+    """What a typed team resolved to: the team, or why it names none."""
+
+    team: Mapping | None = None
+    refusal: str | None = None
+
+
+def resolve_team_reference(
+    text: str | None, teams: Sequence[Mapping], *, scope: str = ""
+) -> TeamReference:
+    """The team of *teams* whose shorthand *text* is, ignoring case, or why it names none.
+
+    A team is typed by its **shorthand** and by nothing else (decided 2026-09-22, #381): the
+    commands offer it by autocomplete, and pasted text — a results submission, a test roster —
+    takes it alone. The full name is only ever shown, and the role is only for mentioning the
+    team, so neither names one here.
+
+    A role mention, ``@everyone``, ``@here``, a mention of a member and a Discord ID typed out
+    each look like something a league might type for a team, and each is refused saying what
+    it is, rather than as a shorthand no team has.
+
+    *teams* are mappings carrying ``name``, the shorthand, as ``TeamService.get_teams_with_roles``
+    and ``resolve_division_team`` return them. *scope* finishes the refusal of a shorthand no
+    team holds — " of this division".
+    """
+    typed = (text or "").strip()
+    if not typed:
+        return TeamReference(refusal=f"No team was named. {_HOW_TO_NAME_A_TEAM}")
+
+    if typed.lower() in ("@everyone", "@here"):
+        return TeamReference(
+            refusal=f"`{typed.lower()}` is not a team. {_HOW_TO_NAME_A_TEAM}"
+        )
+    if parse_role_mention(typed) is not None:
+        return TeamReference(
+            refusal=f"{typed} is a role, and a role does not name a team. {_HOW_TO_NAME_A_TEAM}"
+        )
+    if parse_user_mention(typed) is not None:
+        return TeamReference(refusal=f"{typed} is a member, not a team. {_HOW_TO_NAME_A_TEAM}")
+    if _DISCORD_ID_RE.match(typed):
+        return TeamReference(
+            refusal=f"`{typed}` is a Discord ID, not a team. {_HOW_TO_NAME_A_TEAM}"
+        )
+
+    folded = typed.casefold()
+    match = next((t for t in teams if (t.get("name") or "").casefold() == folded), None)
+    if match is None:
+        return TeamReference(refusal=f"No team{scope} has the shorthand `{typed}`.")
+    return TeamReference(team=match)
+
+
+async def division_team_references(db, division_id: int) -> list[dict]:
+    """Every team of the division, as ``resolve_team_reference`` reads a team, on *db*.
+
+    Each carries ``id``, ``name`` (its shorthand), ``full_name``, ``is_reserve`` and
+    ``role_id`` — the last through the server's mapping, which is keyed by the shorthand, and
+    None for a team with no role.
+    """
+    rows = await (
+        await db.execute(
+            "SELECT ti.id, ti.name, ti.full_name, ti.is_reserve, trc.role_id "
+            "FROM team_instances ti "
+            "LEFT JOIN team_role_configs trc ON trc.team_name = ti.name "
+            "WHERE ti.division_id = ? ORDER BY ti.is_reserve, ti.id",
+            (division_id,),
+        )
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "full_name": r["full_name"],
+            "is_reserve": bool(r["is_reserve"]),
+            "role_id": r["role_id"],
+        }
+        for r in rows
+    ]
+
+
+async def resolve_division_team(db_path: str, division_id: int, text: str | None) -> TeamReference:
+    """The team of the division whose shorthand *text* is.
+
+    A team with no role is found like any other: the Reserve team's role may be cleared, and a
+    driver must still be placed into it.
+    """
+    async with get_connection(db_path) as db:
+        teams = await division_team_references(db, division_id)
+    return resolve_team_reference(text, teams, scope=" of this division")
+
+
+# ---------------------------------------------------------------------------
 # Naming a recorded team
 # ---------------------------------------------------------------------------
 
 async def team_names_for_instances(db_path: str, instance_ids) -> dict[int, str]:
-    """The name of each division team in *instance_ids*, keyed by its id.
+    """The full name of each division team in *instance_ids*, keyed by its id.
+
+    The full name is what every post and graphic shows (#381). A graphic finds the team's
+    artwork by its shorthand instead, from ``team_artwork_keys_for_instances``.
 
     A result, and a constructors row, record the division's **team**, never its Discord role
     (issue #375): a role is resolved to the team once, when a submission types it, and a
     league may replace it mid-season. So every post and graphic names a recorded team from
     here, and none asks Discord about a role that may since have been deleted. An id holding
     no team is simply absent from the answer.
+    """
+    ids = sorted({int(i) for i in instance_ids})
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    async with get_connection(db_path) as db:
+        rows = await (
+            await db.execute(
+                f"SELECT id, full_name FROM team_instances WHERE id IN ({marks})",  # noqa: S608
+                ids,
+            )
+        ).fetchall()
+    return {int(r["id"]): r["full_name"] for r in rows}
+
+
+async def team_artwork_keys_for_instances(db_path: str, instance_ids) -> dict[int, str]:
+    """The shorthand of each division team in *instance_ids*, keyed by its id.
+
+    The shorthand names the team's artwork file (#381): a graphic draws the full name, from
+    ``team_names_for_instances``, and finds the badge by this. An id holding no team is simply
+    absent from the answer.
     """
     ids = sorted({int(i) for i in instance_ids})
     if not ids:
@@ -580,6 +849,7 @@ def _row_to_default_team(row: object) -> DefaultTeam:
     return DefaultTeam(
         id=row["id"],
         name=row["name"],
+        full_name=row["full_name"],
         max_seats=row["max_seats"],
         is_reserve=bool(row["is_reserve"]),
     )

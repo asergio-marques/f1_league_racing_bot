@@ -54,9 +54,9 @@ async def season(tmp_path):
             division_id = cursor.lastrowid
             for team, seats, reserve in (("Alpine", 2, 0), ("Reserve", 0, 1)):
                 cursor = await db.execute(
-                    "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                    "VALUES (?, ?, ?, ?)",
-                    (division_id, team, seats, reserve),
+                    "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (division_id, team, team, seats, reserve),
                 )
                 team_id = cursor.lastrowid
                 for seat in range(1, seats + 1):
@@ -194,6 +194,23 @@ async def test_an_unknown_team_seats_nobody(season):
     assert seated == 0
     assert await _seated(season) == []
     assert any("ferrari" in problem.lower() for problem in errors)
+
+
+async def test_a_team_is_named_by_its_shorthand_in_any_case(season):
+    """A roster names a team by its shorthand (#381), as a submission does."""
+    seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", team="ALPINE")))
+
+    assert errors == []
+    assert seated == 1
+
+
+@pytest.mark.parametrize("team", ["<@&123456789012345678>", "@everyone", "<@123456789012345678>"])
+async def test_a_team_named_any_other_way_seats_nobody_and_says_why(season, team):
+    """A role is only for mentioning a team, and a member or `@everyone` is none at all."""
+    seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", team=team)))
+
+    assert seated == 0
+    assert any(problem.startswith("Line ") and "shorthand" in problem for problem in errors)
 
 
 async def test_a_bad_nationality_seats_nobody(season):

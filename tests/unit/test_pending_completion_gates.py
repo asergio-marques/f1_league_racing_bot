@@ -107,7 +107,17 @@ def _bot(db_path: str, stage: SeasonStage | None):
     bot.season_service.get_division_rounds = AsyncMock(return_value=[])
     bot.team_service = MagicMock()
     bot.team_service.get_teams_with_roles = AsyncMock(
-        return_value=[{"name": "Red", "role_id": 900, "is_reserve": False}]
+        return_value=[
+            {"name": "Red", "full_name": "Red Racing", "role_id": 900, "is_reserve": False}
+        ]
+    )
+    # A team is named by its shorthand (#381); the resolver has tests of its own.
+    from services.team_service import TeamReference
+
+    bot.team_service.resolve_server_team = AsyncMock(
+        return_value=TeamReference(
+            team={"name": "Red", "full_name": "Red Racing", "role_id": 900, "is_reserve": False}
+        )
     )
     bot.placement_service = MagicMock()
     bot.placement_service.set_team_role_config = AsyncMock()
@@ -130,6 +140,8 @@ def _interaction():
     interaction.response.is_done = MagicMock(return_value=False)
     interaction.response.send_message = AsyncMock()
     interaction.response.defer = AsyncMock()
+    # `/team modify` answers with a form rather than a message (#381).
+    interaction.response.send_modal = AsyncMock()
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -154,10 +166,11 @@ def _cog(cls, bot):
 # The table. Each entry runs one command against the bot it is given.
 # ---------------------------------------------------------------------------
 
-async def _team_role(bot, interaction):
+async def _team_modify(bot, interaction):
+    """`/team modify` replaced `/team rename` and `/team role` (#381), and inherits the gate:
+    in Pending completion it is refused before any form opens."""
     cog = _cog(TeamCog, bot)
-    role = MagicMock(id=901, mention="<@&901>", name="Red")
-    await undecorate(TeamCog.team_role)(cog, interaction, "Red", role)
+    await undecorate(TeamCog.team_modify)(cog, interaction, "Red")
 
 
 async def _team_reserve_role(bot, interaction):
@@ -222,7 +235,7 @@ async def _amend_bulk_session(bot, interaction):
 
 #: Every command the rule closes. Named as a league types it, so a failure reads as the rule.
 REFUSED = {
-    "/team role": _team_role,
+    "/team modify": _team_modify,
     "/team reserve-role": _team_reserve_role,
     "/division calendar-sync": _calendar_sync,
     "/results reserves toggle": _reserves_toggle,
@@ -284,6 +297,12 @@ async def test_every_closed_command_is_refused_on_an_archived_season(tmp_path, n
 
     await REFUSED[name](_bot(db_path, stage), interaction)
 
+    if name == "/team modify":
+        # It answers with a form, not a message (#381). With the season archived no season is
+        # live at all, so the server's team list is the league's own again and the form opens —
+        # nothing of the archived season is reachable through it.
+        interaction.response.send_modal.assert_awaited_once()
+        return
     assert _said(interaction), f"{name} said nothing on a {stage.value} season"
 
 

@@ -119,8 +119,8 @@ def _with_teams(svc, names: list[str]) -> None:
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock
 
-    teams = [SimpleNamespace(name=n, is_reserve=False) for n in names]
-    teams.append(SimpleNamespace(name="Reserve", is_reserve=True))
+    teams = [SimpleNamespace(name=n, full_name=f"{n} Racing", is_reserve=False) for n in names]
+    teams.append(SimpleNamespace(name="Reserve", full_name="Reserve", is_reserve=True))
     bot = MagicMock()
     bot.team_service.get_default_teams = AsyncMock(return_value=teams)
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
@@ -259,7 +259,7 @@ async def test_preferred_teams_are_stored_in_the_order_given(wizard_and_service)
 
     await svc._handle_preferred_teams(wizard, _Message("Gamma, Alpha"))
 
-    assert wizard.draft_answers["preferred_teams"] == ["Gamma", "Alpha"]
+    assert wizard.draft_answers["preferred_teams"] == ["Gamma Racing", "Alpha Racing"]
     assert advanced == [True]
 
 
@@ -270,7 +270,7 @@ async def test_preferred_teams_may_be_separated_by_newlines(wizard_and_service):
 
     await svc._handle_preferred_teams(wizard, _Message("Alpha\nBeta"))
 
-    assert wizard.draft_answers["preferred_teams"] == ["Alpha", "Beta"]
+    assert wizard.draft_answers["preferred_teams"] == ["Alpha Racing", "Beta Racing"]
 
 
 async def test_no_preference_for_teams_is_an_answer_not_an_absence(wizard_and_service):
@@ -542,3 +542,16 @@ async def test_a_signup_note_with_an_emoji_is_kept(wizard_and_service):
     assert wizard.draft_answers["notes"] == "Happy to race \U0001F600"
     assert advanced
 
+
+async def test_a_preferred_team_is_recorded_by_its_full_name_however_it_was_typed(
+    wizard_and_service,
+):
+    """A driver is offered the full names and answers with one, but a shorthand they have seen
+    a league manager type is taken too. What is recorded is the full name, which is what every
+    review and export shows (#381)."""
+    svc, wizard, _ = wizard_and_service
+    _with_teams(svc, ["Alpha", "Beta", "Gamma"])
+
+    await svc._handle_preferred_teams(wizard, _Message("alpha racing, BETA"))
+
+    assert wizard.draft_answers["preferred_teams"] == ["Alpha Racing", "Beta Racing"]

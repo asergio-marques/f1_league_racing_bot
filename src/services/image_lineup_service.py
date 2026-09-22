@@ -208,9 +208,11 @@ def resolve_drawing(
 ) -> LineupDrawing:
     """Resolve every value a lineup draws, or raise :class:`LineupDataError`.
 
-    *teams* are records carrying ``name``, ``is_reserve`` and ``seats``; each seat carries
-    ``seat_number`` and, where occupied, ``discord_user_id`` plus the signup fields the
-    name chain reads.
+    *teams* are records carrying ``name`` (the shorthand), ``is_reserve`` and ``seats``, and
+    optionally ``full_name``; each seat carries ``seat_number`` and, where occupied,
+    ``discord_user_id`` plus the signup fields the name chain reads. A team is drawn by its
+    full name and its artwork found by its shorthand (#381); a record with no full name is
+    drawn by its shorthand.
 
     *display_names* maps a Discord user id to that account's display name **on the server
     at the moment of generation** — the first link of the chain, and the only one this
@@ -228,7 +230,8 @@ def resolve_drawing(
     # that sets them and reported at `season review` (Principle IX); a render is not the
     # place to discover it, and refusing the graphic would punish the wrong moment.
     for record in teams:
-        display = (getattr(record, "name", "") or "").strip()
+        shorthand = (getattr(record, "name", "") or "").strip()
+        display = (getattr(record, "full_name", "") or "").strip() or shorthand
         is_reserve = bool(getattr(record, "is_reserve", False))
 
         seats = sorted(
@@ -246,7 +249,7 @@ def resolve_drawing(
         team = LineupTeam(
             ordinal=0 if is_reserve else len(resolved) + 1,
             display_name=display,
-            image_datum=display,
+            image_datum=shorthand,
             seats=seats,
             is_reserve=is_reserve,
         )

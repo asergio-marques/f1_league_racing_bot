@@ -1081,8 +1081,8 @@ async def _seed_two_tied_drivers(tmp_path, server_id: int = 300):
         )
         division_id = cur.lastrowid
         cur = await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-            "VALUES (?, 'Alpha', 2, 0)",
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, 'Alpha', 'Alpha', 2, 0)",
             (division_id,),
         )
         team_id = cur.lastrowid

@@ -18,6 +18,7 @@ from utils.input_validator import (  # noqa: E402
     NAME,
     SIGNUP_ANSWER,
     STEWARD_TEXT,
+    TEAM_NAME,
     InputValidator,
     Mode,
     Rule,
@@ -34,8 +35,11 @@ from utils.input_validator import (  # noqa: E402
     parse_user_mention,
 )
 
-REJECT_ALL = InputValidator(frozenset(Rule), Mode.REJECT)
-STRIP_ALL = InputValidator(frozenset(Rule), Mode.STRIP)
+#: The three rules every free text and name is held to. A user mention is a fourth, a team's
+#: names' alone (#381), and is tested against ``TEAM_NAME`` below.
+_GENERAL = frozenset({Rule.GROUP_MENTIONS, Rule.EMOJI, Rule.MARKUP})
+REJECT_ALL = InputValidator(_GENERAL, Mode.REJECT)
+STRIP_ALL = InputValidator(_GENERAL, Mode.STRIP)
 
 
 def _refusal(text: str, field: str = "description") -> str | None:
@@ -75,6 +79,27 @@ def test_everyone_and_here_are_refused_in_any_case(typed, named):
 def test_a_user_mention_is_not_a_group_mention(typed):
     """Naming the other car is the ordinary thing to write."""
     assert _refusal(typed) is None
+
+
+@pytest.mark.parametrize("typed", ["<@4002> Racing", "Team <@!4002>"])
+def test_a_team_name_refuses_a_user_mention(typed):
+    """A team's names are posted every time the team is named, so a member mentioned in one
+    would be notified each time (#381)."""
+    refusal = TEAM_NAME.check("shorthand", typed).refusal
+
+    assert refusal is not None
+    assert "member" in refusal
+    assert "shorthand" in refusal
+
+
+def test_only_a_team_name_refuses_a_user_mention():
+    """Decided 2026-09-22: the rule is a team's alone. Every other name, and every free text,
+    may still name a driver."""
+    typed = "<@4002> Racing"
+
+    assert NAME.check("name", typed).refusal is None
+    assert STEWARD_TEXT.check("description", typed).refusal is None
+    assert DRAWN_NAME.check("name", typed).text == typed
 
 
 # ── Rejecting: emoji ──────────────────────────────────────────────────────

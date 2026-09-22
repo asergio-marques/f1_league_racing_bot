@@ -68,8 +68,8 @@ SUB_CHANNEL = 7100
 MANAGER = 77
 TEAM_ROLE = 3001
 
-QUALI_PASTE = "1, <@101>, <@&3001>, Soft, 1:19.000, N/A\n2, <@102>, <@&3001>, Soft, 1:19.500, +0.500"
-RACE_PASTE = "1, <@101>, <@&3001>, 1:30:00.000, 1:20.000, N/A\n2, <@102>, <@&3001>, +5.000, 1:21.000, N/A"
+QUALI_PASTE = "1, <@101>, T3001, Soft, 1:19.000, N/A\n2, <@102>, T3001, Soft, 1:19.500, +0.500"
+RACE_PASTE = "1, <@101>, T3001, 1:30:00.000, 1:20.000, N/A\n2, <@102>, T3001, +5.000, 1:21.000, N/A"
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ async def _run(
             "services.result_submission_service._build_division_validation_data",
             new=AsyncMock(
                 return_value=validation
-                or ({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {}),
+                or ({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {}, {"t3001": TEAM_ROLE}),
                 side_effect=validation_error,
             ),
         ),
@@ -499,11 +499,11 @@ async def test_a_team_disagreement_within_the_resubmission_is_refused(tmp_path):
     entered does. Entering them under another team in the race is refused, and the race asked
     for again."""
     db_path = await _make_db(tmp_path, name="resubmit_team_new")
-    other_team = RACE_PASTE.replace("<@101>, <@&3001>", "<@101>, <@&3002>")
+    other_team = RACE_PASTE.replace("<@101>, T3001", "<@101>, T3002")
     bot = _bot(db_path, [QUALI_PASTE, other_team, RACE_PASTE])
 
     stubs = await _run(
-        bot, validation=({101, 102}, {TEAM_ROLE: TEAM_ROLE, 3002: 3002}, None, {102: TEAM_ROLE}, {101}, {})
+        bot, validation=({101, 102}, {TEAM_ROLE: TEAM_ROLE, 3002: 3002}, None, {102: TEAM_ROLE}, {101}, {}, {"t3001": TEAM_ROLE, "t3002": 3002})
     )
 
     assert "was recorded under <@&3001> in Feature Qualifying" in _said(stubs["channel"])
@@ -840,7 +840,7 @@ async def _press_resubmit_and_collect(bot, state):
     with patch(
         "services.result_submission_service._build_division_validation_data",
         new=AsyncMock(
-            return_value=({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {})
+            return_value=({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {}, {"t3001": TEAM_ROLE})
         ),
     ), patch(
         "services.season_points_service.get_attached_config_names",

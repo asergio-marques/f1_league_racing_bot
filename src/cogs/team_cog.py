@@ -8,7 +8,11 @@ from discord import app_commands
 from discord.ext import commands
 
 from models.season import SeasonStage
-from utils.channel_guard import league_admin_only, league_manager_only
+from services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
+from utils.asset_resolver import normalise
+from utils.autocomplete import bounded_autocomplete, team_autocomplete
+from utils.channel_guard import league_admin_only, league_manager_only, role_grant_refusal
+from utils.league_server import LeagueModal
 
 log = logging.getLogger(__name__)
 
@@ -18,6 +22,15 @@ _MAX_MSG_LEN = 1900  # leave headroom below Discord's 2000 char limit
 class TeamCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+
+    async def _team_list_is_open(self) -> bool:
+        """Whether the team list may still be changed: no live season, or one in Configuration.
+
+        The question apart from the refusal, because `/team modify` asks it to decide which
+        fields its form offers, and asks it again when the form comes back (#381).
+        """
+        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
+        return season is None or season.stage is SeasonStage.CONFIGURATION
 
     async def _team_list_lock(self, interaction: discord.Interaction, command: str) -> bool:
         """Refuse a change to the team list once a season's configuration is confirmed.
@@ -84,18 +97,39 @@ class TeamCog(commands.Cog):
         name="add",
         description="Add a team to the server list, while no season's configuration is confirmed.",
     )
-    @app_commands.describe(
-        name="Name of the new team (max 50 chars).",
-        role="Discord role to associate with this team.",
-    )
     @league_manager_only
-    async def team_add(
+    async def team_add(self, interaction: discord.Interaction) -> None:
+        """Open the form a team is added on (#381).
+
+        A team carries three things, and the form takes all three at once: the shorthand a
+        league types, the full name every post shows, and the role its drivers are granted.
+        The two names are bounded as they are typed, which is the one thing a modal does that
+        a command parameter cannot.
+
+        **No deferral.** `send_modal` has to be the interaction's first response, so every
+        check before it is a quick read — and every one of them runs again on submit, because
+        a season can move on while the form is open.
+        """
+        if await self._team_list_lock(interaction, "add"):
+            return
+        await interaction.response.send_modal(_TeamAddModal(self))
+
+    async def add_team(
         self,
         interaction: discord.Interaction,
-        name: str,
+        *,
+        shorthand: str,
+        full_name: str,
         role: discord.Role,
     ) -> None:
+        """Add the team the form describes, or say why not. Every check runs here."""
         if await self._team_list_lock(interaction, "add"):
+            return
+        # A team's role is granted to its drivers, so one the bot cannot grant is refused here,
+        # where a league can still choose another (#381).
+        refusal = role_grant_refusal(role)
+        if refusal is not None:
+            await interaction.response.send_message(f"⛔ {refusal}", ephemeral=True)
             return
         # A role belongs to one team only, and the team is not added where its role is taken.
         holder = await self.bot.placement_service.team_holding_role(  # type: ignore[attr-defined]
@@ -110,7 +144,7 @@ class TeamCog(commands.Cog):
             return
         try:
             await self.bot.team_service.add_default_team(  # type: ignore[attr-defined]
-                name
+                shorthand, full_name=full_name
             )
         except ValueError as exc:
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
@@ -118,22 +152,188 @@ class TeamCog(commands.Cog):
 
         try:
             await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-                name, role.id,
+                shorthand, role.id,
                 actor_id=interaction.user.id, actor_name=str(interaction.user),
             )
         except ValueError as exc:
             # Taken between the check and the write: the team goes again, so nothing stands.
-            await self.bot.team_service.remove_default_team(name)  # type: ignore[attr-defined]
+            await self.bot.team_service.remove_default_team(shorthand)  # type: ignore[attr-defined]
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
             return
 
         await interaction.response.send_message(
-            f'✅ Team "{name}" added with role {role.mention}.', ephemeral=True
+            f'✅ Team "{full_name}" added as `{shorthand}`, with role {role.mention}.',
+            ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team add | Success\n"
-            f"  team: {name}",
+            f"  team: {full_name}\n"
+            f"  shorthand: {shorthand}\n"
+            f"  role: {role.name} (<@&{role.id}>)",
         )
+
+    # ------------------------------------------------------------------
+    # /team modify  (#381) — replaces /team rename and /team role
+    # ------------------------------------------------------------------
+
+    @team.command(
+        name="modify",
+        description="Change a team's names or its role.",
+    )
+    @app_commands.describe(team="The team's shorthand.")
+    @league_manager_only
+    async def team_modify(self, interaction: discord.Interaction, team: str) -> None:
+        """Open the form a team is changed on (#381).
+
+        The form offers what may change **now**: the two names only while the team list is
+        open, and the role at every stage but Pending completion, where nothing may change at
+        all and the command is refused before any form opens. Every field comes pre-filled, so
+        submitting it unchanged changes nothing.
+
+        The Reserve team is sent to `/team reserve-role`, which is the command that owns it.
+        """
+        if await self._refuse_once_the_season_is_done(interaction, "modify"):
+            return
+        reference = await self.bot.team_service.resolve_server_team(team)  # type: ignore[attr-defined]
+        if reference.team is None:
+            await interaction.response.send_message(f"⛔ {reference.refusal}", ephemeral=True)
+            return
+        if reference.team["is_reserve"]:
+            await interaction.response.send_message(
+                "⛔ The Reserve team's role is set with `/team reserve-role`, and its names "
+                "are not a league's to change.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_modal(
+            _TeamModifyModal(
+                self, team=reference.team, names_offered=await self._team_list_is_open()
+            )
+        )
+
+    async def modify_team(
+        self,
+        interaction: discord.Interaction,
+        *,
+        was: dict,
+        shorthand: str | None,
+        full_name: str | None,
+        role: discord.Role | None,
+    ) -> None:
+        """Apply what the form changed, or refuse the whole submission (#381).
+
+        *was* is the team as the form opened on it. Only a field whose value **changed**
+        counts, so a form submitted untouched changes nothing and says so. Each changed field
+        is held to its own window, checked again here because the season may have moved on
+        while the form stood open: a change that no longer stands refuses the submission as a
+        whole, naming the field, and nothing at all is written.
+        """
+        await interaction.response.defer(ephemeral=True)
+        reference = await self.bot.team_service.resolve_server_team(was["name"])  # type: ignore[attr-defined]
+        if reference.team is None:
+            await interaction.followup.send(
+                f'⛔ "{was["full_name"]}" is no longer in the server\'s team list.',
+                ephemeral=True,
+            )
+            return
+        current = reference.team
+
+        new_shorthand = (shorthand or "").strip() or current["name"]
+        new_full_name = (full_name or "").strip() or current["full_name"]
+        names_changed = (new_shorthand, new_full_name) != (current["name"], current["full_name"])
+        role_changed = role is not None and role.id != current["role_id"]
+
+        if not names_changed and not role_changed:
+            await interaction.followup.send(
+                f'Nothing changed: "{current["full_name"]}" stands as it was.', ephemeral=True
+            )
+            return
+
+        if names_changed and not await self._team_list_is_open():
+            await interaction.followup.send(
+                "⛔ The team list is fixed now that the season's configuration is confirmed, "
+                "so a team's shorthand and full name cannot change. Only its role can, and "
+                "nothing was written.",
+                ephemeral=True,
+            )
+            return
+
+        if role_changed:
+            refusal = role_grant_refusal(role)
+            if refusal is not None:
+                await interaction.followup.send(
+                    f"⛔ {refusal} Nothing was written.", ephemeral=True
+                )
+                return
+            try:
+                await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
+                    current["name"], role.id,
+                    actor_id=interaction.user.id, actor_name=str(interaction.user),
+                )
+            except ValueError as exc:
+                # Another team holds the role (#375): nothing is changed and no driver moves.
+                await interaction.followup.send(
+                    f"⛔ {exc} Nothing was written.", ephemeral=True
+                )
+                return
+
+        moved = 0
+        if role_changed:
+            # The drivers already seated in the team follow its role (issue #220).
+            moved = await self.bot.placement_service.swap_team_role(  # type: ignore[attr-defined]
+                current["name"], current["role_id"], role.id, interaction.guild,
+            )
+
+        named = dict(current)
+        if names_changed:
+            try:
+                named = await self.bot.team_service.modify_default_team(  # type: ignore[attr-defined]
+                    current["name"],
+                    shorthand=new_shorthand,
+                    full_name=new_full_name,
+                    actor_id=interaction.user.id,
+                    actor_name=str(interaction.user),
+                )
+            except ValueError as exc:
+                await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+                return
+            if new_shorthand != current["name"]:
+                await self.bot.placement_service.rename_team_role_config(  # type: ignore[attr-defined]
+                    current["name"], new_shorthand,
+                    actor_id=interaction.user.id, actor_name=str(interaction.user),
+                )
+
+        lines = [f'✅ Team "{named["full_name"]}" updated.']
+        if new_full_name != current["full_name"]:
+            lines.append(f'  Full name: "{current["full_name"]}" → "{new_full_name}"')
+        if new_shorthand != current["name"]:
+            lines.append(f"  Shorthand: `{current['name']}` → `{new_shorthand}`")
+            old_file, new_file = normalise(current["name"]), normalise(new_shorthand)
+            if old_file != new_file:
+                lines.append(
+                    f"  Its artwork is now looked for as `{new_file}`, not `{old_file}` — "
+                    "rename the file in the team image directory."
+                )
+        if role_changed:
+            lines.append(f"  Role: {role.mention}")
+            if moved:
+                lines.append(f"  {moved} seated driver(s) moved to the new role.")
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team modify | Success\n"
+            f"  team: {named['full_name']}\n"
+            f"  shorthand: {named['name']}\n"
+            + (f"  role: {role.name} (<@&{role.id}>)\n" if role_changed else "")
+            + f"  seated drivers moved: {moved}",
+        )
+
+    @team_modify.autocomplete("team")
+    @bounded_autocomplete()
+    async def _modify_team_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """The teams `/team modify` acts on: the server's list, the Reserve team excepted."""
+        return await team_autocomplete(self.bot, current, include_reserve=False)
 
     # ------------------------------------------------------------------
     # /team remove  (FR-004, FR-005, FR-006)
@@ -143,7 +343,7 @@ class TeamCog(commands.Cog):
         name="remove",
         description="Remove a team from the server list, while no season's configuration is confirmed.",
     )
-    @app_commands.describe(name="Exact team name to remove.")
+    @app_commands.describe(name="The team's shorthand.")
     @league_admin_only
     async def team_remove(
         self,
@@ -152,144 +352,41 @@ class TeamCog(commands.Cog):
     ) -> None:
         if await self._team_list_lock(interaction, "remove"):
             return
+        # A team is named by its shorthand (#381), offered by the autocomplete below.
+        reference = await self.bot.team_service.resolve_server_team(name)  # type: ignore[attr-defined]
+        if reference.team is None:
+            await interaction.response.send_message(f"⛔ {reference.refusal}", ephemeral=True)
+            return
+        shorthand, full_name = reference.team["name"], reference.team["full_name"]
         try:
             await self.bot.team_service.remove_default_team(  # type: ignore[attr-defined]
-                name
+                shorthand
             )
         except ValueError as exc:
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
             return
 
         await self.bot.placement_service.delete_team_role_config(  # type: ignore[attr-defined]
-            name,
+            shorthand,
             actor_id=interaction.user.id, actor_name=str(interaction.user),
         )
 
         await interaction.response.send_message(
-            f'✅ Team "{name}" removed from the server list.', ephemeral=True
+            f'✅ Team "{full_name}" removed from the server list.', ephemeral=True
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team remove | Success\n"
-            f"  team: {name}",
+            f"  team: {full_name}\n"
+            f"  shorthand: {shorthand}",
         )
 
-    # ------------------------------------------------------------------
-    # /team rename  (FR-007, FR-008, FR-009)
-    # ------------------------------------------------------------------
-
-    @team.command(
-        name="rename",
-        description="Rename a team in the server list, while no season's configuration is confirmed.",
-    )
-    @app_commands.describe(
-        current_name="Exact current name of the team.",
-        new_name="Replacement name (max 50 chars).",
-    )
-    @league_manager_only
-    async def team_rename(
-        self,
-        interaction: discord.Interaction,
-        current_name: str,
-        new_name: str,
-    ) -> None:
-        if await self._team_list_lock(interaction, "rename"):
-            return
-        try:
-            await self.bot.team_service.rename_default_team(  # type: ignore[attr-defined]
-                current_name, new_name
-            )
-        except ValueError as exc:
-            await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
-            return
-
-        await self.bot.placement_service.rename_team_role_config(  # type: ignore[attr-defined]
-            current_name, new_name,
-            actor_id=interaction.user.id, actor_name=str(interaction.user),
-        )
-
-        await interaction.response.send_message(
-            f'✅ Team "{current_name}" renamed to "{new_name}".', ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team rename | Success\n"
-            f"  old_name: {current_name}\n"
-            f"  new_name: {new_name}",
-        )
-
-    # ------------------------------------------------------------------
-    # /team role — set the role of a team, in any state
-    # ------------------------------------------------------------------
-
-    @team.command(
-        name="role",
-        description="Set the Discord role of a team, while the season is being built or raced.",
-    )
-    @app_commands.describe(
-        name="Exact name of the team.",
-        role="Discord role to associate with this team.",
-    )
-    @league_manager_only
-    async def team_role(
-        self,
-        interaction: discord.Interaction,
-        name: str,
-        role: discord.Role,
-    ) -> None:
-        """Map a team of the server list to a role, in any stage but Pending completion.
-
-        Unlike the team list, a team's role is never fixed: nothing stops a role being
-        deleted from the server mid-season, and a league must be able to point the team
-        at its replacement. The Reserve team keeps its own command.
-
-        **Except once every division is done** (issue #224). Nothing is raced in Pending
-        completion, and completing the season revokes every team role a few steps later, so
-        a mapping repaired there would be undone before anyone wore it. The repair is made
-        once the season has ended, for the season that follows.
-        """
-        if await self._refuse_once_the_season_is_done(interaction, "role"):
-            return
-        teams = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
-
-        )
-        match = next(
-            (t for t in teams if t["name"].casefold() == name.casefold()), None
-        )
-        if match is None:
-            await interaction.response.send_message(
-                f'⛔ No team named "{name}" is in the server list.', ephemeral=True
-            )
-            return
-        if match["is_reserve"]:
-            await interaction.response.send_message(
-                "⛔ The Reserve team's role is set with `/team reserve-role`.", ephemeral=True
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        try:
-            await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-                match["name"], role.id,
-                actor_id=interaction.user.id, actor_name=str(interaction.user),
-            )
-        except ValueError as exc:
-            # Another team holds the role (#375): nothing is changed and no driver moves.
-            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
-            return
-        # The drivers already seated in the team follow its role (issue #220).
-        moved = await self.bot.placement_service.swap_team_role(  # type: ignore[attr-defined]
-            match["name"], match["role_id"], role.id, interaction.guild
-        )
-        await interaction.followup.send(
-            f'✅ Team "{match["name"]}" now maps to {role.mention}.'
-            + (f" {moved} seated driver(s) moved to the new role." if moved else ""),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team role | Success\n"
-            f"  team: {match['name']}\n"
-            f"  role: {role.name} (<@&{role.id}>)\n"
-            f"  seated drivers moved: {moved}",
-        )
+    @team_remove.autocomplete("name")
+    @bounded_autocomplete()
+    async def _remove_team_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """The teams `/team remove` acts on: the server's list, the Reserve team excepted."""
+        return await team_autocomplete(self.bot, current, include_reserve=False)
 
     # ------------------------------------------------------------------
     # /team list  (FR-010, FR-011)
@@ -318,8 +415,10 @@ class TeamCog(commands.Cog):
             return
 
         def _fmt_team(t: dict) -> str:
+            # All three names a team carries (#381): what is shown, what is typed, and the
+            # role its drivers are given.
             role_part = f"<@&{t['role_id']}>" if t["role_id"] else "no role"
-            return f"  {t['name']} → {role_part}"
+            return f"  {t['full_name']} — `{t['name']}` → {role_part}"
 
         server_lines = [_fmt_team(t) for t in non_reserve]
         reserve = next((t for t in server_teams if t["is_reserve"]), None)
@@ -458,7 +557,7 @@ class TeamCog(commands.Cog):
                 lines.append("  *(no teams)*")
             else:
                 for team in teams:
-                    lines.append(f"  **{team['name']}**")
+                    lines.append(f"  **{team['full_name']}**")
                     filled = {
                         s["seat_number"]: s["discord_user_id"]
                         for s in team["seats"]
@@ -493,12 +592,18 @@ class TeamCog(commands.Cog):
         interaction: discord.Interaction,
         role: discord.Role | None = None,
     ) -> None:
-        """Set or clear the Reserve team's role, on the same terms as `/team role`.
+        """Set or clear the Reserve team's role, on the same terms `/team modify` sets a team's.
 
-        Refused once the season is pending completion, for the reason given there.
+        Refused once the season is pending completion, for the reason given there, and refuses
+        a role the bot cannot grant as every team command does (#381).
         """
         if await self._refuse_once_the_season_is_done(interaction, "reserve-role"):
             return
+        if role is not None:
+            refusal = role_grant_refusal(role)
+            if refusal is not None:
+                await interaction.response.send_message(f"⛔ {refusal}", ephemeral=True)
+                return
         await interaction.response.defer(ephemeral=True)
         teams = await self.bot.team_service.get_teams_with_roles()  # type: ignore[attr-defined]
         old_role_id = next((t["role_id"] for t in teams if t["is_reserve"]), None)
@@ -549,3 +654,109 @@ async def _send_long(interaction: discord.Interaction, text: str, *, ephemeral: 
         text = text[_MAX_MSG_LEN:]
     for chunk in chunks:
         await interaction.followup.send(chunk, ephemeral=ephemeral)
+
+
+# ---------------------------------------------------------------------------
+# The forms a team is added and changed on (#381)
+# ---------------------------------------------------------------------------
+
+
+class _TeamAddModal(LeagueModal, title="Add a team"):
+    """The three things a team carries, taken together.
+
+    The lengths are enforced as the manager types — Discord will not let a field exceed its
+    ``max_length`` — and again by `TeamService`, which is where the rules live: a modal bounds
+    the typing, it does not decide what is acceptable.
+    """
+
+    def __init__(self, cog: "TeamCog") -> None:
+        super().__init__()
+        self._cog = cog
+        self.shorthand: discord.ui.TextInput = discord.ui.TextInput(
+            placeholder="RBR", min_length=1, max_length=SHORTHAND_MAX,
+        )
+        self.full_name: discord.ui.TextInput = discord.ui.TextInput(
+            placeholder="Oracle Red Bull Racing", min_length=1, max_length=FULL_NAME_MAX,
+        )
+        self.role: discord.ui.RoleSelect = discord.ui.RoleSelect(
+            placeholder="The team's role", required=True,
+        )
+        self.add_item(discord.ui.Label(
+            text="Shorthand",
+            description="Typed to name the team, and the filename of its artwork.",
+            component=self.shorthand,
+        ))
+        self.add_item(discord.ui.Label(
+            text="Full name",
+            description="What every post and graphic shows.",
+            component=self.full_name,
+        ))
+        self.add_item(discord.ui.Label(
+            text="Role",
+            description="Granted to every driver placed in the team.",
+            component=self.role,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await self._cog.add_team(
+            interaction,
+            shorthand=self.shorthand.value.strip(),
+            full_name=self.full_name.value.strip(),
+            role=self.role.values[0],
+        )
+
+
+class _TeamModifyModal(LeagueModal, title="Modify a team"):
+    """A team's fields, pre-filled, and only those that may change now (#381).
+
+    While the team list is open the form holds all three; once it is fixed it holds the role
+    alone, because that is the only thing a league may still change. The windows are checked
+    again on submit — a form can stand open across a stage change.
+    """
+
+    def __init__(self, cog: "TeamCog", *, team: dict, names_offered: bool) -> None:
+        super().__init__()
+        self._cog = cog
+        self._team = dict(team)
+        self.shorthand: discord.ui.TextInput | None = None
+        self.full_name: discord.ui.TextInput | None = None
+
+        if names_offered:
+            self.shorthand = discord.ui.TextInput(
+                default=team["name"], min_length=1, max_length=SHORTHAND_MAX,
+            )
+            self.full_name = discord.ui.TextInput(
+                default=team["full_name"], min_length=1, max_length=FULL_NAME_MAX,
+            )
+            self.add_item(discord.ui.Label(
+                text="Shorthand",
+                description="Typed to name the team, and the filename of its artwork.",
+                component=self.shorthand,
+            ))
+            self.add_item(discord.ui.Label(
+                text="Full name",
+                description="What every post and graphic shows.",
+                component=self.full_name,
+            ))
+
+        self.role: discord.ui.RoleSelect = discord.ui.RoleSelect(
+            placeholder="The team's role",
+            required=True,
+            default_values=(
+                [discord.Object(id=int(team["role_id"]))] if team.get("role_id") else []
+            ),
+        )
+        self.add_item(discord.ui.Label(
+            text="Role",
+            description="Granted to every driver placed in the team.",
+            component=self.role,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await self._cog.modify_team(
+            interaction,
+            was=self._team,
+            shorthand=self.shorthand.value if self.shorthand is not None else None,
+            full_name=self.full_name.value if self.full_name is not None else None,
+            role=self.role.values[0] if self.role.values else None,
+        )

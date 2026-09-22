@@ -259,10 +259,11 @@ async def _round_session_results(bot, ordinal_of_round: dict[int, int]):
 async def _seats(bot, division_id: int):
     """The division's seating, in the three shapes the two drawings need.
 
-    Returns ``(assignments, counts, driver_team_names)`` — the first two keyed by the team's
-    id, as the constructors classification is, for that graphic's car allocation and seat
-    trim; the third by driver user id, because a drivers row names the team its own driver
-    sits in rather than the row's own subject.
+    Returns ``(assignments, counts, driver_team_names, driver_team_keys)`` — the first two
+    keyed by the team's id, as the constructors classification is, for that graphic's car
+    allocation and seat trim; the last two by driver user id, because a drivers row names the
+    team its own driver sits in rather than the row's own subject: the name drawn, and the
+    shorthand its artwork is found by (#381).
 
     The classification and the seats name a team the same way — by the division's team, never
     its Discord role (#375) — so the two are joined directly.
@@ -270,12 +271,14 @@ async def _seats(bot, division_id: int):
     assignments: dict[int, dict[int, int]] = {}
     counts: dict[int, int] = {}
     driver_team_names: dict[int, str] = {}
+    driver_team_keys: dict[int, str] = {}
 
     # A driver whose placement is not yet confirmed is not in the standings (issue #220).
     async with get_connection(bot.db_path) as db:
         rows = await (
             await db.execute(
-                "SELECT ti.id AS team_id, ti.name AS team_name, ti.max_seats AS max_seats, "
+                "SELECT ti.id AS team_id, ti.full_name AS team_name, ti.name AS team_key, "
+                "       ti.max_seats AS max_seats, "
                 "       ts.seat_number AS seat_number, "
                 "       dp.discord_user_id AS discord_user_id "
                 "FROM team_instances ti "
@@ -304,9 +307,10 @@ async def _seats(bot, division_id: int):
             continue
 
         driver_team_names[driver_key] = row["team_name"]
+        driver_team_keys[driver_key] = row["team_key"]
         assignments.setdefault(team_id, {})[driver_key] = seat_number
 
-    return assignments, counts, driver_team_names
+    return assignments, counts, driver_team_names, driver_team_keys
 
 
 async def build_drawings(
@@ -339,6 +343,7 @@ async def build_drawings(
         _driver_names,
         _nationality_collected,
         _nationalities,
+        _team_keys,
         _team_names,
     )
     from services.image_standings_service import resolve_drawing
@@ -353,10 +358,13 @@ async def build_drawings(
     # A constructors row *is* a team, so that graphic's names are keyed by the team. A
     # drivers row names the team its own driver sits in, so that graphic's are keyed by driver.
     team_names_by_team = await _team_names(bot, guild, division_id, team_keys)
+    artwork_keys_by_team = await _team_keys(bot, team_keys)
 
     headings, ordinal_of_round = await _calendar(bot, division_id)
     session_results = await _round_session_results(bot, ordinal_of_round)
-    seat_assignments, seat_counts, driver_team_names = await _seats(bot, division_id)
+    seat_assignments, seat_counts, driver_team_names, driver_team_keys = await _seats(
+        bot, division_id
+    )
 
     driver_current = [
         (s.driver_user_id, s.standing_position, s.total_points) for s in driver_snapshots
@@ -396,6 +404,7 @@ async def build_drawings(
         snapshots=driver_snapshots,
         display_names=names,
         team_names=driver_team_names,
+        team_keys=driver_team_keys,
         movements=standings_service.derive_movement(driver_current, driver_previous),
         gaps=standings_service.derive_gaps(driver_current),
         nationalities=nationalities,
@@ -410,6 +419,7 @@ async def build_drawings(
         # cars are named separately, keyed by user id.
         display_names=team_names_by_team,
         team_names=team_names_by_team,
+        team_keys=artwork_keys_by_team,
         movements=standings_service.derive_movement(team_current, team_previous),
         gaps=standings_service.derive_gaps(team_current),
         team_seat_assignments=seat_assignments,

@@ -167,7 +167,8 @@ async def sheet_db(tmp_path):
                 id          INTEGER PRIMARY KEY,
                 division_id INTEGER,
                 is_reserve  INTEGER,
-                name        TEXT
+                name        TEXT,
+                full_name   TEXT
             );
             CREATE TABLE driver_profiles (
                 id                INTEGER PRIMARY KEY,
@@ -195,7 +196,7 @@ async def sheet_db(tmp_path):
             INSERT INTO rounds VALUES (3, 7, 3, 'NORMAL', 'Silverstone Circuit', 'NOT_RUN');
             INSERT INTO rounds VALUES (9, 7, 9, 'NORMAL', 'Circuit Zandvoort', 'CANCELLED');
             INSERT INTO attendance_config VALUES (1, 10, 20);
-            INSERT INTO team_instances VALUES (100, 7, 0, 'Apex Racing');
+            INSERT INTO team_instances VALUES (100, 7, 0, 'Apex', 'Apex Racing');
             INSERT INTO team_seats     VALUES (200, 100, 1);
             INSERT INTO driver_profiles VALUES (1, '111', NULL);
             INSERT INTO driver_season_assignments VALUES (1, 200, 1, 1);

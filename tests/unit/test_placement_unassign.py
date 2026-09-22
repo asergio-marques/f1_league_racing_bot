@@ -71,8 +71,8 @@ async def _make_db(tmp_path, *, state: str = "ASSIGNED") -> str:
                 (div_id, SEASON_ID, name, div_id, 500 + div_id),
             )
             await db.execute(
-                "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, 'Alpha', 2, 0)",
+                "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, 'Alpha', 'Alpha', 2, 0)",
                 (div_id * 10, div_id),
             )
             await db.execute(

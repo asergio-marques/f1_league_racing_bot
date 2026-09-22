@@ -192,12 +192,12 @@ def _cog(
         return_value=teams_with_roles
         if teams_with_roles is not None
         else [
-            {"name": "Red", "role_id": 3001, "is_reserve": False},
-            {"name": "Reserves", "role_id": 3009, "is_reserve": True},
+            {"name": "Red", "full_name": "Red", "role_id": 3001, "is_reserve": False},
+            {"name": "Reserves", "full_name": "Reserves", "role_id": 3009, "is_reserve": True},
         ]
     )
     bot.team_service.get_division_teams = AsyncMock(
-        return_value=teams if teams is not None else [{"name": "Red"}]
+        return_value=teams if teams is not None else [{"name": "Red", "full_name": "Red"}]
     )
     bot.season_service.get_divisions_with_results_config = AsyncMock(
         return_value=divisions if divisions is not None else [_division()]
@@ -413,7 +413,7 @@ async def test_a_reserve_team_with_no_role_is_warned_about(db_path):
     """Drivers on it fail result validation, which is discovered at the first submission
     unless the review says so first."""
     cog = _cog(
-        db_path, teams_with_roles=[{"name": "Reserves", "role_id": None, "is_reserve": True}]
+        db_path, teams_with_roles=[{"name": "Reserves", "full_name": "Reserves", "role_id": None, "is_reserve": True}]
     )
     messages = await _review(cog, _interaction())
 
@@ -483,11 +483,11 @@ async def test_a_team_without_a_role_is_warned_about_in_its_lineup(db_path):
     """Result submission rejects drivers in a team nobody can mention."""
     cog = _cog(
         db_path,
-        teams=[{"name": "Red"}, {"name": "Ghost"}],
+        teams=[{"name": "Red", "full_name": "Red"}, {"name": "Ghost", "full_name": "Ghost"}],
         teams_with_roles=[
-            {"name": "Red", "role_id": 3001, "is_reserve": False},
-            {"name": "Ghost", "role_id": None, "is_reserve": False},
-            {"name": "Reserves", "role_id": 3009, "is_reserve": True},
+            {"name": "Red", "full_name": "Red", "role_id": 3001, "is_reserve": False},
+            {"name": "Ghost", "full_name": "Ghost", "role_id": None, "is_reserve": False},
+            {"name": "Reserves", "full_name": "Reserves", "role_id": 3009, "is_reserve": True},
         ],
     )
     messages = await _review(cog, _interaction())

@@ -124,14 +124,14 @@ async def _make_db(
         )
 
         await db.execute(
-            "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-            "VALUES (10, ?, 'Alpha', 2, 0)",
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (10, ?, 'Alpha', 'Alpha', 2, 0)",
             (DIVISION_ID,),
         )
         if with_reserve_team:
             await db.execute(
-                "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-                "VALUES (11, ?, 'Reserve', 6, 1)",
+                "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (11, ?, 'Reserve', 'Reserve', 6, 1)",
                 (DIVISION_ID,),
             )
 

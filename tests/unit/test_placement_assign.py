@@ -77,13 +77,13 @@ async def _make_db(
             (DIVISION_ID, SEASON_ID),
         )
         await db.execute(
-            "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-            "VALUES (10, ?, 'Alpha', ?, 0)",
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (10, ?, 'Alpha', 'Alpha', ?, 0)",
             (DIVISION_ID, team_seats),
         )
         await db.execute(
-            "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-            "VALUES (11, ?, 'Reserve', -1, 1)",
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (11, ?, 'Reserve', 'Reserve', -1, 1)",
             (DIVISION_ID,),
         )
         for seat in range(1, team_seats + 1):

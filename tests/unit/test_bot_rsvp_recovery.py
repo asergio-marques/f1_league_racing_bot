@@ -117,8 +117,8 @@ async def _make_db(
                 "VALUES (1, '4242', 'ACTIVE')"
             )
             await db.execute(
-                "INSERT INTO team_instances (id, division_id, name, max_seats, is_reserve) "
-                "VALUES (10, ?, 'Alpha', 2, 0)",
+                "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (10, ?, 'Alpha', 'Alpha', 2, 0)",
                 (DIVISION_ID,),
             )
             await db.execute(

@@ -554,6 +554,7 @@ async def _send_verdict(
     description_text: str,
     justification_text: str,
     team_name: str | None = None,
+    team_key: str | None = None,
 ) -> "object | None":
     """Post one verdict: as a graphic where the toggle allows, as text otherwise.
 
@@ -590,6 +591,7 @@ async def _send_verdict(
                 description_text=description_text,
                 justification_text=justification_text,
                 team_name=team_name,
+                team_key=team_key,
             )
             render = await image_verdict_post.render_verdict(bot, drawing)
         except Exception:  # noqa: BLE001 — a graphic never costs a league its announcement
@@ -770,6 +772,12 @@ async def post_penalty_announcements(
                 if hasattr(record, "get")
                 else getattr(record, "team_instance_id", None),
             )
+            team_key = await image_verdict_post.team_key_for_entry(
+                bot,
+                team_id=record.get("team_instance_id")
+                if hasattr(record, "get")
+                else getattr(record, "team_instance_id", None),
+            )
 
             await head_the_batch()
 
@@ -795,6 +803,7 @@ async def post_penalty_announcements(
                 description_text=description_text or NOT_PROVIDED,
                 justification_text=justification_text or NOT_PROVIDED,
                 team_name=team_name,
+                team_key=team_key,
             )
             await _record_announcement(
                 db_path, "penalty_records", _record_id(record), _sent,
@@ -929,6 +938,12 @@ async def post_appeal_announcements(
                 if hasattr(record, "get")
                 else getattr(record, "team_instance_id", None),
             )
+            team_key = await image_verdict_post.team_key_for_entry(
+                bot,
+                team_id=record.get("team_instance_id")
+                if hasattr(record, "get")
+                else getattr(record, "team_instance_id", None),
+            )
 
             await head_the_batch()
 
@@ -954,6 +969,7 @@ async def post_appeal_announcements(
                 description_text=description_text or NOT_PROVIDED,
                 justification_text=justification_text or NOT_PROVIDED,
                 team_name=team_name,
+                team_key=team_key,
             )
             await _record_announcement(
                 db_path, "appeal_records", _record_id(record), _sent,

@@ -123,9 +123,9 @@ async def _seed_team(
 ) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-            "VALUES (?, ?, ?, ?)",
-            (division_id, name, seats, int(reserve)),
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (division_id, name, name, seats, int(reserve)),
         )
         team_id = cursor.lastrowid
         for seat_number in range(1, seats + 1):

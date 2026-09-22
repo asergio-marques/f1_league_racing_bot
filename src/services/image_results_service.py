@@ -83,10 +83,13 @@ class ResultsEntry:
     #: the ordinal itself; no comparison is made between it and anything else (XIV.11).
     ordinal: int
     driver_name: str
+    #: What is drawn: the team's full name (#381).
     team_name: str
     points: str
     postrace_penalty: str | None
     appeal_penalty: str | None
+    #: What the team's artwork is found by: its shorthand (#381). The drawn name where None.
+    team_key: str | None = None
     #: The datum behind ``row_<x>_driver_flag``. None where the driver recorded none.
     nationality: str | None = None
     #: Qualifying only.
@@ -186,6 +189,7 @@ def resolve_drawing(
     team_names: Mapping[int, str],
     nationalities: Mapping[int, str | None] | None = None,
     dsq_phase_map: Mapping[int, str] | None = None,
+    team_keys: Mapping[int, str] | None = None,
     division_tier: str | int | None = None,
     season_number: str | int | None = None,
     fastest_lap_colour: str | None = None,
@@ -197,6 +201,9 @@ def resolve_drawing(
     rows of the session. *driver_names* and *team_names* are already resolved by the caller,
     which is what keeps this function free of Discord: a graphic carries no mention, and the
     name that stands in its place is settled before anything reaches here (XIV.16).
+
+    *team_keys* holds each team's shorthand, which its artwork is found by, apart from the
+    full name drawn (#381). A team absent from it is found by the name drawn.
 
     The classification's order — including the renumbering that drops a disqualified driver
     to the bottom — is the results module's and is persisted before this is called. Nothing
@@ -217,6 +224,7 @@ def resolve_drawing(
 
     names = dict(driver_names)
     teams = dict(team_names)
+    keys = dict(team_keys or {})
     flags = dict(nationalities or {})
 
     def named(user_id: int) -> str:
@@ -244,6 +252,7 @@ def resolve_drawing(
                     ordinal=ordinal,
                     driver_name=named(row.driver_user_id),
                     team_name=teams.get(row.team_instance_id) or UNKNOWN_TEAM,
+                    team_key=keys.get(row.team_instance_id),
                     points=str(row.points),
                     postrace_penalty=_sanction(
                         row.postrace_penalty, phase_closed=penalty_closed
@@ -267,6 +276,7 @@ def resolve_drawing(
                     ordinal=ordinal,
                     driver_name=named(row.driver_user_id),
                     team_name=teams.get(row.team_instance_id) or UNKNOWN_TEAM,
+                    team_key=keys.get(row.team_instance_id),
                     points=str(row.points),
                     postrace_penalty=_sanction(
                         row.postrace_penalty, phase_closed=penalty_closed
@@ -408,7 +418,7 @@ def build_fill_spec(
         put(f"{stem}_appeal_penalty", entry.appeal_penalty)
 
         if f"{stem}_team_image" in declared:
-            image_data[f"{stem}_team_image"] = ("team", entry.team_name)
+            image_data[f"{stem}_team_image"] = ("team", entry.team_key or entry.team_name)
 
         # The flag. A nationality the league collects but this driver did not state is an
         # ordinary emptied optional and reports as one; a league that switched collection

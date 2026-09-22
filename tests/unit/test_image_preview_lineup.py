@@ -71,9 +71,9 @@ async def _seed(db_path, *, seat_drivers: bool, teams=("Redline", "Bluewave")):
         user_id = 8_000_001
         for team_name in teams:
             cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, 2, 0)",
-                (division_id, team_name),
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, 2, 0)",
+                (division_id, team_name, team_name),
             )
             team_id = cursor.lastrowid
             for seat_number in (1, 2):
@@ -110,8 +110,8 @@ async def _seed(db_path, *, seat_drivers: bool, teams=("Redline", "Bluewave")):
 
         # Every division holds a reserve team; it must not be counted as a real team.
         await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-            "VALUES (?, 'Reserve', 2, 1)",
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, 'Reserve', 'Reserve', 2, 1)",
             (division_id,),
         )
         await db.commit()

@@ -233,8 +233,9 @@
     - Each round will be requested in order; i.e. the user will have to first input the Sprint Quali's results exclusively, then Sprint Race, etc.
 - The bot shall read the inputs of the league manager to create the data entry for the results of the session. The expected format depends on the type of session, but will always require Position, Driver, and Team.
 - For the driver column, a driver holding a committed placement in that division must be tagged. If the driver holds no committed placement in the division, or if there is no driver tagged at all, then the input will fail.
-- For the team column, a team role must be tagged as well. This will allow easy identification of the team.
-    - The role shall be read as naming the team of the division that holds it, and the result shall be recorded against that team, not against the role. A team whose role is changed shall keep every result recorded before the change (#375).
+- For the team column, the team's shorthand must be typed. Decided 2026-09-22 (#381): a team is named by its shorthand and by nothing else, a role being only what its drivers are granted. A role mention in the column, like "@everyone", a mention of a member or a Discord ID typed out, shall be refused saying what it is and that a team is named by its shorthand.
+    - The shorthand shall be read without regard to case, as naming the team of the division that holds it, and the result shall be recorded against that team. A team whose shorthand or role is changed shall keep every result recorded before the change (#375).
+    - A team holding no role shall not be named at all, as it never has been: its drivers are outside the division's submission on the same terms.
 - The team tagged in the Team column shall never be the reserve team. A reserve stands in for a team's car and is recorded under that team; the reserve team fields no cars of its own.
 - No more than two drivers shall be recorded under any one team within a single session, counting a reserve standing in for that team against its two.
 - If the results input for any session within a round are not valid, then they shall be requested once more.
@@ -265,7 +266,7 @@
     - The positions denoted are in descending order (1st to last) and continuous (no gaps);
     - The entries are ordered by outcome: those that set a valid lap first, then DNF, then DNS, then DSQ;
     - All drivers are assigned to the division of the round;
-    - The role in the Team column of every line does indeed belong to one of the teams;
+    - The shorthand in the Team column of every line does indeed name one of the teams;
     - For every entry, the driver in the Driver column is assigned to the team identified in the Team column OR is assigned to the reserve team;
     - For every entry, the Tyre column either records no compound at all — being empty or "N/A" — OR names one of the five compounds a session may be run on;
         - The five are "Soft", "Medium", "Hard", "Intermediate" and "Wet", and there is no sixth. They are a closed set the bot itself defines and no league chooses.
@@ -301,7 +302,7 @@
     - The entries are ordered by outcome: finishers on the lead lap first, then lapped drivers, then DNF, then DNS, then DSQ;
     - Among the lapped drivers, the number of laps behind does not decrease as the position increases;
     - All drivers are assigned to the division of the round;
-    - The role in the Team column of every line does indeed belong to one of the teams;
+    - The shorthand in the Team column of every line does indeed name one of the teams;
     - For every entry, the driver in the Driver column is assigned to the team identified in the Team column OR is assigned to the reserve team;
     - For the entry in 1st position, the total race time follows one of the following formats:
         - "seconds.milisseconds";

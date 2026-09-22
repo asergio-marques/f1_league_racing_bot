@@ -14,6 +14,7 @@ from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
 from models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
+from services.team_service import resolve_team_reference
 from utils import results_formatter
 from utils.batch_notice import batch_notice
 from utils.channel_guard import is_league_manager
@@ -3178,30 +3179,37 @@ def _parse_outcome(time_field: str) -> OutcomeModifier:
 class ParsedQualifyingRow:
     position: int
     driver_user_id: int
-    team_role_id: int
+    #: The role the team column mentions, where it mentions one — which is refused, a team
+    #: being typed by its shorthand (#381). None where the column holds anything else.
+    team_role_id: int | None
     #: The canonical compound, or None where the submission recorded none (v7.8.0).
     tyre: str | None
     best_lap: str           # time string or DNS/DNF/DSQ (in-game result)
     gap: str                # delta string or "N/A"
     outcome: OutcomeModifier  # derived from best_lap
-    #: The division's team *team_role_id* names, set by ``validate_submission_block``. The role
-    #: is only what was typed; the team is what is stored (#375).
+    #: The division's team *team_typed* names, set by ``validate_submission_block``. The
+    #: shorthand is only what was typed; the team is what is stored (#375, #381).
     team_instance_id: int | None = None
+    #: The team column as typed: the team's shorthand (#381). Echoed in a refusal.
+    team_typed: str = ""
 
 
 @dataclass
 class ParsedRaceRow:
     position: int
     driver_user_id: int
-    team_role_id: int
+    #: As on ParsedQualifyingRow.
+    team_role_id: int | None
     total_time: str         # absolute time, delta, lap-gap, or outcome literal
     fastest_lap: str        # time string or "N/A"
     ingame_penalties: str   # time string (e.g. "5.000") or "N/A"
     outcome: OutcomeModifier  # derived from total_time
     # No post-race or appeal sanction: those are decided in the review stages, never pasted —
     # an amendment included, since #345 withdrew the two columns it used to take.
-    #: As on ParsedQualifyingRow: the team the typed role resolved to (#375).
+    #: As on ParsedQualifyingRow: the team the typed shorthand resolved to (#375, #381).
     team_instance_id: int | None = None
+    #: As on ParsedQualifyingRow.
+    team_typed: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -3256,7 +3264,7 @@ def _field_count_error(parts: list[str], expected: int, line: str) -> str:
 def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
     """Parse and validate a single qualifying-result line for the main submission wizard (6 fields).
 
-    Fields: Position, Driver mention, Team role mention, Tyre, Best Lap, Gap
+    Fields: Position, Driver mention, Team (its shorthand), Tyre, Best Lap, Gap
     Postrace and appeal penalty fields default to N/A; outcome is derived from Best Lap.
     """
     parts = [p.strip() for p in line.strip().split(",")]
@@ -3273,9 +3281,11 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
     if driver_user_id is None:
         return f"Driver must be a Discord member mention (<@user_id>), got `{driver_str}`"
 
+    # A team is typed by its shorthand (#381), and which team a text names is the division's
+    # business, settled by `validate_submission_block`. Only an empty field is refused here.
+    if not team_str:
+        return "Team must be named, by its shorthand."
     team_role_id = parse_role_mention(team_str)
-    if team_role_id is None:
-        return f"Team must be a Discord role mention (<@&role_id>), got `{team_str}`"
 
     tyre_error = _tyre_error(tyre)
     if tyre_error is not None:
@@ -3299,6 +3309,7 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
         position=position,
         driver_user_id=driver_user_id,
         team_role_id=team_role_id,
+        team_typed=team_str,
         tyre=canonicalise_tyre(tyre),
         best_lap=best_lap,
         gap=gap,
@@ -3309,7 +3320,8 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
 def _validate_race_row_wizard(line: str, is_first: bool) -> ParsedRaceRow | str:
     """Parse and validate a single race-result line for the main submission wizard (6 fields).
 
-    Fields: Position, Driver mention, Team role mention, Total Time, Fastest Lap, Ingame Penalties
+    Fields: Position, Driver mention, Team (its shorthand), Total Time, Fastest Lap,
+    Ingame Penalties
     Postrace and appeal penalty fields default to N/A; outcome is derived from Total Time.
     """
     parts = [p.strip() for p in line.strip().split(",")]
@@ -3326,9 +3338,11 @@ def _validate_race_row_wizard(line: str, is_first: bool) -> ParsedRaceRow | str:
     if driver_user_id is None:
         return f"Driver must be a Discord member mention (<@user_id>), got `{driver_str}`"
 
+    # A team is typed by its shorthand (#381), and which team a text names is the division's
+    # business, settled by `validate_submission_block`. Only an empty field is refused here.
+    if not team_str:
+        return "Team must be named, by its shorthand."
     team_role_id = parse_role_mention(team_str)
-    if team_role_id is None:
-        return f"Team must be a Discord role mention (<@&role_id>), got `{team_str}`"
 
     total_upper = total_time.upper()
     if is_first:
@@ -3367,6 +3381,7 @@ def _validate_race_row_wizard(line: str, is_first: bool) -> ParsedRaceRow | str:
         position=position,
         driver_user_id=driver_user_id,
         team_role_id=team_role_id,
+        team_typed=team_str,
         total_time=total_time,
         fastest_lap=fastest_lap,
         ingame_penalties=ingame_penalties,
@@ -3422,6 +3437,7 @@ def validate_submission_block(
     other_active_assignments: dict[int, tuple[int, str]] | None = None,
     current_of: Mapping[int, int] | None = None,
     team_names: Mapping[int, str] | None = None,
+    team_of_shorthand: Mapping[str, int] | None = None,
 ) -> list[ParsedQualifyingRow | ParsedRaceRow] | list[str]:
     """Validate all result lines for a session.
 
@@ -3433,8 +3449,10 @@ def validate_submission_block(
     raced for.
 
     **A team is compared as the division's team, never as its role** (#375). *team_of_role*
-    maps each non-reserve team's role to that team's id, and each row's typed role is resolved
-    through it once, onto ``team_instance_id``; *driver_team_map* and
+    maps each non-reserve team's role to that team's id, and *team_of_shorthand* each such
+    team's shorthand, casefolded, to the same id. A team is typed by its shorthand alone
+    (#381): a role mention in the team column is refused. Each row's team is resolved through
+    ``resolve_team_reference`` once, onto ``team_instance_id``; *driver_team_map* and
     *other_active_assignments* name teams by the same id. A league may give a team another
     role mid-season, and the rounds recorded before stay the team's all the same. So a
     refusal names a team by its name, from *team_names*: the role a driver's team holds now is
@@ -3508,10 +3526,14 @@ def validate_submission_block(
                 "is not registered in this division."
             )
 
-    # Each submitted team role must be a valid non-reserve team role, and is resolved here to
-    # the division's team it names (#375). Reserves sub *into* a real team, so the reserve
-    # team role is never a valid submission role.
+    # Each row's team must be a non-reserve team of the division, typed by its shorthand, and
+    # is resolved here to that team (#375, #381). Reserves sub *into* a real team, so the
+    # reserve team is never among those that may be named. Nor is a team with no role, as it
+    # never has been (reconfirmed 2026-09-22): `team_of_shorthand` holds neither.
     role_of_team = {team: role for role, team in team_of_role.items()}
+    namable = [
+        {"id": team, "name": shorthand} for shorthand, team in (team_of_shorthand or {}).items()
+    ]
 
     def _team(team_id: int) -> str:
         # By name where one is known, as every caller supplies; the team's role otherwise.
@@ -3519,12 +3541,10 @@ def validate_submission_block(
         return f"**{name}**" if name else f"<@&{role_of_team.get(team_id)}>"
 
     for row in parsed_rows:
-        row.team_instance_id = team_of_role.get(row.team_role_id)
+        reference = resolve_team_reference(row.team_typed, namable, scope=" of this division")
+        row.team_instance_id = reference.team["id"] if reference.team is not None else None
         if row.team_instance_id is None:
-            errors.append(
-                f"Row {row.position}: <@&{row.team_role_id}> "
-                "is not a valid team role for this division."
-            )
+            errors.append(f"Row {row.position}: {reference.refusal}")
 
     # Driver must be assigned to the stated team — unless the driver is a reserve,
     # in which case they may sub for any valid non-reserve team.
@@ -3539,7 +3559,7 @@ def validate_submission_block(
         if row.team_instance_id != mapped_team:
             errors.append(
                 f"Row {row.position}: driver <@{row.driver_user_id}> "
-                f"submitted as <@&{row.team_role_id}> "
+                f"submitted as {row.team_typed} "
                 f"but is assigned to {_team(mapped_team)}."
             )
 
@@ -3557,7 +3577,7 @@ def validate_submission_block(
                 errors.append(
                     f"Row {row.position}: driver <@{row.driver_user_id}> was recorded under "
                     f"{_team(existing_team)} in {existing_label} of this round, but is "
-                    f"submitted here as <@&{row.team_role_id}>."
+                    f"submitted here as {row.team_typed}."
                 )
 
     # Max 2 drivers per team (counting reserve subs)
@@ -3809,6 +3829,10 @@ class DivisionValidationData(NamedTuple):
     reserve_driver_ids: set[int]
     #: Team id -> its name, for the messages that name a team.
     team_names: dict[int, str]
+    #: Each non-reserve team's shorthand, casefolded -> that team's id: how a submission names
+    #: a team (#381). Only a team with a role is here, as in ``team_of_role``: a team with no
+    #: role stays out of a submission (reconfirmed 2026-09-22).
+    team_of_shorthand: dict[str, int]
 
 
 async def _build_division_validation_data(division_id: int, bot) -> DivisionValidationData:
@@ -3833,6 +3857,7 @@ async def _build_division_validation_data(division_id: int, bot) -> DivisionVali
     driver_team_map: dict[int, int] = {}
     reserve_driver_ids: set[int] = set()
     team_names: dict[int, str] = {}
+    team_of_shorthand: dict[str, int] = {}
 
     for team in div_teams:
         role_id = name_to_role.get(team["name"])
@@ -3843,6 +3868,7 @@ async def _build_division_validation_data(division_id: int, bot) -> DivisionVali
             reserve_team_role_id = role_id
         else:
             team_of_role[role_id] = team["id"]
+            team_of_shorthand[team["name"].casefold()] = team["id"]
         for seat in team["seats"]:
             uid_str = seat.get("discord_user_id")
             if uid_str is not None:
@@ -3854,7 +3880,7 @@ async def _build_division_validation_data(division_id: int, bot) -> DivisionVali
 
     return DivisionValidationData(
         division_driver_ids, team_of_role, reserve_team_role_id, driver_team_map,
-        reserve_driver_ids, team_names,
+        reserve_driver_ids, team_names, team_of_shorthand,
     )
 
 
@@ -4351,6 +4377,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             driver_team_map,
             reserve_driver_ids,
             team_names,
+            team_of_shorthand,
         ) = await _build_division_validation_data(division_id, bot)
     except Exception:
         log.exception(
@@ -4426,12 +4453,14 @@ async def run_result_submission_job(round_id: int, bot) -> None:
 
         if session_type.is_qualifying:
             format_hint = (
-                "Format: `Position, @Driver, @TeamRole, Tyre, BestLap, Gap`\n"
+                "Format: `Position, @Driver, Team, Tyre, BestLap, Gap`\n"
+                "Team: its shorthand.\n"
                 f"Tyre: {tyre_compound_list()} (or blank for none recorded)."
             )
         else:
             format_hint = (
-                "Format: `Position, @Driver, @TeamRole, TotalTime, FastestLap, TimePenalties`\n"
+                "Format: `Position, @Driver, Team, TotalTime, FastestLap, TimePenalties`\n"
+                "Team: its shorthand.\n"
                 "Optional first line: `FL: @Driver` to designate the fastest-lap holder "
                 "(use when two drivers share the same lap time)."
             )
@@ -4495,6 +4524,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 other_active_assignments=other_assignments,
                 current_of=current_of,
                 team_names=team_names,
+                team_of_shorthand=team_of_shorthand,
             )
 
             if isinstance(result[0] if result else None, str):
@@ -5008,6 +5038,7 @@ async def _resubmit_collection_task(
             driver_team_map,
             reserve_driver_ids,
             team_names,
+            team_of_shorthand,
         ) = await _build_division_validation_data(division_id, bot)
     except Exception:
         log.exception("_resubmit_collection_task: failed to build validation data for round %s", round_id)
@@ -5039,12 +5070,14 @@ async def _resubmit_collection_task(
         label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
         if session_type.is_qualifying:
             format_hint = (
-                "Format: `Position, @Driver, @TeamRole, Tyre, BestLap, Gap`\n"
+                "Format: `Position, @Driver, Team, Tyre, BestLap, Gap`\n"
+                "Team: its shorthand.\n"
                 f"Tyre: {tyre_compound_list()} (or blank for none recorded)."
             )
         else:
             format_hint = (
-                "Format: `Position, @Driver, @TeamRole, TotalTime, FastestLap, TimePenalties`\n"
+                "Format: `Position, @Driver, Team, TotalTime, FastestLap, TimePenalties`\n"
+                "Team: its shorthand.\n"
                 "Optional first line: `FL: @Driver` to override fastest-lap holder."
             )
 
@@ -5087,6 +5120,7 @@ async def _resubmit_collection_task(
                 other_active_assignments=other_assignments,
                 current_of=current_of,
                 team_names=team_names,
+                team_of_shorthand=team_of_shorthand,
             )
 
             if isinstance(result[0] if result else None, str):

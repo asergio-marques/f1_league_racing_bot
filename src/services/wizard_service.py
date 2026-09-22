@@ -446,9 +446,11 @@ class WizardService:
         # Capture config snapshot
         snapshot = await self._signup_svc.capture_config_snapshot()
 
-        # Fetch non-reserve default team names for step 6 buttons
+        # Fetch the non-reserve teams' full names for step 6 buttons. A driver is offered, and
+        # answers with, the name every post shows; the shorthand is the league's own shorthand
+        # for typing and is not put to a driver (#381).
         default_teams = await self._bot.team_service.get_default_teams()  # type: ignore[attr-defined]
-        snapshot.team_names = [t.name for t in default_teams if not t.is_reserve]
+        snapshot.team_names = [t.full_name for t in default_teams if not t.is_reserve]
 
         # Determine first wizard state (skip nationality if not required)
         first_state = (
@@ -1488,11 +1490,15 @@ class WizardService:
             wizard.draft_answers["preferred_teams"] = []
             await self._advance_wizard(wizard, message)
             return
-        # Load non-reserve teams
+        # Load non-reserve teams. A driver may type either name — the full name they were
+        # offered, or the league's shorthand — and what is recorded is the full name, which is
+        # what every review and export shows (#381).
         teams = await self._bot.team_service.get_default_teams(  # type: ignore[attr-defined]
 
         )
-        non_reserve = [t.name for t in teams if not t.is_reserve]
+        non_reserve = [t for t in teams if not t.is_reserve]
+        by_typed = {t.full_name.casefold(): t.full_name for t in non_reserve}
+        by_typed.update({t.name.casefold(): t.full_name for t in non_reserve})
         # Parse comma/newline-separated list
         parts = [p.strip() for p in re.split(r"[,\n]+", raw) if p.strip()]
         if len(parts) > 3:
@@ -1500,15 +1506,15 @@ class WizardService:
                 "❌ Please select up to 3 teams."
             )
             return
-        bad = [p for p in parts if p not in non_reserve]
+        bad = [p for p in parts if p.casefold() not in by_typed]
         if bad:
             bad_list = ", ".join(f"`{b}`" for b in bad)
-            valid = ", ".join(f"`{t}`" for t in non_reserve)
+            valid = ", ".join(f"`{t.full_name}`" for t in non_reserve)
             await message.channel.send(
                 f"❌ Unknown team(s): {bad_list}.\nValid teams: {valid}"
             )
             return
-        wizard.draft_answers["preferred_teams"] = parts
+        wizard.draft_answers["preferred_teams"] = [by_typed[p.casefold()] for p in parts]
         await self._advance_wizard(wizard, message)
 
     @staticmethod

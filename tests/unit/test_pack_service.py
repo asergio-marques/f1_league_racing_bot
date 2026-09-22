@@ -70,7 +70,7 @@ async def _seed(db_path: str, *, stage: str = "COMPLETED", test_mode: int = 0) -
                 season_number, division_name) VALUES ('900', 1, 1, 'Pro');
             INSERT INTO driver_portraits (discord_user_id, avatar_key, fetched_at)
             VALUES ('900', 'abc', '2026-01-01');
-            INSERT INTO default_teams (name) VALUES ('Ferrari');
+            INSERT INTO default_teams (name, full_name) VALUES ('Ferrari', 'Ferrari');
             INSERT INTO team_role_configs (team_name, role_id) VALUES ('Ferrari', 70);
             INSERT INTO points_config_store (config_name) VALUES ('standard');
             INSERT INTO signup_module_config (id, signup_channel_id,

@@ -157,7 +157,8 @@ async def team_name_for_entry(
     """The team whose car the driver drove, resolved as the results graphic resolves it.
 
     The session records the division's **team** an entry drove for (#375); its name is what
-    the graphic names, and what the badge is looked up by.
+    the graphic names. The badge is looked up by its shorthand, from ``team_key_for_entry``
+    (#381).
 
     For a reserve standing in for another driver this is the team whose car they drove and
     never the reserve team, because the team is the one the *result* records.
@@ -172,6 +173,20 @@ async def team_name_for_entry(
         log.warning("verdicts: team name unreadable for team %s: %s", team_id, exc)
         return None
     return names.get(int(team_id))
+
+
+async def team_key_for_entry(bot, *, team_id: int | None) -> str | None:
+    """The shorthand of the team whose car the driver drove, which its badge is found by."""
+    if team_id is None:
+        return None
+    try:
+        from services.image_results_post import _team_keys
+
+        keys = await _team_keys(bot, [int(team_id)])
+    except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
+        log.warning("verdicts: team shorthand unreadable for team %s: %s", team_id, exc)
+        return None
+    return keys.get(int(team_id))
 
 
 async def _mention_names(
@@ -241,6 +256,7 @@ async def build_drawing(
     description_text: str,
     justification_text: str,
     team_name: str | None = None,
+    team_key: str | None = None,
 ) -> VerdictDrawing:
     """Resolve one verdict into the values its graphic draws.
 
@@ -294,6 +310,7 @@ async def build_drawing(
         driver_name=driver_name,
         driver_nationality=nationality,
         team_name=team_name if kind is not VerdictKind.ATTENDANCE_SANCTION else None,
+        team_slug_source=team_key if kind is not VerdictKind.ATTENDANCE_SANCTION else None,
         penalty=penalty_description,
         description=resolve_mentions(description_text, _name_for),
         justification=resolve_mentions(justification_text, _name_for),

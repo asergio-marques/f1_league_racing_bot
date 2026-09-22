@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from cogs.driver_cog import DriverCog  # noqa: E402
 from models.driver_profile import DriverState  # noqa: E402
 from models.season import SeasonStage  # noqa: E402
+from tests.support.teams import resolves_as_typed  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 22130
@@ -49,6 +50,7 @@ def _cog(
     cog.bot.season_service.get_confirmed_season = AsyncMock(
         return_value=SimpleNamespace(id=SEASON_ID, stage=stage)
     )
+    cog.bot.team_service.resolve_division_team = resolves_as_typed()
     cog.bot.placement_service.resolve_division = AsyncMock(
         side_effect=lambda season_id, name: known.get(name)
     )
@@ -155,6 +157,36 @@ async def test_a_refusal_the_service_raises_is_relayed_and_nothing_is_logged():
 
     assert _reply(interaction) == "⛔ **Reserve** in this division has no available seats."
     cog.bot.output_router.post_log.assert_not_awaited()
+
+
+async def test_a_move_names_the_team_in_the_division_moved_into():
+    """The team is resolved by its shorthand in the division the driver goes to (#381)."""
+    from services.team_service import TeamReference
+
+    cog = _cog()
+    cog.bot.team_service.resolve_division_team = AsyncMock(
+        return_value=TeamReference(team={"id": 7, "name": "ALP", "full_name": "Alpha Racing"})
+    )
+
+    await _move(cog, _interaction(), from_division="Pro", team="alp", to_division="Academy")
+
+    cog.bot.team_service.resolve_division_team.assert_awaited_once_with(ACADEMY[0], "alp")
+    assert cog.bot.placement_service.move_driver.await_args.kwargs["team_name"] == "ALP"
+
+
+async def test_a_move_into_a_team_the_division_does_not_have_is_refused():
+    from services.team_service import TeamReference
+
+    cog = _cog()
+    cog.bot.team_service.resolve_division_team = AsyncMock(
+        return_value=TeamReference(refusal="No team of this division has the shorthand `X`.")
+    )
+    interaction = _interaction()
+
+    await _move(cog, interaction, team="X")
+
+    assert "No team of this division has the shorthand `X`." in _reply(interaction)
+    cog.bot.placement_service.move_driver.assert_not_awaited()
 
 
 async def test_a_move_within_one_division_passes_that_division_both_ways():

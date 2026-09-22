@@ -359,21 +359,23 @@ class PlacementService:
         """Every placement of *season_id* not yet committed, ordered by division and team.
 
         Each row: driver_profile_id, discord_user_id, is_test_driver, test_display_name,
-        division_id, division_name, division_role_id, team_name.
+        division_id, division_name, division_role_id, team_name (the shorthand, which keys the
+        role mapping) and team_full_name (what a review shows) — #381.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 """
                 SELECT dsa.driver_profile_id, dp.discord_user_id, dp.is_test_driver,
                        dp.test_display_name, d.id AS division_id, d.name AS division_name,
-                       d.mention_role_id AS division_role_id, ti.name AS team_name
+                       d.mention_role_id AS division_role_id, ti.name AS team_name,
+                       ti.full_name AS team_full_name
                 FROM driver_season_assignments dsa
                 JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
                 JOIN divisions d ON d.id = dsa.division_id
                 LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
                 LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
                 WHERE dsa.season_id = ? AND dsa.committed = 0
-                ORDER BY d.tier, ti.is_reserve, ti.name, dp.discord_user_id
+                ORDER BY d.tier, ti.is_reserve, ti.full_name, dp.discord_user_id
                 """,
                 (season_id,),
             )
@@ -934,6 +936,21 @@ class PlacementService:
     # Assign driver (T010)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    async def _team_full_name(db, division_id: int, team_name: str) -> str:
+        """The full name of the division's team held under the shorthand *team_name* (#381).
+
+        What a reply and a log line show. The shorthand is what every key here is, so the two
+        are read apart: a command answers with the name a league reads, and writes the other.
+        """
+        row = await (
+            await db.execute(
+                "SELECT full_name FROM team_instances WHERE division_id = ? AND name = ?",
+                (division_id, team_name),
+            )
+        ).fetchone()
+        return row["full_name"] if row else team_name
+
     async def _free_seat(self, db, division_id: int, team_name: str) -> tuple[int, bool]:
         """The first free seat of *team_name* in *division_id*, and whether it is Reserve.
 
@@ -1031,7 +1048,8 @@ class PlacementService:
 
             cursor = await db.execute(
                 """
-                SELECT dsa.id, dsa.team_seat_id, dsa.committed, ti.name AS team_name
+                SELECT dsa.id, dsa.team_seat_id, dsa.committed, ti.name AS team_name,
+                       ti.full_name AS team_full_name
                 FROM driver_season_assignments dsa
                 LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
                 LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
@@ -1061,6 +1079,7 @@ class PlacementService:
                     )
 
             new_seat_id, _ = await self._free_seat(db, to_division_id, team_name)
+            to_team_full_name = await self._team_full_name(db, to_division_id, team_name)
 
             cursor = await db.execute(
                 "SELECT id, name, mention_role_id FROM divisions WHERE id IN (?, ?)",
@@ -1155,8 +1174,8 @@ class PlacementService:
         return {
             "from_division": divisions[from_division_id]["name"],
             "to_division": divisions[to_division_id]["name"],
-            "from_team": source["team_name"],
-            "to_team": team_name,
+            "from_team": source["team_full_name"] or source["team_name"],
+            "to_team": to_team_full_name,
         }
 
     async def assign_driver(
@@ -1250,6 +1269,7 @@ class PlacementService:
 
             # 3. Find a free seat in this team/division (Reserve = always free)
             seat_id, is_reserve = await self._free_seat(db, division_id, team_name)
+            team_full_name = await self._team_full_name(db, division_id, team_name)
 
             # 4. Fetch division name and role
             cursor = await db.execute(
@@ -1329,7 +1349,7 @@ class PlacementService:
             await self._refresh_lineup_post(guild, division_id)
         return {
             "was_unassigned": was_unassigned,
-            "team_name": team_name,
+            "team_name": team_full_name,
             "division_name": div_name,
             "committed": is_committed,
         }
@@ -1460,13 +1480,14 @@ class PlacementService:
             team_name: str | None = None
             if seat_id is not None:
                 cursor = await db.execute(
-                    "SELECT ti.name FROM team_instances ti "
+                    "SELECT ti.name, ti.full_name FROM team_instances ti "
                     "JOIN team_seats ts ON ts.team_instance_id = ti.id "
                     "WHERE ts.id = ?",
                     (seat_id,),
                 )
                 team_row = await cursor.fetchone()
                 team_name = team_row["name"] if team_row else None
+                team_full_name = team_row["full_name"] if team_row else None
 
             # 4. Fetch division name and role
             cursor = await db.execute(
@@ -1560,7 +1581,12 @@ class PlacementService:
 
         if guild is not None and was_committed:
             await self._refresh_lineup_post(guild, division_id)
-        return {"division_name": div_name, "has_remaining_assignments": has_remaining, "team_name": team_name}
+        return {
+            "division_name": div_name,
+            "has_remaining_assignments": has_remaining,
+            # The name a reply shows is the full one; the shorthand stays a key (#381).
+            "team_name": team_full_name,
+        }
 
     # ------------------------------------------------------------------
     # Revoke all placement roles (T014)
@@ -1903,7 +1929,7 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
                 """
-                SELECT ti.name AS team_name, ti.is_reserve,
+                SELECT ti.full_name AS team_name, ti.is_reserve,
                        dp.discord_user_id,
                        dp.is_test_driver, dp.test_display_name
                 FROM driver_season_assignments dsa
@@ -1914,7 +1940,7 @@ class PlacementService:
                 WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
                   -- A placement not yet confirmed mid-season is not posted (issue #220).
                   AND (dsa.committed = 1 OR s.status != 'ACTIVE')
-                ORDER BY ti.is_reserve ASC, ti.name ASC
+                ORDER BY ti.is_reserve ASC, ti.full_name ASC
                 """,
                 (division_id,),
             )

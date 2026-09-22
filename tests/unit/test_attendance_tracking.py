@@ -63,7 +63,8 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
             id INTEGER PRIMARY KEY,
             division_id INTEGER NOT NULL,
             is_reserve INTEGER NOT NULL DEFAULT 0,
-            name TEXT NOT NULL DEFAULT 'Team'
+            name TEXT NOT NULL DEFAULT 'Team',
+            full_name TEXT NOT NULL DEFAULT 'Team'
         )
         """
     )
@@ -211,11 +212,11 @@ def _now_iso() -> str:
 async def _setup_division(db, *, division_id=10, full_team_id=1, reserve_team_id=2):
     """Create one full-time team and one reserve team for division_id=10."""
     await db.execute(
-        "INSERT INTO team_instances (id, division_id, is_reserve, name) VALUES (?, ?, 0, 'Full Team')",
+        "INSERT INTO team_instances (id, division_id, is_reserve, name, full_name) VALUES (?, ?, 0, 'Full Team', 'Full Team')",
         (full_team_id, division_id),
     )
     await db.execute(
-        "INSERT INTO team_instances (id, division_id, is_reserve, name) VALUES (?, ?, 1, 'Reserve')",
+        "INSERT INTO team_instances (id, division_id, is_reserve, name, full_name) VALUES (?, ?, 1, 'Reserve', 'Reserve')",
         (reserve_team_id, division_id),
     )
 
@@ -1004,8 +1005,8 @@ async def _make_two_round_db(tmp_path):
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, is_reserve) "
-            "VALUES (?, 'Full Team', 0)",
+            "INSERT INTO team_instances (division_id, name, full_name, is_reserve) "
+            "VALUES (?, 'Full Team', 'Full Team', 0)",
             (division_id,),
         )
         team_instance_id = cursor.lastrowid

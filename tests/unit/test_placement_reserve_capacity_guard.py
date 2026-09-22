@@ -88,9 +88,9 @@ async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
         division_id = cursor.lastrowid
 
         cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-            "VALUES (?, ?, 0, 1)",
-            (division_id, RESERVE),
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, ?, 0, 1)",
+            (division_id, RESERVE, RESERVE),
         )
         reserve_instance = cursor.lastrowid
         # Each ordinary team carries its two seats, empty until a driver is seated in one —
@@ -98,9 +98,9 @@ async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
         ordinary_seats: list[int] = []
         for index in range(1, teams + 1):
             cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, ?, 2, 0)",
-                (division_id, f"Team {index}"),
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, 2, 0)",
+                (division_id, f"Team {index}", f"Team {index}"),
             )
             instance_id = cursor.lastrowid
             for seat_number in (1, 2):

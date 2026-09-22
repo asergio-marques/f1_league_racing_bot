@@ -104,8 +104,8 @@ async def _seed(path, *, server_id=1, divisions=("Div A",)):
             )
             profile_id = cur.lastrowid
             cur = await db.execute(
-                "INSERT INTO team_instances (division_id, name, max_seats, is_reserve) "
-                "VALUES (?, 'Apex Racing', 2, 0)",
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+                "VALUES (?, 'Apex Racing', 'Apex Racing', 2, 0)",
                 (division_id,),
             )
             await db.execute(
