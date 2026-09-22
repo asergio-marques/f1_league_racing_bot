@@ -1,7 +1,8 @@
 """The hub's panel: the options modules register, and what a press on one does (issue #279).
 
-**Core names no option.** A module registers one, saying when it is offered and what a press
-does; the panel ships empty, and says so. The tests register their own options against a
+**The hub service names no option.** A module registers one, saying when it is offered and
+what a press does; core's one, About, is registered by `services/about_service.py` (#258) and
+tested there. A panel offering nothing says so. The tests register their own options against a
 registry emptied for each.
 
 **A press is judged when it is made.** A panel can outlive the module that filled it — posted,
@@ -75,8 +76,10 @@ def _interaction(client=None):
 # ── The registry ──────────────────────────────────────────────────────────
 
 
-def test_the_panel_ships_with_no_option():
-    """Decided 2026-09-22: no option is built with the hub itself."""
+def test_the_hub_service_registers_no_option_itself():
+    """The service names no option. Core's one, About (#258), is registered by
+    `services/about_service.py`; every other is a module's. The fixture above clears the
+    registry, so this sees what `hub_service` alone would hold."""
     assert registered_options() == []
 
 
