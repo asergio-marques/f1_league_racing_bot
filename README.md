@@ -2393,7 +2393,7 @@ These sit under `/images template` rather than `/images config` because Discord 
 >
 > **What counts as a points qualifying position is, again, your configuration.** A league that awards no qualifying points sees no qualifying mark below the podium, and one that awards none at all sees none whatever — the same rule as the race, applied to the session before it.
 
-> **The standings grids are 1728 px wide.** They were 1200 and 1128, and the columns were too narrow for the widest thing a cell can hold — a `DSQ` with another outcome raised beside it — which overran into the next round with nothing said about it. Each session column is now 54 px. If you have re-laid a standings template of your own, give your columns the same room; nothing checks it for you, because SVG text simply overruns and reports nothing.
+> **The standings grids are 1828 px wide.** They were 1200 and 1128 before their columns were widened for the widest thing a cell can hold — a `DSQ` with another outcome raised beside it — and 1728 until a team's **full name** took the team column out by another 100 px (#381). Each session column is 54 px. If you have re-laid a standings template of your own, give your columns the same room; nothing checks it for you, because SVG text simply overruns and reports nothing.
 
 #### `/images config <directory>` — Where files are searched for
 *Access: League manager*
