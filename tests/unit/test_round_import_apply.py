@@ -24,29 +24,22 @@ import os
 import sys
 from datetime import datetime
 
-import aiosqlite
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from cogs.season_cog import PendingConfig, PendingDivision, apply_round_import  # noqa: E402
+from db.database import run_migrations  # noqa: E402
 from models.round import RoundFormat  # noqa: E402
 from utils.round_import import ParsedDivisionRounds, ParsedRound  # noqa: E402
 
 
 @pytest.fixture
 async def db_path(tmp_path):
-    """Just the tracks table — it is all the applier reads."""
+    """A migrated database. The track registry is all the applier reads, and the baseline
+    seeds it: 4 is Bahrain International Circuit and 14 the Hungaroring."""
     path = str(tmp_path / "rounds.db")
-    async with aiosqlite.connect(path) as db:
-        await db.execute(
-            "CREATE TABLE tracks (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE)"
-        )
-        await db.executemany(
-            "INSERT INTO tracks (id, name) VALUES (?, ?)",
-            [(4, "Bahrain International Circuit"), (14, "Hungaroring"), (3, "Albert Park")],
-        )
-        await db.commit()
+    await run_migrations(path)
     return path
 
 
