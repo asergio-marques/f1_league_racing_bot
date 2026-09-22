@@ -207,7 +207,7 @@ Each module then has its own configuration, which is not covered here. Start fro
 | | What it is for |
 |---|---|
 | **Shorthand** — `RBR` | What you **type**: commands, the team column of a results submission, a test roster. It is also the filename of the team's badge. At most 16 characters, and no comma. |
-| **Full name** — `Oracle Red Bull Racing` | What is **shown**: every post, every graphic, every reply. At most 64 characters, and no two teams may share one. |
+| **Full name** — `Oracle Red Bull Racing` | What is **shown**: every post, every graphic, every reply. At most 32 characters, and no two teams may share one. |
 | **Role** — `@Red Bull` | Granted to a driver when you seat them, taken away when you do not. |
 
 A team belongs to the **server**, not to a season, so you do this once and it carries forward. **One role, one team:** a role another team already holds, the Reserve team included, is refused. The role must also be one the bot can grant — not `@everyone`, not a role managed by an integration, and not one sitting above the bot's own highest role; each is refused as you choose it, saying why.

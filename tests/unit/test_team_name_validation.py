@@ -287,20 +287,21 @@ def test_an_empty_full_name_is_refused(full_name):
     assert validate_full_name(full_name) is not None
 
 
-def test_full_name_refuses_sixty_five_characters():
-    """Sixty-four is the most a full name may hold (decided 2026-09-22)."""
-    assert validate_full_name("A" * 64) is None
+def test_full_name_refuses_thirty_three_characters():
+    """Thirty-two is the most a full name may hold (decided 2026-09-22): the width the
+    templates give a team column, at the size the rest of a row is read at."""
+    assert validate_full_name("A" * 32) is None
 
-    problem = validate_full_name("A" * 65)
+    problem = validate_full_name("A" * 33)
 
     assert problem is not None
-    assert "64" in problem
+    assert "32" in problem
 
 
 def test_a_full_name_may_hold_what_a_shorthand_may_not():
-    """A full name is never typed as a reference, so a comma and a long name are its own
-    business; it is only ever shown."""
-    assert validate_full_name("Visa Cash App RB Formula One Team, Faenza") is None
+    """A full name is never typed as a reference, so a comma is its own business; it is only
+    ever shown."""
+    assert validate_full_name("Visa Cash App RB, Faenza") is None
 
 
 @pytest.mark.parametrize("full_name", ["**Red** Bull", "Red Bull \U0001F402", "@everyone Racing"])

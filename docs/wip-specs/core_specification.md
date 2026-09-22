@@ -461,7 +461,7 @@ Decided 2026-09-22 (#381). Each name has one job, and no name does another's.
 
 ### The rules each name is held to
 - Both names shall hold no role mention, "@everyone" or "@here", in any case, no emoji, no Discord markup and no mention of a member. A division's name is held to all but the last. Decided 2026-09-21 (#362) and 2026-09-22 (#381).
-- A **full name** shall not be empty, shall be at most 64 characters, and shall be unique across the server's list ignoring case, so that two teams cannot be shown alike.
+- A **full name** shall not be empty, shall be at most 32 characters, and shall be unique across the server's list ignoring case, so that two teams cannot be shown alike. The templates carry a team column sized for exactly this much, a longer name being set down until it could not be read.
 - A **shorthand** shall be at most 16 characters and shall hold no comma, being typed into the comma-separated rows of a results submission and a test roster.
 - A shorthand shall reduce to a usable filename:
     - It shall not be empty and shall hold at least one letter or digit.

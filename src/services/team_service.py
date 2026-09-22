@@ -26,10 +26,11 @@ _RESERVE_KEY = "reserve"
 #: typed wherever a team is entered, and names the team's artwork file.
 SHORTHAND_MAX = 16
 
-#: The longest a team's full name may be (decided 2026-09-22, #381). It is what every post and
-#: graphic shows, and the signup wizard offers teams by it on buttons, whose labels Discord caps
-#: at 80.
-FULL_NAME_MAX = 64
+#: The longest a team's full name may be (decided 2026-09-22, #381, lowered from 64 the same
+#: day). It is what every post and graphic shows, and a name longer than this was set down on a
+#: results row until it could not be read — the templates carry a team column sized for exactly
+#: this much. The signup wizard's buttons, whose labels Discord caps at 80, are nowhere near it.
+FULL_NAME_MAX = 32
 
 
 def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -> str | None:

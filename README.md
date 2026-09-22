@@ -1199,7 +1199,7 @@ Every team carries three, and each has one job:
 
 | | Limit |
 |---|---|
-| Full name | 1 to 64 characters, and unique across the list whatever the case — two teams shown alike could not be told apart. |
+| Full name | 1 to 32 characters, and unique across the list whatever the case — two teams shown alike could not be told apart. The drawings give a team column exactly this much room, so a longer name would be shrunk past reading. |
 | Shorthand | 1 to 16 characters, and **no comma**: a shorthand is typed into rows that are split on commas. |
 
 Neither name may hold a role mention, `@everyone`, `@here`, an emoji, Discord formatting, or a mention of a member — a team's names are posted every time the team is named.
@@ -1226,7 +1226,7 @@ Opens a form taking the team's shorthand, its full name and its role together. T
 | Field | Required | Description |
 |-------|----------|-------------|
 | Shorthand | ✅ | What you type to name the team, and its artwork's filename (max 16) |
-| Full name | ✅ | What every post and graphic shows (max 64) |
+| Full name | ✅ | What every post and graphic shows (max 32) |
 | Role | ✅ | Discord role granted to drivers placed into this team |
 
 **One role per team.** A role belongs to one team only, the Reserve team included. A role another team already holds is refused, naming that team, and the team is not added.
