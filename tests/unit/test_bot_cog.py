@@ -768,6 +768,20 @@ async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypa
     assert "Refused" in bot.output_router.post_log.call_args_list[-1].args[0]
 
 
+async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
+    """Issue #383. What the entry holds is the service's to pin; who it names is the cog's."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    cog = BotCog(_packing_bot(db_path))
+
+    await _unwrap(cog.handle_pack)(
+        cog, _deferred(_interaction(channel_id=CONFIGURED_CHANNEL)), "CONFIRM"
+    )
+
+    (row,) = await _audit_rows(db_path)
+    assert (row["change_type"], row["actor_id"]) == ("BOT_PACKED", 7)
+
+
 # ── /bot factory-reset ─────────────────────────────────────────────────────
 
 OWNER_ID = 77
