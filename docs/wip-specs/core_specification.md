@@ -88,8 +88,9 @@ it only to place it; the rules governing it belong to its own specification.
 - The bot shall keep one panel in the hub channel. It shall be brought up to date whenever a module is enabled or disabled, and posted again where it has been deleted, at the latest when the bot next starts. Its buttons shall work across a restart.
 - The panel's options shall be the modules', save About below. Core shall add no other; each module's specification states what it adds, offered while that module is enabled. A panel offering nothing shall say so.
 - Core shall add one option, About, offered always and placed after every module's option. Decided 2026-09-22 (#258).
-    - A press shall answer the presser alone with the bot's name, the version it is running and a link to the project's repository. It changes nothing and shall record nothing.
+    - A press shall answer the presser alone with the bot's name, the version it is running, the date and time that version was made, and a link to the project's repository. It changes nothing and shall record nothing.
     - The version shall be the one the bot read when it started, never looked up at the press: a release, as `v0.5.0`, or the latest release followed by the number of changes merged since it, as `v0.4.0-230`. Where it could not be told, the answer shall say the version is unknown.
+    - The date and time shall be those of the last change the version holds, read when the bot started, and shown in each member's own time zone. Where they could not be told, the answer shall leave them out.
 - A press on an option no longer offered shall be refused, seen by the presser alone, and the panel brought up to date.
 - Moving the hub to another channel shall delete the panel from the old channel and remove the permissions the bot set there.
 - Whatever fails once the channel is set — a permission or a post Discord refuses — shall be reported, and shall not undo the setting.
