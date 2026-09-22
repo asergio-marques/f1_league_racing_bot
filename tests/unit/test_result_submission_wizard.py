@@ -62,8 +62,8 @@ SUB_CHANNEL = 7100
 MANAGER = 77
 TEAM_ROLE = 3001
 
-QUALI_PASTE = "1, <@101>, <@&3001>, Soft, 1:19.000, N/A\n2, <@102>, <@&3001>, Soft, 1:19.500, +0.500"
-RACE_PASTE = "1, <@101>, <@&3001>, 1:30:00.000, 1:20.000, N/A\n2, <@102>, <@&3001>, +5.000, 1:21.000, N/A"
+QUALI_PASTE = "1, <@101>, T3001, Soft, 1:19.000, N/A\n2, <@102>, T3001, Soft, 1:19.500, +0.500"
+RACE_PASTE = "1, <@101>, T3001, 1:30:00.000, 1:20.000, N/A\n2, <@102>, T3001, +5.000, 1:21.000, N/A"
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +187,7 @@ async def _run(
     patches = {
         "validation": patch(
             "services.result_submission_service._build_division_validation_data",
-            new=AsyncMock(return_value=({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {}, {})),
+            new=AsyncMock(return_value=({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {}, {"t3001": TEAM_ROLE})),
         ),
         "create": patch(
             "services.result_submission_service.create_submission_channel",
@@ -501,7 +501,7 @@ async def test_the_accepted_input_is_logged_verbatim(tmp_path):
 async def test_a_rejected_paste_is_answered_and_the_session_asked_again(tmp_path):
     """The manager fixes the paste rather than losing the session."""
     db_path = await _make_db(tmp_path, name="wizard_reject")
-    bot = _bot(db_path, ["1, not-a-mention, <@&3001>, Soft, 1:19.000, N/A", QUALI_PASTE, RACE_PASTE])
+    bot = _bot(db_path, ["1, not-a-mention, T3001, Soft, 1:19.000, N/A", QUALI_PASTE, RACE_PASTE])
 
     stubs = await _run(bot)
 
@@ -525,7 +525,7 @@ async def test_a_rejected_paste_is_logged_with_its_input(tmp_path):
 
 async def test_a_driver_outside_the_division_is_refused(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_outsider")
-    outsider = "1, <@999>, <@&3001>, Soft, 1:19.000, N/A\n2, <@102>, <@&3001>, Soft, 1:19.500, +0.500"
+    outsider = "1, <@999>, T3001, Soft, 1:19.000, N/A\n2, <@102>, T3001, Soft, 1:19.500, +0.500"
     bot = _bot(db_path, [outsider, QUALI_PASTE, RACE_PASTE])
 
     stubs = await _run(bot)

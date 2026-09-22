@@ -1,10 +1,11 @@
 """Finding a team from what a league typed (#381).
 
-A team is identified by its role, and a league may type its shorthand instead as a convenience.
-Its full name is only ever shown. `resolve_team_reference` is the one place a typed team is read,
-so every command and the results submission name a team by the same rule. The things a league
-might type that name no team at all — `@everyone`, `@here`, a member, a Discord ID — are each
-refused saying what they are.
+A team is typed by its shorthand and by nothing else (decided 2026-09-22): commands offer it by
+autocomplete, and pasted text takes it alone. Its full name is only ever shown, and its role is
+only for mentioning it. `resolve_team_reference` is the one place a typed team is read, so every
+command and the results submission name a team by the same rule. The things a league might type
+that name no team — a role, `@everyone`, `@here`, a member, a Discord ID — are each refused
+saying what they are.
 """
 from __future__ import annotations
 
@@ -29,11 +30,11 @@ TEAMS = [
 ]
 
 
-# ── The two ways a team is named ──────────────────────────────────────────
+# ── The one way a team is named ───────────────────────────────────────────
 
 
-@pytest.mark.parametrize("typed", ["<@&111>", "RBR", "rbr", "  Rbr  "])
-def test_resolve_team_reference_by_role_shorthand_and_case(typed):
+@pytest.mark.parametrize("typed", ["RBR", "rbr", "  Rbr  "])
+def test_resolve_team_reference_by_shorthand_ignoring_case(typed):
     reference = resolve_team_reference(typed, TEAMS)
 
     assert reference.refusal is None
@@ -46,25 +47,28 @@ def test_a_team_with_no_role_is_found_by_its_shorthand():
 
 
 def test_a_full_name_names_no_team():
-    """A full name is shown, never typed: only the role and the shorthand name a team."""
+    """A full name is shown, never typed: only the shorthand names a team."""
     reference = resolve_team_reference("Oracle Red Bull Racing", TEAMS)
 
     assert reference.team is None
     assert "shorthand" in reference.refusal
 
 
-def test_a_role_that_is_no_team_s_is_refused_in_the_scope_given():
-    reference = resolve_team_reference("<@&999>", TEAMS, scope=" of this division")
+def test_a_role_mention_is_refused_saying_to_use_the_shorthand():
+    """Even the team's own role: a role is only for mentioning a team (#381)."""
+    reference = resolve_team_reference("<@&111>", TEAMS)
 
     assert reference.team is None
-    assert reference.refusal == "<@&999> is not the role of a team of this division."
+    assert reference.refusal == (
+        "<@&111> is a role, and a role does not name a team. Name a team by its shorthand."
+    )
 
 
-def test_an_unknown_shorthand_is_refused_naming_what_was_typed():
-    reference = resolve_team_reference("FER", TEAMS)
+def test_an_unknown_shorthand_is_refused_in_the_scope_given():
+    reference = resolve_team_reference("FER", TEAMS, scope=" of this division")
 
     assert reference.team is None
-    assert "`FER`" in reference.refusal
+    assert reference.refusal == "No team of this division has the shorthand `FER`."
 
 
 # ── What names no team at all ─────────────────────────────────────────────
@@ -86,7 +90,7 @@ def test_a_mention_that_is_not_a_team_s_role_is_refused_for_what_it_is(typed, sa
 
     assert reference.team is None
     assert said in reference.refusal
-    assert "Name a team by its role or its shorthand." in reference.refusal
+    assert "Name a team by its shorthand." in reference.refusal
 
 
 # ── Against the database ──────────────────────────────────────────────────
@@ -118,14 +122,14 @@ async def _make_db(tmp_path) -> str:
     return db_path
 
 
-async def test_a_division_s_team_is_found_by_its_role_or_its_shorthand(tmp_path):
+async def test_a_division_s_team_is_found_by_its_shorthand(tmp_path):
     db_path = await _make_db(tmp_path)
 
-    by_role = await resolve_division_team(db_path, 1, "<@&111>")
-    by_shorthand = await resolve_division_team(db_path, 1, "rbr")
+    reference = await resolve_division_team(db_path, 1, "rbr")
 
-    assert by_role.team["full_name"] == "Oracle Red Bull Racing"
-    assert by_role.team["id"] == by_shorthand.team["id"]
+    assert reference.team["full_name"] == "Oracle Red Bull Racing"
+    assert reference.team["role_id"] == 111
+    assert (await resolve_division_team(db_path, 1, "<@&111>")).team is None
 
 
 async def test_a_division_s_reserve_team_is_found_with_no_role(tmp_path):
@@ -137,10 +141,10 @@ async def test_a_division_s_reserve_team_is_found_with_no_role(tmp_path):
     assert reference.team["role_id"] is None
 
 
-async def test_the_server_s_team_is_found_by_its_role(tmp_path):
+async def test_the_server_s_team_is_found_by_its_shorthand(tmp_path):
     db_path = await _make_db(tmp_path)
 
-    reference = await TeamService(db_path).resolve_server_team("<@&111>")
+    reference = await TeamService(db_path).resolve_server_team("Rbr")
 
     assert reference.team["name"] == "RBR"
     assert "in the server's list" in (

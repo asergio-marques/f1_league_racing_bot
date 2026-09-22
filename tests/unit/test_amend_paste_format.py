@@ -36,18 +36,19 @@ TEAM = 3001
 
 
 def _qualifying(*, sanction_columns: bool) -> str:
-    row = f"1, <@{DRIVER}>, <@&{TEAM}>, Soft, 1:23.456, -"
+    row = f"1, <@{DRIVER}>, T{TEAM}, Soft, 1:23.456, -"
     return row + (", N/A, N/A" if sanction_columns else "")
 
 
 def _race(*, sanction_columns: bool) -> str:
-    row = f"1, <@{DRIVER}>, <@&{TEAM}>, 1:23:45.678, 1:23.456, N/A"
+    row = f"1, <@{DRIVER}>, T{TEAM}, 1:23:45.678, 1:23.456, N/A"
     return row + (", N/A, N/A" if sanction_columns else "")
 
 
 def _validate(line: str, session_type: SessionType):
     return validate_submission_block(
         [line], session_type, {DRIVER}, {TEAM: TEAM}, None, {DRIVER: TEAM},
+        team_of_shorthand={f"t{TEAM}": TEAM},
     )
 
 
@@ -97,7 +98,7 @@ def test_the_explanation_is_only_offered_for_the_old_width():
 
     Naming the sanction columns there would send somebody looking for columns they never had.
     """
-    short = _validate(f"1, <@{DRIVER}>, <@&{TEAM}>", SessionType.FEATURE_RACE)
+    short = _validate(f"1, <@{DRIVER}>, T{TEAM}", SessionType.FEATURE_RACE)
 
     assert isinstance(short[0], str)
     assert "got 3" in short[0]
@@ -123,8 +124,8 @@ def test_a_driver_listed_twice_is_refused():
     open the gap without anything obviously breaking.
     """
     rows = [
-        f"1, <@{DRIVER}>, <@&{TEAM}>, 1:23:45.678, 1:23.456, N/A",
-        f"2, <@{DRIVER}>, <@&{TEAM}>, +1.000, 1:24.000, N/A",
+        f"1, <@{DRIVER}>, T{TEAM}, 1:23:45.678, 1:23.456, N/A",
+        f"2, <@{DRIVER}>, T{TEAM}, +1.000, 1:24.000, N/A",
     ]
 
     result = validate_submission_block(

@@ -138,10 +138,10 @@ async def _validate(
     )
 
 
-async def _record(db_path: str, round_id: int, ferrari_role: int, *, ferrari_wins: bool) -> int:
-    """Submit a race of *round_id* naming Ferrari by *ferrari_role*, and score it by hand."""
-    ferrari = f"<@{FERRARI_DRIVER}>, <@&{ferrari_role}>"
-    rival = f"<@{RIVAL_DRIVER}>, <@&{RIVAL_ROLE}>"
+async def _record(db_path: str, round_id: int, *, ferrari_wins: bool) -> int:
+    """Submit a race of *round_id*, naming each team by its shorthand, and score it by hand."""
+    ferrari = f"<@{FERRARI_DRIVER}>, Ferrari"
+    rival = f"<@{RIVAL_DRIVER}>, Rival"
     first, second = (ferrari, rival) if ferrari_wins else (rival, ferrari)
     parsed = await _validate(
         db_path,
@@ -169,10 +169,10 @@ async def _replace_ferrari_role(db_path: str) -> None:
 
 async def _season_raced_across_a_role_change(tmp_path):
     db_path, teams = await _league(tmp_path)
-    first = await _record(db_path, ROUNDS[0], OLD_ROLE, ferrari_wins=True)
+    first = await _record(db_path, ROUNDS[0], ferrari_wins=True)
     await compute_and_persist_round(db_path, ROUNDS[0], DIVISION_ID)
     await _replace_ferrari_role(db_path)
-    second = await _record(db_path, ROUNDS[1], NEW_ROLE, ferrari_wins=False)
+    second = await _record(db_path, ROUNDS[1], ferrari_wins=False)
     await compute_and_persist_round(db_path, ROUNDS[1], DIVISION_ID)
     return db_path, teams, (first, second)
 
@@ -254,14 +254,14 @@ async def test_results_graphic_names_a_team_after_its_role_is_replaced(tmp_path)
 # ── The submission ───────────────────────────────────────────────────────────
 
 
-async def test_submission_resolves_a_role_to_the_division_team(tmp_path):
+async def test_submission_resolves_a_shorthand_to_the_division_team(tmp_path):
     db_path, teams = await _league(tmp_path)
 
     parsed = await _validate(
         db_path,
         [
-            f"1, <@{FERRARI_DRIVER}>, <@&{OLD_ROLE}>, 46:23.569, 1:14.523, N/A",
-            f"2, <@{RIVAL_DRIVER}>, <@&{RIVAL_ROLE}>, +5.000, 1:14.600, N/A",
+            f"1, <@{FERRARI_DRIVER}>, Ferrari, 46:23.569, 1:14.523, N/A",
+            f"2, <@{RIVAL_DRIVER}>, Rival, +5.000, 1:14.600, N/A",
         ],
     )
 
@@ -269,42 +269,56 @@ async def test_submission_resolves_a_role_to_the_division_team(tmp_path):
     assert [row.team_instance_id for row in parsed] == [teams["Ferrari"], teams["Rival"]]
 
 
-async def test_submission_rejects_a_role_of_no_team_in_the_division(tmp_path):
+async def test_submission_rejects_a_shorthand_of_no_team_in_the_division(tmp_path):
     db_path, _teams = await _league(tmp_path)
 
     errors = await _validate(
         db_path,
         [
-            f"1, <@{FERRARI_DRIVER}>, <@&{OLD_ROLE}>, 46:23.569, 1:14.523, N/A",
-            f"2, <@{RIVAL_DRIVER}>, <@&4242>, +5.000, 1:14.600, N/A",
+            f"1, <@{FERRARI_DRIVER}>, Ferrari, 46:23.569, 1:14.523, N/A",
+            f"2, <@{RIVAL_DRIVER}>, Ghost, +5.000, 1:14.600, N/A",
         ],
     )
 
-    assert "Row 2: <@&4242> is not the role of a team of this division." in errors
+    assert "Row 2: No team of this division has the shorthand `Ghost`." in errors
 
 
-async def test_a_replaced_role_no_longer_names_the_team(tmp_path):
-    """Resolved once, when typed: the old role names nothing after the change."""
+async def test_submission_refuses_a_role_mention_in_the_team_column(tmp_path):
+    """A team is typed by its shorthand alone; its role is only for mentioning it (#381,
+    decided 2026-09-22). A mention of the team's own role is refused, saying so."""
     db_path, _teams = await _league(tmp_path)
-    await _replace_ferrari_role(db_path)
 
     errors = await _validate(
         db_path, [f"1, <@{FERRARI_DRIVER}>, <@&{OLD_ROLE}>, 46:23.569, 1:14.523, N/A"]
     )
 
-    assert f"Row 1: <@&{OLD_ROLE}> is not the role of a team of this division." in errors
+    assert (
+        f"Row 1: <@&{OLD_ROLE}> is a role, and a role does not name a team. "
+        "Name a team by its shorthand."
+    ) in errors
+
+
+async def test_the_shorthand_still_names_the_team_after_its_role_is_replaced(tmp_path):
+    db_path, teams = await _league(tmp_path)
+    await _replace_ferrari_role(db_path)
+
+    parsed = await _validate(
+        db_path, [f"1, <@{FERRARI_DRIVER}>, Ferrari, 46:23.569, 1:14.523, N/A"]
+    )
+
+    assert [row.team_instance_id for row in parsed] == [teams["Ferrari"]]
 
 
 async def test_a_refusal_names_the_team_a_driver_is_seated_in(tmp_path):
-    """By name, while echoing the role that was typed."""
+    """By name, while echoing the shorthand that was typed."""
     db_path, _teams = await _league(tmp_path)
 
     errors = await _validate(
-        db_path, [f"1, <@{FERRARI_DRIVER}>, <@&{RIVAL_ROLE}>, 46:23.569, 1:14.523, N/A"]
+        db_path, [f"1, <@{FERRARI_DRIVER}>, Rival, 46:23.569, 1:14.523, N/A"]
     )
 
     assert errors == [
-        f"Row 1: driver <@{FERRARI_DRIVER}> submitted as <@&{RIVAL_ROLE}> "
+        f"Row 1: driver <@{FERRARI_DRIVER}> submitted as Rival "
         "but is assigned to **Ferrari**."
     ]
 
@@ -312,12 +326,12 @@ async def test_a_refusal_names_the_team_a_driver_is_seated_in(tmp_path):
 async def test_a_refusal_names_the_team_an_earlier_session_recorded_across_a_role_change(
     tmp_path,
 ):
-    """Qualifying stood under Ferrari's old role. Once the role is replaced, that role names
-    nothing — the refusal names the team the session recorded, which is Ferrari still."""
+    """Qualifying was recorded while Ferrari held its old role. Once the role is replaced,
+    the refusal still names the team the session recorded, which is Ferrari."""
     db_path, _teams = await _league(tmp_path)
     parsed = await _validate(
         db_path,
-        [f"1, <@{FERRARI_DRIVER}>, <@&{OLD_ROLE}>, Soft, 1:23.456, N/A"],
+        [f"1, <@{FERRARI_DRIVER}>, Ferrari, Soft, 1:23.456, N/A"],
         SessionType.FEATURE_QUALIFYING,
     )
     await save_session_result(
@@ -331,29 +345,28 @@ async def test_a_refusal_names_the_team_an_earlier_session_recorded_across_a_rol
 
     errors = await _validate(
         db_path,
-        [f"1, <@{FERRARI_DRIVER}>, <@&{RIVAL_ROLE}>, 46:23.569, 1:14.523, N/A"],
+        [f"1, <@{FERRARI_DRIVER}>, Rival, 46:23.569, 1:14.523, N/A"],
         other=other,
     )
 
     assert (
         f"Row 1: driver <@{FERRARI_DRIVER}> was recorded under **Ferrari** in Feature "
-        f"Qualifying of this round, but is submitted here as <@&{RIVAL_ROLE}>."
+        f"Qualifying of this round, but is submitted here as Rival."
     ) in errors
 
 
-# ── A team may be typed by its shorthand (#381) ───────────────────────────
+# ── A team is typed by its shorthand (#381) ────────────────────────────────
 
 
 async def test_submission_names_a_team_by_its_shorthand(tmp_path):
-    """The role identifies a team; its shorthand is an alias a league may type instead, in any
-    case. Either resolves to the same division team."""
+    """A team is typed by its shorthand, in any case (#381)."""
     db_path, teams = await _league(tmp_path)
 
     parsed = await _validate(
         db_path,
         [
             f"1, <@{FERRARI_DRIVER}>, FERRARI, 46:23.569, 1:14.523, N/A",
-            f"2, <@{RIVAL_DRIVER}>, <@&{RIVAL_ROLE}>, +5.000, 1:14.600, N/A",
+            f"2, <@{RIVAL_DRIVER}>, rival, +5.000, 1:14.600, N/A",
         ],
     )
 
@@ -361,8 +374,8 @@ async def test_submission_names_a_team_by_its_shorthand(tmp_path):
 
 
 async def test_submission_refuses_the_shorthand_of_a_team_with_no_role(tmp_path):
-    """Decided 2026-09-22: the role is what identifies a team, and the shorthand only an alias
-    for it, so a team with no role stays out of a submission by either name."""
+    """Decided 2026-09-22, and reconfirmed when the role stopped naming a team: a team with no
+    role stays out of a submission."""
     db_path, _teams = await _league(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM team_role_configs WHERE team_name = 'Ferrari'")
@@ -412,7 +425,7 @@ async def test_an_empty_team_column_is_refused(tmp_path):
 
     errors = await _validate(db_path, [f"1, <@{RIVAL_DRIVER}>, , 46:23.569, 1:14.523, N/A"])
 
-    assert errors == ["Row 1: Team must be named, by its role or its shorthand."]
+    assert errors == ["Row 1: Team must be named, by its shorthand."]
 
 
 async def test_a_refusal_echoes_the_shorthand_as_typed(tmp_path):

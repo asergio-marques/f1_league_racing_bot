@@ -3179,17 +3179,18 @@ def _parse_outcome(time_field: str) -> OutcomeModifier:
 class ParsedQualifyingRow:
     position: int
     driver_user_id: int
-    #: The role the team column mentions, or None where it names the team by its shorthand.
+    #: The role the team column mentions, where it mentions one — which is refused, a team
+    #: being typed by its shorthand (#381). None where the column holds anything else.
     team_role_id: int | None
     #: The canonical compound, or None where the submission recorded none (v7.8.0).
     tyre: str | None
     best_lap: str           # time string or DNS/DNF/DSQ (in-game result)
     gap: str                # delta string or "N/A"
     outcome: OutcomeModifier  # derived from best_lap
-    #: The division's team *team_typed* names, set by ``validate_submission_block``. The role or
+    #: The division's team *team_typed* names, set by ``validate_submission_block``. The
     #: shorthand is only what was typed; the team is what is stored (#375, #381).
     team_instance_id: int | None = None
-    #: The team column as typed: the team's role or its shorthand (#381). Echoed in a refusal.
+    #: The team column as typed: the team's shorthand (#381). Echoed in a refusal.
     team_typed: str = ""
 
 
@@ -3205,7 +3206,7 @@ class ParsedRaceRow:
     outcome: OutcomeModifier  # derived from total_time
     # No post-race or appeal sanction: those are decided in the review stages, never pasted —
     # an amendment included, since #345 withdrew the two columns it used to take.
-    #: As on ParsedQualifyingRow: the team the typed role or shorthand resolved to (#375).
+    #: As on ParsedQualifyingRow: the team the typed shorthand resolved to (#375, #381).
     team_instance_id: int | None = None
     #: As on ParsedQualifyingRow.
     team_typed: str = ""
@@ -3263,7 +3264,7 @@ def _field_count_error(parts: list[str], expected: int, line: str) -> str:
 def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
     """Parse and validate a single qualifying-result line for the main submission wizard (6 fields).
 
-    Fields: Position, Driver mention, Team (its role or its shorthand), Tyre, Best Lap, Gap
+    Fields: Position, Driver mention, Team (its shorthand), Tyre, Best Lap, Gap
     Postrace and appeal penalty fields default to N/A; outcome is derived from Best Lap.
     """
     parts = [p.strip() for p in line.strip().split(",")]
@@ -3280,11 +3281,10 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
     if driver_user_id is None:
         return f"Driver must be a Discord member mention (<@user_id>), got `{driver_str}`"
 
-    # A team is named by its role or by its shorthand (#381), and which team either names is
-    # the division's business, settled by `validate_submission_block`. Only an empty field is
-    # refused here.
+    # A team is typed by its shorthand (#381), and which team a text names is the division's
+    # business, settled by `validate_submission_block`. Only an empty field is refused here.
     if not team_str:
-        return "Team must be named, by its role or its shorthand."
+        return "Team must be named, by its shorthand."
     team_role_id = parse_role_mention(team_str)
 
     tyre_error = _tyre_error(tyre)
@@ -3320,7 +3320,7 @@ def _validate_qualifying_row_wizard(line: str) -> ParsedQualifyingRow | str:
 def _validate_race_row_wizard(line: str, is_first: bool) -> ParsedRaceRow | str:
     """Parse and validate a single race-result line for the main submission wizard (6 fields).
 
-    Fields: Position, Driver mention, Team (its role or its shorthand), Total Time, Fastest Lap,
+    Fields: Position, Driver mention, Team (its shorthand), Total Time, Fastest Lap,
     Ingame Penalties
     Postrace and appeal penalty fields default to N/A; outcome is derived from Total Time.
     """
@@ -3338,11 +3338,10 @@ def _validate_race_row_wizard(line: str, is_first: bool) -> ParsedRaceRow | str:
     if driver_user_id is None:
         return f"Driver must be a Discord member mention (<@user_id>), got `{driver_str}`"
 
-    # A team is named by its role or by its shorthand (#381), and which team either names is
-    # the division's business, settled by `validate_submission_block`. Only an empty field is
-    # refused here.
+    # A team is typed by its shorthand (#381), and which team a text names is the division's
+    # business, settled by `validate_submission_block`. Only an empty field is refused here.
     if not team_str:
-        return "Team must be named, by its role or its shorthand."
+        return "Team must be named, by its shorthand."
     team_role_id = parse_role_mention(team_str)
 
     total_upper = total_time.upper()
@@ -3451,8 +3450,8 @@ def validate_submission_block(
 
     **A team is compared as the division's team, never as its role** (#375). *team_of_role*
     maps each non-reserve team's role to that team's id, and *team_of_shorthand* each such
-    team's shorthand, casefolded, to the same id: a team is identified by its role and may be
-    typed by its shorthand instead (#381). Each row's team is resolved through
+    team's shorthand, casefolded, to the same id. A team is typed by its shorthand alone
+    (#381): a role mention in the team column is refused. Each row's team is resolved through
     ``resolve_team_reference`` once, onto ``team_instance_id``; *driver_team_map* and
     *other_active_assignments* name teams by the same id. A league may give a team another
     role mid-season, and the rounds recorded before stay the team's all the same. So a
@@ -3527,17 +3526,14 @@ def validate_submission_block(
                 "is not registered in this division."
             )
 
-    # Each row's team must be a non-reserve team of the division, named by its role or its
-    # shorthand, and is resolved here to that team (#375, #381). Reserves sub *into* a real
-    # team, so the reserve team is never among those that may be named. Nor is a team with no
-    # role: the role is what identifies a team, and the shorthand only an alias for it.
+    # Each row's team must be a non-reserve team of the division, typed by its shorthand, and
+    # is resolved here to that team (#375, #381). Reserves sub *into* a real team, so the
+    # reserve team is never among those that may be named. Nor is a team with no role, as it
+    # never has been (reconfirmed 2026-09-22): `team_of_shorthand` holds neither.
     role_of_team = {team: role for role, team in team_of_role.items()}
-    namable: dict[int, dict] = {
-        team: {"id": team, "role_id": role, "name": None} for role, team in team_of_role.items()
-    }
-    for shorthand, team in (team_of_shorthand or {}).items():
-        if team in namable:
-            namable[team]["name"] = shorthand
+    namable = [
+        {"id": team, "name": shorthand} for shorthand, team in (team_of_shorthand or {}).items()
+    ]
 
     def _team(team_id: int) -> str:
         # By name where one is known, as every caller supplies; the team's role otherwise.
@@ -3545,10 +3541,7 @@ def validate_submission_block(
         return f"**{name}**" if name else f"<@&{role_of_team.get(team_id)}>"
 
     for row in parsed_rows:
-        typed = row.team_typed or f"<@&{row.team_role_id}>"
-        reference = resolve_team_reference(
-            typed, list(namable.values()), scope=" of this division"
-        )
+        reference = resolve_team_reference(row.team_typed, namable, scope=" of this division")
         row.team_instance_id = reference.team["id"] if reference.team is not None else None
         if row.team_instance_id is None:
             errors.append(f"Row {row.position}: {reference.refusal}")
@@ -3836,9 +3829,9 @@ class DivisionValidationData(NamedTuple):
     reserve_driver_ids: set[int]
     #: Team id -> its name, for the messages that name a team.
     team_names: dict[int, str]
-    #: Each non-reserve team's shorthand, casefolded -> that team's id: the alias a submission
-    #: may type instead of the role (#381). Only a team with a role is here, as in
-    #: ``team_of_role``: the shorthand is an alias for a team the role identifies.
+    #: Each non-reserve team's shorthand, casefolded -> that team's id: how a submission names
+    #: a team (#381). Only a team with a role is here, as in ``team_of_role``: a team with no
+    #: role stays out of a submission (reconfirmed 2026-09-22).
     team_of_shorthand: dict[str, int]
 
 
@@ -4461,13 +4454,13 @@ async def run_result_submission_job(round_id: int, bot) -> None:
         if session_type.is_qualifying:
             format_hint = (
                 "Format: `Position, @Driver, Team, Tyre, BestLap, Gap`\n"
-                "Team: its role or its shorthand.\n"
+                "Team: its shorthand.\n"
                 f"Tyre: {tyre_compound_list()} (or blank for none recorded)."
             )
         else:
             format_hint = (
                 "Format: `Position, @Driver, Team, TotalTime, FastestLap, TimePenalties`\n"
-                "Team: its role or its shorthand.\n"
+                "Team: its shorthand.\n"
                 "Optional first line: `FL: @Driver` to designate the fastest-lap holder "
                 "(use when two drivers share the same lap time)."
             )
@@ -5078,13 +5071,13 @@ async def _resubmit_collection_task(
         if session_type.is_qualifying:
             format_hint = (
                 "Format: `Position, @Driver, Team, Tyre, BestLap, Gap`\n"
-                "Team: its role or its shorthand.\n"
+                "Team: its shorthand.\n"
                 f"Tyre: {tyre_compound_list()} (or blank for none recorded)."
             )
         else:
             format_hint = (
                 "Format: `Position, @Driver, Team, TotalTime, FastestLap, TimePenalties`\n"
-                "Team: its role or its shorthand.\n"
+                "Team: its shorthand.\n"
                 "Optional first line: `FL: @Driver` to override fastest-lap holder."
             )
 

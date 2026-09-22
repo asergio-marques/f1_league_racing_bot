@@ -35,6 +35,7 @@ def _validate(lines: list[str]):
         session_type=SessionType.FEATURE_QUALIFYING,
         division_driver_ids={NOW, OTHER},
         team_of_role={TEAM_A: TEAM_A, TEAM_B: TEAM_B},
+        team_of_shorthand={f"t{TEAM_A}": TEAM_A, f"t{TEAM_B}": TEAM_B},
         reserve_team_role_id=None,
         driver_team_map={NOW: TEAM_A, OTHER: TEAM_B},
         current_of={PAST: NOW},
@@ -43,8 +44,8 @@ def _validate(lines: list[str]):
 
 def test_a_row_naming_a_past_account_validates_for_the_current_one():
     result = _validate([
-        f"1, <@{PAST}>, <@&{TEAM_A}>, Soft, 1:23.456, N/A",
-        f"2, <@{OTHER}>, <@&{TEAM_B}>, Soft, 1:24.000, +0:00.544",
+        f"1, <@{PAST}>, T{TEAM_A}, Soft, 1:23.456, N/A",
+        f"2, <@{OTHER}>, T{TEAM_B}, Soft, 1:24.000, +0:00.544",
     ])
 
     assert all(isinstance(r, ParsedQualifyingRow) for r in result)
@@ -54,8 +55,8 @@ def test_a_row_naming_a_past_account_validates_for_the_current_one():
 def test_one_driver_named_by_both_accounts_is_the_same_driver_twice():
     """E5."""
     result = _validate([
-        f"1, <@{PAST}>, <@&{TEAM_A}>, Soft, 1:23.456, N/A",
-        f"2, <@{NOW}>, <@&{TEAM_A}>, Soft, 1:24.000, +0:00.544",
+        f"1, <@{PAST}>, T{TEAM_A}, Soft, 1:23.456, N/A",
+        f"2, <@{NOW}>, T{TEAM_A}, Soft, 1:24.000, +0:00.544",
     ])
 
     assert all(isinstance(r, str) for r in result)
