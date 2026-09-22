@@ -13,6 +13,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from db.database import get_connection, run_migrations
 from services.attendance_service import (
     record_attendance_from_results,
     record_attendance_from_results_full_recompute,
@@ -24,181 +25,30 @@ from services.attendance_service import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _create_schema(db: aiosqlite.Connection) -> None:
-    """Create the minimal schema required by the attendance pipeline tests."""
-    db.row_factory = aiosqlite.Row
+async def _make_db(tmp_path, name: str = "test.db") -> str:
+    """A migrated database holding season 1, active, and its division 10.
 
-    await db.execute("CREATE TABLE seasons (id INTEGER PRIMARY KEY)")
-    await db.execute("INSERT INTO seasons VALUES (1)")
-
-    await db.execute(
-        """
-        CREATE TABLE divisions (
-            id INTEGER PRIMARY KEY,
-            season_id INTEGER NOT NULL
+    The penalties are 2 for failing to check in, 1 for an absence and 3 for a no-show, set
+    here rather than left to the schema's defaults of 1/1/1: every expected value in this
+    file is written against them, and three different numbers are what tell the rules apart.
+    """
+    db_file = str(tmp_path / name)
+    await run_migrations(db_file)
+    async with get_connection(db_file) as db:
+        await db.execute(
+            "INSERT INTO attendance_config "
+            "(id, module_enabled, no_rsvp_penalty, absent_penalty, no_show_penalty) "
+            "VALUES (1, 1, 2, 1, 3)"
         )
-        """
-    )
-    await db.execute("INSERT INTO divisions VALUES (10, 1)")
-
-    await db.execute(
-        """
-        -- Mirrors the shape migration 053 leaves, not the migrations themselves: this file
-        -- hand-builds a minimal schema. Keep the states in step with models.round.RoundStatus.
-        CREATE TABLE rounds (
-            id INTEGER PRIMARY KEY,
-            division_id INTEGER NOT NULL,
-            round_number INTEGER NOT NULL DEFAULT 1,
-            status TEXT NOT NULL DEFAULT 'NOT_RUN'
-                CHECK (status IN ('NOT_RUN', 'AWAITING_RESULTS',
-                                  'AWAITING_REPORT_VERDICTS', 'AWAITING_APPEAL_VERDICTS',
-                                  'FINAL', 'CANCELLED'))
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, '2026-01-01', 'ACTIVE')"
         )
-        """
-    )
-
-    await db.execute(
-        """
-        CREATE TABLE team_instances (
-            id INTEGER PRIMARY KEY,
-            division_id INTEGER NOT NULL,
-            is_reserve INTEGER NOT NULL DEFAULT 0,
-            name TEXT NOT NULL DEFAULT 'Team',
-            full_name TEXT NOT NULL DEFAULT 'Team'
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id) "
+            "VALUES (10, 1, 'Pro', 3010)"
         )
-        """
-    )
-
-    await db.execute(
-        """
-        CREATE TABLE team_seats (
-            id INTEGER PRIMARY KEY,
-            team_instance_id INTEGER NOT NULL,
-            driver_profile_id INTEGER
-        )
-        """
-    )
-
-    await db.execute(
-        """
-        CREATE TABLE driver_profiles (
-            id INTEGER PRIMARY KEY,
-            discord_user_id TEXT NOT NULL
-        )
-        """
-    )
-
-    await db.execute(
-        """
-        CREATE TABLE driver_season_assignments (
-            id INTEGER PRIMARY KEY,
-            driver_profile_id INTEGER NOT NULL,
-            season_id INTEGER NOT NULL,
-            division_id INTEGER NOT NULL,
-            team_seat_id INTEGER NOT NULL
-        )
-        """
-    )
-
-    await db.execute(
-        """
-        CREATE TABLE session_results (
-            id INTEGER PRIMARY KEY,
-            round_id INTEGER NOT NULL,
-            session_type TEXT NOT NULL DEFAULT 'RACE',
-            status TEXT NOT NULL DEFAULT 'ACTIVE'
-        )
-        """
-    )
-
-    await db.execute(
-        """
-        CREATE TABLE race_session_results (
-            id INTEGER PRIMARY KEY,
-            session_result_id INTEGER NOT NULL,
-            driver_profile_id INTEGER,
-            driver_user_id INTEGER NOT NULL,
-            finishing_position INTEGER NOT NULL DEFAULT 1,
-            outcome TEXT
-        )
-        """
-    )
-
-    await db.execute(
-        """
-        CREATE TABLE qualifying_session_results (
-            id INTEGER PRIMARY KEY,
-            session_result_id INTEGER NOT NULL,
-            driver_profile_id INTEGER,
-            driver_user_id INTEGER NOT NULL,
-            finishing_position INTEGER NOT NULL DEFAULT 1,
-            outcome TEXT
-        )
-        """
-    )
-
-    await db.execute(
-        """
-        CREATE TABLE driver_round_attendance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            round_id INTEGER NOT NULL,
-            division_id INTEGER NOT NULL,
-            driver_profile_id INTEGER NOT NULL,
-            rsvp_status TEXT NOT NULL DEFAULT 'NO_RSVP',
-            accepted_at TEXT,
-            assigned_team_id INTEGER,
-            is_standby INTEGER NOT NULL DEFAULT 0,
-            attended INTEGER,
-            points_awarded INTEGER,
-            total_points_after INTEGER
-        )
-        """
-    )
-
-    await db.execute(
-        """
-        CREATE TABLE attendance_config (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            module_enabled INTEGER NOT NULL DEFAULT 1,
-            rsvp_notice_days INTEGER NOT NULL DEFAULT 5,
-            rsvp_last_notice_hours INTEGER NOT NULL DEFAULT 24,
-            rsvp_deadline_hours INTEGER NOT NULL DEFAULT 2,
-            no_rsvp_penalty INTEGER NOT NULL DEFAULT 2,
-            absent_penalty INTEGER NOT NULL DEFAULT 1,
-            no_show_penalty INTEGER NOT NULL DEFAULT 3,
-            autoreserve_threshold INTEGER,
-            autosack_threshold INTEGER
-        )
-        """
-    )
-    await db.execute("INSERT INTO attendance_config (id) VALUES (1)")
-
-    await db.execute(
-        """
-        CREATE TABLE attendance_division_config (
-            division_id INTEGER PRIMARY KEY,
-            rsvp_channel_id TEXT,
-            attendance_channel_id TEXT,
-            attendance_message_id TEXT
-        )
-        """
-    )
-
-    await db.execute(
-        """
-        CREATE TABLE attendance_pardons (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            attendance_id INTEGER NOT NULL REFERENCES driver_round_attendance(id) ON DELETE CASCADE,
-            pardon_type TEXT NOT NULL CHECK (pardon_type IN ('NO_RSVP', 'ABSENT', 'NO_SHOW')),
-            justification TEXT NOT NULL,
-            granted_by INTEGER NOT NULL,
-            granted_at TEXT NOT NULL,
-            UNIQUE (attendance_id, pardon_type)
-        )
-        """
-    )
-
-    await db.commit()
+        await db.commit()
+    return db_file
 
 
 def _now_iso() -> str:
@@ -221,16 +71,31 @@ async def _setup_division(db, *, division_id=10, full_team_id=1, reserve_team_id
     )
 
 
-async def _add_driver(db, *, profile_id, user_id, team_instance_id, division_id=10, season_id=1):
-    """Insert a driver profile, seat, and assignment."""
+async def _add_round(db, *, round_id, round_number, division_id=10, status="NOT_RUN"):
+    """Insert a round of the division, a week apart by number."""
     await db.execute(
-        "INSERT OR IGNORE INTO driver_profiles (id, discord_user_id) VALUES (?, ?)",
+        "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at, status) "
+        "VALUES (?, ?, ?, 'NORMAL', ?, ?)",
+        (round_id, division_id, round_number, f"2026-06-{round_number * 7:02d}T18:00:00", status),
+    )
+
+
+async def _add_driver(db, *, profile_id, user_id, team_instance_id, division_id=10, season_id=1):
+    """Insert a driver profile, seat, and assignment.
+
+    A plain INSERT: an `OR IGNORE` here once swallowed a NOT NULL failure and discarded
+    every driver this file seeded, and the tests still passed on the empty tables (#244).
+    """
+    await db.execute(
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+        "VALUES (?, ?, 'ASSIGNED')",
         (profile_id, str(user_id)),
     )
     seat_id = profile_id * 100
     await db.execute(
-        "INSERT INTO team_seats (id, team_instance_id, driver_profile_id) VALUES (?, ?, ?)",
-        (seat_id, team_instance_id, profile_id),
+        "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+        "VALUES (?, ?, ?, ?)",
+        (seat_id, team_instance_id, profile_id, profile_id),
     )
     await db.execute(
         "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, team_seat_id) VALUES (?, ?, ?, ?)",
@@ -246,14 +111,31 @@ async def _add_dra(db, *, round_id, division_id=10, driver_profile_id, rsvp_stat
     )
 
 
-async def _add_session_result(db, *, round_id, driver_profile_id, user_id, outcome=None):
-    """Insert a session_result + driver_session_result row (driver attended)."""
-    await db.execute("INSERT INTO session_results (round_id, status) VALUES (?, 'ACTIVE')", (round_id,))
-    cur = await db.execute("SELECT last_insert_rowid()")
-    sr_id = (await cur.fetchone())[0]
+async def _add_session_result(db, *, round_id, driver_profile_id, user_id):
+    """Classify the driver in the round's race, which is what attending it means.
+
+    A round has one race session, so a second driver joins the first one's classification
+    rather than opening a session of their own.
+    """
     await db.execute(
-        "INSERT INTO race_session_results (session_result_id, driver_profile_id, driver_user_id, outcome) VALUES (?, ?, ?, ?)",
-        (sr_id, driver_profile_id, user_id, outcome),
+        "INSERT OR IGNORE INTO session_results (round_id, division_id, session_type, status) "
+        "SELECT id, division_id, 'FEATURE_RACE', 'ACTIVE' FROM rounds WHERE id = ?",
+        (round_id,),
+    )
+    session = await (await db.execute(
+        "SELECT id FROM session_results WHERE round_id = ? AND session_type = 'FEATURE_RACE'",
+        (round_id,),
+    )).fetchone()
+    team = await (await db.execute(
+        "SELECT team_instance_id FROM team_seats WHERE driver_profile_id = ?",
+        (driver_profile_id,),
+    )).fetchone()
+    await db.execute(
+        "INSERT INTO race_session_results "
+        "(session_result_id, driver_profile_id, driver_user_id, team_instance_id, "
+        "finishing_position) "
+        "SELECT ?, ?, ?, ?, COUNT(*) + 1 FROM race_session_results WHERE session_result_id = ?",
+        (session[0], driver_profile_id, user_id, team[0], session[0]),
     )
 
 
@@ -264,15 +146,14 @@ async def _add_session_result(db, *, round_id, driver_profile_id, user_id, outco
 @pytest.mark.asyncio
 async def test_record_attendance_sets_attended_flags(tmp_path):
     """FR-001: attended=1 for drivers with results, attended=0 for absent drivers."""
-    db_file = str(tmp_path / "test.db")
-    async with aiosqlite.connect(db_file) as db:
-        await _create_schema(db)
+    db_file = await _make_db(tmp_path)
+    async with get_connection(db_file) as db:
         await _setup_division(db)
 
         # Driver 1 attends; Driver 2 absent
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
         await _add_driver(db, profile_id=2, user_id=1002, team_instance_id=1)
-        await db.execute("INSERT INTO rounds (id, division_id, round_number) VALUES (1, 10, 1)")
+        await _add_round(db, round_id=1, round_number=1)
         await _add_dra(db, round_id=1, driver_profile_id=1)
         await _add_dra(db, round_id=1, driver_profile_id=2)
         await _add_session_result(db, round_id=1, driver_profile_id=1, user_id=1001)
@@ -280,8 +161,7 @@ async def test_record_attendance_sets_attended_flags(tmp_path):
 
     await record_attendance_from_results(db_file, round_id=1, division_id=10)
 
-    async with aiosqlite.connect(db_file) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_connection(db_file) as db:
         cur = await db.execute(
             "SELECT driver_profile_id, attended FROM driver_round_attendance WHERE round_id = 1 ORDER BY driver_profile_id"
         )
@@ -298,22 +178,20 @@ async def test_record_attendance_sets_attended_flags(tmp_path):
 @pytest.mark.asyncio
 async def test_record_attendance_excludes_reserve_team_drivers(tmp_path):
     """FR-002: Reserve-team driver's DRA row is not updated."""
-    db_file = str(tmp_path / "test.db")
-    async with aiosqlite.connect(db_file) as db:
-        await _create_schema(db)
+    db_file = await _make_db(tmp_path)
+    async with get_connection(db_file) as db:
         await _setup_division(db)
 
         # Driver 3 is in the Reserve team
         await _add_driver(db, profile_id=3, user_id=1003, team_instance_id=2)  # Reserve
-        await db.execute("INSERT INTO rounds (id, division_id, round_number) VALUES (1, 10, 1)")
+        await _add_round(db, round_id=1, round_number=1)
         await _add_dra(db, round_id=1, driver_profile_id=3)
         await _add_session_result(db, round_id=1, driver_profile_id=3, user_id=1003)
         await db.commit()
 
     await record_attendance_from_results(db_file, round_id=1, division_id=10)
 
-    async with aiosqlite.connect(db_file) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_connection(db_file) as db:
         cur = await db.execute(
             "SELECT attended FROM driver_round_attendance WHERE driver_profile_id = 3"
         )
@@ -330,13 +208,12 @@ async def test_record_attendance_excludes_reserve_team_drivers(tmp_path):
 @pytest.mark.asyncio
 async def test_record_attendance_upgrades_absent_to_present(tmp_path):
     """FR-003: A second call can flip 0→1 but never 1→0."""
-    db_file = str(tmp_path / "test.db")
-    async with aiosqlite.connect(db_file) as db:
-        await _create_schema(db)
+    db_file = await _make_db(tmp_path)
+    async with get_connection(db_file) as db:
         await _setup_division(db)
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
         await _add_driver(db, profile_id=2, user_id=1002, team_instance_id=1)
-        await db.execute("INSERT INTO rounds (id, division_id, round_number) VALUES (1, 10, 1)")
+        await _add_round(db, round_id=1, round_number=1)
         await _add_dra(db, round_id=1, driver_profile_id=1)
         await _add_dra(db, round_id=1, driver_profile_id=2)
         # First call: driver 1 absent, driver 2 attended
@@ -346,14 +223,13 @@ async def test_record_attendance_upgrades_absent_to_present(tmp_path):
     await record_attendance_from_results(db_file, round_id=1, division_id=10)
 
     # Second call: driver 1 now has a result too (late session)
-    async with aiosqlite.connect(db_file) as db:
+    async with get_connection(db_file) as db:
         await _add_session_result(db, round_id=1, driver_profile_id=1, user_id=1001)
         await db.commit()
 
     await record_attendance_from_results(db_file, round_id=1, division_id=10)
 
-    async with aiosqlite.connect(db_file) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_connection(db_file) as db:
         cur = await db.execute(
             "SELECT driver_profile_id, attended FROM driver_round_attendance ORDER BY driver_profile_id"
         )
@@ -370,12 +246,11 @@ async def test_record_attendance_upgrades_absent_to_present(tmp_path):
 @pytest.mark.asyncio
 async def test_record_attendance_full_recompute_can_flip_to_absent(tmp_path):
     """Amendment recalculation may flip attended 1→0 (no upgrade-only constraint)."""
-    db_file = str(tmp_path / "test.db")
-    async with aiosqlite.connect(db_file) as db:
-        await _create_schema(db)
+    db_file = await _make_db(tmp_path)
+    async with get_connection(db_file) as db:
         await _setup_division(db)
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
-        await db.execute("INSERT INTO rounds (id, division_id, round_number) VALUES (1, 10, 1)")
+        await _add_round(db, round_id=1, round_number=1)
         await _add_dra(db, round_id=1, driver_profile_id=1)
         # Initially attended
         await _add_session_result(db, round_id=1, driver_profile_id=1, user_id=1001)
@@ -384,15 +259,14 @@ async def test_record_attendance_full_recompute_can_flip_to_absent(tmp_path):
     await record_attendance_from_results(db_file, round_id=1, division_id=10)
 
     # Remove result rows to simulate amendment correcting a wrong entry
-    async with aiosqlite.connect(db_file) as db:
+    async with get_connection(db_file) as db:
         await db.execute("DELETE FROM race_session_results")
         await db.execute("DELETE FROM session_results")
         await db.commit()
 
     await record_attendance_from_results_full_recompute(db_file, round_id=1, division_id=10)
 
-    async with aiosqlite.connect(db_file) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_connection(db_file) as db:
         cur = await db.execute("SELECT attended FROM driver_round_attendance WHERE driver_profile_id = 1")
         row = await cur.fetchone()
 
@@ -414,14 +288,10 @@ async def test_record_attendance_full_recompute_can_flip_to_absent(tmp_path):
 
 async def _make_single_driver_db(tmp_path, *, rsvp_status: str, attended: int) -> str:
     """Return a DB path seeded with one full-time driver for round 1, division 10."""
-    db_file = str(tmp_path / f"test_{rsvp_status}_{attended}.db")
-    async with aiosqlite.connect(db_file) as db:
-        await _create_schema(db)
+    db_file = await _make_db(tmp_path, f"test_{rsvp_status}_{attended}.db")
+    async with get_connection(db_file) as db:
         await _setup_division(db)
-        await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, status) "
-            "VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')"
-        )
+        await _add_round(db, round_id=1, round_number=1, status="AWAITING_APPEAL_VERDICTS")
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
         await db.execute(
             "INSERT INTO driver_round_attendance "
@@ -434,8 +304,7 @@ async def _make_single_driver_db(tmp_path, *, rsvp_status: str, attended: int) -
 
 
 async def _points(db_file: str) -> int:
-    async with aiosqlite.connect(db_file) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_connection(db_file) as db:
         cur = await db.execute(
             "SELECT points_awarded FROM driver_round_attendance WHERE driver_profile_id = 1"
         )
@@ -523,12 +392,11 @@ async def test_points_case_d_declined_absent(tmp_path):
 @pytest.mark.asyncio
 async def test_point_distribution_all_scenarios(tmp_path):
     """US3 rules table: verify points_awarded for all RSVP × attendance combinations."""
-    db_file = str(tmp_path / "test.db")
-    async with aiosqlite.connect(db_file) as db:
-        await _create_schema(db)
+    db_file = await _make_db(tmp_path)
+    async with get_connection(db_file) as db:
         # Penalty config: no_rsvp=2, absent=1, no_show=3
         await _setup_division(db)
-        await db.execute("INSERT INTO rounds (id, division_id, round_number, status) VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')")
+        await _add_round(db, round_id=1, round_number=1, status="AWAITING_APPEAL_VERDICTS")
 
         scenarios = [
             # (profile_id, rsvp_status, attended, expected_points)
@@ -551,8 +419,7 @@ async def test_point_distribution_all_scenarios(tmp_path):
     await distribute_attendance_points(db_file, round_id=1, division_id=10)
 
     expected = {1: 2, 2: 3, 3: 0, 4: 3, 5: 1, 6: 1}
-    async with aiosqlite.connect(db_file) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_connection(db_file) as db:
         cur = await db.execute("SELECT driver_profile_id, points_awarded FROM driver_round_attendance ORDER BY driver_profile_id")
         rows = await cur.fetchall()
 
@@ -569,11 +436,10 @@ async def test_point_distribution_all_scenarios(tmp_path):
 @pytest.mark.asyncio
 async def test_point_distribution_with_pardons(tmp_path):
     """FR-013/FR-015: pardons waive only their matching component."""
-    db_file = str(tmp_path / "test.db")
-    async with aiosqlite.connect(db_file) as db:
-        await _create_schema(db)
+    db_file = await _make_db(tmp_path)
+    async with get_connection(db_file) as db:
         await _setup_division(db)
-        await db.execute("INSERT INTO rounds (id, division_id, round_number, status) VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')")
+        await _add_round(db, round_id=1, round_number=1, status="AWAITING_APPEAL_VERDICTS")
 
         # Driver: NO_RSVP + absent → base = 2+1 = 3; with NO_RSVP pardon → net = 1
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
@@ -589,8 +455,7 @@ async def test_point_distribution_with_pardons(tmp_path):
 
     await distribute_attendance_points(db_file, round_id=1, division_id=10)
 
-    async with aiosqlite.connect(db_file) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_connection(db_file) as db:
         cur = await db.execute("SELECT points_awarded FROM driver_round_attendance WHERE driver_profile_id = 1")
         row = await cur.fetchone()
 
@@ -605,20 +470,19 @@ async def test_point_distribution_with_pardons(tmp_path):
 @pytest.mark.asyncio
 async def test_total_points_after_accumulates_across_rounds(tmp_path):
     """FR-014: total_points_after is cumulative across finalized rounds."""
-    db_file = str(tmp_path / "test.db")
-    async with aiosqlite.connect(db_file) as db:
-        await _create_schema(db)
+    db_file = await _make_db(tmp_path)
+    async with get_connection(db_file) as db:
         await _setup_division(db)
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
 
         # Round 1 — already finalized — driver earned 2 points
-        await db.execute("INSERT INTO rounds (id, division_id, round_number, status) VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')")
+        await _add_round(db, round_id=1, round_number=1, status="AWAITING_APPEAL_VERDICTS")
         await db.execute(
             "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, rsvp_status, attended, points_awarded, total_points_after) VALUES (1, 10, 1, 'NO_RSVP', 1, 2, 2)"
         )
 
         # Round 2 — being finalized now
-        await db.execute("INSERT INTO rounds (id, division_id, round_number, status) VALUES (2, 10, 2, 'AWAITING_APPEAL_VERDICTS')")
+        await _add_round(db, round_id=2, round_number=2, status="AWAITING_APPEAL_VERDICTS")
         await db.execute(
             "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, rsvp_status, attended) VALUES (2, 10, 1, 'NO_RSVP', 1)"
         )
@@ -626,8 +490,7 @@ async def test_total_points_after_accumulates_across_rounds(tmp_path):
 
     await distribute_attendance_points(db_file, round_id=2, division_id=10)
 
-    async with aiosqlite.connect(db_file) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_connection(db_file) as db:
         cur = await db.execute(
             "SELECT points_awarded, total_points_after FROM driver_round_attendance WHERE round_id = 2"
         )
@@ -654,14 +517,10 @@ async def _make_reserve_driver_db(
     rsvp_status: str = "ACCEPTED",
     with_no_show_pardon: bool = False,
 ) -> str:
-    db_file = str(tmp_path / f"reserve_{rsvp_status}_{attended}_{assigned_team_id}.db")
-    async with aiosqlite.connect(db_file) as db:
-        await _create_schema(db)
+    db_file = await _make_db(tmp_path, f"reserve_{rsvp_status}_{attended}_{assigned_team_id}.db")
+    async with get_connection(db_file) as db:
         await _setup_division(db)
-        await db.execute(
-            "INSERT INTO rounds (id, division_id, round_number, status) "
-            "VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')"
-        )
+        await _add_round(db, round_id=1, round_number=1, status="AWAITING_APPEAL_VERDICTS")
         # Driver seated in the Reserve team (is_reserve=1, team_instance_id=2)
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=2)
         await db.execute(
@@ -729,12 +588,11 @@ async def test_allocated_reserve_no_show_pardon_waives_penalty(tmp_path):
 @pytest.mark.asyncio
 async def test_amendment_recalculation_preserves_pardons(tmp_path):
     """FR-029: existing attendance_pardons rows are not deleted during recalculation."""
-    db_file = str(tmp_path / "test.db")
-    async with aiosqlite.connect(db_file) as db:
-        await _create_schema(db)
+    db_file = await _make_db(tmp_path)
+    async with get_connection(db_file) as db:
         await _setup_division(db)
         await _add_driver(db, profile_id=1, user_id=1001, team_instance_id=1)
-        await db.execute("INSERT INTO rounds (id, division_id, round_number, status) VALUES (1, 10, 1, 'AWAITING_APPEAL_VERDICTS')")
+        await _add_round(db, round_id=1, round_number=1, status="AWAITING_APPEAL_VERDICTS")
         # DRA row with id=10 — driver was absent with NO_RSVP
         await db.execute(
             "INSERT INTO driver_round_attendance (id, round_id, division_id, driver_profile_id, rsvp_status, attended) VALUES (10, 1, 10, 1, 'NO_RSVP', 0)"
@@ -747,15 +605,14 @@ async def test_amendment_recalculation_preserves_pardons(tmp_path):
         await db.commit()
 
     # Simulate amendment: driver now appears in results
-    async with aiosqlite.connect(db_file) as db:
+    async with get_connection(db_file) as db:
         await _add_session_result(db, round_id=1, driver_profile_id=1, user_id=1001)
         await db.commit()
 
     await record_attendance_from_results_full_recompute(db_file, round_id=1, division_id=10)
     await distribute_attendance_points(db_file, round_id=1, division_id=10)
 
-    async with aiosqlite.connect(db_file) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_connection(db_file) as db:
         # Pardon must still exist
         cur = await db.execute("SELECT COUNT(*) AS cnt FROM attendance_pardons WHERE attendance_id = 10")
         row = await cur.fetchone()
@@ -782,23 +639,11 @@ async def test_amendment_recalculation_preserves_pardons(tmp_path):
 async def _make_two_round_db(tmp_path):
     """One full-time driver with attendance rows in two finalised rounds.
 
-    **Built from the production migrations**, not from a hand-written ``CREATE TABLE``.
-    The migrated ``driver_round_attendance`` declares
-    ``UNIQUE (round_id, division_id, driver_profile_id)`` and foreign keys to ``rounds``,
-    ``divisions``, ``driver_profiles`` and ``team_instances`` — none of which the hand-built
-    copy in this file carries — so every parent row below has to exist and be seeded in
-    order. That is the point: a fixture that did not enforce them could hold data
-    production would refuse.
-
-    Penalties are set explicitly rather than left to the schema's defaults, which are 1/1/1.
-    The cases above are written against 2/1/3 and the hand-built table encoded those as its
-    defaults; reading them from the real schema would have silently changed what every
-    expected value meant.
+    Its ids are the database's own rather than `_make_db`'s fixed ones, because other files
+    import it and read them from what it returns. The penalties are the same 2/1/3.
 
     Returns ``(db_path, division_id, round_ids)``.
     """
-    from db.database import get_connection, run_migrations
-
     db_file = str(tmp_path / "two_rounds.db")
     await run_migrations(db_file)
 
@@ -867,8 +712,7 @@ async def _make_two_round_db(tmp_path):
 
 
 async def _awarded(db_file: str, round_id: int):
-    async with aiosqlite.connect(db_file) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_connection(db_file) as db:
         cur = await db.execute(
             "SELECT points_awarded FROM driver_round_attendance WHERE round_id = ?",
             (round_id,),
