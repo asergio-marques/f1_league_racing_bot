@@ -6012,9 +6012,10 @@ class SeasonCog(commands.Cog):
         error handler would tell the manager the approval did not finish, skip every grant
         and posting not yet reached, and leave the review standing to expire. So every step
         after it is guarded on its own. Where a read the grants or the calendars depend on
-        fails, what was left undone is named in the reply and the log line. The residual is
-        the reply itself: a Discord that refuses it would refuse the error report the same
-        way.
+        fails, what was left undone is named in the reply and the log line. The reply itself
+        is best effort, falling back to a notice in the review's channel. Only a Discord
+        refusing both is left, and the log line, retried until delivered, still carries the
+        record.
         """
         # Defer immediately — approval involves heavy work (scheduling, role grants,
         # lineup/calendar posts) that can exceed Discord's 3-second response window.
@@ -6691,11 +6692,34 @@ class SeasonCog(commands.Cog):
             self._calendar_report = None
         # Chunked: the sections above make a reply over Discord's limit reachable, and a
         # send refused for its length would raise out of an approval already made.
-        for _chunk in _chunk_message(msg):
-            if interaction.response.is_done():
-                await interaction.followup.send(_chunk, ephemeral=True)
-            else:
-                await interaction.response.send_message(_chunk, ephemeral=True)
+        #
+        # And sent best effort, as `/round results amend` sends its own (#345). The
+        # interaction's token lapses after fifteen minutes, which an approval that waited on
+        # the backup question and then drew on the Pi can outlast. Where the reply is
+        # refused, the channel the review was read in is told instead — through the bot's own
+        # token, which does not lapse — and pointed at the log channel, which carries all the
+        # reply said (decided 2026-09-22).
+        try:
+            for _chunk in _chunk_message(msg):
+                if interaction.response.is_done():
+                    await interaction.followup.send(_chunk, ephemeral=True)
+                else:
+                    await interaction.response.send_message(_chunk, ephemeral=True)
+        except Exception:  # noqa: BLE001 — the season is committed
+            log.warning(
+                "_do_approve: could not send the confirmation privately", exc_info=True
+            )
+            if interaction.channel is not None:
+                try:
+                    await interaction.channel.send(
+                        f"✅ <@{interaction.user.id}> — Season #{cfg.season_number} is "
+                        f"approved and ongoing. Your confirmation could not be sent to you "
+                        f"privately; the log channel has what it said."
+                    )
+                except Exception:  # noqa: BLE001
+                    log.exception(
+                        "_do_approve: could not tell the channel the season was approved"
+                    )
 
         try:
             await self.bot.output_router.post_log(

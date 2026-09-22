@@ -38,6 +38,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -987,16 +988,16 @@ async def _break_the_placements_read(db_path: str) -> None:
         await db.commit()
 
 
-async def _fail_the_placements_read(cog, db_path) -> dict:
+async def _fail_the_placements_read(cog, interaction, db_path) -> dict:
     await _break_the_placements_read(db_path)
     return {}
 
 
-async def _fail_the_circuits_read(cog, db_path) -> dict:
+async def _fail_the_circuits_read(cog, interaction, db_path) -> dict:
     return {"tracks_error": sqlite3.OperationalError("database is locked")}
 
 
-async def _fail_the_closing_log_line(cog, db_path) -> dict:
+async def _fail_the_closing_log_line(cog, interaction, db_path) -> dict:
     """`post_log` reads the server configuration to find the channel, and can raise."""
 
     async def _post_log(text):
@@ -1007,27 +1008,38 @@ async def _fail_the_closing_log_line(cog, db_path) -> dict:
     return {}
 
 
-async def _fail_every_lineup(cog, db_path) -> dict:
+def _token_lapsed() -> discord.HTTPException:
+    """What Discord answers a follow-up sent after the interaction's fifteen minutes."""
+    return discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Webhook")
+
+
+async def _refuse_the_confirmation(cog, interaction, db_path) -> dict:
+    interaction.followup.send = AsyncMock(side_effect=_token_lapsed())
+    return {}
+
+
+async def _fail_every_lineup(cog, interaction, db_path) -> dict:
     cog.bot.placement_service._refresh_lineup_post = AsyncMock(
         side_effect=RuntimeError("Discord is down")
     )
     return {}
 
 
-async def _fail_every_calendar(cog, db_path) -> dict:
+async def _fail_every_calendar(cog, interaction, db_path) -> dict:
     return {"calendar_error": RuntimeError("template will not draw")}
 
 
-async def _fail_the_opening_classifications(cog, db_path) -> dict:
+async def _fail_the_opening_classifications(cog, interaction, db_path) -> dict:
     return {"classification_error": RuntimeError("template will not draw")}
 
 
 #: Each step after the commit, made to fail. Returns what `_approve` needs to fail it.
-#: The last four were guarded before issue #387 and are pinned here beside the rest.
+#: The last three were guarded before issue #387 and are pinned here beside the rest.
 _FAILURES = {
     "the placed drivers read": _fail_the_placements_read,
     "the circuits read": _fail_the_circuits_read,
     "the closing log line": _fail_the_closing_log_line,
+    "the confirmation": _refuse_the_confirmation,
     "every lineup": _fail_every_lineup,
     "every calendar": _fail_every_calendar,
     "the opening classifications": _fail_the_opening_classifications,
@@ -1038,7 +1050,7 @@ _FAILURES = {
 async def test_nothing_after_the_commit_escapes_the_approval(db_path, failure):
     cog = _cog(db_path)
     interaction = _interaction()
-    approve_kwargs = await _FAILURES[failure](cog, db_path)
+    approve_kwargs = await _FAILURES[failure](cog, interaction, db_path)
 
     await _approve(cog, interaction, **approve_kwargs)
 
@@ -1101,6 +1113,51 @@ async def test_a_report_too_long_for_one_message_is_sent_in_pieces(db_path):
     assert all(len(chunk) <= 2000 for chunk in sent)
     assert "Season approved" in sent[0]
     assert "**Division 15** — its placed drivers could not be read" in sent[-1]
+
+
+def _told_in_the_channel(interaction) -> str:
+    return "\n".join(
+        str(call.args[0]) for call in interaction.channel.send.await_args_list if call.args
+    )
+
+
+async def test_a_confirmation_discord_refuses_is_told_in_the_channel_instead(db_path):
+    """The interaction's token lapses after fifteen minutes, which an approval that waited on
+    the backup question and then drew on the Pi can outlast. The channel the review was read
+    in is told instead, through the bot's own token, in one line pointing at the log channel,
+    which carries all the reply said (decided 2026-09-22)."""
+    cog = _cog(db_path)
+    interaction = _interaction()
+    interaction.followup.send = AsyncMock(side_effect=_token_lapsed())
+
+    await _approve(cog, interaction)
+
+    told = _told_in_the_channel(interaction)
+    assert f"<@{USER_ID}> — Season #1 is approved and ongoing" in told
+    assert "the log channel has what it said" in told
+    assert "Placements confirmed" in _logged(cog)
+
+
+async def test_a_delivered_confirmation_tells_the_channel_nothing(db_path):
+    """The notice stands in for the reply; beside one it would say the approval twice."""
+    cog = _cog(db_path)
+    interaction = _interaction()
+
+    await _approve(cog, interaction)
+
+    assert "approved and ongoing" not in _told_in_the_channel(interaction)
+
+
+async def test_a_channel_that_refuses_the_notice_too_does_not_fail_the_approval(db_path):
+    """Discord refusing both leaves the log line, which is retried until it is delivered."""
+    cog = _cog(db_path)
+    interaction = _interaction()
+    interaction.followup.send = AsyncMock(side_effect=_token_lapsed())
+    interaction.channel.send = AsyncMock(side_effect=_token_lapsed())
+
+    await _approve(cog, interaction)
+
+    assert "Placements confirmed" in _logged(cog)
 
 
 async def test_a_stumbled_approval_still_clears_its_review(db_path):
