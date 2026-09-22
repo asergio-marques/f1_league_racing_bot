@@ -320,3 +320,18 @@ def test_full_name_must_be_unique_ignoring_case():
     assert problem is not None
     assert "Oracle Red Bull Racing" in problem
     assert validate_full_name("Red Bull Racing", taken) is None
+
+
+@pytest.mark.parametrize("name", ["<@4002>", "RB <@!4002>"])
+def test_shorthand_refuses_a_user_mention(name):
+    problem = validate_team_name(name)
+
+    assert problem is not None
+    assert "member" in problem
+
+
+def test_full_name_refuses_a_user_mention():
+    problem = validate_full_name("Red Bull, driven by <@4002>")
+
+    assert problem is not None
+    assert "member" in problem
