@@ -488,7 +488,7 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 | A division has no calendar channel or no lineup channel | Step 9 |
 | A signup is unsettled | Step 10 |
 
-**And more, depending on what you turned on** — a missing channel for any enabled module, and every check from step 6 made again: a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
+**And more, depending on what you turned on** — a missing channel for any enabled module, and every check from step 6 made again: a missing or badly ordered points configuration, incomplete signup settings, an unusable image template. The base role and the driver role are the exception: confirming the configuration fixed them, so they are not checked again. Each is named individually with the command that fixes it. `/season placements-review` shows you all of them before you get here, and withholds the Approve button rather than offering you one that would be refused.
 
 When it goes through, the bot:
 

@@ -351,16 +351,16 @@ async def test_the_signup_configuration_is_reviewed(db_path):
     assert "Available slots: Sunday 20:00" in public
 
 
-async def test_the_league_s_roles_are_reviewed_with_signup_off(db_path):
-    """They are the league's, not the signup module's (issue #276), so they are reported
-    whatever modules are on — and the signup subsection no longer repeats them."""
-    cog = _cog(db_path, signup=False)
+@pytest.mark.parametrize("signup", [True, False])
+async def test_the_placements_review_does_not_repeat_the_league_s_roles(db_path, signup):
+    """Confirming the configuration fixed both roles until the season ends (issue #276), so
+    the configuration review reports them and this one has nothing to add."""
+    cog = _cog(db_path, signup=signup)
     messages = await _review(cog, _interaction())
 
     public = _public(messages)
-    assert "Base role: <@&901>" in public
-    assert "Driver role: <@&902>" in public
-    assert "Signup Config" not in public
+    assert "<@&901>" not in public
+    assert "<@&902>" not in public
 
 
 async def test_the_attendance_configuration_is_reviewed(db_path):

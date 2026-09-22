@@ -1754,7 +1754,6 @@ class SeasonCog(commands.Cog):
                 f"  Images: {on if images_on else off}",
                 "",
             ]
-            header_lines += await self._league_roles_review_lines()
 
             # ── Image module (FR-033, FR-034) ─────────────────────────
             # When disabled, report that and omit the detail. When enabled, render the
@@ -2426,7 +2425,8 @@ class SeasonCog(commands.Cog):
         divisions: every check the placements review makes, save those concerning divisions,
         lineups, calendars and division channels. The placements review makes all of these
         again, the configuration of a module other than signup being free to change in
-        between.
+        between — save the league's two roles, which confirming the configuration fixes
+        until the season ends (issue #276), and so cannot have changed.
 
         **One helper for the review and the confirmation**, so the button is withheld on
         exactly what the confirmation refuses. Each fault is a line a league manager reads,
@@ -2501,11 +2501,15 @@ class SeasonCog(commands.Cog):
         ]
 
     async def _league_roles_review_lines(self) -> list[str]:
-        """The league's base role and driver role, as both reviews report them.
+        """The league's base role and driver role, as the configuration review reports them.
 
         Shown whatever modules are enabled, the roles being the league's rather than the
         signup module's (issue #276). Whether their absence is a fault is the signup
         module's to say; see `_configuration_faults`.
+
+        **The configuration review alone.** Confirming the configuration fixes both roles
+        until the season ends, so the placements review has nothing to say of them that the
+        confirmed configuration did not.
         """
         server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
 
@@ -6183,18 +6187,15 @@ class SeasonCog(commands.Cog):
                 return
 
         # ── Gate 2b: signup module config prerequisites ───────────────────────
-        # The two roles are the league's (issue #276), required while signup is enabled.
+        # The league's two roles are not checked again: confirming the configuration
+        # required them while signup was enabled, and fixed them until the season ends
+        # (issue #276).
         if await self.bot.module_service.is_signup_enabled():
             signup_cfg = await self.bot.signup_module_service.get_config()
-            server_cfg = await self.bot.config_service.get_server_config()
             if signup_cfg:
                 missing: list[str] = []
                 if signup_cfg.signup_channel_id is None:
                     missing.append("**Signup channel** (use `/signup channel`)")
-                if server_cfg is None or server_cfg.base_role_id is None:
-                    missing.append("**Base role** (use `/bot base-role`)")
-                if server_cfg is None or server_cfg.driver_role_id is None:
-                    missing.append("**Driver role** (use `/bot driver-role`)")
                 if missing:
                     bullet_list = "\n\u2022 ".join(missing)
                     msg = (

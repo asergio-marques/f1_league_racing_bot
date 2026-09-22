@@ -271,49 +271,34 @@ async def test_a_configured_signup_module_does_not_block_approval(db_path):
     cog.bot.season_service.transition_to_active.assert_awaited_once()
 
 
-@pytest.mark.parametrize(
-    "channel,roles,fragment",
-    [
-        (None, (3001, 3002), "/signup channel"),
-        (700, (None, 3002), "/bot base-role"),
-        (700, (3001, None), "/bot driver-role"),
-    ],
-)
-async def test_an_unconfigured_signup_module_blocks_approval(db_path, channel, roles, fragment):
-    """Approving without them arms a season whose signups open into nothing — a module
-    failing to produce output while switched on. The roles are the league's (issue #276),
-    and the refusal names the `/bot` command that sets each."""
-    cog = _cog(
-        db_path, signup_enabled=True, signup_config=_signup_config(channel=channel),
-        roles=roles,
-    )
+async def test_an_unconfigured_signup_module_blocks_approval(db_path):
+    """Approving without a channel arms a season whose signups open into nothing — a module
+    failing to produce output while switched on."""
+    cog = _cog(db_path, signup_enabled=True, signup_config=_signup_config(channel=None))
     interaction = _interaction()
 
     await _approve(cog, interaction)
 
     replied = _replied(interaction)
     assert "signup module is enabled but" in replied
-    assert fragment in replied
+    assert "/signup channel" in replied
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
-async def test_the_signup_refusal_lists_everything_missing(db_path):
-    """A manager fixing one setting per refused approval is three attempts at a season
-    they are trying to start."""
+async def test_the_league_s_roles_are_not_checked_again_at_placements(db_path):
+    """Confirming the configuration required both roles while signup was enabled, and
+    fixed them until the season ends (issue #276): they cannot have gone missing since."""
     cog = _cog(
-        db_path,
-        signup_enabled=True,
-        signup_config=_signup_config(channel=None),
-        roles=(None, None),
+        db_path, signup_enabled=True, signup_config=_signup_config(), roles=(None, None)
     )
     interaction = _interaction()
 
     await _approve(cog, interaction)
 
-    replied = _replied(interaction)
-    assert "/signup channel" in replied
-    assert "/bot base-role" in replied
-    assert "/bot driver-role" in replied
+    assert "/bot" not in _replied(interaction)
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
 
 
 async def test_a_signup_module_with_no_configuration_row_does_not_block(db_path):

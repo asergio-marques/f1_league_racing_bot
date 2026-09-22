@@ -319,6 +319,8 @@ async def take_fingerprint(bot, season_id: int) -> SeasonFingerprint:
             )
 
             # The league's two roles, core's rather than the signup module's (issue #276).
+            # Only the configuration review reports them; confirming the configuration fixes
+            # them, so at placements they cannot differ and this area never trips.
             areas["roles"] = _digest(
                 await _rows(db, "SELECT base_role_id, driver_role_id FROM server_configs")
             )

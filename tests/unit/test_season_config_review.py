@@ -370,6 +370,18 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     view.carries.assert_called_once()
 
 
+@pytest.mark.parametrize("signup", [True, False])
+async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, signup):
+    """The one review that reports them (issue #276). They are the league's, so they are
+    shown whether or not signup is on, and confirming the configuration fixes them."""
+    cog = _cog(_report_bot(signup=signup))
+
+    messages = await _report(cog, _interaction(), monkeypatch)
+
+    assert "Base role: <@&2>" in messages[0]
+    assert "Driver role: <@&3>" in messages[0]
+
+
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     """The placements review's subsections, save the divisions, in the same words (#220)."""
     import cogs.season_cog as season_cog

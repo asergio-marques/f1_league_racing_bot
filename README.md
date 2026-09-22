@@ -407,7 +407,7 @@ No parameters. Posts a report of the season in configuration — test mode, the 
 - where the results module is enabled, that a points configuration is attached, that each attached one exists, and that its tables are in order;
 - where the images module is enabled, that the rasteriser is installed, that every template an enabled output draws is valid, the per-tier colours and the driver portrait settings.
 
-With nothing at fault the report ends with a **✅ Confirm configuration** button, governed like the Approve button below: the reviewer or a league admin may press it, it stands for five minutes, and it refuses if the season changed after the report was posted. Every check is made again when you press it, and again at `/season placements-review`.
+With nothing at fault the report ends with a **✅ Confirm configuration** button, governed like the Approve button below: the reviewer or a league admin may press it, it stands for five minutes, and it refuses if the season changed after the report was posted. Every check is made again when you press it, and again at `/season placements-review` — save the league's base role and driver role, which confirming the configuration fixes until the season ends. This review is the only one that reports them; `/season placements-review` does not repeat them.
 
 > **Confirming fixes the configuration for the season.** From then until the season ends, the team list, the game edition, test mode and the signup module's settings cannot change.
 
