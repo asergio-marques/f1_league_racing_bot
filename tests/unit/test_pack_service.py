@@ -101,6 +101,11 @@ async def _one(db_path: str, sql: str):
         return await (await db.execute(sql)).fetchone()
 
 
+async def _all(db_path: str, sql: str) -> list:
+    async with get_connection(db_path) as db:
+        return await (await db.execute(sql)).fetchall()
+
+
 async def _count(db_path: str, table: str) -> int:
     return (await _one(db_path, f"SELECT COUNT(*) FROM {table}"))[0]
 
@@ -329,3 +334,15 @@ async def test_pack_is_audited_with_every_setting_and_role_it_cleared(db_path):
         "signup_channel_id": None,
         "team_roles": {},
     }
+
+
+async def test_a_refused_pack_records_nothing(db_path):
+    """The entry shares the pack's transaction, so a pack that did not happen is not audited
+    as though it had."""
+    await _seed(db_path, stage="CONFIGURATION")
+
+    with pytest.raises(PackRefused):
+        await pack(db_path, _scheduler(), **ACTOR)
+
+    rows = await _all(db_path, "SELECT change_type FROM audit_entries")
+    assert [r["change_type"] for r in rows] == ["X"]
