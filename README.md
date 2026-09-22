@@ -378,7 +378,7 @@ Frees the bot from this server so that `/bot init` on another can claim it. What
 
 **Refused while there is a current season** — one at any stage short of completed or cancelled. Complete it, or cancel or abort it, first. It is allowed in test mode.
 
-**Nothing in Discord changes.** The bot's messages stay on this server, and their buttons are refused from then on. The bot stays in the server too, refusing every command there once another server has claimed it; remove it when you are ready. The pack is written to the log channel before the log channel is cleared.
+**Nothing in Discord changes.** The bot's messages stay on this server, and their buttons are refused from then on. The bot stays in the server too, refusing every command there once another server has claimed it; remove it when you are ready. The pack is written to the log channel before the log channel is cleared, and audited with every setting and role it cleared.
 
 ---
 
