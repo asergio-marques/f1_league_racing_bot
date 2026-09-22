@@ -101,8 +101,14 @@ def seated_members(guild, teams) -> dict[str, object]:
     return members
 
 
-async def build_drawing(bot, guild, division_id: int):
-    """Resolve the division into a LineupDrawing, or raise LineupDataError."""
+async def build_drawing(bot, guild, division_id: int, *, include_uncommitted: bool = False):
+    """Resolve the division into a LineupDrawing, or raise LineupDataError.
+
+    A placement made mid-season and not yet confirmed is left out (#220), for the lineup of
+    record shows who races. *include_uncommitted* draws it in, for the one caller that must
+    see the lineup as it **will** stand: the mid-season placements review, which draws what
+    confirming will post and withholds its button where that will not draw (#374).
+    """
     from services.image_lineup_service import resolve_drawing
     from services.image_results_post import SIGNUP_FOR_SEASON_SQL
 
@@ -140,16 +146,17 @@ async def build_drawing(bot, guild, division_id: int):
                     "       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
                     "            ELSE sr.nationality END AS nationality "
                     "FROM team_seats ts "
-                    # A placement not yet confirmed mid-season is not drawn (issue #220).
+                    # A placement not yet confirmed mid-season is not drawn (issue #220),
+                    # unless the caller asks for the lineup as it will stand (#374).
                     "LEFT JOIN driver_season_assignments dsa "
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
-                    "      AND (dsa.committed = 1 OR NOT EXISTS ("
+                    "      AND (dsa.committed = 1 OR ? OR NOT EXISTS ("
                     "          SELECT 1 FROM seasons s WHERE s.id = dsa.season_id "
                     "          AND s.status = 'ACTIVE')) "
                     "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
                     f"LEFT JOIN signup_records sr ON sr.id = {SIGNUP_FOR_SEASON_SQL} "
                     "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
-                    (division_id, season_id, instance["id"]),
+                    (division_id, int(include_uncommitted), season_id, instance["id"]),
                 )
             ).fetchall()
             teams.append(
@@ -201,15 +208,22 @@ async def build_drawing(bot, guild, division_id: int):
     )
 
 
-async def render_png(bot, guild, division_id: int, origin: PostingOrigin):
-    """Render one division's lineup. Returns the render service's PostingDecision."""
+async def render_png(
+    bot, guild, division_id: int, origin: PostingOrigin, *, include_uncommitted: bool = False
+):
+    """Render one division's lineup. Returns the render service's PostingDecision.
+
+    *include_uncommitted* is `build_drawing`'s, and is for command output alone.
+    """
     from services.image_lineup_service import build_fill_spec
     from services.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
 
-    _division, drawing, members = await build_drawing(bot, guild, division_id)
+    _division, drawing, members = await build_drawing(
+        bot, guild, division_id, include_uncommitted=include_uncommitted
+    )
 
     config = await bot.image_config_service.get_config()
     directories, directory_faults = resolve_configured_directories(
@@ -367,7 +381,9 @@ async def try_post(
     )
 
 
-async def render_for_command(bot, guild, division_id: int) -> LineupPostOutcome:
+async def render_for_command(
+    bot, guild, division_id: int, *, include_uncommitted: bool = False
+) -> LineupPostOutcome:
     """Produce a division's lineup PNG as **command output**, posting it nowhere.
 
     Used by `/team lineup` and `/season placements-review`. Constitution XIV.7 makes a commanded
@@ -377,14 +393,20 @@ async def render_for_command(bot, guild, division_id: int) -> LineupPostOutcome:
     These images are output of a command and **not the lineup of record** (FR-028): this
     function writes no ``lineup_message_id``, deletes nothing from the lineup channel, and
     records no audit entry. That separation is the whole reason it exists beside
-    :func:`try_post` rather than being a flag on it.
+    :func:`try_post` rather than being a flag on it — and why *include_uncommitted*, which
+    draws a lineup as it will stand once mid-season placements are confirmed, is offered
+    here and not there.
     """
     if guild is None or not await lineup_enabled(bot):
         return LineupPostOutcome()
 
     try:
         decision = await render_png(
-            bot, guild, division_id, PostingOrigin.COMMANDED
+            bot,
+            guild,
+            division_id,
+            PostingOrigin.COMMANDED,
+            include_uncommitted=include_uncommitted,
         )
     except Exception as exc:  # noqa: BLE001
         log.error("lineup: command render failed for division %s: %s", division_id, exc)
