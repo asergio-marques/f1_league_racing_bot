@@ -110,9 +110,11 @@ async def _set(db_path, setting, channel_id, *, division_id=None, server_id=SERV
                 (1, channel_id, channel_id),
             )
         else:
-            column = {"interaction": "interaction_channel_id", "log": "log_channel_id"}[
-                setting
-            ]
+            column = {
+                "interaction": "interaction_channel_id",
+                "log": "log_channel_id",
+                "hub": "hub_channel_id",
+            }[setting]
             await db.execute(
                 f"UPDATE server_configs SET {column} = ? WHERE server_id = ?",
                 (channel_id, server_id),
@@ -151,7 +153,7 @@ async def test_the_label_names_the_division_for_a_per_division_setting(db_path):
     assert "**Pro**" in use.describe()
 
 
-@pytest.mark.parametrize("setting", ["interaction", "log", "signup"])
+@pytest.mark.parametrize("setting", ["interaction", "log", "hub", "signup"])
 async def test_a_server_setting_names_no_division(db_path, setting):
     await _set(db_path, setting, 500)
 
@@ -252,3 +254,27 @@ def test_re_setting_a_channel_to_itself_is_not_reported_as_a_clash():
 def test_every_setting_has_a_label_a_league_would_recognise():
     for setting, label in SETTING_LABELS.items():
         assert label and not label.endswith("_channel_id"), setting
+
+
+# ── The hub (issue #279) ──────────────────────────────────────────────────
+
+
+async def test_the_hub_refuses_a_channel_a_division_posts_to(db_path):
+    """A panel among results would be pushed out of sight by the next round's posts."""
+    season_id = await _season(db_path)
+    division_id = await _division(db_path, season_id, "Pro")
+    await _set(db_path, "results", 600, division_id=division_id)
+
+    use = await find_channel_use(db_path, 600, ignore=ChannelUse("hub"))
+
+    assert use == ChannelUse("results", "Pro")
+
+
+async def test_a_division_refuses_the_hub_channel(db_path):
+    """The rule holds both ways: the hub's channel is held for the hub alone."""
+    await _set(db_path, "hub", 601)
+
+    use = await find_channel_use(db_path, 601, ignore=ChannelUse("standings", "Pro"))
+
+    assert use == ChannelUse("hub")
+    assert use.describe() == "hub channel"
