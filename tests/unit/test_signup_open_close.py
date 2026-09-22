@@ -135,7 +135,25 @@ def _cog(db_path: str) -> SignupCog:
     return cog
 
 
-def _interaction(*, channel_found: bool = True, members: dict | None = None):
+def _role(role_id: int, *, above_the_bot: bool = False) -> MagicMock:
+    """A role on the server, one the bot can grant unless *above_the_bot* says otherwise."""
+    role = MagicMock()
+    role.id = role_id
+    role.mention = "@drivers"
+    role.is_default.return_value = False
+    role.managed = False
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, _other: not above_the_bot
+    return role
+
+
+def _interaction(
+    *,
+    channel_found: bool = True,
+    members: dict | None = None,
+    gone_roles: tuple[int, ...] = (),
+    driver_role_above_the_bot: bool = False,
+):
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock()
@@ -150,12 +168,16 @@ def _interaction(*, channel_found: bool = True, members: dict | None = None):
     signup_channel.send = AsyncMock(return_value=posted)
     signup_channel.fetch_message = AsyncMock(return_value=MagicMock(delete=AsyncMock()))
 
-    role = MagicMock()
-    role.mention = "@drivers"
+    roles = {
+        BASE_ROLE_ID: _role(BASE_ROLE_ID),
+        DRIVER_ROLE_ID: _role(DRIVER_ROLE_ID, above_the_bot=driver_role_above_the_bot),
+    }
+    for role_id in gone_roles:
+        roles.pop(role_id)
 
     guild = MagicMock()
     guild.get_channel = MagicMock(return_value=signup_channel if channel_found else None)
-    guild.get_role = MagicMock(return_value=role)
+    guild.get_role = MagicMock(side_effect=roles.get)
     guild.get_member = MagicMock(
         side_effect=lambda uid: (members or {}).get(int(uid))
     )
@@ -259,6 +281,50 @@ async def test_each_setting_alone_is_enough_to_refuse(tmp_path, missing, expecte
     await _open(_cog(db_path), interaction)
 
     assert expected in _replied(interaction)
+
+
+@pytest.mark.parametrize(
+    "gone,expected",
+    [
+        (BASE_ROLE_ID, "**base role** is no longer on the server"),
+        (DRIVER_ROLE_ID, "**driver role** is no longer on the server"),
+    ],
+)
+async def test_a_role_gone_from_the_server_is_refused(tmp_path, gone, expected):
+    """Stored is not enough (#374). A base role gone opens a channel its members cannot see
+    and pings nobody; a driver role gone lets every approval of the window grant nothing."""
+    db_path = await _seed(tmp_path)
+    interaction = _interaction(gone_roles=(gone,))
+
+    await _open(_cog(db_path), interaction)
+
+    assert expected in _replied(interaction)
+    assert not await _is_open(db_path)
+    interaction._signup_channel.send.assert_not_awaited()
+
+
+async def test_a_driver_role_the_bot_cannot_grant_is_refused(tmp_path):
+    """`wizard_service.approve_signup` only logs a grant Discord refuses, so every approval of
+    the window would grant nothing with nobody told."""
+    db_path = await _seed(tmp_path)
+    interaction = _interaction(driver_role_above_the_bot=True)
+
+    await _open(_cog(db_path), interaction)
+
+    assert "Move my role above it" in _replied(interaction)
+    assert not await _is_open(db_path)
+
+
+async def test_every_role_fault_is_named_at_once_beside_what_is_not_set(tmp_path):
+    db_path = await _seed(tmp_path, channel=None)
+    interaction = _interaction(gone_roles=(BASE_ROLE_ID, DRIVER_ROLE_ID))
+
+    await _open(_cog(db_path), interaction)
+
+    replied = _replied(interaction)
+    assert "/signup channel" in replied
+    assert "**base role** is no longer on the server" in replied
+    assert "**driver role** is no longer on the server" in replied
 
 
 async def test_signups_cannot_be_opened_with_no_time_slots(tmp_path):

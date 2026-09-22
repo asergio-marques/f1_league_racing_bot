@@ -418,6 +418,11 @@ class TestOneRuleForTheCloseTime:
         cog.bot.signup_module_service.get_config = AsyncMock(return_value=cfg)
 
         interaction = _interaction()
+        # Both roles on the server and grantable: the roles are not what this pins (#374).
+        role = MagicMock(managed=False)
+        role.is_default.return_value = False
+        role.guild.me.top_role.__gt__ = lambda _self, _other: True
+        interaction.guild.get_role = MagicMock(return_value=role)
         await undecorate(SignupCog.signup_open)(cog, interaction, None, LATER)
 
         assert calls == [LATER]
