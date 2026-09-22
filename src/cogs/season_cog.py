@@ -6011,9 +6011,10 @@ class SeasonCog(commands.Cog):
         `transition_to_active` on, the season is running. An exception reaching the view's
         error handler would tell the manager the approval did not finish, skip every grant
         and posting not yet reached, and leave the review standing to expire. So every step
-        after it is guarded on its own, and what one could not do is named in the reply and
-        the log line. The residual is the reply itself: a Discord that refuses it would
-        refuse the error report the same way.
+        after it is guarded on its own. Where a read the grants or the calendars depend on
+        fails, what was left undone is named in the reply and the log line. The residual is
+        the reply itself: a Discord that refuses it would refuse the error report the same
+        way.
         """
         # Defer immediately — approval involves heavy work (scheduling, role grants,
         # lineup/calendar posts) that can exceed Discord's 3-second response window.
