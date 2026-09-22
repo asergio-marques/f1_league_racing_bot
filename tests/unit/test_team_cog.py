@@ -104,7 +104,7 @@ class TestTeamAdd:
         role = _make_role(555)
         role.mention = "<@&555>"
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", full_name="Alpine Racing", role=role)
+        await cog.add_team(interaction, shorthand="Alpine", full_name="Alpine Racing", role=role)
 
         bot.team_service.add_default_team.assert_awaited_once_with("Alpine", full_name="Alpine Racing")
         bot.placement_service.set_team_role_config.assert_awaited_once()
@@ -125,7 +125,7 @@ class TestTeamAdd:
         role = _make_role(555)
         role.mention = "<@&555>"
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", full_name="Alpine Racing", role=role)
+        await cog.add_team(interaction, shorthand="Alpine", full_name="Alpine Racing", role=role)
 
         bot.team_service.add_default_team.assert_awaited_once_with("Alpine", full_name="Alpine Racing")
         bot.team_service.season_team_add.assert_not_awaited()
@@ -142,7 +142,9 @@ class TestTeamAdd:
         cog = TeamCog(bot)
         interaction = _make_interaction()
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", full_name="Alpine Racing", role=_make_role())
+        await cog.add_team(
+            interaction, shorthand="Alpine", full_name="Alpine Racing", role=_make_role()
+        )
 
         bot.team_service.add_default_team.assert_not_awaited()
         bot.placement_service.set_team_role_config.assert_not_awaited()
@@ -158,7 +160,7 @@ class TestTeamAdd:
         interaction = _make_interaction()
         role = _make_role(555)
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", full_name="Alpine Racing", role=role)
+        await cog.add_team(interaction, shorthand="Alpine", full_name="Alpine Racing", role=role)
 
         args, kwargs = interaction.response.send_message.call_args
         content = args[0] if args else kwargs["content"]
@@ -536,7 +538,9 @@ class TestOneRolePerTeam:
         cog = TeamCog(bot)
         interaction = _make_interaction()
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", full_name="Alpine Racing", role=self._role())
+        await cog.add_team(
+            interaction, shorthand="Alpine", full_name="Alpine Racing", role=self._role()
+        )
 
         bot.team_service.add_default_team.assert_not_awaited()
         bot.placement_service.set_team_role_config.assert_not_awaited()
@@ -554,7 +558,9 @@ class TestOneRolePerTeam:
         cog = TeamCog(bot)
         interaction = _make_interaction()
 
-        await _unwrap(cog.team_add)(cog, interaction, name="Alpine", full_name="Alpine Racing", role=self._role())
+        await cog.add_team(
+            interaction, shorthand="Alpine", full_name="Alpine Racing", role=self._role()
+        )
 
         bot.team_service.remove_default_team.assert_awaited_once_with("Alpine")
         assert interaction.response.send_message.call_args.args[0].startswith("⛔")

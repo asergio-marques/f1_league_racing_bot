@@ -8,7 +8,9 @@ from discord import app_commands
 from discord.ext import commands
 
 from models.season import SeasonStage
+from services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
 from utils.channel_guard import league_admin_only, league_manager_only, role_grant_refusal
+from utils.league_server import LeagueModal
 
 log = logging.getLogger(__name__)
 
@@ -84,19 +86,32 @@ class TeamCog(commands.Cog):
         name="add",
         description="Add a team to the server list, while no season's configuration is confirmed.",
     )
-    @app_commands.describe(
-        name="Shorthand of the new team: what is typed to name it, and its artwork's filename.",
-        full_name="Full name of the new team: what every post and graphic shows.",
-        role="Discord role to associate with this team.",
-    )
     @league_manager_only
-    async def team_add(
+    async def team_add(self, interaction: discord.Interaction) -> None:
+        """Open the form a team is added on (#381).
+
+        A team carries three things, and the form takes all three at once: the shorthand a
+        league types, the full name every post shows, and the role its drivers are granted.
+        The two names are bounded as they are typed, which is the one thing a modal does that
+        a command parameter cannot.
+
+        **No deferral.** `send_modal` has to be the interaction's first response, so every
+        check before it is a quick read — and every one of them runs again on submit, because
+        a season can move on while the form is open.
+        """
+        if await self._team_list_lock(interaction, "add"):
+            return
+        await interaction.response.send_modal(_TeamAddModal(self))
+
+    async def add_team(
         self,
         interaction: discord.Interaction,
-        name: str,
+        *,
+        shorthand: str,
         full_name: str,
         role: discord.Role,
     ) -> None:
+        """Add the team the form describes, or say why not. Every check runs here."""
         if await self._team_list_lock(interaction, "add"):
             return
         # A team's role is granted to its drivers, so one the bot cannot grant is refused here,
@@ -118,7 +133,7 @@ class TeamCog(commands.Cog):
             return
         try:
             await self.bot.team_service.add_default_team(  # type: ignore[attr-defined]
-                name, full_name=full_name
+                shorthand, full_name=full_name
             )
         except ValueError as exc:
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
@@ -126,21 +141,24 @@ class TeamCog(commands.Cog):
 
         try:
             await self.bot.placement_service.set_team_role_config(  # type: ignore[attr-defined]
-                name, role.id,
+                shorthand, role.id,
                 actor_id=interaction.user.id, actor_name=str(interaction.user),
             )
         except ValueError as exc:
             # Taken between the check and the write: the team goes again, so nothing stands.
-            await self.bot.team_service.remove_default_team(name)  # type: ignore[attr-defined]
+            await self.bot.team_service.remove_default_team(shorthand)  # type: ignore[attr-defined]
             await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
             return
 
         await interaction.response.send_message(
-            f'✅ Team "{name}" added with role {role.mention}.', ephemeral=True
+            f'✅ Team "{full_name}" added as `{shorthand}`, with role {role.mention}.',
+            ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team add | Success\n"
-            f"  team: {name}",
+            f"  team: {full_name}\n"
+            f"  shorthand: {shorthand}\n"
+            f"  role: {role.name} (<@&{role.id}>)",
         )
 
     # ------------------------------------------------------------------
@@ -568,3 +586,53 @@ async def _send_long(interaction: discord.Interaction, text: str, *, ephemeral: 
         text = text[_MAX_MSG_LEN:]
     for chunk in chunks:
         await interaction.followup.send(chunk, ephemeral=ephemeral)
+
+
+# ---------------------------------------------------------------------------
+# The forms a team is added and changed on (#381)
+# ---------------------------------------------------------------------------
+
+
+class _TeamAddModal(LeagueModal, title="Add a team"):
+    """The three things a team carries, taken together.
+
+    The lengths are enforced as the manager types — Discord will not let a field exceed its
+    ``max_length`` — and again by `TeamService`, which is where the rules live: a modal bounds
+    the typing, it does not decide what is acceptable.
+    """
+
+    def __init__(self, cog: "TeamCog") -> None:
+        super().__init__()
+        self._cog = cog
+        self.shorthand: discord.ui.TextInput = discord.ui.TextInput(
+            placeholder="RBR", min_length=1, max_length=SHORTHAND_MAX,
+        )
+        self.full_name: discord.ui.TextInput = discord.ui.TextInput(
+            placeholder="Oracle Red Bull Racing", min_length=1, max_length=FULL_NAME_MAX,
+        )
+        self.role: discord.ui.RoleSelect = discord.ui.RoleSelect(
+            placeholder="The team's role", required=True,
+        )
+        self.add_item(discord.ui.Label(
+            text="Shorthand",
+            description="Typed to name the team, and the filename of its artwork.",
+            component=self.shorthand,
+        ))
+        self.add_item(discord.ui.Label(
+            text="Full name",
+            description="What every post and graphic shows.",
+            component=self.full_name,
+        ))
+        self.add_item(discord.ui.Label(
+            text="Role",
+            description="Granted to every driver placed in the team.",
+            component=self.role,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await self._cog.add_team(
+            interaction,
+            shorthand=self.shorthand.value.strip(),
+            full_name=self.full_name.value.strip(),
+            role=self.role.values[0],
+        )

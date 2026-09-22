@@ -84,7 +84,6 @@ def test_a_role_carrying_no_guild_is_judged_on_itself_alone():
 @pytest.mark.parametrize(
     "command,arguments",
     [
-        ("team_add", {"name": "RBR", "full_name": "Oracle Red Bull Racing"}),
         ("team_role", {"name": "RBR"}),
         ("team_reserve_role", {}),
     ],
@@ -119,3 +118,28 @@ async def test_a_team_command_refuses_a_role_the_bot_cannot_grant(command, argum
     assert "integration" in said
     bot.team_service.add_default_team.assert_not_awaited()
     bot.placement_service.set_team_role_config.assert_not_awaited()
+
+
+async def test_adding_a_team_refuses_a_role_the_bot_cannot_grant():
+    """The form's own submission, which is where `/team add` does its work now (#381)."""
+    from cogs.team_cog import TeamCog
+
+    bot = MagicMock()
+    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)
+    bot.team_service.add_default_team = AsyncMock()
+    bot.placement_service.team_holding_role = AsyncMock(return_value=None)
+    interaction = MagicMock()
+    interaction.user.id = 42
+    interaction.response.send_message = AsyncMock()
+    cog = TeamCog.__new__(TeamCog)
+    cog.bot = bot
+
+    await cog.add_team(
+        interaction,
+        shorthand="RBR",
+        full_name="Oracle Red Bull Racing",
+        role=_role(managed=True),
+    )
+
+    assert "integration" in interaction.response.send_message.await_args.args[0]
+    bot.team_service.add_default_team.assert_not_awaited()
