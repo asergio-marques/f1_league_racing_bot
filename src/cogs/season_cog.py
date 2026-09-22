@@ -482,6 +482,45 @@ def _amendment_open_refusal(division_name: str, open_row) -> str:
     )
 
 
+def _not_done_section(not_done: list[str]) -> str:
+    """What a placements confirmation could not do, as a section of its reply (#387)."""
+    if not not_done:
+        return ""
+    return "\n\n⚠️ **Not everything could be done**\n" + "\n".join(
+        f"• {line}" for line in not_done
+    )
+
+
+async def _confirm_privately(
+    interaction: discord.Interaction, text: str, *, fallback: str
+) -> None:
+    """Tell the member *text* privately, or tell the channel *fallback* where that is refused.
+
+    For the confirmation of something already committed, so it never raises (issue #387).
+    Chunked, *text* being free to outgrow Discord's limit. And sent best effort, as
+    `/round results amend` sends its own (#345): the interaction's token lapses after fifteen
+    minutes, which an approval that waited on the backup question and then drew on the Pi can
+    outlast. Where the reply is refused, the channel the interaction came from is told
+    *fallback* instead, through the bot's own token, which does not lapse. *fallback* points
+    at the log channel, which the caller makes carry all that *text* said (decided
+    2026-09-22).
+    """
+    try:
+        for chunk in _chunk_message(text):
+            if interaction.response.is_done():
+                await interaction.followup.send(chunk, ephemeral=True)
+            else:
+                await interaction.response.send_message(chunk, ephemeral=True)
+    except Exception:  # noqa: BLE001 — what is confirmed is committed
+        log.warning("could not send a confirmation privately", exc_info=True)
+        if interaction.channel is None:
+            return
+        try:
+            await interaction.channel.send(fallback)
+        except Exception:  # noqa: BLE001
+            log.exception("could not tell the channel what the confirmation said")
+
+
 class _AmendSessionsView(LeagueView):
     """Choose which of a round's sessions an amendment re-enters (#345, decided 2026-09-21).
 
@@ -6680,10 +6719,7 @@ class SeasonCog(commands.Cog):
             f"\u2705 **Season approved and activated!**\n"
             f"Season #{cfg.season_number} (ID: {cfg.season_id})"
         )
-        if _not_done:
-            msg += "\n\n\u26a0\ufe0f **Not everything could be done**\n" + "\n".join(
-                f"\u2022 {line}" for line in _not_done
-            )
+        msg += _not_done_section(_not_done)
         # The manager who approved is told what the calendar generation met, so a
         # template that fell back to text is not discovered only by reading the channel.
         _cal_report = getattr(self, "_calendar_report", None)
@@ -6691,36 +6727,15 @@ class SeasonCog(commands.Cog):
             msg += f"\n\n\u26a0\ufe0f **Calendar images**\n{_cal_report.splitlines()[0]}"
             msg += "\n" + "\n".join(_cal_report.splitlines()[1:])
             self._calendar_report = None
-        # Chunked: the sections above make a reply over Discord's limit reachable, and a
-        # send refused for its length would raise out of an approval already made.
-        #
-        # And sent best effort, as `/round results amend` sends its own (#345). The
-        # interaction's token lapses after fifteen minutes, which an approval that waited on
-        # the backup question and then drew on the Pi can outlast. Where the reply is
-        # refused, the channel the review was read in is told instead — through the bot's own
-        # token, which does not lapse — and pointed at the log channel, which carries all the
-        # reply said (decided 2026-09-22).
-        try:
-            for _chunk in _chunk_message(msg):
-                if interaction.response.is_done():
-                    await interaction.followup.send(_chunk, ephemeral=True)
-                else:
-                    await interaction.response.send_message(_chunk, ephemeral=True)
-        except Exception:  # noqa: BLE001 — the season is committed
-            log.warning(
-                "_do_approve: could not send the confirmation privately", exc_info=True
-            )
-            if interaction.channel is not None:
-                try:
-                    await interaction.channel.send(
-                        f"✅ <@{interaction.user.id}> — Season #{cfg.season_number} is "
-                        f"approved and ongoing. Your confirmation could not be sent to you "
-                        f"privately; the log channel has what it said."
-                    )
-                except Exception:  # noqa: BLE001
-                    log.exception(
-                        "_do_approve: could not tell the channel the season was approved"
-                    )
+        await _confirm_privately(
+            interaction,
+            msg,
+            fallback=(
+                f"\u2705 <@{interaction.user.id}> \u2014 Season #{cfg.season_number} is approved and "
+                f"ongoing. Your confirmation could not be sent to you privately; the log "
+                f"channel has what it said."
+            ),
+        )
 
         try:
             await self.bot.output_router.post_log(
