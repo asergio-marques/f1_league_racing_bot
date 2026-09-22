@@ -18,36 +18,38 @@ from __future__ import annotations
 import os
 import sys
 
-import aiosqlite
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-pytestmark = pytest.mark.asyncio
+from db.database import get_connection, run_migrations  # noqa: E402
 
-SCHEMA = """
-CREATE TABLE rounds (
-    id INTEGER PRIMARY KEY, division_id INTEGER, round_number INTEGER,
-    format TEXT, track_name TEXT
-);
-CREATE TABLE tracks (
-    id INTEGER PRIMARY KEY, name TEXT, gp_name TEXT, location TEXT,
-    country TEXT, mu REAL, sigma REAL
-);
-INSERT INTO rounds VALUES (1, 5, 1, 'NORMAL',  'Silverstone Circuit');
-INSERT INTO rounds VALUES (2, 5, 2, 'MYSTERY', NULL);
-INSERT INTO rounds VALUES (3, 5, 3, 'NORMAL',  'Circuit Zandvoort');
-INSERT INTO tracks VALUES
-    (1, 'Silverstone Circuit', 'British GP', 'Silverstone', 'United Kingdom', 0, 0),
-    (2, 'Circuit Zandvoort',   'Dutch GP',   'Zandvoort',   'Netherlands',    0, 0);
-"""
+pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
 async def db_path(tmp_path):
+    """Division 5's three rounds, the middle one a mystery. The two circuits are the seeded
+    registry's, which places them in the United Kingdom and the Netherlands."""
     path = str(tmp_path / "grid.db")
-    async with aiosqlite.connect(path) as db:
-        await db.executescript(SCHEMA)
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, '2026-01-01', 'ACTIVE')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id) "
+            "VALUES (5, 1, 'Elite', 3001)"
+        )
+        await db.executemany(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at) VALUES (?, 5, ?, ?, ?, ?)",
+            [
+                (1, 1, "NORMAL", "Silverstone Circuit", "2026-06-07T18:00:00"),
+                (2, 2, "MYSTERY", None, "2026-06-14T18:00:00"),
+                (3, 3, "NORMAL", "Circuit Zandvoort", "2026-06-21T18:00:00"),
+            ],
+        )
         await db.commit()
     return path
 
