@@ -150,7 +150,7 @@ These are ordinary commands: the interaction role runs them, in the command chan
 /bot hub-channel channel:#league-hub
 ```
 
-It is visible to your base role — or to every member, if you have not set one — and to both league roles, and nobody but the bot can post there. Change any of those roles later and the hub follows. Give it a channel of its own: setting the hub replaces that channel's permissions. **Nothing is offered on the panel yet**; modules add their options to it as they are built, and it says so until then.
+It is visible to your base role — or to every member, if you have not set one — and to both league roles, and nobody but the bot can post there. Change any of those roles later and the hub follows. Give it a channel of its own: setting the hub replaces that channel's permissions. The panel starts with **About**, which tells whoever presses it which bot this is and which version it runs; modules add their options to it as they are built.
 
 **One team already exists.** `/bot init` creates the **Reserve** team, which has unlimited seats and belongs to every division. You cannot remove or rename it. Nothing else is created — your team list starts empty apart from it.
 
