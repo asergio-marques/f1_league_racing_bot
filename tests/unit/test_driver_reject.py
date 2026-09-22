@@ -1,7 +1,7 @@
 """`/driver reject` — turning down an approved driver who has not been placed (issue #220).
 
 Available where a window's drivers are settled: in Placements and in Ongoing, placements. The
-driver returns to Not Signed Up and loses the signed-up role; their signup stays with the season.
+driver returns to Not Signed Up and loses the driver role; their signup stays with the season.
 """
 from __future__ import annotations
 

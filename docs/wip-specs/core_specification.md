@@ -283,7 +283,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A season in any of the three ongoing states shall move to Pending completion as soon as every one of its divisions is finished or cancelled. There being no round left to place a driver into, a season leaving Ongoing, signups open or Ongoing, placements shall first:
     - close its signup window, where one is open;
     - discard every placement not yet committed;
-    - return to Not Signed Up every driver whose signup is unsettled and every driver whose placements were all uncommitted, as the reject command would: an approved driver loses the signed-up role, and a signup in review has its channel closed.
+    - return to Not Signed Up every driver whose signup is unsettled and every driver whose placements were all uncommitted, as the reject command would: an approved driver loses the driver role, and a signup in review has its channel closed.
 - Pending completion is the last moment a season's record may change, and nothing is being raced: every division is finished or cancelled, so a grid, a lineup and a calendar no longer describe anything anyone will drive under. Three things may be done with the season and no others:
     - the results of a round already final may be amended, with everything that follows from it — the round's results and standings reposted, the attendance recalculated, and the attendance sanctions re-checked. The sanctions shall fire: a sanction is part of that round's record, and suppressing it would make the last round different from every other;
     - the channels of a division may be set and repointed, so that a channel lost before the season ends may be repaired;
@@ -299,7 +299,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Completing a season shall, in this order:
     1. post each division's final classification;
     2. record a history entry for every division each driver took part in;
-    3. revoke the division, team and signup roles of the season's drivers;
+    3. revoke the division roles, the team roles and the driver role of the season's drivers;
     4. close the signup window, where one is open, so that no signup begins after the driver pass has gone by;
     5. run the driver pass;
     6. switch test mode off, deleting every driver created by test mode;
@@ -323,7 +323,7 @@ it only to place it; the rules governing it belong to its own specification.
 #### Aborting a season
 - An abort command shall be a league admin's, shall require the word `CONFIRM`, and shall be refused in any state but Configuration, Waiting, Signups and Placements.
 - Aborting a season shall delete the season and every record belonging to it, its signups included. The season shall take no number and shall leave nothing in the archive.
-- Aborting shall close the signup window where one is open, revoke the signup roles of the season's drivers, run the driver pass without recording any history, and switch test mode off, deleting every driver created by test mode.
+- Aborting shall close the signup window where one is open, revoke the driver role of the season's drivers, run the driver pass without recording any history, and switch test mode off, deleting every driver created by test mode.
 - Once aborted, the server shall hold no active season.
 
 ### The archive
@@ -486,7 +486,7 @@ it only to place it; the rules governing it belong to its own specification.
     - A driver pending deletion shall not be deleted at once. They shall be deleted by the driver pass of the season's completion, cancellation or abort.
     - Until then the profile shall stand at Not Signed Up and may sign up again. Whether to accept them is the league's to decide.
 - A driver whose flag is true and who reaches Not Signed Up shall be retained, with nothing of their profile or their signups cleared, so that the results they raced for remain attributed.
-- A committed driver may be sacked, only while the season is in one of the three ongoing states. A driver who is not committed shall not be sacked: an uncommitted placement is removed by the command removing a driver from a division, and an Unassigned driver is turned down by the reject command. Sacking shall free every seat they hold, revoke every division, team and signup role, and return them to Not Signed Up.
+- A committed driver may be sacked, only while the season is in one of the three ongoing states. A driver who is not committed shall not be sacked: an uncommitted placement is removed by the command removing a driver from a division, and an Unassigned driver is turned down by the reject command. Sacking shall free every seat they hold, revoke every division and team role and the driver role, and return them to Not Signed Up.
 
 ### Placement into a division and team
 - A placement shall be **committed** once placements have been confirmed with it standing, and uncommitted until then. A driver holding a committed placement is a **committed driver**; a driver placed or awaiting placement who holds none is an **uncommitted driver**.
@@ -517,7 +517,7 @@ it only to place it; the rules governing it belong to its own specification.
     - The division's role shall be revoked. The team's role shall be revoked only where the driver holds no other seat, across all divisions, mapping to that role. The division's lineup shall be posted again.
 - A command shall reject a driver who is Unassigned.
     - The season shall stand in Placements or in Ongoing, placements.
-    - The driver shall return to Not Signed Up and lose the signed-up role.
+    - The driver shall return to Not Signed Up and lose the driver role.
 - A placement or a move shall be refused where it would carry a division beyond what its lineup, its attendance sheet or its standings graphic can draw, and nothing shall be changed by the refusal.
 - Every successful move, release and sacking shall cause the lineup of each division it touches to be deleted and posted again in its lineup channel, once.
 

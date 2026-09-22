@@ -7,7 +7,7 @@ refusal the service raises, and the reply and log line of a move or release that
 The two commands copy that ladder rather than share it, so each rung is tested for both.
 
 The reject command's own ladder is in `test_driver_reject.py`; the one branch it leaves — a
-signed-up role Discord will not take back — is here, because a failed role removal must not
+driver role Discord will not take back — is here, because a failed role removal must not
 undo a rejection already written.
 """
 from __future__ import annotations

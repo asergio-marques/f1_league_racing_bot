@@ -131,7 +131,7 @@ When inviting the bot, grant it the following OAuth2 bot permissions. All are us
 | **Manage Channels** | Creates private signup wizard channels; applies and removes channel permission overwrites for the signup module and per-driver wizard channels; deletes the channels it created during a `/bot factory-reset` |
 | **Manage Messages** | Deletes the old forecast message when a newer phase supersedes it (`forecast_cleanup_service`); deletes its own messages for `/clean-bot` and `/bot factory-reset` |
 | **Read Message History** | Reads back through a channel to find its own messages, for `/clean-bot` and `/bot factory-reset` |
-| **Manage Roles** | Grants the signed-up role on signup approval; grants/revokes division and team roles on driver placement, unassignment, and sacking |
+| **Manage Roles** | Grants the driver role on signup approval; grants/revokes division and team roles on driver placement, unassignment, and sacking |
 | **Mention @everyone, @here, and All Roles** | Pings the division role in weather forecast messages (phase 1–3) and round amendment notices, and the interaction role when a round's results submission channel opens. Required when those roles are not set to "Allow anyone to @mention this role" (the typical default for private league roles) |
 
 ### Privileged Gateway Intents
@@ -646,8 +646,8 @@ amendment first.
 
 > **Pending completion.** Once every division is finished or cancelled, the season moves by itself to *pending completion*. From then there are three things left, and no others: **amending the results of a round already final**, **repairing a division's channels** — completing posts the final classification and the final attendance sheet to them, so one deleted has to be repointed — and **completing the season**. Everything else that would act on the season is refused and says so: `/division calendar-sync`, `/team role`, `/team reserve-role`, `/results standings sync`, `/results rounds sync`, `/results reserves toggle` and every `/results amend` command. No module can be disabled either. Nothing is being raced by then, so a grid, a lineup and a calendar no longer describe anything anyone will drive under. A season with a signup window open, or mid-season placements still to confirm, moves there too: there is no round left to place anyone into, so the window is closed, every placement not yet confirmed is discarded, and every driver still unplaced, unconfirmed, awaiting approval or mid-correction returns to Not Signed Up as `/driver reject` would. Once every
 division is done it ends the season, in this order: each division's final classification is posted;
-a history entry is written for every division each driver took part in, whether or not they still sit in it — a driver moved, released or sacked mid-season keeps an entry for every division they held a confirmed seat in; the division, team and
-signed-up roles are revoked; an open signup window is closed; every driver who was Unassigned, placed,
+a history entry is written for every division each driver took part in, whether or not they still sit in it — a driver moved, released or sacked mid-season keeps an entry for every division they held a confirmed seat in; the division and team
+roles and the driver role are revoked; an open signup window is closed; every driver who was Unassigned, placed,
 signing up or in review returns to **Not Signed Up**, so they can sign up for the next season; every
 driver who never raced is then deleted, with their placements and history, though their signups stay
 with the season; test mode is switched off, deleting the drivers it created and keeping their
@@ -1139,7 +1139,7 @@ Refused for a driver's **only** confirmed seat — a seat not yet confirmed in a
 #### `/driver reject` — Turn down an approved driver
 *Access: League manager · Placements only*
 
-Turns down a driver who was approved but has not been placed — one in the Unassigned state. They return to Not Signed Up and lose the signed-up role; their signup is kept with the season. Available while the season is in placements, or mid-season while the drivers of a closed signup window are placed — the moments every signup has to be settled before placements are confirmed. A signup still in review is rejected from its review panel instead, and a placed driver is unassigned first.
+Turns down a driver who was approved but has not been placed — one in the Unassigned state. They return to Not Signed Up and lose the driver role; their signup is kept with the season. Available while the season is in placements, or mid-season while the drivers of a closed signup window are placed — the moments every signup has to be settled before placements are confirmed. A signup still in review is rejected from its review panel instead, and a placed driver is unassigned first.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1148,7 +1148,7 @@ Turns down a driver who was approved but has not been placed — one in the Unas
 #### `/driver sack` — Sack a driver
 *Access: League admin · Ongoing only*
 
-Revokes all placement roles and the signed-up role, removes the driver's placements in the season, and returns them to Not Signed Up. Available only while the season is ongoing, and only for a driver whose placement is confirmed — an unconfirmed placement is removed with `/driver unassign`, and an Unassigned driver turned down with `/driver reject`.
+Revokes all placement roles and the driver role, removes the driver's placements in the season, and returns them to Not Signed Up. Available only while the season is ongoing, and only for a driver whose placement is confirmed — an unconfirmed placement is removed with `/driver unassign`, and an Unassigned driver turned down with `/driver reject`.
 
 **Nobody is deleted by a sack.** The profile stays at Not Signed Up with its attendance, results and signups, and the driver may sign up again in a later window. A driver who has never raced is *pending deletion*, and is deleted when the season ends.
 

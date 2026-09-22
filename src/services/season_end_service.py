@@ -94,7 +94,7 @@ async def execute_season_end(season_id: int, bot: "Bot") -> None:
     # 2. History entries, for every driver holding a committed placement.
     await _write_driver_history_entries(season, bot)
 
-    # 3. The division, team and signup roles of the season's drivers.
+    # 3. The division and team roles, and the driver role, of the season's drivers.
     if guild is not None:
         await _revoke_season_roles(season.id, guild, bot)
 
