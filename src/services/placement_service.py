@@ -219,9 +219,10 @@ class PlacementService:
         The team's role is never fixed (issue #220): a league repoints it when the role is
         deleted or replaced, and the drivers already seated in the team — in any division of
         the season being raced, their placements confirmed — follow it. The old role is taken
-        from each where one was mapped and no other team still maps to it; the new one is
-        granted where one is given. A driver created by test mode holds no roles and is left
-        alone. Returns how many drivers were reached.
+        from each where one was mapped; the new one is granted where one is given. A role
+        belongs to one team only (#375), so the old role is nobody else's to keep. A driver
+        created by test mode holds no roles and is left alone. Returns how many drivers were
+        reached.
         """
         from services.season_lifecycle_service import uncommitted_seat_excluded
 
@@ -244,14 +245,6 @@ class PlacementService:
                 (team_name,),
             )
             user_ids = [row["discord_user_id"] for row in await cursor.fetchall()]
-            still_mapped = False
-            if old_role_id is not None:
-                cursor = await db.execute(
-                    "SELECT 1 FROM team_role_configs WHERE role_id = ? "
-                    "AND team_name != ? LIMIT 1",
-                    (old_role_id, team_name),
-                )
-                still_mapped = await cursor.fetchone() is not None
 
         reached = 0
         for user_id in user_ids:
@@ -261,7 +254,7 @@ class PlacementService:
                     member = await guild.fetch_member(int(user_id))
                 except discord.HTTPException:
                     continue
-            if old_role_id is not None and not still_mapped:
+            if old_role_id is not None:
                 await self._revoke_roles(member, old_role_id)
             if new_role_id is not None:
                 await self._grant_roles(member, new_role_id)
