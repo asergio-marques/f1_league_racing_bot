@@ -167,6 +167,55 @@ def role_grant_refusal(
     return None
 
 
+#: What the league's driver role stands for, in a refusal to grant it.
+DRIVER_ROLE_STANDS_FOR = "the league's drivers"
+
+
+def league_role_faults(
+    guild: Any, base_role_id: int | None, driver_role_id: int | None
+) -> list[str]:
+    """What is wrong with the league's two roles upon the server, each fault a full sentence.
+
+    Opening signups and confirming a season's configuration both ask this (#374). A role that
+    is only *stored* is not enough: the base role is who can see the signup channel and who is
+    pinged when it opens, and the driver role is granted at every approval by
+    `wizard_service.approve_signup`, which passes over a role that has gone and only logs one
+    Discord refuses. Either fault would otherwise cost every signup of the window in silence.
+
+    Three faults: the base role no longer on the server, the driver role no longer on the
+    server, and a driver role the bot cannot grant (`role_grant_refusal`). The base role is not
+    judged grantable, the league and not the bot being who grants it.
+
+    **Judges only what it can see.** A role that is not set is the caller's to name, with the
+    command that sets it; and with no guild there is nothing to look a role up in, so nothing
+    is said rather than a role being called missing on no evidence.
+    """
+    if guild is None:
+        return []
+    faults: list[str] = []
+    if base_role_id is not None and guild.get_role(base_role_id) is None:
+        faults.append(
+            "The league's **base role** is no longer on the server — replace it with "
+            "`/bot base-role`."
+        )
+    if driver_role_id is not None:
+        driver_role = guild.get_role(driver_role_id)
+        if driver_role is None:
+            faults.append(
+                "The league's **driver role** is no longer on the server — replace it with "
+                "`/bot driver-role`."
+            )
+        else:
+            refusal = role_grant_refusal(
+                driver_role,
+                stands_for=DRIVER_ROLE_STANDS_FOR,
+                remedy="Choose another with `/bot driver-role`.",
+            )
+            if refusal is not None:
+                faults.append(f"The league's **driver role**: {refusal}")
+    return faults
+
+
 def _member_of(interaction: Interaction) -> discord.Member | None:
     """The invoking member, or None where the interaction did not come from a server."""
     user = interaction.user
