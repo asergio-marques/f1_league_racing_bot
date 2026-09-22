@@ -261,7 +261,7 @@ Every command is given in the interaction channel, except those same five and
 `/bot factory-reset`.
 
 **When a command fails.** If a command, button or form runs into a fault in the bot, it tells
-you so, and nobody else sees the reply: *"❌ `/season approve` stopped on a fault in the bot,
+you so, and nobody else sees the reply: *"❌ `/round amend` stopped on a fault in the bot,
 not on anything you entered, and did not finish. It may have been partly done — check before
 running it again."* It also writes a line to the log channel naming who ran what and the kind
 of fault. Nothing is undone, so check what the command was meant to change before you run it
@@ -598,6 +598,13 @@ The image subsection also lists the eight **asset directories** and the path eac
 Pressing it saves all pending divisions and rounds to the database and arms the weather scheduler, and — with the attendance module on — every round's check-in call, reminder and deadline.
 
 **The review is deleted once the season is approved** — the whole report, pictures included, not just the button. It described a season waiting on a decision, and the decision has been made; leaving it would put a long stale scroll above everything the bot posts next. Your confirmation that the season was approved is private to you and stays. An expired review is cleared the same way, for the same reason.
+
+**Once committed, the approval stands, even where something after it cannot be done.** If the bot cannot read which drivers a division has placed, or the list of circuits its calendars are drawn from, it carries on with the rest. Your confirmation then lists what was left undone, under **Not everything could be done**:
+
+- a division whose drivers were given no roles — grant them by hand, and [`/team lineup`](#team-lineup--show-the-confirmed-team-lineups-of-the-season-being-raced) shows who they are;
+- the calendars that were not posted — post each one with [`/division calendar-sync`](#division-calendar-sync--repost-a-divisions-calendar).
+
+The same list is added to the approval's line in the log channel.
 
 **Who may press it.** The person who ran the review, or a **league admin**. Anyone else who presses is told so privately and nothing is approved. That check matters because the question is posted publicly: a league manager can review a season and then ask a league admin to approve it, which is the point of putting it where both can see it.
 

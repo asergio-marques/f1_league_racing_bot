@@ -510,6 +510,13 @@ When it goes through, the bot:
 
 Your season is **ongoing** from the moment the placements are confirmed in step 2, before anything is posted. So a round you spot as wrong while the calendar is still arriving can be moved with `/round amend` straight away, and `/round add` is closed from then on.
 
+**If one of steps 2 to 4 cannot be done, the approval still stands.** Should the bot fail to read which drivers a division has placed, or the list of circuits the calendars are drawn from, it carries on with the rest. Your private confirmation then lists what was left undone, under **Not everything could be done**:
+
+- a division whose drivers were given no roles — grant them by hand, and `/team lineup` shows who they are;
+- the calendars that were not posted — post each one with `/division calendar-sync`.
+
+The same list goes to the log channel.
+
 > **The opening classification needs the results and attendance modules, not the images module.**
 > Steps 3 and 4 draw nothing without `/images`; step 5 posts either way — as a drawing where the
 > `standings` and `attendance` outputs are switched on, and as the ordinary text tables where they
