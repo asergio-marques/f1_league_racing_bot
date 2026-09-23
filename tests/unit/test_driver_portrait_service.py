@@ -463,6 +463,29 @@ async def test_the_gate_never_raises_on_a_configuration_predating_the_feature(
     assert (written, calls) == (0, [])
 
 
+async def test_a_failure_beneath_the_gate_never_reaches_the_render(monkeypatch, directory):
+    """The lineup render would refuse a drawing over a raise from here, and at the
+    placements review a refused drawing withholds the approve button — which obtaining a
+    portrait must never do."""
+    from services import driver_portrait_service as m
+
+    monkeypatch.setattr(
+        m, "refresh_portraits", AsyncMock(side_effect=OSError("disk gone"))
+    )
+    bot = MagicMock()
+    bot.db_path = ":memory:"
+
+    written = await m.refresh_before_render(
+        bot,
+        [_member(1)],
+        config=_config(pfp_prerender=False, pfp_daily=True),
+        directory=directory,
+        obtain_missing=True,
+    )
+
+    assert written == 0
+
+
 # ── The daily refresh ─────────────────────────────────────────────────────
 
 
