@@ -406,7 +406,7 @@ def _config(**overrides):
     return SimpleNamespace(**values)
 
 
-async def _gate(monkeypatch, config, directory, members=None, *, ignore_trigger=False):
+async def _gate(monkeypatch, config, directory, members=None, *, obtain_missing=False):
     """Run refresh_before_render with refresh_portraits captured rather than performed."""
     from services import driver_portrait_service as m
 
@@ -421,7 +421,7 @@ async def _gate(monkeypatch, config, directory, members=None, *, ignore_trigger=
     bot.db_path = ":memory:"
     written = await m.refresh_before_render(
         bot, members if members is not None else [_member(1)],
-        config=config, directory=directory, ignore_trigger=ignore_trigger,
+        config=config, directory=directory, obtain_missing=obtain_missing,
     )
     return written, calls
 
@@ -902,33 +902,97 @@ def test_a_wrapped_portrait_survives_the_whole_fill_and_render_path(tmp_path):
     assert out.is_file() and out.stat().st_size > 0
 
 
-# ── Approval overrides the update trigger ─────────────────────────────────
+# ── The placements review obtains a missing portrait ──────────────────────
 #
-# `pfp_prerender` is the league's choice about ordinary postings. The confirmation of placements
-# decides whether to commit a season on the strength of a trial render, so it pulls
-# whichever trigger is on: judging the season on yesterday's portraits — or on the
-# placeholder for a driver seated since the last daily fetch — would be judging a
-# picture the season is not going to post (decided 2026-09-07).
+# `pfp_prerender` is the league's choice about ordinary postings. The placements review is
+# the one moment a season is judged on a drawing, so it obtains the portrait of any driver
+# who has none, whichever trigger is on: a driver seated since the last daily run would
+# otherwise be judged as a placeholder the league will not see. A portrait already present
+# is left to the trigger (image specification, decided 2026-09-23).
 
 
-async def test_approval_pulls_even_where_only_daily_updates_are_asked_for(
+async def test_the_review_obtains_a_missing_portrait_where_only_daily_updates_are_asked_for(
+    db_path, directory
+):
+    from services import driver_portrait_service as m
+
+    bot = MagicMock()
+    bot.db_path = db_path
+    member = _member(7, "abc")
+
+    written = await m.refresh_before_render(
+        bot,
+        [member],
+        config=_config(pfp_prerender=False, pfp_daily=True),
+        directory=directory,
+        obtain_missing=True,
+        now=NOW,
+    )
+
+    assert written == 1
+    assert (directory / "7.svg").is_file()
+    assert await _rows(db_path) == {"7": (portrait_key("abc", 1.0), NOW.isoformat())}
+
+
+async def test_the_review_does_not_obtain_again_a_portrait_the_driver_already_has(
     monkeypatch, directory
 ):
+    """Keeping a present portrait current is the daily trigger's work, not the review's."""
+    (directory / "1.svg").write_text("<svg>obtained yesterday</svg>")
+    has_one, has_none = _member(1), _member(2)
+
     written, calls = await _gate(
         monkeypatch,
         _config(pfp_prerender=False, pfp_daily=True),
         directory,
-        ignore_trigger=True,
+        [has_one, has_none],
+        obtain_missing=True,
     )
 
     assert written == 1
-    assert calls
+    assert calls == [([has_none], directory)]
 
 
-async def test_the_same_configuration_pulls_nothing_on_an_ordinary_posting(
+async def test_the_review_obtains_nothing_where_every_driver_has_a_portrait(
     monkeypatch, directory
 ):
-    """The override is approval's alone; a scheduled posting still honours the trigger."""
+    (directory / "1.svg").write_text("<svg>obtained yesterday</svg>")
+
+    written, calls = await _gate(
+        monkeypatch,
+        _config(pfp_prerender=False, pfp_daily=True),
+        directory,
+        [_member(1)],
+        obtain_missing=True,
+    )
+
+    assert (written, calls) == (0, [])
+
+
+async def test_where_every_render_updates_the_review_updates_every_portrait(
+    monkeypatch, directory
+):
+    """With the pre-render trigger on, the review is a render like any other: the trigger
+    brings every portrait up to date, present ones included."""
+    (directory / "1.svg").write_text("<svg>obtained yesterday</svg>")
+    has_one, has_none = _member(1), _member(2)
+
+    written, calls = await _gate(
+        monkeypatch,
+        _config(pfp_prerender=True),
+        directory,
+        [has_one, has_none],
+        obtain_missing=True,
+    )
+
+    assert written == 2
+    assert calls == [([has_one, has_none], directory)]
+
+
+async def test_the_same_configuration_obtains_nothing_on_an_ordinary_posting(
+    monkeypatch, directory
+):
+    """The override is the review's alone; a scheduled posting still honours the trigger."""
     written, calls = await _gate(
         monkeypatch, _config(pfp_prerender=False, pfp_daily=True), directory
     )
@@ -936,24 +1000,24 @@ async def test_the_same_configuration_pulls_nothing_on_an_ordinary_posting(
     assert (written, calls) == (0, [])
 
 
-async def test_portraits_switched_off_are_never_pulled_even_by_approval(
+async def test_portraits_switched_off_are_never_obtained_even_by_the_review(
     monkeypatch, directory
 ):
     """`use_pfp` is the league saying it does not take portraits from Discord at all.
-    Approval overrides *when* they are fetched, never *whether*."""
+    The review overrides *when* they are fetched, never *whether*."""
     written, calls = await _gate(
-        monkeypatch, _config(use_pfp=False), directory, ignore_trigger=True
+        monkeypatch, _config(use_pfp=False), directory, obtain_missing=True
     )
 
     assert (written, calls) == (0, [])
 
 
-async def test_a_rejected_directory_still_shuts_the_gate_for_approval(
+async def test_a_rejected_directory_still_shuts_the_gate_for_the_review(
     monkeypatch,
 ):
     """Obtaining portraits into a directory the render has refused helps nobody."""
     written, calls = await _gate(
-        monkeypatch, _config(), None, ignore_trigger=True
+        monkeypatch, _config(pfp_prerender=False, pfp_daily=True), None, obtain_missing=True
     )
 
     assert (written, calls) == (0, [])
