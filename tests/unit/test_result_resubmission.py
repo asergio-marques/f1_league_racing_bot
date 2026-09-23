@@ -117,7 +117,7 @@ async def _make_db(tmp_path, *, results: int = 2) -> str:
     return db_path
 
 
-def _state(db_path: str, *, staged=(), channel=None, prompt_message_id=None):
+def _state(db_path: str, *, staged=(), pardons=(), channel=None, prompt_message_id=None):
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
@@ -131,6 +131,7 @@ def _state(db_path: str, *, staged=(), channel=None, prompt_message_id=None):
         division_name="Division 1",
         submission_channel_id=SUBMISSION_CHANNEL_ID,
         staged=list(staged),
+        staged_pardons=list(pardons),
         prompt_message_id=prompt_message_id,
     )
 
@@ -209,6 +210,15 @@ def _penalty(seconds: int = 5, penalty_type: str = "TIME") -> StagedPenalty:
     )
 
 
+def _pardon(pardon_type: str = "ABSENT", justification: str = "Ill"):
+    from services.penalty_wizard import StagedPardon
+
+    return StagedPardon(
+        driver_user_id=DRIVER_A, driver_profile_id=31, attendance_id=41,
+        pardon_type=pardon_type, justification=justification, grantor_id=ACTOR_ID,
+    )
+
+
 # ---------------------------------------------------------------------------
 # What is kept, and what is thrown away
 # ---------------------------------------------------------------------------
@@ -268,6 +278,17 @@ async def test_the_staged_penalties_are_discarded(tmp_path):
     assert state.staged == []
 
 
+async def test_the_staged_pardons_are_discarded(tmp_path):
+    """The log says they are, and the state outlives the prompt: an approval message still
+    standing holds it, and must not grant what the resubmission threw away (#356)."""
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, pardons=[_pardon()], channel=_channel())
+
+    await _run(state, _interaction())
+
+    assert state.staged_pardons == []
+
+
 # ---------------------------------------------------------------------------
 # What is written down first
 # ---------------------------------------------------------------------------
@@ -305,6 +326,31 @@ async def test_the_discard_log_is_machine_readable(tmp_path):
     assert payload[0]["penalty_seconds"] == 5
 
 
+async def test_the_discarded_pardons_are_logged_in_full(tmp_path):
+    """The entry listed the penalties it threw away and not the pardons, which went with them
+    unrecorded (#356). They are written as the penalties are, count and detail."""
+    db_path = await _make_db(tmp_path)
+    state = _state(
+        db_path, staged=[_penalty(5)],
+        pardons=[_pardon("ABSENT", "Ill"), _pardon("NO_RSVP", "Power cut")],
+        channel=_channel(),
+    )
+
+    await _run(state, _interaction())
+
+    logged = _logged(state)
+    assert "discarded_count: 1" in logged
+    assert "discarded_pardons_count: 2" in logged
+    line = next(
+        l for l in logged.splitlines() if l.strip().startswith("discarded_pardons:")
+    )
+    payload = json.loads(line.split("discarded_pardons:", 1)[1].strip())
+    assert payload == [
+        {"driver_user_id": DRIVER_A, "pardon_type": "ABSENT", "justification": "Ill"},
+        {"driver_user_id": DRIVER_A, "pardon_type": "NO_RSVP", "justification": "Power cut"},
+    ]
+
+
 async def test_the_resubmission_itself_is_logged(tmp_path):
     db_path = await _make_db(tmp_path)
     state = _state(db_path, channel=_channel())
@@ -312,6 +358,20 @@ async def test_the_resubmission_itself_is_logged(tmp_path):
     await _run(state, _interaction())
 
     assert "RESULTS_RESUBMISSION | Started" in _logged(state)
+
+
+async def test_the_resubmission_counts_the_pardons_it_discarded(tmp_path):
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, pardons=[_pardon()], channel=_channel())
+
+    await _run(state, _interaction())
+
+    started = next(
+        call.args[0] for call in state.bot.output_router.post_log.await_args_list
+        if "RESULTS_RESUBMISSION | Started" in call.args[0]
+    )
+    assert "Previous staged penalties discarded: 0" in started
+    assert "Previous staged pardons discarded: 1" in started
 
 
 async def test_a_resubmission_with_nothing_staged_still_logs(tmp_path):

@@ -4833,7 +4833,7 @@ async def enter_resubmit_flow(
     interaction: discord.Interaction,
     state,
 ) -> None:
-    """Discard staged penalties and restart collection over the round's existing results.
+    """Discard staged penalties and pardons and restart collection over the round's existing results.
 
     Called from the pw_resubmit button callback in PenaltyReviewView.
 
@@ -4874,6 +4874,16 @@ async def enter_resubmit_flow(
         }
         for sp in state.staged
     ]
+    # The pardons go with them, and went unrecorded until #356. The justification is logged
+    # as it was when the pardon was staged: the log channel is the one place it may appear.
+    discarded_pardons = [
+        {
+            "driver_user_id": sp.driver_user_id,
+            "pardon_type": sp.pardon_type,
+            "justification": sp.justification,
+        }
+        for sp in state.staged_pardons
+    ]
 
     srv_row = None
     try:
@@ -4888,12 +4898,15 @@ async def enter_resubmit_flow(
                 f"<@{actor_id}> | RESULTS_RESUBMISSION_STAGED_DISCARD | Success\n"
                 f"  round_id: {round_id} ({state.division_name})\n"
                 f"  discarded_count: {discarded_count}\n"
-                f"  discarded: {_json.dumps(discarded_detail)}",
+                f"  discarded: {_json.dumps(discarded_detail)}\n"
+                f"  discarded_pardons_count: {len(discarded_pardons)}\n"
+                f"  discarded_pardons: {_json.dumps(discarded_pardons)}",
             )
     except Exception:
         log.exception("enter_resubmit_flow: error writing staged-discard audit log (round %s)", round_id)
 
     state.staged.clear()
+    state.staged_pardons.clear()
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -4939,7 +4952,8 @@ async def enter_resubmit_flow(
             await bot.output_router.post_log(
                 f"<@{actor_id}> | RESULTS_RESUBMISSION | Started\n"
                 f"  round_id: {round_id} ({state.division_name})\n"
-                f"  Previous staged penalties discarded: {discarded_count}",
+                f"  Previous staged penalties discarded: {discarded_count}\n"
+                f"  Previous staged pardons discarded: {len(discarded_pardons)}",
             )
     except Exception:
         log.exception("enter_resubmit_flow: error writing resubmission audit log (round %s)", round_id)
