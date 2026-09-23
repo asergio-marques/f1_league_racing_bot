@@ -6018,10 +6018,11 @@ class SeasonCog(commands.Cog):
 
         def _expired(what_never_came: str) -> str:
             # **Said to the admin, not only logged** (#135). The channel they were working in
-            # goes, and the log channel is not where they are looking.
+            # goes, and the log channel is not where they are looking. It does not claim the
+            # channel is gone: one Discord refuses to delete stands until the next run clears it.
             return (
                 f"⏱️ Amendment expired — {what_never_came} within {_AMEND_TIMEOUT_S // 60} "
-                "minutes, so its channel has been deleted and nothing was written. Run "
+                "minutes, so it has been closed and nothing was written. Run "
                 "`/round results amend` again to start over."
             )
 
