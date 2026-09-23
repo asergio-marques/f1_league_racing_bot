@@ -255,3 +255,32 @@ class TestTheNameIsChecked:
         assert isinstance(result, str)
         assert "driver name" in result
         assert "member" in result
+
+
+# ── Removing one driver (#268) ────────────────────────────────────────────
+
+
+class TestRemovingOneDriver:
+    """`roster remove` deletes by the route `roster clear` and switching test mode off take."""
+
+    async def test_their_history_is_kept_by_identifier(self, db_path):
+        """As switching test mode off keeps it: a driver created again under the same
+        identifier holds it as their own (#220)."""
+        result = await _add(db_path)
+        uid = str(result["discord_user_id"])
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO driver_history_entries (discord_user_id, driver_profile_id, "
+                "season_number, division_name) VALUES (?, ?, 1, ?)",
+                (uid, result["profile_id"], DIVISION),
+            )
+            await db.commit()
+
+        await remove_test_driver(result["discord_user_id"], db_path)
+
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT discord_user_id, driver_profile_id FROM driver_history_entries"
+            )
+            rows = [tuple(r) for r in await cursor.fetchall()]
+        assert rows == [(uid, None)]
