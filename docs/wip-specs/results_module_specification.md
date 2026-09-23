@@ -378,7 +378,7 @@ Penalties are not applied by a command. Once every session of a round has been s
     - A driver not present in the chosen session's results shall be rejected.
 - **No Penalties / Confirm** — proceeds with nothing applied. Where entries are staged, it shall first ask for confirmation that they are to be discarded.
 - **Approve** — proceeds with what is staged. It shall be unavailable while nothing is staged.
-- **Resubmit Initial Results** — discards the staged penalties and attendance pardons, takes down the prompt, and restarts collection in the same channel from the first session.
+- **Resubmit Initial Results** — discards the staged penalties and attendance pardons, takes down the prompt and any approval message, and restarts collection in the same channel from the first session.
     - The resubmission shall supersede the round's submitted results rather than delete them. The submitted results shall stand, published and counted, until every session has been submitted again, and shall then be replaced all at once. Decided 2026-09-17 (issue #210).
     - Team agreement across the sessions of the round shall be checked against the sessions of the resubmission, not the results being replaced.
     - The resubmission shall carry a button labelled "Cancel", usable by league managers. Pressing it shall end the resubmission, keep the submitted results, and post the stage-one prompt again. The staged penalties and pardons it discarded shall not be restored. Decided 2026-09-17.
@@ -388,7 +388,12 @@ Penalties are not applied by a command. Once every session of a round has been s
 - **Attendance Pardon** — stages an attendance pardon, per the attendance module specification.
 - One **Remove** button per staged penalty, and one per staged attendance pardon.
 
-Approving stage one shall present the staged list again with a choice of returning to staging, with the list intact, or committing. Committing shall apply every penalty, recompute positions, times and points for the sessions affected, republish the round's results and standings under the post-race penalty state, recompute the standings of every later round, and post one verdict per decision to the division's verdicts channel.
+**Approve** on the prompt shall commit stage one at once. **No Penalties / Confirm** shall instead post an approval message carrying **Make Changes**, which returns to staging with the list intact, and **Approve**, which commits. Committing shall apply every penalty, recompute positions, times and points for the sessions affected, republish the round's results and standings under the post-race penalty state, recompute the standings of every later round, and post one verdict per decision to the division's verdicts channel.
+
+- **A control of stage one shall act only while stage one is the round's current stage.** Decided 2026-09-23 (#402). Once stage one is committed, while a resubmission is collecting, or once a newer prompt has replaced the one pressed, a button or form of the stage shall be refused, saying why, and shall change nothing.
+- Committing stage one shall take down its prompt and its approval message.
+- A second commit pressed while the first is still being applied shall be refused.
+- The approval message shall be withdrawn when anything staged changes or **Make Changes** is pressed, and a second one shall replace the first. Its buttons shall act only on the approval message last posted.
 
 **Stage two — appeals.** Committing stage one shall post a second prompt to the same channel, carrying **Add Correction**, **No Changes / Confirm**, **Approve** and one **Remove** per staged correction. A correction takes and validates the same values as a penalty, and is the surface for overturning one.
 
@@ -410,6 +415,7 @@ Approving stage two shall apply any staged corrections, republish the round's re
     - Approving a stage of an amendment shall not move the round. The round is already final: it shall not be returned to either review state, its division shall not be finished a second time, and its season shall not be wound down again.
     - A stage approved without change shall leave the round's decisions exactly as they stood.
     - A stage shall be approved once. A second approval of the same stage shall change nothing.
+    - Once an amendment's reports are approved, a control that would change one shall be refused, saying why. Decided 2026-09-23 (#402).
 - **A division shall have one amendment open at a time.** Decided 2026-09-21. An amendment of any round of a division in which another amendment is still open shall be refused, and the refusal shall name the round, the sessions and the channel of the open one. The last stage of an amendment reposts the whole division, and would otherwise publish the other's unapproved classification.
 - **A division with an amendment open shall commit nothing else.** Decided 2026-09-21. While an amendment of one of its rounds is open, the submission of any other round of the division, first or resubmitted, shall refuse every commit: a session's results, a session entered as cancelled, and the approval of either review stage. The "results standings sync" and "results rounds sync" commands shall be refused for the division likewise. The refusal shall name the round being amended and its channel, and the submission shall remain open for the user to try again once the amendment has ended. An amendment's first stage recalculates the division from its unapproved classification, which the other round's postings would otherwise publish.
 
