@@ -116,25 +116,28 @@ def fabricate_qualifying_rows(drivers, team_keys, points_map):
     reasoning as PHASE3_SLOTS above: a preview exists to let every icon be judged in one
     picture, and a compound the fabrication never deals is a compound never seen.
 
-    A large enough field also carries a DNS and, one place inside it, a DSQ — the third
-    outcome literal a session can record — so a manager can judge all three chips
-    (#144).
+    A large enough field also carries a DNS and a DSQ — the outcome literals a session can
+    record — so a manager can judge their chips (#144). They stand in the order
+    ``validate_submission_block`` requires of a submitted qualifying, the DSQ last of all,
+    so the preview never draws a classification the results module would refuse.
     """
     rows = []
     count = len(drivers)
     compounds_dealt = 0
+    # A field of five or more ends DNS, DSQ; a field of four ends with the DNS alone.
+    dsq_position = count if count >= 5 else None
+    dns_position = count - 1 if count >= 5 else (count if count >= 4 else None)
     for position, driver in enumerate(drivers, start=1):
         seconds = 88.400 + (position - 1) * 0.400
         best_lap: str | None = f"1:{int(seconds - 60):02d}.{int(round((seconds % 1) * 1000)):03d}"
 
         outcome = OutcomeModifier.CLASSIFIED
-        # The last driver of a large enough field set no time, so that case is drawn too.
-        if count >= 4 and position == count:
-            outcome = OutcomeModifier.DNS
-            best_lap = None
-        # One place inside that, a disqualification, so the third literal is drawn as well.
-        elif count >= 5 and position == count - 1:
+        if position == dsq_position:
             outcome = OutcomeModifier.DSQ
+            best_lap = None
+        # A driver of a large enough field set no time, so that case is drawn too.
+        elif position == dns_position:
+            outcome = OutcomeModifier.DNS
             best_lap = None
 
         # P2 records no tyre at all, so the absent-datum case is drawn beside the five.
@@ -166,8 +169,8 @@ def fabricate_race_rows(drivers, team_keys, points_map, *, fastest_lap_position=
     """A believable race classification over *drivers*.
 
     The leader carries a total race time; everyone else an interval growing with position.
-    A driver who did not finish is placed last, as the results module renumbers them, so
-    the outcome literal is drawn where a league would actually see it.
+    A driver who did not finish is placed behind every finisher, as the results module
+    renumbers them, so the outcome literal is drawn where a league would actually see it.
 
     *fastest_lap_position* is where the bonus falls. It is a parameter because a standings
     grid draws many races at once: pinned to one place, the fastest-lap highlight would
@@ -175,27 +178,34 @@ def fabricate_race_rows(drivers, team_keys, points_map, *, fastest_lap_position=
     see it over a winner or over a midfield points finish. A single classification has no
     such need and keeps the second place it always had.
 
-    A large enough field also carries a DSQ, beside the DNF and the lapped classified
-    finish already drawn, so the outcome literal a league's results module can record is
-    exercised in full (#144).
+    A large enough field also carries a DSQ, beside the DNF and the lapped finish, so every
+    outcome literal a league's results module can record is exercised (#144). The tail
+    stands in the order ``validate_submission_block`` requires of a submitted race —
+    lapped, then DNF, then DSQ last of all — so the preview never draws a classification
+    the results module would refuse.
     """
     rows = []
     count = len(drivers)
+    # Six or more end lapped, DNF, DSQ; five end lapped, DNF; four end on the lapped finish.
+    # The lapped car always stands directly ahead of the non-finishers and behind every
+    # lead-lap finisher — on four it was once third with a lead-lap car behind it.
+    dsq_position = count if count >= 6 else None
+    dnf_position = count - 1 if count >= 6 else (count if count >= 5 else None)
+    non_finishers = (dsq_position is not None) + (dnf_position is not None)
+    lapped_position = count - non_finishers if count >= 4 else None
     for position, driver in enumerate(drivers, start=1):
         outcome = OutcomeModifier.CLASSIFIED
         base_time_ms: int | None = 3_723_000 + (position - 1) * 1_800
         laps_behind = None
 
-        if count >= 5 and position == count:
+        if position == dsq_position:
+            outcome = OutcomeModifier.DSQ
+            base_time_ms = None
+        elif position == dnf_position:
             outcome = OutcomeModifier.DNF
             base_time_ms = None
-        elif count >= 4 and position == count - 1:
+        elif position == lapped_position:
             laps_behind = 1
-            base_time_ms = None
-        # Two places inside that, a disqualification — the third outcome literal a race can
-        # carry, beside the DNF and the lapped finish already drawn.
-        elif count >= 6 and position == count - 2:
-            outcome = OutcomeModifier.DSQ
             base_time_ms = None
 
         rows.append(

@@ -190,6 +190,45 @@ class TestStandingsScatter:
             {row.finishing_position for row in dnf}
         )
 
+    def test_the_outcomes_stand_in_the_order_a_submission_must_keep(self):
+        """A preview must not draw a classification the results module would refuse.
+
+        ``validate_submission_block`` refuses a race whose rows do not run lead-lap, then
+        lapped, then DNF, then DNS, then DSQ, and a qualifying whose rows do not run
+        classified, then DNF, then DNS, then DSQ. The rule sits inside that function among
+        checks needing a division, so it is stated here rather than called. A DSQ placed
+        ahead of the lapped car and the DNF first shipped exactly that refusal (#144).
+        """
+        from models.session_result import OutcomeModifier
+        from services.image_preview_data import fabricate_qualifying_rows, fabricate_race_rows
+
+        def race_category(row) -> int:
+            if row.outcome is OutcomeModifier.DSQ:
+                return 4
+            if row.outcome is OutcomeModifier.DNS:
+                return 3
+            if row.outcome is OutcomeModifier.DNF:
+                return 2
+            return 1 if row.laps_behind else 0
+
+        qualifying_category = {
+            OutcomeModifier.CLASSIFIED: 0,
+            OutcomeModifier.DNF: 1,
+            OutcomeModifier.DNS: 2,
+            OutcomeModifier.DSQ: 3,
+        }
+
+        for count in range(1, 25):
+            race = fabricate_race_rows(self._drivers(count), {"Team": 900}, {})
+            race_order = [race_category(row) for row in race]
+            assert race_order == sorted(race_order), f"race of {count}: {race_order}"
+
+            qualifying = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {})
+            qualifying_order = [qualifying_category[row.outcome] for row in qualifying]
+            assert qualifying_order == sorted(qualifying_order), (
+                f"qualifying of {count}: {qualifying_order}"
+            )
+
     def test_a_small_field_is_not_forced_to_carry_a_disqualification(self):
         """The spec's own qualifier: none of the cases are fabricated into existence."""
         from models.session_result import OutcomeModifier
