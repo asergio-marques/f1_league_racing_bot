@@ -5,7 +5,7 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Collection, Iterable, Mapping
 
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
@@ -113,6 +113,148 @@ def detect_fastest_lap(
 
 
 # ---------------------------------------------------------------------------
+# The standings order
+# ---------------------------------------------------------------------------
+#
+# The rule that orders a championship, apart from where its inputs come from. The two
+# `compute_*_standings` functions below read their inputs from the database; the standings
+# preview fabricates its own and must still be ordered by this rule and no other, or it draws
+# a tie the countback would have settled the other way (#144). Hence plain functions both
+# call, rather than a sort key closed over inside each.
+
+
+def tally_feature_finishes(
+    results: Iterable[tuple[int, str, str, int, int]],
+) -> tuple[dict[int, dict[int, int]], dict[int, dict[int, int]]]:
+    """The countback's raw material: each entry's classified Feature Race finishes.
+
+    *results* is ``(key, session_type, outcome, finishing_position, round_number)`` for every
+    session result, in any order; *key* is a driver or a team, as the caller tallies. Returns
+    ``(finish_counts, first_finish_rounds)``: per key, how many times it finished at each
+    position, and the earliest round it first did so.
+
+    Only a **classified** finish of a **Feature Race** counts — a sprint, a qualifying
+    session, a retirement from second place are all invisible to the countback (FR-028).
+    """
+    finish_counts: dict[int, dict[int, int]] = defaultdict(dict)
+    first_finish_rounds: dict[int, dict[int, int]] = defaultdict(dict)
+    for key, session_type, outcome, position, round_number in results:
+        if SessionType(session_type) is not SessionType.FEATURE_RACE:
+            continue
+        if outcome != OutcomeModifier.CLASSIFIED:
+            continue
+        finish_counts[key][position] = finish_counts[key].get(position, 0) + 1
+        existing = first_finish_rounds[key].get(position)
+        if existing is None or round_number < existing:
+            first_finish_rounds[key][position] = round_number
+    return dict(finish_counts), dict(first_finish_rounds)
+
+
+def _countback_vectors(
+    key: int,
+    finish_counts: Mapping[int, Mapping[int, int]],
+    first_finish_rounds: Mapping[int, Mapping[int, int]],
+    positions: int,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Most of each position first, then the earliest to reach it, over *positions* places.
+
+    *positions* is the same for every entry of one classification, so that no two vectors
+    differ in length — a shorter tuple would compare as better and corrupt the order.
+    """
+    counts = finish_counts.get(key, {})
+    firsts = first_finish_rounds.get(key, {})
+    return (
+        tuple(-counts.get(p, 0) for p in range(1, positions + 1)),
+        tuple(firsts.get(p, 999999) for p in range(1, positions + 1)),
+    )
+
+
+def _deepest_position(finish_counts: Mapping[int, Mapping[int, int]]) -> int:
+    return max((max(fc.keys(), default=0) for fc in finish_counts.values()), default=0)
+
+
+def order_drivers(
+    drivers: Iterable[int],
+    *,
+    points: Mapping[int, int],
+    finish_counts: Mapping[int, Mapping[int, int]],
+    first_finish_rounds: Mapping[int, Mapping[int, int]],
+    participants: Collection[int],
+    seats: Mapping[int, tuple[int, str]],
+    names: Mapping[int, str],
+) -> list[int]:
+    """*drivers* in championship order (FR-028).
+
+    1. Total points, most first.
+    2. Feature Race wins, then second places, and so on down every position.
+    3. Still level: the driver who first reached the highest position where they differ.
+    4. A driver who has taken part in a session ranks above one who has taken part in none.
+    5. The final tiebreak: alphabetically by team, the reserve team after every named team and
+       a driver holding no seat after the reserves; alphabetically by driver within the team;
+       and ascending user id where even that ties.
+
+    Step 5 exists because the four above it can all come out equal — two drivers on nought at
+    the start of a season is the ordinary case — and what then decided the order was
+    ``sorted()`` falling back on set iteration over Discord snowflakes. That is not an order,
+    it just looks like one: adding an unrelated driver to the division rehashes the set and can
+    swap two already-published positions. The last step is what makes the order *total*, since
+    display names are not unique on Discord and two drivers can genuinely share one (#143, and
+    the rule ``opening_driver_standings`` already applied to the season's opening).
+
+    *seats* maps a driver to ``(team rank, team name)`` — rank 0 a named team, 1 the reserve
+    team; a driver absent from it holds no seat and ranks after both (decided 2026-09-15).
+    *names* are the names the output will draw, since an order taken on one name while another
+    is displayed reads as simply broken; a driver absent from it falls back to their id.
+    """
+    positions = _deepest_position(finish_counts)
+
+    def key(uid: int) -> tuple:
+        count_vec, first_vec = _countback_vectors(
+            uid, finish_counts, first_finish_rounds, positions
+        )
+        team_rank, team_name = seats.get(uid, (2, ""))
+        return (
+            -points.get(uid, 0),
+            count_vec,
+            first_vec,
+            0 if uid in participants else 1,
+            team_rank,
+            team_name.casefold(),
+            names.get(uid, str(uid)).casefold(),
+            uid,
+        )
+
+    return sorted(drivers, key=key)
+
+
+def order_teams(
+    teams: Iterable[int],
+    *,
+    points: Mapping[int, int],
+    finish_counts: Mapping[int, Mapping[int, int]],
+    first_finish_rounds: Mapping[int, Mapping[int, int]],
+    team_meta: Mapping[int, tuple[int, str]],
+) -> list[int]:
+    """*teams* in championship order (FR-029): as :func:`order_drivers`, less participation.
+
+    The final tiebreak mirrors the drivers' for the same reason (#143): alphabetically by team
+    name, the reserve team after every named team, and the team added first where two teams
+    carry the same name. *team_meta* maps a team to ``(team rank, team name)``; a team absent
+    from it — of another division, which no result should name — ranks after both.
+    """
+    positions = _deepest_position(finish_counts)
+
+    def key(tid: int) -> tuple:
+        count_vec, first_vec = _countback_vectors(
+            tid, finish_counts, first_finish_rounds, positions
+        )
+        team_rank, team_name = team_meta.get(tid, (2, ""))
+        return (-points.get(tid, 0), count_vec, first_vec, team_rank, team_name.casefold(), tid)
+
+    return sorted(teams, key=key)
+
+
+# ---------------------------------------------------------------------------
 # Driver standings
 # ---------------------------------------------------------------------------
 
@@ -124,27 +266,10 @@ async def compute_driver_standings(
 ) -> list[DriverStandingsSnapshot]:
     """Aggregate driver points for all rounds up to and including *up_to_round_id*.
 
-    Sort order (FR-028):
-    1. total_points DESC
-    2. Feature Race P1 count DESC, Feature Race P2 count DESC, ... (all positions)
-    3. For tie after all finish-counts: driver who FIRST achieved the highest
-       diverging position wins (first_finish_rounds comparison).
-    4. A driver who has taken part in a session ranks above one who has taken part in none.
-    5. The final tiebreak: alphabetically by team, the reserve team after every named team
-       and a driver holding no seat after the reserves; alphabetically by driver within the
-       team; and ascending user id where even that ties.
-
-    Step 5 exists because the four above it can all come out equal — two drivers on nought
-    at the start of a season is the ordinary case — and what then decided the order was
-    ``sorted()`` falling back on set iteration over Discord snowflakes. That is not an order,
-    it just looks like one: adding an unrelated driver to the division rehashes the set and
-    can swap two already-published positions. The last step is what makes the order *total*,
-    since display names are not unique on Discord and two drivers can genuinely share one
-    (#143, and the rule ``opening_driver_standings`` already applied to the season's opening).
+    Ordered by :func:`order_drivers`, which holds the rule (FR-028) and its final tiebreak.
 
     *display_names* are the names the output will actually draw, resolved from Discord by the
-    caller; the order is taken on the same string, as a grid ordered on one name while
-    displaying another reads as simply broken. A driver the caller could not resolve falls
+    caller; the order is taken on the same string. A driver the caller could not resolve falls
     back to their id, as everywhere else.
 
     Returns snapshots with standing_position assigned from 1.
@@ -195,28 +320,26 @@ async def compute_driver_standings(
 
     # Aggregate
     total_points: dict[int, int] = defaultdict(int)
-    # finish_counts[driver][position] = count of Feature Race CLASSIFIED finishes at that position
-    finish_counts: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    # first_finish_rounds[driver][position] = earliest round where driver was CLASSIFIED at position
-    first_finish_rounds: dict[int, dict[int, int]] = defaultdict(dict)
     # Any driver that has at least one session result (even a 0-point DNF)
     race_participants: set[int] = set()
+    tallied: list[tuple[int, str, str, int, int]] = []
 
     for row in rows:
         uid: int = current_of.get(row["driver_user_id"], row["driver_user_id"])
         pts = (row["points_awarded"] or 0) + (row["fastest_lap_bonus"] or 0)
         total_points[uid] += pts
         race_participants.add(uid)
+        tallied.append(
+            (
+                uid,
+                row["session_type"],
+                row["outcome"],
+                row["finishing_position"],
+                row["round_number"],
+            )
+        )
 
-        session_type = SessionType(row["session_type"])
-        if session_type is SessionType.FEATURE_RACE and row["outcome"] == "CLASSIFIED":
-            pos: int = row["finishing_position"]
-            round_num: int = row["round_number"]
-            finish_counts[uid][pos] = finish_counts[uid].get(pos, 0) + 1
-            existing = first_finish_rounds[uid].get(pos)
-            if existing is None or round_num < existing:
-                first_finish_rounds[uid][pos] = round_num
-
+    finish_counts, first_finish_rounds = tally_feature_finishes(tallied)
     all_drivers = set(total_points) | set(finish_counts)
 
     # Every seat in the division, reserves included. Two jobs, one query: the non-reserve
@@ -253,36 +376,15 @@ async def compute_driver_standings(
             total_points[uid] = 0
         all_drivers.add(uid)
 
-    # Compute once across all drivers so every sort-key vector has the same
-    # length — prevents tuple length mismatch corrupting tiebreak comparisons.
-    global_max_pos = max(
-        (max(fc.keys(), default=0) for fc in finish_counts.values()),
-        default=0,
+    sorted_drivers = order_drivers(
+        all_drivers,
+        points=total_points,
+        finish_counts=finish_counts,
+        first_finish_rounds=first_finish_rounds,
+        participants=race_participants,
+        seats=seats,
+        names=names,
     )
-
-    def _sort_key(uid: int) -> tuple:
-        pts = total_points.get(uid, 0)
-        fc = finish_counts.get(uid, {})
-        ffr = first_finish_rounds.get(uid, {})
-        # Build per-position tiebreak vectors — use negative counts (descending)
-        # and positive first_round (ascending for tiebreak: earlier is better)
-        count_vec = tuple(-fc.get(p, 0) for p in range(1, global_max_pos + 1))
-        first_vec = tuple(ffr.get(p, 999999) for p in range(1, global_max_pos + 1))
-        # Tiebreaker: participated in any race (even DNF) ranks above never-participated
-        not_participated = 0 if uid in race_participants else 1
-        team_rank, team_name = seats.get(uid, (2, ""))
-        return (
-            -pts,
-            count_vec,
-            first_vec,
-            not_participated,
-            team_rank,
-            team_name.casefold(),
-            names.get(uid, str(uid)).casefold(),
-            uid,
-        )
-
-    sorted_drivers = sorted(all_drivers, key=_sort_key)
 
     snapshots: list[DriverStandingsSnapshot] = []
     for i, uid in enumerate(sorted_drivers, start=1):
@@ -316,13 +418,7 @@ async def compute_team_standings(
 ) -> list[TeamStandingsSnapshot]:
     """Aggregate team points for all sessions up to *up_to_round_id*.
 
-    Sort order mirrors driver standings (FR-029): total_points DESC then finish-count
-    tiebreaks; tiebreak uses Feature Race CLASSIFIED finishes only.
-
-    The final tiebreak mirrors it too, and for the same reason (#143): alphabetically by
-    team name, the reserve team after every named team, and the team added first where two
-    teams carry the same name. Without it two teams level on everything are ordered by set
-    iteration, which the addition of an unrelated team can silently reverse.
+    Ordered by :func:`order_teams`, which holds the rule (FR-029) and its final tiebreak.
 
     **A team is the division's team, never its Discord role** (#375). A result records the
     team, so a team whose role is replaced mid-season keeps a single entry holding every
@@ -369,23 +465,20 @@ async def compute_team_standings(
         rows = await cursor.fetchall()
 
     total_points: dict[int, int] = defaultdict(int)
-    finish_counts: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    first_finish_rounds: dict[int, dict[int, int]] = defaultdict(dict)
-
     for row in rows:
         tid: int = row["team_instance_id"]
-        pts = (row["points_awarded"] or 0) + (row["fastest_lap_bonus"] or 0)
-        total_points[tid] += pts
+        total_points[tid] += (row["points_awarded"] or 0) + (row["fastest_lap_bonus"] or 0)
 
-        session_type = SessionType(row["session_type"])
-        if session_type is SessionType.FEATURE_RACE and row["outcome"] == "CLASSIFIED":
-            pos: int = row["finishing_position"]
-            rnum: int = row["round_number"]
-            finish_counts[tid][pos] = finish_counts[tid].get(pos, 0) + 1
-            existing = first_finish_rounds[tid].get(pos)
-            if existing is None or rnum < existing:
-                first_finish_rounds[tid][pos] = rnum
-
+    finish_counts, first_finish_rounds = tally_feature_finishes(
+        (
+            row["team_instance_id"],
+            row["session_type"],
+            row["outcome"],
+            row["finishing_position"],
+            row["round_number"],
+        )
+        for row in rows
+    )
     all_teams = set(total_points) | set(finish_counts)
 
     # Every team of the division, reserves included. Two jobs, one query: the non-reserve
@@ -412,23 +505,13 @@ async def compute_team_standings(
             total_points[tid] = 0
         all_teams.add(tid)
 
-    # Compute once across all teams so every sort-key vector has the same
-    # length — prevents tuple length mismatch corrupting tiebreak comparisons.
-    global_max_pos = max(
-        (max(fc.keys(), default=0) for fc in finish_counts.values()),
-        default=0,
+    sorted_teams = order_teams(
+        all_teams,
+        points=total_points,
+        finish_counts=finish_counts,
+        first_finish_rounds=first_finish_rounds,
+        team_meta=team_meta,
     )
-
-    def _sort_key(tid: int) -> tuple:
-        pts = total_points.get(tid, 0)
-        fc = finish_counts.get(tid, {})
-        ffr = first_finish_rounds.get(tid, {})
-        count_vec = tuple(-fc.get(p, 0) for p in range(1, global_max_pos + 1))
-        first_vec = tuple(ffr.get(p, 999999) for p in range(1, global_max_pos + 1))
-        team_rank, team_name = team_meta.get(tid, (2, ""))
-        return (-pts, count_vec, first_vec, team_rank, team_name.casefold(), tid)
-
-    sorted_teams = sorted(all_teams, key=_sort_key)
 
     snapshots: list[TeamStandingsSnapshot] = []
     for i, tid in enumerate(sorted_teams, start=1):
