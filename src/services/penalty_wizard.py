@@ -554,6 +554,14 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
+        # The review may have moved on while the form was open (#402). A correction is staged on
+        # the appeals review, which is the stage the round has moved on *to*.
+        if not self.use_appeals_staging:
+            refusal = await _review_moved_on(self.state)
+            if refusal is not None:
+                await interaction.followup.send(refusal, ephemeral=True)
+                return
+
         # Both texts are published in the verdict, so neither may mention a group or carry an
         # emoji (#204).
         for label, text_input in (
@@ -917,6 +925,8 @@ class _ConfirmClearView(LeagueView):
     ) -> None:
         if not await _require_lm(interaction, self.state):
             return
+        if not await _require_current(interaction, self.state):
+            return
         self.state.staged.clear()
         await interaction.response.defer(ephemeral=True)
         await _show_approval_step(interaction, self.state)
@@ -1065,6 +1075,8 @@ class PenaltyReviewView(LeagueView):
                 return
             if not await _require_lm(interaction, self.state):
                 return
+            if not await _require_current(interaction, self.state):
+                return
             if idx < len(self.state.staged):
                 removed = self.state.staged.pop(idx)
                 await interaction.response.defer(ephemeral=True)
@@ -1128,6 +1140,8 @@ class PenaltyReviewView(LeagueView):
             return
         if not await _require_lm(interaction, self.state):
             return
+        if not await _require_current(interaction, self.state):
+            return
         view = _SessionSelectView(state=self.state, source_interaction=interaction)
         await interaction.response.send_message(
             "Select which session to penalise:", view=view, ephemeral=True
@@ -1149,6 +1163,8 @@ class PenaltyReviewView(LeagueView):
             )
             return
         if not await _require_lm(interaction, self.state):
+            return
+        if not await _require_current(interaction, self.state):
             return
         if not self.state.staged:
             # No penalties — advance directly to approval step (T019)
@@ -1209,6 +1225,8 @@ class PenaltyReviewView(LeagueView):
             return
         if not await _require_lm(interaction, self.state):
             return
+        if not await _require_current(interaction, self.state):
+            return
         await interaction.response.defer(ephemeral=True)
         from services.result_submission_service import enter_resubmit_flow
         await enter_resubmit_flow(interaction, self.state)
@@ -1229,6 +1247,8 @@ class PenaltyReviewView(LeagueView):
             )
             return
         if not await _require_lm(interaction, self.state):
+            return
+        if not await _require_current(interaction, self.state, pardons=True):
             return
         await interaction.response.send_modal(AddPardonModal(state=self.state))
 
@@ -1259,6 +1279,8 @@ class ApprovalView(LeagueView):
             )
             return
         if not await _require_lm(interaction, self.state):
+            return
+        if not await _require_current(interaction, self.state):
             return
         await interaction.response.defer(ephemeral=True)
         await _refresh_prompt(self.state)

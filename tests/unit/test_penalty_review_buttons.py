@@ -18,6 +18,13 @@ genuinely different acts — approving a round *with* penalties, and finalising 
 — and a manager pressing Approve on an empty list has almost certainly meant the other. Letting
 it through would finalise the round by a path that expects penalties to apply.
 
+**Every control that changes the review first asks whether it is still the round's current one**
+(#402). The review outlives the stage it was built for — through a resubmission, through the
+appeals stage, while an approval is still being applied — and a control pressed then must say
+why it cannot act and change nothing. The check itself is tested against the database in
+`test_review_moves_on.py`; here it is stubbed, and
+`test_every_control_refuses_once_the_review_has_moved_on` drives every control that asks it.
+
 **Clearing a staged list asks first, and says how many.** The list is an evening's work and
 discarding it cannot be undone; the count is what makes the warning real rather than
 boilerplate. `test_confirming_the_clear_discards_the_staged_list` and its cancel counterpart sit
@@ -38,6 +45,7 @@ import services.penalty_wizard as pw  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
 from services.penalty_service import StagedPenalty  # noqa: E402
 from services.penalty_wizard import (  # noqa: E402
+    ApprovalView,
     PenaltyReviewState,
     PenaltyReviewView,
     _ConfirmClearView,
@@ -126,6 +134,15 @@ def _permitted(monkeypatch):
     """Permit by default; the refusal is exercised explicitly where it is the subject."""
     monkeypatch.setattr(pw, "_may_review_signup", AsyncMock(return_value=True), raising=False)
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: True)
+
+
+@pytest.fixture(autouse=True)
+def _current(monkeypatch):
+    """Every review is current by default; its moving on is exercised explicitly (#402).
+
+    The real check reads the round from the database, which a state on `:memory:` does not have.
+    """
+    monkeypatch.setattr(pw, "_review_moved_on", AsyncMock(return_value=None))
 
 
 def _approval_step():
@@ -497,3 +514,77 @@ async def test_the_appeals_review_draws_with_more_corrections_than_there_is_room
     state.staged_appeals = [_penalty(s) for s in range(1, 31)]
 
     assert len(AppealsReviewView(state).children) <= 25
+
+
+# ---------------------------------------------------------------------------
+# A review that has moved on (#402)
+# ---------------------------------------------------------------------------
+
+#: Every control on the review that asks whether it is current, and whether it asks as one that
+#: stages or removes a pardon. Remove buttons are named by their custom ID.
+GUARDED = [
+    ("add_penalty_btn", False),
+    ("no_penalties_btn", False),
+    ("resubmit_btn", False),
+    ("pw_remove_0", False),
+    ("pardon_btn", True),
+    ("pw_pardon_remove_0", True),
+]
+
+
+@pytest.mark.parametrize(("control", "pardons"), GUARDED)
+async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, control, pardons):
+    """**The review prompt stayed up, and worked, after the job it was posted for moved on** — so
+    Remove said a penalty was removed through the appeals stage when it had been applied, and
+    Resubmit started collecting a round already in appeals. Each control now says why it cannot
+    act, and changes nothing: no list touched, no form opened, nothing posted or started."""
+    moved_on = AsyncMock(return_value="❌ moved on")
+    monkeypatch.setattr(pw, "_review_moved_on", moved_on)
+    state = _state(staged=[_penalty()])
+    state.staged_pardons = [_pardon(0)]
+    view = PenaltyReviewView(state)
+    interaction = _interaction()
+    refresh = AsyncMock()
+
+    with _approval_step() as approval, patch(
+        "services.penalty_wizard._refresh_prompt", new=refresh
+    ), patch(
+        "services.result_submission_service.enter_resubmit_flow", new=AsyncMock()
+    ) as resubmit:
+        if control.startswith("pw_"):
+            await next(c for c in view.children if c.custom_id == control).callback(interaction)
+        else:
+            await _press(view, control, interaction)
+
+    assert _replied(interaction) == "❌ moved on"
+    assert moved_on.await_args.kwargs == {"pardons": pardons}
+    assert len(state.staged) == 1 and len(state.staged_pardons) == 1
+    approval.assert_not_awaited()
+    refresh.assert_not_awaited()
+    resubmit.assert_not_awaited()
+    interaction.response.send_modal.assert_not_awaited()
+    interaction.response.defer.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("view_class", "button"),
+    [(_ConfirmClearView, "confirm_btn"), (ApprovalView, "make_changes_btn")],
+)
+async def test_the_steps_on_the_way_to_approval_refuse_too(monkeypatch, view_class, button):
+    """Clearing the list and going back to it are reached from a review that was current when
+    they were posted, which says nothing about whether it still is."""
+    monkeypatch.setattr(pw, "_review_moved_on", AsyncMock(return_value="❌ moved on"))
+    state = _state(staged=[_penalty()])
+    view = view_class(state)
+    interaction = _interaction()
+    refresh = AsyncMock()
+
+    with _approval_step() as approval, patch(
+        "services.penalty_wizard._refresh_prompt", new=refresh
+    ):
+        await getattr(type(view), button)(view, interaction, MagicMock())
+
+    assert _replied(interaction) == "❌ moved on"
+    assert len(state.staged) == 1
+    approval.assert_not_awaited()
+    refresh.assert_not_awaited()

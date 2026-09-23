@@ -64,7 +64,15 @@ ROUND_ID = 21
 # ---------------------------------------------------------------------------
 
 
-async def _make_db(tmp_path, *, name: str = "appeals", season_status: str = "ACTIVE") -> str:
+async def _make_db(
+    tmp_path,
+    *,
+    name: str = "appeals",
+    season_status: str = "ACTIVE",
+    round_status: str = "AWAITING_APPEAL_VERDICTS",
+) -> str:
+    """*round_status* is the report stage's for the approval step, which belongs to that stage
+    and refuses once the round has moved on to appeals (#402)."""
     db_path = os.path.join(str(tmp_path), f"{name}.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -85,9 +93,14 @@ async def _make_db(tmp_path, *, name: str = "appeals", season_status: str = "ACT
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
-            "status) VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL', "
-            "'AWAITING_APPEAL_VERDICTS')",
-            (ROUND_ID, DIVISION_ID),
+            "status) VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL', ?)",
+            (ROUND_ID, DIVISION_ID, round_status),
+        )
+        await db.execute(
+            "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
+            "in_penalty_review, results_posted) "
+            "VALUES (?, 700, '2026-02-01T00:00:00+00:00', 1, 1)",
+            (ROUND_ID,),
         )
         await db.commit()
     return db_path
@@ -274,7 +287,9 @@ async def test_only_a_league_manager_may_remove_a_correction(tmp_path):
 async def test_make_changes_returns_to_staging_with_the_list_intact(tmp_path):
     """A steward who reaches approval and realises they have missed a penalty must be able
     to go back — otherwise the safe thing to do at that screen is to approve."""
-    db_path = await _make_db(tmp_path, name="make_changes")
+    db_path = await _make_db(
+        tmp_path, name="make_changes", round_status="AWAITING_REPORT_VERDICTS"
+    )
     state = _state(db_path)
     state.staged.append(_penalty())
     view = ApprovalView(state=state)

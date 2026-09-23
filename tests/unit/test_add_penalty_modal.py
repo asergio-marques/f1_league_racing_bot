@@ -74,6 +74,7 @@ async def _make_db(
     base_time_ms: int | None = 3_600_000,
     ingame_ms: int = 0,
     qualifying: bool = False,
+    round_status: str = "AWAITING_REPORT_VERDICTS",
 ) -> str:
     db_path = os.path.join(str(tmp_path), "add_penalty.db")
     await run_migrations(db_path)
@@ -97,8 +98,17 @@ async def _make_db(
         await seed_team_instances(db, DIVISION_ID, 0)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
-            "scheduled_at) VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01')",
-            (ROUND_ID, DIVISION_ID),
+            "scheduled_at, status) "
+            "VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01', ?)",
+            (ROUND_ID, DIVISION_ID, round_status),
+        )
+        # The submission channel the review runs in. A penalty is staged only while the review
+        # is the round's current one, which this row says (#402).
+        await db.execute(
+            "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
+            "in_penalty_review, results_posted) "
+            "VALUES (?, 1, '2026-06-01T00:00:00+00:00', 1, 1)",
+            (ROUND_ID,),
         )
         await db.execute(
             "INSERT INTO session_results (id, round_id, division_id, session_type, status) "
@@ -317,6 +327,28 @@ async def test_an_appeal_correction_is_staged_on_the_appeals_list(tmp_path):
     assert state.staged == []
     assert len(state.staged_appeals) == 1
     assert "Staged Correction" in _replied(interaction)
+
+
+async def test_a_penalty_is_not_staged_once_the_review_has_moved_on(tmp_path):
+    """**The form can outlive its review** (#402). Submitted once the round's reports were
+    approved, it staged a penalty onto a list nothing would ever apply, and said it had."""
+    state = _state(await _make_db(tmp_path, round_status="AWAITING_APPEAL_VERDICTS"))
+
+    interaction = await _submit(state)
+
+    assert state.staged == []
+    assert "already been approved" in _replied(interaction)
+    assert "Staged" not in _replied(interaction)
+
+
+async def test_a_correction_is_staged_while_the_round_awaits_appeals(tmp_path):
+    """The appeals review is the stage the round has moved on *to*, so the check that closes the
+    penalty review must not close it."""
+    state = _state(await _make_db(tmp_path, round_status="AWAITING_APPEAL_VERDICTS"))
+
+    await _submit(state, penalty="+3s", appeals=True)
+
+    assert len(state.staged_appeals) == 1
 
 
 async def test_the_prompt_is_refreshed_for_the_pass_being_staged_into(tmp_path):
