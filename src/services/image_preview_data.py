@@ -283,6 +283,29 @@ def fabricate_standings_totals(count: int, *, leader: int) -> list[int]:
     return totals
 
 
+def fabricate_standings_previous_positions(keys: list[int]) -> dict[int, int]:
+    """A fictitious reference round's positions, keyed as the current classification is.
+
+    ``build_standings_preview`` stands against no real reference round, so nothing about a
+    previous classification is on hand to read — but it fabricates the *current* round
+    wholesale already, and a fabricated previous one is no different. Handed to
+    ``standings_service.derive_movement`` alongside the current positions, it is what lets
+    the preview draw the three movement markers the spec requires, rather than omitting the
+    column because no real history exists (corrected from the "deliberate" omission this
+    replaced, whose reasoning did not hold once the current round was already invented).
+
+    *keys* is every entry's key (``driver_user_id`` or ``team_instance_id``), in the order
+    of its **current** standing position, 1st first. The previous positions returned put
+    the **third**-placed entry ahead of the **second** — one gained, one lost, and the rest
+    unchanged — wherever the field is large enough to hold the swap. A field of fewer than
+    three holds every entry unchanged; there is nothing to swap.
+    """
+    previous = {key: position for position, key in enumerate(keys, start=1)}
+    if len(keys) >= 3:
+        previous[keys[1]], previous[keys[2]] = previous[keys[2]], previous[keys[1]]
+    return previous
+
+
 def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team_keys):
     """Session results for every round already run, over the division's own drivers.
 

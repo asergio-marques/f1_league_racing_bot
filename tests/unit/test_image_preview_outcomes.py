@@ -464,6 +464,67 @@ class TestStandingsPreview:
         constructors_spec = constructors_spec_builder(constructors_root)
         assert constructors_spec.text["row_2_points"] == "0"
 
+    async def test_the_three_movement_markers_are_drawn_on_the_drivers_preview(
+        self, bot, league
+    ):
+        """#144 — movement was omitted outright; a preview can fabricate a reference round.
+
+        The four-driver fixture puts the gain on row 2, the loss on row 3, and the hold on
+        rows 1 and 4 (`fabricate_standings_previous_positions`).
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_drivers_template.svg")
+        spec = drivers_spec_builder(root)
+
+        markers = {
+            spec.image_data[f"row_{row}_position_change_marker"][1] for row in (1, 2, 3, 4)
+        }
+        assert markers == {"position_change_gained", "position_change_lost", "position_change_none"}
+
+    async def test_the_three_movement_markers_are_drawn_on_the_constructors_preview(
+        self, bot, league, db_path
+    ):
+        """The same fabrication feeds the constructors table, so a third team draws its
+        own gain and loss.
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
+                "is_reserve) VALUES (?, 'Greenfield', 'Greenfield', 2, 0)",
+                (league,),
+            )
+            await db.commit()
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        constructors_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_constructors_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_constructors_template.svg")
+        spec = constructors_spec_builder(root)
+
+        markers = {
+            spec.image_data[f"row_{row}_position_change_marker"][1] for row in (1, 2, 3)
+        }
+        assert "position_change_gained" in markers
+        assert "position_change_lost" in markers
+
 
 # ── Attendance (T024) ─────────────────────────────────────────────────────
 

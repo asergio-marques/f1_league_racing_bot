@@ -231,6 +231,71 @@ class TestStandingsTotals:
 
 
 # ---------------------------------------------------------------------------
+# The standings preview's fabricated previous positions (#144)
+# ---------------------------------------------------------------------------
+
+class TestStandingsPreviousPositions:
+    """A preview stands against no real reference round, so movement was once omitted
+    outright. A fabricated previous round is no different in kind from the current round
+    the preview already invents, and is what lets the three markers be drawn at all.
+    """
+
+    def test_one_entry_gained_one_lost_one_held_position(self):
+        from services.image_preview_data import fabricate_standings_previous_positions
+        from services.standings_service import (
+            MOVEMENT_GAINED,
+            MOVEMENT_LOST,
+            MOVEMENT_UNCHANGED,
+            derive_movement,
+        )
+
+        keys = [10, 20, 30, 40]
+        previous = fabricate_standings_previous_positions(keys)
+        current = [(key, position, 0) for position, key in enumerate(keys, start=1)]
+
+        movements = derive_movement(current, previous)
+
+        directions = {m.direction for m in movements.values() if m is not None}
+        assert directions == {MOVEMENT_GAINED, MOVEMENT_LOST, MOVEMENT_UNCHANGED}
+
+    def test_no_entry_is_left_without_a_movement(self):
+        from services.image_preview_data import fabricate_standings_previous_positions
+        from services.standings_service import derive_movement
+
+        keys = [10, 20, 30, 40]
+        previous = fabricate_standings_previous_positions(keys)
+        current = [(key, position, 0) for position, key in enumerate(keys, start=1)]
+
+        movements = derive_movement(current, previous)
+
+        assert all(movement is not None for movement in movements.values())
+
+    def test_a_field_too_small_to_swap_holds_every_entry_unchanged(self):
+        from services.image_preview_data import fabricate_standings_previous_positions
+        from services.standings_service import MOVEMENT_UNCHANGED, derive_movement
+
+        for count in (0, 1, 2):
+            keys = list(range(10, 10 + count))
+            previous = fabricate_standings_previous_positions(keys)
+            current = [(key, position, 0) for position, key in enumerate(keys, start=1)]
+
+            movements = derive_movement(current, previous)
+
+            assert all(
+                movement is None or movement.direction == MOVEMENT_UNCHANGED
+                for movement in movements.values()
+            )
+
+    def test_the_same_field_produces_the_same_previous_positions_twice(self):
+        from services.image_preview_data import fabricate_standings_previous_positions
+
+        keys = [10, 20, 30, 40, 50]
+        assert fabricate_standings_previous_positions(
+            keys
+        ) == fabricate_standings_previous_positions(keys)
+
+
+# ---------------------------------------------------------------------------
 # The attendance sheet's totals and the marks they earn
 # ---------------------------------------------------------------------------
 

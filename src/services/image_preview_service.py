@@ -951,17 +951,20 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
     entries level on points and one on none, rather than leaving a fixed ramp to reach
     either by accident of the field's size — which on a normal division it never did (#144).
 
-    The **gap to the leader is drawn** here and the movement is not, which is deliberate
-    and not an oversight of one or the other. A preview stands against no reference round,
-    so no entry has a previous position to have moved from; the gap is arithmetic over the
-    classification being drawn alone and is therefore always available. Passing no ``gaps``
-    once emptied the column on every row of both championships, so a manager judging the
-    ``PTS · GAP`` column of their template saw only half of what a posting would put there.
+    **The gap needs no reference round and the movement does — so a preview fabricates
+    one.** A real reference round has no counterpart here, but the current round is already
+    wholly invented, and a fabricated previous round is no different in kind
+    (``fabricate_standings_previous_positions``). Passing no ``movements`` at all once
+    seemed the honest reading of "no reference round exists", and passing no ``gaps``
+    likewise once emptied that column on every row of both championships — both readings
+    left a manager judging their template's ``PTS · GAP`` column, and the three movement
+    markers, seeing less than a posting would ever show them.
     """
     from types import SimpleNamespace
 
     from services import standings_service
     from services.image_preview_data import (
+        fabricate_standings_previous_positions,
         fabricate_standings_round_results,
         fabricate_standings_totals,
     )
@@ -1063,6 +1066,22 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
         [(x.team_instance_id, x.standing_position, x.total_points) for x in team_snapshots]
     )
 
+    # A preview stands against no real reference round, so a fabricated one stands in — no
+    # different from the current round it already invents. See `fabricate_standings_previous_
+    # positions`.
+    driver_movements = standings_service.derive_movement(
+        [(x.driver_user_id, x.standing_position, x.total_points) for x in driver_snapshots],
+        fabricate_standings_previous_positions(
+            [x.driver_user_id for x in driver_snapshots]
+        ),
+    )
+    team_movements = standings_service.derive_movement(
+        [(x.team_instance_id, x.standing_position, x.total_points) for x in team_snapshots],
+        fabricate_standings_previous_positions(
+            [x.team_instance_id for x in team_snapshots]
+        ),
+    )
+
     shared = dict(
         division_name=context.division_name,
         round_number=round_obj.round_number,
@@ -1081,7 +1100,7 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
         display_names=names,
         team_names={d.key: d.team_name for d in drivers},
         team_keys={d.key: (d.team_key or d.team_name) for d in drivers},
-        movements={d.key: None for d in drivers},
+        movements=driver_movements,
         gaps=driver_gaps,
         nationalities=flags,
         **shared,
@@ -1100,7 +1119,7 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
             if t.name in team_key_of
         },
         team_keys={team_key_of[t.name]: t.name for t in racing_teams if t.name in team_key_of},
-        movements={team_key_of[t.name]: None for t in racing_teams if t.name in team_key_of},
+        movements=team_movements,
         gaps=team_gaps,
         team_seat_assignments=team_seat_assignments,
         team_seat_counts=team_seat_counts,
