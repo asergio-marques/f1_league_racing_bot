@@ -6772,8 +6772,9 @@ class SeasonCog(commands.Cog):
 
         # The sessions are written here, past every gate and the backup question, and not
         # beside the round checks above (#408): written there, every refusal between left them
-        # behind and the next approval wrote a second set, which every forecast named twice. Before the scheduling still, so
-        # no phase is ever armed against a round that has no sessions yet.
+        # behind and the next approval wrote a second set, which every forecast named twice.
+        # Before the scheduling still, so no phase is ever armed against a round that has no
+        # sessions yet.
         all_rounds = []
         for div_db in divisions:
             for rnd in div_rounds[div_db.id]:
