@@ -270,8 +270,23 @@ async def test_a_division_that_already_holds_drivers_is_refused(season):
     assert len(await _seated(season)) == 1
 
 
+async def test_a_roster_naming_a_seated_division_seats_none_of_its_empty_ones(season):
+    """A seated division is a fault like any other, so it refuses the whole import: the
+    empty division beside it in the same file lands no more than the seated one (#265)."""
+    await _apply(season, _csv(_row(1, "Quicksilver")))
+
+    seated, errors = await _apply(
+        season, _csv(_row(2, "Badger"), _row(3, "Wolf", div="Challenger"))
+    )
+
+    assert seated == 0
+    assert any("already holds" in problem for problem in errors)
+    assert [name for _uid, name in await _seated(season)] == ["Quicksilver"]
+
+
 async def test_an_empty_division_is_still_importable_beside_a_full_one(season):
-    """Only the division named is refused, so the second half of a split roster lands."""
+    """A second paste naming only the empty division lands, which is how a split roster
+    goes in."""
     await _apply(season, _csv(_row(1, "Quicksilver")))
 
     seated, errors = await _apply(season, _csv(_row(2, "Badger", div="Challenger")))
