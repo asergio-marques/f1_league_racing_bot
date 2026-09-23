@@ -254,6 +254,35 @@ def _coprime(a: int, b: int) -> bool:
     return a == 1
 
 
+def fabricate_standings_totals(count: int, *, leader: int) -> list[int]:
+    """The points total for each position of a fabricated standings, 1st first.
+
+    Descending and scaled to *count* so the ramp never runs off its own floor by accident —
+    the defect this replaces was a fixed step that reached zero from position 15 on the
+    drivers' ramp and 13 on the constructors', so a normal-sized field never showed either
+    of the two cases below at all (#144).
+
+    Two cases are **placed**, not left to arithmetic to produce or fail to produce:
+
+    - **The tie.** 2nd and 3rd are set level, the leader kept clear of it, whenever the
+      field holds at least three. That is what the standings service hands a graphic after
+      a countback has failed to separate two entries at adjacent positions — never a shared
+      one — so this is the shape a real tie takes, not an invented one.
+    - **The nought.** The last entry is set to zero, unless it is the leader (a field of
+      one) or already part of the tie (a field of three) — a tie *on* nought is the
+      accidental case #144 reported, not the deliberate one this places.
+    """
+    if count <= 0:
+        return []
+    step = max(1, leader // count)
+    totals = [step * (count - position) for position in range(count)]
+    if count >= 3:
+        totals[1] = totals[2]
+    if count != 3 and count > 1:
+        totals[-1] = 0
+    return totals
+
+
 def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team_keys):
     """Session results for every round already run, over the division's own drivers.
 

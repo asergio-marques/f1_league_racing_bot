@@ -947,6 +947,10 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
     Session results for the rounds already run are fabricated over the division's own
     drivers, through the same builders the results preview calls.
 
+    **The totals are placed, not just descended.** ``fabricate_standings_totals`` puts two
+    entries level on points and one on none, rather than leaving a fixed ramp to reach
+    either by accident of the field's size — which on a normal division it never did (#144).
+
     The **gap to the leader is drawn** here and the movement is not, which is deliberate
     and not an oversight of one or the other. A preview stands against no reference round,
     so no entry has a previous position to have moved from; the gap is arithmetic over the
@@ -957,7 +961,10 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
     from types import SimpleNamespace
 
     from services import standings_service
-    from services.image_preview_data import fabricate_standings_round_results
+    from services.image_preview_data import (
+        fabricate_standings_round_results,
+        fabricate_standings_totals,
+    )
     from services.image_standings_service import (
         CONSTRUCTORS_TEMPLATE_KEY,
         DRIVERS_TEMPLATE_KEY,
@@ -1020,11 +1027,12 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
         if team.name in team_key_of
     }
 
+    driver_totals = fabricate_standings_totals(len(drivers), leader=120)
     driver_snapshots = [
         SimpleNamespace(
             driver_user_id=driver.key,
             standing_position=position,
-            total_points=max(0, 120 - (position - 1) * 9),
+            total_points=driver_totals[position - 1],
             finish_counts={},
             first_finish_rounds={},
             race_participant=True,
@@ -1032,16 +1040,17 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
         for position, driver in enumerate(drivers, start=1)
     ]
 
+    racing_teams_with_keys = [team for team in racing_teams if team.name in team_key_of]
+    team_totals = fabricate_standings_totals(len(racing_teams_with_keys), leader=200)
     team_snapshots = [
         SimpleNamespace(
             team_instance_id=team_key_of[team.name],
             standing_position=position,
-            total_points=max(0, 200 - (position - 1) * 17),
+            total_points=team_totals[position - 1],
             finish_counts={},
             first_finish_rounds={},
         )
-        for position, team in enumerate(racing_teams, start=1)
-        if team.name in team_key_of
+        for position, team in enumerate(racing_teams_with_keys, start=1)
     ]
 
     # The gap needs no reference round, so a preview draws it in full where it draws no

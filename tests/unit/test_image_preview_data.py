@@ -166,6 +166,71 @@ class TestStandingsScatter:
 
 
 # ---------------------------------------------------------------------------
+# The standings preview's fabricated totals (#144)
+# ---------------------------------------------------------------------------
+
+class TestStandingsTotals:
+    """A fixed ramp clamped at zero showed a tie or a nought only by accident of the field
+    size — never on a normal-sized division. These totals place both deliberately instead.
+    """
+
+    def test_second_and_third_are_level_on_points(self):
+        from services.image_preview_data import fabricate_standings_totals
+
+        for count in (3, 4, 10, 20):
+            totals = fabricate_standings_totals(count, leader=120)
+            assert totals[1] == totals[2]
+
+    def test_the_leader_stands_clear_of_the_tie(self):
+        from services.image_preview_data import fabricate_standings_totals
+
+        for count in (3, 4, 10, 20):
+            totals = fabricate_standings_totals(count, leader=120)
+            assert totals[0] > totals[1]
+
+    def test_no_two_entries_are_level_but_the_placed_pair(self):
+        """The #144 regression: a fixed clamp put a whole block of the field level on zero."""
+        from services.image_preview_data import fabricate_standings_totals
+
+        for count in range(2, 31):
+            totals = fabricate_standings_totals(count, leader=120)
+            level_pairs = {
+                (i, j)
+                for i in range(count)
+                for j in range(i + 1, count)
+                if totals[i] == totals[j]
+            }
+            assert level_pairs <= {(1, 2)}
+
+    def test_the_last_entry_holds_no_points(self):
+        from services.image_preview_data import fabricate_standings_totals
+
+        for count in (2, 4, 5, 10, 20):
+            totals = fabricate_standings_totals(count, leader=120)
+            assert totals[-1] == 0
+
+    def test_a_field_of_three_keeps_the_tie_off_nought(self):
+        """A tie *on* nought is the accidental case #144 reported, not the deliberate one."""
+        from services.image_preview_data import fabricate_standings_totals
+
+        totals = fabricate_standings_totals(3, leader=120)
+        assert totals[1] == totals[2] != 0
+
+    def test_the_totals_never_rise_down_the_table(self):
+        from services.image_preview_data import fabricate_standings_totals
+
+        for count in range(1, 31):
+            totals = fabricate_standings_totals(count, leader=120)
+            assert totals == sorted(totals, reverse=True)
+
+    def test_a_field_of_one_and_an_empty_field(self):
+        from services.image_preview_data import fabricate_standings_totals
+
+        assert fabricate_standings_totals(1, leader=120) == [120]
+        assert fabricate_standings_totals(0, leader=120) == []
+
+
+# ---------------------------------------------------------------------------
 # The attendance sheet's totals and the marks they earn
 # ---------------------------------------------------------------------------
 

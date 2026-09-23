@@ -385,6 +385,85 @@ class TestStandingsPreview:
 
         assert spec.text["row_2_gap_to_leader"] == f"-{leader_points - second_points}"
 
+    async def test_two_drivers_level_on_points_are_drawn_on_separate_positions(
+        self, bot, league
+    ):
+        """#144 — the previous fixed ramp never produced a tie on a normal field."""
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_drivers_template.svg")
+        spec = drivers_spec_builder(root)
+
+        assert spec.text["row_2_position"] != spec.text["row_3_position"]
+        assert spec.text["row_2_points"] == spec.text["row_3_points"]
+
+    async def test_two_teams_level_on_points_are_drawn_on_separate_positions(
+        self, bot, league, db_path
+    ):
+        """The same fabrication feeds the constructors table, so a third team draws its tie."""
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
+                "is_reserve) VALUES (?, 'Greenfield', 'Greenfield', 2, 0)",
+                (league,),
+            )
+            await db.commit()
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        constructors_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_constructors_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_constructors_template.svg")
+        spec = constructors_spec_builder(root)
+
+        assert spec.text["row_2_position"] != spec.text["row_3_position"]
+        assert spec.text["row_2_points"] == spec.text["row_3_points"]
+
+    async def test_the_last_driver_and_the_last_team_are_drawn_on_no_points(
+        self, bot, league
+    ):
+        """#144 — the previous ramp reached zero only from position 15 (drivers) or 13
+        (teams), so a normal-sized division never showed a pointless entry either.
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        drivers_root = load_svg(root_dir / "standings_drivers_template.svg")
+        drivers_spec = drivers_spec_builder(drivers_root)
+        assert drivers_spec.text["row_4_points"] == "0"
+
+        constructors_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_constructors_template"
+        )
+        constructors_root = load_svg(root_dir / "standings_constructors_template.svg")
+        constructors_spec = constructors_spec_builder(constructors_root)
+        assert constructors_spec.text["row_2_points"] == "0"
+
 
 # ── Attendance (T024) ─────────────────────────────────────────────────────
 
