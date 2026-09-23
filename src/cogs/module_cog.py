@@ -35,38 +35,47 @@ _MODULE_CHOICES = [
 # ---------------------------------------------------------------------------
 
 
-async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> None:
-    """Force-close the signup window.
+#: The states a close returns to Not Signed Up: a driver still filling in the wizard. One
+#: awaiting approval, awaiting a correction parameter or correcting keeps their state
+#: (FR-002/FR-003). ``signup_close`` reads this set to tell a manager which drivers the close
+#: will drop and which keep their place. When it kept a list of its own, it warned that every
+#: driver mid-signup would be dropped (issue #128).
+RETURNED_BY_CLOSE: frozenset[DriverState] = frozenset({DriverState.PENDING_SIGNUP_COMPLETION})
 
-    1. Transition in-progress drivers to NOT_SIGNED_UP.
+
+async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> int:
+    """Force-close the signup window, and return how many drivers it turned away.
+
+    1. Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP.
     2. Delete signup button message (graceful NotFound).
     3. Post "signups are closed" to signup channel.
     4. Set window closed.
     5. Emit audit entry.
+
+    The count is of transitions that succeeded, read at the moment of closing. The
+    confirmation ``/signup close`` shows may be up to five minutes older than that.
     """
     cfg = await bot.signup_module_service.get_config()
     if cfg is None:
-        return
+        return 0
 
-    # 1. Transition in-progress drivers (only PENDING_SIGNUP_COMPLETION; approved/correcting
-    #    drivers retain their state per FR-002/FR-003)
-    in_progress_states = {
-        DriverState.PENDING_SIGNUP_COMPLETION,
-    }
+    # 1. Transition the drivers still filling in the wizard
     async with get_connection(bot.db_path) as db:
-        placeholders = ",".join("?" for _ in in_progress_states)
+        placeholders = ",".join("?" for _ in RETURNED_BY_CLOSE)
         cursor = await db.execute(
             f"SELECT discord_user_id FROM driver_profiles "
             f"WHERE current_state IN ({placeholders})",
-            (*[s.value for s in in_progress_states],),
+            (*[s.value for s in RETURNED_BY_CLOSE],),
         )
         rows = await cursor.fetchall()
 
+    returned = 0
     for row in rows:
         try:
             await bot.driver_service.transition(
                 row["discord_user_id"], DriverState.NOT_SIGNED_UP
             )
+            returned += 1
         except Exception:
             log.exception("forced_close: failed to transition driver %s", row["discord_user_id"])
 
@@ -146,6 +155,8 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> None:
             (0, "system", audit_action, "open", "closed", now),
         )
         await db.commit()
+
+    return returned
 
 
 # ---------------------------------------------------------------------------
