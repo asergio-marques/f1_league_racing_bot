@@ -8,7 +8,9 @@ scheduled close and `/signup close`, and it decides what happens to drivers caug
 one state transitioned back to Not Signed Up. A driver waiting on a manager's approval, or
 correcting an answer a manager asked about, has finished signing up as far as they are
 concerned, and closing the window must not undo that (FR-002, FR-003).
-`test_a_driver_awaiting_approval_is_left_alone` is the one that holds it.
+`test_a_driver_awaiting_approval_is_left_alone` is the one that holds it. The close returns how
+many it turned away, counting only transitions that succeeded, so the confirm button can report
+what actually happened (issue #128).
 
 **A turned-away driver is told, and their jobs go with them.** Their wizard's inactivity and
 channel-delete jobs are removed — left armed they would fire against a signup that has ended —
@@ -223,6 +225,34 @@ async def test_a_failing_channel_hold_does_not_stop_the_close(tmp_path):
     bot.signup_module_service.set_window_closed.assert_awaited_once()
 
 
+async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
+    """The confirm button reports this number (issue #128). A driver awaiting approval is not
+    turned away, so is not counted."""
+    db_path = await _make_db(
+        tmp_path,
+        name="fc_count",
+        drivers=[
+            ("101", DriverState.PENDING_SIGNUP_COMPLETION),
+            ("102", DriverState.PENDING_SIGNUP_COMPLETION),
+            ("103", DriverState.PENDING_ADMIN_APPROVAL),
+        ],
+    )
+
+    assert await execute_forced_close(_bot(db_path), audit_action="X") == 2
+
+
+async def test_a_driver_whose_transition_failed_is_not_counted(tmp_path):
+    """They are still mid-signup, so saying they were turned away would be false."""
+    db_path = await _make_db(
+        tmp_path,
+        name="fc_count_fail",
+        drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)],
+    )
+    bot = _bot(db_path, transition_error=RuntimeError("db locked"))
+
+    assert await execute_forced_close(bot, audit_action="X") == 0
+
+
 # ---------------------------------------------------------------------------
 # The window itself
 # ---------------------------------------------------------------------------
@@ -311,7 +341,7 @@ async def test_a_server_with_no_signup_configuration_does_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="fc_noconfig")
     bot = _bot(db_path, config=None)
 
-    await execute_forced_close(bot, audit_action="X")
+    assert await execute_forced_close(bot, audit_action="X") == 0
 
     bot.signup_module_service.set_window_closed.assert_not_awaited()
     assert await _audit(db_path) == []

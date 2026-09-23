@@ -31,7 +31,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from cogs.module_cog import execute_forced_close
+from cogs.module_cog import RETURNED_BY_CLOSE, execute_forced_close
 from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupModuleConfig, SignupModuleSettings
@@ -244,6 +244,51 @@ class SignupButtonView(LeagueView):
         )
 
 
+#: How many drivers each group in the close confirmation names before it gives a count of the
+#: rest. Thirty mid-signup would otherwise overflow the message Discord will accept.
+_CLOSE_LIST_LIMIT = 10
+
+
+def _close_confirmation(returned: list[str], kept: list[str]) -> str:
+    """The confirmation ``/signup close`` asks for while anyone is mid-signup.
+
+    *returned* and *kept* hold one line per driver: those the close will return to Not
+    Signed Up, and those in review, whom it leaves alone. Each group is told only what the
+    close does to it. A single list once warned that everyone in it would be dropped, when
+    the close drops only the first group (issue #128). Each list is cut short on its own, so
+    a long review queue cannot push a driver about to be dropped out of view.
+    """
+
+    def _listed(lines: list[str]) -> str:
+        shown = "\n".join(f"• {line}" for line in lines[:_CLOSE_LIST_LIMIT])
+        if len(lines) > _CLOSE_LIST_LIMIT:
+            shown += f"\n…and {len(lines) - _CLOSE_LIST_LIMIT} more"
+        return shown
+
+    parts: list[str] = []
+    if returned:
+        parts.append(
+            f"⚠️ **Closing signups will return {len(returned)} driver(s) to Not Signed Up.** "
+            "They have not finished signing up and would have to start again:\n"
+            + _listed(returned)
+        )
+        if kept:
+            parts.append(
+                f"**{len(kept)} driver(s) awaiting approval or a correction will keep their "
+                "place.** You can still approve, reject or correct them once the window has "
+                "closed:\n" + _listed(kept)
+            )
+        parts.append("Are you sure?")
+    else:
+        parts.append(
+            f"**Nobody will lose their signup.** {len(kept)} driver(s) awaiting approval or a "
+            "correction will keep their place, and you can still approve, reject or correct "
+            "them once the window has closed:\n" + _listed(kept)
+        )
+        parts.append("Close signups?")
+    return "\n\n".join(parts)
+
+
 class ConfirmCloseView(LeagueView):
     """Confirmation dialog for closing signups with in-progress drivers (T018)."""
 
@@ -259,13 +304,19 @@ class ConfirmCloseView(LeagueView):
         self.confirmed = True
         self.stop()
         await interaction.response.defer(ephemeral=True)
-        await execute_forced_close(
+        # The count is the close's own, not the confirmation's: a driver may have finished
+        # signing up, or started, in the five minutes the buttons stand (issue #128).
+        returned = await execute_forced_close(
             self._bot, audit_action="SIGNUP_FORCE_CLOSE"
         )
-        await interaction.followup.send("✅ Signups force-closed.", ephemeral=True)
+        await interaction.followup.send(
+            f"✅ Signups closed. {returned} driver(s) still signing up were returned to "
+            "Not Signed Up.",
+            ephemeral=True,
+        )
         await self._bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close (force) | Success\n"
-            f"  in_progress_drivers_discarded: true",
+            f"  drivers_returned_to_not_signed_up: {returned}",
         )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
@@ -1608,23 +1659,23 @@ class SignupCog(commands.Cog):
             )
             return
 
-        # Query in-progress drivers
-        # AWAITING_CORRECTION_PARAMETER counts like the other two review-cycle states: the
-        # close does not touch any of them, but a manager shutting the window should see
-        # every driver mid-signup. Leaving it out meant a driver parked there alone let
-        # `/signup close` shut on the spot with no confirmation at all (issue #129).
-        in_progress_states = (
-            "PENDING_SIGNUP_COMPLETION",
-            "PENDING_ADMIN_APPROVAL",
-            "AWAITING_CORRECTION_PARAMETER",
-            "PENDING_DRIVER_CORRECTION",
-        )
+        # Every driver mid-signup is listed, in two groups: those the close will return to
+        # Not Signed Up, and those in review, whom it leaves alone. AWAITING_CORRECTION_
+        # PARAMETER is in the second group. Leaving it out meant a driver parked there alone
+        # let `/signup close` shut on the spot with no confirmation at all (issue #129).
+        # Warning the second group that it would be dropped as well was issue #128.
+        #
+        # Each driver is named with their signup channel, so a manager can follow the link
+        # and nudge someone to finish before closing. A driver with no wizard record, or one
+        # whose channel was never made, is named alone.
         async with get_connection(self.bot.db_path) as db:
-            placeholders = ",".join("?" for _ in in_progress_states)
+            placeholders = ",".join("?" for _ in IN_PROGRESS_STATES)
             cursor = await db.execute(
-                f"SELECT discord_user_id FROM driver_profiles "
-                f"WHERE current_state IN ({placeholders})",
-                (*in_progress_states,),
+                f"SELECT p.discord_user_id, p.current_state, w.signup_channel_id "
+                f"FROM driver_profiles p "
+                f"LEFT JOIN signup_wizard_records w ON w.discord_user_id = p.discord_user_id "
+                f"WHERE p.current_state IN ({placeholders}) ORDER BY p.id",
+                tuple(state.value for state in IN_PROGRESS_STATES),
             )
             rows = await cursor.fetchall()
 
@@ -1639,23 +1690,24 @@ class SignupCog(commands.Cog):
             return
 
         # Present confirmation view
-        driver_ids = [row["discord_user_id"] for row in rows]
-        count = len(driver_ids)
         _guild = interaction.guild
 
         def _name_for_uid(uid: str) -> str:
             member = _guild.get_member(int(uid)) if _guild else None
             return member.display_name if member else uid
 
-        driver_list = "\n".join(f"• {_name_for_uid(uid)}" for uid in driver_ids[:10])
-        if count > 10:
-            driver_list += f"\n…and {count - 10} more"
+        returned: list[str] = []
+        kept: list[str] = []
+        for row in rows:
+            group = returned if DriverState(row["current_state"]) in RETURNED_BY_CLOSE else kept
+            line = _name_for_uid(row["discord_user_id"])
+            if row["signup_channel_id"] is not None:
+                line += f" — <#{row['signup_channel_id']}>"
+            group.append(line)
 
         view = ConfirmCloseView(self.bot)
         await interaction.response.send_message(
-            f"⚠️ **{count} driver(s) are currently in progress:**\n{driver_list}\n\n"
-            "Closing signups will transition all in-progress drivers to **Not Signed Up**.\n"
-            "Are you sure?",
+            _close_confirmation(returned, kept),
             view=view,
             ephemeral=True,
         )

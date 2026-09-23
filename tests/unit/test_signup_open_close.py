@@ -16,15 +16,18 @@ the loop three times.
 real driver may sign up while the server is under test, so a window opened then is one nobody
 can use.
 
-**`/signup close` asks before it destroys anything.** Drivers mid-signup are transitioned to
-Not Signed Up by the close, which is not recoverable — they would have to start again — so a
-close with anyone in progress presents a confirmation naming them. The list of states that
-counts as "in progress" is four long and each was added for a reason; `AWAITING_CORRECTION_
-PARAMETER` in particular was issue #129, where a driver parked there alone let the close go
-through with no confirmation at all. `test_every_in_progress_state_forces_a_confirmation`
-holds all four together.
+**`/signup close` asks while anyone is mid-signup, and says what the close does to each of
+them.** Drivers still filling in the form are returned to Not Signed Up, which cannot be undone
+— they would have to start again. Drivers in review (awaiting approval, awaiting a correction
+parameter, or correcting) keep their place. The confirmation lists the two groups apart. It
+used to warn that everyone in one list would be dropped (issue #128), and
+`test_the_confirmation_counts_only_the_drivers_the_close_will_return` holds that. The list of
+states that counts as "in progress" is four long and each was added for a reason;
+`AWAITING_CORRECTION_PARAMETER` in particular was issue #129, where a driver parked there alone
+let the close go through with no confirmation at all.
+`test_every_in_progress_state_forces_a_confirmation` holds all four together.
 
-The driver list is truncated at ten with a count of the rest, because a division of thirty
+Each group is truncated at ten with a count of the rest, because a division of thirty
 mid-signup would otherwise overflow the message Discord will accept.
 """
 from __future__ import annotations
@@ -40,7 +43,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.signup_cog import SignupCog  # noqa: E402
+from cogs.signup_cog import ConfirmCloseView, SignupCog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
 from services.config_service import ConfigService  # noqa: E402
 from services.signup_module_service import SignupModuleService  # noqa: E402
@@ -609,7 +612,9 @@ async def test_every_in_progress_state_forces_a_confirmation(tmp_path, state):
         await _close(cog, interaction)
 
     forced.assert_not_awaited()
-    assert "Are you sure" in _replied(interaction)
+    assert isinstance(
+        interaction.response.send_message.await_args.kwargs["view"], ConfirmCloseView
+    )
 
 
 async def test_the_confirmation_counts_and_names_the_drivers(tmp_path):
@@ -618,16 +623,127 @@ async def test_the_confirmation_counts_and_names_the_drivers(tmp_path):
         signups_open=True,
         in_progress=("PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL"),
     )
-    member = MagicMock()
-    member.display_name = "Lewis"
-    interaction = _interaction(members={7000: member})
+    lewis, max_ = MagicMock(), MagicMock()
+    lewis.display_name = "Lewis"
+    max_.display_name = "Max"
+    interaction = _interaction(members={7000: lewis, 7001: max_})
+
+    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+        await _close(_cog(db_path), interaction)
+
+    returned, kept = _replied(interaction).split("keep their place")
+    assert "return 1 driver(s) to Not Signed Up" in returned
+    assert "Lewis" in returned
+    assert "Max" in kept
+
+
+async def test_the_confirmation_counts_only_the_drivers_the_close_will_return(tmp_path):
+    """Issue #128: it warned that every driver mid-signup would go to Not Signed Up, when the
+    close returns only those still filling the form in. The three in review keep their place,
+    and a manager told otherwise could abandon a close that was perfectly safe."""
+    db_path = await _seed(
+        tmp_path,
+        signups_open=True,
+        in_progress=(
+            "PENDING_SIGNUP_COMPLETION",
+            "PENDING_ADMIN_APPROVAL",
+            "AWAITING_CORRECTION_PARAMETER",
+            "PENDING_DRIVER_CORRECTION",
+        ),
+    )
+    interaction = _interaction(members={})
 
     with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
         await _close(_cog(db_path), interaction)
 
     replied = _replied(interaction)
-    assert "2 driver(s)" in replied
-    assert "Lewis" in replied
+    assert "return 1 driver(s) to Not Signed Up" in replied
+    assert "3 driver(s) awaiting approval or a correction will keep their place" in replied
+
+
+async def test_a_close_with_only_drivers_in_review_says_nobody_loses_their_signup(tmp_path):
+    """The close is still confirmed — the spec lists every driver mid-signup — but nothing in
+    it may suggest the driver is about to be dropped."""
+    db_path = await _seed(
+        tmp_path, signups_open=True, in_progress=("PENDING_ADMIN_APPROVAL",)
+    )
+    interaction = _interaction(members={})
+
+    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()) as forced:
+        await _close(_cog(db_path), interaction)
+
+    forced.assert_not_awaited()
+    replied = _replied(interaction)
+    assert "Nobody will lose their signup" in replied
+    assert "7000" in replied
+    assert "Not Signed Up" not in replied
+    assert isinstance(
+        interaction.response.send_message.await_args.kwargs["view"], ConfirmCloseView
+    )
+
+
+async def _give_signup_channel(db_path: str, discord_user_id: str, channel_id: int) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id) "
+            "VALUES (?, ?)",
+            (discord_user_id, channel_id),
+        )
+        await db.commit()
+
+
+async def test_each_driver_is_listed_with_their_signup_channel(tmp_path):
+    """The spec names the drivers *and their signup channels*: a link a manager can follow to
+    nudge a driver to finish before the window shuts on them."""
+    db_path = await _seed(
+        tmp_path,
+        signups_open=True,
+        in_progress=("PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL"),
+    )
+    await _give_signup_channel(db_path, "7000", 880001)
+    await _give_signup_channel(db_path, "7001", 880002)
+    interaction = _interaction(members={})
+
+    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+        await _close(_cog(db_path), interaction)
+
+    returned, kept = _replied(interaction).split("keep their place")
+    assert "7000 — <#880001>" in returned
+    assert "7001 — <#880002>" in kept
+
+
+async def test_a_driver_with_no_signup_channel_is_listed_by_name_alone(tmp_path):
+    """No wizard record — or one whose channel was never made — must not print a link to
+    nowhere, nor drop the driver from the list."""
+    db_path = await _seed(
+        tmp_path,
+        signups_open=True,
+        in_progress=("PENDING_SIGNUP_COMPLETION", "PENDING_SIGNUP_COMPLETION"),
+    )
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id) "
+            "VALUES ('7001', NULL)"
+        )
+        await db.commit()
+    interaction = _interaction(members={})
+
+    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+        await _close(_cog(db_path), interaction)
+
+    replied = _replied(interaction)
+    assert "• 7000\n" in replied
+    assert "• 7001\n" in replied
+    assert "<#" not in replied
+
+
+def test_every_state_the_close_returns_is_one_the_confirmation_lists():
+    """A state added to the close alone would drop drivers the confirmation never named, and
+    one of them parked alone would let the close through with no confirmation at all."""
+    from cogs.module_cog import RETURNED_BY_CLOSE
+    from cogs.signup_cog import IN_PROGRESS_STATES
+
+    assert RETURNED_BY_CLOSE <= IN_PROGRESS_STATES
 
 
 async def test_a_driver_who_has_left_is_listed_by_id(tmp_path):
@@ -662,6 +778,24 @@ async def test_a_long_list_of_drivers_is_truncated(tmp_path):
     assert "and 3 more" in replied
 
 
+async def test_each_list_is_truncated_on_its_own(tmp_path):
+    """A long review queue must not push a driver about to be dropped out of view."""
+    db_path = await _seed(
+        tmp_path,
+        signups_open=True,
+        in_progress=("PENDING_SIGNUP_COMPLETION",) * 12 + ("PENDING_ADMIN_APPROVAL",) * 12,
+    )
+    interaction = _interaction(members={})
+
+    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+        await _close(_cog(db_path), interaction)
+
+    returned, kept = _replied(interaction).split("keep their place")
+    assert "return 12 driver(s)" in returned
+    assert "and 2 more" in returned
+    assert "and 2 more" in kept
+
+
 async def test_the_confirmation_warns_what_closing_will_do(tmp_path):
     """The drivers are transitioned to Not Signed Up and would have to start again, so the
     warning is the manager's only chance to think better of it."""
@@ -674,3 +808,22 @@ async def test_the_confirmation_warns_what_closing_will_do(tmp_path):
         await _close(_cog(db_path), interaction)
 
     assert "Not Signed Up" in _replied(interaction)
+
+
+async def test_confirming_reports_how_many_drivers_the_close_returned(tmp_path):
+    """The reply and the log say what the close did, not what the confirmation feared. The log
+    used to record `in_progress_drivers_discarded: true` whoever was waiting (issue #128).
+    The number is the close's own, since a driver may have moved on while the buttons stood."""
+    db_path = await _seed(tmp_path, signups_open=True)
+    cog = _cog(db_path)
+    interaction = _interaction()
+    view = ConfirmCloseView(cog.bot)
+
+    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock(return_value=2)) as forced:
+        await view.confirm.callback(interaction)
+
+    forced.assert_awaited_once()
+    assert "2 driver(s) still signing up were returned to Not Signed Up" in _replied(interaction)
+    log = cog.bot.output_router.post_log.await_args.args[0]
+    assert "drivers_returned_to_not_signed_up: 2" in log
+    assert "discarded" not in log

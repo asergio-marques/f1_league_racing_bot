@@ -223,7 +223,12 @@ There are no reminders. The bot never chases a driver who has not signed up, and
 /signup close
 ```
 
-If nobody is mid-signup it closes immediately. Otherwise you get a confirmation listing who is still going, with Confirm and Cancel buttons.
+If nobody is mid-signup it closes immediately. Otherwise you get a confirmation with Confirm and Cancel buttons. It lists everyone still going, each with a link to their signup channel, in two groups:
+
+- **Drivers still filling in the form** are returned to Not Signed Up by the close, and would have to start again. If you want them in, follow their links and nudge them to finish before you close.
+- **Drivers awaiting your approval or a correction** keep their place. You can still approve, reject or ask them for changes once the window has closed.
+
+If only the second group is waiting, the confirmation says nobody will lose their signup. After you confirm, the reply says how many drivers were returned to Not Signed Up.
 
 **If you set a close time, clear it first.** `/signup close` refuses while one is armed, names the time it is waiting for, and sends you here:
 
@@ -369,7 +374,7 @@ Worth running through before you confirm the season's configuration, which fixes
 | Drivers press the button and nothing happens after | The Message Content intent is off, so the bot cannot see anything they type |
 | The preferred-team question offers nothing but "No Preference" | No teams have been added yet |
 | `/signup close` refused, naming an auto-close time | You set a `close_time`. Run `/signup close-time cancel`, then `/signup close` again — or `/signup close-time modify` if you only want to move the deadline |
-| Drivers you expected to be dropped by a close are still there | Known: closing only drops drivers still filling the form in. Anyone waiting on you keeps their place — approve them |
+| Drivers you expected to be dropped by a close are still there | Closing only drops drivers still filling the form in, as the confirmation said. Anyone waiting on you keeps their place — approve or reject them |
 | `/signup time-slot add`, `remove` or another signup setting refused, naming a season | That season's configuration is confirmed, so its signup settings are fixed until it ends |
 | Your time slots came back after disabling the module | Known: disabling clears the channel and roles only, whatever the message says |
 | A driver went back to waiting for approval on their own | The five-minute field window lapsed, or the bot restarted while it was open. The ping in their channel says which. Press **Request Changes** again |
