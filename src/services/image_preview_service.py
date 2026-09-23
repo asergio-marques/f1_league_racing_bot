@@ -1042,7 +1042,7 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
         if int(heading.number) <= int(round_obj.round_number)
     ]
     round_session_results = fabricate_standings_round_results(
-        run_ordinals, round_formats, drivers, team_key_of
+        run_ordinals, round_formats, drivers, team_key_of, reserve_driver=reserve_driver
     )
 
     team_seat_assignments = {

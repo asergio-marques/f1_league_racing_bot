@@ -333,6 +333,177 @@ class TestStandingsPreviousPositions:
 
 
 # ---------------------------------------------------------------------------
+# The standings preview's fabricated absence and stand-in (#144)
+# ---------------------------------------------------------------------------
+
+class TestStandingsSubstitution:
+    """A driver absent from one round, a reserve standing in, and a car nobody drove — the
+    spec's three cases, drawn over two *different* regular teams so a stand-in filling the
+    very seat it vacates does not paper over the empty-car case with it.
+    """
+
+    #: Three regular teams and a reserve: the fixture every test in this class shares.
+    TEAM_KEYS = {"Redline": 1, "Bluewave": 2, "Greenfield": 3, "Reserve": 4}
+
+    @staticmethod
+    def _drivers(team_layout):
+        """*team_layout* is ``[(team_name, seat_count), ...]``, drivers numbered from 1."""
+        from types import SimpleNamespace
+
+        drivers = []
+        key = 1
+        for team_name, seat_count in team_layout:
+            for seat_number in range(1, seat_count + 1):
+                drivers.append(
+                    SimpleNamespace(
+                        key=key,
+                        display_name=f"Driver {key}",
+                        team_name=team_name,
+                        team_key=team_name,
+                        seat_number=seat_number,
+                        nationality=None,
+                    )
+                )
+                key += 1
+        return drivers
+
+    def test_the_absent_regular_is_not_scattered_into_the_substitution_round(self):
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        regulars = drivers[:-1]
+        absent = regulars[-2]  # Bluewave 2
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
+        )
+
+        keys_in_round = {
+            row.driver_user_id for rows in results[1].values() for row in rows
+        }
+        assert absent.key not in keys_in_round
+
+    def test_a_different_teams_car_is_left_with_nobody_in_it(self):
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        regulars = drivers[:-1]
+        undriven = regulars[-1]  # Greenfield 1
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
+        )
+
+        keys_in_round = {
+            row.driver_user_id for rows in results[1].values() for row in rows
+        }
+        assert undriven.key not in keys_in_round
+
+    def test_the_reserve_is_credited_to_the_absent_drivers_team_not_the_undriven_ones(self):
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        absent = drivers[:-1][-2]  # Bluewave 2
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
+        )
+
+        substitute_team_ids = {
+            row.team_instance_id
+            for rows in results[1].values()
+            for row in rows
+            if row.driver_user_id == reserve.key
+        }
+        absent_team_id = self.TEAM_KEYS[absent.team_key or absent.team_name]
+        assert substitute_team_ids == {absent_team_id}
+
+    def test_a_round_before_or_after_the_substitution_is_untouched(self):
+        """Confined to one round — both dropped drivers are back in every other one."""
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        regulars = drivers[:-1]
+        absent, undriven = regulars[-2], regulars[-1]
+
+        results = fabricate_standings_round_results(
+            [1, 2], {1: "NORMAL", 2: "NORMAL"}, drivers,
+            self.TEAM_KEYS, reserve_driver=reserve,
+        )
+
+        rows_in_round_2 = [row for rows in results[2].values() for row in rows]
+        keys_in_round_2 = {row.driver_user_id for row in rows_in_round_2}
+        assert absent.key in keys_in_round_2
+        assert undriven.key in keys_in_round_2
+
+        # The reserve still races the second round too, under their own reserve team —
+        # only the substitution round credits them to somebody else's.
+        reserve_team_id = self.TEAM_KEYS[reserve.team_key or reserve.team_name]
+        reserve_rows = [row for row in rows_in_round_2 if row.driver_user_id == reserve.key]
+        assert {row.team_instance_id for row in reserve_rows} == {reserve_team_id}
+
+    def test_no_reserve_leaves_every_driver_in_place(self):
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers([("Redline", 2), ("Bluewave", 2)])
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, {"Redline": 1, "Bluewave": 2}
+        )
+
+        keys_in_round = {
+            row.driver_user_id for rows in results[1].values() for row in rows
+        }
+        assert keys_in_round == {d.key for d in drivers}
+
+    def test_a_field_too_small_carries_no_substitution(self):
+        """The spec's own qualifier: nothing is fabricated into existence to reach a case."""
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers([("Redline", 1), ("Reserve", 1)])
+        reserve = drivers[-1]
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, {"Redline": 1, "Reserve": 2},
+            reserve_driver=reserve,
+        )
+
+        keys_in_round = {
+            row.driver_user_id for rows in results[1].values() for row in rows
+        }
+        assert keys_in_round == {d.key for d in drivers}
+
+    def test_only_one_regular_team_carries_no_substitution(self):
+        """Both roles would fall on the same team, which the "different team" guard refuses."""
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers([("Redline", 2), ("Reserve", 1)])
+        reserve = drivers[-1]
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, {"Redline": 1, "Reserve": 2},
+            reserve_driver=reserve,
+        )
+
+        keys_in_round = {
+            row.driver_user_id for rows in results[1].values() for row in rows
+        }
+        assert keys_in_round == {d.key for d in drivers}
+
+
+# ---------------------------------------------------------------------------
 # The attendance sheet's totals and the marks they earn
 # ---------------------------------------------------------------------------
 

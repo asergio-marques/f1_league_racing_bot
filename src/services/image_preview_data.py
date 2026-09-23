@@ -323,7 +323,9 @@ def fabricate_standings_previous_positions(keys: list[int]) -> dict[int, int]:
     return previous
 
 
-def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team_keys):
+def fabricate_standings_round_results(
+    run_ordinals, round_formats, drivers, team_keys, *, reserve_driver=None
+):
     """Session results for every round already run, over the division's own drivers.
 
     Reuses ``fabricate_qualifying_rows``/``fabricate_race_rows`` — the same builders the
@@ -336,9 +338,52 @@ def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team
     and Race), read through ``result_submission_service.get_sessions_for_format`` — not the
     schedule's Short/Long/Full vocabulary ``sessions_for`` reads for the weather previews,
     which answers a different question (how many weather slots a session carries).
+
+    *reserve_driver*, where given, draws three of the spec's cases for one run round, over
+    two *different* regular teams, so that a stand-in filling the very seat it vacates does
+    not paper over the empty-car case with it:
+
+    - the **last** regular is dropped from the round's field entirely, so its own team's
+      last car goes undriven for it (FR-026's "a car nobody drove") — with no reserve to
+      fill the seat, unlike the case below;
+    - a **different** regular, of the team before it, is dropped and the reserve credited
+      to that team instead (a reserve standing in) — which is also what makes that
+      regular's own absence visible (a driver absent from one round).
+
+    Both need a car to spare: at least two seated drivers standing between the reserve's
+    own team and the one it substitutes into, so neither drop empties a team down to
+    nothing raced. Silently skipped wherever the field is too small to carry both, per the
+    spec's own qualifier that none of its cases is fabricated into existence beyond what
+    the field allows (#144).
     """
+    from types import SimpleNamespace
+    from typing import Any
+
     from models.round import RoundFormat
     from services.result_submission_service import get_sessions_for_format
+
+    # Bundled as one Optional rather than several separate ones, so that a check of the one
+    # narrows the rest together — the round substituted and who it touches all exist for
+    # the same reason and never independently of it.
+    substitution: tuple[int, Any, Any, Any] | None = None
+    if reserve_driver is not None and run_ordinals:
+        reserve_team = reserve_driver.team_key or reserve_driver.team_name
+        regulars = [d for d in drivers if (d.team_key or d.team_name) != reserve_team]
+        if len(regulars) >= 2:
+            undriven_driver = regulars[-1]
+            absent_driver = regulars[-2]
+            if (undriven_driver.team_key or undriven_driver.team_name) != (
+                absent_driver.team_key or absent_driver.team_name
+            ):
+                standin = SimpleNamespace(
+                    key=reserve_driver.key,
+                    display_name=reserve_driver.display_name,
+                    team_name=absent_driver.team_name,
+                    team_key=absent_driver.team_key or absent_driver.team_name,
+                    seat_number=absent_driver.seat_number,
+                    nationality=reserve_driver.nationality,
+                )
+                substitution = (min(run_ordinals), undriven_driver, absent_driver, standin)
 
     out: dict[int, dict[str, list]] = {}
     for ordinal in run_ordinals:
@@ -353,7 +398,15 @@ def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team
                 if session_type.is_qualifying
                 else {n: max(0, 26 - 2 * (n - 1)) for n in range(1, 14)}
             )
-            field = _scattered(drivers, ordinal, index)
+            round_drivers = drivers
+            if substitution is not None and ordinal == substitution[0]:
+                _, undriven_driver, absent_driver, standin = substitution
+                dropped = {undriven_driver.key, absent_driver.key}
+                round_drivers = [d for d in drivers if d.key not in dropped]
+                round_drivers = [
+                    standin if d.key == reserve_driver.key else d for d in round_drivers
+                ]
+            field = _scattered(round_drivers, ordinal, index)
             rows = (
                 fabricate_qualifying_rows(field, team_keys, points_map)
                 if session_type.is_qualifying
