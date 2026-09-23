@@ -16,6 +16,7 @@ from utils.input_validator import (
     parse_penalty_seconds,
     parse_time,
 )
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -172,7 +173,7 @@ async def apply_penalties(
     division_id: int,
     staged: list[StagedPenalty],
     applied_by: int,
-    bot: discord.Client,
+    bot: LeagueBot,
     *,
     _skip_post: bool = False,
     _phase: Literal["PENALTY", "APPEAL"] = "PENALTY",

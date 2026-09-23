@@ -20,12 +20,12 @@ from utils.math_utils import compute_rpc_beta
 from utils.message_builder import phase1_message, phase_log_message
 
 if TYPE_CHECKING:
-    from discord.ext.commands import Bot
+    from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
 
-async def run_phase1(round_id: int, bot: "Bot") -> None:
+async def run_phase1(round_id: int, bot: "LeagueBot") -> None:
     """Execute Phase 1 for *round_id*.
 
     Produces nothing at all while the weather module is disabled for the round's server: no
@@ -52,7 +52,7 @@ async def run_phase1(round_id: int, bot: "Bot") -> None:
         return
 
     # The module gate — see the docstring for why it sits here.
-    if not await bot.module_service.is_weather_enabled():  # type: ignore[attr-defined]
+    if not await bot.module_service.is_weather_enabled():
         log.info(
             "Phase 1: weather module disabled — round %s left untouched.",
             round_id,

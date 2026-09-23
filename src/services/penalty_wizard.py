@@ -22,6 +22,7 @@ from services.driver_service import accounts_of_in_division, current_account_map
 from services.penalty_service import StagedPenalty, validate_penalty_input
 from utils.channel_guard import is_league_manager
 from utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
+from utils.league_bot import LeagueBot
 from utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ class PenaltyReviewState:
     submission_channel_id: int
     session_types_present: list[SessionType]
     db_path: str
-    bot: Any
+    bot: LeagueBot
     staged: list[StagedPenalty] = field(default_factory=list)
     staged_appeals: list[StagedPenalty] = field(default_factory=list)
     staged_pardons: list[StagedPardon] = field(default_factory=list)
@@ -105,7 +106,7 @@ class PenaltyReviewState:
 async def _is_league_manager(
     interaction: discord.Interaction,
     db_path: str,
-    bot: Any,
+    bot: LeagueBot,
 ) -> bool:
     """Return True if the interacting member holds the league manager tier.
 
@@ -805,7 +806,7 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         self.state.staged_pardons.append(pardon)
 
         # --- Log justification to calc-log channel only (FR-010) ---
-        await self.state.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await self.state.bot.output_router.post_log(
             f"ATTENDANCE_PARDON_STAGED | <@{interaction.user.id}> granted {pardon_type} pardon\n"
             f"  driver: <@{driver_user_id}> | round: {self.state.round_number} "
             f"({self.state.division_name})\n"

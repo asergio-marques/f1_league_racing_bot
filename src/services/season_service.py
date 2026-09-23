@@ -414,7 +414,7 @@ class SeasonService:
                         ),
                     )
                     div_id = cursor.lastrowid
-                    division_ids[div_data["name"]] = div_id  # type: ignore[assignment]
+                    division_ids[div_data["name"]] = div_id
                 await _sync_division_rounds(db, div_id, div_data["rounds"])  # type: ignore[arg-type]
 
             await db.commit()

@@ -22,7 +22,7 @@ from utils.input_validator import ROLE_MENTION, USER_MENTION
 _MENTION_RE = re.compile(rf"((?:{USER_MENTION})|(?:{ROLE_MENTION}))")
 
 if TYPE_CHECKING:
-    from discord.ext.commands import Bot
+    from utils.league_bot import LeagueBot
     from models.division import Division
 
 log = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 class OutputRouter:
     """Routes all bot output to the correct channels with error isolation."""
 
-    def __init__(self, bot: "Bot", retry_db_path: "Optional[str]" = None) -> None:
+    def __init__(self, bot: "LeagueBot", retry_db_path: "Optional[str]" = None) -> None:
         self._bot = bot
         self._retry_db_path: Optional[str] = retry_db_path
 

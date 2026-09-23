@@ -25,7 +25,7 @@ import discord
 from db.database import get_connection
 
 if TYPE_CHECKING:
-    from discord.ext.commands import Bot
+    from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ async def delete_forecast_message(
     round_id: int,
     division_id: int,
     phase_number: int,
-    bot: "Bot",
+    bot: "LeagueBot",
 ) -> None:
     """Delete the stored Discord message for *phase_number* of *round_id*.
 
@@ -83,7 +83,7 @@ async def delete_forecast_message(
     On Discord API failure (NotFound / Forbidden / HTTPException) the DB row is
     still removed so a stale reference does not block future clean-ups.
     """
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     # --- Load stored message row ---
     async with get_connection(db_path) as db:
@@ -138,7 +138,7 @@ async def delete_forecast_message(
 # T010 — run_post_race_cleanup (Phase 3 message, 24 h after round start)
 # ---------------------------------------------------------------------------
 
-async def run_post_race_cleanup(round_id: int, bot: "Bot") -> None:
+async def run_post_race_cleanup(round_id: int, bot: "LeagueBot") -> None:
     """Delete the Phase 3 forecast message for all divisions of *round_id*.
 
     Invoked 24 hours after round start by the APScheduler ``cleanup_r{round_id}``
@@ -147,7 +147,7 @@ async def run_post_race_cleanup(round_id: int, bot: "Bot") -> None:
     Each division is processed independently so a single failure does not block
     the others.
     """
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -164,7 +164,7 @@ async def run_post_race_cleanup(round_id: int, bot: "Bot") -> None:
 # T013 — flush_pending_deletions (test-mode disable hook)
 # ---------------------------------------------------------------------------
 
-async def flush_pending_deletions(bot: "Bot") -> None:
+async def flush_pending_deletions(bot: "LeagueBot") -> None:
     """Delete all pending forecast messages.
 
     Called when test mode is disabled (FR-015).  By the time this function
@@ -174,7 +174,7 @@ async def flush_pending_deletions(bot: "Bot") -> None:
     All stored messages for the server are iterated and deleted.  Individual
     Discord API failures are logged but do not halt the batch.
     """
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -209,7 +209,7 @@ async def flush_pending_deletions(bot: "Bot") -> None:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-async def _discord_delete(bot: "Bot", channel_id: int, message_id: int) -> bool:
+async def _discord_delete(bot: "LeagueBot", channel_id: int, message_id: int) -> bool:
     """Attempt to delete a Discord message.  Returns True on success."""
     try:
         channel = bot.get_channel(channel_id)
@@ -247,7 +247,7 @@ async def _discord_delete(bot: "Bot", channel_id: int, message_id: int) -> bool:
 # ---------------------------------------------------------------------------
 
 async def post_phase_message(
-    bot: "Bot",
+    bot: "LeagueBot",
     *,
     round_id: int,
     division_id: int,
@@ -283,14 +283,14 @@ async def post_phase_message(
     the message it rides on, which for a forecast is the division role mention and nothing
     besides, and for a mystery notice is empty.
     """
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     if attachment is None:
         # The textual path, unchanged: the router chunks it and owns its own retry.
         class _Div:
             forecast_channel_id = channel_id
 
-        msg = await bot.output_router.post_forecast(  # type: ignore[attr-defined]
+        msg = await bot.output_router.post_forecast(
             _Div(), text, enqueue_on_failure=True
         )
     else:

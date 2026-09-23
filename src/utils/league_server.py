@@ -44,6 +44,7 @@ import discord
 from discord import app_commands
 
 from utils.interaction_errors import describe, describe_form, report_failure
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ UNCLAIMED_REFUSAL = (
 )
 
 
-async def is_foreign_guild(bot: Any, guild_id: int | None) -> bool:
+async def is_foreign_guild(bot: LeagueBot, guild_id: int | None) -> bool:
     """Whether *guild_id* is a server other than the league's.
 
     False outside a server (a DM carries no guild, and the tier guards refuse it themselves)
@@ -68,7 +69,7 @@ async def is_foreign_guild(bot: Any, guild_id: int | None) -> bool:
     return league is not None and guild_id != league
 
 
-async def league_guild(bot: Any) -> discord.Guild | None:
+async def league_guild(bot: LeagueBot) -> discord.Guild | None:
     """The league's Discord server, or None where none is set up or it is not in the cache.
 
     The one route from a scheduled job or a restart to the guild: the id lives in
@@ -167,7 +168,7 @@ class LeagueModal(discord.ui.Modal):
         await report_failure(interaction, error, what=describe_form(self))
 
 
-def warn_if_serving_several(bot: Any) -> None:
+def warn_if_serving_several(bot: LeagueBot) -> None:
     """Log a warning to the host when the bot sits in more than one server.
 
     A warning and nothing more: the refusal above already keeps the league's data to the

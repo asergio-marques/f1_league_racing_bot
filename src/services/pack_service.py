@@ -34,6 +34,7 @@ from models.season import SeasonStage
 from services.config_service import RELEASE_CLAIM_SQL
 from services.in_memory_state import clear_in_memory_state
 from services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
+from utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from services.scheduler_service import SchedulerService
@@ -120,7 +121,7 @@ async def _cleared_configuration(db) -> dict[str, Any]:
 async def pack(
     db_path: str,
     scheduler_service: "SchedulerService",
-    bot: Any | None = None,
+    bot: LeagueBot | None = None,
     *,
     actor_id: int,
     actor_name: str,

@@ -1552,7 +1552,7 @@ async def enforce_attendance_sanctions(
     from services import verdict_announcement_service as _vas
     if head is None:
         head = _vas.banner_for_round(bot, db_path, round_id)
-    placement: PlacementService = bot.placement_service  # type: ignore[attr-defined]
+    placement: PlacementService = bot.placement_service
     acting_id = bot.user.id
     acting_name = str(bot.user)
 
@@ -1577,7 +1577,7 @@ async def enforce_attendance_sanctions(
         if autosack_threshold and total >= autosack_threshold:
             if row["current_state"] == "NOT_SIGNED_UP":
                 # Already signed off — the one refusal that is expected, not a failure (I1).
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     f"ATTENDANCE_AUTOSACK | No-op | driver_profile_id={profile_id} "
                     f"already NOT_SIGNED_UP (total={total})",
                 )
@@ -1603,7 +1603,7 @@ async def enforce_attendance_sanctions(
                 )
                 sanctioned_profile_ids.add(profile_id)
                 outcome.applied.append((driver, "autosack"))
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     f"ATTENDANCE_AUTOSACK | {driver}"
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}",
                 )
@@ -1683,7 +1683,7 @@ async def enforce_attendance_sanctions(
                 )
                 sanctioned_profile_ids.add(profile_id)
                 outcome.applied.append((driver, "autoreserve"))
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     f"ATTENDANCE_AUTORESERVE | {driver}"
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autoreserve_threshold}"
                     f" → moved to {reserve_team_name}",
@@ -1709,7 +1709,7 @@ async def enforce_attendance_sanctions(
     # Refresh lineup and re-post attendance sheet with sanctioned annotations.
     if sanctioned_profile_ids:
         try:
-            await placement._refresh_lineup_post(guild, division_id)  # type: ignore[attr-defined]
+            await placement._refresh_lineup_post(guild, division_id)
         except Exception as exc:  # noqa: BLE001 — reported with the outcome
             log.exception("enforce_attendance_sanctions: lineup refresh failed")
             outcome.posting_faults.append(f"the lineup could not be posted again: {exc}")
@@ -1755,7 +1755,7 @@ async def enforce_attendance_sanctions(
     if not outcome.complete:
         lines = "\n".join(f"  {line}" for line in outcome.failure_lines())
         try:
-            await bot.output_router.post_log(  # type: ignore[attr-defined]
+            await bot.output_router.post_log(
                 f"ATTENDANCE_SANCTIONS | Incomplete\n{lines}\n"
                 f"  {await sync_hint(db_path, division_id, round_id)}",
             )

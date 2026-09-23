@@ -20,7 +20,7 @@ from utils.points_ordering import ordering_message, ordering_violations
 from utils.league_server import league_guild
 
 if TYPE_CHECKING:
-    from discord.ext.commands import Bot
+    from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class AmendmentService:
         round_id: int,
         actor: discord.Member,
         changes: list[tuple[str, Any]],
-        bot: "Bot",
+        bot: "LeagueBot",
         now: datetime | None = None,
     ) -> None:
         """Atomically apply every amendment in *changes* to *round_id*, as one change.
@@ -960,7 +960,7 @@ async def approve_amendment(
                     )
 
         # T018: Attendance recalculation (033-attendance-tracking).
-        if guild and set_up and await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+        if guild and set_up and await bot.module_service.is_attendance_enabled():
             from services.attendance_service import recalculate_attendance_for_round
 
             # Find the most recently finalized round per division to recalculate.

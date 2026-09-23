@@ -271,7 +271,7 @@ async def _build_penalty_review_state(
     """
     from services.penalty_wizard import PenaltyReviewState
 
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     async with get_connection(db_path) as db:
         ctx_cursor = await db.execute(
@@ -340,7 +340,7 @@ async def enter_penalty_state(
     from services import standings_service, results_post_service  # lazy imports
     from services.penalty_wizard import PenaltyReviewState, PenaltyReviewView, _render_prompt_content
 
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     # ------------------------------------------------------------------
     # Fetch round context
@@ -485,7 +485,7 @@ async def enter_penalty_state(
     content = await _render_prompt_content(state)
     msg = await sub_channel.send(content, view=view)
     state.prompt_message_id = msg.id
-    bot.add_view(view, message_id=msg.id)  # type: ignore[attr-defined]
+    bot.add_view(view, message_id=msg.id)
 
     # Persist the prompt message ID so recovery can delete it before reposting.
     async with get_connection(db_path) as db:
@@ -682,7 +682,7 @@ async def finalize_penalty_review(
                     + (f"  penalties: {n_penalties}\n" if n_penalties else "  penalties: none\n")
                     + f"  old={old_val}\n  new={new_val}"
                 )
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     summary,
                 )
         except Exception:
@@ -735,7 +735,7 @@ async def finalize_penalty_review(
             )
             _srv_row = await _srv_cur.fetchone()
 
-        if _srv_row and await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+        if _srv_row and await bot.module_service.is_attendance_enabled():
             _att_season_id = int(_srv_row["season_id"])
 
             # The two steps that write to the database are reported, and the two that post
@@ -1029,7 +1029,7 @@ async def _post_appeals_prompt(state, guild, bot, db_path: str) -> bool:
     content = await _render_appeals_prompt_content(state)
     msg = await sub_channel.send(content, view=appeals_view)
     state.appeals_prompt_message_id = msg.id
-    bot.add_view(appeals_view, message_id=msg.id)  # type: ignore[attr-defined]
+    bot.add_view(appeals_view, message_id=msg.id)
     return True
 
 
@@ -1322,7 +1322,7 @@ async def finalize_appeals_review(
                     + (f"  corrections: {n_corrections}\n" if n_corrections else "  corrections: none\n")
                     + f"  old={old_val}\n  new={new_val}"
                 )
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     summary,
                 )
         except Exception:
@@ -2578,7 +2578,7 @@ async def _approve_amendment_reports(interaction, state) -> None:
     await _rearm_amendment(db_path, round_id, deadline)
 
     try:
-        await bot.output_router.post_log(  # type: ignore[attr-defined]
+        await bot.output_router.post_log(
             f"<@{interaction.user.id}> | AMEND_STAGE_2 | Recorded\n"
             f"  round: {state.round_number} ({state.division_name}), "
             f"sessions: {_sessions_text(session_types)}\n"
@@ -2632,7 +2632,7 @@ async def _approve_amendment_appeals(interaction, state) -> None:
         await _apply_staged_appeals(
             db_path, round_id, division_id, state.staged_appeals, actor_id, bot
         )
-        if await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+        if await bot.module_service.is_attendance_enabled():
             await _rewrite_round_pardons(db_path, round_id, state.staged_pardons)
         # **The amendment's own settling of the former-driver flag** (#216), and the one path
         # that can take a flag *down*: an amendment may strike a driver from the round, or
@@ -2737,7 +2737,7 @@ async def _log_result_amended(
         )
         if faults:
             summary += "\n" + "\n".join(f"  {line}" for line in faults) + f"\n  {hint}"
-        await bot.output_router.post_log(summary)  # type: ignore[attr-defined]
+        await bot.output_router.post_log(summary)
     except Exception:  # noqa: BLE001 — the amendment stands whether or not it was logged
         log.exception("amendment: could not log RESULT_AMENDED for round %s", state.round_id)
 
@@ -2786,7 +2786,7 @@ async def _abandon_failed_amendment(interaction, state, *, stage: str, reason: s
         outcome = "The round was put back as it was." if reverted else "Nothing was changed."
 
     try:
-        await state.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await state.bot.output_router.post_log(
             f"<@{interaction.user.id}> | AMEND_FAILED | Notice\n"
             f"  round: {state.round_number} ({state.division_name}), "
             f"sessions: {_sessions_text(session_types)}, stage: {stage}\n"
@@ -2872,7 +2872,7 @@ async def run_amendment_review_stages(
     """
     from services.penalty_service import load_staged_from_records
     from services.penalty_wizard import PenaltyReviewState, PenaltyReviewView
-    from services.penalty_wizard import _render_prompt_content  # type: ignore[attr-defined]
+    from services.penalty_wizard import _render_prompt_content
 
     # **Scoped to the sessions being amended** (#345). `apply_penalties` walks whatever
     # session types the staged set names, and stage one re-inserted only the amended sessions'
@@ -4251,7 +4251,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     channel, collects results session by session with validation, prompts for config
     selection, persists everything, and then closes the channel.
     """
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     # ------------------------------------------------------------------
     # 1. Load round context
@@ -4308,7 +4308,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # will ever enter a result, so the round has nothing to wait for and ends here — otherwise
     # it would sit outstanding for ever and its season could never be completed, which is issue
     # #154 over again for every league that does not run the results module.
-    results_enabled = await bot.module_service.is_results_enabled()  # type: ignore[attr-defined]
+    results_enabled = await bot.module_service.is_results_enabled()
     arrived_at = (
         RoundStatus.AWAITING_RESULTS.value if results_enabled else RoundStatus.FINAL.value
     )
@@ -4341,7 +4341,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # 3. Get guild + results channel
     # ------------------------------------------------------------------
-    guild = await league_guild(bot)  # type: ignore[attr-defined]
+    guild = await league_guild(bot)
     if guild is None:
         log.error(
             "run_result_submission_job: the league's server is not in the cache for round %s",
@@ -4390,7 +4390,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # 5. Create submission channel
     # ------------------------------------------------------------------
     # Look up both of the league's roles and the bot-command channel for channel setup
-    server_cfg = await bot.config_service.get_server_config()  # type: ignore[attr-defined]
+    server_cfg = await bot.config_service.get_server_config()
     interaction_role: discord.Role | None = None
     league_admin_role: discord.Role | None = None
     bot_cmd_channel_id: int | None = None
@@ -4471,7 +4471,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
         )
 
         while True:
-            msg = await bot.wait_for(  # type: ignore[attr-defined]
+            msg = await bot.wait_for(
                 "message",
                 check=lambda m, ch=sub_channel: (
                     m.channel.id == ch.id and not m.author.bot
@@ -4530,7 +4530,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             if isinstance(result[0] if result else None, str):
                 # Validation failed — these are error strings
                 error_list = "\n".join(f"• {e}" for e in result)
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_REJECTED | \n"
                     f"  season: {season_number}, division: {division_name!r}\n"
                     f"  round: {round_number}, session: {session_type.value}\n"
@@ -4593,7 +4593,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 continue
 
             # Log accepted input (with raw content for auditability)
-            await bot.output_router.post_log(  # type: ignore[attr-defined]
+            await bot.output_router.post_log(
                 f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_ACCEPTED | Success\n"
                 f"  season: {season_number}, division: {division_name!r}\n"
                 f"  round: {round_number}, session: {session_type.value}\n"

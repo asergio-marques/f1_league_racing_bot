@@ -226,7 +226,7 @@ async def add_test_driver(
                 "VALUES (?, ?, NULL)",
                 (team_instance_id, next_seat_number),
             )
-            seat_id = new_seat_cursor.lastrowid  # type: ignore[assignment]
+            seat_id = new_seat_cursor.lastrowid
         else:
             seat_id: int = seat_row["id"]
 
