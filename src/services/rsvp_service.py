@@ -62,13 +62,7 @@ def build_rsvp_embed(
     unix_ts = int(scheduled_at.timestamp())
     timestamp_str = f"<t:{unix_ts}:F>"
 
-    format_labels = {
-        RoundFormat.NORMAL:    "Normal",
-        RoundFormat.SPRINT:    "Sprint",
-        RoundFormat.ENDURANCE: "Endurance",
-        RoundFormat.MYSTERY:   "Mystery",
-    }
-    event_type = format_labels.get(round_format, str(round_format))
+    event_type = round_format.label
 
     embed = discord.Embed(title=title, color=discord.Color.red())
     embed.add_field(name="📅 Date", value=timestamp_str, inline=True)

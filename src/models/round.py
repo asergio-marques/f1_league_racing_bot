@@ -10,6 +10,26 @@ class RoundFormat(str, Enum):
     MYSTERY = "MYSTERY"
     ENDURANCE = "ENDURANCE"
 
+    @property
+    def label(self) -> str:
+        """The format as a league reads it: "Sprint", never ``SPRINT``.
+
+        Text a league reads names a format through this, never by interpolating the member.
+        A ``str`` enum in an f-string formats as ``RoundFormat.SPRINT`` from Python 3.12 on,
+        which is what the submission channel's opening message said until #360.
+        """
+        return _ROUND_FORMAT_LABELS[self]
+
+
+#: Written out rather than derived from the value, so a format whose name has two words cannot
+#: reach a league as ``Reverse_grid``.
+_ROUND_FORMAT_LABELS: dict[RoundFormat, str] = {
+    RoundFormat.NORMAL: "Normal",
+    RoundFormat.SPRINT: "Sprint",
+    RoundFormat.MYSTERY: "Mystery",
+    RoundFormat.ENDURANCE: "Endurance",
+}
+
 
 class RoundStatus(str, Enum):
     """Where a round stands in its life, as one chain.

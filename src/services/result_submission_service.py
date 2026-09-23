@@ -4468,7 +4468,8 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
     # cannot see this channel, and a mention there notified nobody (#136).
     mention_str = f" <@&{interaction_role.id}>" if interaction_role is not None else ""
     await sub_channel.send(
-        f"✅ Results submission open for **Round {round_number}** ({division_name}) - {round_format}."
+        f"✅ Results submission open for **Round {round_number}** ({division_name})"
+        f" - {round_format.label}."
         f" Sessions: {session_list_str}.{mention_str}\n\n"
         "Submit results one driver per line (comma-separated), or type `CANCELLED` to skip a session."
     )
