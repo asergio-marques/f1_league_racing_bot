@@ -290,11 +290,9 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
         lines.append("")
         lines.append(f"**Staged Attendance Pardons ({len(state.staged_pardons)}):**")
         for i, sp in enumerate(state.staged_pardons, 1):
-            # Removable only in an amendment, which is where the round's pardons are reopened.
-            remove = f"  ← Remove Pardon #{i} below" if state.is_amendment else ""
             lines.append(
                 f"  • {_mention(sp.driver_user_id)} — **{sp.pardon_type}** "
-                f"*(justification logged)*{remove}"
+                f"*(justification logged)*  ← Remove Pardon #{i} below"
             )
 
     return "\n".join(lines)
@@ -959,19 +957,19 @@ class PenaltyReviewView(LeagueView):
                 if getattr(item, "custom_id", None) == _CID_RESUBMIT:
                     self.remove_item(item)
 
-        # Dynamic Remove buttons — one per staged entry (T018), then, in an amendment, one per
-        # staged pardon, which is the one place a round's pardons are reopened (#345).
+        # Dynamic Remove buttons — one per staged entry (T018), then one per staged pardon: a
+        # first pass's until its reports are approved (#356), an amendment's reopened from the
+        # round (#345).
         if state is not None:
             buttons = [
                 (f"Remove #{idx + 1}", f"pw_remove_{idx}", self._make_remove_cb(idx))
                 for idx in range(len(state.staged))
             ]
-            if state.is_amendment:
-                buttons += [
-                    (f"Remove Pardon #{idx + 1}", f"pw_pardon_remove_{idx}",
-                     self._make_pardon_remove_cb(idx))
-                    for idx in range(len(state.staged_pardons))
-                ]
+            buttons += [
+                (f"Remove Pardon #{idx + 1}", f"pw_pardon_remove_{idx}",
+                 self._make_pardon_remove_cb(idx))
+                for idx in range(len(state.staged_pardons))
+            ]
             _add_remove_buttons(self, buttons)
 
     def _make_remove_cb(self, idx: int):
@@ -1009,6 +1007,15 @@ class PenaltyReviewView(LeagueView):
                 )
                 return
             if not await _require_lm(interaction, self.state):
+                return
+            # This prompt stays up through a first pass's appeals, after its reports are
+            # approved and its pardons granted: removing one then would change nothing.
+            if await _pardons_closed(self.state):
+                await interaction.response.send_message(
+                    "❌ Post-race penalties have already been finalized for this round, so its "
+                    "pardons stand. A granted pardon is changed with `/round results amend`.",
+                    ephemeral=True,
+                )
                 return
             if idx < len(self.state.staged_pardons):
                 removed = self.state.staged_pardons.pop(idx)

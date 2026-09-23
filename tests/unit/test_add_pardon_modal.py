@@ -468,6 +468,29 @@ async def test_a_finalised_round_takes_no_more_pardons(tmp_path):
     assert state.staged_pardons == []
 
 
+@pytest.mark.parametrize(
+    ("round_status", "amendment", "closed"),
+    [
+        ("AWAITING_REPORT_VERDICTS", False, False),
+        ("AWAITING_APPEAL_VERDICTS", False, True),
+        ("FINAL", True, False),
+    ],
+)
+async def test_pardons_close_when_the_reports_are_approved(
+    tmp_path, round_status, amendment, closed
+):
+    """The one check behind staging a pardon and removing one (#356). A first pass grants its
+    pardons as its reports are approved; an amendment's round is FINAL throughout, and grants its
+    pardons only as its appeals are approved, so the check must never close one."""
+    from services.penalty_wizard import _pardons_closed
+
+    db_path = await _make_db(tmp_path, name="pardons_closed", round_status=round_status)
+    state = _state(db_path)
+    state.is_amendment = amendment
+
+    assert await _pardons_closed(state) is closed
+
+
 # ---------------------------------------------------------------------------
 # Staging the same thing twice
 # ---------------------------------------------------------------------------
