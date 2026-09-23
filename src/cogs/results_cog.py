@@ -20,7 +20,7 @@ from services.season_points_service import (
 )
 from utils.channel_guard import league_admin_only, league_manager_only
 from utils.input_validator import NAME
-from utils.league_bot import LeagueBot
+from utils.league_bot import LeagueBot, bot_of
 from utils.league_server import LeagueModal, LeagueView
 from utils.season_gate import season_for_command
 
@@ -228,7 +228,7 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
         await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
 
         if applied:
-            await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
+            await bot_of(interaction).output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /results config bulk-session | {len(applied)} change(s)\n"
                 f"  config: {self._config_name}, session: {self._session.name}",
@@ -270,7 +270,7 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         # submitted long after it was shown, and the season can reach Pending completion in
         # between — a window that writes to the store is exactly the one worth closing twice.
         season = await season_for_command(
-            interaction, interaction.client.season_service, "results amend bulk-session"  # type: ignore[attr-defined]
+            interaction, bot_of(interaction).season_service, "results amend bulk-session"
         )
         if season is None:
             return
@@ -325,7 +325,7 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
 
         if applied:
-            await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
+            await bot_of(interaction).output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /results amend bulk-session | {len(applied)} change(s)\n"
                 f"  config: {self._config_name}, session: {self._session.name}",
@@ -377,7 +377,7 @@ async def _run_xml_import(
     from utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
 
     async def _audit(msg: str) -> None:
-        await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
+        await bot_of(interaction).output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) "
             f"| /results config xml-import | config: {config_name}\n  {msg}",
         )
@@ -1494,7 +1494,7 @@ class ResultsCog(commands.Cog):
                 return
             try:
                 sanction_failures = await approve_amendment(
-                    self.bot.db_path, season.id, interaction.user.id, interaction.client
+                    self.bot.db_path, season.id, interaction.user.id, bot_of(interaction)
                 )
             except NonMonotonicAmendmentError as exc:
                 bullet_list = "\n\u2022 ".join(exc.errors)

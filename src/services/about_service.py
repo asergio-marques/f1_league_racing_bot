@@ -24,11 +24,11 @@ posted carries it.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
 import discord
 
 from services.hub_service import HubOption, register_option
+from utils.league_bot import bot_of
 
 PROJECT_NAME = "F1 League Racing Bot"
 REPOSITORY_URL = "https://github.com/asergio-marques/f1_league_racing_bot"
@@ -55,7 +55,7 @@ def about_text(version: str | None, made: datetime | None = None) -> str:
 
 async def respond(interaction: discord.Interaction) -> None:
     """Answer a press on About, to the presser alone."""
-    bot: Any = interaction.client
+    bot = bot_of(interaction)
     await interaction.response.send_message(
         about_text(
             getattr(bot, "running_version", None), getattr(bot, "running_version_date", None)

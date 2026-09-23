@@ -42,7 +42,7 @@ from typing import Any, Awaitable, Callable
 
 import discord
 
-from utils.league_bot import LeagueBot
+from utils.league_bot import LeagueBot, bot_of
 from utils.league_server import LeagueView, league_guild
 
 log = logging.getLogger(__name__)
@@ -151,7 +151,7 @@ def _callback_for(key: str) -> Callable[[discord.Interaction], Awaitable[None]]:
 
 async def press(interaction: discord.Interaction, key: str) -> None:
     """Answer a press on the button keyed *key*, judging the option as it stands now."""
-    bot = interaction.client
+    bot = bot_of(interaction)
     option = _OPTIONS.get(key)
     if option is None or not await is_offered(bot, option):
         await interaction.response.send_message(NO_LONGER_OFFERED, ephemeral=True)

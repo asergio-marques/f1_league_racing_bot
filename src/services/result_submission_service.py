@@ -26,7 +26,7 @@ from utils.input_validator import (
     parse_time,
     parse_user_mention,
 )
-from utils.league_bot import LeagueBot
+from utils.league_bot import LeagueBot, bot_of
 from utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
@@ -616,10 +616,10 @@ async def finalize_penalty_review(
             repost_faults = _rps.merge_faults(
                 await _rps.delete_and_repost_final_results(
                     db_path, round_id, division_id, guild,
-                    label="Post-Race Penalty Results", bot=interaction.client,
+                    label="Post-Race Penalty Results", bot=bot_of(interaction),
                 ),
                 await _rps.repost_subsequent_standings(
-                    db_path, division_id, round_id, guild, bot=interaction.client,
+                    db_path, division_id, round_id, guild, bot=bot_of(interaction),
                 ),
             )
 
@@ -1251,10 +1251,10 @@ async def finalize_appeals_review(
             repost_faults = _rps.merge_faults(
                 await _rps.delete_and_repost_final_results(
                     db_path, round_id, division_id, guild,
-                    label="Final Results", bot=interaction.client,
+                    label="Final Results", bot=bot_of(interaction),
                 ),
                 await _rps.repost_subsequent_standings(
-                    db_path, division_id, round_id, guild, bot=interaction.client,
+                    db_path, division_id, round_id, guild, bot=bot_of(interaction),
                 ),
             )
 
@@ -1294,7 +1294,7 @@ async def finalize_appeals_review(
             # open or placements to confirm is wound down and moves to Pending completion at
             # once (#220).
             try:
-                await interaction.client.season_service.wind_down_ongoing(interaction.client)
+                await bot_of(interaction).season_service.wind_down_ongoing(bot_of(interaction))
             except Exception:  # noqa: BLE001 — never fail the approval on the season's next stage
                 log.exception("could not wind the season down")
 
@@ -2673,13 +2673,13 @@ async def _approve_amendment_appeals(interaction, state) -> None:
             else:
                 async def _attendance_step() -> list[str]:
                     return await _repost_attendance_after_amendment(
-                        db_path, round_id, division_id, interaction.client, guild
+                        db_path, round_id, division_id, bot_of(interaction), guild
                     )
 
                 outcome = await _rps.replay_division_channels(
-                    db_path, division_id, round_id, guild, bot=interaction.client,
+                    db_path, division_id, round_id, guild, bot=bot_of(interaction),
                     verdict_state_factory=_amend_verdict_state(
-                        db_path, division_id, interaction.client,
+                        db_path, division_id, bot_of(interaction),
                         division_name=state.division_name,
                     ),
                     attendance_step=_attendance_step,
@@ -2694,7 +2694,7 @@ async def _approve_amendment_appeals(interaction, state) -> None:
                     faults = _rps.merge_faults(
                         faults,
                         await take_down_superseded_announcements(
-                            interaction.client, db_path, round_id
+                            bot_of(interaction), db_path, round_id
                         ),
                     )
                 else:

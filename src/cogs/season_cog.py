@@ -54,7 +54,7 @@ from utils.channel_guard import (
     league_manager_only,
     league_role_faults,
 )
-from utils.league_bot import LeagueBot
+from utils.league_bot import LeagueBot, bot_of
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from utils.league_server import LeagueModal, LeagueView, is_foreign_guild
 from utils.output_router import _chunk_message
@@ -358,7 +358,7 @@ async def _run_round_import(
 
     The interaction is already deferred. Everything here replies through ``followup``.
     """
-    cog = interaction.client.get_cog("SeasonCog")
+    cog = bot_of(interaction).get_cog("SeasonCog")
     if cog is None:  # pragma: no cover — the cog is loaded for the command to exist
         await interaction.followup.send(
             "❌ Season commands are unavailable.", ephemeral=True
@@ -5856,7 +5856,7 @@ class SeasonCog(commands.Cog):
         (
             driver_ids, team_of_role, reserve_role_id, driver_team_map, reserve_driver_ids,
             team_names, team_of_shorthand,
-        ) = await _build_division_validation_data(div.id, interaction.client)
+        ) = await _build_division_validation_data(div.id, bot_of(interaction))
         config_names = await get_season_config_names(self.bot.db_path, season.id)
 
         async def _cleanup_channel() -> None:
@@ -6051,7 +6051,7 @@ class SeasonCog(commands.Cog):
                 div.id,
                 collected,
                 interaction.user.id,
-                interaction.client,
+                bot_of(interaction),
             )
             # Set before the writing flag is lowered, so that no press falls between the two
             # and finds neither the write in progress nor the amendment open (#345).

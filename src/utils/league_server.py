@@ -38,13 +38,12 @@ raises is reported to its member, the log channel and the host's log by
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import discord
 from discord import app_commands
 
 from utils.interaction_errors import describe, describe_form, report_failure
-from utils.league_bot import LeagueBot
+from utils.league_bot import LeagueBot, bot_of
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +79,7 @@ async def league_guild(bot: LeagueBot) -> discord.Guild | None:
 
 
 async def admits(
-    client: Any, interaction: discord.Interaction, *, while_unclaimed: bool = True
+    client: LeagueBot, interaction: discord.Interaction, *, while_unclaimed: bool = True
 ) -> bool:
     """Whether *interaction* may proceed: True unless it comes from a server not the league's.
 
@@ -118,7 +117,7 @@ async def admits(
     return False
 
 
-class LeagueCommandTree(app_commands.CommandTree):
+class LeagueCommandTree(app_commands.CommandTree[LeagueBot]):
     """The command tree, refusing every command from a server that is not the league's, and
     answering every command that fails."""
 
@@ -149,7 +148,7 @@ class LeagueView(discord.ui.View):
     """
 
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
-        return await admits(interaction.client, interaction, while_unclaimed=False)
+        return await admits(bot_of(interaction), interaction, while_unclaimed=False)
 
     async def on_error(
         self, interaction: discord.Interaction, error: Exception, item: discord.ui.Item, /
@@ -162,7 +161,7 @@ class LeagueModal(discord.ui.Modal):
     league's, as `LeagueView` refuses a press."""
 
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
-        return await admits(interaction.client, interaction, while_unclaimed=False)
+        return await admits(bot_of(interaction), interaction, while_unclaimed=False)
 
     async def on_error(self, interaction: discord.Interaction, error: Exception, /) -> None:
         await report_failure(interaction, error, what=describe_form(self))

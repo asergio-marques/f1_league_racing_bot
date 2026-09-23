@@ -37,7 +37,7 @@ from models.driver_profile import DriverState
 from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from services import track_service
 from utils.input_validator import parse_datetime
-from utils.league_bot import LeagueBot
+from utils.league_bot import LeagueBot, bot_of
 from utils.time_parsing import parse_time_of_day
 from utils.channel_guard import league_manager_only, league_role_faults
 from utils.league_server import LeagueView, is_foreign_guild
@@ -129,10 +129,10 @@ async def _resolve_view_context(
     ``bot.add_view``), looks up the wizard by channel ID to identify the
     owning driver.
     """
-    bot = interaction.client
+    bot = bot_of(interaction)
     if stored_user_id is not None:
         return bot, stored_user_id
-    wizard = await bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
+    wizard = await bot.wizard_service.get_wizard_by_channel(
         interaction.channel_id
     )
     return bot, (wizard.discord_user_id if wizard else None)
@@ -184,12 +184,12 @@ class SignupButtonView(LeagueView):
         """T028: Check driver state then launch the signup wizard."""
         if not interaction.guild:
             return
-        bot = interaction.client
+        bot = bot_of(interaction)
         discord_user_id = str(interaction.user.id)
 
         # A real driver never joins a server that is under test: test mode and a real
         # league may not share one, and leaving test mode deletes every fake driver.
-        server_cfg = await bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        server_cfg = await bot.config_service.get_server_config()
         if server_cfg is not None and server_cfg.test_mode_active:
             await interaction.response.send_message(
                 "⛔ Signups are closed while this server is in test mode. "
@@ -201,7 +201,7 @@ class SignupButtonView(LeagueView):
         # A past account of a driver signs nobody up (issue #243). The signup would be kept
         # under an account the driver no longer uses, and the account belongs to that driver
         # already, so it may not start a profile of its own either.
-        current = await bot.driver_service.current_account(discord_user_id)  # type: ignore[attr-defined]
+        current = await bot.driver_service.current_account(discord_user_id)
         if current != discord_user_id:
             await interaction.response.send_message(
                 f"⛔ This account is a past account of a driver in this league. Sign up from "
@@ -210,7 +210,7 @@ class SignupButtonView(LeagueView):
             )
             return
 
-        profile = await bot.driver_service.get_profile(discord_user_id)  # type: ignore[attr-defined]
+        profile = await bot.driver_service.get_profile(discord_user_id)
         if profile is not None and profile.current_state != DriverState.NOT_SIGNED_UP:
             if profile.current_state in IN_PROGRESS_STATES:
                 await interaction.response.send_message(
@@ -232,7 +232,7 @@ class SignupButtonView(LeagueView):
             return
 
         await interaction.response.defer(ephemeral=True)
-        channel = await bot.wizard_service.start_wizard(interaction)  # type: ignore[attr-defined]
+        channel = await bot.wizard_service.start_wizard(interaction)
         if channel is None:
             await interaction.followup.send(
                 "❌ Signup module is not configured. Contact an admin.", ephemeral=True

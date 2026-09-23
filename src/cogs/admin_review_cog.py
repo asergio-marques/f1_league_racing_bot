@@ -16,7 +16,7 @@ from discord.ext import commands
 
 from models.driver_profile import DriverState
 from utils.channel_guard import is_league_manager
-from utils.league_bot import LeagueBot
+from utils.league_bot import LeagueBot, bot_of
 from utils.league_server import LeagueView, is_foreign_guild
 
 log = logging.getLogger(__name__)
@@ -43,9 +43,9 @@ async def _may_review_signup(interaction: discord.Interaction) -> bool:
     """
     if not interaction.guild or not isinstance(interaction.user, discord.Member):
         return False
-    bot = interaction.client
+    bot = bot_of(interaction)
     try:
-        server_cfg = await bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        server_cfg = await bot.config_service.get_server_config()
     except Exception:
         return False
     if server_cfg is None:
@@ -68,10 +68,10 @@ class AdminReviewView(LeagueView):
 
     async def _resolve(self, interaction: discord.Interaction):
         """Return (bot, discord_user_id) resolving from channel when not stored."""
-        _bot = self._bot or interaction.client
+        _bot = self._bot or bot_of(interaction)
         _user_id = self._discord_user_id
         if _user_id is None:
-            wizard = await _bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
+            wizard = await _bot.wizard_service.get_wizard_by_channel(
                 interaction.channel_id
             )
             _user_id = wizard.discord_user_id if wizard else None
@@ -196,10 +196,10 @@ class CorrectionParameterView(LeagueView):
                             "⛔ Insufficient permissions.", ephemeral=True
                         )
                         return
-                    _bot = self._bot or inter.client
+                    _bot = self._bot or bot_of(inter)
                     _user_id = self._discord_user_id
                     if _user_id is None:
-                        wizard = await _bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
+                        wizard = await _bot.wizard_service.get_wizard_by_channel(
                             inter.channel_id
                         )
                         _user_id = wizard.discord_user_id if wizard else None
@@ -209,7 +209,7 @@ class CorrectionParameterView(LeagueView):
                         )
                         return
                     await inter.response.defer(ephemeral=True)
-                    await _bot.wizard_service.select_correction_parameter(  # type: ignore[attr-defined]
+                    await _bot.wizard_service.select_correction_parameter(
                         _user_id, p, inter.guild
                     )
                     await inter.followup.send(
