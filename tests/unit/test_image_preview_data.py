@@ -510,6 +510,63 @@ class TestStandingsSubstitution:
             row.team_instance_id for row in rows if row.driver_user_id == reserve.key
         } == {self.TEAM_KEYS["Bluewave"]}
 
+    def test_the_team_short_of_a_car_scores_nothing_in_that_round(self):
+        """The spec's "a team conferred no points in one of the rounds run", placed.
+
+        Judged by the drawing's own rule, `highlight_for`, since what a manager sees of a
+        round's points on the constructors grid is the highlight and nothing else. Left to
+        the scatter it never arose on a field of five teams or fewer, where every finisher
+        is in the points.
+        """
+        from services.image_preview_data import fabricate_standings_round_results
+        from services.image_standings_service import highlight_for
+
+        for team_count in range(3, 12):
+            layout = [(f"Team {n}", 2) for n in range(team_count)] + [("Reserve", 1)]
+            drivers = self._drivers(layout)
+            team_keys = {name: n + 1 for n, (name, _) in enumerate(layout)}
+            reserve = drivers[-1]
+            short_team_id = team_keys[drivers[:-1][-1].team_name]
+
+            for round_format in ("NORMAL", "SPRINT"):
+                results = fabricate_standings_round_results(
+                    [1], {1: round_format}, drivers, team_keys, reserve_driver=reserve,
+                )
+                rows = [
+                    row
+                    for session in results[1].values()
+                    for row in session
+                    if row.team_instance_id == short_team_id
+                ]
+                assert rows, f"{team_count} teams: the short team drove nothing at all"
+                assert all(highlight_for(row) == (None, False) for row in rows), (
+                    f"{team_count} teams, {round_format}: the short team was drawn scoring"
+                )
+
+    def test_the_team_short_of_a_car_scores_as_usual_in_every_other_round(self):
+        """Confined to the one round, like the rest of the substitution."""
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 2), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        plain = fabricate_standings_round_results(
+            [2], {2: "NORMAL"}, drivers, self.TEAM_KEYS
+        )
+        substituted = fabricate_standings_round_results(
+            [1, 2], {1: "NORMAL", 2: "NORMAL"}, drivers, self.TEAM_KEYS,
+            reserve_driver=reserve,
+        )
+
+        def order(results):
+            return {
+                session: [row.driver_user_id for row in rows]
+                for session, rows in results[2].items()
+            }
+
+        assert order(substituted) == order(plain)
+
     def test_only_one_regular_team_carries_no_substitution(self):
         """Both roles would fall on the same team, which the "different team" guard refuses."""
         from services.image_preview_data import fabricate_standings_round_results

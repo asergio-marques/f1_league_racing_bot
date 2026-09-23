@@ -348,7 +348,10 @@ def fabricate_standings_round_results(
       fill the seat, unlike the case below;
     - the last regular of **any other** team is dropped and the reserve credited to that
       team instead (a reserve standing in) — which is also what makes that regular's own
-      absence visible (a driver absent from one round).
+      absence visible (a driver absent from one round);
+    - whatever remains of the first team is classified at the back of every session of
+      that round, so it is a team conferred no points in one of the rounds run. Placed and
+      not left to the scatter, which on a small field puts every finisher in the points.
 
     The second is sought by team and not simply taken as the regular before the first:
     on the commonest field of all, every team seating two, the two last regulars are
@@ -402,15 +405,29 @@ def fabricate_standings_round_results(
                 if session_type.is_qualifying
                 else {n: max(0, 26 - 2 * (n - 1)) for n in range(1, 14)}
             )
+            active = (
+                substitution
+                if substitution is not None and ordinal == substitution[0]
+                else None
+            )
             round_drivers = drivers
-            if substitution is not None and ordinal == substitution[0]:
-                _, undriven_driver, absent_driver, standin = substitution
+            if active is not None:
+                _, undriven_driver, absent_driver, standin = active
                 dropped = {undriven_driver.key, absent_driver.key}
                 round_drivers = [d for d in drivers if d.key not in dropped]
                 round_drivers = [
                     standin if d.key == reserve_driver.key else d for d in round_drivers
                 ]
             field = _scattered(round_drivers, ordinal, index)
+            if active is not None:
+                # The team short of a car finishes at the back as well, so the round it
+                # scores nothing in is placed rather than left to the scatter — which on a
+                # field of five teams or fewer, every finisher in the points, never
+                # produced one. Last is the DNF of a race and the DNS of a qualifying.
+                short_team = team_of(active[1])
+                field = [d for d in field if team_of(d) != short_team] + [
+                    d for d in field if team_of(d) == short_team
+                ]
             rows = (
                 fabricate_qualifying_rows(field, team_keys, points_map)
                 if session_type.is_qualifying

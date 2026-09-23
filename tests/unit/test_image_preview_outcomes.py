@@ -584,8 +584,12 @@ class TestStandingsPreview:
     async def test_a_driver_is_absent_and_a_reserve_stands_in_for_one_round(
         self, bot, league, db_path
     ):
-        """#144 — every regular was scattered into every round; none of the three cases
-        the spec asks for (an absence, a stand-in, an empty car) could ever occur.
+        """#144 — every regular was scattered into every round; none of the cases the spec
+        asks for (an absence, a stand-in, an empty car, a team scoring nothing in a round)
+        could ever occur.
+
+        Every team seats two, the commonest division there is — and the one a first cut
+        of the substitution skipped altogether, its two last regulars being teammates.
         """
         from pathlib import Path
 
@@ -598,64 +602,38 @@ class TestStandingsPreview:
                 ).fetchone()
             )["season_id"]
 
-            # A third regular team, one seat, so the absence and the empty car fall on
-            # different teams — the guard that keeps a stand-in from filling the very seat
-            # it vacates and papering over the empty-car case with it.
-            cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
-                "is_reserve) VALUES (?, 'Greenfield', 'Greenfield', 1, 0)",
-                (league,),
-            )
-            greenfield_id = cursor.lastrowid
-            cursor = await db.execute(
-                "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 1)",
-                (greenfield_id,),
-            )
-            greenfield_seat_id = cursor.lastrowid
-            cursor = await db.execute(
-                "INSERT INTO driver_profiles (discord_user_id, current_state) "
-                "VALUES (9_300_000, 'ACTIVE')"
-            )
-            greenfield_profile_id = cursor.lastrowid
-            await db.execute(
-                "INSERT INTO signup_records (discord_user_id, server_display_name, "
-                "discord_username, nationality) VALUES ('9300000', 'Greenfield 1', 'g', "
-                "'British')"
-            )
-            await db.execute(
-                "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                "division_id, current_position, current_points, points_gap_to_first, "
-                "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
-                (greenfield_profile_id, season_id, league, greenfield_seat_id),
-            )
-
-            cursor = await db.execute(
-                "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
-                "is_reserve) VALUES (?, 'Reserve', 'Reserve', 1, 1)",
-                (league,),
-            )
-            team_id = cursor.lastrowid
-            cursor = await db.execute(
-                "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 1)",
-                (team_id,),
-            )
-            seat_id = cursor.lastrowid
-            cursor = await db.execute(
-                "INSERT INTO driver_profiles (discord_user_id, current_state) "
-                "VALUES (9_200_000, 'ACTIVE')"
-            )
-            profile_id = cursor.lastrowid
-            await db.execute(
-                "INSERT INTO signup_records (discord_user_id, server_display_name, "
-                "discord_username, nationality) VALUES ('9200000', 'Reserve 1', 'r', "
-                "'British')"
-            )
-            await db.execute(
-                "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                "division_id, current_position, current_points, points_gap_to_first, "
-                "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
-                (profile_id, season_id, league, seat_id),
-            )
+            user_id = 9_300_000
+            for team_name, seats, is_reserve in (("Greenfield", 2, 0), ("Reserve", 1, 1)):
+                cursor = await db.execute(
+                    "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
+                    "is_reserve) VALUES (?, ?, ?, ?, ?)",
+                    (league, team_name, team_name, seats, is_reserve),
+                )
+                team_id = cursor.lastrowid
+                for seat_number in range(1, seats + 1):
+                    cursor = await db.execute(
+                        "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, ?)",
+                        (team_id, seat_number),
+                    )
+                    seat_id = cursor.lastrowid
+                    cursor = await db.execute(
+                        "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                        "VALUES (?, 'ACTIVE')",
+                        (user_id,),
+                    )
+                    profile_id = cursor.lastrowid
+                    await db.execute(
+                        "INSERT INTO signup_records (discord_user_id, server_display_name, "
+                        "discord_username, nationality) VALUES (?, ?, 'd', 'British')",
+                        (str(user_id), f"{team_name} {seat_number}"),
+                    )
+                    await db.execute(
+                        "INSERT INTO driver_season_assignments (driver_profile_id, "
+                        "season_id, division_id, current_position, current_points, "
+                        "points_gap_to_first, team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                        (profile_id, season_id, league, seat_id),
+                    )
+                    user_id += 1
             await db.commit()
 
         context = await _context(bot, round_number=2, require_teams=True)
@@ -667,17 +645,29 @@ class TestStandingsPreview:
             spec for label, key, spec in requests if key == "standings_constructors_template"
         )
         constructors_root = load_svg(root_dir / "standings_constructors_template.svg")
-        constructors_spec = constructors_spec_builder(constructors_root)
+        spec = constructors_spec_builder(constructors_root)
 
-        # The default template carries no driver-name label inside a car (only the numeric
-        # result cells), so the visible half of the substitution here is the one car of the
-        # substituted team that, for this one round, carries nobody — removed rather than
-        # emptied, as FR-026 requires for a car the round holds no driver for.
-        car_removed = any(
-            "_round_1_driver_" in group_id and group_id.endswith("_group")
-            for group_id in constructors_spec.remove
-        )
-        assert car_removed
+        # Rows follow the teams: Redline 1, Bluewave 2, Greenfield 3. Greenfield's second
+        # driver sits round 1 out and Bluewave's second is replaced by the reserve. Rows
+        # past the field have their cars removed too, so every assertion names its row.
+        removed = set(spec.remove)
+
+        # A car nobody drove: Greenfield's second, for round 1 alone.
+        assert "row_3_round_1_driver_2_group" in removed
+        assert "row_3_round_1_driver_1_group" not in removed
+        assert "row_3_round_2_driver_2_group" not in removed
+
+        # The stand-in fills the car Bluewave's absent driver left, so both still stand.
+        assert "row_2_round_1_driver_1_group" not in removed
+        assert "row_2_round_1_driver_2_group" not in removed
+
+        # A team conferred no points in one of the rounds run: Greenfield's remaining car
+        # finished at the back, so no cell of theirs in round 1 carries a highlight.
+        assert not [
+            key
+            for key in spec.image_data
+            if key.startswith("row_3_round_1_") and key.endswith("_background")
+        ]
 
 
 # ── Attendance (T024) ─────────────────────────────────────────────────────
