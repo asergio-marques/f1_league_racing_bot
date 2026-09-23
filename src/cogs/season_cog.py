@@ -1001,7 +1001,11 @@ class SeasonCog(commands.Cog):
                     prepared,
                     (division.id, "lineup"),
                     await self._safe_render(
-                        render_lineup, self.bot, interaction.guild, division.id
+                        render_lineup,
+                        self.bot,
+                        interaction.guild,
+                        division.id,
+                        obtain_missing_portraits=True,
                     ),
                 )
 
@@ -1062,6 +1066,11 @@ class SeasonCog(commands.Cog):
 
         *include_uncommitted* draws the placements not yet confirmed mid-season, so the
         review shows the lineup confirming will post (#374).
+
+        Every lineup the review draws, here and in both pre-renders, obtains first the
+        portrait of any driver who has none, whichever update trigger the league chose
+        (#407): the review is judged on its drawing, and a driver seated since the last daily
+        update would otherwise be judged as the placeholder.
         """
         try:
             import discord as _discord
@@ -1079,6 +1088,7 @@ class SeasonCog(commands.Cog):
                     poster.interaction.guild,
                     division.id,
                     include_uncommitted=include_uncommitted,
+                    obtain_missing_portraits=True,
                 )
             if outcome.png_path is None:
                 # A commanded render that would not draw. The manager is told what is at
@@ -2671,6 +2681,7 @@ class SeasonCog(commands.Cog):
                         interaction.guild,
                         division.id,
                         include_uncommitted=True,
+                        obtain_missing_portraits=True,
                     ),
                 )
 

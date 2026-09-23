@@ -121,6 +121,20 @@ async def test_a_drawn_lineup_is_posted_and_the_caller_posts_no_text(monkeypatch
     assert kwargs["ephemeral"] is False
 
 
+async def test_a_lineup_drawn_here_obtains_missing_portraits_first(monkeypatch, tmp_path):
+    """The review is judged on its drawing, so a driver seated since the last daily update
+    is fetched before it is made, whichever trigger the league chose (#407)."""
+    import services.image_lineup_post as lineup_post
+
+    render = AsyncMock(return_value=_outcome(_png(tmp_path)))
+    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(lineup_post, "render_for_command", render)
+
+    await _cog()._post_review_lineup_image(_ReviewPoster(_interaction()), _division())
+
+    assert render.await_args.kwargs["obtain_missing_portraits"] is True
+
+
 async def test_a_lineup_that_would_not_draw_reports_the_fault(monkeypatch):
     """The manager is told, and the caller is told to fall back to its text."""
     from cogs.season_cog import REVIEW_IMAGE_FAULT
@@ -374,7 +388,10 @@ async def test_every_graphic_is_drawn_before_any_division_block_is_posted(
         drawn.append(("calendar", division.id))
         return _outcome(_png(tmp_path))
 
-    async def _lineup(bot, guild, division_id):
+    asked = []
+
+    async def _lineup(bot, guild, division_id, **kwargs):
+        asked.append(kwargs)
         drawn.append(("lineup", division_id))
         return _outcome(_png(tmp_path))
 
@@ -393,6 +410,8 @@ async def test_every_graphic_is_drawn_before_any_division_block_is_posted(
     assert drawn == [
         ("calendar", 1), ("lineup", 1), ("calendar", 2), ("lineup", 2),
     ]
+    # Each lineup fetches any missing portrait before it is drawn (#407).
+    assert asked == [{"obtain_missing_portraits": True}] * 2
 
 
 async def test_an_aspect_that_is_off_is_not_pre_rendered(monkeypatch, tmp_path):
