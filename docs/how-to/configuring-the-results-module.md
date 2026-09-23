@@ -254,7 +254,7 @@ The prompt carries five buttons:
 |---|---|
 | **➕ Add Penalty** | Pick a session, then give the driver, the sanction, a description and a justification |
 | **No Penalties / Confirm** | Move to approval with nothing applied. If you have anything staged, it asks whether you really mean to discard it |
-| **✅ Approve** | Commit what you have staged, immediately. With nothing staged it refuses and points you at **No Penalties / Confirm** — the button is never greyed out |
+| **✅ Approve** | Commit what you have staged, immediately. It is greyed out while nothing is staged — finish with **No Penalties / Confirm** instead |
 | **🔄 Resubmit Initial Results** | Start collecting the whole round again from the first session. The results already submitted stay in place until the last session is in |
 | **🏳️ Attendance Pardon** | Only useful with the attendance module on — see [its guide](configuring-the-attendance-module.md) |
 
