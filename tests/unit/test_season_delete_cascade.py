@@ -23,8 +23,9 @@ alongside and asserted intact afterwards.
 only to fill a rehearsal, so leaving the profiles behind would accumulate fake drivers across
 every rehearsal a league runs. A real driver profile is the league's record of a person and
 outlives any one season — they are unseated, not deleted. The two are told apart by
-`is_test_driver`, and the profiles are removed *after* the rows referencing them, which is the
-ordering the comment in the source is about.
+`is_test_driver`, and the test drivers are deleted by `delete_driver_profiles`, the route test
+mode itself takes, which lets go of every row holding them wherever it stands and keeps their
+history (#268).
 
 **Results are seeded too, though no league can reach a season that has them.** The only caller,
 `/season abort`, deletes a season still in setup, which has no results, and the method refuses
@@ -390,6 +391,28 @@ async def test_another_seasons_test_drivers_are_left_alone(tmp_path):
     await SeasonService(db_path).delete_season(SEASON_ID)
 
     assert await _count(db_path, "driver_profiles", "id", other_test_profile) == 1
+
+
+async def test_a_test_driver_holding_a_row_beyond_the_season_is_deleted_all_the_same(tmp_path):
+    """The season's own rows go with its rounds, but not a row elsewhere naming the driver.
+    No flow puts one there, the abort having switched test mode off and deleted every fake
+    driver first, so it stands in for a table that comes to hold a driver. The deletion once
+    written here by hand was refused by a foreign key (#268)."""
+    db_path, profiles = await _make_db(tmp_path, name="drivers_beyond")
+    _, test_profile = profiles["deleted"]
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id) "
+            "VALUES (?, ?, ?)",
+            (OTHER_ROUND_ID, OTHER_DIVISION_ID, test_profile),
+        )
+        await db.commit()
+
+    await SeasonService(db_path).delete_season(SEASON_ID)
+
+    assert await _count(db_path, "seasons", "id", SEASON_ID) == 0
+    assert await _count(db_path, "driver_profiles", "id", test_profile) == 0
+    assert await _count(db_path, "driver_round_attendance") == 0
 
 
 async def test_a_test_drivers_history_is_kept_by_identifier(tmp_path):
