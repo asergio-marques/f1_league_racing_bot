@@ -299,6 +299,44 @@ async def test_disabling_signup_keeps_both_roles(tmp_path):
     assert "base role and driver role" in _replied(interaction)
 
 
+async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
+    """Only the channel goes (issue #127). The slots and the three question settings live in
+    tables no key joins to the configuration row, so nothing but the rule keeps them: a
+    disable that cleared them too would pass every other test here."""
+    from models.signup_module import SignupModuleConfig, SignupModuleSettings
+    from services.config_service import ConfigService
+    from services.module_service import ModuleService
+    from services.signup_module_service import SignupModuleService
+
+    db_path = await _make_db(tmp_path, name="disable_keeps_slots")
+    cog = _make_cog(db_path)
+    cog.bot.config_service = ConfigService(db_path)
+    cog.bot.module_service = ModuleService(db_path)
+    cog.bot.signup_module_service = SignupModuleService(db_path)
+    signup = cog.bot.signup_module_service
+    await cog.bot.module_service.set_signup_enabled(True)
+    await signup.save_config(SignupModuleConfig(
+        signup_channel_id=SIGNUP_CHANNEL, signups_open=False,
+        signup_button_message_id=None, selected_tracks=[],
+    ))
+    # Every setting away from its default, so a reset to defaults cannot pass for kept.
+    await signup.save_settings(SignupModuleSettings(
+        nationality_required=False, time_type="SHORT_QUALIFICATION", time_image_required=False,
+    ))
+    await signup.add_slot(3, "19:00")
+    await signup.add_slot(6, "21:30")
+    settings, slots = await signup.get_settings(), await signup.get_slots()
+
+    await _disable(cog, _interaction())
+    await cog._enable_signup(_interaction())
+
+    assert await cog.bot.module_service.is_signup_enabled()
+    assert await signup.get_settings() == settings
+    assert await signup.get_slots() == slots
+    config = await signup.get_config()
+    assert config is not None and config.signup_channel_id is None
+
+
 # ---------------------------------------------------------------------------
 # Open signups, and the timers behind them
 # ---------------------------------------------------------------------------
