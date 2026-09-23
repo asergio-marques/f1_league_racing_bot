@@ -18,9 +18,9 @@ specification's "approved/active" is `get_confirmed_season`, which is what the c
 shape this file follows. The bot's services are spec-bound doubles, so a cog calling a method
 the real service does not define raises `AttributeError` rather than being silently recorded.
 Issue #119 was exactly that failure on the attendance cog — a setter left behind by a rename,
-acknowledged and then raising on every invocation, with a green suite throughout. The
-`# type: ignore[attr-defined]` comments on these very call sites would keep a type checker
-quiet about the same mistake here. Do not relax the `spec=` to make a future test easier.
+acknowledged and then raising on every invocation, with a green suite throughout. Since #228
+the type check catches the same mistake in `src/` too, but `spec=` is the suite's own guard
+and does not lean on it. Do not relax the `spec=` to make a future test easier.
 
 The coverage is deliberately driven across all three commands rather than one, so a change
 that stops halfway is caught on whichever command it lands on.
