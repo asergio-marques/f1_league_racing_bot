@@ -6152,7 +6152,10 @@ class SeasonCog(commands.Cog):
                 for _t in _pending:
                     _t.cancel()
                 if not _done:
-                    await _end("AMEND_TIMEOUT", session_type=st)
+                    await _end(
+                        "AMEND_TIMEOUT", session_type=st,
+                        reply=_expired("no points configuration was chosen"),
+                    )
                     return
                 if cancelled_flag[0]:
                     await _end("AMEND_CANCELLED", reply="ℹ️ Amendment cancelled.")

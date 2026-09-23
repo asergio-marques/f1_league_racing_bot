@@ -943,6 +943,25 @@ async def test_a_configuration_nobody_chooses_times_out_like_a_paste_nobody_send
     assert await _amend_rows(db_path) == 0
 
 
+async def test_a_configuration_nobody_chooses_tells_the_manager_it_expired(tmp_path):
+    """The same silence as a paste nobody sends, one step later (#135)."""
+    db_path = await _make_db(tmp_path, name="amend_config_timeout_told")
+    interaction = _interaction(_amend_channel(), message=_message())
+    real_wait = asyncio.wait
+    calls = {"n": 0}
+
+    async def _wait(tasks, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return await real_wait(tasks, **kwargs)  # the paste arrives
+        return set(), set(tasks)  # nobody picks a configuration
+
+    with patch("asyncio.wait", new=_wait):
+        await _amend(_make_cog(db_path), interaction, config_names=("A", "B"))
+
+    _told_it_expired(interaction, "no points configuration was chosen within 5 minutes")
+
+
 async def test_a_stale_channel_that_will_not_delete_keeps_its_row_and_says_so(tmp_path):
     """The row is the only record of that channel. Dropping it while the channel still stands
     would leak a private channel nothing could ever find again."""
