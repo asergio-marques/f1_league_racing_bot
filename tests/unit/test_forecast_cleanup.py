@@ -196,7 +196,7 @@ class TestDeleteForecastMessage:
 
 class TestDeleteForecastMessageTestModeGuard:
 
-    async def test_test_mode_suppresses_delete_keeps_row(self, tmp_path):
+    async def test_test_mode_does_not_suppress_delete(self, tmp_path):
         """Test mode no longer suppresses deletion — behaves identically to live mode."""
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path, test_mode=1)
@@ -214,7 +214,7 @@ class TestDeleteForecastMessageTestModeGuard:
         row = await _get_stored_row(db_path, 1, 1, 1)
         assert row is None
 
-    async def test_delete_forecast_message_skips_in_test_mode(self, tmp_path):
+    async def test_delete_forecast_message_runs_in_test_mode(self, tmp_path):
         """Test mode no longer suppresses deletion — _discord_delete is called normally."""
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path, test_mode=1)
