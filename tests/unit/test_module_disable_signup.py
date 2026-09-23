@@ -14,19 +14,22 @@ channel a league has since repurposed.
 part-way through a wizard with no way to finish and no notice that it had ended; the forced
 close is what tells them.
 
-**Only the overwrites the bot applied are cleared.** `/signup channel` sets four — everyone,
-the bot, the base role and the interaction role — and those four are what is reverted. A league
-that has added its own overwrites to that channel keeps them, because the bot did not put them
-there and removing them would be the module reaching outside itself on the way out.
+**Only the overwrites the bot applied are cleared.** `/signup channel` sets five — everyone,
+the bot, the base role, the interaction role and, since #116, the league admin role — and the
+first four are what is reverted. The admin role's is left standing, an allow for a role that
+already governs the league (#372, closed as won't fix). A league that has added its own
+overwrites to that channel keeps them, because the bot did not put them there and removing them
+would be the module reaching outside itself on the way out.
 
 **A permissions failure does not fail the disable.** Discord refuses an overwrite change for
 reasons that have nothing to do with the toggle, and a module left half-disabled is worse than
 a channel with a stale overwrite — one is repairable by hand, the other needs the toggle run
 again in a state it may refuse.
 
-**The configuration is deleted, not kept.** Signup is the one module whose disable clears its
-configuration, and re-enabling starts from nothing — which is the opposite of the image module,
-where a re-enable is deliberately lossless. Worth stating, because the two sit in the same file.
+**The channel is cleared; the time slots and question settings are kept** (issue #127). A
+channel can be deleted or given another job while the module is off, so a re-enable asks for
+it again; the slots and the three settings name nothing on Discord and stand again as they were,
+as the signup specification requires.
 
 **The league's two roles are not the module's configuration** (issue #276). The base role and
 the driver role are core's, read from the server configuration, and survive the disable; only
@@ -257,8 +260,8 @@ async def test_the_disable_is_logged(tmp_path):
 
 
 async def test_the_configuration_is_cleared(tmp_path):
-    """Signup is the one module whose disable clears its configuration — the opposite of
-    the image module, where a re-enable is deliberately lossless."""
+    """The configuration row, which holds the channel, is deleted. What survives it is
+    pinned by `test_time_slots_and_settings_stand_again_after_a_re_enable`."""
     db_path = await _make_db(tmp_path, name="disable_config")
     cog = _make_cog(db_path)
     interaction = _interaction()
@@ -437,8 +440,8 @@ async def test_a_league_with_no_configuration_still_disables(tmp_path):
 
 
 async def test_the_overwrites_the_bot_applied_are_cleared(tmp_path):
-    """`/signup channel` sets four — everyone, the bot, the base role and the interaction
-    role — and those four are what is reverted."""
+    """Everyone's, the bot's, the base role's and the interaction role's are reverted. The
+    league admin role's, which `/signup channel` sets too, is left (#372)."""
     db_path = await _make_db(tmp_path, name="disable_perms")
     guild = _guild(channel=_channel())
     cog = _make_cog(db_path, guild=guild)
