@@ -406,7 +406,7 @@ async def test_the_close_confirmation_counts_a_driver_awaiting_a_correction_para
     await undecorate(SignupCog.signup_close)(cog, interaction)
 
     reply = interaction.response.send_message.await_args.args[0]
-    assert "1 driver(s) are currently in progress" in reply
+    assert "1 driver(s) awaiting approval or a correction will keep their place" in reply
     assert DRIVER_ID in reply
 
 
