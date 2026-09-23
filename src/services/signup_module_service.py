@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import discord
 
-from db.database import get_connection
+from db.database import get_connection, inserted_id
 from models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
@@ -545,7 +545,7 @@ class SignupModuleService:
                 (season_id, window_id, record.discord_user_id, *fields),
             )
             await db.commit()
-            new_id = int(cursor.lastrowid)
+            new_id = inserted_id(cursor)
         record.id, record.season_id, record.window_id = new_id, season_id, window_id
         return new_id
 

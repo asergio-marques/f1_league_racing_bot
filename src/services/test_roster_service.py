@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import TypedDict
 
-from db.database import get_connection
+from db.database import get_connection, inserted_id
 from models.points_config import SessionType
 from services.team_service import (
     division_team_references,
@@ -243,7 +243,7 @@ async def add_test_driver(
                 "VALUES (?, 'ASSIGNED', 0, 1, ?, ?)",
                 (uid_str, driver_name, canonical_nationality),
             )
-            profile_id: int = profile_cursor.lastrowid
+            profile_id: int = inserted_id(profile_cursor)
         except Exception as exc:
             return f"Failed to create driver profile: {exc}"
         await _reattach_history(db, uid_str, profile_id)
@@ -471,7 +471,7 @@ async def add_test_drivers_in_bulk(
                     "VALUES (?, ?, NULL)",
                     (team_row["id"], (max_row[0] or 0) + 1),
                 )
-                seat_id = new_seat.lastrowid
+                seat_id = inserted_id(new_seat)
 
             profile_cursor = await db.execute(
                 "INSERT INTO driver_profiles "

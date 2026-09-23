@@ -7,7 +7,7 @@ from datetime import date, datetime
 
 import aiosqlite
 
-from db.database import get_connection
+from db.database import get_connection, inserted_id
 from models.division import Division
 from models.round import (
     ROUND_AWAITING_RESULTS_MODULE,
@@ -1623,7 +1623,7 @@ class SeasonService:
                     (round_id, st.value),
                 )
                 sessions.append(
-                    Session(id=cursor.lastrowid, round_id=round_id, session_type=st)
+                    Session(id=inserted_id(cursor), round_id=round_id, session_type=st)
                 )
             await db.commit()
 
