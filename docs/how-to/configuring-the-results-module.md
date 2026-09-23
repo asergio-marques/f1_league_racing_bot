@@ -253,8 +253,8 @@ The prompt carries five buttons:
 | Button | What it does |
 |---|---|
 | **➕ Add Penalty** | Pick a session, then give the driver, the sanction, a description and a justification |
-| **No Penalties / Confirm** | Move to approval with nothing applied. If you have anything staged, it asks whether you really mean to discard it |
-| **✅ Approve** | Commit what you have staged, immediately. It is greyed out while nothing is staged — finish with **No Penalties / Confirm** instead |
+| **No Penalties / Confirm** | Move to approval with no penalty applied. If you have penalties staged, it asks whether you really mean to discard them. Staged attendance pardons are kept |
+| **✅ Approve** | Commit what you have staged, immediately. It is greyed out while no penalty is staged, even with pardons staged — finish with **No Penalties / Confirm** instead |
 | **🔄 Resubmit Initial Results** | Start collecting the whole round again from the first session. The results already submitted stay in place until the last session is in |
 | **🏳️ Attendance Pardon** | Only useful with the attendance module on — see [its guide](configuring-the-attendance-module.md) |
 
@@ -272,7 +272,7 @@ Each staged penalty also gets its own **Remove** button, so you can take one bac
 
 **Approving is one click.** **✅ Approve** commits there and then, with no second confirmation: it applies every penalty, recomputes positions, times and points for the sessions affected, republishes the round as **Post-Race Penalty Results**, brings every later round's standings up to date, and posts one verdict per decision to the verdicts channel. Check the staged list before you press it, because nothing will ask you again. The prompt comes down as the approval goes through, and pressing **✅ Approve** a second time while it is still working is refused.
 
-The second prompt you may have seen — **✏️ Make Changes** alongside **✅ Approve** — belongs to **No Penalties / Confirm**, not to approval. It is what the bot shows when you say you are finishing with nothing applied, so that a list you had staged is not discarded without being asked about. It stands for the review exactly as it was when it appeared: stage or remove anything, or press **✏️ Make Changes**, and it is taken down. Press **No Penalties / Confirm** again when you are ready.
+The second prompt you may have seen — **✏️ Make Changes** alongside **✅ Approve** — belongs to **No Penalties / Confirm**, not to approval. It is what the bot shows when you say you are finishing with no penalty applied, so that a list you had staged is not discarded without being asked about. It lists any attendance pardons you have staged, which its **✅ Approve** grants. It stands for the review exactly as it was when it appeared: stage or remove anything, or press **✏️ Make Changes**, and it is taken down. Press **No Penalties / Confirm** again when you are ready.
 
 **A button left over from an earlier stage does nothing.** If you still have a penalty prompt or approval message on screen after the penalties were approved, during a resubmission, or after a newer prompt has replaced it, pressing it gets a reply saying why, and nothing changes. Use the prompt the channel is showing now.
 
