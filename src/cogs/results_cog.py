@@ -21,7 +21,7 @@ from services.season_points_service import (
 from utils.channel_guard import league_admin_only, league_manager_only
 from utils.input_validator import NAME
 from utils.league_bot import LeagueBot, bot_of
-from utils.league_server import LeagueModal, LeagueView
+from utils.league_server import LeagueModal, LeagueView, guild_of
 from utils.season_gate import season_for_command
 
 log = logging.getLogger(__name__)
@@ -1638,7 +1638,7 @@ class ResultsCog(commands.Cog):
 
         from services.results_post_service import repost_standings_for_division
         status = await repost_standings_for_division(
-            self.bot.db_path, div.id, interaction.guild, bot=self.bot
+            self.bot.db_path, div.id, guild_of(interaction), bot=self.bot
         )
 
         if status == "ok":
@@ -1693,7 +1693,7 @@ class ResultsCog(commands.Cog):
 
         from services.results_post_service import repost_results_for_division
         status = await repost_results_for_division(
-            self.bot.db_path, div.id, interaction.guild, bot=self.bot
+            self.bot.db_path, div.id, guild_of(interaction), bot=self.bot
         )
 
         if status == "ok":

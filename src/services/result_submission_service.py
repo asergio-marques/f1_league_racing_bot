@@ -33,7 +33,7 @@ from utils.tyre_compound import (
     records_no_tyre,
     tyre_compound_list,
 )
-from utils.league_server import LeagueView, league_guild
+from utils.league_server import LeagueView, guild_of, league_guild
 
 if TYPE_CHECKING:
     from services.penalty_wizard import PenaltyReviewState
@@ -1225,7 +1225,7 @@ async def finalize_appeals_review(
     bot = state.bot
     round_id: int = state.round_id
     division_id: int = state.division_id
-    guild = interaction.guild
+    guild = guild_of(interaction)
     actor_id: int = interaction.user.id
 
     applied_correction_records = await _apply_staged_appeals(

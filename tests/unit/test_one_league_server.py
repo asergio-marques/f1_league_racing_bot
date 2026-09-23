@@ -27,6 +27,7 @@ from utils.league_server import (  # noqa: E402
     LeagueCommandTree,
     LeagueModal,
     LeagueView,
+    guild_of,
     is_foreign_guild,
     league_guild,
     warn_if_serving_several,
@@ -384,3 +385,30 @@ async def test_the_penalty_review_lock_ignores_another_server(monkeypatch):
 
     asked.assert_not_awaited()
     message.delete.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# guild_of (#228)
+# ---------------------------------------------------------------------------
+
+
+def test_guild_of_is_the_server_the_interaction_came_from():
+    interaction = MagicMock()
+    assert guild_of(interaction) is interaction.guild
+
+
+def test_guild_of_names_a_body_that_ran_outside_a_server():
+    """A guard is missing, and the command that lacks one is named."""
+    interaction = MagicMock()
+    interaction.guild = None
+    interaction.command.qualified_name = "season review"
+    with pytest.raises(RuntimeError, match=r"/season review reached its body outside a server"):
+        guild_of(interaction)
+
+
+def test_guild_of_outside_a_command_still_says_what_went_wrong():
+    interaction = MagicMock()
+    interaction.guild = None
+    interaction.command = None
+    with pytest.raises(RuntimeError, match=r"^An interaction reached its body outside a server"):
+        guild_of(interaction)

@@ -68,6 +68,26 @@ async def is_foreign_guild(bot: LeagueBot, guild_id: int | None) -> bool:
     return league is not None and guild_id != league
 
 
+def guild_of(interaction: discord.Interaction) -> discord.Guild:
+    """The server *interaction* came from, which by the time a command body asks is the league's.
+
+    Every command body runs behind a tier guard, and a guard admits only a member, in the
+    league's command channel — so an interaction that reaches a body has a server. discord.py
+    types it as optional because an interaction in general need not. A None here means a body
+    ran with no guard in front of it, and that is raised by name rather than left to surface
+    as an ``AttributeError`` on ``None`` somewhere further in (#228).
+    """
+    guild = interaction.guild
+    if guild is None:
+        command = getattr(interaction.command, "qualified_name", None)
+        what = f"/{command}" if command else "An interaction"
+        raise RuntimeError(
+            f"{what} reached its body outside a server: it needs a guard that refuses a "
+            "direct message"
+        )
+    return guild
+
+
 async def league_guild(bot: LeagueBot) -> discord.Guild | None:
     """The league's Discord server, or None where none is set up or it is not in the cache.
 

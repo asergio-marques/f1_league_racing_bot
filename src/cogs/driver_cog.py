@@ -12,6 +12,7 @@ from utils.autocomplete import bounded_autocomplete, team_autocomplete
 from utils.channel_guard import league_admin_only, league_manager_only
 from utils.input_validator import parse_user_id
 from utils.league_bot import LeagueBot
+from utils.league_server import guild_of
 from services.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)
@@ -330,7 +331,7 @@ class DriverCog(commands.Cog):
                 season_id=season.id,
                 acting_user_id=actor_id,
                 acting_user_name=actor_name,
-                guild=interaction.guild,
+                guild=guild_of(interaction),
                 discord_user_id=str(user.id),
                 committed=False,
                 uncommitted_only=season.stage is SeasonStage.ONGOING_PLACEMENTS,
@@ -424,7 +425,7 @@ class DriverCog(commands.Cog):
                 season_id=season.id,
                 acting_user_id=actor_id,
                 acting_user_name=actor_name,
-                guild=interaction.guild,
+                guild=guild_of(interaction),
                 discord_user_id=str(user.id),
                 uncommitted_only=season.stage is SeasonStage.ONGOING_PLACEMENTS,
             )
@@ -610,7 +611,7 @@ class DriverCog(commands.Cog):
                 season_id=season.id,
                 acting_user_id=interaction.user.id,
                 acting_user_name=str(interaction.user),
-                guild=interaction.guild,
+                guild=guild_of(interaction),
                 discord_user_id=str(user.id),
             )
         except ValueError as exc:
@@ -743,7 +744,7 @@ class DriverCog(commands.Cog):
                 season_id=season.id,
                 acting_user_id=actor_id,
                 acting_user_name=actor_name,
-                guild=interaction.guild,
+                guild=guild_of(interaction),
                 discord_user_id=str(user.id),
             )
         except ValueError as exc:

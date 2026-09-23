@@ -50,6 +50,7 @@ from utils.channel_guard import (
     server_owner_only,
 )
 from utils.league_bot import LeagueBot
+from utils.league_server import guild_of
 
 log = logging.getLogger(__name__)
 
@@ -443,7 +444,7 @@ class BotCog(commands.Cog):
         )
         if replacing_gone:
             given, given_log = await self._give_replaced_role_to_every_driver(
-                interaction.guild, role, column
+                guild_of(interaction), role, column
             )
             reply += (
                 f"\nThe role it replaces is no longer on the server, so it could be replaced "
@@ -568,7 +569,7 @@ class BotCog(commands.Cog):
             )
             return
 
-        guild = interaction.guild
+        guild = guild_of(interaction)
         perms = channel.permissions_for(guild.me)
         missing = [
             name

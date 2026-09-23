@@ -56,7 +56,7 @@ from utils.channel_guard import (
 )
 from utils.league_bot import LeagueBot, bot_of
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
-from utils.league_server import LeagueModal, LeagueView, is_foreign_guild
+from utils.league_server import LeagueModal, LeagueView, guild_of, is_foreign_guild
 from utils.output_router import _chunk_message
 from utils.round_import import (
     ParsedDivisionRounds,
@@ -5499,6 +5499,7 @@ class SeasonCog(commands.Cog):
         opened: _OpenedAmendment,
     ) -> None:
         """The body of `/round results amend`, filling in *opened* as it goes."""
+        guild = guild_of(interaction)
         if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "\u274c The Results & Standings module is not enabled.", ephemeral=True
@@ -5634,7 +5635,7 @@ class SeasonCog(commands.Cog):
             # not hold the unique constraint against this attempt (#345). The channel it names
             # goes first, the row being the only record of it: where it still cannot be deleted
             # the row stays, and the manager is asked to remove the channel by hand.
-            _stale = interaction.guild.get_channel(_closed["channel_id"])
+            _stale = guild.get_channel(_closed["channel_id"])
             if _stale is not None:
                 try:
                     await _stale.delete(reason="Finished amendment channel left behind")
@@ -5670,29 +5671,29 @@ class SeasonCog(commands.Cog):
         bot_cmd_channel_id: int | None = server_cfg.interaction_channel_id if server_cfg else None
         interaction_role: discord.Role | None = None
         if server_cfg and server_cfg.interaction_role_id:
-            interaction_role = interaction.guild.get_role(server_cfg.interaction_role_id)
+            interaction_role = guild.get_role(server_cfg.interaction_role_id)
         # The league admin role is opened to the amendment channel on the same terms. A
         # league admin holds the league manager tier within their own, so a channel opened to
         # one role and not the other would leave them able to cancel an amendment they cannot
         # see (issue #116).
         league_admin_role: discord.Role | None = None
         if server_cfg and server_cfg.league_admin_role_id:
-            league_admin_role = interaction.guild.get_role(server_cfg.league_admin_role_id)
+            league_admin_role = guild.get_role(server_cfg.league_admin_role_id)
 
         # Derive category from bot command channel (same pattern as submission channel)
         category: discord.CategoryChannel | None = None
         if bot_cmd_channel_id is not None:
-            cmd_channel = interaction.guild.get_channel(bot_cmd_channel_id)
+            cmd_channel = guild.get_channel(bot_cmd_channel_id)
             if cmd_channel is not None:
                 category = getattr(cmd_channel, "category", None)
 
         slug = _re.sub(r"[^a-z0-9-]", "", division_name.lower().replace(" ", "-"))[:20]
         amend_ch_name = f"amend-S{season.season_number}-{slug}-R{round_number}"
         overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
-            interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
         }
-        if interaction.guild.me is not None:
-            overwrites[interaction.guild.me] = discord.PermissionOverwrite(
+        if guild.me is not None:
+            overwrites[guild.me] = discord.PermissionOverwrite(
                 read_messages=True, send_messages=True, manage_messages=True
             )
         for role in (interaction_role, league_admin_role):
@@ -5700,7 +5701,7 @@ class SeasonCog(commands.Cog):
                 overwrites[role] = discord.PermissionOverwrite(
                     read_messages=True, send_messages=True
                 )
-        amend_channel = await interaction.guild.create_text_channel(
+        amend_channel = await guild.create_text_channel(
             name=amend_ch_name,
             category=category,
             overwrites=overwrites,

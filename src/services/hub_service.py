@@ -263,7 +263,7 @@ async def apply_hub_permissions(bot: LeagueBot, guild: discord.Guild, channel: A
 async def reapply_hub_permissions(bot: LeagueBot) -> str | None:
     """Apply the hub's permissions again, after one of the roles they name has changed."""
     _cfg, guild, channel, fault = await _hub_channel(bot)
-    if channel is None:
+    if channel is None or guild is None:
         return fault
     return await apply_hub_permissions(bot, guild, channel)
 

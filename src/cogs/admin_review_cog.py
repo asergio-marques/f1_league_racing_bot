@@ -17,7 +17,7 @@ from discord.ext import commands
 from models.driver_profile import DriverState
 from utils.channel_guard import is_league_manager
 from utils.league_bot import LeagueBot, bot_of
-from utils.league_server import LeagueView, is_foreign_guild
+from utils.league_server import LeagueView, guild_of, is_foreign_guild
 
 log = logging.getLogger(__name__)
 
@@ -210,7 +210,7 @@ class CorrectionParameterView(LeagueView):
                         return
                     await inter.response.defer(ephemeral=True)
                     await _bot.wizard_service.select_correction_parameter(
-                        _user_id, p, inter.guild
+                        _user_id, p, guild_of(inter)
                     )
                     await inter.followup.send(
                         f"✅ Re-collecting **{p.replace('_', ' ')}**.", ephemeral=True

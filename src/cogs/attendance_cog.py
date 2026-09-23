@@ -20,6 +20,7 @@ from services.channel_registry_service import as_text_channel
 from services.season_lifecycle_service import uncommitted_seat_excluded
 from utils.channel_guard import league_manager_only
 from utils.league_bot import LeagueBot, bot_of
+from utils.league_server import guild_of
 
 log = logging.getLogger(__name__)
 
@@ -494,7 +495,7 @@ class AttendanceCog(commands.Cog):
             return
 
         outcome = await sync_attendance(
-            self.bot, interaction.guild, db_path, div.id, round_row["id"], season.id
+            self.bot, guild_of(interaction), db_path, div.id, round_row["id"], season.id
         )
 
         lines = [f"\u2705 Attendance of **{div.name}** recalculated from round {round} on."]
