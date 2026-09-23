@@ -2294,6 +2294,20 @@ async def repost_subsequent_standings(
             continue
 
         sc = as_text_channel(guild.get_channel(standings_ch_id))
+        if sc is None:
+            # The check above is kept for the whole repost, and an earlier round's posting has
+            # been awaited since: the channel was deleted meanwhile. It is refused as the check
+            # would have refused it, rather than posted to and raised on (#228).
+            channel_fault = missing_channel_fault(
+                rnd["division_name"] or f"division {division_id}",
+                "standings",
+                int(standings_ch_id),
+            )
+            gated[standings_ch_id] = channel_fault
+            if channel_fault not in faults:
+                faults.append(channel_fault)
+            skipped_rounds.append(rnd_number)
+            continue
 
         # Delete old standings message(s) for both championships and forget their ids
         await _clear_standings_messages(db_path, division_id, rnd_id, sc)
