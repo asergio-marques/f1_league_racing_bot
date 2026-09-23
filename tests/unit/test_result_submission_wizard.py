@@ -50,7 +50,11 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
-from services.result_submission_service import run_result_submission_job  # noqa: E402
+from models.round import RoundFormat  # noqa: E402
+from services.result_submission_service import (  # noqa: E402
+    get_sessions_for_format,
+    run_result_submission_job,
+)
 from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 14008
@@ -381,6 +385,24 @@ async def test_the_opening_message_names_the_round_and_its_sessions(tmp_path):
     assert "Round 3" in opening
     assert "Pro" in opening
     assert "Qualifying" in opening and "Race" in opening
+
+
+@pytest.mark.parametrize(
+    ("fmt", "label"),
+    [("NORMAL", "Normal"), ("SPRINT", "Sprint"), ("MYSTERY", "Mystery"), ("ENDURANCE", "Endurance")],
+)
+async def test_the_opening_message_names_the_format_as_a_league_reads_it(tmp_path, fmt, label):
+    """Issue #360. The format was interpolated as the enum member, which Python 3.12 prints as
+    ``RoundFormat.NORMAL`` — the code name, not a word a league manager uses."""
+    db_path = await _make_db(tmp_path, name=f"wizard_format_{fmt}", fmt=fmt)
+    sessions = get_sessions_for_format(RoundFormat(fmt))
+
+    stubs = await _run(_bot(db_path, ["CANCELLED"] * len(sessions)))
+
+    opening = str(stubs["sub"].send.await_args_list[0].args[0])
+    assert f"(Pro) - {label}. Sessions:" in opening
+    assert "RoundFormat" not in opening
+    assert fmt not in opening
 
 
 async def test_the_opening_message_pings_the_interaction_role_and_not_the_division(tmp_path):
