@@ -49,6 +49,7 @@ from utils.channel_guard import (
     role_grant_refusal,
     server_owner_only,
 )
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ _ANOTHER_SERVER = (
 
 
 class BotCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
         # The factory reset's Discord clean-up, which outlives the command. Held so that it
         # is not collected mid-run, asyncio keeping only a weak reference to a task.
@@ -165,7 +166,7 @@ class BotCog(commands.Cog):
         )
 
         # Seed default F1 teams + Reserve for this server if none exist yet
-        await self.bot.team_service.seed_default_teams_if_empty()  # type: ignore[attr-defined]
+        await self.bot.team_service.seed_default_teams_if_empty()
 
         await interaction.response.send_message(
             f"✅ Bot configuration saved!\n"
@@ -372,7 +373,7 @@ class BotCog(commands.Cog):
         """
         from services.season_lifecycle_service import configuration_fixed
 
-        season_number = await configuration_fixed(self.bot.db_path)  # type: ignore[attr-defined]
+        season_number = await configuration_fixed(self.bot.db_path)
         config = await self.bot.config_service.get_server_config()
         old_role_id = getattr(config, column) if config is not None else None
         replacing_gone = (
@@ -421,7 +422,7 @@ class BotCog(commands.Cog):
             return
 
         if column == "base_role_id" and interaction.guild is not None:
-            await self.bot.signup_module_service.move_base_role_overwrite(  # type: ignore[attr-defined]
+            await self.bot.signup_module_service.move_base_role_overwrite(
                 interaction.guild, old_role_id, role
             )
             # The hub is seen by the base role, or by everyone where there is none (#279).
@@ -466,7 +467,7 @@ class BotCog(commands.Cog):
         """
         if role.is_default():
             return "Everybody holds it already.", "  given to: everybody, as @everyone"
-        outcome = await self.bot.placement_service.grant_to_every_driver(  # type: ignore[attr-defined]
+        outcome = await self.bot.placement_service.grant_to_every_driver(
             guild, role.id
         )
         told = f"It has been given to {outcome.granted} driver(s)."
@@ -559,7 +560,7 @@ class BotCog(commands.Cog):
         from services import hub_service
         from services.channel_registry_service import ChannelUse, find_channel_use, refusal
 
-        use = await find_channel_use(self.bot.db_path, channel.id)  # type: ignore[attr-defined]
+        use = await find_channel_use(self.bot.db_path, channel.id)
         if use is not None:
             await interaction.response.send_message(
                 refusal(channel.mention, use, same_setting=(use == ChannelUse("hub"))),
@@ -658,7 +659,7 @@ class BotCog(commands.Cog):
             )
             return
 
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+        async with get_connection(self.bot.db_path) as db:
             season = await pack_service.current_season(db)
         if season is not None:
             await interaction.response.send_message(
@@ -667,20 +668,20 @@ class BotCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | Success\n"
             f"  The bot no longer serves this server. `/bot init` on another claims it."
         )
         try:
             result = await pack_service.pack(
-                self.bot.db_path,  # type: ignore[attr-defined]
-                self.bot.scheduler_service,  # type: ignore[attr-defined]
+                self.bot.db_path,
+                self.bot.scheduler_service,
                 self.bot,
                 actor_id=interaction.user.id,
                 actor_name=str(interaction.user),
             )
         except pack_service.PackRefused as refused:
-            await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | "
                 f"Refused — season {refused.season_number} was set up meanwhile. "
                 f"Nothing was changed."
@@ -743,8 +744,8 @@ class BotCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        db_path = self.bot.db_path  # type: ignore[attr-defined]
-        scheduler = self.bot.scheduler_service  # type: ignore[attr-defined]
+        db_path = self.bot.db_path
+        scheduler = self.bot.scheduler_service
 
         paused = False
         try:

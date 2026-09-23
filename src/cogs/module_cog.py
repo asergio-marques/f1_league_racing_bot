@@ -15,6 +15,7 @@ from discord.ext import commands
 from db.database import get_connection
 from models.driver_profile import DriverState
 from utils.channel_guard import league_admin_only
+from utils.league_bot import LeagueBot
 from utils.league_server import LeagueView, league_guild
 from utils.output_router import _chunk_message
 
@@ -33,7 +34,7 @@ _MODULE_CHOICES = [
 # ---------------------------------------------------------------------------
 
 
-async def execute_forced_close(bot: commands.Bot, *, audit_action: str) -> None:
+async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> None:
     """Force-close the signup window.
 
     1. Transition in-progress drivers to NOT_SIGNED_UP.
@@ -69,7 +70,7 @@ async def execute_forced_close(bot: commands.Bot, *, audit_action: str) -> None:
             log.exception("forced_close: failed to transition driver %s", row["discord_user_id"])
 
     # T046: cancel wizard APScheduler jobs for each force-transitioned driver
-    svc = bot.scheduler_service  # type: ignore[attr-defined]
+    svc = bot.scheduler_service
     for row in rows:
         uid = row["discord_user_id"]
         from services.wizard_service import channel_delete_job_id, inactivity_job_id
@@ -85,7 +86,7 @@ async def execute_forced_close(bot: commands.Bot, *, audit_action: str) -> None:
     # is cleaned up after a 24-hour hold.
     _guild = await league_guild(bot)
     if _guild is not None:
-        _wizard_svc = bot.wizard_service  # type: ignore[attr-defined]
+        _wizard_svc = bot.wizard_service
         for row in rows:
             try:
                 await _wizard_svc._trigger_channel_hold(
@@ -255,7 +256,7 @@ class _ConfirmDisableResultsView(LeagueView):
 
 
 class ModuleCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     module = app_commands.Group(

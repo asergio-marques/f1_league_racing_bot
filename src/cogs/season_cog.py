@@ -54,6 +54,7 @@ from utils.channel_guard import (
     league_manager_only,
     league_role_faults,
 )
+from utils.league_bot import LeagueBot
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from utils.league_server import LeagueModal, LeagueView, is_foreign_guild
 from utils.output_router import _chunk_message
@@ -291,7 +292,7 @@ class BulkRoundModal(LeagueModal, title="Add rounds in bulk"):
         super().__init__()
         self._division_name = division_name
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         rounds, errors = parse_bulk_round_lines(self.entries.value)
         if errors:
@@ -330,7 +331,7 @@ class XmlRoundModal(LeagueModal, title="Add rounds from XML"):
         max_length=4000,
     )
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         divisions, errors = parse_round_xml(self.payload.value)
         if errors:
@@ -357,7 +358,7 @@ async def _run_round_import(
 
     The interaction is already deferred. Everything here replies through ``followup``.
     """
-    cog = interaction.client.get_cog("SeasonCog")  # type: ignore[union-attr]
+    cog = interaction.client.get_cog("SeasonCog")
     if cog is None:  # pragma: no cover — the cog is loaded for the command to exist
         await interaction.followup.send(
             "❌ Season commands are unavailable.", ephemeral=True
@@ -616,7 +617,7 @@ class _AmendSessionsView(LeagueView):
 
 
 class SeasonCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
         # Keyed by user_id, or by _RECOVERED on recovery \u2192 PendingConfig. At most one
         # season is live in the league, so at most one setup is pending at a time.
@@ -700,7 +701,7 @@ class SeasonCog(commands.Cog):
         answer must not be the thing that refuses a season.
         """
         try:
-            shortfall = await self.bot.image_validity_service.colour_shortfall(  # type: ignore[attr-defined]
+            shortfall = await self.bot.image_validity_service.colour_shortfall(
 
             )
         except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
@@ -758,7 +759,7 @@ class SeasonCog(commands.Cog):
         tree to say so. The season simply stayed in setup and nothing was ever sent.
         """
         return await season_points_service.missing_attached_configs(
-            self.bot.db_path, season_id  # type: ignore[attr-defined]
+            self.bot.db_path, season_id
         )
 
     async def _team_name_problems(self, season_id: int | None) -> list[str]:
@@ -784,7 +785,7 @@ class SeasonCog(commands.Cog):
 
         problems: list[str] = []
         try:
-            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            async with get_connection(self.bot.db_path) as db:
                 scopes: list[tuple[str, str, tuple]] = [
                     (
                         "the server's team list",
@@ -1156,7 +1157,7 @@ class SeasonCog(commands.Cog):
             if not await self.bot.module_service.is_images_enabled():
                 return []
 
-            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports()
             report = reports.get("lineup_template")
             if report is None or not report.valid:
                 # An unusable template is already reported by the review's own render,
@@ -1173,11 +1174,11 @@ class SeasonCog(commands.Cog):
             nest = catalogue.rows.nested if catalogue.rows is not None else None
             declared = FieldIndex(root).declared()
 
-            divisions = await self.bot.season_service.get_divisions(season_id)  # type: ignore[attr-defined]
+            divisions = await self.bot.season_service.get_divisions(season_id)
             problems: list[str] = []
 
             for division in sorted(divisions, key=lambda d: d.tier):
-                entries = await self.bot.team_service.get_division_teams(division.id)  # type: ignore[attr-defined]
+                entries = await self.bot.team_service.get_division_teams(division.id)
                 teams = [e for e in entries if not e.get("is_reserve")]
 
                 if len(teams) > blocks:
@@ -1224,14 +1225,14 @@ class SeasonCog(commands.Cog):
         from models.image_catalogues import catalogue_for
 
         try:
-            if not await self.bot.module_service.is_images_enabled():  # type: ignore[attr-defined]
+            if not await self.bot.module_service.is_images_enabled():
                 return None
-            if not await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
+            if not await self.bot.image_config_service.is_aspect_enabled(
                 "calendar"
             ):
                 return None
 
-            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports()
             report = reports.get("calendar_template")
             if report is None or not report.valid:
                 return None
@@ -1268,13 +1269,13 @@ class SeasonCog(commands.Cog):
         from models.image_catalogues import CapacityError, catalogue_for
 
         try:
-            config = await self.bot.image_config_service.get_config()  # type: ignore[attr-defined]
-            if config is None or not await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
+            config = await self.bot.image_config_service.get_config()
+            if config is None or not await self.bot.image_config_service.is_aspect_enabled(
                 "calendar"
             ):
                 return []
 
-            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports()
             report = reports.get("calendar_template")
             if report is None or not report.valid:
                 return []  # already named by the template problems list
@@ -1287,7 +1288,7 @@ class SeasonCog(commands.Cog):
             if not capacity:
                 return []
 
-            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            async with get_connection(self.bot.db_path) as db:
                 cursor = await db.execute(
                     "SELECT d.name AS name, COUNT(r.id) AS rounds "
                     "FROM divisions d LEFT JOIN rounds r ON r.division_id = d.id "
@@ -1334,10 +1335,10 @@ class SeasonCog(commands.Cog):
         try:
             from utils.svg_document import load_svg
 
-            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports()
 
             # The sheet's round grid, against the season's longest calendar.
-            if await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
+            if await self.bot.image_config_service.is_aspect_enabled(
                 "attendance"
             ):
                 report = reports.get("attendance_template")
@@ -1348,7 +1349,7 @@ class SeasonCog(commands.Cog):
                     # Nought means the template draws no grid at all, which is a legitimate
                     # choice (XIV.3) and never a divergence.
                     if declared:
-                        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                        async with get_connection(self.bot.db_path) as db:
                             cursor = await db.execute(
                                 "SELECT d.name AS name, COUNT(r.id) AS rounds "
                                 "FROM divisions d LEFT JOIN rounds r ON r.division_id = d.id "
@@ -1370,13 +1371,13 @@ class SeasonCog(commands.Cog):
             # championships are reported apart, never as one pair (FR-045): they are two
             # files, and a manager told "the standings template" would not know which to
             # enlarge.
-            if await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
+            if await self.bot.image_config_service.is_aspect_enabled(
                 "standings"
             ):
                 lines += await self._standings_capacity_lines(season_id, reports)
 
             # The call's session list, against the season's largest round.
-            if await self.bot.image_config_service.is_aspect_enabled(  # type: ignore[attr-defined]
+            if await self.bot.image_config_service.is_aspect_enabled(
                 "rsvp"
             ):
                 report = reports.get("rsvp_template")
@@ -1385,7 +1386,7 @@ class SeasonCog(commands.Cog):
                         load_svg(report.resolved_path)
                     )
                     if declared:
-                        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                        async with get_connection(self.bot.db_path) as db:
                             cursor = await db.execute(
                                 "SELECT COUNT(*) AS sprints FROM rounds r "
                                 "JOIN divisions d ON d.id = r.division_id "
@@ -1434,7 +1435,7 @@ class SeasonCog(commands.Cog):
         )
         from utils.svg_document import load_svg
 
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+        async with get_connection(self.bot.db_path) as db:
             cursor = await db.execute(
                 "SELECT d.name AS name, "
                 "       (SELECT COUNT(*) FROM driver_season_assignments dsa "
@@ -1523,10 +1524,10 @@ class SeasonCog(commands.Cog):
             )
 
         try:
-            statuses = await self.bot.image_validity_service.aspect_statuses()  # type: ignore[attr-defined]
-            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
-            directories = await self.bot.image_validity_service.directory_reports()  # type: ignore[attr-defined]
-            config = await self.bot.image_config_service.get_config()  # type: ignore[attr-defined]
+            statuses = await self.bot.image_validity_service.aspect_statuses()
+            reports = await self.bot.image_validity_service.template_reports()
+            directories = await self.bot.image_validity_service.directory_reports()
+            config = await self.bot.image_config_service.get_config()
         except Exception as exc:  # a review must never fail because of this section
             log.error("season review: image section failed: %s", exc)
             return ["**Image output**", "  ⚠️ Could not be read.", ""]
@@ -1558,7 +1559,7 @@ class SeasonCog(commands.Cog):
             from services.image_validity_service import templates_of_enabled_aspects
 
             drawn = templates_of_enabled_aspects(
-                await self.bot.image_config_service.get_toggles()  # type: ignore[attr-defined]
+                await self.bot.image_config_service.get_toggles()
             )
 
             def _detail(report) -> str:
@@ -1623,9 +1624,9 @@ class SeasonCog(commands.Cog):
         from services.image_config_service import portrait_configuration_fault
 
         try:
-            if not await self.bot.module_service.is_images_enabled():  # type: ignore[attr-defined]
+            if not await self.bot.module_service.is_images_enabled():
                 return None
-            config = await self.bot.image_config_service.get_config()  # type: ignore[attr-defined]
+            config = await self.bot.image_config_service.get_config()
         except Exception as exc:  # never block a season because this could not be read
             log.error("season review: portrait blocker failed: %s", exc)
             return None
@@ -1641,7 +1642,7 @@ class SeasonCog(commands.Cog):
         from services.image_config_service import portrait_configuration_fault
 
         try:
-            config = await self.bot.image_config_service.get_config()  # type: ignore[attr-defined]
+            config = await self.bot.image_config_service.get_config()
         except Exception as exc:  # a review must never fail because of this section
             log.error("season review: portrait settings failed: %s", exc)
             return ["  ⚠️ Driver portraits: could not be read."]
@@ -1676,8 +1677,8 @@ class SeasonCog(commands.Cog):
         from services.approval_window_service import AttendanceWindows, WeatherWindows
 
         attendance = None
-        if await self.bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
-            _att = await self.bot.attendance_service.get_or_create_config()  # type: ignore[attr-defined]
+        if await self.bot.module_service.is_attendance_enabled():
+            _att = await self.bot.attendance_service.get_or_create_config()
             attendance = AttendanceWindows(
                 notice_days=_att.rsvp_notice_days,
                 last_notice_hours=_att.rsvp_last_notice_hours,
@@ -1685,7 +1686,7 @@ class SeasonCog(commands.Cog):
             )
 
         weather = None
-        if await self.bot.module_service.is_weather_enabled():  # type: ignore[attr-defined]
+        if await self.bot.module_service.is_weather_enabled():
             from services.weather_config_service import get_weather_pipeline_config
 
             _wx = await get_weather_pipeline_config(self.bot.db_path)
@@ -1739,7 +1740,7 @@ class SeasonCog(commands.Cog):
     # the narrower right, and `_ApproveView` is where that is enforced.
     @league_manager_only
     async def season_review(self, interaction: discord.Interaction) -> None:
-        confirmed = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
+        confirmed = await self.bot.season_service.get_confirmed_season()
         if confirmed is not None:
             # Mid-season, the review covers the drivers of the window just closed (#220).
             if confirmed.stage is SeasonStage.ONGOING_PLACEMENTS:
@@ -1762,7 +1763,7 @@ class SeasonCog(commands.Cog):
 
         # Placements are reviewed only once the season is in Placements (issue #220).
         if cfg.season_id and (
-            await self.bot.season_service.get_stage(cfg.season_id)  # type: ignore[attr-defined]
+            await self.bot.season_service.get_stage(cfg.season_id)
         ) is not SeasonStage.PLACEMENTS:
             await interaction.response.send_message(
                 "\u26d4 Placements can only be reviewed while the season is in placements. "
@@ -1820,14 +1821,14 @@ class SeasonCog(commands.Cog):
         # Load from DB to get tier and team roster data
         if cfg.season_id != 0:
             # ── Modules ───────────────────────────────────────────────
-            weather_on = await self.bot.module_service.is_weather_enabled()  # type: ignore[attr-defined]
-            signup_on = await self.bot.module_service.is_signup_enabled()  # type: ignore[attr-defined]
-            results_on = await self.bot.module_service.is_results_enabled()  # type: ignore[attr-defined]
-            attendance_on = await self.bot.module_service.is_attendance_enabled()  # type: ignore[attr-defined]
+            weather_on = await self.bot.module_service.is_weather_enabled()
+            signup_on = await self.bot.module_service.is_signup_enabled()
+            results_on = await self.bot.module_service.is_results_enabled()
+            attendance_on = await self.bot.module_service.is_attendance_enabled()
             on = "✅ Enabled"
             off = "❌ Disabled"
             if signup_on:
-                signup_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
+                signup_cfg = await self.bot.signup_module_service.get_config()
                 if signup_cfg:
                     signup_ch = f"<#{signup_cfg.signup_channel_id}>" if signup_cfg.signup_channel_id else "*(not configured)*"
                     signup_line = f"  Signup: {on} | Channel: {signup_ch}"
@@ -1835,7 +1836,7 @@ class SeasonCog(commands.Cog):
                     signup_line = f"  Signup: {on}"
             else:
                 signup_line = f"  Signup: {off}"
-            images_on = await self.bot.module_service.is_images_enabled()  # type: ignore[attr-defined]
+            images_on = await self.bot.module_service.is_images_enabled()
             header_lines += [
                 "**Modules**",
                 f"  Weather: {on if weather_on else off}",
@@ -1944,7 +1945,7 @@ class SeasonCog(commands.Cog):
             points_lines.append("")
 
             # Pre-fetch role configs so we can warn about teams missing a role
-            teams_with_roles = await self.bot.team_service.get_teams_with_roles(  # type: ignore[attr-defined]
+            teams_with_roles = await self.bot.team_service.get_teams_with_roles(
 
             )
             roleless = {t["name"] for t in teams_with_roles if not t["role_id"] and not t["is_reserve"]}
@@ -2039,7 +2040,7 @@ class SeasonCog(commands.Cog):
                         f"  Verdicts channel: {verdicts_chan}",
                     ]
                     if attendance_on:
-                        att_div_cfg = await self.bot.attendance_service.get_division_config(div.id)  # type: ignore[attr-defined]
+                        att_div_cfg = await self.bot.attendance_service.get_division_config(div.id)
                         rsvp_chan = (
                             f"<#{att_div_cfg.rsvp_channel_id}>"
                             if att_div_cfg and att_div_cfg.rsvp_channel_id
@@ -2145,7 +2146,7 @@ class SeasonCog(commands.Cog):
                             )
                             if role_warning is not None:
                                 lineup_lines.append(role_warning)
-                        async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
+                        async with get_connection(self.bot.db_path) as _db:
                             _cur = await _db.execute(
                                 """
                                 SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name,
@@ -2316,7 +2317,7 @@ class SeasonCog(commands.Cog):
         A season with none has nothing to race, and would never reach Pending completion —
         so its placements are not confirmed.
         """
-        divisions = await self.bot.season_service.get_divisions(season_id)  # type: ignore[attr-defined]
+        divisions = await self.bot.season_service.get_divisions(season_id)
         return any(division.status != "CANCELLED" for division in divisions)
 
     #: Every channel a division posts to, in the order a manager reads them: the column that
@@ -2352,14 +2353,14 @@ class SeasonCog(commands.Cog):
         could not tell must not be what refuses a season. With no *guild*, only whether each
         channel is set is judged. A cancelled division posts nothing and is passed over.
         """
-        modules = self.bot.module_service  # type: ignore[attr-defined]
+        modules = self.bot.module_service
         enabled = {
             None: True,
             "weather": await modules.is_weather_enabled(),
             "results": await modules.is_results_enabled(),
             "attendance": await modules.is_attendance_enabled(),
         }
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+        async with get_connection(self.bot.db_path) as db:
             cursor = await db.execute(
                 "SELECT d.name, d.lineup_channel_id, d.calendar_channel_id, "
                 "       d.forecast_channel_id, rc.results_channel_id, "
@@ -2401,7 +2402,7 @@ class SeasonCog(commands.Cog):
         from services.season_lifecycle_service import UNSETTLED_STATES
 
         placeholders = ",".join("?" for _ in UNSETTLED_STATES)
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+        async with get_connection(self.bot.db_path) as db:
             cursor = await db.execute(
                 f"SELECT dp.discord_user_id, dp.current_state, sr.server_display_name "
                 f"FROM driver_profiles dp "
@@ -2463,7 +2464,7 @@ class SeasonCog(commands.Cog):
         original_followup = self._recording_followup(interaction, posted_messages)
         prepared: dict = {}
         try:
-            placements = await self.bot.placement_service.uncommitted_placements(season.id)  # type: ignore[attr-defined]
+            placements = await self.bot.placement_service.uncommitted_placements(season.id)
             lines = [
                 f"**Placements Review (Season #{season.season_number}) — mid-season**",
                 "",
@@ -2484,7 +2485,7 @@ class SeasonCog(commands.Cog):
 
             divisions = [
                 division
-                for division in await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+                for division in await self.bot.season_service.get_divisions(season.id)
                 if division.status != "CANCELLED"
             ]
             # The divisions whose lineup confirming posts: those holding a new driver.
@@ -2505,7 +2506,7 @@ class SeasonCog(commands.Cog):
                     lineup_faulted = lineup_faulted or state == REVIEW_IMAGE_FAULT
                     if state == REVIEW_IMAGE_DREW:
                         continue
-                teams = await self.bot.team_service.get_division_teams(division.id)  # type: ignore[attr-defined]
+                teams = await self.bot.team_service.get_division_teams(division.id)
                 block = [f"\U0001f4c2 **{division.name}** — lineup once confirmed"]
                 for team in teams:
                     seated = [
@@ -2617,7 +2618,7 @@ class SeasonCog(commands.Cog):
         from models.season import InvalidStageTransition
 
         await interaction.response.defer(ephemeral=True)
-        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage is not SeasonStage.ONGOING_PLACEMENTS:
             await interaction.followup.send(
                 "\u26d4 The season is no longer placing drivers. **Nothing has been confirmed.**",
@@ -2646,7 +2647,7 @@ class SeasonCog(commands.Cog):
                 await interaction.followup.send(chunk, ephemeral=True)
             return
 
-        outcome = await self.bot.placement_service.commit_mid_season_placements(  # type: ignore[attr-defined]
+        outcome = await self.bot.placement_service.commit_mid_season_placements(
             season.id, interaction.guild
         )
         committed = outcome.placements
@@ -2659,7 +2660,7 @@ class SeasonCog(commands.Cog):
 
         returned = False
         try:
-            await self.bot.season_service.set_stage(season.id, SeasonStage.ONGOING)  # type: ignore[attr-defined]
+            await self.bot.season_service.set_stage(season.id, SeasonStage.ONGOING)
         except InvalidStageTransition:
             log.warning("mid-season placements: season %s had already moved on", season.id)
         except Exception:  # noqa: BLE001 — the placements are committed
@@ -2678,7 +2679,7 @@ class SeasonCog(commands.Cog):
 
             # Rounds may have finished every division while the new drivers were placed.
             try:
-                await advance_to_pending_completion(self.bot.db_path, season.id)  # type: ignore[attr-defined]
+                await advance_to_pending_completion(self.bot.db_path, season.id)
             except Exception:  # noqa: BLE001 — `/season complete` makes this move itself
                 log.exception(
                     "mid-season placements: could not check whether season %s is done",
@@ -2699,7 +2700,7 @@ class SeasonCog(commands.Cog):
             ),
         )
         try:
-            await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
                 f"/season placements-review | Confirmed\n"
                 f"  season: Season #{season.season_number}\n"
@@ -2736,9 +2737,9 @@ class SeasonCog(commands.Cog):
         # ── Signup ─────────────────────────────────────────────────────────────
         # The two roles are the league's (issue #276), but only the signup module needs
         # them, so they are faults only while it is enabled.
-        if await self.bot.module_service.is_signup_enabled():  # type: ignore[attr-defined]
-            signup_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
-            server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        if await self.bot.module_service.is_signup_enabled():
+            signup_cfg = await self.bot.signup_module_service.get_config()
+            server_cfg = await self.bot.config_service.get_server_config()
             base_role_id = server_cfg.base_role_id if server_cfg is not None else None
             driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
             if signup_cfg is None or signup_cfg.signup_channel_id is None:
@@ -2761,8 +2762,8 @@ class SeasonCog(commands.Cog):
         ]
 
         # ── Results: points configurations ────────────────────────────────────
-        if await self.bot.module_service.is_results_enabled():  # type: ignore[attr-defined]
-            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+        if await self.bot.module_service.is_results_enabled():
+            async with get_connection(self.bot.db_path) as db:
                 cursor = await db.execute(
                     "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
                     (season_id,),
@@ -2784,7 +2785,7 @@ class SeasonCog(commands.Cog):
             ]
 
         # ── Images: rasteriser, templates, colours, portraits ─────────────────
-        if await self.bot.module_service.is_images_enabled():  # type: ignore[attr-defined]
+        if await self.bot.module_service.is_images_enabled():
             faults += await self._image_configuration_faults()
 
         return faults
@@ -2809,7 +2810,7 @@ class SeasonCog(commands.Cog):
         What is left is the image module's, whose templates, artwork and settings may all
         change while a season is raced.
         """
-        if not await self.bot.module_service.is_images_enabled():  # type: ignore[attr-defined]
+        if not await self.bot.module_service.is_images_enabled():
             return []
         return await self._image_configuration_faults()
 
@@ -2817,7 +2818,7 @@ class SeasonCog(commands.Cog):
         """The weather deadlines, as both reviews report them."""
         from services.weather_config_service import get_weather_pipeline_config as _gwpc
 
-        _wcfg = await _gwpc(self.bot.db_path)  # type: ignore[attr-defined]
+        _wcfg = await _gwpc(self.bot.db_path)
         return [
             "**Weather Config**",
             f"  • Phase 1 deadline: {_wcfg.phase_1_days} day(s) before race",
@@ -2837,7 +2838,7 @@ class SeasonCog(commands.Cog):
         until the season ends, so the placements review has nothing to say of them that the
         confirmed configuration did not.
         """
-        server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        server_cfg = await self.bot.config_service.get_server_config()
 
         def _role(role_id: int | None) -> str:
             return f"<@&{role_id}>" if role_id else "*(not configured)*"
@@ -2851,9 +2852,9 @@ class SeasonCog(commands.Cog):
 
     async def _signup_review_lines(self) -> list[str]:
         """The signup module's configuration, as both reviews report it."""
-        _s_cfg = await self.bot.signup_module_service.get_config()  # type: ignore[attr-defined]
-        _s_settings = await self.bot.signup_module_service.get_settings()  # type: ignore[attr-defined]
-        _s_slots = await self.bot.signup_module_service.get_slots()  # type: ignore[attr-defined]
+        _s_cfg = await self.bot.signup_module_service.get_config()
+        _s_settings = await self.bot.signup_module_service.get_settings()
+        _s_slots = await self.bot.signup_module_service.get_slots()
         _signup_ch = f"<#{_s_cfg.signup_channel_id}>" if _s_cfg and _s_cfg.signup_channel_id else "*(not configured)*"
         _time_type = _s_settings.time_type.replace("_", " ").title()
         _time_img = "Required" if _s_settings.time_image_required else "Not required"
@@ -2871,7 +2872,7 @@ class SeasonCog(commands.Cog):
 
     async def _attendance_review_lines(self) -> list[str]:
         """The attendance module's configuration, as both reviews report it."""
-        att_cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
+        att_cfg = await self.bot.attendance_service.get_config()
         if not att_cfg:
             return []
         ar = att_cfg.autoreserve_threshold
@@ -2901,11 +2902,11 @@ class SeasonCog(commands.Cog):
     ) -> list[str]:
         """The names of the points configurations attached to the season, as both reviews
         report them. The faults of those configurations are reported beside them by each."""
-        config_names = await season_points_service.get_season_config_names(self.bot.db_path, season_id)  # type: ignore[attr-defined]
+        config_names = await season_points_service.get_season_config_names(self.bot.db_path, season_id)
         if config_names:
             return ["**Points Configs:** " + ", ".join(config_names)]
         if results_on:
-            server_config_tm = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+            server_config_tm = await self.bot.config_service.get_server_config()
             if server_config_tm is not None and server_config_tm.test_mode_active:
                 return [
                     "**Points Configs:** *(none attached)* "
@@ -2926,9 +2927,9 @@ class SeasonCog(commands.Cog):
         if not converter_available():
             faults.append(f"{CONVERTER_NAME} is not installed on this host.")
         try:
-            reports = await self.bot.image_validity_service.template_reports()  # type: ignore[attr-defined]
+            reports = await self.bot.image_validity_service.template_reports()
             drawn = templates_of_enabled_aspects(
-                await self.bot.image_config_service.get_toggles()  # type: ignore[attr-defined]
+                await self.bot.image_config_service.get_toggles()
             )
         except Exception as exc:  # noqa: BLE001 — a check that never ran is not a pass
             log.error("config review: the templates could not be read: %s", exc)
@@ -2961,7 +2962,7 @@ class SeasonCog(commands.Cog):
         """
         cfg = self.resolve_pending(interaction)
         stage = (
-            await self.bot.season_service.get_stage(cfg.season_id)  # type: ignore[attr-defined]
+            await self.bot.season_service.get_stage(cfg.season_id)
             if cfg is not None and cfg.season_id
             else None
         )
@@ -2977,9 +2978,9 @@ class SeasonCog(commands.Cog):
         posted_messages: list = []
         original_followup = self._recording_followup(interaction, posted_messages)
         try:
-            module = self.bot.module_service  # type: ignore[attr-defined]
+            module = self.bot.module_service
             on, off = "✅ Enabled", "❌ Disabled"
-            server_config = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+            server_config = await self.bot.config_service.get_server_config()
             test_mode = bool(server_config is not None and server_config.test_mode_active)
             lines = [
                 f"**Configuration Review (Season #{cfg.season_number} — F1 {cfg.game_edition})**",
@@ -2995,7 +2996,7 @@ class SeasonCog(commands.Cog):
                 "",
             ]
             lines += await self._league_roles_review_lines()
-            teams = await self.bot.team_service.get_teams_with_roles()  # type: ignore[attr-defined]
+            teams = await self.bot.team_service.get_teams_with_roles()
             lines.append("**Teams**")
             for team in teams:
                 role = f"<@&{team['role_id']}>" if team["role_id"] else "no role"
@@ -3085,19 +3086,19 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        server_config = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        server_config = await self.bot.config_service.get_server_config()
         test_mode = bool(server_config is not None and server_config.test_mode_active)
-        signup_on = await self.bot.module_service.is_signup_enabled()  # type: ignore[attr-defined]
+        signup_on = await self.bot.module_service.is_signup_enabled()
         target = (
             SeasonStage.WAITING if signup_on and not test_mode else SeasonStage.PLACEMENTS
         )
         if signup_on:
             # The season's signups are made under these settings, fixed from this moment.
-            await self.bot.signup_module_service.snapshot_season_config(  # type: ignore[attr-defined]
+            await self.bot.signup_module_service.snapshot_season_config(
                 cfg.season_id
             )
         try:
-            await self.bot.season_service.set_stage(cfg.season_id, target)  # type: ignore[attr-defined]
+            await self.bot.season_service.set_stage(cfg.season_id, target)
         except InvalidStageTransition:
             await interaction.followup.send(
                 "⛔ The season is no longer in configuration. **Nothing has been confirmed.**",
@@ -3116,7 +3117,7 @@ class SeasonCog(commands.Cog):
             f"✅ Season #{cfg.season_number}'s configuration is confirmed. {next_step}",
             ephemeral=True,
         )
-        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
             f"/season config-review | Confirmed\n"
             f"  season: Season #{cfg.season_number}\n"
@@ -3438,7 +3439,7 @@ class SeasonCog(commands.Cog):
         deferred = season.stage in (SeasonStage.ONGOING_SIGNUPS, SeasonStage.ONGOING_PLACEMENTS)
         if deferred:
             await interaction.response.defer(ephemeral=True)
-        await self.bot.season_service.wind_down_ongoing(self.bot)  # type: ignore[attr-defined]
+        await self.bot.season_service.wind_down_ongoing(self.bot)
 
         all_done = await self.bot.season_service.all_divisions_finished()
         if not all_done:
@@ -3910,7 +3911,7 @@ class SeasonCog(commands.Cog):
         })
         now = datetime.now(timezone.utc).isoformat()
 
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+        async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 f"UPDATE divisions SET {', '.join(set_clauses)} WHERE id = ?",
                 params,
@@ -4085,7 +4086,7 @@ class SeasonCog(commands.Cog):
 
         mine = ChannelUse(setting, division_name)
         use = await find_channel_use(
-            self.bot.db_path, channel.id  # type: ignore[attr-defined]
+            self.bot.db_path, channel.id
         )
         if use is None:
             return False
@@ -4497,14 +4498,14 @@ class SeasonCog(commands.Cog):
         channel: discord.TextChannel,
     ) -> None:
         import json as _json
-        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
             await interaction.response.send_message(
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
-        divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+        divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
             await interaction.response.send_message(
@@ -4518,7 +4519,7 @@ class SeasonCog(commands.Cog):
             return
 
         now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+        async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "UPDATE divisions SET lineup_channel_id = ? WHERE id = ?",
                 (channel.id, div.id),
@@ -4559,14 +4560,14 @@ class SeasonCog(commands.Cog):
         channel: discord.TextChannel,
     ) -> None:
         import json as _json
-        season = await self.bot.season_service.get_setup_or_active_season()  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
             await interaction.response.send_message(
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
                 ephemeral=True,
             )
             return
-        divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+        divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
             await interaction.response.send_message(
@@ -4580,7 +4581,7 @@ class SeasonCog(commands.Cog):
             return
 
         now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+        async with get_connection(self.bot.db_path) as db:
             await db.execute(
                 "UPDATE divisions SET calendar_channel_id = ? WHERE id = ?",
                 (channel.id, div.id),
@@ -4647,12 +4648,12 @@ class SeasonCog(commands.Cog):
         # of the end-of-season output either — completing posts the final classification and
         # the final attendance sheet, and neither is a calendar.
         season = await season_for_command(
-            interaction, self.bot.season_service, "division calendar-sync"  # type: ignore[attr-defined]
+            interaction, self.bot.season_service, "division calendar-sync"
         )
         if season is None:
             return
 
-        divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+        divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
             await interaction.followup.send(
@@ -4668,8 +4669,8 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        rounds = await self.bot.season_service.get_division_rounds(div.id)  # type: ignore[attr-defined]
-        tracks = await _calendar.tracks_by_name(self.bot.db_path)  # type: ignore[attr-defined]
+        rounds = await self.bot.season_service.get_division_rounds(div.id)
+        tracks = await _calendar.tracks_by_name(self.bot.db_path)
 
         if not season.season_number:
             log.warning(
@@ -5661,7 +5662,7 @@ class SeasonCog(commands.Cog):
         import re as _re
         from datetime import datetime, timezone
 
-        server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        server_cfg = await self.bot.config_service.get_server_config()
         bot_cmd_channel_id: int | None = server_cfg.interaction_channel_id if server_cfg else None
         interaction_role: discord.Role | None = None
         if server_cfg and server_cfg.interaction_role_id:
@@ -5846,7 +5847,7 @@ class SeasonCog(commands.Cog):
 
         # --- Collect new results ---
         from services.result_submission_service import validate_submission_block
-        from services.result_submission_service import _build_division_validation_data  # type: ignore[attr-defined]
+        from services.result_submission_service import _build_division_validation_data
         from services.result_submission_service import other_active_team_assignments
         from services.result_submission_service import current_accounts, extract_current_fl_override
         from services.result_submission_service import AmendedSession
@@ -5996,7 +5997,7 @@ class SeasonCog(commands.Cog):
             elif existing_config_name and existing_config_name in config_names:
                 config_name = existing_config_name
             else:
-                from services.result_submission_service import _ConfigSelectView  # type: ignore[attr-defined]
+                from services.result_submission_service import _ConfigSelectView
                 cfg_view = _ConfigSelectView(config_names, server_cfg)
                 await amend_channel.send(
                     f"Select the points configuration for {_label(st)}:", view=cfg_view
@@ -6025,7 +6026,7 @@ class SeasonCog(commands.Cog):
             collected.append(
                 AmendedSession(
                     session_type=st,
-                    driver_rows=parsed,  # type: ignore[arg-type]
+                    driver_rows=parsed,
                     config_name=config_name,
                     fl_driver_override=fl_amend_override,
                 )
@@ -6275,7 +6276,7 @@ class SeasonCog(commands.Cog):
         button. Leaving it unanswered therefore expires the approval rather than holding
         it open, which is the whole reason the deadline is carried in here.
         """
-        config = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config()
         if config is None or not getattr(config, "test_mode_active", False):
             return True
 
@@ -6290,7 +6291,7 @@ class SeasonCog(commands.Cog):
 
         from services import backup_service
 
-        state = backup_service.state(self.bot.db_path)  # type: ignore[attr-defined]
+        state = backup_service.state(self.bot.db_path)
         standing = (
             f"A backup taken {discord_ts(state.taken_at)} would be replaced."
             if state.exists and not state.locked
@@ -6451,7 +6452,7 @@ class SeasonCog(commands.Cog):
         # ── Gate 2: points-config prerequisites (FR-013) ───────────────────────
         if await self.bot.module_service.is_results_enabled():
             # Auto-seed point configs if test mode is active and none are attached yet
-            server_config = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+            server_config = await self.bot.config_service.get_server_config()
             if server_config is not None and server_config.test_mode_active:
                 async with get_connection(self.bot.db_path) as _db:
                     _cur = await _db.execute(
@@ -6463,7 +6464,7 @@ class SeasonCog(commands.Cog):
                     from services.test_roster_service import ensure_test_configs
                     await ensure_test_configs(
                         season_id=cfg.season_id,
-                        db_path=self.bot.db_path,  # type: ignore[attr-defined]
+                        db_path=self.bot.db_path,
                     )
 
             errors: list[str] = []
@@ -6731,7 +6732,7 @@ class SeasonCog(commands.Cog):
             # Weather off but results on: schedule results jobs for production
             # (real future race times).  In test mode we skip this because past-dated
             # jobs auto-fire immediately; the advance command uses DB-state detection.
-            server_config = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+            server_config = await self.bot.config_service.get_server_config()
             if server_config is None or not server_config.test_mode_active:
                 self.bot.scheduler_service.schedule_result_submission_jobs(all_rounds, division_meta=_div_meta)
 
@@ -6771,7 +6772,7 @@ class SeasonCog(commands.Cog):
             _ungranted: list[str] = []
             for _div in divisions:
                 try:
-                    async with get_connection(self.bot.db_path) as _db:  # type: ignore[attr-defined]
+                    async with get_connection(self.bot.db_path) as _db:
                         _cur = await _db.execute(
                             """
                             SELECT dp.discord_user_id, ti.name AS team_name
@@ -6815,12 +6816,12 @@ class SeasonCog(commands.Cog):
                                 )
                                 continue
                         _role_ids = [_div.mention_role_id]
-                        _team_cfg = await self.bot.placement_service.get_team_role_config(  # type: ignore[attr-defined]
+                        _team_cfg = await self.bot.placement_service.get_team_role_config(
                             _row["team_name"]
                         )
                         if _team_cfg is not None:
                             _role_ids.append(_team_cfg.role_id)
-                        await self.bot.placement_service._grant_roles(_member, *_role_ids)  # type: ignore[attr-defined]
+                        await self.bot.placement_service._grant_roles(_member, *_role_ids)
                     except Exception:
                         log.exception(
                             "_do_approve: role grant failed for user %s", _row["discord_user_id"]
@@ -6843,7 +6844,7 @@ class SeasonCog(commands.Cog):
                 for _div in divisions:
                     if _div.lineup_channel_id:
                         try:
-                            await self.bot.placement_service._refresh_lineup_post(_guild, _div.id)  # type: ignore[attr-defined]
+                            await self.bot.placement_service._refresh_lineup_post(_guild, _div.id)
                         except Exception:
                             log.exception(
                                 "_do_approve: lineup post failed for division %s", _div.id
@@ -7099,7 +7100,7 @@ class _BackupBeforeApprovalView(LeagueView):
                     scheduler._scheduler.pause()
                     paused = True
             backup_service.save(
-                self._cog.bot.db_path,  # type: ignore[attr-defined]
+                self._cog.bot.db_path,
                 backup_service.jobstore_path_of(self._cog.bot),
             )
         except backup_service.BackupError as exc:
@@ -7207,7 +7208,7 @@ class _ApproveView(LeagueView):
         if self._season_id is None:
             return
         try:
-            async with get_connection(self._cog.bot.db_path) as db:  # type: ignore[attr-defined]
+            async with get_connection(self._cog.bot.db_path) as db:
                 await db.execute(
                     "INSERT INTO season_review_prompts "
                     "(id, season_id, channel_id, message_id, reviewer_id, posted_at) "
@@ -7234,7 +7235,7 @@ class _ApproveView(LeagueView):
         if self._season_id is None:
             return
         try:
-            async with get_connection(self._cog.bot.db_path) as db:  # type: ignore[attr-defined]
+            async with get_connection(self._cog.bot.db_path) as db:
                 await db.execute(
                     "DELETE FROM season_review_prompts",
                 )
@@ -7258,7 +7259,7 @@ class _ApproveView(LeagueView):
             return True
         if not isinstance(member, discord.Member):
             return False
-        config = await self._cog.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self._cog.bot.config_service.get_server_config(
 
         )
         if config is None:

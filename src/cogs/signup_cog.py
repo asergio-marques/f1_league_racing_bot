@@ -37,6 +37,7 @@ from models.driver_profile import DriverState
 from models.signup_module import SignupModuleConfig, SignupModuleSettings
 from services import track_service
 from utils.input_validator import parse_datetime
+from utils.league_bot import LeagueBot
 from utils.time_parsing import parse_time_of_day
 from utils.channel_guard import league_manager_only, league_role_faults
 from utils.league_server import LeagueView, is_foreign_guild
@@ -183,7 +184,7 @@ class SignupButtonView(LeagueView):
         """T028: Check driver state then launch the signup wizard."""
         if not interaction.guild:
             return
-        bot = interaction.client  # type: ignore[attr-defined]
+        bot = interaction.client
         discord_user_id = str(interaction.user.id)
 
         # A real driver never joins a server that is under test: test mode and a real
@@ -246,7 +247,7 @@ class SignupButtonView(LeagueView):
 class ConfirmCloseView(LeagueView):
     """Confirmation dialog for closing signups with in-progress drivers (T018)."""
 
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         super().__init__(timeout=300)
         self._bot = bot
         self.confirmed = False
@@ -291,7 +292,7 @@ class WithdrawButtonView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: commands.Bot | None = None,
+        bot: LeagueBot | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
@@ -315,7 +316,7 @@ class WithdrawButtonView(LeagueView):
             )
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+        await _bot.wizard_service.withdraw(
             _user_id, interaction.guild
         )
         await interaction.followup.send(
@@ -329,7 +330,7 @@ class NoNotesButtonView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: commands.Bot | None = None,
+        bot: LeagueBot | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
@@ -352,7 +353,7 @@ class NoNotesButtonView(LeagueView):
             )
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.handle_no_notes(  # type: ignore[attr-defined]
+        await _bot.wizard_service.handle_no_notes(
             _user_id, interaction.guild
         )
 
@@ -373,7 +374,7 @@ class NoNotesButtonView(LeagueView):
             )
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+        await _bot.wizard_service.withdraw(
             _user_id, interaction.guild
         )
         await interaction.followup.send(
@@ -387,7 +388,7 @@ class PlatformButtonView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: commands.Bot | None = None,
+        bot: LeagueBot | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
@@ -401,7 +402,7 @@ class PlatformButtonView(LeagueView):
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.handle_platform_button(  # type: ignore[attr-defined]
+        await _bot.wizard_service.handle_platform_button(
             _user_id, platform, interaction.guild
         )
 
@@ -430,7 +431,7 @@ class PlatformButtonView(LeagueView):
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+        await _bot.wizard_service.withdraw(
             _user_id, interaction.guild
         )
         await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
@@ -442,7 +443,7 @@ class DriverTypeButtonView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: commands.Bot | None = None,
+        bot: LeagueBot | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
@@ -456,7 +457,7 @@ class DriverTypeButtonView(LeagueView):
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.handle_driver_type_button(  # type: ignore[attr-defined]
+        await _bot.wizard_service.handle_driver_type_button(
             _user_id, driver_type, interaction.guild
         )
 
@@ -477,7 +478,7 @@ class DriverTypeButtonView(LeagueView):
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+        await _bot.wizard_service.withdraw(
             _user_id, interaction.guild
         )
         await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
@@ -489,7 +490,7 @@ class PreferredTeamsButtonView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: commands.Bot | None = None,
+        bot: LeagueBot | None = None,
         team_names: list[str] | None = None,
         excluded: list[str] | None = None,
     ) -> None:
@@ -548,7 +549,7 @@ class PreferredTeamsButtonView(LeagueView):
                 await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
                 return
             # Resolve team name by index from live wizard state
-            wizard = await _bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
+            wizard = await _bot.wizard_service.get_wizard_by_channel(
                 interaction.channel_id
             )
             if wizard is None or wizard.config_snapshot is None:
@@ -560,7 +561,7 @@ class PreferredTeamsButtonView(LeagueView):
                 await interaction.response.send_message("⛔ That option is no longer available.", ephemeral=True)
                 return
             await interaction.response.defer(ephemeral=True)
-            await _bot.wizard_service.handle_preferred_teams_button(  # type: ignore[attr-defined]
+            await _bot.wizard_service.handle_preferred_teams_button(
                 _user_id, available[i], interaction.guild
             )
         return callback
@@ -573,7 +574,7 @@ class PreferredTeamsButtonView(LeagueView):
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.handle_preferred_teams_button(  # type: ignore[attr-defined]
+        await _bot.wizard_service.handle_preferred_teams_button(
             _user_id, None, interaction.guild
         )
 
@@ -585,7 +586,7 @@ class PreferredTeamsButtonView(LeagueView):
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+        await _bot.wizard_service.withdraw(
             _user_id, interaction.guild
         )
         await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
@@ -597,7 +598,7 @@ class NoPreferenceTeammateView(LeagueView):
     def __init__(
         self,
         discord_user_id: str | None = None,
-        bot: commands.Bot | None = None,
+        bot: LeagueBot | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
@@ -612,7 +613,7 @@ class NoPreferenceTeammateView(LeagueView):
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.handle_no_preference_teammate(  # type: ignore[attr-defined]
+        await _bot.wizard_service.handle_no_preference_teammate(
             _user_id, interaction.guild
         )
 
@@ -625,14 +626,14 @@ class NoPreferenceTeammateView(LeagueView):
             await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(  # type: ignore[attr-defined]
+        await _bot.wizard_service.withdraw(
             _user_id, interaction.guild
         )
         await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
 
 
 class SignupCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -658,12 +659,12 @@ class SignupCog(commands.Cog):
             return
         if await is_foreign_guild(self.bot, message.guild.id):
             return
-        wizard = await self.bot.wizard_service.get_wizard_by_channel(  # type: ignore[attr-defined]
+        wizard = await self.bot.wizard_service.get_wizard_by_channel(
             message.channel.id
         )
         if wizard is None or wizard.discord_user_id != str(message.author.id):
             return
-        await self.bot.wizard_service.handle_message(wizard, message)  # type: ignore[attr-defined]
+        await self.bot.wizard_service.handle_message(wizard, message)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
@@ -677,13 +678,13 @@ class SignupCog(commands.Cog):
         """
         if await is_foreign_guild(self.bot, member.guild.id):
             return
-        await self.bot.wizard_service.handle_member_remove(  # type: ignore[attr-defined]
+        await self.bot.wizard_service.handle_member_remove(
             str(member.id), member.guild
         )
 
         # Handle UNASSIGNED / ASSIGNED drivers (not covered by wizard_service)
         try:
-            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            async with get_connection(self.bot.db_path) as db:
                 cursor = await db.execute(
                     "SELECT current_state FROM driver_profiles "
                     "WHERE discord_user_id = ?",
@@ -697,7 +698,7 @@ class SignupCog(commands.Cog):
                 return
             # Fetch display name from signup_records
             try:
-                async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                async with get_connection(self.bot.db_path) as db:
                     cursor = await db.execute(
                         "SELECT server_display_name, discord_username "
                         "FROM signup_records WHERE discord_user_id = ? "
@@ -712,7 +713,7 @@ class SignupCog(commands.Cog):
                 )
             except Exception:
                 display_name = member.display_name or str(member.id)
-            await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            await self.bot.output_router.post_log(
                 f"Driver left server: **{display_name}** (<@{member.id}>) | state: {state}",
             )
         except Exception:
@@ -1391,7 +1392,7 @@ class SignupCog(commands.Cog):
         # Refused under test mode, for the same reason the Sign Up button is: no real
         # driver may sign up while the server is under test, so a window opened now
         # would be one nobody could use.
-        server_cfg = await self.bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        server_cfg = await self.bot.config_service.get_server_config()
         if server_cfg is not None and server_cfg.test_mode_active:
             await interaction.response.send_message(
                 "⛔ Signups cannot be opened while test mode is active. "
@@ -1472,7 +1473,7 @@ class SignupCog(commands.Cog):
         track_name_map: dict[str, str] = {}
         if track_ids and track_ids.strip():
             parts = [t.strip() for t in re.split(r"[,\s]+", track_ids.strip()) if t.strip()]
-            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            async with get_connection(self.bot.db_path) as db:
                 track_name_map = await track_service.get_track_name_map(db)
             unknown = [t for t in parts if t not in track_name_map]
             if unknown:
@@ -1684,7 +1685,7 @@ class SignupCog(commands.Cog):
     @league_manager_only
     async def signup_unassigned_list(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        drivers = await self.bot.placement_service.get_unassigned_drivers_seeded()  # type: ignore[attr-defined]
+        drivers = await self.bot.placement_service.get_unassigned_drivers_seeded()
         if not drivers:
             await interaction.followup.send(
                 "No unsettled signups found.", ephemeral=True
@@ -1702,7 +1703,7 @@ class SignupCog(commands.Cog):
         # be issue #126: the ordinal is recomputed on every read, so a slot added or removed
         # since the driver signed up would show them against somebody else's time.
         slots_ordered = sorted(
-            await self.bot.signup_module_service.get_slots(),  # type: ignore[attr-defined]
+            await self.bot.signup_module_service.get_slots(),
             key=lambda s: s.slot_sequence_id,
         )
         slot_labels = {s.slot_id: s.display_label for s in slots_ordered}
@@ -1756,10 +1757,10 @@ class SignupCog(commands.Cog):
     async def signup_unassigned_export(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        slots = await self.bot.signup_module_service.get_slots()  # type: ignore[attr-defined]
+        slots = await self.bot.signup_module_service.get_slots()
         slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
 
-        drivers = await self.bot.placement_service.get_unassigned_drivers_for_export(  # type: ignore[attr-defined]
+        drivers = await self.bot.placement_service.get_unassigned_drivers_for_export(
             slots_ordered
         )
         if not drivers:

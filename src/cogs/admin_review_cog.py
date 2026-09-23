@@ -16,6 +16,7 @@ from discord.ext import commands
 
 from models.driver_profile import DriverState
 from utils.channel_guard import is_league_manager
+from utils.league_bot import LeagueBot
 from utils.league_server import LeagueView, is_foreign_guild
 
 log = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ async def _may_review_signup(interaction: discord.Interaction) -> bool:
     """
     if not interaction.guild or not isinstance(interaction.user, discord.Member):
         return False
-    bot = interaction.client  # type: ignore[attr-defined]
+    bot = interaction.client
     try:
         server_cfg = await bot.config_service.get_server_config()  # type: ignore[attr-defined]
     except Exception:
@@ -60,7 +61,7 @@ class AdminReviewView(LeagueView):
     FR-039, A-004.
     """
 
-    def __init__(self, discord_user_id: str | None = None, bot: commands.Bot | None = None) -> None:
+    def __init__(self, discord_user_id: str | None = None, bot: LeagueBot | None = None) -> None:
         super().__init__(timeout=None)
         self._discord_user_id = discord_user_id
         self._bot = bot
@@ -90,7 +91,7 @@ class AdminReviewView(LeagueView):
             )
             return False, None, None
         # Race-condition guard: driver must still be in PENDING_ADMIN_APPROVAL
-        profile = await _bot.driver_service.get_profile(  # type: ignore[attr-defined]
+        profile = await _bot.driver_service.get_profile(
             _user_id
         )
         if profile is None or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL:
@@ -108,7 +109,7 @@ class AdminReviewView(LeagueView):
         if not ok:
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.approve_signup(  # type: ignore[attr-defined]
+        await _bot.wizard_service.approve_signup(
             _user_id, interaction.guild, interaction.user
         )
         await interaction.followup.send("✅ Signup approved.", ephemeral=True)
@@ -176,7 +177,7 @@ class CorrectionParameterView(LeagueView):
         ("Notes",               "notes"),
     ]
 
-    def __init__(self, discord_user_id: str | None = None, bot: commands.Bot | None = None) -> None:
+    def __init__(self, discord_user_id: str | None = None, bot: LeagueBot | None = None) -> None:
         super().__init__(timeout=None)  # persistent — logical timeout enforced by asyncio task
         self._discord_user_id = discord_user_id
         self._bot = bot
@@ -188,7 +189,7 @@ class CorrectionParameterView(LeagueView):
                 custom_id=f"correct_{param_key}",
             )
 
-            def make_callback(p: str) -> ...:  # type: ignore[return]
+            def make_callback(p: str) -> ...:
                 async def callback(inter: discord.Interaction) -> None:
                     if not await _may_review_signup(inter):
                         await inter.response.send_message(
@@ -216,14 +217,14 @@ class CorrectionParameterView(LeagueView):
                     )
                 return callback
 
-            btn.callback = make_callback(param_key)  # type: ignore[assignment]
+            btn.callback = make_callback(param_key)
             self.add_item(btn)
 
 
 class AdminReviewCog(commands.Cog):
     """Cog that holds the admin review views for signup approvals."""
 
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     @commands.Cog.listener()
@@ -248,17 +249,17 @@ class AdminReviewCog(commands.Cog):
         action = pending["action"]
         followup: discord.Webhook = pending["followup"]
         if action == "request_changes":
-            await self.bot.wizard_service.request_changes(  # type: ignore[attr-defined]
+            await self.bot.wizard_service.request_changes(
                 pending["discord_user_id"], pending["guild"], pending["actor"], reason=reason,
             )
             await followup.send("✅ Correction requested.", ephemeral=True)
         elif action == "reject":
-            await self.bot.wizard_service.reject_signup(  # type: ignore[attr-defined]
+            await self.bot.wizard_service.reject_signup(
                 pending["discord_user_id"],
                 pending["guild"], pending["actor"], reason=reason,
             )
             await followup.send("✅ Signup rejected.", ephemeral=True)
 
 
-async def setup(bot: commands.Bot) -> None:
+async def setup(bot: LeagueBot) -> None:
     await bot.add_cog(AdminReviewCog(bot))

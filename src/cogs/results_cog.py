@@ -20,6 +20,7 @@ from services.season_points_service import (
 )
 from utils.channel_guard import league_admin_only, league_manager_only
 from utils.input_validator import NAME
+from utils.league_bot import LeagueBot
 from utils.league_server import LeagueModal, LeagueView
 from utils.season_gate import season_for_command
 
@@ -175,7 +176,7 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
         self._session = session
         self._db_path = db_path
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         valid, errors = _parse_bulk_lines(self.entries.value)
         if not valid and not errors:
@@ -256,7 +257,7 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         self._session = session
         self._db_path = db_path
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         from services.amendment_service import (
             AmendmentNotActiveError,
             modification_ordering_warnings,
@@ -351,7 +352,7 @@ class XmlImportModal(LeagueModal, title="XML Points Config Import"):
         self._config_name = config_name
         self._db_path = db_path
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         await _run_xml_import(
             interaction,
@@ -485,7 +486,7 @@ class _ConfirmRemoveConfigView(LeagueView):
 
 
 class ResultsCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     # ------------------------------------------------------------------

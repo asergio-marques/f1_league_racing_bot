@@ -32,6 +32,7 @@ from models.image_constants import (
 from models.image_module import STATE_DISABLED, STATE_ENABLED
 from services.image_config_service import pfp_change_refusal
 from utils.channel_guard import league_manager_only
+from utils.league_bot import LeagueBot
 from utils.paths import PathContainmentError, relative_to_root
 from utils.time_parsing import parse_time_of_day
 from utils.timezones import clear_zone_cache, is_known_zone, zone_names
@@ -175,7 +176,7 @@ class TierPaletteModal(LeagueModal, title="Set one tier's colours"):
         self._cog = cog
         self._division = division
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         await self._cog.apply_tier_block(interaction, self._division, self.block.value)
 
@@ -196,13 +197,13 @@ class TierPaletteXmlModal(LeagueModal, title="Import tier colours"):
         super().__init__()
         self._cog = cog
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         await self._cog.apply_tier_xml(interaction, self.payload.value)
 
 
 class ImageCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     images = app_commands.Group(
@@ -246,7 +247,7 @@ class ImageCog(commands.Cog):
         callers differ: a command that has already deferred must answer on the followup,
         and sending a fresh response there raises ``404 Unknown interaction``.
         """
-        if not await self.bot.module_service.is_images_enabled():  # type: ignore[attr-defined]
+        if not await self.bot.module_service.is_images_enabled():
             await self._reply(
                 interaction,
                 "❌ The Image module is not enabled. "
@@ -257,11 +258,11 @@ class ImageCog(commands.Cog):
 
     @property
     def _config_service(self):
-        return self.bot.image_config_service  # type: ignore[attr-defined]
+        return self.bot.image_config_service
 
     @property
     def _validity_service(self):
-        return self.bot.image_validity_service  # type: ignore[attr-defined]
+        return self.bot.image_validity_service
 
     @staticmethod
     async def _reply(interaction: discord.Interaction, content: str) -> None:
@@ -438,7 +439,7 @@ class ImageCog(commands.Cog):
         await self._config_service.set_field("pfp_daily_time", normalised)
         await self._config_service.set_pfp_flag("pfp_daily", True)
         try:
-            self.bot.scheduler_service.schedule_portrait_refresh(  # type: ignore[attr-defined]
+            self.bot.scheduler_service.schedule_portrait_refresh(
                 normalised
             )
         except Exception as exc:  # the setting is stored; recovery re-arms it on restart
@@ -474,11 +475,11 @@ class ImageCog(commands.Cog):
         # the feature off stops the fetching rather than leaving a job running against a
         # setting that says no.
         if enabling and config.pfp_daily:
-            self.bot.scheduler_service.schedule_portrait_refresh(  # type: ignore[attr-defined]
+            self.bot.scheduler_service.schedule_portrait_refresh(
                 config.pfp_daily_time
             )
         elif not enabling:
-            self.bot.scheduler_service.cancel_portrait_refresh()  # type: ignore[attr-defined]
+            self.bot.scheduler_service.cancel_portrait_refresh()
 
     @use_pfp.command(
         name="prerender-toggle",
@@ -512,7 +513,7 @@ class ImageCog(commands.Cog):
             if await self._apply_pfp_flag(
                 interaction, config, "pfp_daily", False, "Daily driver-portrait updates"
             ):
-                self.bot.scheduler_service.cancel_portrait_refresh(  # type: ignore[attr-defined]
+                self.bot.scheduler_service.cancel_portrait_refresh(
 
                 )
             return
@@ -525,7 +526,7 @@ class ImageCog(commands.Cog):
     async def _log(self, interaction: discord.Interaction, detail: str) -> None:
         """Record a configuration mutation to the calculation log (Principle V)."""
         try:
-            await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /images config | {detail}",
             )
@@ -1661,7 +1662,7 @@ class ImageCog(commands.Cog):
             # it, which halves the connect/PRAGMA/close cost on a path racing Discord's
             # three-second budget. The shorter lock wait means a contended database gives up
             # in time to answer rather than answering into an expired token.
-            divisions = await self.bot.season_service.get_previewable_divisions(  # type: ignore[attr-defined]
+            divisions = await self.bot.season_service.get_previewable_divisions(
                 timeout=AUTOCOMPLETE_TIMEOUT_SECONDS
             )
         except Exception:  # noqa: BLE001 — an autocomplete never breaks the command
@@ -1745,7 +1746,7 @@ class ImageCog(commands.Cog):
 
         outcomes = []
         for label, template_key, spec_builder in requests:
-            outcome = await self.bot.image_render_service.render(  # type: ignore[attr-defined]
+            outcome = await self.bot.image_render_service.render(
                 template_key,
                 spec_builder,
                 filename_stem=image_filename_stem(
