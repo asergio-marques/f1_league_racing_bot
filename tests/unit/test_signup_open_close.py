@@ -808,3 +808,22 @@ async def test_the_confirmation_warns_what_closing_will_do(tmp_path):
         await _close(_cog(db_path), interaction)
 
     assert "Not Signed Up" in _replied(interaction)
+
+
+async def test_confirming_reports_how_many_drivers_the_close_returned(tmp_path):
+    """The reply and the log say what the close did, not what the confirmation feared. The log
+    used to record `in_progress_drivers_discarded: true` whoever was waiting (issue #128).
+    The number is the close's own, since a driver may have moved on while the buttons stood."""
+    db_path = await _seed(tmp_path, signups_open=True)
+    cog = _cog(db_path)
+    interaction = _interaction()
+    view = ConfirmCloseView(cog.bot)
+
+    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock(return_value=2)) as forced:
+        await view.confirm.callback(interaction)
+
+    forced.assert_awaited_once()
+    assert "2 driver(s) still signing up were returned to Not Signed Up" in _replied(interaction)
+    log = cog.bot.output_router.post_log.await_args.args[0]
+    assert "drivers_returned_to_not_signed_up: 2" in log
+    assert "discarded" not in log

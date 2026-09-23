@@ -304,13 +304,19 @@ class ConfirmCloseView(LeagueView):
         self.confirmed = True
         self.stop()
         await interaction.response.defer(ephemeral=True)
-        await execute_forced_close(
+        # The count is the close's own, not the confirmation's: a driver may have finished
+        # signing up, or started, in the five minutes the buttons stand (issue #128).
+        returned = await execute_forced_close(
             self._bot, audit_action="SIGNUP_FORCE_CLOSE"
         )
-        await interaction.followup.send("✅ Signups force-closed.", ephemeral=True)
+        await interaction.followup.send(
+            f"✅ Signups closed. {returned} driver(s) still signing up were returned to "
+            "Not Signed Up.",
+            ephemeral=True,
+        )
         await self._bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close (force) | Success\n"
-            f"  in_progress_drivers_discarded: true",
+            f"  drivers_returned_to_not_signed_up: {returned}",
         )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
