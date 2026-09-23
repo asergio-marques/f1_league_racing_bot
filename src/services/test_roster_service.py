@@ -226,9 +226,9 @@ async def add_test_driver(
                 "VALUES (?, ?, NULL)",
                 (team_instance_id, next_seat_number),
             )
-            seat_id = new_seat_cursor.lastrowid
+            seat_id = inserted_id(new_seat_cursor)
         else:
-            seat_id: int = seat_row["id"]
+            seat_id = seat_row["id"]
 
         # Generate synthetic ID
         synthetic_uid = await _next_synthetic_id(db_path)
@@ -484,7 +484,7 @@ async def add_test_drivers_in_bulk(
                     canonical[driver.line],
                 ),
             )
-            profile_id = profile_cursor.lastrowid
+            profile_id = inserted_id(profile_cursor)
             await _reattach_history(db, str(driver.discord_user_id), profile_id)
 
             await db.execute(

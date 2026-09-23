@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
-from db.database import get_connection
+from db.database import get_connection, inserted_id
 from models.team import DefaultTeam, TeamInstance
 from utils.asset_resolver import normalise
 from utils.input_validator import NAME, parse_role_mention, parse_user_mention
@@ -261,7 +261,7 @@ class TeamService:
                 (name, full_name, max_seats),
             )
             await db.commit()
-            row_id = cursor.lastrowid
+            row_id = inserted_id(cursor)
         return DefaultTeam(
             id=row_id, name=name, full_name=full_name, max_seats=max_seats, is_reserve=False
         )

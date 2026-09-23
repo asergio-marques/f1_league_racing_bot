@@ -248,16 +248,16 @@ def parse_round_xml(xml_text: str) -> tuple[list[ParsedDivisionRounds], list[str
             raw_format = _text_of(round_el, "format")
             track_raw = _text_of(round_el, "track")
 
-            missing = [
-                tag
-                for tag, value in (
-                    ("datetime", raw_datetime),
-                    ("timezone", raw_zone),
-                    ("format", raw_format),
-                )
-                if value is None
-            ]
-            if missing:
+            if raw_datetime is None or raw_zone is None or raw_format is None:
+                missing = [
+                    tag
+                    for tag, value in (
+                        ("datetime", raw_datetime),
+                        ("timezone", raw_zone),
+                        ("format", raw_format),
+                    )
+                    if value is None
+                ]
                 errors.append(
                     f"{location}: missing "
                     + ", ".join(f"<{tag}>" for tag in missing)

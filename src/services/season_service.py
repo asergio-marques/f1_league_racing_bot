@@ -84,7 +84,7 @@ class SeasonService:
                 (start_date.isoformat(), SeasonStatus.SETUP.value),
             )
             await db.commit()
-            season_id = cursor.lastrowid
+            season_id = inserted_id(cursor)
 
         return Season(
             id=season_id,
@@ -416,7 +416,7 @@ class SeasonService:
                             div_data.get("tier", 0),
                         ),
                     )
-                    div_id = cursor.lastrowid
+                    div_id = inserted_id(cursor)
                     division_ids[div_data["name"]] = div_id
                 await _sync_division_rounds(db, div_id, div_data["rounds"])
 
@@ -1022,7 +1022,7 @@ class SeasonService:
                 (season_id, name, mention_role_id, forecast_channel_id, tier),
             )
             await db.commit()
-            div_id = cursor.lastrowid
+            div_id = inserted_id(cursor)
 
         return Division(
             id=div_id,
@@ -1471,7 +1471,7 @@ class SeasonService:
                 ),
             )
             await db.commit()
-            round_id = cursor.lastrowid
+            round_id = inserted_id(cursor)
 
         return Round(
             id=round_id,

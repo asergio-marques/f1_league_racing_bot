@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+from typing import cast
 
 import discord
 from discord.ext import commands
@@ -173,6 +174,8 @@ async def main() -> None:
 
     @bot.event
     async def on_ready() -> None:
+        # `on_ready` fires once the bot has logged in, which is when it has a user.
+        assert bot.user is not None
         log.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
 
         # Run DB migrations on startup
@@ -647,8 +650,8 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
                         """,
                         (round_id, division_id),
                     )
-                    row = await cur.fetchone()
-                already_ran = row is not None and row["cnt"] > 0
+                    count_row = await cur.fetchone()
+                already_ran = count_row is not None and count_row["cnt"] > 0
             except Exception:
                 already_ran = False
 
@@ -1176,7 +1179,7 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
 async def _recover_pending_setups(bot: LeagueBot) -> None:
     """Restore in-memory pending season configs from DB SETUP seasons."""
     from cogs.season_cog import SeasonCog
-    season_cog: SeasonCog | None = bot.get_cog("SeasonCog")
+    season_cog = cast("SeasonCog | None", bot.get_cog("SeasonCog"))
     if season_cog is not None:
         await season_cog.recover_pending_setups()
 

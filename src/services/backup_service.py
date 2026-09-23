@@ -115,7 +115,7 @@ def snapshot_database(source: str | Path, target: str | Path) -> None:
         copy = sqlite3.connect(str(temporary))
         origin.backup(copy)
     except sqlite3.Error as exc:
-        failure = exc
+        failure: sqlite3.Error | None = exc
     else:
         failure = None
     finally:

@@ -197,7 +197,16 @@ class LeagueModal(discord.ui.Modal):
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
         return await admits(bot_of(interaction), interaction, while_unclaimed=False)
 
-    async def on_error(self, interaction: discord.Interaction, error: Exception, /) -> None:
+    async def on_error(
+        self,
+        interaction: discord.Interaction,
+        error: Exception,
+        item: discord.ui.Item | None = None,
+        /,
+    ) -> None:
+        # A modal's failure names no item, and discord.py passes none. `item` is declared
+        # because discord.py's own `Modal` narrows `BaseView.on_error`, and a subclass has to
+        # satisfy both (#228).
         await report_failure(interaction, error, what=describe_form(self))
 
 

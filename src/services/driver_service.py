@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from db.database import get_connection
+from db.database import get_connection, inserted_id
 from models.driver_profile import DriverProfile, DriverState
 
 log = logging.getLogger(__name__)
@@ -429,7 +429,7 @@ class DriverService:
                 (discord_user_id, initial_state.value),
             )
             await db.commit()
-            profile_id = cursor.lastrowid
+            profile_id = inserted_id(cursor)
         return DriverProfile(
             id=profile_id,
             discord_user_id=discord_user_id,

@@ -364,7 +364,7 @@ async def _close_driver_signups(
     drivers: list[dict],
     driver_role_id: int | None,
     *,
-    bot: LeagueBot,
+    bot: LeagueBot | None,
     guild,
     notice: str,
     reason: str,

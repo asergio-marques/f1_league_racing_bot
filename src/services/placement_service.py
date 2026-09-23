@@ -732,7 +732,7 @@ class PlacementService:
 
             reports = await bot.image_validity_service.template_reports()
             report = reports.get("lineup_template")
-            if report is None or not report.valid:
+            if report is None or not report.valid or report.resolved_path is None:
                 return
 
             async with get_connection(self._db_path) as db:
