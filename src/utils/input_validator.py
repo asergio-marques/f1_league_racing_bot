@@ -301,11 +301,6 @@ STEWARD_TEXT = InputValidator(_ALL, Mode.REJECT)
 #: so a member mentioned in one would be notified each time (#381, #388).
 NAME = InputValidator(_ALL | {Rule.USER_MENTIONS}, Mode.REJECT)
 
-#: A team's shorthand and its full name (#381): a name, and no mention of a member either. The
-#: shorthand is typed wherever a team is entered and the full name is shown on every post, so a
-#: member mentioned in either would be notified every time the team is named.
-TEAM_NAME = InputValidator(_ALL | {Rule.USER_MENTIONS}, Mode.REJECT)
-
 #: A driver's own signup answers — notes, preferred teammate, platform ID. They are shown only in
 #: text, where an emoji or markup reads as intended, so only a group mention is refused: the
 #: review panel quoting it would otherwise notify everybody who can see the channel.

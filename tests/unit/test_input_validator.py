@@ -18,7 +18,6 @@ from utils.input_validator import (  # noqa: E402
     NAME,
     SIGNUP_ANSWER,
     STEWARD_TEXT,
-    TEAM_NAME,
     InputValidator,
     Mode,
     Rule,
@@ -85,7 +84,7 @@ def test_a_user_mention_is_not_a_group_mention(typed):
 def test_a_team_name_refuses_a_user_mention(typed):
     """A team's names are posted every time the team is named, so a member mentioned in one
     would be notified each time (#381)."""
-    refusal = TEAM_NAME.check("shorthand", typed).refusal
+    refusal = NAME.check("shorthand", typed).refusal
 
     assert refusal is not None
     assert "member" in refusal

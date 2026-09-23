@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from db.database import get_connection
 from models.team import DefaultTeam, TeamInstance
 from utils.asset_resolver import normalise
-from utils.input_validator import TEAM_NAME, parse_role_mention, parse_user_mention
+from utils.input_validator import NAME, parse_role_mention, parse_user_mention
 
 log = logging.getLogger(__name__)
 
@@ -63,8 +63,8 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
     teams of a season. Omit it to check only the properties of the name itself.
 
     Before any of them, the name is held to the rules every name a league types is held to
-    (#362): no group mention, no emoji and no markup, being posted as text and drawn on graphics
-    — and, as a team's name, no mention of a member either (``TEAM_NAME``, #381).
+    (``NAME``): no group mention, no emoji and no markup, being posted as text and drawn on
+    graphics (#362), and no mention of a member (#381).
 
     Returns a message ready to show a user, or None.
     """
@@ -84,7 +84,7 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
             "of a results submission and a test roster, so it cannot hold one."
         )
 
-    refusal = TEAM_NAME.check("shorthand", trimmed).refusal
+    refusal = NAME.check("shorthand", trimmed).refusal
     if refusal is not None:
         return refusal
 
@@ -115,9 +115,9 @@ def validate_full_name(full_name: str, taken: dict[str, str] | None = None) -> s
     """Why *full_name* cannot be a team's **full name**, or None where it can.
 
     The full name is what every post and graphic shows (#381). It is never typed to name a
-    team, so it holds no rule of a reference: only the rules a team's names are held to
-    (``TEAM_NAME``: #362's, and no mention of a member), a length, and uniqueness — two teams
-    showing the same name could not be told apart in a standings table.
+    team, so it holds no rule of a reference: only the rules every name a league types is held
+    to (``NAME``), a length, and uniqueness — two teams showing the same name could not be told
+    apart in a standings table.
 
     *taken* maps an already-taken full name, casefolded, to the full name that holds it, the
     Reserve team's included. Omit it to check only the properties of the name itself.
@@ -134,7 +134,7 @@ def validate_full_name(full_name: str, taken: dict[str, str] | None = None) -> s
             f"{FULL_NAME_MAX}."
         )
 
-    refusal = TEAM_NAME.check("full name", trimmed).refusal
+    refusal = NAME.check("full name", trimmed).refusal
     if refusal is not None:
         return refusal
 
