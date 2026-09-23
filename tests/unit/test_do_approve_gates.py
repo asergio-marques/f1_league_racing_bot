@@ -877,10 +877,9 @@ async def test_the_refusal_names_every_phantom_at_once(db_path):
 DIVISION_ID = 21
 
 
-async def _writing_sessions(cog, db_path, *, days_out: float = 30):
-    """Give *cog* one division holding one Normal round, as rows its sessions can name."""
-    from services.season_service import SeasonService
-
+async def _seed_round(db_path, *, days_out: float = 30):
+    """One division of the fixture's season holding one Normal round, as rows its sessions
+    can name. Returns the round."""
     rnd = _round_in(days_out, div_id=DIVISION_ID)
     async with get_connection(db_path) as db:
         await db.execute(
@@ -894,6 +893,13 @@ async def _writing_sessions(cog, db_path, *, days_out: float = 30):
             (rnd.id, DIVISION_ID, rnd.scheduled_at.isoformat()),
         )
         await db.commit()
+    return rnd
+
+
+def _writing_sessions(cog, db_path, rnd):
+    """Point *cog* at the seeded round, and let it write that round's sessions for real."""
+    from services.season_service import SeasonService
+
     season_svc = cog.bot.season_service
     season_svc.get_divisions = AsyncMock(return_value=[_division(div_id=DIVISION_ID)])
     season_svc.get_division_rounds = AsyncMock(return_value=[rnd])
@@ -907,8 +913,9 @@ async def _session_types(db_path) -> list[str]:
         return [r["session_type"] for r in await cursor.fetchall()]
 
 
-# One per way out of the approval after its session loop stood: each builds the cog, and
-# answers the words the refusal is known by and the deadline the view would pass.
+# One for each way the approval can stop after the point its sessions used to be written.
+# Each builds the cog, and returns the words its refusal is known by and the deadline the
+# view would pass.
 
 
 async def _no_points_configuration(db_path, monkeypatch):
@@ -980,8 +987,8 @@ async def _a_review_expired_at_the_backup_question(db_path, monkeypatch):
 )
 async def test_a_refused_approval_writes_no_sessions(db_path, monkeypatch, refusal):
     cog, refused_for, deadline = await refusal(db_path, monkeypatch)
-    days_out = -1 if refusal is _a_past_round else 30
-    await _writing_sessions(cog, db_path, days_out=days_out)
+    rnd = await _seed_round(db_path, days_out=-1 if refusal is _a_past_round else 30)
+    _writing_sessions(cog, db_path, rnd)
     interaction = _interaction()
 
     await SeasonCog._do_approve(cog, interaction, deadline=deadline)
@@ -994,16 +1001,13 @@ async def test_a_refused_approval_writes_no_sessions(db_path, monkeypatch, refus
 async def test_an_approval_after_a_refusal_creates_each_session_once(db_path):
     """The issue's own reproduction: refused for want of a points configuration, which is
     then attached, and approved."""
-    refused = await _writing_sessions(_cog_with_results(db_path), db_path)
+    rnd = await _seed_round(db_path)
+    refused = _writing_sessions(_cog_with_results(db_path), db_path, rnd)
     await _run(refused, _interaction())
     refused.bot.season_service.transition_to_active.assert_not_awaited()
 
     await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
-    approved = _cog_with_results(db_path)
-    season_svc = approved.bot.season_service
-    season_svc.get_divisions = refused.bot.season_service.get_divisions
-    season_svc.get_division_rounds = refused.bot.season_service.get_division_rounds
-    season_svc.create_sessions_for_round = refused.bot.season_service.create_sessions_for_round
+    approved = _writing_sessions(_cog_with_results(db_path), db_path, rnd)
     await _run(approved, _interaction())
 
     approved.bot.season_service.transition_to_active.assert_awaited_once()
@@ -1014,7 +1018,7 @@ async def test_approving_twice_creates_each_session_once(db_path):
     """An approval that fails after writing the sessions leaves the season in Placements and
     the review standing, so Approve can be pressed again. A second full pass is the same
     walk, and must leave one set."""
-    cog = await _writing_sessions(_cog(db_path), db_path)
+    cog = _writing_sessions(_cog(db_path), db_path, await _seed_round(db_path))
 
     await _run(cog, _interaction())
     await _run(cog, _interaction())
