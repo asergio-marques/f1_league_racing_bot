@@ -549,7 +549,10 @@ class TestStandingsPreview:
             seat_id = cursor.lastrowid
             cursor = await db.execute(
                 "INSERT INTO driver_profiles (discord_user_id, current_state) "
-                "VALUES (9_200_000, 'ACTIVE')"
+                "VALUES (?, 'ACTIVE')",
+                # Bound, never written into the SQL: a literal 9_200_000 is Python's digit
+                # separator, which only SQLite 3.46 and later accepts in a query.
+                (9_200_000,),
             )
             profile_id = cursor.lastrowid
             await db.execute(
