@@ -29,6 +29,7 @@ from utils.league_server import (  # noqa: E402
     CallbackButton,
     CallbackSelect,
     LeagueView,
+    channel_id_of,
     guild_of,
     is_foreign_guild,
     league_guild,
@@ -463,3 +464,16 @@ def test_no_item_has_its_callback_assigned():
         if ".callback = " in line
     )
     assert offenders == []
+
+
+def test_channel_id_of_is_the_channel_the_interaction_came_from():
+    interaction = MagicMock()
+    interaction.channel_id = 4455
+    assert channel_id_of(interaction) == 4455
+
+
+def test_channel_id_of_refuses_an_interaction_from_no_channel():
+    interaction = MagicMock()
+    interaction.channel_id = None
+    with pytest.raises(RuntimeError, match="from no channel"):
+        channel_id_of(interaction)

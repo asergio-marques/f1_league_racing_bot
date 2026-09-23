@@ -89,6 +89,19 @@ def guild_of(interaction: discord.Interaction) -> discord.Guild:
     return guild
 
 
+def channel_id_of(interaction: discord.Interaction) -> int:
+    """The id of the channel *interaction* came from.
+
+    A command, a press or a submission always comes from a channel. discord.py types the id as
+    optional because an interaction in general need not carry one, so a None here is raised by
+    name rather than stored as a key or looked up (#228).
+    """
+    channel_id = interaction.channel_id
+    if channel_id is None:
+        raise RuntimeError("An interaction arrived from no channel")
+    return channel_id
+
+
 async def league_guild(bot: LeagueBot) -> discord.Guild | None:
     """The league's Discord server, or None where none is set up or it is not in the cache.
 
