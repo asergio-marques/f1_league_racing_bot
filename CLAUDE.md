@@ -206,16 +206,23 @@ A file matching no rule in the tool is printed as `UNASSIGNED` rather than absor
 **CI runs a type check too, and gates on it** (decided 2026-09-23, #228). Its
 `python-type-check` job runs `mypy` from the repository root, which reads `mypy.ini`; run it by
 hand the same way, as `.venv/bin/mypy`, before reporting a change to `src/` complete. It
-checks `src/` and not the tests. Two rules keep it worth running. **The bot is `LeagueBot`**
-(`src/utils/league_bot.py`): every attribute `bot.py` attaches is declared there first, a `bot`
-parameter is annotated as it, and an interaction's bot is reached through `bot_of(interaction)`.
-Never silence a read of a service with `# type: ignore[attr-defined]` — a silenced read is
-`Any`, nothing the service returns is checked through it, and that is how #226 reached `main`;
-`tests/unit/test_league_bot.py` refuses one. **`mypy.ini`'s exemptions only shrink.** Each
-module still carrying errors from before the check was adopted has only the codes it still trips
-switched off, and every new module is checked in full. Clear a module's errors and delete its
-section; never add a section, or a code to one, to get a change through. `attr-defined` and
-`name-defined` are exempt nowhere, and `tests/unit/test_type_check_config.py` holds all of it.
+checks `src/` and not the tests, and it checks all of it.
+
+**Nothing is exempt from it, and nothing may be made so.** `mypy.ini` has no section but
+`[mypy]`, no library is skipped, and there is no `# type: ignore` anywhere in `src/` —
+`tests/unit/test_type_check_config.py` refuses each. Where the check cannot see something the
+code knows, the code says it: a narrowing with its reason, a helper that raises by name
+(`guild_of`, `channel_id_of`, `sole_row`, `inserted_id`), a declared type. A `cast` is allowed
+only where it is true by construction, with a docstring saying why (`bot_of`,
+`as_text_channel`). A `None` the check exposes that can really happen is a defect: fix it, with a
+test, rather than narrowing it away.
+
+**The bot is `LeagueBot`** (`src/utils/league_bot.py`): every attribute `bot.py` attaches is
+declared there first, a `bot` parameter is annotated as it, and an interaction's bot is reached
+through `bot_of(interaction)`. **A library that ships no types is described in `stubs/`** — at
+present fontTools and APScheduler 3, for the part the bot uses and no more. Using more of one
+means extending its stub; `tests/unit/test_library_stubs.py` runs mypy's `stubtest` so a stub
+cannot drift from the installed library. lxml is described by the pinned `types-lxml`.
 
 **A test must not depend on what the host happens to carry.** The suite runs on three
 materially different environments — a Windows development machine, CI's runners, and the

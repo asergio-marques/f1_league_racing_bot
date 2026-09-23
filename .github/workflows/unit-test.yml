@@ -169,10 +169,10 @@ jobs:
         sys.exit(1 if failures or errors else 0)
         '
 
-  # The type check (#228). `mypy` reads `mypy.ini`, which says what is checked and which of the
-  # bot's modules are still excused which codes — read the head of that file before touching
-  # either. One job, on Linux alone: the annotations are the same on every host, so a second
-  # runner would only check them twice. It gates on its own and does not wait on the tests.
+  # The type check (#228). `mypy` reads `mypy.ini`, which checks the whole of `src/` and excuses
+  # nothing — read the head of that file before touching either. One job, on Linux alone: the
+  # annotations are the same on every host, so a second runner would only check them twice. It
+  # gates on its own and does not wait on the tests.
   python-type-check:
     runs-on: ubuntu-latest
     timeout-minutes: 10

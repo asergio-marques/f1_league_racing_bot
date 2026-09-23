@@ -148,12 +148,15 @@ way:
 mypy
 ```
 
+**Nothing is exempt from it.** There is no `# type: ignore` in `src/`, no module is excused an
+error code and no library is skipped, and tests refuse each. Where the check cannot see something
+the code knows, say it in the code — a narrowing with its reason, or one of the helpers that
+raises by name — rather than switching the check off.
+
 **The bot is typed as `LeagueBot`** (`src/utils/league_bot.py`). Declare an attribute there before
 `bot.py` attaches it, annotate a `bot` parameter as it, and reach an interaction's bot through
-`bot_of(interaction)`. Never silence a read of a service with `# type: ignore[attr-defined]`: a
-silenced read is `Any`, and nothing the service returns is checked through it. `mypy.ini` excuses
-some modules some error codes, left from before the check was adopted — that list only shrinks,
-and its head says how.
+`bot_of(interaction)`. A library that ships no types is described in `stubs/`; using more of one
+means extending its stub, which `stubtest` then holds to the installed version.
 
 ## Pull requests
 
