@@ -15,6 +15,11 @@ whole point is that the track is not known — so an empty list is the correct a
 missing case. `test_a_mystery_round_creates_no_sessions` exists so a reader meeting the empty
 list in `SESSIONS_BY_FORMAT` does not fill it in.
 
+**Creating a round's sessions again replaces them** (issue #408). A refused or failed approval
+that had already written them was followed by an approval writing a full second set, and every
+forecast named each session twice. However often it is called, a round holds one set, and the
+set its format defines now.
+
 **The order sessions are created in is the order they are raced in.** Qualifying before its
 race, sprint before feature. They are read back by insertion order, and a set or a sorted list
 would put a sprint's feature qualifying after its feature race.
@@ -182,6 +187,48 @@ async def test_each_created_session_carries_the_id_it_was_given(tmp_path):
     assert all(ids)
     assert len(set(ids)) == len(ids)
     assert all(s.round_id == ROUND_ID for s in created)
+
+
+async def test_creating_a_rounds_sessions_again_leaves_one_set(tmp_path):
+    """Issue #408. An approval refused after writing the sessions was followed by one writing
+    them again, and the round's forecast named each session twice."""
+    db_path = await _make_db(tmp_path, name="format_again")
+    service = SeasonService(db_path)
+
+    await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    created = await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+
+    assert [r["session_type"] for r in await _raw_sessions(db_path)] == [
+        "SHORT_QUALIFYING",
+        "LONG_RACE",
+    ]
+    assert [s.session_type for s in created] == SESSIONS_BY_FORMAT[RoundFormat.NORMAL]
+
+
+async def test_creating_sessions_again_follows_the_rounds_format_now(tmp_path):
+    """The sessions follow from the format and nothing else, so none of the earlier format's
+    survives beside the new one's."""
+    db_path = await _make_db(tmp_path, name="format_changed")
+    service = SeasonService(db_path)
+
+    await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    await service.create_sessions_for_round(ROUND_ID, RoundFormat.SPRINT)
+
+    assert [r["session_type"] for r in await _raw_sessions(db_path)] == [
+        st.value for st in SESSIONS_BY_FORMAT[RoundFormat.SPRINT]
+    ]
+
+
+async def test_creating_one_rounds_sessions_again_leaves_the_others_alone(tmp_path):
+    """The replacement is the round's own: the next round's sessions stay as they were."""
+    db_path = await _make_db(tmp_path, name="format_other_round")
+    service = SeasonService(db_path)
+    other = await service.create_sessions_for_round(OTHER_ROUND_ID, RoundFormat.SPRINT)
+
+    await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+
+    assert [s.id for s in await service.get_sessions(OTHER_ROUND_ID)] == [s.id for s in other]
 
 
 # ---------------------------------------------------------------------------

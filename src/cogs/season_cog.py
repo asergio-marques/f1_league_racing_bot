@@ -6527,12 +6527,6 @@ class SeasonCog(commands.Cog):
             await interaction.followup.send(msg, ephemeral=True)
             return
 
-        all_rounds = []
-        for div_db in divisions:
-            for rnd in div_rounds[div_db.id]:
-                await season_svc.create_sessions_for_round(rnd.id, rnd.format)
-                all_rounds.append(rnd)
-
         # Every channel a division posts to — the weather, results, standings, verdicts, RSVP
         # and attendance channels among them — is judged at Gate S above, by the helper the
         # review withholds its button on (#374). The gates that checked them one module at a
@@ -6775,6 +6769,17 @@ class SeasonCog(commands.Cog):
             interaction, deadline
         ):
             return
+
+        # The sessions are written here, past every gate and the backup question, and not
+        # beside the round checks above (#408): written there, every refusal between left them
+        # behind and the next approval wrote a second set, which every forecast named twice.
+        # Before the scheduling still, so no phase is ever armed against a round that has no
+        # sessions yet.
+        all_rounds = []
+        for div_db in divisions:
+            for rnd in div_rounds[div_db.id]:
+                await season_svc.create_sessions_for_round(rnd.id, rnd.format)
+                all_rounds.append(rnd)
 
         # Snapshot attached points configs before transitioning (FR-007)
         if await self.bot.module_service.is_results_enabled():

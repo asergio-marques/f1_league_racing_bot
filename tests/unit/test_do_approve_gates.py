@@ -863,3 +863,165 @@ async def test_the_refusal_names_every_phantom_at_once(db_path):
     assert "Standrad" in replies
     assert "Haf Points" in replies
 
+
+
+# ── #408: a refused approval writes no sessions ──────────────────────────────
+#
+# Every test above that says a refusal "commits nothing" asks only whether the season went
+# active, and none of them gave the season a division, so none could see that the sessions of
+# every round were written ahead of most of the gates and left behind by the refusal. The next
+# approval wrote a full second set, and every forecast named each session twice. These seed a
+# real division and round and let the real `create_sessions_for_round` write, so what they
+# count is rows.
+
+DIVISION_ID = 21
+
+
+async def _seed_round(db_path, *, days_out: float = 30):
+    """One division of the fixture's season holding one Normal round, as rows its sessions
+    can name. Returns the round."""
+    rnd = _round_in(days_out, div_id=DIVISION_ID)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (?, ?, 'Premier', 1, 555)",
+            (DIVISION_ID, SEASON_ID),
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at) VALUES (?, ?, 1, 'NORMAL', 'Silverstone', ?)",
+            (rnd.id, DIVISION_ID, rnd.scheduled_at.isoformat()),
+        )
+        await db.commit()
+    return rnd
+
+
+def _writing_sessions(cog, db_path, rnd):
+    """Point *cog* at the seeded round, and let it write that round's sessions for real."""
+    from services.season_service import SeasonService
+
+    season_svc = cog.bot.season_service
+    season_svc.get_divisions = AsyncMock(return_value=[_division(div_id=DIVISION_ID)])
+    season_svc.get_division_rounds = AsyncMock(return_value=[rnd])
+    season_svc.create_sessions_for_round = SeasonService(db_path).create_sessions_for_round
+    return cog
+
+
+async def _session_types(db_path) -> list[str]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT session_type FROM sessions ORDER BY id")
+        return [r["session_type"] for r in await cursor.fetchall()]
+
+
+# One for each way the approval can stop after the point its sessions used to be written.
+# Each builds the cog, and returns the words its refusal is known by and the deadline the
+# view would pass.
+
+
+async def _no_points_configuration(db_path, monkeypatch):
+    return _cog_with_results(db_path), "no points configuration is attached", None
+
+
+async def _a_wrongly_ordered_points_table(db_path, monkeypatch):
+    await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
+    return _cog_with_results(db_path), "violates monotonic ordering", None
+
+
+async def _no_signup_channel(db_path, monkeypatch):
+    cog = _cog(db_path)
+    cog.bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+    cog.bot.signup_module_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(signup_channel_id=None)
+    )
+    return cog, "missing required configuration", None
+
+
+async def _a_past_round(db_path, monkeypatch):
+    return _cog(db_path), "already gone by", None
+
+
+async def _an_unusable_team_name(db_path, monkeypatch):
+    cog = _cog(db_path, _team_name_problems=AsyncMock(return_value=["Team ✱ cannot be a field"]))
+    return cog, "cannot become", None
+
+
+async def _a_lineup_too_small(db_path, monkeypatch):
+    cog = _cog(db_path, _lineup_problems=AsyncMock(return_value=["No seat for driver 3"]))
+    return cog, "cannot draw this season", None
+
+
+async def _an_image_fault(db_path, monkeypatch):
+    return (
+        _images_on(_cog(db_path), monkeypatch, converter=False),
+        "image module is not correctly configured",
+        None,
+    )
+
+
+async def _a_review_expired_at_the_backup_question(db_path, monkeypatch):
+    """Test mode asks about a backup after every gate, and a review already run out there
+    approves nothing. A backup taken at that question saves the season as it was before the
+    approval, so nothing may have been written by then either."""
+    cog = _cog(db_path)
+    cog.bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(test_mode_active=True)
+    )
+    return cog, "expired before the season could be approved", (
+        datetime.now(timezone.utc) - timedelta(seconds=1)
+    )
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        _no_points_configuration,
+        _a_wrongly_ordered_points_table,
+        _no_signup_channel,
+        _a_past_round,
+        _an_unusable_team_name,
+        _a_lineup_too_small,
+        _an_image_fault,
+        _a_review_expired_at_the_backup_question,
+    ],
+    ids=lambda f: f.__name__.lstrip("_"),
+)
+async def test_a_refused_approval_writes_no_sessions(db_path, monkeypatch, refusal):
+    cog, refused_for, deadline = await refusal(db_path, monkeypatch)
+    rnd = await _seed_round(db_path, days_out=-1 if refusal is _a_past_round else 30)
+    _writing_sessions(cog, db_path, rnd)
+    interaction = _interaction()
+
+    await SeasonCog._do_approve(cog, interaction, deadline=deadline)
+
+    assert refused_for in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    assert await _session_types(db_path) == []
+
+
+async def test_an_approval_after_a_refusal_creates_each_session_once(db_path):
+    """The issue's own reproduction: refused for want of a points configuration, which is
+    then attached, and approved."""
+    rnd = await _seed_round(db_path)
+    refused = _writing_sessions(_cog_with_results(db_path), db_path, rnd)
+    await _run(refused, _interaction())
+    refused.bot.season_service.transition_to_active.assert_not_awaited()
+
+    await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
+    approved = _writing_sessions(_cog_with_results(db_path), db_path, rnd)
+    await _run(approved, _interaction())
+
+    approved.bot.season_service.transition_to_active.assert_awaited_once()
+    assert await _session_types(db_path) == ["SHORT_QUALIFYING", "LONG_RACE"]
+
+
+async def test_approving_twice_creates_each_session_once(db_path):
+    """An approval that fails after writing the sessions leaves the season in Placements and
+    the review standing, so Approve can be pressed again. A second full pass is the same
+    walk, and must leave one set."""
+    cog = _writing_sessions(_cog(db_path), db_path, await _seed_round(db_path))
+
+    await _run(cog, _interaction())
+    await _run(cog, _interaction())
+
+    assert cog.bot.season_service.transition_to_active.await_count == 2
+    assert await _session_types(db_path) == ["SHORT_QUALIFYING", "LONG_RACE"]
