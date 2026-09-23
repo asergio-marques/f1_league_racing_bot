@@ -26,9 +26,9 @@ the public review is what the approval later clears from the channel.
 placements are confirmed (issue #220), and whoever reads the review is shown who is still waiting
 — not merely how many.
 
-**Test mode's automatic points configurations are announced, not hidden.** A test season with
-nothing attached is approved with two seeded configurations, and a maintainer reading the review
-should know that before they press the button, not discover it in the standings.
+**Test mode promises no points configuration.** It attaches Standard and Half Points when it
+is enabled and at no other moment (decided 2026-09-23), so a test season with nothing attached
+is refused as any other season is, and the review says nothing about their coming back.
 """
 from __future__ import annotations
 
@@ -419,13 +419,15 @@ async def test_a_season_with_no_points_attached_says_so(db_path):
     assert "Points Configs:** *(none attached)*" in _public(messages)
 
 
-async def test_test_modes_automatic_points_are_announced(db_path):
-    """A test season with nothing attached is approved with two seeded configurations, and
-    a maintainer should know that before they press the button."""
-    cog = _cog(db_path, results=True, test_mode=True)
+async def test_test_mode_promises_no_points_on_approval(db_path):
+    """Test mode attaches Standard and Half Points when it is enabled and at no other moment
+    (decided 2026-09-23). The review once promised them "on approval", which the approval of
+    a test season with nothing attached no longer does."""
+    cog = _cog(db_path, results=True, test_mode=True, nothing_attached=True)
     messages = await _review(cog, _interaction())
 
-    assert "auto-seeded on approval" in _public(messages)
+    assert "Points Configs:** *(none attached)*" in _public(messages)
+    assert "auto-seeded" not in _public(messages) + _private(messages)
 
 
 async def test_a_team_name_that_cannot_be_a_lineup_field_is_named(db_path):

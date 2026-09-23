@@ -1987,9 +1987,7 @@ class SeasonCog(commands.Cog):
                 signup_lines += await self._signup_review_lines()
             if attendance_on:
                 attendance_lines += await self._attendance_review_lines()
-            points_lines += await self._points_names_review_lines(
-                cfg.season_id, results_on
-            )
+            points_lines += await self._points_names_review_lines(cfg.season_id)
 
             # ── Points ordering ───────────────────────────────────────
             # Reported here rather than left to the approval. The refusal at
@@ -3009,21 +3007,17 @@ class SeasonCog(commands.Cog):
             "",
         ]
 
-    async def _points_names_review_lines(
-        self, season_id: int, results_on: bool
-    ) -> list[str]:
+    async def _points_names_review_lines(self, season_id: int) -> list[str]:
         """The names of the points configurations attached to the season, as both reviews
-        report them. The faults of those configurations are reported beside them by each."""
+        report them. The faults of those configurations are reported beside them by each.
+
+        Nothing is promised under test mode (decided 2026-09-23): it attaches Standard and
+        Half Points when it is enabled and at no other moment, so a test season with none is
+        a fault here as any other season's is.
+        """
         config_names = await season_points_service.get_season_config_names(self.bot.db_path, season_id)
         if config_names:
             return ["**Points Configs:** " + ", ".join(config_names)]
-        if results_on:
-            server_config_tm = await self.bot.config_service.get_server_config()
-            if server_config_tm is not None and server_config_tm.test_mode_active:
-                return [
-                    "**Points Configs:** *(none attached)* "
-                    "\u26a0\ufe0f Test mode active \u2014 Standard & Half Points will be auto-seeded on approval."
-                ]
         return ["**Points Configs:** *(none attached)*"]
 
     async def _image_configuration_faults(self) -> list[str]:
@@ -3148,7 +3142,7 @@ class SeasonCog(commands.Cog):
             sections.append(await self._attendance_review_lines())
         if results_on:
             sections.append(
-                await self._points_names_review_lines(cfg.season_id, results_on)
+                await self._points_names_review_lines(cfg.season_id)
             )
         if await module.is_weather_enabled():
             sections.append(await self._weather_review_lines())

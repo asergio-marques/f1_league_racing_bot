@@ -433,6 +433,31 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     view.carries.assert_called_once()
 
 
+async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
+    tmp_path, monkeypatch
+):
+    """The half of #409 folded in from the configuration review. Test mode attaches Standard
+    and Half Points when it is enabled and at no other moment (decided 2026-09-23), and the
+    review once promised them "on approval" while refusing in the same report for want of one.
+    """
+    from db.database import run_migrations
+
+    db_path = str(tmp_path / "config_review.db")
+    await run_migrations(db_path)
+    bot = _report_bot(results=True, test_mode=True)
+    bot.db_path = db_path
+    cog = _cog(bot)
+    cog._missing_points_config_problems = AsyncMock(return_value=[])
+    cog._points_ordering_problems = AsyncMock(return_value=[])
+
+    text = "\n".join(await _report(cog, _interaction(), monkeypatch))
+
+    assert "**Points Configs:** *(none attached)*" in text
+    assert "auto-seeded" not in text
+    assert "No points configuration is attached to this season" in text
+    assert _RecordedView.made == []
+
+
 @pytest.mark.parametrize("signup", [True, False])
 async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, signup):
     """The one review that reports them (issue #276). They are the league's, so they are
