@@ -292,7 +292,7 @@ class InputValidator:
 _ALL = frozenset({Rule.GROUP_MENTIONS, Rule.EMOJI, Rule.MARKUP})
 
 #: A steward's description and justification of a penalty, and the justification of a pardon.
-#: Either may name the driver an incident involved.
+#: Each may name a driver.
 STEWARD_TEXT = InputValidator(_ALL, Mode.REJECT)
 
 #: A name a league types: a division, a team's shorthand and full name, a test driver, a points
