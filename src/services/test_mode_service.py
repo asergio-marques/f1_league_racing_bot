@@ -213,7 +213,7 @@ async def get_next_pending_phase(
             ORDER BY r.scheduled_at ASC, d.id ASC
             """,
         )
-        rows = await cursor.fetchall()
+        rows = list(await cursor.fetchall())
         if not rows:
             return None
 

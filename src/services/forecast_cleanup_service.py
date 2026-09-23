@@ -186,7 +186,7 @@ async def flush_pending_deletions(bot: "LeagueBot") -> None:
             ORDER BY fm.round_id, fm.division_id, fm.phase_number
             """,
         )
-        rows = await cursor.fetchall()
+        rows = list(await cursor.fetchall())
 
     if not rows:
         log.debug("flush_pending_deletions: no pending messages")

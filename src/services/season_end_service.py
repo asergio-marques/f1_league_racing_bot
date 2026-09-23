@@ -210,7 +210,7 @@ async def _write_driver_history_entries(
             """,
             (season.id,),
         )
-        assignments = await cursor.fetchall()
+        assignments = list(await cursor.fetchall())
 
         if not assignments:
             log.info(
@@ -332,7 +332,7 @@ async def _revoke_season_roles(
             """,
             (season_id,),
         )
-        assigned_rows = await cur.fetchall()
+        assigned_rows = list(await cur.fetchall())
 
         # Fetch the driver role once for the whole loop
         cfg_cur = await db.execute("SELECT driver_role_id FROM server_configs")

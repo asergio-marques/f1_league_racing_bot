@@ -239,7 +239,7 @@ class SignupModuleService:
                 " "
                 "ORDER BY day_of_week ASC, time_hhmm ASC",
             )
-            rows = await cursor.fetchall()
+            rows = list(await cursor.fetchall())
             if slot_id < 1 or slot_id > len(rows):
                 return False
             target_id = rows[slot_id - 1]["id"]

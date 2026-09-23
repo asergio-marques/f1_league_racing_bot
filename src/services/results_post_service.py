@@ -1937,7 +1937,7 @@ async def repost_standings_for_division(
             """,
             (division_id,),
         )
-        rows = await cursor.fetchall()
+        rows = list(await cursor.fetchall())
 
     if not rows:
         return "no_rounds"
