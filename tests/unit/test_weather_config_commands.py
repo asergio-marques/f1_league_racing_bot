@@ -24,6 +24,10 @@ quiet about the same mistake here. Do not relax the `spec=` to make a future tes
 
 The coverage is deliberately driven across all three commands rather than one, so a change
 that stops halfway is caught on whichever command it lands on.
+
+`/weather config view` is covered at the end (issue #118). It shares the setters' module gate
+and must not share their season gate: the deadlines were once readable only in the two season
+reviews, each tied to one stage of one season.
 """
 from __future__ import annotations
 
@@ -294,8 +298,7 @@ async def test_success_reports_all_three_deadlines(command, setter, value, _log)
     """"Each successful command shall report the resulting values of all three deadlines."
 
     The reply must name the other two as well as the one just changed, so the league can see
-    the whole ordering it now has without a command to read it back — the specification
-    provides none.
+    the whole ordering it now has without running `/weather config view` after it.
     """
     resulting = _config(phase_1_days=9, phase_2_days=4, phase_3_hours=8)
     cog = _make_cog()
@@ -348,3 +351,86 @@ async def test_success_defers_before_touching_the_database(command, setter, valu
     interaction.response.defer.assert_awaited_once()
     interaction.response.send_message.assert_not_awaited()
     interaction.followup.send.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# /weather config view
+# ---------------------------------------------------------------------------
+
+
+async def _invoke_view(cog: WeatherCog, interaction) -> None:
+    """Call `/weather config view`'s body, stepping past `@league_manager_only` as `_invoke` does."""
+    await WeatherCog.config_view.callback.__wrapped__(cog, interaction)
+
+
+def _patched_read(config: WeatherPipelineConfig):
+    """Patch the service's reader. The cog imports it inside the body, as it does the setters."""
+    return patch(
+        "services.weather_config_service.get_weather_pipeline_config",
+        new=AsyncMock(return_value=config),
+    )
+
+
+async def test_view_reports_the_deadlines_with_no_season():
+    """The case #118 was raised for: no season at all, and the deadlines still readable.
+
+    Distinct values, so a line reading the wrong field cannot pass on a coincidence.
+    """
+    cog = _make_cog()
+    interaction = _interaction()
+
+    with _patched_read(_config(phase_1_days=7, phase_2_days=3, phase_3_hours=6)) as read:
+        await _invoke_view(cog, interaction)
+
+    read.assert_awaited_once_with(DB_PATH)
+    interaction.followup.send.assert_awaited_once()
+    assert interaction.followup.send.await_args.kwargs["ephemeral"] is True
+    text = _sent_text(interaction)
+    for line in (
+        "Phase 1 deadline: 7 day(s) before race",
+        "Phase 2 deadline: 3 day(s) before race",
+        "Phase 3 deadline: 6h before race",
+    ):
+        assert line in text, f"{line!r} missing from {text!r}"
+
+
+async def test_view_answers_while_a_season_is_confirmed():
+    """The setters' season gate is theirs alone.
+
+    Mid-season is when a league most needs to know when its forecasts land, and it is the
+    stage at which neither review shows the deadlines.
+    """
+    cog = _make_cog(season=_season())
+    interaction = _interaction()
+
+    with _patched_read(_config()) as read:
+        await _invoke_view(cog, interaction)
+
+    read.assert_awaited_once()
+    assert "placements are confirmed" not in _sent_text(interaction)
+    assert "Phase 1 deadline: 5 day(s) before race" in _sent_text(interaction)
+
+
+async def test_view_is_refused_while_the_weather_module_is_disabled():
+    """The module gate the setters and every other module's view command hold."""
+    cog = _make_cog(weather_enabled=False)
+    interaction = _interaction()
+
+    with _patched_read(_config()) as read:
+        await _invoke_view(cog, interaction)
+
+    read.assert_not_awaited()
+    interaction.response.send_message.assert_awaited_once()
+    assert "not enabled" in _sent_text(interaction)
+    interaction.response.defer.assert_not_awaited()
+
+
+async def test_view_writes_nothing_to_the_log_channel():
+    """A read changes nothing, so it leaves no entry beside the changes that are logged."""
+    cog = _make_cog()
+    interaction = _interaction()
+
+    with _patched_read(_config()):
+        await _invoke_view(cog, interaction)
+
+    cog.bot.output_router.post_log.assert_not_awaited()
