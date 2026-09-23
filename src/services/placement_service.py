@@ -15,6 +15,7 @@ from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
 from models.signup_module import AvailabilitySlot
 from models.team import TeamRoleConfig
 from utils.input_validator import parse_time
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ def _compute_total_lap_ms(lap_times: dict[str, str]) -> int | None:
 
 
 class PlacementService:
-    def __init__(self, db_path: str, bot=None) -> None:
+    def __init__(self, db_path: str, bot: LeagueBot | None = None) -> None:
         self._db_path = db_path
         #: The bot, where one is available. Needed only by the lineup **image** path, which
         #: reads the module toggles and the render service through it. None in every unit
@@ -1964,7 +1965,7 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def _refresh_lineup_post(
-        self, guild: discord.Guild, division_id: int, *, bot=None
+        self, guild: discord.Guild, division_id: int, *, bot: LeagueBot | None = None
     ) -> None:
         """Post the division's lineup: as a graphic where configured, else as the embed.
 

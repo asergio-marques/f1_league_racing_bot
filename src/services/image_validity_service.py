@@ -57,6 +57,7 @@ from models.image_module import (
     Problem,
     ValidityReport,
 )
+from utils.league_bot import LeagueBot
 from utils.paths import PathContainmentError, resolve_within_project_root
 from utils.svg_document import (
     FieldIndex,
@@ -1289,7 +1290,7 @@ def build_aspect_statuses(
     return statuses
 
 
-async def aspect_attaches_files(bot, aspect: str) -> bool:
+async def aspect_attaches_files(bot: LeagueBot, aspect: str) -> bool:
     """Whether *aspect* could cause a file to be attached to a posting on this server.
 
     **This predicate deliberately does NOT check template validity, and must not be

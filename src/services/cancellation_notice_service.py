@@ -33,6 +33,7 @@ from dataclasses import dataclass
 
 from db.database import get_connection
 from models.round import RoundStatus
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ def attendance_notice(scope: str, division_name: str, round_number=None, track_n
 
 
 async def refresh_division_calendar(
-    bot,
+    bot: LeagueBot,
     guild,
     division,
     *,
@@ -179,7 +180,7 @@ async def refresh_division_calendar(
 # ── The one entry point ───────────────────────────────────────────────────
 
 
-async def _module_channels(bot, division_id: int) -> dict[str, int | None]:
+async def _module_channels(bot: LeagueBot, division_id: int) -> dict[str, int | None]:
     """The division's forecast, results and check-in channels, whatever table holds each."""
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
@@ -204,7 +205,7 @@ async def _module_channels(bot, division_id: int) -> dict[str, int | None]:
     }
 
 
-async def _rounds_of(bot, division_id: int, round_ids: frozenset[int]) -> list[int]:
+async def _rounds_of(bot: LeagueBot, division_id: int, round_ids: frozenset[int]) -> list[int]:
     """Those of *round_ids* that belong to *division_id*, in order.
 
     A season's cancellation names every round it calls off, across every division; each
@@ -246,7 +247,7 @@ _ANSWERS = (
 )
 
 
-async def _checkin_audit(bot, division, round_id: int) -> str:
+async def _checkin_audit(bot: LeagueBot, division, round_id: int) -> str:
     """The log-channel record of *round_id*'s check-in in *division*, or "" where it had none.
 
     Every driver the check-in recorded, grouped by their answer, and — where the reserves had
@@ -297,7 +298,7 @@ async def _checkin_audit(bot, division, round_id: int) -> str:
     return "".join(lines)
 
 
-async def _withdraw_call(bot, round_id: int, division_id: int) -> str | None:
+async def _withdraw_call(bot: LeagueBot, round_id: int, division_id: int) -> str | None:
     """Take down *round_id*'s check-in call in *division_id*, if one stands. Returns what went
     wrong, or None.
 
@@ -326,7 +327,7 @@ async def _withdraw_call(bot, round_id: int, division_id: int) -> str | None:
 
 
 async def announce_cancellation(
-    bot,
+    bot: LeagueBot,
     guild,
     divisions,
     *,
@@ -361,7 +362,7 @@ async def announce_cancellation(
 
 
 async def _announce(
-    bot, guild, divisions, report: CancellationReport, *,
+    bot: LeagueBot, guild, divisions, report: CancellationReport, *,
     scope, round_number, track_name, season_number, round_ids,
 ) -> None:
     import discord

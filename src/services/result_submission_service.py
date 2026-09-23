@@ -26,6 +26,7 @@ from utils.input_validator import (
     parse_time,
     parse_user_mention,
 )
+from utils.league_bot import LeagueBot
 from utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
@@ -259,7 +260,7 @@ async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
 
 
 async def _build_penalty_review_state(
-    bot,
+    bot: LeagueBot,
     round_id: int,
     division_id: int,
     submission_channel_id: int,
@@ -313,7 +314,7 @@ async def _build_penalty_review_state(
 
 
 async def enter_penalty_state(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     round_id: int,
     division_id: int,
@@ -1002,7 +1003,7 @@ async def recompute_former_drivers_for_round(
         )
 
 
-async def _post_appeals_prompt(state, guild, bot, db_path: str) -> bool:
+async def _post_appeals_prompt(state, guild, bot: LeagueBot, db_path: str) -> bool:
     """Open the appeals stage in the channel the report stage ran in.
 
     Stage three follows stage two in the same place, for an amendment exactly as for a first
@@ -1034,7 +1035,7 @@ async def _post_appeals_prompt(state, guild, bot, db_path: str) -> bool:
 
 
 async def _report_incomplete_sanctions(
-    interaction, bot, db_path: str, division_id: int, round_id: int,
+    interaction, bot: LeagueBot, db_path: str, division_id: int, round_id: int,
     failures: list[str], *, logged: bool,
 ) -> None:
     """Tell the approving manager which attendance sanctions did not apply (#239).
@@ -1066,7 +1067,7 @@ async def _report_incomplete_sanctions(
 
 
 async def _report_faults(
-    interaction, bot, *, heading: str, intro: str, faults: list[str], hint: str,
+    interaction, bot: LeagueBot, *, heading: str, intro: str, faults: list[str], hint: str,
 ) -> None:
     """Tell the manager and the log channel what an approval could not do (#237).
 
@@ -1103,7 +1104,7 @@ async def _report_faults(
 
 
 async def _report_unpostable_results(
-    interaction, bot, db_path: str, division_id: int, faults: list[str],
+    interaction, bot: LeagueBot, db_path: str, division_id: int, faults: list[str],
 ) -> None:
     """What the results cascade could not post."""
     from services.results_post_service import results_sync_hint
@@ -1118,7 +1119,7 @@ async def _report_unpostable_results(
 
 
 async def _report_attendance_not_recorded(
-    interaction, bot, db_path: str, division_id: int, round_id: int, faults: list[str],
+    interaction, bot: LeagueBot, db_path: str, division_id: int, round_id: int, faults: list[str],
 ) -> None:
     """What the attendance pipeline failed to *write* (#237).
 
@@ -1155,7 +1156,7 @@ async def _report_attendance_not_recorded(
     )
 
 
-async def _report_unannounced_verdicts(interaction, bot, faults: list[str]) -> None:
+async def _report_unannounced_verdicts(interaction, bot: LeagueBot, faults: list[str]) -> None:
     """What the verdicts channel never received (#237).
 
     Its hint is not a command. A decided verdict cannot be announced again — no command
@@ -1355,7 +1356,7 @@ async def finalize_appeals_review(
 
 
 async def _apply_staged_appeals(
-    db_path: str, round_id: int, division_id: int, staged_appeals: list, actor_id: int, bot
+    db_path: str, round_id: int, division_id: int, staged_appeals: list, actor_id: int, bot: LeagueBot
 ) -> list[dict]:
     """Apply a round's upheld appeal corrections and record each one as an appeal record.
 
@@ -1758,7 +1759,7 @@ async def _repoint_verdicts(
                 )
 
 
-def _amend_verdict_state(db_path: str, division_id: int, bot, *, division_name: str = ""):
+def _amend_verdict_state(db_path: str, division_id: int, bot: LeagueBot, *, division_name: str = ""):
     """Build the state each round's verdict announcement needs during a replay (#345).
 
     The announcement functions read the round, the division and the database off a
@@ -1785,7 +1786,7 @@ def _amend_verdict_state(db_path: str, division_id: int, bot, *, division_name: 
 
 
 async def _repost_attendance_after_amendment(
-    db_path: str, round_id: int, division_id: int, bot, guild
+    db_path: str, round_id: int, division_id: int, bot: LeagueBot, guild
 ) -> list[str]:
     """Recompute the division's attendance from the amended round and repost its sheet.
 
@@ -1889,7 +1890,7 @@ async def _remember_superseded_announcements(
         await db.commit()
 
 
-async def take_down_superseded_announcements(bot, db_path: str, round_id: int) -> list[str]:
+async def take_down_superseded_announcements(bot: LeagueBot, db_path: str, round_id: int) -> list[str]:
     """Remove the announcements noted before the report stage cleared their records (#345).
 
     Called by the final stage once the replacements are up, so produce-then-destroy holds across
@@ -2098,7 +2099,7 @@ async def snapshot_before_amendment(
         await db.commit()
 
 
-async def revert_abandoned_amendment(db_path: str, round_id: int, bot=None) -> bool:
+async def revert_abandoned_amendment(db_path: str, round_id: int, bot: LeagueBot | None = None) -> bool:
     """Put a round back as it was before an amendment nobody approved.
 
     The round keeps the classification it raced rather than a half-amended one: for every
@@ -2230,7 +2231,7 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot=None) -> b
     return True
 
 
-async def _standings_names(db_path: str, division_id: int, bot, guild=None):
+async def _standings_names(db_path: str, division_id: int, bot: LeagueBot, guild=None):
     """The names the division's standings are drawn under, or None — never raising.
 
     A standings snapshot stores the order the league is shown, and a full tie is settled by name
@@ -2805,7 +2806,7 @@ async def _abandon_failed_amendment(interaction, state, *, stage: str, reason: s
         log.exception("amendment: could not tell the manager of round %s", round_id)
 
 
-async def cancel_amendment(bot, round_id: int, *, cancelled_by) -> bool:
+async def cancel_amendment(bot: LeagueBot, round_id: int, *, cancelled_by) -> bool:
     """Undo an amendment its manager cancelled after the first stage, and close its channel.
 
     Returns False where it was too late — the appeal stage is already committing it — or the
@@ -2843,7 +2844,7 @@ async def run_amendment_review_stages(
     round_id: int,
     division_id: int,
     channel,
-    bot,
+    bot: LeagueBot,
     *,
     round_number: int,
     division_name: str,
@@ -2930,7 +2931,7 @@ async def amend_round_results(
     division_id: int,
     sessions: list[AmendedSession],
     amended_by: int,
-    bot,
+    bot: LeagueBot,
 ) -> None:
     """Supersede the chosen sessions' results with their corrected classifications.
 
@@ -3835,7 +3836,7 @@ class DivisionValidationData(NamedTuple):
     team_of_shorthand: dict[str, int]
 
 
-async def _build_division_validation_data(division_id: int, bot) -> DivisionValidationData:
+async def _build_division_validation_data(division_id: int, bot: LeagueBot) -> DivisionValidationData:
     """Build validation structures for the given division.
 
     A team whose role is not mapped cannot be typed, and is left out. Its drivers are then
@@ -4244,7 +4245,7 @@ async def _insert_new_tables_in_tx(
 # Main wizard
 # ---------------------------------------------------------------------------
 
-async def run_result_submission_job(round_id: int, bot) -> None:
+async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
     """APScheduler job entry point — runs the full submission wizard for a round.
 
     Triggered at each round's scheduled start time. Creates a transient submission
@@ -4759,7 +4760,7 @@ class ResubmissionCancelView(LeagueView):
         self.stop()
 
 
-async def _next_paste(bot, sub_channel, cancel_view: ResubmissionCancelView | None):
+async def _next_paste(bot: LeagueBot, sub_channel, cancel_view: ResubmissionCancelView | None):
     """The next message pasted into *sub_channel*, or None if Cancel was pressed first.
 
     Races the paste against the button, as the amend channel does. Where both land together
@@ -4801,7 +4802,7 @@ async def _take_down_cancel_button(cancel_view: ResubmissionCancelView | None) -
 
 
 async def _return_to_review(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     round_id: int,
     division_id: int,
@@ -4987,7 +4988,7 @@ def _collected_team_assignments(
 async def _resubmit_collection_task(
     round_id: int,
     division_id: int,
-    bot,
+    bot: LeagueBot,
     sub_channel: discord.TextChannel | None,
     cancel_view: ResubmissionCancelView | None = None,
 ) -> None:
@@ -5218,7 +5219,7 @@ async def _resubmit_collection_task(
 
 
 
-async def sweep_expired_amendments(bot, *, now: datetime | None = None) -> int:
+async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = None) -> int:
     """Revert every amendment whose stages went unapproved past their deadline.
 
     Returns how many were reverted. The round keeps the classification it raced rather than a

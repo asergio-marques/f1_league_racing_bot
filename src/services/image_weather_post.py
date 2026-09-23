@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from models.image_module import PostingOrigin
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class ForecastRender:
         return self.png is not None
 
 
-async def weather_enabled(bot, template_key: str) -> bool:
+async def weather_enabled(bot: LeagueBot, template_key: str) -> bool:
     """True where the module is on, the ``weather`` aspect is on, and *template_key* is valid.
 
     The template is named per call because weather is drawn from six, and one being invalid
@@ -70,7 +71,7 @@ async def weather_enabled(bot, template_key: str) -> bool:
         return False
 
 
-async def build_drawing_for_round(bot, round_id: int, phase: int):
+async def build_drawing_for_round(bot: LeagueBot, round_id: int, phase: int):
     """Load everything a weather graphic draws for *phase* of *round_id*.
 
     Reads and never computes. The likelihood is the one phase 1 persisted, the type on each
@@ -163,7 +164,7 @@ async def build_drawing_for_round(bot, round_id: int, phase: int):
 
 
 async def render_forecast(
-    bot,
+    bot: LeagueBot,
     drawing,
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
@@ -229,21 +230,21 @@ def describe(*, division_name: str, round_number, phase: int, season_number=None
     return ", ".join(parts)
 
 
-async def report(bot, what: str, detail: str) -> None:
+async def report(bot: LeagueBot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a forecast channel."""
     from services.image_results_post import report as _report
 
     await _report(bot, what, detail)
 
 
-async def report_notices(bot, what: str, notices) -> None:
+async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4, FR-059)."""
     from services.image_results_post import report_notices as _report_notices
 
     await _report_notices(bot, what, notices)
 
 
-async def attach_forecast(bot, round_id: int, phase: int):
+async def attach_forecast(bot: LeagueBot, round_id: int, phase: int):
     """The ``discord.File`` a weather occasion rides on, or None to post the text.
 
     The one entry point the phase services and the mystery notice service call. Every reason a

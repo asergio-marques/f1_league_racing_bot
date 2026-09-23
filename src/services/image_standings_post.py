@@ -47,6 +47,7 @@ from services.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
 )
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ class StandingsPostOutcome:
 # ── Enablement ────────────────────────────────────────────────────────────
 
 
-async def standings_enabled(bot, template_key: str) -> bool:
+async def standings_enabled(bot: LeagueBot, template_key: str) -> bool:
     """True where the module is on, the `standings` aspect is on, and *template_key* is valid.
 
     Read per template rather than per aspect, so a sound drivers template still draws while a
@@ -166,7 +167,7 @@ async def standings_enabled(bot, template_key: str) -> bool:
 # ── The data behind the two drawings ──────────────────────────────────────
 
 
-async def _calendar(bot, division_id: int):
+async def _calendar(bot: LeagueBot, division_id: int):
     """The division's whole calendar as ``RoundHeading``s, and the ordinal of each round id.
 
     Every round the division holds is headed, run or not: the grid is the season's shape,
@@ -216,7 +217,7 @@ async def _calendar(bot, division_id: int):
     return headings, ordinal_of_round
 
 
-async def _round_session_results(bot, ordinal_of_round: dict[int, int]):
+async def _round_session_results(bot: LeagueBot, ordinal_of_round: dict[int, int]):
     """Round ordinal -> session type value -> the rows of that session.
 
     A round with no active session result is **absent** from the mapping, which is how the
@@ -256,7 +257,7 @@ async def _round_session_results(bot, ordinal_of_round: dict[int, int]):
     return results
 
 
-async def _seats(bot, division_id: int):
+async def _seats(bot: LeagueBot, division_id: int):
     """The division's seating, in the three shapes the two drawings need.
 
     Returns ``(assignments, counts, driver_team_names, driver_team_keys)`` — the first two
@@ -314,7 +315,7 @@ async def _seats(bot, division_id: int):
 
 
 async def build_drawings(
-    bot,
+    bot: LeagueBot,
     guild,
     *,
     db_path: str,
@@ -434,7 +435,7 @@ async def build_drawings(
 # ── Render ────────────────────────────────────────────────────────────────
 
 
-async def render_png(bot, drawing, origin: PostingOrigin):
+async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
     """Render one championship. Returns the render service's PostingDecision."""
     from services.image_render_service import (
         resolve_configured_directories,
@@ -474,7 +475,7 @@ async def render_png(bot, drawing, origin: PostingOrigin):
 
 
 async def _post_one(
-    bot,
+    bot: LeagueBot,
     channel,
     *,
     db_path: str,
@@ -585,7 +586,7 @@ async def _post_one(
 
 
 async def try_post(
-    bot,
+    bot: LeagueBot,
     guild,
     channel,
     *,
@@ -707,7 +708,7 @@ async def try_post(
 # ── Reporting ─────────────────────────────────────────────────────────────
 
 
-async def report(bot, what: str, detail: str) -> None:
+async def report(bot: LeagueBot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to the standings channel.
 
     Drivers read the standings channel (FR-053); a template fault is the league manager's
@@ -721,7 +722,7 @@ async def report(bot, what: str, detail: str) -> None:
         log.error("standings: could not report to the log channel: %s", exc)
 
 
-async def report_notices(bot, what: str, notices) -> None:
+async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     """Report every non-fatal degradation, in one grouped block like every other path.
 
     This used to post one Discord message per notice, which a twenty-driver championship

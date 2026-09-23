@@ -95,7 +95,7 @@ class PendingConfig:
 # ---------------------------------------------------------------------------
 
 
-async def _get_setup_season_id(bot) -> int | None:
+async def _get_setup_season_id(bot: LeagueBot) -> int | None:
     """Return the season_id for a SETUP-status season for the guild, or None."""
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(

@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from models.image_module import PostingOrigin
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class SheetRender:
         return self.png is not None
 
 
-async def attendance_enabled(bot) -> bool:
+async def attendance_enabled(bot: LeagueBot) -> bool:
     """True where the module is on, the ``attendance`` aspect is on, and the template is valid."""
     try:
         if not await bot.module_service.is_images_enabled():
@@ -64,7 +65,7 @@ async def attendance_enabled(bot) -> bool:
 
 
 async def render_sheet(
-    bot,
+    bot: LeagueBot,
     drawing,
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
@@ -122,14 +123,14 @@ async def render_sheet(
     return SheetRender(png=decision.png_paths[0], notices=decision.notices)
 
 
-async def report(bot, what: str, detail: str) -> None:
+async def report(bot: LeagueBot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a driver-read channel."""
     from services.image_results_post import report as _report
 
     await _report(bot, what, detail)
 
 
-async def report_notices(bot, what: str, notices) -> None:
+async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4, FR-056)."""
     from services.image_results_post import report_notices as _report_notices
 

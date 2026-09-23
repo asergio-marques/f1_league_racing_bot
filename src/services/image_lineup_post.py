@@ -31,6 +31,7 @@ import discord
 
 from db.database import get_connection
 from models.image_module import PostingOrigin
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class LineupPostOutcome:
         return self.action != NOT_APPLICABLE
 
 
-async def lineup_enabled(bot) -> bool:
+async def lineup_enabled(bot: LeagueBot) -> bool:
     """True where the module is on, the `lineup` aspect is on, and a template is named."""
     try:
         if not await bot.module_service.is_images_enabled():
@@ -101,7 +102,7 @@ def seated_members(guild, teams) -> dict[str, object]:
     return members
 
 
-async def build_drawing(bot, guild, division_id: int, *, include_uncommitted: bool = False):
+async def build_drawing(bot: LeagueBot, guild, division_id: int, *, include_uncommitted: bool = False):
     """Resolve the division into a LineupDrawing, or raise LineupDataError.
 
     A placement made mid-season and not yet confirmed is left out (#220), for the lineup of
@@ -209,7 +210,7 @@ async def build_drawing(bot, guild, division_id: int, *, include_uncommitted: bo
 
 
 async def render_png(
-    bot, guild, division_id: int, origin: PostingOrigin, *, include_uncommitted: bool = False
+    bot: LeagueBot, guild, division_id: int, origin: PostingOrigin, *, include_uncommitted: bool = False
 ):
     """Render one division's lineup. Returns the render service's PostingDecision.
 
@@ -261,7 +262,7 @@ async def render_png(
 
 
 async def try_post(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild | None,
     division_id: int,
     *,
@@ -382,7 +383,7 @@ async def try_post(
 
 
 async def render_for_command(
-    bot, guild, division_id: int, *, include_uncommitted: bool = False
+    bot: LeagueBot, guild, division_id: int, *, include_uncommitted: bool = False
 ) -> LineupPostOutcome:
     """Produce a division's lineup PNG as **command output**, posting it nowhere.
 
@@ -424,7 +425,7 @@ async def render_for_command(
     )
 
 
-async def _report(bot, division_name: str, detail: str) -> None:
+async def _report(bot: LeagueBot, division_name: str, detail: str) -> None:
     """Send a fault to the server's logging channel, never to the lineup channel.
 
     The lineup channel is read by the drivers of the league and not by its staff

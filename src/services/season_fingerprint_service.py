@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from db.database import get_connection
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ def _directory_signature(directory: Path) -> list:
     return [_path_signature(p) for p in entries]
 
 
-async def take_fingerprint(bot, season_id: int) -> SeasonFingerprint:
+async def take_fingerprint(bot: LeagueBot, season_id: int) -> SeasonFingerprint:
     """Fingerprint everything `/season placements-review` reports for *season_id*.
 
     One connection for the lot. Never raises: a fingerprint that could not be taken is an
@@ -396,7 +397,7 @@ async def take_fingerprint(bot, season_id: int) -> SeasonFingerprint:
     return SeasonFingerprint(areas)
 
 
-async def _artwork_signature(bot) -> list:
+async def _artwork_signature(bot: LeagueBot) -> list:
     """The template files and asset folders, by size and modification time.
 
     The one thing a database read cannot see. A template edited or deleted between the

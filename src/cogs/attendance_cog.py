@@ -712,7 +712,7 @@ _STATUS_LABELS = {
 }
 
 
-async def _call_stands(bot, round_id: int, division_id: int) -> bool:
+async def _call_stands(bot: LeagueBot, round_id: int, division_id: int) -> bool:
     """Whether a check-in call for *round_id* is still recorded as standing.
 
     The row goes when the call is taken down — by a cancellation, or by an amendment that

@@ -9,18 +9,16 @@ import json
 import logging
 from datetime import datetime, timezone
 from itertools import groupby
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import discord
 
 from db.database import get_connection
 from models.round import RoundFormat
 from services.season_service import SeasonImmutableError
+from utils.league_bot import LeagueBot
 from utils.points_ordering import ordering_message, ordering_violations
 from utils.league_server import league_guild
-
-if TYPE_CHECKING:
-    from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -769,7 +767,7 @@ async def _season_exists(db_path: str, season_id: int) -> bool:
         return await cursor.fetchone() is not None
 
 
-async def approval_faults(db_path: str, season_id: int, bot) -> list[str]:
+async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[str]:
     """Everything that would stop an approved amendment being published (#187).
 
     Returns the faults as lines a league can read, and an empty list where the whole
@@ -819,7 +817,7 @@ async def approve_amendment(
     db_path: str,
     season_id: int,
     approved_by: int,
-    bot,
+    bot: LeagueBot,
 ) -> list[str]:
     """Atomically overwrite season points from the modification store, then recompute all standings.
 

@@ -19,6 +19,7 @@ from models.attendance import (
     RsvpEmbedMessage,
 )
 from models.classification_occasion import ClassificationOccasion
+from utils.league_bot import LeagueBot
 
 
 @asynccontextmanager
@@ -857,7 +858,7 @@ async def distribute_attendance_points(
 
 
 async def post_attendance_sheet(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     db_path: str,
     round_id: int,
@@ -1172,7 +1173,7 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
 
 
 async def _sheet_attachment(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     db_path: str,
     *,
@@ -1488,7 +1489,7 @@ class SanctionOutcome:
 
 
 async def enforce_attendance_sanctions(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     db_path: str,
     round_id: int,
@@ -1787,7 +1788,7 @@ def _failure_reason(exc: Exception, *, applied: bool) -> str:
 
 
 async def recalculate_attendance_for_round(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     db_path: str,
     round_id: int,
@@ -1922,7 +1923,7 @@ async def cascade_attendance_from_round(
 
 
 async def sync_attendance(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     db_path: str,
     division_id: int,
@@ -1952,7 +1953,7 @@ async def sync_attendance(
 
 
 async def recalculation_faults(
-    db_path: str, season_id: int, guild, bot=None
+    db_path: str, season_id: int, guild, bot: LeagueBot | None = None
 ) -> list[str]:
     """What stands between this season and recalculating its attendance (#187).
 

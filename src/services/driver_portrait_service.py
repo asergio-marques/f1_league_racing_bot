@@ -45,6 +45,7 @@ import discord
 
 from db.database import get_connection
 from utils.asset_resolver import filename_for
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -280,7 +281,7 @@ async def assigned_driver_ids(db_path: str) -> list[str]:
     return sorted(str(row["uid"]) for row in rows)
 
 
-async def run_daily_refresh(bot, *, now: datetime | None = None) -> int:
+async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> int:
     """The daily portrait refresh for the league. Returns how many were written.
 
     Unlike the pre-render trigger this has no graphic to scope it, so it works through every
@@ -337,7 +338,7 @@ async def run_daily_refresh(bot, *, now: datetime | None = None) -> int:
 
 
 async def refresh_before_render(
-    bot,
+    bot: LeagueBot,
     members,
     *,
     config=None,

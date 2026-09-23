@@ -24,12 +24,13 @@ from __future__ import annotations
 import logging
 
 from models.classification_occasion import ClassificationOccasion
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
 
 async def post_opening_classifications(
-    bot, guild, db_path: str, divisions, div_rounds
+    bot: LeagueBot, guild, db_path: str, divisions, div_rounds
 ) -> list[str]:
     """Post every division's opening standings and attendance sheet.
 
@@ -120,7 +121,7 @@ async def post_opening_classifications(
     return problems
 
 
-async def post_final_classifications(bot, guild, db_path: str, season_id: int) -> list[str]:
+async def post_final_classifications(bot: LeagueBot, guild, db_path: str, season_id: int) -> list[str]:
     """Post every division's final standings and attendance sheet.
 
     Drawn against the division's **last round that has results**, whose classification the

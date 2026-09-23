@@ -8,6 +8,7 @@ import discord
 
 from db.database import get_connection
 from models.round import RoundFormat
+from utils.league_bot import LeagueBot
 from utils.league_server import LeagueView
 
 log = logging.getLogger(__name__)
@@ -176,7 +177,7 @@ class _RsvpButton(discord.ui.Button):
 # this gate's, and nothing here should try to compensate for it.
 
 
-async def _check_in_runs_for_round(round_id: int, bot) -> bool:
+async def _check_in_runs_for_round(round_id: int, bot: LeagueBot) -> bool:
     """Return True when *round_id*'s check-in work should still run.
 
     The module gate above, and one thing more: a round **recorded as cancelled** has no
@@ -204,7 +205,7 @@ async def _check_in_runs_for_round(round_id: int, bot) -> bool:
     return await bot.module_service.is_attendance_enabled()
 
 
-async def _attendance_enabled_for_division(division_id: int, bot) -> bool:
+async def _attendance_enabled_for_division(division_id: int, bot: LeagueBot) -> bool:
     """Return True when *division_id* exists and the league has the attendance module enabled."""
     async with get_connection(bot.db_path) as db:
         cur = await db.execute(
@@ -291,7 +292,7 @@ def _driver_display_str(driver: dict) -> str:
 
 
 async def _report_call_failure(
-    bot,
+    bot: LeagueBot,
     *,
     division_id: int,
     division_name: str,
@@ -339,7 +340,7 @@ async def _report_call_failure(
 
 
 async def _checkin_attachment(
-    bot,
+    bot: LeagueBot,
     *,
     division_id: int,
     division_name: str,
@@ -391,7 +392,7 @@ async def _checkin_attachment(
 # ── run_rsvp_notice ───────────────────────────────────────────────────────────
 
 
-async def run_rsvp_notice(round_id: int, bot) -> None:
+async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
     """Post the RSVP embed for *round_id* to all configured RSVP channels.
 
     Called by the APScheduler job (and by /test-mode advance for phase 5).
@@ -637,7 +638,7 @@ async def run_rsvp_notice(round_id: int, bot) -> None:
 async def withdraw_rsvp_call(
     round_id: int,
     division_id: int,
-    bot,
+    bot: LeagueBot,
     *,
     undeleted: list[str] | None = None,
 ) -> bool:
@@ -697,7 +698,7 @@ async def withdraw_rsvp_call(
     return True
 
 
-async def repost_rsvp_call(round_id: int, division_id: int, bot) -> None:
+async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> None:
     """Post a round's check-in call again, carrying over every answer already given.
 
     Used when a round is amended and its call has already gone out: the call names the circuit,
@@ -734,7 +735,7 @@ async def repost_rsvp_call(round_id: int, division_id: int, bot) -> None:
 # ── run_rsvp_last_notice ──────────────────────────────────────────────────────
 
 
-async def run_rsvp_last_notice(round_id: int, bot) -> None:
+async def run_rsvp_last_notice(round_id: int, bot: LeagueBot) -> None:
     """Post the last-notice ping for *round_id*.
 
     Always posts a visibility message to the RSVP channel with a Discord relative
@@ -851,7 +852,7 @@ async def run_rsvp_last_notice(round_id: int, bot) -> None:
 # ── run_rsvp_deadline ─────────────────────────────────────────────────────────
 
 
-async def run_rsvp_deadline(round_id: int, bot) -> None:
+async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
     """Run reserve distribution and close the RSVP embed for *round_id*.
 
     Produces nothing while the attendance module is disabled — see the module gate above.
@@ -906,7 +907,7 @@ async def run_rsvp_deadline(round_id: int, bot) -> None:
         await _post_no_reserve_notice(round_id, division_id, bot)
 
 
-async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None:
+async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueBot) -> None:
     """Compute and write reserve-to-team distribution for *round_id* in *division_id*.
 
     Algorithm (FR-018 – FR-024):
@@ -1079,7 +1080,7 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot) -> None
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
-async def _rebuild_embed_for_round(round_id: int, division_id: int, bot) -> discord.Embed:
+async def _rebuild_embed_for_round(round_id: int, division_id: int, bot: LeagueBot) -> discord.Embed:
     """Rebuild the RSVP embed using current DB state for *round_id* / *division_id*."""
     async with get_connection(bot.db_path) as db:
         cur = await db.execute(
@@ -1134,7 +1135,7 @@ async def _rebuild_embed_for_round(round_id: int, division_id: int, bot) -> disc
     )
 
 
-async def _post_no_reserve_notice(round_id: int, division_id: int, bot) -> None:
+async def _post_no_reserve_notice(round_id: int, division_id: int, bot: LeagueBot) -> None:
     """Post a notice that no reserves were placed because all seats were filled."""
     att_div_cfg = await bot.attendance_service.get_division_config(division_id)
     if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
@@ -1169,7 +1170,7 @@ async def _post_no_reserve_notice(round_id: int, division_id: int, bot) -> None:
     )
 
 
-async def _post_distribution_announcement(round_id: int, division_id: int, bot) -> None:
+async def _post_distribution_announcement(round_id: int, division_id: int, bot: LeagueBot) -> None:
     """Post the reserve distribution assignment announcement (FR-025 / FR-026)."""
     async with get_connection(bot.db_path) as db:
         cur = await db.execute(

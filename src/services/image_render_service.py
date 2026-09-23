@@ -30,6 +30,7 @@ from models.image_module import (
     RenderNotice,
     RenderOutcome,
 )
+from utils.league_bot import LeagueBot
 
 #: What a caller should do with the result of ``render_for_posting``.
 POST_IMAGE = "POST_IMAGE"
@@ -803,7 +804,7 @@ class ImageRenderService:
 
     @staticmethod
     async def report_notices(
-        bot, notices: list[RenderNotice], *, subject: str | None = None
+        bot: LeagueBot, notices: list[RenderNotice], *, subject: str | None = None
     ):
         """Surface notices to the calculation log channel (Principle V, FR-031).
 
@@ -833,7 +834,7 @@ class ImageRenderService:
         spec_builder,
         *,
         posting_origin: PostingOrigin,
-        bot=None,
+        bot: LeagueBot | None = None,
         output_dir: Path | None = None,
         filename_stem: str | None = None,
         division_name: str | None = None,

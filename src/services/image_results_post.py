@@ -30,6 +30,7 @@ import discord
 from db.database import get_connection
 from models.image_module import PostingOrigin
 from services.image_lineup_service import resolve_driver_name
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ class ResultsPostOutcome:
         return self.action != NOT_APPLICABLE
 
 
-async def results_enabled(bot, template_key: str) -> bool:
+async def results_enabled(bot: LeagueBot, template_key: str) -> bool:
     """True where the module is on, the `results` aspect is on, and *template_key* is valid.
 
     The aspect is what a league toggles; the two templates behind it are checked one at a
@@ -147,7 +148,7 @@ async def season_of_division(db_path: str, division_id: int | None) -> int | Non
 
 
 async def _driver_names(
-    bot, guild, user_ids: list[int], *, division_id: int | None = None
+    bot: LeagueBot, guild, user_ids: list[int], *, division_id: int | None = None
 ) -> dict[int, str]:
     """The name each driver is drawn under (XIV.16, and the wip-spec's person-name rule).
 
@@ -204,7 +205,7 @@ async def _driver_names(
 
 
 async def _nationalities(
-    bot, user_ids: list[int], *, division_id: int | None = None
+    bot: LeagueBot, user_ids: list[int], *, division_id: int | None = None
 ) -> dict[int, str | None]:
     """Each driver's recorded nationality, or None where they stated none.
 
@@ -231,7 +232,7 @@ async def _nationalities(
     return {int(row["discord_user_id"]): (row["nationality"] or None) for row in rows}
 
 
-async def _team_names(bot, guild, division_id: int, team_ids: list[int]) -> dict[int, str]:
+async def _team_names(bot: LeagueBot, guild, division_id: int, team_ids: list[int]) -> dict[int, str]:
     """The name of each division team a session records, keyed by the team's id.
 
     A session records the division's **team** an entry drove for, never its Discord role
@@ -245,7 +246,7 @@ async def _team_names(bot, guild, division_id: int, team_ids: list[int]) -> dict
     return await team_names_for_instances(bot.db_path, team_ids)
 
 
-async def _team_keys(bot, team_ids: list[int]) -> dict[int, str]:
+async def _team_keys(bot: LeagueBot, team_ids: list[int]) -> dict[int, str]:
     """The shorthand of each division team a session records, which its artwork is found by.
 
     Apart from the name drawn (#381): a team is drawn by its full name, and its badge file is
@@ -257,7 +258,7 @@ async def _team_keys(bot, team_ids: list[int]) -> dict[int, str]:
 
 
 async def build_drawing(
-    bot,
+    bot: LeagueBot,
     guild,
     *,
     session_result,
@@ -307,7 +308,7 @@ async def build_drawing(
     )
 
 
-async def render_png(bot, drawing, origin: PostingOrigin):
+async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
     """Render one session's results. Returns the render service's PostingDecision."""
     from services.image_results_service import build_fill_spec
     from services.image_render_service import (
@@ -346,7 +347,7 @@ async def render_png(bot, drawing, origin: PostingOrigin):
 
 
 async def try_post(
-    bot,
+    bot: LeagueBot,
     guild,
     channel,
     *,
@@ -509,7 +510,7 @@ def drawing_label(*, drawing, fallback: str) -> str:
     return f"{fallback} — {drawing.session_name}"
 
 
-async def report(bot, what: str, detail: str) -> None:
+async def report(bot: LeagueBot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, and never to a driver-read channel."""
     try:
         await bot.output_router.post_log(
@@ -519,7 +520,7 @@ async def report(bot, what: str, detail: str) -> None:
         log.error("results: could not report to the log channel: %s", exc)
 
 
-async def report_notices(bot, what: str, notices) -> None:
+async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     """Report every non-fatal degradation, naming the session it pertains to.
 
     `what` reaches the log as the block's subject. It used to be accepted and dropped,

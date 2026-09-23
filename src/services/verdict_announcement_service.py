@@ -20,6 +20,7 @@ from services import image_verdict_post
 from services.image_verdict_service import VerdictKind
 from utils import results_formatter
 from utils.input_validator import is_disqualification, parse_penalty_seconds
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ def _driver_label(driver_discord_id) -> str:
 
 
 async def _graphic_name(
-    bot,
+    bot: LeagueBot,
     guild,
     discord_user_id: int,
     *,
@@ -218,7 +219,7 @@ async def _get_announcement_context(db_path: str, round_id: int) -> dict:
     }
 
 
-def _banner_once(bot, channel, ctx: dict):
+def _banner_once(bot: LeagueBot, channel, ctx: dict):
     """A callable that heads a run of verdicts with a banner, at most once.
 
     **Lazy, and that is the point.** A run can produce nothing: a record whose result
@@ -264,7 +265,7 @@ def _banner_once(bot, channel, ctx: dict):
     return post
 
 
-def _banner_once_recorded(bot, channel, ctx, db_path: str, round_id: int):
+def _banner_once_recorded(bot: LeagueBot, channel, ctx, db_path: str, round_id: int):
     """`_banner_once`, recording the message it posts (#345).
 
     What a poster falls back to when no shared banner was handed to it. The banner is recorded
@@ -284,7 +285,7 @@ def _banner_once_recorded(bot, channel, ctx, db_path: str, round_id: int):
     return post
 
 
-def banner_for_round(bot, db_path: str, round_id: int):
+def banner_for_round(bot: LeagueBot, db_path: str, round_id: int):
     """A shared banner poster for every verdict one approval will post.
 
     The same callable as :func:`_banner_once`, resolving the round's context and channel on
@@ -537,7 +538,7 @@ async def _record_announcement(
 
 
 async def _send_verdict(
-    bot,
+    bot: LeagueBot,
     target_channel,
     *,
     db_path: str,
@@ -641,7 +642,7 @@ async def _send_verdict(
 
 
 async def post_penalty_announcements(
-    bot,
+    bot: LeagueBot,
     state,  # PenaltyReviewState
     applied_penalties: list,
     *,
@@ -823,7 +824,7 @@ async def post_penalty_announcements(
 
 
 async def post_appeal_announcements(
-    bot,
+    bot: LeagueBot,
     state,  # PenaltyReviewState
     applied_corrections: list,
     *,
@@ -989,7 +990,7 @@ async def post_appeal_announcements(
 
 
 async def post_autosanction_announcement(
-    bot,
+    bot: LeagueBot,
     db_path: str,
     round_id: int,
     driver_discord_id: int,
@@ -1200,7 +1201,7 @@ async def banners_from_round(
 
 
 async def republish_verdicts_from_round(
-    bot, db_path: str, division_id: int, from_round_id: int, state_factory,
+    bot: LeagueBot, db_path: str, division_id: int, from_round_id: int, state_factory,
     superseded_banners: list[tuple[int, str, int]] | None = None,
     rebuilt: list[int] | None = None,
 ) -> list[str]:

@@ -52,6 +52,7 @@ from pathlib import Path
 
 from models.image_module import PostingOrigin
 from services.image_verdict_banner_service import VerdictBannerDrawing
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class BannerRender:
         return self.png is not None
 
 
-async def banner_enabled(bot) -> bool:
+async def banner_enabled(bot: LeagueBot) -> bool:
     """True where the module is on, the aspect is on, and the template is valid.
 
     Read separately from `verdicts_enabled`: the two aspects are independent, so a league
@@ -127,7 +128,7 @@ def build_drawing(
 
 
 async def render_banner(
-    bot,
+    bot: LeagueBot,
     drawing: VerdictBannerDrawing,
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
@@ -209,21 +210,21 @@ def describe(*, division_name: str, round_number, season_number=None) -> str:
     return " · ".join(parts)
 
 
-async def report(bot, what: str, detail: str) -> None:
+async def report(bot: LeagueBot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a verdicts channel."""
     from services.image_results_post import report as _report
 
     await _report(bot, what, detail)
 
 
-async def report_notices(bot, what: str, notices) -> None:
+async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4)."""
     from services.image_results_post import report_notices as _report_notices
 
     await _report_notices(bot, what, notices)
 
 
-async def try_post(bot, channel, drawing: VerdictBannerDrawing):
+async def try_post(bot: LeagueBot, channel, drawing: VerdictBannerDrawing):
     """Post the banner above a batch of verdicts. Returns the message sent, or None.
 
     The message rather than a flag, so the caller can record which message carries the banner

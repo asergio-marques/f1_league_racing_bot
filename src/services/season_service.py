@@ -26,6 +26,7 @@ from models.season import (
 )
 from models.session import Session, SessionType, SESSIONS_BY_FORMAT
 from utils.input_validator import NAME
+from utils.league_bot import LeagueBot
 
 #: Rendered from the model's sets so the queries below cannot drift from the rule they
 #: encode. Interpolated rather than bound because they are our own enum values and the
@@ -548,7 +549,7 @@ class SeasonService:
 
         return await advance_to_pending_completion(self._db_path, season_id)
 
-    async def wind_down_ongoing(self, bot) -> bool:
+    async def wind_down_ongoing(self, bot: LeagueBot) -> bool:
         """Take a season whose every division is done out of the ongoing stages (issue #220).
 
         Its signup window closed, its pending placements turned down, and on to Pending

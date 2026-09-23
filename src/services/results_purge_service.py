@@ -29,12 +29,13 @@ import logging
 import discord
 
 from db.database import get_connection
+from utils.league_bot import LeagueBot
 from utils.league_server import league_guild
 
 log = logging.getLogger(__name__)
 
 
-async def purge_season_results(db_path: str, bot) -> dict:
+async def purge_season_results(db_path: str, bot: LeagueBot) -> dict:
     """Delete every result of the active season, from Discord and from the database.
 
     Discord first, while the message ids are still stored: once the rows are gone there is

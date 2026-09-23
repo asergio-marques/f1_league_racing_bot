@@ -32,6 +32,7 @@ from db.database import get_connection, run_migrations
 from services import backup_service
 from services.channel_registry_service import DIVISION_SOURCES, SERVER_SOURCES
 from services.in_memory_state import clear_in_memory_state
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -162,7 +163,7 @@ async def gather_targets(db_path: str) -> DiscordTargets:
 # ── The wipe ──────────────────────────────────────────────────────────────
 
 
-async def wipe(db_path: str, scheduler_service, bot=None) -> None:
+async def wipe(db_path: str, scheduler_service, bot: LeagueBot | None = None) -> None:
     """Return the database, the scheduled work and the memory to a fresh install.
 
     **The database is replaced by a freshly migrated one, not emptied table by table.** A

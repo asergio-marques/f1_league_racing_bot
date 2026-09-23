@@ -800,7 +800,7 @@ class BotCog(commands.Cog):
         )
 
 
-async def _audit(bot, user, change_type: str, old: dict, new: dict) -> None:
+async def _audit(bot: LeagueBot, user, change_type: str, old: dict, new: dict) -> None:
     """Write the audit entry for a change to the bot's configuration upon its server.
 
     The other half of the log line each command posts: a configuration change is recorded
@@ -823,7 +823,7 @@ async def _audit(bot, user, change_type: str, old: dict, new: dict) -> None:
         await db.commit()
 
 
-async def _reapply_hub_permissions(bot) -> None:
+async def _reapply_hub_permissions(bot: LeagueBot) -> None:
     """Set the hub's permissions again after a role they name has changed (issue #279).
 
     Logged where it fails, and never failing the role command that asked for it: the role is
