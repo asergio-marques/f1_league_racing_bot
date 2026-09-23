@@ -137,6 +137,9 @@ def _cog(
     points_faults=None,
     name_problems=None,
     pending=None,
+    images=False,
+    image_faults=None,
+    lineup_problems=None,
 ):
     cog = SeasonCog.__new__(SeasonCog)
     bot = MagicMock()
@@ -152,7 +155,7 @@ def _cog(
     modules.is_signup_enabled = AsyncMock(return_value=signup)
     modules.is_results_enabled = AsyncMock(return_value=results)
     modules.is_attendance_enabled = AsyncMock(return_value=attendance)
-    modules.is_images_enabled = AsyncMock(return_value=False)
+    modules.is_images_enabled = AsyncMock(return_value=images)
 
     bot.signup_module_service.get_config = AsyncMock(
         return_value=SimpleNamespace(signup_channel_id=900)
@@ -214,6 +217,23 @@ def _cog(
     cog._post_review_calendar_image = AsyncMock(return_value=calendar_state)
     cog._post_review_lineup_image = AsyncMock(return_value=REVIEW_IMAGE_TEXT)
     cog._post_approval_prompt = AsyncMock()
+
+    # The image section. What it prints has tests of its own, in
+    # `tests/integration/test_image_module_flow.py`; under test here is whether its faults withhold the button
+    # (#396), so the report lines are stubbed and the fault reading is left real. Its readers
+    # are pinned to "nothing wrong" — each is wrapped in a `try` that turns a mock's
+    # surprise into a fault of its own, which would withhold the button on the harness.
+    cog._build_image_review_section = AsyncMock(return_value=[])
+    cog._calendar_capacity_warning = AsyncMock(return_value=[])
+    cog._attendance_capacity_warning = AsyncMock(return_value=[])
+    cog._lineup_problems = AsyncMock(return_value=lineup_problems or [])
+    bot.image_validity_service.template_reports = AsyncMock(return_value={})
+    bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
+    bot.image_config_service.get_toggles = AsyncMock(return_value={})
+    bot.image_config_service.get_config = AsyncMock(return_value=None)
+    if image_faults is not None:
+        cog._image_configuration_faults = AsyncMock(return_value=image_faults)
+
     # In Placements with nothing unsettled (issue #220); those gates are tested in
     # test_placements_confirmation.py.
     from models.season import SeasonStage
@@ -241,14 +261,20 @@ def _interaction():
     return interaction
 
 
-async def _review(cog, interaction):
-    """Run the command, returning every followup as ``(text, ephemeral)``."""
+async def _review(cog, interaction, *, converter=True):
+    """Run the command, returning every followup as ``(text, ephemeral)``.
+
+    *converter* is whether the rasteriser is installed, said rather than read from the host:
+    the image checks ask, and a test must not pass on one host and fail on the next.
+    """
     sent = interaction.followup.send
     with patch(
         "services.weather_config_service.get_weather_pipeline_config",
         new=AsyncMock(
             return_value=SimpleNamespace(phase_1_days=5, phase_2_days=2, phase_3_hours=2)
         ),
+    ), patch(
+        "services.image_render_service.converter_available", return_value=converter
     ):
         await undecorate(SeasonCog.season_review)(cog, interaction)
     return [
@@ -682,3 +708,111 @@ async def test_points_faults_are_not_checked_with_results_off(db_path):
 
     cog._points_ordering_problems.assert_not_awaited()
     cog._post_approval_prompt.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# The image configuration (#396)
+# ---------------------------------------------------------------------------
+#
+# The review draws the lineup and the calendar, and nothing else. Every other fault of the
+# image configuration — a template of a switched-on output, the rasteriser, a per-tier colour
+# — was named under "These block approval" and the button offered all the same, and two of
+# them were then approved. Each is read through `_image_configuration_faults`, the helper the
+# confirmation refuses on, so what withholds the button here is what refuses the press.
+
+
+def _broken(template_key: str):
+    from models.image_module import ValidityReport
+
+    return ValidityReport(
+        template_key=template_key,
+        resolved_path=None,
+        valid=False,
+        depth_checked=0,
+        reason="file not found",
+    )
+
+
+async def test_a_sound_image_configuration_is_offered_for_approval(db_path):
+    cog = _cog(db_path, images=True)
+
+    await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_awaited_once()
+
+
+async def test_a_missing_rasteriser_withholds_approval(db_path):
+    """With the lineup and the calendar off the review draws nothing, so the rasteriser
+    being absent was never met by a render — and every graphic of the season would fail."""
+    cog = _cog(db_path, images=True)
+
+    messages = await _review(cog, _interaction(), converter=False)
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "image module is not correctly configured" in _private(messages)
+    assert "is not installed on this host" in _private(messages)
+
+
+async def test_a_broken_template_of_a_switched_on_output_withholds_approval(db_path):
+    from models.image_constants import TEMPLATE_LABELS
+
+    cog = _cog(db_path, images=True)
+    cog.bot.image_config_service.get_toggles = AsyncMock(return_value={"results": True})
+    cog.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={"results_race_template": _broken("results_race_template")}
+    )
+
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert f"Template **{TEMPLATE_LABELS['results_race_template']}**" in _private(messages)
+
+
+async def test_a_broken_template_of_a_switched_off_output_withholds_nothing(db_path):
+    """An output that is off posts as text and draws no template, so its template stops
+    nothing — the review names it as a warning, and offers the button."""
+    cog = _cog(db_path, images=True)
+    cog.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={"results_race_template": _broken("results_race_template")}
+    )
+
+    await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_awaited_once()
+
+
+async def test_a_tier_colour_shortfall_withholds_approval(db_path):
+    cog = _cog(db_path, images=True)
+    cog.bot.image_validity_service.colour_shortfall = AsyncMock(
+        return_value={"calendar_template": ["`accent` is not set for **Pro**"]}
+    )
+
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "Tier colour: `calendar_template` — `accent` is not set for **Pro**" in _private(
+        messages
+    )
+
+
+async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
+    """A league not drawing has no template, rasteriser or colour to be wrong about."""
+    cog = _cog(db_path, images=False, image_faults=["Inkscape is not installed on this host."])
+
+    await _review(cog, _interaction())
+
+    cog._image_configuration_faults.assert_not_awaited()
+    cog._post_approval_prompt.assert_awaited_once()
+
+
+async def test_a_long_list_of_image_faults_is_sent_whole(db_path):
+    """Sixteen templates each with its reason pass Discord's limit, and an over-long send
+    loses the message rather than its tail."""
+    faults = [f"Template **Drawing {n}**: " + "x" * 150 for n in range(16)]
+    cog = _cog(db_path, images=True, image_faults=faults)
+
+    messages = await _review(cog, _interaction())
+
+    private = [text for text, ephemeral in messages if ephemeral]
+    assert all(len(text) <= 2000 for text in private)
+    assert all(fault in _private(messages) for fault in faults)

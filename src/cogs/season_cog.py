@@ -1859,11 +1859,11 @@ class SeasonCog(commands.Cog):
         # configuration is a setting to change. A single flag reported the second as the
         # first, and sent a manager looking for artwork that was not the problem.
         #
-        # Raised by any division whose lineup or calendar graphic was wanted and could not
-        # be drawn. The section's text still stands in, so the review is a complete
-        # picture of the season, but the approve button is withheld: a season approved now
-        # would post that fault to the league's own channels, and the manager reading this
-        # is the one person able to fix it.
+        # Raised by every fault of the image configuration, and by any division whose lineup
+        # or calendar graphic was wanted and could not be drawn. The section's text still
+        # stands in, so the review is a complete picture of the season, but the approve
+        # button is withheld: a season approved now would post that fault to the league's
+        # own channels, and the manager reading this is the one person able to fix it.
         approval_blockers: list[str] = []
 
         # Kept beside it rather than inside the results branch that fills it: the block
@@ -1908,12 +1908,13 @@ class SeasonCog(commands.Cog):
             if images_on:
                 image_lines += await self._build_image_review_section()
 
-                # The portrait settings block approval on their own terms: nothing about a
-                # graphic is wrong, so this must not be reported as a graphic that would
-                # not draw.
-                _portrait_fault = await self._portrait_configuration_blocker()
-                if _portrait_fault is not None:
-                    approval_blockers.append(_portrait_fault)
+                # Every fault of the image configuration the section above names as blocking
+                # — the rasteriser, a template a switched-on output draws, a per-tier colour,
+                # the portrait settings — withholds the button, read through the helper the
+                # confirmation refuses on (#396). The section draws only the lineup and the
+                # calendar, so a broken results or weather template, or a missing rasteriser
+                # with both of those off, was named here as blocking and then approved.
+                approval_blockers += await self._image_configuration_faults()
                 image_lines += await self._calendar_capacity_warning(
                     cfg.season_id
                 )
@@ -2275,16 +2276,17 @@ class SeasonCog(commands.Cog):
                 )
             if approval_blockers:
                 # De-duplicated: five divisions failing to draw is one thing to fix, and
-                # saying it five times buries anything else in the list.
+                # saying it five times buries anything else in the list. Chunked, because
+                # sixteen templates each with its reason can pass Discord's limit.
                 reasons = list(dict.fromkeys(approval_blockers))
                 body = "\n".join(f"• {reason}" for reason in reasons)
-                await poster.send(
+                for chunk in _chunk_message(
                     "\u26d4 **The image module is not correctly configured.**\n"
                     f"{body}\n"
                     "The season is **not** offered for approval while that stands. "
-                    "Put it right, then run `/season placements-review` again.",
-                    ephemeral=True,
-                )
+                    "Put it right, then run `/season placements-review` again."
+                ):
+                    await poster.send(chunk, ephemeral=True)
             if phantom_configs:
                 body = "\n".join(f"\u2022 **{name}**" for name in phantom_configs)
                 await poster.send(

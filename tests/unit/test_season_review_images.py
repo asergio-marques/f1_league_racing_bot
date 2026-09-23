@@ -254,12 +254,15 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
     """A season approved on a broken template would post the fault to the league."""
     source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
 
-    # A list of reasons rather than a flag: an undrawable graphic and an invalid driver
-    # portrait configuration both withhold the button, and they read differently.
+    # A list of reasons rather than a flag: an undrawable graphic and a fault of the image
+    # configuration — the portrait settings among them — both withhold the button, and they
+    # read differently.
     assert "approval_blockers: list[str] = []" in source
-    assert source.count("approval_blockers.append(") == 3, (
-        "both graphics and the portrait settings must raise it"
-    )
+    assert source.count("approval_blockers.append(") == 2, "both graphics must raise it"
+    # Every fault of the image configuration, through the helper the confirmation refuses
+    # on (#396) — not the portrait settings alone, which left a broken results template
+    # and a missing rasteriser named as blocking and then approved.
+    assert "approval_blockers += await self._image_configuration_faults()" in source
 
     tail = source[source.index("Server-level unsettled signups"):]
     assert "if approval_blockers:" in tail
@@ -638,9 +641,10 @@ def test_the_review_and_the_approval_read_the_same_evaluation():
         SRC / "cogs" / "season_cog.py", "approve"
     )
 
-    # The portrait settings block on both surfaces too, and through one helper so that the
-    # two cannot disagree about whether a season may be approved.
-    assert "_portrait_configuration_blocker" in review
+    # The image configuration blocks on both surfaces too, and through one helper so that
+    # the two cannot disagree about whether a season may be approved (#396). The review
+    # reads the portrait settings through it.
+    assert "_image_configuration_faults" in review
     assert "_portrait_configuration_blocker" in approve
 
 
