@@ -255,3 +255,72 @@ class TestTheNameIsChecked:
         assert isinstance(result, str)
         assert "driver name" in result
         assert "member" in result
+
+
+# ── Removing one driver (#268) ────────────────────────────────────────────
+
+
+class TestRemovingOneDriver:
+    """`roster remove` deletes by the route `roster clear` and switching test mode off take."""
+
+    async def test_a_driver_holding_attendance_and_standings_rows_is_deleted(self, db_path):
+        """The command is refused outside Placements, before any round has run, so only a fake
+        driver outliving a season whose switch-off failed holds either. The deletion `remove`
+        once wrote by hand left both in place and was refused by a foreign key."""
+        result = await _add(db_path)
+        uid, pid = result["discord_user_id"], result["profile_id"]
+        async with get_connection(db_path) as db:
+            cursor = await db.execute("SELECT id FROM divisions")
+            division_id = (await cursor.fetchone())["id"]
+            cursor = await db.execute(
+                "INSERT INTO rounds (division_id, round_number, format, track_name, scheduled_at) "
+                "VALUES (?, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T14:00:00')",
+                (division_id,),
+            )
+            round_id = cursor.lastrowid
+            await db.execute(
+                "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id) "
+                "VALUES (?, ?, ?)",
+                (round_id, division_id, pid),
+            )
+            await db.execute(
+                "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+                "standing_position, driver_profile_id) VALUES (?, ?, ?, 1, ?)",
+                (round_id, division_id, uid, pid),
+            )
+            await db.commit()
+
+        removed = await remove_test_driver(uid, db_path)
+
+        assert removed == {"display_name": "Mock Alpha", "team_name": "Redline"}
+        async with get_connection(db_path) as db:
+            cursor = await db.execute("SELECT COUNT(*) FROM driver_profiles WHERE id = ?", (pid,))
+            assert (await cursor.fetchone())[0] == 0
+            cursor = await db.execute("SELECT COUNT(*) FROM driver_round_attendance")
+            assert (await cursor.fetchone())[0] == 0
+            cursor = await db.execute(
+                "SELECT driver_user_id, driver_profile_id FROM driver_standings_snapshots"
+            )
+            assert [tuple(r) for r in await cursor.fetchall()] == [(uid, None)]
+
+    async def test_their_history_is_kept_by_identifier(self, db_path):
+        """As switching test mode off keeps it: a driver created again under the same
+        identifier holds it as their own (#220)."""
+        result = await _add(db_path)
+        uid = str(result["discord_user_id"])
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO driver_history_entries (discord_user_id, driver_profile_id, "
+                "season_number, division_name) VALUES (?, ?, 1, ?)",
+                (uid, result["profile_id"], DIVISION),
+            )
+            await db.commit()
+
+        await remove_test_driver(result["discord_user_id"], db_path)
+
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT discord_user_id, driver_profile_id FROM driver_history_entries"
+            )
+            rows = [tuple(r) for r in await cursor.fetchall()]
+        assert rows == [(uid, None)]
