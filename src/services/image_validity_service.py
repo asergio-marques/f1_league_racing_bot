@@ -1292,7 +1292,7 @@ def build_aspect_statuses(
     return statuses
 
 
-async def aspect_attaches_files(bot: LeagueBot, aspect: str) -> bool:
+async def aspect_attaches_files(bot: LeagueBot | None, aspect: str) -> bool:
     """Whether *aspect* could cause a file to be attached to a posting on this server.
 
     **This predicate deliberately does NOT check template validity, and must not be

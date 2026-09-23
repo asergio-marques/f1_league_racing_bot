@@ -145,18 +145,15 @@ class _RsvpButton(discord.ui.Button):
         label: str,
         style: discord.ButtonStyle,
     ) -> None:
-        super().__init__(
-            label=label,
-            style=style,
-            custom_id=f"rsvp_{action}_r{round_id}",
-        )
+        self._custom_id = f"rsvp_{action}_r{round_id}"
+        super().__init__(label=label, style=style, custom_id=self._custom_id)
         self._action = action
 
     async def callback(self, interaction: discord.Interaction) -> None:
         # Delegate to the cog that handles RSVP button interactions.
         # The cog is responsible for validation, DB updates, and embed editing.
         from cogs.attendance_cog import handle_rsvp_button
-        await handle_rsvp_button(interaction, self.custom_id)
+        await handle_rsvp_button(interaction, self._custom_id)
 
 
 # ── The attendance module gate ────────────────────────────────────────────────
@@ -908,7 +905,7 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
         await _post_no_reserve_notice(round_id, division_id, bot)
 
 
-async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueBot) -> None:
+async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueBot) -> bool:
     """Compute and write reserve-to-team distribution for *round_id* in *division_id*.
 
     Algorithm (FR-018 – FR-024):

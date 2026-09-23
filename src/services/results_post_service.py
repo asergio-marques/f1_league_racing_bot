@@ -1278,7 +1278,7 @@ _REPOST_PERMISSIONS: tuple[tuple[str, str], ...] = (
 _ATTACHMENT_PERMISSION: tuple[str, str] = ("attach_files", "Attach Files")
 
 
-def _bot_member(guild: "discord.Guild", bot: LeagueBot):
+def _bot_member(guild: "discord.Guild", bot: LeagueBot | None):
     """The bot's own member object in *guild*, or ``None`` where it cannot be resolved.
 
     **``guild.me`` is deliberately not used here** (#187). It is a property reading

@@ -843,7 +843,7 @@ async def distribute_attendance_points(
                 (row["driver_profile_id"], division_id, this_round_number, round_id),
             )
             prior_row = await c3.fetchone()
-            prior_total: int = prior_row["prior_total"] if prior_row else 0
+            prior_total = prior_row["prior_total"] if prior_row else 0
             total_after = prior_total + net
 
             await db.execute(
@@ -1289,7 +1289,7 @@ async def _sheet_attachment(
             await report_notices(bot, label, render.notices)
         if render.problem:
             await report(bot, label, render.problem)
-        if not render.draws:
+        if render.png is None:  # `render.draws`, in a form the type check can follow
             return None
 
         return discord.File(str(render.png), filename=Path(render.png).name)
@@ -1386,10 +1386,10 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
                     )
                 ).fetchall()
                 for row in points_rows:
-                    ordinal = ordinal_of.get(int(row["round_id"]))
-                    if ordinal is None:
+                    points_ordinal = ordinal_of.get(int(row["round_id"]))
+                    if points_ordinal is None:
                         continue
-                    cells.setdefault(int(row["driver_profile_id"]), {})[ordinal] = (
+                    cells.setdefault(int(row["driver_profile_id"]), {})[points_ordinal] = (
                         row["points_awarded"]
                     )
     except Exception as exc:  # noqa: BLE001 — a grid that cannot be read is drawn empty
@@ -1556,8 +1556,11 @@ async def enforce_attendance_sanctions(
     if head is None:
         head = _vas.banner_for_round(bot, db_path, round_id)
     placement: PlacementService = bot.placement_service
-    acting_id = bot.user.id
-    acting_name = str(bot.user)
+    # Sanctions are enforced by a bot that has logged in, which is when it has a user.
+    acting = bot.user
+    assert acting is not None, "sanctions enforced before the bot logged in"
+    acting_id = acting.id
+    acting_name = str(acting)
 
     # Track which profiles were actually sanctioned for the attendance sheet re-post.
     sanctioned_profile_ids: set[int] = set()
