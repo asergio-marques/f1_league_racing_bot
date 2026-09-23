@@ -485,6 +485,31 @@ class TestStandingsSubstitution:
         }
         assert keys_in_round == {d.key for d in drivers}
 
+    def test_a_field_of_two_seat_teams_carries_the_substitution(self):
+        """The commonest division there is. Its two last regulars are teammates, and taking
+        the pair of them skipped the substitution on it altogether.
+        """
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 2), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        regulars = drivers[:-1]
+        undriven = regulars[-1]  # Greenfield 2
+        absent = regulars[-3]  # Bluewave 2, the last regular of another team
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
+        )
+
+        rows = [row for session in results[1].values() for row in session]
+        assert undriven.key not in {row.driver_user_id for row in rows}
+        assert absent.key not in {row.driver_user_id for row in rows}
+        assert {
+            row.team_instance_id for row in rows if row.driver_user_id == reserve.key
+        } == {self.TEAM_KEYS["Bluewave"]}
+
     def test_only_one_regular_team_carries_no_substitution(self):
         """Both roles would fall on the same team, which the "different team" guard refuses."""
         from services.image_preview_data import fabricate_standings_round_results

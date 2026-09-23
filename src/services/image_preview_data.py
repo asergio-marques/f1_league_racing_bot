@@ -346,15 +346,16 @@ def fabricate_standings_round_results(
     - the **last** regular is dropped from the round's field entirely, so its own team's
       last car goes undriven for it (FR-026's "a car nobody drove") — with no reserve to
       fill the seat, unlike the case below;
-    - a **different** regular, of the team before it, is dropped and the reserve credited
-      to that team instead (a reserve standing in) — which is also what makes that
-      regular's own absence visible (a driver absent from one round).
+    - the last regular of **any other** team is dropped and the reserve credited to that
+      team instead (a reserve standing in) — which is also what makes that regular's own
+      absence visible (a driver absent from one round).
 
-    Both need a car to spare: at least two seated drivers standing between the reserve's
-    own team and the one it substitutes into, so neither drop empties a team down to
-    nothing raced. Silently skipped wherever the field is too small to carry both, per the
-    spec's own qualifier that none of its cases is fabricated into existence beyond what
-    the field allows (#144).
+    The second is sought by team and not simply taken as the regular before the first:
+    on the commonest field of all, every team seating two, the two last regulars are
+    teammates, and taking them both would have skipped the substitution on exactly the
+    division a league most often runs. Skipped only where no second regular team exists,
+    per the spec's own qualifier that none of its cases is fabricated into existence beyond
+    what the field allows (#144).
     """
     from types import SimpleNamespace
     from typing import Any
@@ -362,19 +363,22 @@ def fabricate_standings_round_results(
     from models.round import RoundFormat
     from services.result_submission_service import get_sessions_for_format
 
+    def team_of(driver) -> str:
+        return driver.team_key or driver.team_name
+
     # Bundled as one Optional rather than several separate ones, so that a check of the one
     # narrows the rest together — the round substituted and who it touches all exist for
     # the same reason and never independently of it.
     substitution: tuple[int, Any, Any, Any] | None = None
     if reserve_driver is not None and run_ordinals:
-        reserve_team = reserve_driver.team_key or reserve_driver.team_name
-        regulars = [d for d in drivers if (d.team_key or d.team_name) != reserve_team]
-        if len(regulars) >= 2:
+        regulars = [d for d in drivers if team_of(d) != team_of(reserve_driver)]
+        if regulars:
             undriven_driver = regulars[-1]
-            absent_driver = regulars[-2]
-            if (undriven_driver.team_key or undriven_driver.team_name) != (
-                absent_driver.team_key or absent_driver.team_name
-            ):
+            absent_driver = next(
+                (d for d in reversed(regulars) if team_of(d) != team_of(undriven_driver)),
+                None,
+            )
+            if absent_driver is not None:
                 standin = SimpleNamespace(
                     key=reserve_driver.key,
                     display_name=reserve_driver.display_name,
