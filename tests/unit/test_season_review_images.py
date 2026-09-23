@@ -254,12 +254,15 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
     """A season approved on a broken template would post the fault to the league."""
     source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
 
-    # A list of reasons rather than a flag: an undrawable graphic and an invalid driver
-    # portrait configuration both withhold the button, and they read differently.
+    # A list of reasons rather than a flag: an undrawable graphic and a fault of the image
+    # configuration — the portrait settings among them — both withhold the button, and they
+    # read differently.
     assert "approval_blockers: list[str] = []" in source
-    assert source.count("approval_blockers.append(") == 3, (
-        "both graphics and the portrait settings must raise it"
-    )
+    assert source.count("approval_blockers.append(") == 2, "both graphics must raise it"
+    # Every fault of the image configuration, through the helper the confirmation refuses
+    # on (#396) — not the portrait settings alone, which left a broken results template
+    # and a missing rasteriser named as blocking and then approved.
+    assert "approval_blockers += await self._image_configuration_faults()" in source
 
     tail = source[source.index("Server-level unsettled signups"):]
     assert "if approval_blockers:" in tail
@@ -279,6 +282,7 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
         "calendar_faults_found",
         "points_faults",
         "phantom_configs",
+        "name_problems",
         "unsettled",
         "channel_faults",
         "no_divisions",
@@ -638,10 +642,11 @@ def test_the_review_and_the_approval_read_the_same_evaluation():
         SRC / "cogs" / "season_cog.py", "approve"
     )
 
-    # The portrait settings block on both surfaces too, and through one helper so that the
-    # two cannot disagree about whether a season may be approved.
-    assert "_portrait_configuration_blocker" in review
-    assert "_portrait_configuration_blocker" in approve
+    # The image configuration blocks on both surfaces too, and through one helper so that
+    # the two cannot disagree about whether a season may be approved (#396). The review
+    # reads the portrait settings through it.
+    assert "_image_configuration_faults" in review
+    assert "_image_configuration_faults" in approve
 
 
 # ── The driver portrait settings in the review, and at approval ───────────
@@ -740,10 +745,12 @@ async def test_the_blocker_never_blocks_a_season_it_could_not_read():
 
 
 def test_the_approval_gate_returns_rather_than_merely_reporting():
+    """The portrait settings refuse through the image configuration gate (#396), whose
+    refusal must stop the approval rather than report and carry on. Driven, not read, in
+    `test_do_approve_gates.py`."""
     source = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
 
-    assert "Gate 4c" in source
-    branch = source[source.index("if portrait_fault is not None:"):]
+    branch = source[source.index("if image_faults:"):]
     branch = branch[: branch.index("snapshot_configs_to_season")]
     assert "return" in branch
     assert "Season cannot be approved" in branch

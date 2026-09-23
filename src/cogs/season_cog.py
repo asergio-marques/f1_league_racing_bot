@@ -1859,11 +1859,11 @@ class SeasonCog(commands.Cog):
         # configuration is a setting to change. A single flag reported the second as the
         # first, and sent a manager looking for artwork that was not the problem.
         #
-        # Raised by any division whose lineup or calendar graphic was wanted and could not
-        # be drawn. The section's text still stands in, so the review is a complete
-        # picture of the season, but the approve button is withheld: a season approved now
-        # would post that fault to the league's own channels, and the manager reading this
-        # is the one person able to fix it.
+        # Raised by every fault of the image configuration, and by any division whose lineup
+        # or calendar graphic was wanted and could not be drawn. The section's text still
+        # stands in, so the review is a complete picture of the season, but the approve
+        # button is withheld: a season approved now would post that fault to the league's
+        # own channels, and the manager reading this is the one person able to fix it.
         approval_blockers: list[str] = []
 
         # Kept beside it rather than inside the results branch that fills it: the block
@@ -1908,12 +1908,13 @@ class SeasonCog(commands.Cog):
             if images_on:
                 image_lines += await self._build_image_review_section()
 
-                # The portrait settings block approval on their own terms: nothing about a
-                # graphic is wrong, so this must not be reported as a graphic that would
-                # not draw.
-                _portrait_fault = await self._portrait_configuration_blocker()
-                if _portrait_fault is not None:
-                    approval_blockers.append(_portrait_fault)
+                # Every fault of the image configuration the section above names as blocking
+                # — the rasteriser, a template a switched-on output draws, a per-tier colour,
+                # the portrait settings — withholds the button, read through the helper the
+                # confirmation refuses on (#396). The section draws only the lineup and the
+                # calendar, so a broken results or weather template, or a missing rasteriser
+                # with both of those off, was named here as blocking and then approved.
+                approval_blockers += await self._image_configuration_faults()
                 image_lines += await self._calendar_capacity_warning(
                     cfg.season_id
                 )
@@ -1929,6 +1930,10 @@ class SeasonCog(commands.Cog):
                     )
                     image_lines += [f"  • {problem}" for problem in lineup_problems]
                     image_lines.append("")
+                    # And they do (#396): the confirmation refuses on the same helper.
+                    approval_blockers += [
+                        f"Lineup template: {problem}" for problem in lineup_problems
+                    ]
 
             # ── Team names (038, FR-013) ──────────────────────────────
             # Outside the `images_on` branch deliberately: a team name must address a
@@ -2275,16 +2280,17 @@ class SeasonCog(commands.Cog):
                 )
             if approval_blockers:
                 # De-duplicated: five divisions failing to draw is one thing to fix, and
-                # saying it five times buries anything else in the list.
+                # saying it five times buries anything else in the list. Chunked, because
+                # sixteen templates each with its reason can pass Discord's limit.
                 reasons = list(dict.fromkeys(approval_blockers))
                 body = "\n".join(f"• {reason}" for reason in reasons)
-                await poster.send(
+                for chunk in _chunk_message(
                     "\u26d4 **The image module is not correctly configured.**\n"
                     f"{body}\n"
                     "The season is **not** offered for approval while that stands. "
-                    "Put it right, then run `/season placements-review` again.",
-                    ephemeral=True,
-                )
+                    "Put it right, then run `/season placements-review` again."
+                ):
+                    await poster.send(chunk, ephemeral=True)
             if phantom_configs:
                 body = "\n".join(f"\u2022 **{name}**" for name in phantom_configs)
                 await poster.send(
@@ -2309,6 +2315,20 @@ class SeasonCog(commands.Cog):
                     "again.",
                     ephemeral=True,
                 )
+            if name_problems:
+                # Named in full at the head of the review. No command renames a team once
+                # the configuration is confirmed, which fixes the team list (see
+                # `TeamCog._team_list_lock`), so abandoning the season is the one remedy there
+                # is — and the configuration review refuses these names, so a season reaching
+                # here is rare.
+                await poster.send(
+                    "\u26d4 **Some team names cannot be used as artwork filenames.** Each is "
+                    "named at the head of the review. The season is **not** offered for "
+                    "approval while that stands. The team list is fixed once the "
+                    "configuration is confirmed, so the season must be aborted with "
+                    "`/season abort` and configured again.",
+                    ephemeral=True,
+                )
             if unsettled:
                 await poster.send(
                     "\u26d4 **Every signup must be settled before placements are confirmed.** "
@@ -2331,6 +2351,7 @@ class SeasonCog(commands.Cog):
                 and not calendar_faults_found
                 and not points_faults
                 and not phantom_configs
+                and not name_problems
                 and not unsettled
                 and not channel_faults
                 and not no_divisions
@@ -2964,7 +2985,26 @@ class SeasonCog(commands.Cog):
         return ["**Points Configs:** *(none attached)*"]
 
     async def _image_configuration_faults(self) -> list[str]:
-        """The image module's faults that need no division, round, lineup or calendar."""
+        """The image module's faults that need no division, round, lineup or calendar.
+
+        The rasteriser, every template a switched-on output draws, the per-tier colours and
+        the driver portrait settings. **The one reading of them every gate shares**: the
+        configuration review and its confirmation, both placements reviews and both
+        confirmations of placements. Each review withholds its button on exactly what its
+        confirmation refuses, so a manager is never shown a fault as blocking and then
+        let past it — which the first placements review did (#396), reading only the
+        portrait settings while its confirmation read the colours and the portraits and
+        neither read the templates or the rasteriser.
+
+        A template beneath a switched-off output is no fault: that output posts as text. A
+        per-tier colour is, where a template marks the slot: a league marking one has said
+        it matters, and a tier left without it would be drawn in whatever the template
+        happened to be authored in — silently, and differently from its siblings.
+
+        Templates that cannot be read are a fault of their own, never a pass; the colour and
+        portrait readers stand aside on a failure of theirs, as their docstrings say. The
+        caller decides whether the module is enabled; this assumes it is.
+        """
         from models.image_constants import TEMPLATE_LABELS
         from services.image_render_service import CONVERTER_NAME, converter_available
         from services.image_validity_service import (
@@ -6654,10 +6694,10 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # Everything above is a database read. Everything below reaches the image
-        # module, and Gate 4c rasterises in earnest — so the cheap checks come first and
-        # a league missing an RSVP channel is told so without paying for a render it was
-        # never going to keep (ordering settled 2026-09-07).
+        # Everything above is a database read. What follows reads the image module's
+        # templates, artwork and settings besides — still no rasterisation, the approval
+        # drawing nothing (see below), but dearer than a query, so the cheap checks come
+        # first and a league missing a channel is told so before any file is opened.
 
         # ── Gate 3a: team names can address a lineup template (038, FR-013) ───
         #
@@ -6674,15 +6714,6 @@ class SeasonCog(commands.Cog):
             await interaction.followup.send(msg, ephemeral=True)
             return
 
-        # Gate 4 — every unusable template — is withdrawn (2026-09-07), with the render
-        # pass it belonged to. `/season placements-review` draws every graphic and withholds its own
-        # button where one will not draw; the fingerprint then proves the season is the one
-        # that review described. A template broken here is therefore impossible: it was
-        # broken at the review, and there was no button, or it has changed since, and the
-        # fingerprint refuses. Re-evaluating sixteen templates at the button would answer a
-        # question already answered — and its method was deleted while this call was left
-        # behind, so the approval raised `AttributeError` rather than approving anything.
-
         # ── Gate 4a: the lineup template against this season (038, FR-017/18) ─
         #
         # Season review holds the data that will actually be drawn, so a divergence here
@@ -6698,45 +6729,37 @@ class SeasonCog(commands.Cog):
             await interaction.followup.send(msg, ephemeral=True)
             return
 
-        # ── Gate 4a2: the per-tier colours (051) ──────────────────────────────
+        # ── Gate 4b: the image module's configuration (#396) ──────────────────
         #
-        # Same reasoning as the lineup gate above it: a league that turned per-tier colours
-        # on and marked a template with a slot has said that slot matters, and approving a
-        # season with one unset would draw that tier in whatever the template happened to
-        # be authored in — silently, and differently from its siblings. Read through the
-        # same `colour_shortfall` `/season placements-review` and `/images config view` report, so the
-        # three cannot disagree about what is missing.
-        colour_problems = await self._colour_shortfall_problems()
-        if colour_problems:
-            bullet_list = "\n• ".join(colour_problems)
-            await interaction.followup.send(
-                f"❌ Season cannot be approved — per-tier colours are on, but a template "
-                f"wants a colour no tier has set:\n• {bullet_list}",
-                ephemeral=True,
-            )
-            return
-
-        # ── Gate 4b: the driver portrait settings ─────────────────────────────
+        # Every check the configuration review makes of the image module, made again: the
+        # rasteriser, every template a switched-on output draws, the per-tier colours and
+        # the driver portrait settings. Read through `_image_configuration_faults`, the
+        # helper `/season placements-review` withholds its button on, so the report a
+        # manager was given and the refusal they then meet cannot disagree.
         #
-        # Nothing about a graphic is wrong here, so this is its own gate rather than a
-        # finding of the render below: with portraits enabled and neither update trigger on,
-        # no portrait
-        # would ever be fetched, and the season would run drawing the placeholder for every
-        # driver while the configuration said otherwise. Read through the same helper
-        # `/season placements-review` reads, so the two cannot disagree.
-        portrait_fault = await self._portrait_configuration_blocker()
-        if portrait_fault is not None:
-            await interaction.followup.send(
-                f"\u274c Season cannot be approved \u2014 {portrait_fault}",
-                ephemeral=True,
-            )
-            return
+        # **The review's drawing is not evidence enough on its own.** It draws the lineup
+        # and the calendar and nothing else, so a broken results or weather template, or a
+        # rasteriser missing with both of those off, meets no render before the season
+        # first tries to post it. The gate on templates was withdrawn on 2026-09-07 on the
+        # contrary belief, and approved exactly those seasons until #396 restored it.
+        if await self.bot.module_service.is_images_enabled():
+            image_faults = await self._image_configuration_faults()
+            if image_faults:
+                bullet_list = "\n• ".join(image_faults)
+                for chunk in _chunk_message(
+                    f"❌ Season cannot be approved — the image module is not correctly "
+                    f"configured:\n• {bullet_list}"
+                ):
+                    await interaction.followup.send(chunk, ephemeral=True)
+                return
 
-        # The graphics are **not** drawn again here (withdrawn 2026-09-07). `/season
-        # review` draws every one of them, and the button that reaches this code refuses
-        # unless the season still fingerprints as the one that review described — so the
-        # review's render is evidence for this approval, and repeating it would be one
-        # full rasterisation per division per aspect for an answer already in hand.
+        # The graphics are **not** drawn here (withdrawn 2026-09-07). `/season
+        # placements-review` draws the lineup and the calendar of every division, and the
+        # button that reaches this code refuses unless the season still fingerprints as the
+        # one that review described, its template and artwork files among what that
+        # fingerprint covers. The review's render is therefore evidence for this approval,
+        # and repeating it would be one full rasterisation per division per aspect for an
+        # answer already in hand.
 
         # ── The last thing before anything is committed: a backup, under test mode ──
         #

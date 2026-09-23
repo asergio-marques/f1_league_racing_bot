@@ -688,7 +688,7 @@ Several kinds send more than one picture: the results send one per session of th
 
 **A cancelled division still previews.** It is offered in the division list and draws like any other, deliberately — a preview posts nothing where a driver can see it, so a division you have withdrawn is a perfectly good one to check a drawing against, and often the most convenient.
 
-`/season placements-review` shows the same summary and names anything that would stop the season. **Pressing Approve refuses** while something is broken — review is where you spot it, approval is where it stops you.
+`/season placements-review` shows the same summary and names anything that would stop the season. **The review withholds its Approve button** while something is broken, and tells you privately what to fix — the program that draws the pictures missing, a drawing for an output you have switched on that will not load, a tier colour a drawing wants, or your portrait settings. A button already standing when something breaks refuses on the same faults when pressed, so fix it and run the review again.
 
 It also lists your eight **asset directories** with the path each is set to, and marks any it cannot read. This is the one place in the review those paths appear, and it is worth a glance: a folder that has been moved or renamed draws placeholders everywhere, which looks exactly like artwork you never supplied. `/images config view` says what is wrong with a folder it cannot read; the review only tells you which one.
 
@@ -741,7 +741,7 @@ Worth running through just before you approve.
 | A picture refused over a linked image | Something in your drawing file points at a picture file that is not on the machine. You are told which element and which file — put the file there, correct the path, or delete the element |
 | A preview refusing outright | It names why: unknown division, no such round, no team beyond Reserve, or a forecast asked of a mystery round |
 | Nothing posted at all, and nothing in the log | Usually the channel for that output is not set, or the module behind it is off. Check step 2 |
-| Approval refusing over a picture | It draws every calendar and lineup the season would post before it commits anything, and stops on one that will not draw. It names the division and which picture — fix that and try again |
+| Approval refusing over the image module | Pressing **Approve** checks again what the review checked — the program that draws the pictures, the drawings of every output you have switched on, the tier colours and the portrait settings — and refuses, naming each fault, if one broke after the review was posted. Fix it and run `/season placements-review` again |
 
 Smaller problems — a swapped typeface, a field set very small to fit, a placeholder used — are reported with the picture and written to the log channel. They never appear in a channel your drivers read.
 
