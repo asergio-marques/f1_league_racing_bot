@@ -543,6 +543,25 @@ async def test_a_timed_out_amendment_writes_nothing_and_tidies_up(tmp_path):
     assert await _amend_rows(db_path) == 0
 
 
+def _told_it_expired(interaction, waited_for: str) -> None:
+    last = interaction.followup.send.await_args
+    assert last.kwargs.get("ephemeral") is True
+    assert "Amendment expired" in last.args[0]
+    assert waited_for in last.args[0]
+    assert "/round results amend" in last.args[0]
+
+
+async def test_a_paste_nobody_sends_tells_the_manager_it_expired(tmp_path):
+    """The channel they were typing in simply disappeared, and the one line saying why went to
+    a log channel they were not looking at (#135)."""
+    db_path = await _make_db(tmp_path, name="amend_timeout_told")
+    interaction = _interaction(_amend_channel(), wait_forever=True)
+
+    await _amend(_make_cog(db_path), interaction, timeout=True)
+
+    _told_it_expired(interaction, "no results were pasted within 5 minutes")
+
+
 async def test_cancelling_writes_nothing_and_tidies_up(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_cancel")
     channel = _amend_channel()
