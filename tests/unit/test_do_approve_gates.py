@@ -733,6 +733,30 @@ async def test_a_table_worth_nothing_below_the_points_still_approves(db_path):
     cog.bot.season_service.transition_to_active.assert_awaited_once()
 
 
+async def test_a_test_season_with_nothing_attached_is_seeded_rather_than_refused(db_path):
+    """Test mode attaches Standard and Half Points before the count, so it never refuses.
+
+    The half of #409's exemption the review leans on: `/season placements-review` offers a
+    test season with nothing attached for approval, because this is what the press does.
+    """
+    from services import season_points_service
+
+    cog = _cog_with_results(db_path)
+    cog.bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(test_mode_active=True)
+    )
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "no points configuration is attached" not in _replies(interaction)
+    assert await season_points_service.get_attached_config_names(db_path, SEASON_ID) == [
+        "Half Points",
+        "Standard",
+    ]
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
 async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):
     """The case the old check did cover, and which the new one must not displace.
 
