@@ -2985,7 +2985,26 @@ class SeasonCog(commands.Cog):
         return ["**Points Configs:** *(none attached)*"]
 
     async def _image_configuration_faults(self) -> list[str]:
-        """The image module's faults that need no division, round, lineup or calendar."""
+        """The image module's faults that need no division, round, lineup or calendar.
+
+        The rasteriser, every template a switched-on output draws, the per-tier colours and
+        the driver portrait settings. **The one reading of them every gate shares**: the
+        configuration review and its confirmation, both placements reviews and both
+        confirmations of placements. Each review withholds its button on exactly what its
+        confirmation refuses, so a manager is never shown a fault as blocking and then
+        let past it — which the first placements review did (#396), reading only the
+        portrait settings while its confirmation read the colours and the portraits and
+        neither read the templates or the rasteriser.
+
+        A template beneath a switched-off output is no fault: that output posts as text. A
+        per-tier colour is, where a template marks the slot: a league marking one has said
+        it matters, and a tier left without it would be drawn in whatever the template
+        happened to be authored in — silently, and differently from its siblings.
+
+        Templates that cannot be read are a fault of their own, never a pass; the colour and
+        portrait readers stand aside on a failure of theirs, as their docstrings say. The
+        caller decides whether the module is enabled; this assumes it is.
+        """
         from models.image_constants import TEMPLATE_LABELS
         from services.image_render_service import CONVERTER_NAME, converter_available
         from services.image_validity_service import (

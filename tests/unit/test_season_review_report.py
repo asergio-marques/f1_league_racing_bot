@@ -839,3 +839,33 @@ async def test_a_lineup_the_template_cannot_draw_withholds_approval(db_path):
     cog._post_approval_prompt.assert_not_awaited()
     assert problem in _public(messages)
     assert f"Lineup template: {problem}" in _private(messages)
+
+
+async def test_the_review_and_the_confirmation_refuse_on_the_same_image_faults(db_path):
+    """One reading for both surfaces (#396). The review withholds its button on a fault of
+    the image configuration, and a press that reached the confirmation anyway — a review
+    standing while the rasteriser was uninstalled, which the fingerprint cannot see — is
+    refused on the same fault, read by the same helper."""
+    fault = "Template **Results — race**: the drawing file is missing."
+    cog = _cog(db_path, images=True, image_faults=[fault])
+    interaction = _interaction()
+
+    messages = await _review(cog, interaction)
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert fault in _private(messages)
+
+    # The press, upon the same season: every gate before the image module's passes.
+    season_svc = cog.bot.season_service
+    season_svc.validate_division_tiers = AsyncMock()
+    season_svc.get_divisions = AsyncMock(return_value=[])
+    season_svc.transition_to_active = AsyncMock()
+    interaction.followup.send.reset_mock()
+
+    await SeasonCog._do_approve(cog, interaction)
+
+    refusal = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
+    assert "Season cannot be approved" in refusal
+    assert fault in refusal
+    assert cog._image_configuration_faults.await_count == 2
+    season_svc.transition_to_active.assert_not_awaited()
