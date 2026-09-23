@@ -875,7 +875,7 @@ No parameters. Flips test mode on/off; state persists across bot restarts.
 
 **Test mode cannot be enabled while your league has real drivers.** A server is either running a real league or being tested, never both, and the command refuses — naming how many drivers stand in the way — if any driver profile is signed up, unassigned or assigned. Former drivers who have left do not count.
 
-Enabling it seeds the **Standard** and **Half Points** points configurations onto the current season if none are attached, as ordinary server configurations that `/results config` can view and edit like any other. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**; the two configurations are kept, being configuration rather than scaffolding.
+Enabling it attaches the **Standard** and **Half Points** points configurations to the current season, each unless one of that name is already attached — a season carrying configurations of its own gains both beside them — as ordinary server configurations that `/results config` can view and edit like any other. Enabling is the only time it attaches them: detach both and the season is refused approval like any other until you attach one with `/results config append`. Disabling it flushes pending forecast deletions and **removes every fake driver on the server**; the two configurations are kept, being configuration rather than scaffolding.
 
 #### `/test-mode nationality` — Toggle nationality for fake drivers
 *Access: League admin · Requires test mode active*

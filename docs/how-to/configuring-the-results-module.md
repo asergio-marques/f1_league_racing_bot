@@ -200,7 +200,7 @@ You are not going to wait for a real race to find out whether your points table 
 
 `advance` fires the next thing due, and when that is a round's start it opens the submission channel there and then, in the real channel, with the real wizard. Nothing about it is a simulation except the drivers.
 
-Two things about test mode matter here specifically. **Enabling it attaches points configurations if your season has none** — it creates and attaches `Standard` and `Half Points`, so a season can acquire a points table as a side effect of flipping a flag. And `/test-mode roster list` gives you the mention strings for your fake drivers, which is the only practical way to type a classification for twenty of them.
+Two things about test mode matter here specifically. **Enabling it attaches points configurations to your season** — it creates and attaches `Standard` and `Half Points`, each unless one of that name is already attached, and alongside any you attached yourself, so a season can acquire a points table as a side effect of flipping a flag. Enabling is the only time it does: detach them and the season needs a configuration attached again, with `/results config append`, before it can be approved. And `/test-mode roster list` gives you the mention strings for your fake drivers, which is the only practical way to type a classification for twenty of them.
 
 See [Test mode](test-mode.md) for the whole picture.
 
