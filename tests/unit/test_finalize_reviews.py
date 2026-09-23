@@ -573,9 +573,9 @@ async def test_a_take_down_that_fails_still_opens_the_appeals(tmp_path):
     stubs["appeals_view"].assert_called_once()
 
 
-async def test_an_amendments_report_stage_takes_its_approval_down(tmp_path):
-    """**Only the approval.** An amendment's pardons are changed on its prompt until its appeals
-    are approved (#345), so the prompt stays up."""
+async def test_an_amendments_report_stage_takes_its_controls_down(tmp_path):
+    """**The prompt as well as the approval**, as a first pass's. An amendment's pardons close with
+    its reports (decided 2026-09-23), so nothing on the prompt is left to do."""
     db_path = await _make_db(tmp_path, name="amend_takes_down")
     state = _state(db_path, staged=[_penalty()])
     await _open_amendment(state)
@@ -585,7 +585,7 @@ async def test_an_amendments_report_stage_takes_its_approval_down(tmp_path):
 
     await _run(finalize_penalty_review, state)
 
-    assert [c.args[0] for c in channel.fetch_message.await_args_list] == [990002]
+    assert sorted(c.args[0] for c in channel.fetch_message.await_args_list) == [990001, 990002]
     assert state.approval_message_id is None
     assert state.reports_approved is True
 

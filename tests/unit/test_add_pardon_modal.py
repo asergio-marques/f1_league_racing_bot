@@ -477,26 +477,29 @@ async def test_a_finalised_round_takes_no_more_pardons(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("round_status", "amendment", "closed"),
+    ("round_status", "amendment", "reports_approved", "closed"),
     [
-        ("AWAITING_REPORT_VERDICTS", False, False),
-        ("AWAITING_APPEAL_VERDICTS", False, True),
-        ("FINAL", True, False),
+        ("AWAITING_REPORT_VERDICTS", False, False, False),
+        ("AWAITING_APPEAL_VERDICTS", False, False, True),
+        ("FINAL", True, False, False),
+        ("FINAL", True, True, True),
     ],
 )
 async def test_pardons_close_when_the_reports_are_approved(
-    tmp_path, round_status, amendment, closed
+    tmp_path, round_status, amendment, reports_approved, closed
 ):
     """The one check behind staging a pardon and removing one (#356, #402). A first pass grants
-    its pardons as its reports are approved; an amendment's round is FINAL throughout, and grants
-    its pardons only as its appeals are approved, so the check must never close one."""
+    its pardons as its reports are approved, and its round moves on to appeals. An amendment's
+    round is FINAL throughout, so its status closes nothing; its pardons close with its reports
+    all the same (decided 2026-09-23), though it writes them only as its appeals are approved."""
     from services.penalty_wizard import _review_moved_on
 
     db_path = await _make_db(tmp_path, name="pardons_closed", round_status=round_status)
     state = _state(db_path)
     state.is_amendment = amendment
+    state.reports_approved = reports_approved
 
-    assert (await _review_moved_on(state, pardons=True) is not None) is closed
+    assert (await _review_moved_on(state) is not None) is closed
 
 
 # ---------------------------------------------------------------------------

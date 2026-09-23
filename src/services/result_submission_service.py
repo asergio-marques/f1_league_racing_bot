@@ -2613,7 +2613,7 @@ async def _approve_amendment_reports(interaction, state) -> None:
     # one taken, not a fresh one — see `AMENDMENT_STAGE_TIMEOUT_SECONDS`.
     await _rearm_amendment(db_path, round_id, deadline)
 
-    # Its approval message goes; the prompt stays for the pardons (#402).
+    # The report stage's controls come down as the amendment leaves it, pardons included (#402).
     from services.penalty_wizard import _take_down_report_stage
     await _take_down_report_stage(state)
 

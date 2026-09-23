@@ -177,7 +177,7 @@ _BEING_APPROVED = (
 )
 
 
-async def _review_moved_on(state: PenaltyReviewState, *, pardons: bool = False) -> str | None:
+async def _review_moved_on(state: PenaltyReviewState) -> str | None:
     """Why this review can no longer be acted on, or None while it can (#402).
 
     Every control of the review acts on *state*, which is held in memory and outlives the stage
@@ -197,21 +197,23 @@ async def _review_moved_on(state: PenaltyReviewState, *, pardons: bool = False) 
       records it, so a review whose prompt has been replaced — by a cancelled or completed
       resubmission, or by restart recovery — is an old one, whatever its state still holds.
 
-    An amendment's round is FINAL throughout, so none of that applies to it. Its reports close
-    once approved; its **pardons** do not, because an amendment writes them when its appeals are
-    approved, and until then this review is where they are changed (#345). The controls that
-    stage or remove a pardon pass *pardons*.
+    An amendment's round is FINAL throughout, so none of that applies to it. Its review closes
+    once its reports are approved, **pardons included**, as a first pass's does (decided
+    2026-09-23, #402). Its pardons stayed open until its appeals were approved, because that is
+    when an amendment writes them; they are still written then, with everything else it commits,
+    so that a revert has nothing to take back (#345) — but they are changed in the report stage
+    alone.
 
     **One race is left open.** A resubmission records itself only after logging what it
     discards, so an approval pressed in that moment passes the check. The window is one log post
     wide, and both buttons would have to be pressed inside it.
     """
     if state.is_amendment:
-        if pardons or not state.reports_approved:
+        if not state.reports_approved:
             return None
         return (
-            "❌ This amendment's reports are already approved, so they can no longer be changed "
-            "here. Its appeals are reviewed below."
+            "❌ This amendment's reports are already approved, so neither they nor its pardons "
+            "can be changed any more. Its appeals are reviewed below."
         )
     if state.approving:
         return _BEING_APPROVED
@@ -250,11 +252,9 @@ async def _review_moved_on(state: PenaltyReviewState, *, pardons: bool = False) 
 async def _require_current(
     interaction: discord.Interaction,
     state: PenaltyReviewState,
-    *,
-    pardons: bool = False,
 ) -> bool:
     """If the review has moved on, say why and return False; see :func:`_review_moved_on`."""
-    refusal = await _review_moved_on(state, pardons=pardons)
+    refusal = await _review_moved_on(state)
     if refusal is not None:
         await interaction.response.send_message(refusal, ephemeral=True)
         return False
@@ -420,19 +420,15 @@ async def _take_down_report_stage(state: PenaltyReviewState) -> None:
 
     Left up, they were what a manager pressed to approve the reports a second time, or to be
     told a penalty was removed that had been applied. The controls refuse regardless; this takes
-    them out of reach.
+    them out of reach. The prompt goes with the approval message, an amendment's as a first
+    pass's: its pardons close with its reports, so nothing on it is left to do.
 
-    A first pass's prompt goes with its approval message: its pardons are granted with the
-    reports, so nothing on it is left to do. An amendment's prompt stays, because its pardons are
-    changed there until its appeals are approved (#345), and only the approval message goes.
-
-    **Never raises.** It runs after the round has moved on and before the next stage is opened,
-    and a failure to tidy the channel must not cost the manager the appeals prompt.
+    **Never raises.** It runs as the next stage is opened, and a failure to tidy the channel must
+    not cost the manager that stage.
     """
     try:
         await _take_down_approval(state)
-        if not state.is_amendment:
-            await _delete_review_message(state, state.prompt_message_id)
+        await _delete_review_message(state, state.prompt_message_id)
     except Exception:  # noqa: BLE001 — the controls refuse whether or not they came down
         log.exception("could not take down the report stage of round %s", state.round_id)
 
@@ -794,7 +790,7 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         await interaction.response.defer(ephemeral=True)
 
         # --- The review may have moved on while the form was open (FR-011, #402) ---
-        refusal = await _review_moved_on(self.state, pardons=True)
+        refusal = await _review_moved_on(self.state)
         if refusal is not None:
             await interaction.followup.send(refusal, ephemeral=True)
             return
@@ -1170,7 +1166,7 @@ class PenaltyReviewView(LeagueView):
                 return
             # Once a first pass's reports are approved its pardons are granted, and removing
             # one would change nothing the round carries (#356, #402).
-            if not await _require_current(interaction, self.state, pardons=True):
+            if not await _require_current(interaction, self.state):
                 return
             if idx < len(self.state.staged_pardons):
                 removed = self.state.staged_pardons.pop(idx)
@@ -1313,7 +1309,7 @@ class PenaltyReviewView(LeagueView):
             return
         if not await _require_lm(interaction, self.state):
             return
-        if not await _require_current(interaction, self.state, pardons=True):
+        if not await _require_current(interaction, self.state):
             return
         await interaction.response.send_modal(AddPardonModal(state=self.state))
 

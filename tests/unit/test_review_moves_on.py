@@ -12,9 +12,10 @@ resubmission is collecting, and its prompt is the one the channel records — th
 review is told apart from the one that replaced it, since each review posts its own prompt and
 records it. Each of the four is a test here, against the production schema.
 
-**An amendment is FINAL throughout**, so none of the four applies to it. Its reports close once
-approved; its pardons stay open until its appeals are, because that is when an amendment writes
-them (#345).
+**An amendment is FINAL throughout**, so none of the four applies to it. Its review closes once
+its reports are approved, pardons included, as a first pass's does (decided 2026-09-23). Its
+pardons are still written only when its appeals are approved, as everything an amendment commits
+is (#345), but they are changed in its report stage alone.
 
 **The approval message confirms the review as it stood when it was posted**, and its Approve
 commits the review as it stands when pressed. So it is withdrawn whenever the review changes, a
@@ -34,8 +35,11 @@ from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
 from services.penalty_service import StagedPenalty  # noqa: E402
 from services.penalty_wizard import (  # noqa: E402
+    AddPardonModal,
     ApprovalView,
     PenaltyReviewState,
+    PenaltyReviewView,
+    StagedPardon,
     _refresh_prompt,
     _review_moved_on,
     _show_approval_step,
@@ -115,21 +119,19 @@ def _state(db_path: str, *, prompt_message_id: int | None = PROMPT_ID) -> Penalt
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("pardons", [False, True])
-async def test_a_review_awaiting_its_reports_is_current(tmp_path, pardons):
+async def test_a_review_awaiting_its_reports_is_current(tmp_path):
     db_path = await _make_db(tmp_path)
 
-    assert await _review_moved_on(_state(db_path), pardons=pardons) is None
+    assert await _review_moved_on(_state(db_path)) is None
 
 
-@pytest.mark.parametrize("pardons", [False, True])
-async def test_a_review_whose_reports_are_approved_has_moved_on(tmp_path, pardons):
+async def test_a_review_whose_reports_are_approved_has_moved_on(tmp_path):
     """**The review prompt stayed up, and worked, through the appeals stage.** Its Remove said a
     penalty was removed that had been applied, and its Approve ran the approval a second time.
     A first pass writes its pardons as its reports are approved, so they close with them."""
     db_path = await _make_db(tmp_path, round_status="AWAITING_APPEAL_VERDICTS")
 
-    refusal = await _review_moved_on(_state(db_path), pardons=pardons)
+    refusal = await _review_moved_on(_state(db_path))
 
     assert refusal is not None
     assert "already been approved" in refusal
@@ -208,16 +210,45 @@ async def test_an_amendments_reports_close_once_approved(tmp_path):
     assert "already approved" in refusal
 
 
-@pytest.mark.parametrize("reports_approved", [False, True])
-async def test_an_amendments_pardons_stay_open_through_its_appeals(tmp_path, reports_approved):
-    """An amendment writes its pardons when its appeals are approved, so until then its review is
-    where they are changed (#345). The round is FINAL throughout and its first pass's channel
-    long closed; neither closes them."""
+@pytest.mark.parametrize("control", ["pardon_btn", "pw_pardon_remove_0", "AddPardonModal"])
+async def test_an_amendments_pardons_close_with_its_reports(tmp_path, control):
+    """**As a first pass's do** (decided 2026-09-23). They stayed open through an amendment's
+    appeals, because that is when it writes them; the specs had them changed in the report stage
+    alone. Each of the three pardon controls is driven here, with the real check behind it."""
     db_path = await _make_db(tmp_path, round_status="FINAL", closed=1)
+    state = _amendment(db_path, reports_approved=True)
+    state.staged_pardons = [
+        StagedPardon(
+            driver_user_id=4001, driver_profile_id=31, attendance_id=41,
+            pardon_type="ABSENT", justification="Ill", grantor_id=77,
+        )
+    ]
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.response.send_modal = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
 
-    state = _amendment(db_path, reports_approved=reports_approved)
+    with patch(
+        "services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
+    ), patch("services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
+        if control == "AddPardonModal":
+            await AddPardonModal(state).on_submit(interaction)
+            replied = interaction.followup.send.await_args.args[0]
+        else:
+            view = PenaltyReviewView(state)
+            if control == "pardon_btn":
+                await type(view).pardon_btn(view, interaction, MagicMock())
+            else:
+                await next(
+                    c for c in view.children if c.custom_id == control
+                ).callback(interaction)
+            replied = interaction.response.send_message.await_args.args[0]
 
-    assert await _review_moved_on(state, pardons=True) is None
+    assert "nor its pardons" in replied
+    assert len(state.staged_pardons) == 1
+    interaction.response.send_modal.assert_not_awaited()
+    refresh.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

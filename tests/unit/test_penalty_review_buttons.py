@@ -483,10 +483,9 @@ async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment):
 
 
 async def test_a_pardon_cannot_be_removed_once_the_reports_are_approved():
-    """**Approving a first pass's reports grants its pardons, and leaves this prompt up** through
-    the appeals stage (#356). Removing one there would take it off a list nothing reads again and
-    say it was removed, while the round went on carrying it. An amendment is where a granted
-    pardon is changed."""
+    """**Approving a first pass's reports grants its pardons** (#356). Removing one after that
+    would take it off a list nothing reads again and say it was removed, while the round went on
+    carrying it. An amendment is where a granted pardon is changed."""
     state = _state(staged=[_penalty()])
     state.staged_pardons = [_pardon(0)]
     view = PenaltyReviewView(state)
@@ -504,7 +503,7 @@ async def test_a_pardon_cannot_be_removed_once_the_reports_are_approved():
     assert "already been approved" in _replied(interaction)
     assert "Removed" not in _replied(interaction)
     refresh.assert_not_awaited()
-    assert moved_on.await_args.kwargs == {"pardons": True}
+    moved_on.assert_awaited_once_with(state)
 
 
 async def test_the_appeals_review_draws_with_more_corrections_than_there_is_room_for():
@@ -520,20 +519,20 @@ async def test_the_appeals_review_draws_with_more_corrections_than_there_is_room
 # A review that has moved on (#402)
 # ---------------------------------------------------------------------------
 
-#: Every control on the review that asks whether it is current, and whether it asks as one that
-#: stages or removes a pardon. Remove buttons are named by their custom ID.
+#: Every control on the review that asks whether it is current. Remove buttons are named by their
+#: custom ID.
 GUARDED = [
-    ("add_penalty_btn", False),
-    ("no_penalties_btn", False),
-    ("resubmit_btn", False),
-    ("pw_remove_0", False),
-    ("pardon_btn", True),
-    ("pw_pardon_remove_0", True),
+    "add_penalty_btn",
+    "no_penalties_btn",
+    "resubmit_btn",
+    "pw_remove_0",
+    "pardon_btn",
+    "pw_pardon_remove_0",
 ]
 
 
-@pytest.mark.parametrize(("control", "pardons"), GUARDED)
-async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, control, pardons):
+@pytest.mark.parametrize("control", GUARDED)
+async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, control):
     """**The review prompt stayed up, and worked, after the job it was posted for moved on** — so
     Remove said a penalty was removed through the appeals stage when it had been applied, and
     Resubmit started collecting a round already in appeals. Each control now says why it cannot
@@ -557,7 +556,7 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
             await _press(view, control, interaction)
 
     assert _replied(interaction) == "❌ moved on"
-    assert moved_on.await_args.kwargs == {"pardons": pardons}
+    moved_on.assert_awaited_once_with(state)
     assert len(state.staged) == 1 and len(state.staged_pardons) == 1
     approval.assert_not_awaited()
     refresh.assert_not_awaited()
