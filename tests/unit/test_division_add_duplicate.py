@@ -685,6 +685,20 @@ async def test_a_division_name_with_an_emoji_is_refused(tmp_path):
     assert not any(d.name for d in cfg.divisions)
 
 
+async def test_a_division_name_with_a_member_mention_is_refused(tmp_path):
+    """It heads every posting of the division, so the member would be notified by each (#388)."""
+    db_path = await _make_db(tmp_path)
+    cfg = _pending()
+    cog = _make_cog(db_path, cfg=cfg)
+    interaction = _interaction()
+
+    await _add(cog, interaction, name="<@123456789012345678>")
+
+    assert "division name" in _replied(interaction)
+    assert "member" in _replied(interaction)
+    assert not any(d.name for d in cfg.divisions)
+
+
 async def test_a_duplicated_division_named_with_markup_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
