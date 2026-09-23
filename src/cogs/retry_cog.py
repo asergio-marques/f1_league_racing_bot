@@ -27,7 +27,7 @@ class RetryCog(commands.Cog):
         self._bot = bot
         self.retry_loop.start()
 
-    def cog_unload(self) -> None:
+    async def cog_unload(self) -> None:
         self.retry_loop.cancel()
 
     @tasks.loop(minutes=5)

@@ -3434,7 +3434,7 @@ def extract_current_fl_override(
 _Row = TypeVar("_Row", ParsedQualifyingRow, ParsedRaceRow)
 
 
-def _split_validation(
+def split_validation(
     result: list[ParsedQualifyingRow | ParsedRaceRow] | list[str],
 ) -> tuple[list[str], list[ParsedQualifyingRow | ParsedRaceRow]]:
     """`validate_submission_block`'s errors and its rows, of which one is always empty."""
@@ -4563,7 +4563,7 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
                 team_of_shorthand=team_of_shorthand,
             )
 
-            validation_errors, parsed_rows = _split_validation(result)
+            validation_errors, parsed_rows = split_validation(result)
             if validation_errors:
                 error_list = "\n".join(f"• {e}" for e in validation_errors)
                 await bot.output_router.post_log(
@@ -5170,7 +5170,7 @@ async def _resubmit_collection_task(
                 team_of_shorthand=team_of_shorthand,
             )
 
-            validation_errors, parsed_rows = _split_validation(result)
+            validation_errors, parsed_rows = split_validation(result)
             if validation_errors:
                 error_list = "\n".join(f"• {e}" for e in validation_errors)
                 await sub_channel.send(f"❌ Validation failed:\n{error_list}\nPlease correct and resubmit.")

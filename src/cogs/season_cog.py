@@ -30,7 +30,8 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
-from typing import Any, Awaitable, Callable, Literal, cast, overload
+from types import EllipsisType
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, cast, overload
 
 import discord
 from discord import app_commands
@@ -64,6 +65,9 @@ from utils.round_import import (
     parse_bulk_round_lines,
     parse_round_xml,
 )
+
+if TYPE_CHECKING:
+    from services.season_fingerprint_service import SeasonFingerprint
 
 log = logging.getLogger(__name__)
 
@@ -699,6 +703,8 @@ class SeasonCog(commands.Cog):
         # Keyed by user_id, or by _RECOVERED on recovery \u2192 PendingConfig. At most one
         # season is live in the league, so at most one setup is pending at a time.
         self._pending: dict[int, PendingConfig] = {}
+        #: The calendar report a review drew, carried to its approval; None until one is.
+        self._calendar_report: str | None = None
 
     # ------------------------------------------------------------------
     # /season group
@@ -1208,7 +1214,7 @@ class SeasonCog(commands.Cog):
 
             reports = await self.bot.image_validity_service.template_reports()
             report = reports.get("lineup_template")
-            if report is None or not report.valid:
+            if report is None or not report.valid or report.resolved_path is None:
                 # An unusable template is already reported by the review's own render,
                 # which withholds the approve button; naming it twice would tell a
                 # manager nothing new.
@@ -1283,7 +1289,7 @@ class SeasonCog(commands.Cog):
 
             reports = await self.bot.image_validity_service.template_reports()
             report = reports.get("calendar_template")
-            if report is None or not report.valid:
+            if report is None or not report.valid or report.resolved_path is None:
                 return None
 
             from utils.svg_document import load_svg
@@ -1326,7 +1332,7 @@ class SeasonCog(commands.Cog):
 
             reports = await self.bot.image_validity_service.template_reports()
             report = reports.get("calendar_template")
-            if report is None or not report.valid:
+            if report is None or not report.valid or report.resolved_path is None:
                 return []  # already named by the template problems list
 
             from utils.svg_document import load_svg
@@ -1408,7 +1414,7 @@ class SeasonCog(commands.Cog):
                             )
                             row = await cursor.fetchone()
                         held = (row["rounds"] if row else 0) or 0
-                        if held > declared:
+                        if row is not None and held > declared:
                             lines.append(
                                 f"  ⚠️ Attendance sheet template draws {declared} round "
                                 f"column(s); `{row['name']}` holds {held}. That division's "
@@ -3009,7 +3015,7 @@ class SeasonCog(commands.Cog):
             if cfg is not None and cfg.season_id
             else None
         )
-        if stage is not SeasonStage.CONFIGURATION:
+        if cfg is None or stage is not SeasonStage.CONFIGURATION:
             await interaction.response.send_message(
                 "⛔ There is no season in configuration. `/season setup` begins one; a "
                 "season whose configuration is confirmed is reviewed with `/season placements-review`.",
@@ -5031,7 +5037,7 @@ class SeasonCog(commands.Cog):
                 )
                 return
 
-            new_track: str | None = ...
+            new_track: str | None | EllipsisType = ...
             if track:
                 async with get_connection(self.bot.db_path) as _tdb:
                     _resolved = await track_service.resolve_track_name(_tdb, track)
@@ -5043,7 +5049,7 @@ class SeasonCog(commands.Cog):
                     return
                 new_track = _resolved
 
-            new_dt = ...
+            new_dt: datetime | None | EllipsisType = ...
             if scheduled_at:
                 new_dt = parse_datetime(scheduled_at)
                 if new_dt is None:
@@ -5053,7 +5059,7 @@ class SeasonCog(commands.Cog):
                     )
                     return
 
-            new_fmt = ...
+            new_fmt: RoundFormat | EllipsisType = ...
             if format:
                 try:
                     new_fmt = RoundFormat(format.upper())
@@ -5498,6 +5504,8 @@ class SeasonCog(commands.Cog):
         """
         from services.result_submission_service import _close_amend_channel_record
 
+        # Its one caller lets an amendment go only once its record is in.
+        assert opened.round_id is not None
         if opened.cancel_view is not None:
             opened.cancel_view.stop()
         try:
@@ -5723,7 +5731,7 @@ class SeasonCog(commands.Cog):
 
         slug = _re.sub(r"[^a-z0-9-]", "", division_name.lower().replace(" ", "-"))[:20]
         amend_ch_name = f"amend-S{season.season_number}-{slug}-R{round_number}"
-        overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
+        overwrites: dict[discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite] = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
         }
         if guild.me is not None:
@@ -5749,7 +5757,7 @@ class SeasonCog(commands.Cog):
         # round, and across rounds the one recorded first keeps the division — the loser is
         # refused here and its channel deleted, or it would be an orphan nothing could find (#345).
         _amend_created_at = datetime.now(timezone.utc).isoformat()
-        _earlier = None
+        _earlier: sqlite3.Row | dict[str, None] | None = None
         try:
             async with get_connection(self.bot.db_path) as _adb:
                 _ins = await _adb.execute(
@@ -5807,6 +5815,8 @@ class SeasonCog(commands.Cog):
         # safely revert it half-done, so it is answered and refused rather than swallowed — which
         # is what it was: the button replied "cancelled", stopped itself, and cancelled nothing.
         stage_one_writing: list[bool] = [False]
+        # The round, for the view below: a check made out here does not reach inside it.
+        amended_round_id = rnd.id
 
         class _CancelView(LeagueView):
             def __init__(self_v) -> None:
@@ -5844,10 +5854,10 @@ class SeasonCog(commands.Cog):
 
                     try:
                         undone = await cancel_amendment(
-                            self.bot, rnd.id, cancelled_by=bi.user.id
+                            self.bot, amended_round_id, cancelled_by=bi.user.id
                         )
                     except Exception:
-                        log.exception("amend: cancelling round %s failed", rnd.id)
+                        log.exception("amend: cancelling round %s failed", amended_round_id)
                         await bi.followup.send(
                             "❌ The round could not be put back just now. The bot will "
                             "retry within a few minutes and say so in the log channel.",
@@ -5885,7 +5895,7 @@ class SeasonCog(commands.Cog):
         )
 
         # --- Collect new results ---
-        from services.result_submission_service import validate_submission_block
+        from services.result_submission_service import split_validation, validate_submission_block
         from services.result_submission_service import _build_division_validation_data
         from services.result_submission_service import other_active_team_assignments
         from services.result_submission_service import current_accounts, extract_current_fl_override
@@ -5981,7 +5991,7 @@ class SeasonCog(commands.Cog):
                     other_assignments.setdefault(
                         row.driver_user_id, (row.team_instance_id, earlier.session_type.value)
                     )
-            parsed = validate_submission_block(
+            validation_errors, parsed = split_validation(validate_submission_block(
                 lines_raw,
                 st,
                 driver_ids,
@@ -5993,19 +6003,19 @@ class SeasonCog(commands.Cog):
                 current_of=current_of,
                 team_names=team_names,
                 team_of_shorthand=team_of_shorthand,
-            )
+            ))
             try:
                 await msg.delete()
             except Exception:
                 pass
 
-            if isinstance(parsed, list) and parsed and isinstance(parsed[0], str):
+            if validation_errors:
                 # **The whole amendment ends, earlier pastes and all** (decided 2026-09-21).
                 # The session is not asked for again: a league amending a round prepares every
                 # classification before it starts, and nothing has been written to undo.
                 await _end(
                     "AMEND_REJECTED", session_type=st,
-                    detail=f"errors: {'; '.join(parsed[:10])}",
+                    detail=f"errors: {'; '.join(validation_errors[:10])}",
                     reply=(
                         "❌ Amendment rejected — validation errors were found. "
                         "Check the log channel for details, then re-run `/round results amend`."
@@ -6333,7 +6343,7 @@ class SeasonCog(commands.Cog):
         state = backup_service.state(self.bot.db_path)
         standing = (
             f"A backup taken {discord_ts(state.taken_at)} would be replaced."
-            if state.exists and not state.locked
+            if state.exists and not state.locked and state.taken_at is not None
             else "The saved backup is locked and will not be replaced."
             if state.locked
             else "Nothing is saved yet."
@@ -7165,7 +7175,7 @@ class _BackupBeforeApprovalView(LeagueView):
             self.stop()
             return
         finally:
-            if paused:
+            if paused and scheduler is not None:
                 scheduler._scheduler.resume()
 
         await interaction.followup.send(
@@ -7221,7 +7231,7 @@ class _ApproveView(LeagueView):
         self._deadline = datetime.now(timezone.utc) + timedelta(
             seconds=APPROVAL_WINDOW_SECONDS
         )
-        self._fingerprint = None
+        self._fingerprint: "SeasonFingerprint | None" = None
         self._season_id: int | None = None
         self._message: discord.Message | None = None
         self._report: list = []

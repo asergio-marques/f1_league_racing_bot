@@ -30,7 +30,7 @@ class AmendmentService:
     async def amend_round(
         self,
         round_id: int,
-        actor: discord.Member,
+        actor: discord.User | discord.Member,
         changes: list[tuple[str, Any]],
         bot: "LeagueBot",
         now: datetime | None = None,

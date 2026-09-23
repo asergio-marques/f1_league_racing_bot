@@ -100,7 +100,7 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> None:
     # 2. Delete button message
     if cfg.signup_button_message_id:
         guild = await league_guild(bot)
-        if guild:
+        if guild and cfg.signup_channel_id is not None:
             channel = as_text_channel(guild.get_channel(cfg.signup_channel_id))
             if channel:
                 try:
@@ -114,7 +114,7 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> None:
     # 3. Post closed message; capture ID so it can be deleted when re-opening
     closed_msg_id: int | None = None
     guild = await league_guild(bot)
-    if guild:
+    if guild and cfg.signup_channel_id is not None:
         channel = as_text_channel(guild.get_channel(cfg.signup_channel_id))
         if channel:
             try:
@@ -989,7 +989,9 @@ class ModuleCog(commands.Cog):
             if guild:
                 channel = guild.get_channel(signup_cfg.signup_channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
-                    targets_to_revert = [guild.default_role, guild.me]
+                    targets_to_revert: list[discord.Role | discord.Member] = [
+                        guild.default_role, guild.me
+                    ]
                     # The base role is the league's and outlives the module (issue #276):
                     # only its overwrite on this channel goes.
                     server_cfg = await self.bot.config_service.get_server_config()

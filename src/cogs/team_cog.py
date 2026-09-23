@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from typing import Any
 
 import discord
 from discord import app_commands
@@ -243,6 +245,7 @@ class TeamCog(commands.Cog):
         new_full_name = (full_name or "").strip() or current["full_name"]
         names_changed = (new_shorthand, new_full_name) != (current["name"], current["full_name"])
         role_changed = role is not None and role.id != current["role_id"]
+        new_role = role if role_changed else None
 
         if not names_changed and not role_changed:
             await interaction.followup.send(
@@ -259,8 +262,8 @@ class TeamCog(commands.Cog):
             )
             return
 
-        if role_changed:
-            refusal = role_grant_refusal(role)
+        if new_role is not None:
+            refusal = role_grant_refusal(new_role)
             if refusal is not None:
                 await interaction.followup.send(
                     f"⛔ {refusal} Nothing was written.", ephemeral=True
@@ -268,7 +271,7 @@ class TeamCog(commands.Cog):
                 return
             try:
                 await self.bot.placement_service.set_team_role_config(
-                    current["name"], role.id,
+                    current["name"], new_role.id,
                     actor_id=interaction.user.id, actor_name=str(interaction.user),
                 )
             except ValueError as exc:
@@ -279,10 +282,10 @@ class TeamCog(commands.Cog):
                 return
 
         moved = 0
-        if role_changed:
+        if new_role is not None:
             # The drivers already seated in the team follow its role (issue #220).
             moved = await self.bot.placement_service.swap_team_role(
-                current["name"], current["role_id"], role.id, interaction.guild,
+                current["name"], current["role_id"], new_role.id, interaction.guild,
             )
 
         named = dict(current)
@@ -315,8 +318,8 @@ class TeamCog(commands.Cog):
                     f"  Its artwork is now looked for as `{new_file}`, not `{old_file}` — "
                     "rename the file in the team image directory."
                 )
-        if role_changed:
-            lines.append(f"  Role: {role.mention}")
+        if new_role is not None:
+            lines.append(f"  Role: {new_role.mention}")
             if moved:
                 lines.append(f"  {moved} seated driver(s) moved to the new role.")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
@@ -324,7 +327,7 @@ class TeamCog(commands.Cog):
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team modify | Success\n"
             f"  team: {named['full_name']}\n"
             f"  shorthand: {named['name']}\n"
-            + (f"  role: {role.name} (<@&{role.id}>)\n" if role_changed else "")
+            + (f"  role: {new_role.name} (<@&{new_role.id}>)\n" if new_role is not None else "")
             + f"  seated drivers moved: {moved}",
         )
 
@@ -715,7 +718,7 @@ class _TeamModifyModal(LeagueModal, title="Modify a team"):
     again on submit — a form can stand open across a stage change.
     """
 
-    def __init__(self, cog: "TeamCog", *, team: dict, names_offered: bool) -> None:
+    def __init__(self, cog: "TeamCog", *, team: Mapping[str, Any], names_offered: bool) -> None:
         super().__init__()
         self._cog = cog
         self._team = dict(team)

@@ -123,6 +123,8 @@ class BotCog(commands.Cog):
         then give is a worse introduction than one more parameter.
         """
         server_id = interaction.guild_id
+        # `bot_setup_only` admits only a member of a server, so there is always one here.
+        assert server_id is not None
 
         league = await self.bot.config_service.get_league_server_id()
         if league is not None and league != server_id:
@@ -146,7 +148,15 @@ class BotCog(commands.Cog):
             "interaction_channel_id": interaction_channel.id,
             "log_channel_id": log_channel.id,
         }
-        created = await self.bot.config_service.save_server_config(ServerConfig(**claimed))
+        created = await self.bot.config_service.save_server_config(
+            ServerConfig(
+                server_id=server_id,
+                interaction_role_id=interaction_role.id,
+                league_admin_role_id=league_admin_role.id,
+                interaction_channel_id=interaction_channel.id,
+                log_channel_id=log_channel.id,
+            )
+        )
         if not created:
             # Lost a race with a concurrent /bot init. Report the refusal that fits whoever
             # won rather than claiming a success that wrote nothing.
@@ -795,6 +805,8 @@ class BotCog(commands.Cog):
                 except discord.HTTPException:
                     log.warning("factory reset: the progress message could not be edited")
 
+        # A command runs on a bot that has logged in, which is when it has a user.
+        assert self.bot.user is not None
         bot_user_id = self.bot.user.id
         self._clean_up = asyncio.create_task(
             _clean_up(interaction.guild, bot_user_id, targets, report)

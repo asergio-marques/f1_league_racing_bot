@@ -271,9 +271,10 @@ class DriverCog(commands.Cog):
         team: str,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        user = await self._current_member(interaction, user)
-        if user is None:
+        current = await self._current_member(interaction, user)
+        if current is None:
             return
+        user = current
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
@@ -377,9 +378,10 @@ class DriverCog(commands.Cog):
         division: str,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        user = await self._current_member(interaction, user)
-        if user is None:
+        current = await self._current_member(interaction, user)
+        if current is None:
             return
+        user = current
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 
@@ -479,9 +481,10 @@ class DriverCog(commands.Cog):
         assigning again.
         """
         await interaction.response.defer(ephemeral=True)
-        user = await self._current_member(interaction, user)
-        if user is None:
+        current = await self._current_member(interaction, user)
+        if current is None:
             return
+        user = current
 
         season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage not in ONGOING_STAGES:
@@ -501,15 +504,16 @@ class DriverCog(commands.Cog):
             return
         resolved_to = resolved_from
         if to_division is not None:
-            resolved_to = await self.bot.placement_service.resolve_division(
+            found_to = await self.bot.placement_service.resolve_division(
                 season.id, to_division
             )
-            if resolved_to is None:
+            if found_to is None:
                 await interaction.followup.send(
                     f"⛔ Division **{to_division}** not found in the active season.",
                     ephemeral=True,
                 )
                 return
+            resolved_to = found_to
 
         # A team is typed by its shorthand (#381), in the division moved into.
         reference = await self.bot.team_service.resolve_division_team(
@@ -576,9 +580,10 @@ class DriverCog(commands.Cog):
     ) -> None:
         """Release a committed driver from one division (issue #220), in the ongoing stages."""
         await interaction.response.defer(ephemeral=True)
-        user = await self._current_member(interaction, user)
-        if user is None:
+        current = await self._current_member(interaction, user)
+        if current is None:
             return
+        user = current
 
         season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage not in ONGOING_STAGES:
@@ -648,9 +653,10 @@ class DriverCog(commands.Cog):
         from models.driver_profile import DriverState
 
         await interaction.response.defer(ephemeral=True)
-        user = await self._current_member(interaction, user)
-        if user is None:
+        current = await self._current_member(interaction, user)
+        if current is None:
             return
+        user = current
 
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None or season.stage not in _PLACING_STAGES:
@@ -712,9 +718,10 @@ class DriverCog(commands.Cog):
         user: discord.Member,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        user = await self._current_member(interaction, user)
-        if user is None:
+        current = await self._current_member(interaction, user)
+        if current is None:
             return
+        user = current
         actor_id = interaction.user.id
         actor_name = str(interaction.user)
 

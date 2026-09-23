@@ -693,7 +693,7 @@ class TestModeCog(commands.Cog):
             )
             return
         finally:
-            if paused:
+            if paused and scheduler is not None:
                 scheduler._scheduler.resume()
 
         state = backup_service.state(db_path)
@@ -750,7 +750,7 @@ class TestModeCog(commands.Cog):
             return
 
         state = backup_service.state(self.bot.db_path)
-        if not state.exists:
+        if not state.exists or state.taken_at is None:
             await interaction.followup.send(
                 "📭 There is no saved backup. Take one with `/test-mode backup save`.",
                 ephemeral=True,
@@ -779,7 +779,7 @@ class TestModeCog(commands.Cog):
             return
 
         state = backup_service.state(self.bot.db_path)
-        if not state.exists:
+        if not state.exists or state.taken_at is None:
             await interaction.followup.send(
                 "⛔ There is no saved backup to restore. Take one with "
                 "`/test-mode backup save`.",
