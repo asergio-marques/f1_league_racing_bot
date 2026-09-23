@@ -1513,3 +1513,85 @@ async def test_a_recompute_leaves_a_row_it_no_longer_names_for_another_reason(db
             (r1,),
         )
         assert [r[0] for r in await cursor.fetchall()] == [111, 222]
+
+
+# ---------------------------------------------------------------------------
+# The standings order, apart from the database (#144)
+# ---------------------------------------------------------------------------
+#
+# `order_drivers` and `order_teams` hold the rule the two `compute_*` functions order by; the
+# tests above pin it through the database, these without one — which is how the standings
+# preview calls it, over results it fabricated.
+
+FEATURE = SessionType.FEATURE_RACE.value
+SPRINT = SessionType.SPRINT_RACE.value
+
+
+def _order(results, points, **overrides):
+    from services.standings_service import order_drivers, tally_feature_finishes
+
+    finish_counts, first_finish_rounds = tally_feature_finishes(results)
+    return order_drivers(
+        list(points),
+        points=points,
+        finish_counts=finish_counts,
+        first_finish_rounds=first_finish_rounds,
+        participants=overrides.get("participants", set(points)),
+        seats=overrides.get("seats", {}),
+        names=overrides.get("names", {}),
+    )
+
+
+def test_on_equal_points_a_win_beats_none():
+    """The Bergström and Castellano case: a win outranks a best of third, level on points."""
+    results = [
+        (1, FEATURE, "CLASSIFIED", 3, 1),
+        (2, FEATURE, "CLASSIFIED", 1, 2),
+    ]
+    assert _order(results, {1: 95, 2: 95}) == [2, 1]
+
+
+def test_points_come_before_the_countback():
+    results = [(1, FEATURE, "CLASSIFIED", 1, 1), (2, FEATURE, "CLASSIFIED", 9, 1)]
+    assert _order(results, {1: 10, 2: 11}) == [2, 1]
+
+
+def test_equal_counts_go_to_whoever_reached_the_position_first():
+    results = [(1, FEATURE, "CLASSIFIED", 2, 3), (2, FEATURE, "CLASSIFIED", 2, 1)]
+    assert _order(results, {1: 50, 2: 50}) == [2, 1]
+
+
+def test_only_a_classified_feature_race_finish_counts():
+    """A sprint win, a disqualification from first and a qualifying pole count for nothing."""
+    results = [
+        (1, SPRINT, "CLASSIFIED", 1, 1),
+        (1, FEATURE, "DSQ", 1, 2),
+        (1, SessionType.FEATURE_QUALIFYING.value, "CLASSIFIED", 1, 2),
+        (2, FEATURE, "CLASSIFIED", 5, 1),
+    ]
+    assert _order(results, {1: 30, 2: 30}) == [2, 1]
+
+
+def test_participation_then_the_final_tiebreak_settle_what_the_countback_cannot():
+    points = {1: 0, 2: 0, 3: 0}
+    seats = {1: (0, "Zephyr"), 2: (0, "Alpine"), 3: (1, "Reserve")}
+    # 3 raced and 1 and 2 did not: participation first, then the team's name.
+    assert _order([], points, participants={3}, seats=seats) == [3, 2, 1]
+    # Nobody raced: the reserve team after every named team.
+    assert _order([], points, participants=set(), seats=seats) == [2, 1, 3]
+
+
+def test_teams_are_ordered_by_the_same_countback():
+    from services.standings_service import order_teams, tally_feature_finishes
+
+    finish_counts, first_finish_rounds = tally_feature_finishes(
+        [(10, FEATURE, "CLASSIFIED", 4, 1), (20, FEATURE, "CLASSIFIED", 1, 2)]
+    )
+    ordered = order_teams(
+        [10, 20],
+        points={10: 160, 20: 160},
+        finish_counts=finish_counts,
+        first_finish_rounds=first_finish_rounds,
+        team_meta={10: (0, "Alpha"), 20: (0, "Bravo")},
+    )
+    assert ordered == [20, 10]

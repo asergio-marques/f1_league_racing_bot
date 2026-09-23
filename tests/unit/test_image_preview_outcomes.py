@@ -385,6 +385,448 @@ class TestStandingsPreview:
 
         assert spec.text["row_2_gap_to_leader"] == f"-{leader_points - second_points}"
 
+    async def test_two_drivers_level_on_points_are_drawn_on_separate_positions(
+        self, bot, league
+    ):
+        """#144 — the previous fixed ramp never produced a tie on a normal field."""
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_drivers_template.svg")
+        spec = drivers_spec_builder(root)
+
+        assert spec.text["row_2_position"] != spec.text["row_3_position"]
+        assert spec.text["row_2_points"] == spec.text["row_3_points"]
+
+    async def test_two_teams_level_on_points_are_drawn_on_separate_positions(
+        self, bot, league, db_path
+    ):
+        """The same fabrication feeds the constructors table, so a third team draws its tie."""
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
+                "is_reserve) VALUES (?, 'Greenfield', 'Greenfield', 2, 0)",
+                (league,),
+            )
+            await db.commit()
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        constructors_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_constructors_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_constructors_template.svg")
+        spec = constructors_spec_builder(root)
+
+        assert spec.text["row_2_position"] != spec.text["row_3_position"]
+        assert spec.text["row_2_points"] == spec.text["row_3_points"]
+
+    async def test_the_last_driver_and_the_last_team_are_drawn_on_no_points(
+        self, bot, league
+    ):
+        """#144 — the previous ramp reached zero only from position 15 (drivers) or 13
+        (teams), so a normal-sized division never showed a pointless entry either.
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        drivers_root = load_svg(root_dir / "standings_drivers_template.svg")
+        drivers_spec = drivers_spec_builder(drivers_root)
+        assert drivers_spec.text["row_4_points"] == "0"
+
+        constructors_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_constructors_template"
+        )
+        constructors_root = load_svg(root_dir / "standings_constructors_template.svg")
+        constructors_spec = constructors_spec_builder(constructors_root)
+        assert constructors_spec.text["row_2_points"] == "0"
+
+    async def test_the_three_movement_markers_are_drawn_on_the_drivers_preview(
+        self, bot, league
+    ):
+        """#144 — movement was omitted outright; a preview can fabricate a reference round.
+
+        The four-driver fixture puts the gain on row 2, the loss on row 3, and the hold on
+        rows 1 and 4 (`fabricate_standings_previous_positions`).
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_drivers_template.svg")
+        spec = drivers_spec_builder(root)
+
+        markers = {
+            spec.image_data[f"row_{row}_position_change_marker"][1] for row in (1, 2, 3, 4)
+        }
+        assert markers == {"position_change_gained", "position_change_lost", "position_change_none"}
+
+    async def test_the_three_movement_markers_are_drawn_on_the_constructors_preview(
+        self, bot, league, db_path
+    ):
+        """The same fabrication feeds the constructors table, so a third team draws its
+        own gain and loss.
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
+                "is_reserve) VALUES (?, 'Greenfield', 'Greenfield', 2, 0)",
+                (league,),
+            )
+            await db.commit()
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        constructors_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_constructors_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_constructors_template.svg")
+        spec = constructors_spec_builder(root)
+
+        markers = {
+            spec.image_data[f"row_{row}_position_change_marker"][1] for row in (1, 2, 3)
+        }
+        assert "position_change_gained" in markers
+        assert "position_change_lost" in markers
+
+    async def test_a_reserve_driver_is_drawn_in_the_drivers_classification(
+        self, bot, league, db_path
+    ):
+        """#144 — `_racing_drivers` excluded the reserve team wholesale, so a preview never
+        exercised `driver_is_drawn`'s reserve branch at all.
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
+                "is_reserve) VALUES (?, 'Reserve', 'Reserve', 1, 1)",
+                (league,),
+            )
+            team_id = cursor.lastrowid
+            cursor = await db.execute(
+                "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 1)",
+                (team_id,),
+            )
+            seat_id = cursor.lastrowid
+            cursor = await db.execute(
+                "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                "VALUES (?, 'ACTIVE')",
+                # Bound, never written into the SQL: a literal 9_200_000 is Python's digit
+                # separator, which only SQLite 3.46 and later accepts in a query.
+                (9_200_000,),
+            )
+            profile_id = cursor.lastrowid
+            await db.execute(
+                "INSERT INTO signup_records (discord_user_id, server_display_name, "
+                "discord_username, nationality) VALUES ('9200000', 'Reserve 1', 'r', "
+                "'British')"
+            )
+            season_id = (
+                await (await db.execute("SELECT season_id FROM divisions WHERE id = ?", (league,))).fetchone()
+            )["season_id"]
+            await db.execute(
+                "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
+                "division_id, current_position, current_points, points_gap_to_first, "
+                "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                (profile_id, season_id, league, seat_id),
+            )
+            await db.commit()
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_drivers_template.svg")
+        spec = drivers_spec_builder(root)
+
+        assert spec.row_count == 5
+        assert spec.text["row_5_driver_name"] == "Reserve 1"
+
+        # The reserve is also the driver the preceding round does not hold: their movement
+        # group leaves whole, where every regular's is drawn.
+        assert "row_5_position_change_group" in spec.remove
+        assert "row_5_position_change_marker" not in spec.image_data
+        assert "row_4_position_change_marker" in spec.image_data
+
+    async def test_a_driver_is_absent_and_a_reserve_stands_in_for_one_round(
+        self, bot, league, db_path
+    ):
+        """#144 — every regular was scattered into every round; none of the cases the spec
+        asks for (an absence, a stand-in, an empty car, a team scoring nothing in a round)
+        could ever occur.
+
+        Every team seats two, the commonest division there is — and the one a first cut
+        of the substitution skipped altogether, its two last regulars being teammates.
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        async with get_connection(db_path) as db:
+            season_id = (
+                await (
+                    await db.execute("SELECT season_id FROM divisions WHERE id = ?", (league,))
+                ).fetchone()
+            )["season_id"]
+
+            user_id = 9_300_000
+            for team_name, seats, is_reserve in (("Greenfield", 2, 0), ("Reserve", 1, 1)):
+                cursor = await db.execute(
+                    "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
+                    "is_reserve) VALUES (?, ?, ?, ?, ?)",
+                    (league, team_name, team_name, seats, is_reserve),
+                )
+                team_id = cursor.lastrowid
+                for seat_number in range(1, seats + 1):
+                    cursor = await db.execute(
+                        "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, ?)",
+                        (team_id, seat_number),
+                    )
+                    seat_id = cursor.lastrowid
+                    cursor = await db.execute(
+                        "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                        "VALUES (?, 'ACTIVE')",
+                        (user_id,),
+                    )
+                    profile_id = cursor.lastrowid
+                    await db.execute(
+                        "INSERT INTO signup_records (discord_user_id, server_display_name, "
+                        "discord_username, nationality) VALUES (?, ?, 'd', 'British')",
+                        (str(user_id), f"{team_name} {seat_number}"),
+                    )
+                    await db.execute(
+                        "INSERT INTO driver_season_assignments (driver_profile_id, "
+                        "season_id, division_id, current_position, current_points, "
+                        "points_gap_to_first, team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                        (profile_id, season_id, league, seat_id),
+                    )
+                    user_id += 1
+            await db.commit()
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+
+        constructors_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_constructors_template"
+        )
+        constructors_root = load_svg(root_dir / "standings_constructors_template.svg")
+        spec = constructors_spec_builder(constructors_root)
+
+        # Rows follow the teams: Redline 1, Bluewave 2, Greenfield 3. Greenfield's second
+        # driver sits round 1 out and Bluewave's second is replaced by the reserve. Rows
+        # past the field have their cars removed too, so every assertion names its row.
+        removed = set(spec.remove)
+
+        # A car nobody drove: Greenfield's second, for round 1 alone.
+        assert "row_3_round_1_driver_2_group" in removed
+        assert "row_3_round_1_driver_1_group" not in removed
+        assert "row_3_round_2_driver_2_group" not in removed
+
+        # The stand-in fills the car Bluewave's absent driver left, so both still stand.
+        assert "row_2_round_1_driver_1_group" not in removed
+        assert "row_2_round_1_driver_2_group" not in removed
+
+        # A team conferred no points in one of the rounds run: Greenfield's remaining car
+        # finished at the back, so no cell of theirs in round 1 carries a highlight.
+        assert not [
+            key
+            for key in spec.image_data
+            if key.startswith("row_3_round_1_") and key.endswith("_background")
+        ]
+
+
+async def _seed_full_grid(db_path, division_id) -> None:
+    """Eight more two-seat teams beside the fixture's two: a twenty-car field."""
+    async with get_connection(db_path) as db:
+        season_id = (
+            await (
+                await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
+            ).fetchone()
+        )["season_id"]
+        user_id = 9_400_000
+        for team_name in ("Solaris", "Nordvik", "Carmine", "Halcyon",
+                          "Ironbark", "Veloce", "Zephyr", "Greenfield"):
+            cursor = await db.execute(
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
+                "is_reserve) VALUES (?, ?, ?, 2, 0)",
+                (division_id, team_name, team_name),
+            )
+            team_id = cursor.lastrowid
+            for seat_number in (1, 2):
+                cursor = await db.execute(
+                    "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, ?)",
+                    (team_id, seat_number),
+                )
+                seat_id = cursor.lastrowid
+                cursor = await db.execute(
+                    "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                    "VALUES (?, 'ACTIVE')",
+                    (user_id,),
+                )
+                profile_id = cursor.lastrowid
+                await db.execute(
+                    "INSERT INTO signup_records (discord_user_id, server_display_name, "
+                    "discord_username, nationality) VALUES (?, ?, 'd', 'British')",
+                    (str(user_id), f"{team_name} {seat_number}"),
+                )
+                await db.execute(
+                    "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
+                    "division_id, current_position, current_points, points_gap_to_first, "
+                    "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                    (profile_id, season_id, division_id, seat_id),
+                )
+                user_id += 1
+        await db.commit()
+
+
+def _drawn_feature_finishes(spec, stem: str, round_count: int) -> list[tuple]:
+    """The classified Feature Race finishes a row's grid shows, as the standings tally them.
+
+    Read back off the drawing — the cells a manager would look at to check the order — so
+    the test judges the picture and not the data behind it. A cell holding an outcome
+    literal (DNF, DNS, DSQ) is not a classified finish and is not counted.
+    """
+    finishes = []
+    for number in range(1, round_count + 1):
+        for key, value in spec.text.items():
+            if (
+                key.startswith(f"{stem}_round_{number}_")
+                and key.endswith("feature_race_result")
+                and value.isdigit()
+            ):
+                finishes.append((stem, "FEATURE_RACE", "CLASSIFIED", int(value), number))
+    return finishes
+
+
+def _countback_differs(finish_counts, first_finish_rounds) -> bool:
+    return (finish_counts.get("row_2"), first_finish_rounds.get("row_2")) != (
+        finish_counts.get("row_3"),
+        first_finish_rounds.get("row_3"),
+    )
+
+
+class TestStandingsPreviewCountback:
+    """#144 — the pair level on points stands in the order the countback of its own grid
+    gives. It once stood in the order of the driver list, the grid scattered on its own, so
+    a driver with a win could be drawn beneath one without.
+    """
+
+    async def _drawn(self, bot, key, round_number):
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=round_number, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+        spec_builder = next(spec for label, k, spec in requests if k == key)
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        return spec_builder(load_svg(root_dir / f"{key}.svg"))
+
+    async def test_the_level_drivers_stand_in_the_order_the_countback_gives(
+        self, bot, league, db_path
+    ):
+        from services.standings_service import order_drivers, tally_feature_finishes
+
+        await _seed_full_grid(db_path, league)
+        for round_number in (1, 2, 3, 4):
+            spec = await self._drawn(bot, "standings_drivers_template", round_number)
+            assert spec.text["row_2_points"] == spec.text["row_3_points"]
+
+            finish_counts, first_finish_rounds = tally_feature_finishes(
+                _drawn_feature_finishes(spec, "row_2", round_number)
+                + _drawn_feature_finishes(spec, "row_3", round_number)
+            )
+            ordered = order_drivers(
+                ["row_2", "row_3"],
+                points={"row_2": 1, "row_3": 1},
+                finish_counts=finish_counts,
+                first_finish_rounds=first_finish_rounds,
+                participants={"row_2", "row_3"},
+                seats={},
+                names={},
+            )
+            # Where the countback is level too, the final tiebreak decides on names this
+            # test does not rebuild; the countback is what is being pinned.
+            if _countback_differs(finish_counts, first_finish_rounds):
+                assert ordered == ["row_2", "row_3"], (
+                    f"after round {round_number}, "
+                    f"{spec.text['row_3_driver_name']} out-counts "
+                    f"{spec.text['row_2_driver_name']} yet stands below"
+                )
+
+    async def test_the_level_teams_stand_in_the_order_the_countback_gives(
+        self, bot, league, db_path
+    ):
+        from services.standings_service import order_teams, tally_feature_finishes
+
+        await _seed_full_grid(db_path, league)
+        for round_number in (1, 2, 3, 4):
+            spec = await self._drawn(bot, "standings_constructors_template", round_number)
+            assert spec.text["row_2_points"] == spec.text["row_3_points"]
+
+            finish_counts, first_finish_rounds = tally_feature_finishes(
+                _drawn_feature_finishes(spec, "row_2", round_number)
+                + _drawn_feature_finishes(spec, "row_3", round_number)
+            )
+            ordered = order_teams(
+                ["row_2", "row_3"],
+                points={"row_2": 1, "row_3": 1},
+                finish_counts=finish_counts,
+                first_finish_rounds=first_finish_rounds,
+                team_meta={},
+            )
+            # Where the countback is level too, the final tiebreak decides on names this
+            # test does not rebuild; the countback is what is being pinned.
+            if _countback_differs(finish_counts, first_finish_rounds):
+                assert ordered == ["row_2", "row_3"], (
+                    f"after round {round_number}, {spec.text['row_3_team_name']} "
+                    f"out-counts {spec.text['row_2_team_name']} yet stands below"
+                )
+
 
 # ── Attendance (T024) ─────────────────────────────────────────────────────
 

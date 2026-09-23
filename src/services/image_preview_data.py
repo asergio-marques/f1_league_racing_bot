@@ -115,17 +115,28 @@ def fabricate_qualifying_rows(drivers, team_keys, points_map):
     field of six rather than only those whose position happens to land on them. Same
     reasoning as PHASE3_SLOTS above: a preview exists to let every icon be judged in one
     picture, and a compound the fabrication never deals is a compound never seen.
+
+    A large enough field also carries a DNS and a DSQ — the outcome literals a session can
+    record — so a manager can judge their chips (#144). They stand in the order
+    ``validate_submission_block`` requires of a submitted qualifying, the DSQ last of all,
+    so the preview never draws a classification the results module would refuse.
     """
     rows = []
     count = len(drivers)
     compounds_dealt = 0
+    # A field of five or more ends DNS, DSQ; a field of four ends with the DNS alone.
+    dsq_position = count if count >= 5 else None
+    dns_position = count - 1 if count >= 5 else (count if count >= 4 else None)
     for position, driver in enumerate(drivers, start=1):
         seconds = 88.400 + (position - 1) * 0.400
         best_lap: str | None = f"1:{int(seconds - 60):02d}.{int(round((seconds % 1) * 1000)):03d}"
 
         outcome = OutcomeModifier.CLASSIFIED
-        # The last driver of a large enough field set no time, so that case is drawn too.
-        if count >= 4 and position == count:
+        if position == dsq_position:
+            outcome = OutcomeModifier.DSQ
+            best_lap = None
+        # A driver of a large enough field set no time, so that case is drawn too.
+        elif position == dns_position:
             outcome = OutcomeModifier.DNS
             best_lap = None
 
@@ -158,26 +169,42 @@ def fabricate_race_rows(drivers, team_keys, points_map, *, fastest_lap_position=
     """A believable race classification over *drivers*.
 
     The leader carries a total race time; everyone else an interval growing with position.
-    A driver who did not finish is placed last, as the results module renumbers them, so
-    the outcome literal is drawn where a league would actually see it.
+    A driver who did not finish is placed behind every finisher, as the results module
+    renumbers them, so the outcome literal is drawn where a league would actually see it.
 
     *fastest_lap_position* is where the bonus falls. It is a parameter because a standings
     grid draws many races at once: pinned to one place, the fastest-lap highlight would
     only ever be seen over the same chip, and a manager judging their template would never
     see it over a winner or over a midfield points finish. A single classification has no
     such need and keeps the second place it always had.
+
+    A large enough field also carries a DSQ, beside the DNF and the lapped finish, so every
+    outcome literal a league's results module can record is exercised (#144). The tail
+    stands in the order ``validate_submission_block`` requires of a submitted race —
+    lapped, then DNF, then DSQ last of all — so the preview never draws a classification
+    the results module would refuse.
     """
     rows = []
     count = len(drivers)
+    # Six or more end lapped, DNF, DSQ; five end lapped, DNF; four end on the lapped finish.
+    # The lapped car always stands directly ahead of the non-finishers and behind every
+    # lead-lap finisher — on four it was once third with a lead-lap car behind it.
+    dsq_position = count if count >= 6 else None
+    dnf_position = count - 1 if count >= 6 else (count if count >= 5 else None)
+    non_finishers = (dsq_position is not None) + (dnf_position is not None)
+    lapped_position = count - non_finishers if count >= 4 else None
     for position, driver in enumerate(drivers, start=1):
         outcome = OutcomeModifier.CLASSIFIED
         base_time_ms: int | None = 3_723_000 + (position - 1) * 1_800
         laps_behind = None
 
-        if count >= 5 and position == count:
+        if position == dsq_position:
+            outcome = OutcomeModifier.DSQ
+            base_time_ms = None
+        elif position == dnf_position:
             outcome = OutcomeModifier.DNF
             base_time_ms = None
-        elif count >= 4 and position == count - 1:
+        elif position == lapped_position:
             laps_behind = 1
             base_time_ms = None
 
@@ -254,7 +281,71 @@ def _coprime(a: int, b: int) -> bool:
     return a == 1
 
 
-def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team_keys):
+def fabricate_standings_totals(count: int, *, leader: int) -> list[int]:
+    """The points total for each position of a fabricated standings, 1st first.
+
+    Descending and scaled to *count* so the ramp never runs off its own floor by accident —
+    the defect this replaces was a fixed step that reached zero from position 15 on the
+    drivers' ramp and 13 on the constructors', so a normal-sized field never showed either
+    of the two cases below at all (#144).
+
+    Two cases are **placed**, not left to arithmetic to produce or fail to produce:
+
+    - **The tie.** 2nd and 3rd are set level, the leader kept clear of it, whenever the
+      field holds at least three. *Which* of the two stands higher is not decided here: the
+      preview orders its classification through the standings service's own rule over the
+      grid it draws, so the pair is separated by the countback a reader can check beneath
+      them. Leaving it to the order of the list once drew a driver with a win beneath one
+      without.
+    - **The nought.** The last entry is set to zero, unless it is the leader (a field of
+      one) or already part of the tie (a field of three) — a tie *on* nought is the
+      accidental case #144 reported, not the deliberate one this places.
+    """
+    if count <= 0:
+        return []
+    step = max(1, leader // count)
+    totals = [step * (count - position) for position in range(count)]
+    if count >= 3:
+        totals[1] = totals[2]
+    if count != 3 and count > 1:
+        totals[-1] = 0
+    return totals
+
+
+def fabricate_standings_previous_positions(
+    keys: list[int], *, newcomers: frozenset[int] = frozenset()
+) -> dict[int, int]:
+    """A fictitious reference round's positions, keyed as the current classification is.
+
+    ``build_standings_preview`` stands against no real reference round, so nothing about a
+    previous classification is on hand to read — but it fabricates the *current* round
+    wholesale already, and a fabricated previous one is no different. Handed to
+    ``standings_service.derive_movement`` alongside the current positions, it is what lets
+    the preview draw the three movement markers the spec requires, rather than omitting the
+    column because no real history exists (corrected from the "deliberate" omission this
+    replaced, whose reasoning did not hold once the current round was already invented).
+
+    *keys* is every entry's key (``driver_user_id`` or ``team_instance_id``), in the order
+    of its **current** standing position, 1st first. The previous positions returned put
+    the **third**-placed entry ahead of the **second** — one gained, one lost, and the rest
+    unchanged — wherever the field is large enough to hold the swap. A field of fewer than
+    three holds every entry unchanged; there is nothing to swap.
+
+    *newcomers* are left out of the previous round altogether, so ``derive_movement`` finds
+    no record for them — the spec's "a driver whom the standings of the preceding round do
+    not hold", whose movement columns a template must be able to empty.
+    """
+    previous = {key: position for position, key in enumerate(keys, start=1)}
+    if len(keys) >= 3:
+        previous[keys[1]], previous[keys[2]] = previous[keys[2]], previous[keys[1]]
+    for key in newcomers:
+        previous.pop(key, None)
+    return previous
+
+
+def fabricate_standings_round_results(
+    run_ordinals, round_formats, drivers, team_keys, *, reserve_driver=None
+):
     """Session results for every round already run, over the division's own drivers.
 
     Reuses ``fabricate_qualifying_rows``/``fabricate_race_rows`` — the same builders the
@@ -267,9 +358,59 @@ def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team
     and Race), read through ``result_submission_service.get_sessions_for_format`` — not the
     schedule's Short/Long/Full vocabulary ``sessions_for`` reads for the weather previews,
     which answers a different question (how many weather slots a session carries).
+
+    *reserve_driver*, where given, draws three of the spec's cases for one run round, over
+    two *different* regular teams, so that a stand-in filling the very seat it vacates does
+    not paper over the empty-car case with it:
+
+    - the **last** regular is dropped from the round's field entirely, so its own team's
+      last car goes undriven for it (FR-026's "a car nobody drove") — with no reserve to
+      fill the seat, unlike the case below;
+    - the last regular of **any other** team is dropped and the reserve credited to that
+      team instead (a reserve standing in) — which is also what makes that regular's own
+      absence visible (a driver absent from one round);
+    - whatever remains of the first team is classified at the back of every session of
+      that round, so it is a team conferred no points in one of the rounds run. Placed and
+      not left to the scatter, which on a small field puts every finisher in the points.
+
+    The second is sought by team and not simply taken as the regular before the first:
+    on the commonest field of all, every team seating two, the two last regulars are
+    teammates, and taking them both would have skipped the substitution on exactly the
+    division a league most often runs. Skipped only where no second regular team exists,
+    per the spec's own qualifier that none of its cases is fabricated into existence beyond
+    what the field allows (#144).
     """
+    from types import SimpleNamespace
+    from typing import Any
+
     from models.round import RoundFormat
     from services.result_submission_service import get_sessions_for_format
+
+    def team_of(driver) -> str:
+        return driver.team_key or driver.team_name
+
+    # Bundled as one Optional rather than several separate ones, so that a check of the one
+    # narrows the rest together — the round substituted and who it touches all exist for
+    # the same reason and never independently of it.
+    substitution: tuple[int, Any, Any, Any] | None = None
+    if reserve_driver is not None and run_ordinals:
+        regulars = [d for d in drivers if team_of(d) != team_of(reserve_driver)]
+        if regulars:
+            undriven_driver = regulars[-1]
+            absent_driver = next(
+                (d for d in reversed(regulars) if team_of(d) != team_of(undriven_driver)),
+                None,
+            )
+            if absent_driver is not None:
+                standin = SimpleNamespace(
+                    key=reserve_driver.key,
+                    display_name=reserve_driver.display_name,
+                    team_name=absent_driver.team_name,
+                    team_key=absent_driver.team_key or absent_driver.team_name,
+                    seat_number=absent_driver.seat_number,
+                    nationality=reserve_driver.nationality,
+                )
+                substitution = (min(run_ordinals), undriven_driver, absent_driver, standin)
 
     out: dict[int, dict[str, list]] = {}
     for ordinal in run_ordinals:
@@ -284,7 +425,29 @@ def fabricate_standings_round_results(run_ordinals, round_formats, drivers, team
                 if session_type.is_qualifying
                 else {n: max(0, 26 - 2 * (n - 1)) for n in range(1, 14)}
             )
-            field = _scattered(drivers, ordinal, index)
+            active = (
+                substitution
+                if substitution is not None and ordinal == substitution[0]
+                else None
+            )
+            round_drivers = drivers
+            if active is not None:
+                _, undriven_driver, absent_driver, standin = active
+                dropped = {undriven_driver.key, absent_driver.key}
+                round_drivers = [d for d in drivers if d.key not in dropped]
+                round_drivers = [
+                    standin if d.key == reserve_driver.key else d for d in round_drivers
+                ]
+            field = _scattered(round_drivers, ordinal, index)
+            if active is not None:
+                # The team short of a car finishes at the back as well, so the round it
+                # scores nothing in is placed rather than left to the scatter — which on a
+                # field of five teams or fewer, every finisher in the points, never
+                # produced one. Last is the DNF of a race and the DNS of a qualifying.
+                short_team = team_of(active[1])
+                field = [d for d in field if team_of(d) != short_team] + [
+                    d for d in field if team_of(d) == short_team
+                ]
             rows = (
                 fabricate_qualifying_rows(field, team_keys, points_map)
                 if session_type.is_qualifying

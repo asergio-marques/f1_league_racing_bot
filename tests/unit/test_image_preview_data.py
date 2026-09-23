@@ -164,6 +164,479 @@ class TestStandingsScatter:
         holder = [row for row in rows if row.fastest_lap_bonus]
         assert [row.finishing_position for row in holder] == [2]
 
+    def test_a_qualifying_field_large_enough_carries_a_disqualification(self):
+        """#144 — DNF and DNS were fabricated already; DSQ was the one literal never drawn."""
+        from models.session_result import OutcomeModifier
+        from services.image_preview_data import fabricate_qualifying_rows
+
+        rows = fabricate_qualifying_rows(self._drivers(20), {"Team": 900}, {})
+        assert any(row.outcome is OutcomeModifier.DSQ for row in rows)
+        # It sits beside the DNS, not on top of it.
+        dsq = [row for row in rows if row.outcome is OutcomeModifier.DSQ]
+        dns = [row for row in rows if row.outcome is OutcomeModifier.DNS]
+        assert {row.finishing_position for row in dsq}.isdisjoint(
+            {row.finishing_position for row in dns}
+        )
+
+    def test_a_race_field_large_enough_carries_a_disqualification(self):
+        from models.session_result import OutcomeModifier
+        from services.image_preview_data import fabricate_race_rows
+
+        rows = fabricate_race_rows(self._drivers(20), {"Team": 900}, {})
+        dsq = [row for row in rows if row.outcome is OutcomeModifier.DSQ]
+        dnf = [row for row in rows if row.outcome is OutcomeModifier.DNF]
+        assert dsq
+        assert {row.finishing_position for row in dsq}.isdisjoint(
+            {row.finishing_position for row in dnf}
+        )
+
+    def test_the_outcomes_stand_in_the_order_a_submission_must_keep(self):
+        """A preview must not draw a classification the results module would refuse.
+
+        ``validate_submission_block`` refuses a race whose rows do not run lead-lap, then
+        lapped, then DNF, then DNS, then DSQ, and a qualifying whose rows do not run
+        classified, then DNF, then DNS, then DSQ. The rule sits inside that function among
+        checks needing a division, so it is stated here rather than called. A DSQ placed
+        ahead of the lapped car and the DNF first shipped exactly that refusal (#144).
+        """
+        from models.session_result import OutcomeModifier
+        from services.image_preview_data import fabricate_qualifying_rows, fabricate_race_rows
+
+        def race_category(row) -> int:
+            if row.outcome is OutcomeModifier.DSQ:
+                return 4
+            if row.outcome is OutcomeModifier.DNS:
+                return 3
+            if row.outcome is OutcomeModifier.DNF:
+                return 2
+            return 1 if row.laps_behind else 0
+
+        qualifying_category = {
+            OutcomeModifier.CLASSIFIED: 0,
+            OutcomeModifier.DNF: 1,
+            OutcomeModifier.DNS: 2,
+            OutcomeModifier.DSQ: 3,
+        }
+
+        for count in range(1, 25):
+            race = fabricate_race_rows(self._drivers(count), {"Team": 900}, {})
+            race_order = [race_category(row) for row in race]
+            assert race_order == sorted(race_order), f"race of {count}: {race_order}"
+
+            qualifying = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {})
+            qualifying_order = [qualifying_category[row.outcome] for row in qualifying]
+            assert qualifying_order == sorted(qualifying_order), (
+                f"qualifying of {count}: {qualifying_order}"
+            )
+
+    def test_a_small_field_is_not_forced_to_carry_a_disqualification(self):
+        """The spec's own qualifier: none of the cases are fabricated into existence."""
+        from models.session_result import OutcomeModifier
+        from services.image_preview_data import fabricate_qualifying_rows, fabricate_race_rows
+
+        for count in (2, 3, 4):
+            qualifying = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {})
+            race = fabricate_race_rows(self._drivers(count), {"Team": 900}, {})
+            assert all(row.outcome is not OutcomeModifier.DSQ for row in qualifying)
+            assert all(row.outcome is not OutcomeModifier.DSQ for row in race)
+
+
+# ---------------------------------------------------------------------------
+# The standings preview's fabricated totals (#144)
+# ---------------------------------------------------------------------------
+
+class TestStandingsTotals:
+    """A fixed ramp clamped at zero showed a tie or a nought only by accident of the field
+    size — never on a normal-sized division. These totals place both deliberately instead.
+    """
+
+    def test_second_and_third_are_level_on_points(self):
+        from services.image_preview_data import fabricate_standings_totals
+
+        for count in (3, 4, 10, 20):
+            totals = fabricate_standings_totals(count, leader=120)
+            assert totals[1] == totals[2]
+
+    def test_the_leader_stands_clear_of_the_tie(self):
+        from services.image_preview_data import fabricate_standings_totals
+
+        for count in (3, 4, 10, 20):
+            totals = fabricate_standings_totals(count, leader=120)
+            assert totals[0] > totals[1]
+
+    def test_no_two_entries_are_level_but_the_placed_pair(self):
+        """The #144 regression: a fixed clamp put a whole block of the field level on zero."""
+        from services.image_preview_data import fabricate_standings_totals
+
+        for count in range(2, 31):
+            totals = fabricate_standings_totals(count, leader=120)
+            level_pairs = {
+                (i, j)
+                for i in range(count)
+                for j in range(i + 1, count)
+                if totals[i] == totals[j]
+            }
+            assert level_pairs <= {(1, 2)}
+
+    def test_the_last_entry_holds_no_points(self):
+        from services.image_preview_data import fabricate_standings_totals
+
+        for count in (2, 4, 5, 10, 20):
+            totals = fabricate_standings_totals(count, leader=120)
+            assert totals[-1] == 0
+
+    def test_a_field_of_three_keeps_the_tie_off_nought(self):
+        """A tie *on* nought is the accidental case #144 reported, not the deliberate one."""
+        from services.image_preview_data import fabricate_standings_totals
+
+        totals = fabricate_standings_totals(3, leader=120)
+        assert totals[1] == totals[2] != 0
+
+    def test_the_totals_never_rise_down_the_table(self):
+        from services.image_preview_data import fabricate_standings_totals
+
+        for count in range(1, 31):
+            totals = fabricate_standings_totals(count, leader=120)
+            assert totals == sorted(totals, reverse=True)
+
+    def test_a_field_of_one_and_an_empty_field(self):
+        from services.image_preview_data import fabricate_standings_totals
+
+        assert fabricate_standings_totals(1, leader=120) == [120]
+        assert fabricate_standings_totals(0, leader=120) == []
+
+
+# ---------------------------------------------------------------------------
+# The standings preview's fabricated previous positions (#144)
+# ---------------------------------------------------------------------------
+
+class TestStandingsPreviousPositions:
+    """A preview stands against no real reference round, so movement was once omitted
+    outright. A fabricated previous round is no different in kind from the current round
+    the preview already invents, and is what lets the three markers be drawn at all.
+    """
+
+    def test_one_entry_gained_one_lost_one_held_position(self):
+        from services.image_preview_data import fabricate_standings_previous_positions
+        from services.standings_service import (
+            MOVEMENT_GAINED,
+            MOVEMENT_LOST,
+            MOVEMENT_UNCHANGED,
+            derive_movement,
+        )
+
+        keys = [10, 20, 30, 40]
+        previous = fabricate_standings_previous_positions(keys)
+        current = [(key, position, 0) for position, key in enumerate(keys, start=1)]
+
+        movements = derive_movement(current, previous)
+
+        directions = {m.direction for m in movements.values() if m is not None}
+        assert directions == {MOVEMENT_GAINED, MOVEMENT_LOST, MOVEMENT_UNCHANGED}
+
+    def test_no_entry_is_left_without_a_movement(self):
+        from services.image_preview_data import fabricate_standings_previous_positions
+        from services.standings_service import derive_movement
+
+        keys = [10, 20, 30, 40]
+        previous = fabricate_standings_previous_positions(keys)
+        current = [(key, position, 0) for position, key in enumerate(keys, start=1)]
+
+        movements = derive_movement(current, previous)
+
+        assert all(movement is not None for movement in movements.values())
+
+    def test_a_field_too_small_to_swap_holds_every_entry_unchanged(self):
+        from services.image_preview_data import fabricate_standings_previous_positions
+        from services.standings_service import MOVEMENT_UNCHANGED, derive_movement
+
+        for count in (0, 1, 2):
+            keys = list(range(10, 10 + count))
+            previous = fabricate_standings_previous_positions(keys)
+            current = [(key, position, 0) for position, key in enumerate(keys, start=1)]
+
+            movements = derive_movement(current, previous)
+
+            assert all(
+                movement is None or movement.direction == MOVEMENT_UNCHANGED
+                for movement in movements.values()
+            )
+
+    def test_a_newcomer_has_no_previous_position_to_have_moved_from(self):
+        """The spec's "a driver whom the standings of the preceding round do not hold"."""
+        from services.image_preview_data import fabricate_standings_previous_positions
+        from services.standings_service import derive_movement
+
+        keys = [10, 20, 30, 40, 50]
+        previous = fabricate_standings_previous_positions(keys, newcomers=frozenset({50}))
+        current = [(key, position, 0) for position, key in enumerate(keys, start=1)]
+
+        movements = derive_movement(current, previous)
+
+        assert movements[50] is None
+        assert all(movements[key] is not None for key in (10, 20, 30, 40))
+
+    def test_the_same_field_produces_the_same_previous_positions_twice(self):
+        from services.image_preview_data import fabricate_standings_previous_positions
+
+        keys = [10, 20, 30, 40, 50]
+        assert fabricate_standings_previous_positions(
+            keys
+        ) == fabricate_standings_previous_positions(keys)
+
+
+# ---------------------------------------------------------------------------
+# The standings preview's fabricated absence and stand-in (#144)
+# ---------------------------------------------------------------------------
+
+class TestStandingsSubstitution:
+    """A driver absent from one round, a reserve standing in, and a car nobody drove — the
+    spec's three cases, drawn over two *different* regular teams so a stand-in filling the
+    very seat it vacates does not paper over the empty-car case with it.
+    """
+
+    #: Three regular teams and a reserve: the fixture every test in this class shares.
+    TEAM_KEYS = {"Redline": 1, "Bluewave": 2, "Greenfield": 3, "Reserve": 4}
+
+    @staticmethod
+    def _drivers(team_layout):
+        """*team_layout* is ``[(team_name, seat_count), ...]``, drivers numbered from 1."""
+        from types import SimpleNamespace
+
+        drivers = []
+        key = 1
+        for team_name, seat_count in team_layout:
+            for seat_number in range(1, seat_count + 1):
+                drivers.append(
+                    SimpleNamespace(
+                        key=key,
+                        display_name=f"Driver {key}",
+                        team_name=team_name,
+                        team_key=team_name,
+                        seat_number=seat_number,
+                        nationality=None,
+                    )
+                )
+                key += 1
+        return drivers
+
+    def test_the_absent_regular_is_not_scattered_into_the_substitution_round(self):
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        regulars = drivers[:-1]
+        absent = regulars[-2]  # Bluewave 2
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
+        )
+
+        keys_in_round = {
+            row.driver_user_id for rows in results[1].values() for row in rows
+        }
+        assert absent.key not in keys_in_round
+
+    def test_a_different_teams_car_is_left_with_nobody_in_it(self):
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        regulars = drivers[:-1]
+        undriven = regulars[-1]  # Greenfield 1
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
+        )
+
+        keys_in_round = {
+            row.driver_user_id for rows in results[1].values() for row in rows
+        }
+        assert undriven.key not in keys_in_round
+
+    def test_the_reserve_is_credited_to_the_absent_drivers_team_not_the_undriven_ones(self):
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        absent = drivers[:-1][-2]  # Bluewave 2
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
+        )
+
+        substitute_team_ids = {
+            row.team_instance_id
+            for rows in results[1].values()
+            for row in rows
+            if row.driver_user_id == reserve.key
+        }
+        absent_team_id = self.TEAM_KEYS[absent.team_key or absent.team_name]
+        assert substitute_team_ids == {absent_team_id}
+
+    def test_a_round_before_or_after_the_substitution_is_untouched(self):
+        """Confined to one round — both dropped drivers are back in every other one."""
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        regulars = drivers[:-1]
+        absent, undriven = regulars[-2], regulars[-1]
+
+        results = fabricate_standings_round_results(
+            [1, 2], {1: "NORMAL", 2: "NORMAL"}, drivers,
+            self.TEAM_KEYS, reserve_driver=reserve,
+        )
+
+        rows_in_round_2 = [row for rows in results[2].values() for row in rows]
+        keys_in_round_2 = {row.driver_user_id for row in rows_in_round_2}
+        assert absent.key in keys_in_round_2
+        assert undriven.key in keys_in_round_2
+
+        # The reserve still races the second round too, under their own reserve team —
+        # only the substitution round credits them to somebody else's.
+        reserve_team_id = self.TEAM_KEYS[reserve.team_key or reserve.team_name]
+        reserve_rows = [row for row in rows_in_round_2 if row.driver_user_id == reserve.key]
+        assert {row.team_instance_id for row in reserve_rows} == {reserve_team_id}
+
+    def test_no_reserve_leaves_every_driver_in_place(self):
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers([("Redline", 2), ("Bluewave", 2)])
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, {"Redline": 1, "Bluewave": 2}
+        )
+
+        keys_in_round = {
+            row.driver_user_id for rows in results[1].values() for row in rows
+        }
+        assert keys_in_round == {d.key for d in drivers}
+
+    def test_a_field_too_small_carries_no_substitution(self):
+        """The spec's own qualifier: nothing is fabricated into existence to reach a case."""
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers([("Redline", 1), ("Reserve", 1)])
+        reserve = drivers[-1]
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, {"Redline": 1, "Reserve": 2},
+            reserve_driver=reserve,
+        )
+
+        keys_in_round = {
+            row.driver_user_id for rows in results[1].values() for row in rows
+        }
+        assert keys_in_round == {d.key for d in drivers}
+
+    def test_a_field_of_two_seat_teams_carries_the_substitution(self):
+        """The commonest division there is. Its two last regulars are teammates, and taking
+        the pair of them skipped the substitution on it altogether.
+        """
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 2), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        regulars = drivers[:-1]
+        undriven = regulars[-1]  # Greenfield 2
+        absent = regulars[-3]  # Bluewave 2, the last regular of another team
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, self.TEAM_KEYS, reserve_driver=reserve,
+        )
+
+        rows = [row for session in results[1].values() for row in session]
+        assert undriven.key not in {row.driver_user_id for row in rows}
+        assert absent.key not in {row.driver_user_id for row in rows}
+        assert {
+            row.team_instance_id for row in rows if row.driver_user_id == reserve.key
+        } == {self.TEAM_KEYS["Bluewave"]}
+
+    def test_the_team_short_of_a_car_scores_nothing_in_that_round(self):
+        """The spec's "a team conferred no points in one of the rounds run", placed.
+
+        Judged by the drawing's own rule, `highlight_for`, since what a manager sees of a
+        round's points on the constructors grid is the highlight and nothing else. Left to
+        the scatter it never arose on a field of five teams or fewer, where every finisher
+        is in the points.
+        """
+        from services.image_preview_data import fabricate_standings_round_results
+        from services.image_standings_service import highlight_for
+
+        for team_count in range(3, 12):
+            layout = [(f"Team {n}", 2) for n in range(team_count)] + [("Reserve", 1)]
+            drivers = self._drivers(layout)
+            team_keys = {name: n + 1 for n, (name, _) in enumerate(layout)}
+            reserve = drivers[-1]
+            short_team_id = team_keys[drivers[:-1][-1].team_name]
+
+            for round_format in ("NORMAL", "SPRINT"):
+                results = fabricate_standings_round_results(
+                    [1], {1: round_format}, drivers, team_keys, reserve_driver=reserve,
+                )
+                rows = [
+                    row
+                    for session in results[1].values()
+                    for row in session
+                    if row.team_instance_id == short_team_id
+                ]
+                assert rows, f"{team_count} teams: the short team drove nothing at all"
+                assert all(highlight_for(row) == (None, False) for row in rows), (
+                    f"{team_count} teams, {round_format}: the short team was drawn scoring"
+                )
+
+    def test_the_team_short_of_a_car_scores_as_usual_in_every_other_round(self):
+        """Confined to the one round, like the rest of the substitution."""
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers(
+            [("Redline", 2), ("Bluewave", 2), ("Greenfield", 2), ("Reserve", 1)]
+        )
+        reserve = drivers[-1]
+        plain = fabricate_standings_round_results(
+            [2], {2: "NORMAL"}, drivers, self.TEAM_KEYS
+        )
+        substituted = fabricate_standings_round_results(
+            [1, 2], {1: "NORMAL", 2: "NORMAL"}, drivers, self.TEAM_KEYS,
+            reserve_driver=reserve,
+        )
+
+        def order(results):
+            return {
+                session: [row.driver_user_id for row in rows]
+                for session, rows in results[2].items()
+            }
+
+        assert order(substituted) == order(plain)
+
+    def test_only_one_regular_team_carries_no_substitution(self):
+        """Both roles would fall on the same team, which the "different team" guard refuses."""
+        from services.image_preview_data import fabricate_standings_round_results
+
+        drivers = self._drivers([("Redline", 2), ("Reserve", 1)])
+        reserve = drivers[-1]
+
+        results = fabricate_standings_round_results(
+            [1], {1: "NORMAL"}, drivers, {"Redline": 1, "Reserve": 2},
+            reserve_driver=reserve,
+        )
+
+        keys_in_round = {
+            row.driver_user_id for rows in results[1].values() for row in rows
+        }
+        assert keys_in_round == {d.key for d in drivers}
+
 
 # ---------------------------------------------------------------------------
 # The attendance sheet's totals and the marks they earn
