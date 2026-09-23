@@ -27,6 +27,10 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
 coverage==7.15.4
 
+# The type check (#228): `mypy` from the repository root, configured by `mypy.ini`. It types
+# the bot against the libraries above, so it is installed beside them rather than on its own.
+mypy==2.3.1
+
 # Pillow backs the one test that inspects the rasterised PNG pixel by pixel, which is the
 # only guard against Inkscape collapsing flowed text. That test is `rasteriser`-marked, so
 # CI never runs it and nothing but a hand-run would catch a break — it is pinned here rather
