@@ -9,7 +9,7 @@ from typing import Mapping
 
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.session_result import OutcomeModifier
+from models.session_result import DriverSessionResult, OutcomeModifier
 from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 
 log = logging.getLogger(__name__)

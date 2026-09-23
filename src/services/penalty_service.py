@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import discord
 
@@ -17,6 +17,9 @@ from utils.input_validator import (
     parse_time,
 )
 from utils.league_bot import LeagueBot
+
+if TYPE_CHECKING:
+    from services.penalty_wizard import StagedPardon
 
 log = logging.getLogger(__name__)
 

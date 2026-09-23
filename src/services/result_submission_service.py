@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping, NamedTuple
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple
 
 import discord
 
@@ -33,6 +33,9 @@ from utils.tyre_compound import (
     tyre_compound_list,
 )
 from utils.league_server import LeagueView, league_guild
+
+if TYPE_CHECKING:
+    from services.penalty_wizard import PenaltyReviewState
 
 log = logging.getLogger(__name__)
 
@@ -264,7 +267,7 @@ async def _build_penalty_review_state(
     round_id: int,
     division_id: int,
     submission_channel_id: int,
-) -> "PenaltyReviewState":  # type: ignore[name-defined]
+) -> "PenaltyReviewState":
     """Reconstruct a :class:`~services.penalty_wizard.PenaltyReviewState` from the DB.
 
     Used by the bot restart-recovery path to re-post the appeals review prompt
