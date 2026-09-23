@@ -1073,3 +1073,16 @@ async def test_a_batch_that_heads_itself_records_its_banner(tmp_path):
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT message_id FROM verdict_banner_messages")
         assert [r[0] for r in await cursor.fetchall()] == ["9912"]
+
+
+def test_a_round_label_names_the_round_as_a_league_numbers_it():
+    from services.verdict_announcement_service import _round_label
+
+    assert _round_label(SimpleNamespace(round_number=3, division_name="Pro")) == "Round 3 (Pro)"
+
+
+def test_a_round_label_without_a_round_number_says_the_round():
+    from services.verdict_announcement_service import _round_label
+
+    assert _round_label(SimpleNamespace()) == "The round"
+    assert _round_label(SimpleNamespace(round_number="not a number")) == "The round"

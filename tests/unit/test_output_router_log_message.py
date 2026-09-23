@@ -116,3 +116,17 @@ async def test_every_mention_in_a_log_line_is_written_as_code(mention):
 
     assert f"`{mention}`" in sent[0]
 
+
+
+async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing():
+    """Nothing to post to. It came to the same before — the router asked Discord for a channel
+    with no id and logged the failure — less the request (#228)."""
+    from utils.output_router import ForecastChannel
+
+    bot = MagicMock()
+    bot.fetch_channel = AsyncMock()
+    router = OutputRouter(bot)
+
+    assert await router.post_forecast(ForecastChannel(None), "forecast") is None
+    bot.get_channel.assert_not_called()
+    bot.fetch_channel.assert_not_awaited()
