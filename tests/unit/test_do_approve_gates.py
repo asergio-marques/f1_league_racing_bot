@@ -637,9 +637,9 @@ async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
 def _cog_with_results(db_path, **overrides):
     """A cog whose results module is on and whose test mode is off.
 
-    Test mode matters: with it on, `_do_approve` seeds and attaches configs of its own
-    before the gate, which is precisely why the bug was invisible to anyone exercising
-    approval in test mode.
+    Test mode once mattered here: with it on, `_do_approve` attached configs of its own before
+    the gate, which is precisely why #131 was invisible to anyone exercising approval in test
+    mode. It attaches nothing now (decided 2026-09-23), and off is still said outright.
     """
     cog = _cog(db_path, **overrides)
     # Said outright. Before issue #240 the module read as on because the whole-bot
@@ -733,11 +733,10 @@ async def test_a_table_worth_nothing_below_the_points_still_approves(db_path):
     cog.bot.season_service.transition_to_active.assert_awaited_once()
 
 
-async def test_a_test_season_with_nothing_attached_is_seeded_rather_than_refused(db_path):
-    """Test mode attaches Standard and Half Points before the count, so it never refuses.
-
-    The half of #409's exemption the review leans on: `/season placements-review` offers a
-    test season with nothing attached for approval, because this is what the press does.
+async def test_a_test_season_with_nothing_attached_is_refused_as_any_other(db_path):
+    """Test mode attaches Standard and Half Points when it is enabled and at no other moment
+    (decided 2026-09-23, #409). The approval once attached them itself where a test season had
+    none, overriding a manager who had detached both on purpose.
     """
     from services import season_points_service
 
@@ -749,12 +748,9 @@ async def test_a_test_season_with_nothing_attached_is_seeded_rather_than_refused
 
     await _run(cog, interaction)
 
-    assert "no points configuration is attached" not in _replies(interaction)
-    assert await season_points_service.get_attached_config_names(db_path, SEASON_ID) == [
-        "Half Points",
-        "Standard",
-    ]
-    cog.bot.season_service.transition_to_active.assert_awaited_once()
+    assert "no points configuration is attached" in _replies(interaction)
+    assert await season_points_service.get_attached_config_names(db_path, SEASON_ID) == []
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
 async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):

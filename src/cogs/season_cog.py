@@ -855,9 +855,9 @@ class SeasonCog(commands.Cog):
         `/results config detach` stays open in Placements.
 
         A link to a configuration that does not exist still counts as attached here; that
-        one is `_missing_points_config_problems`' fault. Test mode is the caller's business:
-        under it the approval attaches two configurations of its own before it asks, so the
-        placements review exempts a test season and the configuration review does not.
+        one is `_missing_points_config_problems`' fault. Test mode is no exception (decided
+        2026-09-23): it attaches Standard and Half Points when it is enabled and at no other
+        moment, and a season that has had them detached is refused as any other.
         """
         return not await season_points_service.get_attached_config_names(
             self.bot.db_path, season_id
@@ -6570,16 +6570,9 @@ class SeasonCog(commands.Cog):
 
         # ── Gate 2: points-config prerequisites (FR-013) ───────────────────────
         if await self.bot.module_service.is_results_enabled():
-            # Auto-seed point configs if test mode is active and none are attached yet
-            server_config = await self.bot.config_service.get_server_config()
-            if server_config is not None and server_config.test_mode_active:
-                if await self._no_points_config_attached(cfg.season_id):
-                    from services.test_roster_service import ensure_test_configs
-                    await ensure_test_configs(
-                        season_id=cfg.season_id,
-                        db_path=self.bot.db_path,
-                    )
-
+            # Test mode is no exception (decided 2026-09-23): it attaches Standard and Half
+            # Points when it is enabled, and a test season that has had them detached is
+            # refused here as any other rather than having them attached again behind it.
             errors: list[str] = []
             if await self._no_points_config_attached(cfg.season_id):
                 errors.append("no points configuration is attached to this season")

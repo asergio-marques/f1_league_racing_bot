@@ -6,9 +6,8 @@ reachable because `/results config detach` stays open in Placements. Each surfac
 `season_points_links` with SQL of its own, and one of them simply had no copy.
 
 All three now read `_no_points_config_attached`, and the drift between them is what the source
-pins below hold. Test mode is the caller's business, not the helper's: the approval attaches
-two configurations of its own before it asks, so the placements review exempts a test season
-and the configuration review does not.
+pins below hold. Test mode is no exception (decided 2026-09-23): it attaches Standard and Half
+Points when it is enabled and at no other moment, so all three judge a test season as any other.
 """
 from __future__ import annotations
 
