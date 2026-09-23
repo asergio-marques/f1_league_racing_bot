@@ -115,7 +115,7 @@ def test_the_approve_notice_goes_to_the_interaction_channel():
 
 
 def test_the_penalty_batch_is_wrapped():
-    node = _function("services/result_submission_service.py", "finalize_penalty_review")
+    node = _function("services/result_submission_service.py", "_apply_approved_reports")
     blocks = _notices(node)
 
     assert len(blocks) == 1
@@ -166,7 +166,7 @@ def test_the_appeals_notice_closes_before_the_channel_is_deleted():
 def test_both_results_flow_notices_target_the_submission_channel():
     """Not the results, standings or verdicts channels the graphics land in: the person
     waiting is the steward who pressed the button, and they are in here."""
-    for name in ("finalize_penalty_review", "finalize_appeals_review"):
+    for name in ("_apply_approved_reports", "finalize_appeals_review"):
         node = _function("services/result_submission_service.py", name)
         call = _notices(node)[0].items[0].context_expr
         assert isinstance(call.args[0], ast.Name), name
@@ -181,7 +181,7 @@ def test_both_results_flow_notices_target_the_submission_channel():
     [
         ("cogs/season_cog.py", "season_review"),
         ("cogs/season_cog.py", "_do_approve"),
-        ("services/result_submission_service.py", "finalize_penalty_review"),
+        ("services/result_submission_service.py", "_apply_approved_reports"),
         ("services/result_submission_service.py", "finalize_appeals_review"),
     ],
 )

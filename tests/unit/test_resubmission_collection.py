@@ -824,6 +824,7 @@ def _review_state(bot, *, staged=()):
         staged=list(staged),
         staged_pardons=[],
         prompt_message_id=None,
+        approval_message_id=None,
     )
 
 

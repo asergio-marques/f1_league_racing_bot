@@ -522,23 +522,50 @@ async def finalize_penalty_review(
 
     An amendment's report stage shares the screens but not this body, and is handed to
     :func:`_approve_amendment_reports` before anything here runs (#345).
+
+    **A review that has moved on approves nothing** (#402). Its prompt and its approval message
+    outlived the stage they were posted for, so an Approve could land on a round whose results
+    a resubmission was replacing, whose reports were already approved, or whose review had been
+    replaced by another — and ran the whole approval on it: reposts, attendance, a second
+    appeals prompt. The check is the one every other control of the review asks.
+
+    **Once at a time.** The approval draws every graphic the round posts before it moves the
+    round on, and a second press in that time found the round exactly as the first had.
+    ``approving`` is claimed after the last await of the checks, so two presses cannot both pass
+    them, and released however the approval ends, so one that fails can be pressed again.
     """
-    import json as _json
-    from services import results_post_service as _rps
-    from services import penalty_service as _ps
-    from services import verdict_announcement_service as _vas
+    from services.penalty_wizard import _BEING_APPROVED, _review_moved_on
 
     if getattr(state, "is_amendment", False):
         await _approve_amendment_reports(interaction, state)
         return
 
-    held = await held_by_amendment(
-        state.db_path, state.round_id, state.division_id,
-        then="Approve the reports again then.",
-    )
-    if held:
-        await interaction.response.send_message(held, ephemeral=True)
+    refusal = await _review_moved_on(state)
+    if refusal is None:
+        refusal = await held_by_amendment(
+            state.db_path, state.round_id, state.division_id,
+            then="Approve the reports again then.",
+        )
+    if refusal is None and state.approving:
+        refusal = _BEING_APPROVED
+    if refusal is not None:
+        await interaction.response.send_message(refusal, ephemeral=True)
         return
+
+    state.approving = True
+    try:
+        await _apply_approved_reports(interaction, state)
+    finally:
+        state.approving = False
+
+
+async def _apply_approved_reports(interaction: discord.Interaction, state) -> None:
+    """What approving a first pass's reports does, once :func:`finalize_penalty_review` has
+    checked the review is current and claimed it."""
+    import json as _json
+    from services import results_post_service as _rps
+    from services import penalty_service as _ps
+    from services import verdict_announcement_service as _vas
 
     await interaction.response.defer(ephemeral=True)
 
@@ -647,6 +674,10 @@ async def finalize_penalty_review(
                 (RoundStatus.AWAITING_APPEAL_VERDICTS.value, round_id),
             )
             await db.commit()
+
+        # The report stage's controls come down as the round leaves it (#402).
+        from services.penalty_wizard import _take_down_report_stage
+        await _take_down_report_stage(state)
 
         # Audit log PENALTY_REVIEW_APPROVED
         penalty_log = [
@@ -2581,6 +2612,10 @@ async def _approve_amendment_reports(interaction, state) -> None:
     # than handed back to the sweep to sit out its half hour. The deadline handed back is the
     # one taken, not a fresh one — see `AMENDMENT_STAGE_TIMEOUT_SECONDS`.
     await _rearm_amendment(db_path, round_id, deadline)
+
+    # The report stage's controls come down as the amendment leaves it, pardons included (#402).
+    from services.penalty_wizard import _take_down_report_stage
+    await _take_down_report_stage(state)
 
     try:
         await bot.output_router.post_log(
@@ -4875,14 +4910,16 @@ async def enter_resubmit_flow(
     every session has been entered again, and `replace_round_results` swaps them out then
     (issue #210). What changes now is the channel. `resubmitting` is set, which lets the
     manager's pastes through the review channel's message guard and tells a restart what was
-    lost, and the penalty review prompt is taken down, so that nobody can approve the results
-    being replaced or press Resubmit a second time and start a second collector.
+    lost, and the penalty review prompt and any approval message are taken down, so that nobody
+    can approve the results being replaced or press Resubmit a second time and start a second
+    collector. Both would refuse if pressed regardless, as the review has moved on (#402).
 
     A submission channel that cannot be found refuses the resubmission before anything is
     discarded: with nowhere to collect in, the review is all the round has.
     """
     import asyncio
     import json as _json
+    from services.penalty_wizard import _delete_review_message, _take_down_approval
 
     bot = state.bot
     db_path: str = bot.db_path
@@ -4949,12 +4986,11 @@ async def enter_resubmit_flow(
         )
         await db.commit()
 
-    if state.prompt_message_id is not None:
-        try:
-            prompt = await sub_channel.fetch_message(state.prompt_message_id)
-            await prompt.delete()
-        except (discord.NotFound, discord.HTTPException):
-            pass  # Already gone; the collection does not depend on it
+    # The prompt and any approval message go together: the approval message outlived the prompt
+    # once, and its Approve finalised the round on the results being replaced (#402). The
+    # collection depends on neither.
+    await _delete_review_message(state, state.prompt_message_id)
+    await _take_down_approval(state)
 
     cancel_view = ResubmissionCancelView(state)
     announcement = await sub_channel.send(
