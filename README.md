@@ -1409,7 +1409,7 @@ Also refused unless the signup channel, the league's base role and its driver ro
 #### `/signup close` — Close the signup window
 *Access: League manager*
 
-No parameters. If drivers are currently in progress you will be prompted to confirm; the confirmation lists everyone in `PENDING_SIGNUP_COMPLETION`, `PENDING_ADMIN_APPROVAL`, `AWAITING_CORRECTION_PARAMETER` and `PENDING_DRIVER_CORRECTION`, but only drivers in `PENDING_SIGNUP_COMPLETION` are transitioned to Not Signed Up. Drivers awaiting approval, awaiting a correction parameter, or correcting retain their state and may still be approved after the window has closed.
+No parameters. If anyone is mid-signup you are asked to confirm first, and the confirmation lists every such driver with a link to their signup channel, in two groups. Drivers still filling in the form are returned to Not Signed Up by the close and would have to start again. Drivers awaiting approval, awaiting a correction parameter, or correcting keep their place and may still be approved, rejected or corrected after the window has closed. Where only the second group is waiting, the confirmation says nobody will lose their signup. Once you confirm, the reply says how many drivers were returned to Not Signed Up.
 
 Refused while an auto-close time is armed. The refusal names the armed time and sends you to `/signup close-time cancel` — clear the timer and the manual close goes through. Closing ahead of the time you set is deliberately two steps.
 
