@@ -1612,11 +1612,22 @@ class SeasonService:
     # ------------------------------------------------------------------
 
     async def create_sessions_for_round(self, round_id: int, fmt: RoundFormat) -> list[Session]:
-        """Insert Session rows for every session type defined by *fmt*."""
+        """Make the sessions of *round_id* the ones *fmt* defines, replacing any it holds.
+
+        **Replaced, not added to** (issue #408). A confirmation of placements that writes the
+        sessions and then fails before the season goes active leaves them behind, and the next
+        confirmation used to write a full second set, every session of which the phases then
+        forecast twice. However often this is called, the round holds one set: the one its
+        format defines now.
+
+        The old rows go with whatever phase data they held, so this is for a round no phase has
+        been drawn for. Its one caller is the confirmation, before anything is armed.
+        """
         session_types: list[SessionType] = SESSIONS_BY_FORMAT.get(fmt, [])
         sessions: list[Session] = []
 
         async with get_connection(self._db_path) as db:
+            await db.execute("DELETE FROM sessions WHERE round_id = ?", (round_id,))
             for st in session_types:
                 cursor = await db.execute(
                     "INSERT INTO sessions (round_id, session_type) VALUES (?, ?)",
