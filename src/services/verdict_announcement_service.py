@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -265,6 +266,24 @@ def _banner_once(bot: LeagueBot, channel, ctx: dict):
     return post
 
 
+class _RecordingPoster:
+    """A banner poster that keeps the banner it put up, called with no arguments like any other.
+
+    `message` is the banner once it is up, and None until then; a sanction card beneath it reads
+    it, and may come from a later path of the same approval (#345). A class rather than an
+    attribute set on a closure, which is the same thing to a caller but invisible to the type
+    check (#228).
+    """
+
+    message: discord.Message | None = None
+
+    def __init__(self, post: Callable[[_RecordingPoster], Awaitable[None]]) -> None:
+        self._post = post
+
+    async def __call__(self) -> None:
+        await self._post(self)
+
+
 def _banner_once_recorded(bot: LeagueBot, channel, ctx, db_path: str, round_id: int):
     """`_banner_once`, recording the message it posts (#345).
 
@@ -274,15 +293,13 @@ def _banner_once_recorded(bot: LeagueBot, channel, ctx, db_path: str, round_id: 
     """
     once = _banner_once(bot, channel, ctx)
 
-    async def post() -> None:
+    async def post(poster: _RecordingPoster) -> None:
         message = await once()
         if message is not None:
-            post.message = message
+            poster.message = message
         await _record_banner(db_path, round_id, getattr(channel, "id", None), message)
 
-    #: The banner this poster put up, once it has; read by a sanction card beneath it.
-    post.message = None
-    return post
+    return _RecordingPoster(post)
 
 
 def banner_for_round(bot: LeagueBot, db_path: str, round_id: int):
@@ -298,7 +315,7 @@ def banner_for_round(bot: LeagueBot, db_path: str, round_id: int):
     """
     posted = False
 
-    async def post() -> None:
+    async def post(poster: _RecordingPoster) -> None:
         nonlocal posted
         if posted:
             return
@@ -314,15 +331,12 @@ def banner_for_round(bot: LeagueBot, db_path: str, round_id: int):
             if channel is None:
                 return
             message = await _banner_once(bot, channel, ctx)()
-            post.message = message
+            poster.message = message
             await _record_banner(db_path, round_id, channel_id_raw, message)
         except Exception:
             log.exception("verdict banner: could not head round %s", round_id)
 
-    #: The banner this poster put up, once it has; read by a sanction card beneath it, which
-    #: may come from a later path of the same approval.
-    post.message = None
-    return post
+    return _RecordingPoster(post)
 
 
 async def _record_banner(db_path: str, round_id: int, channel_id, message) -> None:

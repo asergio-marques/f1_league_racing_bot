@@ -267,34 +267,34 @@ def resolve_drawing(
                 )
             )
     else:
-        rows = build_race_rows(
+        race_rows = build_race_rows(
             list(driver_rows), dict(points_map), dsq_phase_map=dict(dsq_phase_map or {})
         )
-        for ordinal, row in enumerate(rows, start=1):
+        for ordinal, race_row in enumerate(race_rows, start=1):
             entries.append(
                 ResultsEntry(
                     ordinal=ordinal,
-                    driver_name=named(row.driver_user_id),
-                    team_name=teams.get(row.team_instance_id) or UNKNOWN_TEAM,
-                    team_key=keys.get(row.team_instance_id),
-                    points=str(row.points),
+                    driver_name=named(race_row.driver_user_id),
+                    team_name=teams.get(race_row.team_instance_id) or UNKNOWN_TEAM,
+                    team_key=keys.get(race_row.team_instance_id),
+                    points=str(race_row.points),
                     postrace_penalty=_sanction(
-                        row.postrace_penalty, phase_closed=penalty_closed
+                        race_row.postrace_penalty, phase_closed=penalty_closed
                     ),
                     appeal_penalty=_sanction(
-                        row.appeal_penalty, phase_closed=appeal_closed
+                        race_row.appeal_penalty, phase_closed=appeal_closed
                     ),
-                    nationality=(flags.get(row.driver_user_id) or None),
-                    time=row.time,
-                    fastest_lap=row.fastest_lap,
+                    nationality=(flags.get(race_row.driver_user_id) or None),
+                    time=race_row.time,
+                    fastest_lap=race_row.fastest_lap,
                     # The in-game penalty belongs to no phase and is never left empty: a
                     # dash where the game applied none.
-                    ingame_penalty=row.ingame_penalty or NOT_APPLICABLE,
-                    holds_fastest_lap=row.holds_fastest_lap,
+                    ingame_penalty=race_row.ingame_penalty or NOT_APPLICABLE,
+                    holds_fastest_lap=race_row.holds_fastest_lap,
                 )
             )
 
-        holder = fastest_lap_holder(rows)
+        holder = fastest_lap_holder(race_rows)
         if holder is not None:
             block = FastestLapBlock(
                 driver_name=named(holder.driver_user_id),

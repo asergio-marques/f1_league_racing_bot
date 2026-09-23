@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 
+import aiosqlite
+
 from db.database import get_connection
 from models.division import Division
 from models.round import (
@@ -1712,7 +1714,7 @@ async def _sync_division_rounds(db, division_id: int, rounds: list[dict]) -> Non
 # Row mappers
 # ------------------------------------------------------------------
 
-def _row_to_season(row: object) -> Season:
+def _row_to_season(row: aiosqlite.Row) -> Season:
     return Season(
         id=row["id"],
         start_date=date.fromisoformat(row["start_date"]),
@@ -1727,7 +1729,7 @@ def _row_to_season(row: object) -> Season:
     )
 
 
-def _row_to_division(row: object) -> Division:
+def _row_to_division(row: aiosqlite.Row) -> Division:
     keys = row.keys()
     return Division(
         id=row["id"],
@@ -1748,7 +1750,7 @@ def _row_to_division(row: object) -> Division:
     )
 
 
-def _row_to_round(row: object) -> Round:
+def _row_to_round(row: aiosqlite.Row) -> Round:
     return Round(
         id=row["id"],
         division_id=row["division_id"],
@@ -1763,7 +1765,7 @@ def _row_to_round(row: object) -> Round:
     )
 
 
-def _row_to_session(row: object) -> Session:
+def _row_to_session(row: aiosqlite.Row) -> Session:
     import json
 
     slots_raw = row["phase3_slots"]

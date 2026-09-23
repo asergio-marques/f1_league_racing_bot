@@ -78,7 +78,7 @@ async def lineup_enabled(bot: LeagueBot) -> bool:
         return False
 
 
-def seated_members(guild, teams) -> dict[str, object]:
+def seated_members(guild, teams) -> dict[str, discord.Member]:
     """The Discord member behind each occupied seat, as user id -> Member.
 
     One reader for what the posting path and the preview path both need. Both once carried
@@ -89,7 +89,7 @@ def seated_members(guild, teams) -> dict[str, object]:
     A seat with no driver, a driver the guild cannot resolve (they have left), and a mock
     driver carrying a synthetic id all simply do not appear.
     """
-    members: dict[str, object] = {}
+    members: dict[str, discord.Member] = {}
     if guild is None:
         return members
     for team in teams:

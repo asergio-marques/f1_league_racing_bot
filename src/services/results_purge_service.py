@@ -49,6 +49,7 @@ async def purge_season_results(db_path: str, bot: LeagueBot) -> dict:
     message the bot tried and failed to remove, so the league can delete it by hand — its record
     is gone once this returns, and nothing else could find it again (decided 2026-09-21, #189).
     """
+    left_standing: list[str] = []
     report = {
         "rounds": 0,
         "sessions": 0,
@@ -57,7 +58,7 @@ async def purge_season_results(db_path: str, bot: LeagueBot) -> dict:
         "verdicts": 0,
         "submission_channels": 0,
         "amend_channels": 0,
-        "left_standing": [],
+        "left_standing": left_standing,
     }
 
     async with get_connection(db_path) as db:
@@ -91,9 +92,9 @@ async def purge_season_results(db_path: str, bot: LeagueBot) -> dict:
 
     if guild is not None:
         report["messages"], left = await _delete_posted_results(db_path, rounds, guild)
-        report["left_standing"].extend(left)
+        left_standing.extend(left)
         report["verdicts"], left = await _delete_posted_verdicts(db_path, rounds, guild)
-        report["left_standing"].extend(left)
+        left_standing.extend(left)
         report["submission_channels"] = await _close_open_submissions(db_path, rounds, guild)
 
     # **Not under the guild** (#345). Deleting the channel needs one; forgetting the amendment

@@ -18,6 +18,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from lxml import etree
 
@@ -47,6 +48,9 @@ from utils.svg_document import (
     merge_style,
     stylesheet,
 )
+
+if TYPE_CHECKING:
+    from models.image_catalogues import FieldCatalogue
 
 log = logging.getLogger(__name__)
 
@@ -166,7 +170,7 @@ class FillSpec:
     #: template must declare the field, and whether its value must be determinable.
     #: Asset resolution is a separate matter and does not consult it — see the asset
     #: fill below.
-    catalogue: object | None = None
+    catalogue: FieldCatalogue | None = None
 
     #: Fields the data determines to be **empty**, as against ``empty`` above, which means
     #: a value that could not be determined. A lineup seat that is configured but

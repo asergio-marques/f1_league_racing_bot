@@ -290,9 +290,9 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
     if state.staged_pardons:
         lines.append("")
         lines.append(f"**Staged Attendance Pardons ({len(state.staged_pardons)}):**")
-        for i, sp in enumerate(state.staged_pardons, 1):
+        for i, pardon in enumerate(state.staged_pardons, 1):
             lines.append(
-                f"  • {_mention(sp.driver_user_id)} — **{sp.pardon_type}** "
+                f"  • {_mention(pardon.driver_user_id)} — **{pardon.pardon_type}** "
                 f"*(justification logged)*  ← Remove Pardon #{i} below"
             )
 

@@ -15,15 +15,19 @@ state. A cache added later cannot slip past unnoticed.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, cast
 
 from utils.league_bot import LeagueBot
+
+if TYPE_CHECKING:
+    from cogs.season_cog import SeasonCog
 
 log = logging.getLogger(__name__)
 
 
 def clear_in_memory_state(bot: LeagueBot) -> None:
     """Drop every in-memory store of league state the running bot holds."""
-    season_cog = bot.get_cog("SeasonCog")
+    season_cog = cast("SeasonCog | None", bot.get_cog("SeasonCog"))
     if season_cog is not None:
         season_cog.clear_pending()
 

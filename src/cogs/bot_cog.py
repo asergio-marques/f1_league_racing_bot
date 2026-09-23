@@ -875,7 +875,7 @@ async def _clean_up(guild, bot_user_id: int, targets, report) -> None:
         await report(f"⛔ Factory reset: the Discord clean-up stopped: {exc}")
 
 
-async def _open_progress(user: discord.abc.User) -> discord.Message | None:
+async def _open_progress(user: discord.User | discord.Member) -> discord.Message | None:
     """The direct message the clean-up edits as it goes, or None where DMs are closed."""
     try:
         return await user.send("🧹 Factory reset: starting the Discord clean-up.")

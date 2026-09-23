@@ -22,6 +22,7 @@ from types import SimpleNamespace
 
 from db.database import get_connection
 from models.image_constants import ASSET_CLASS_TO_COLUMN, PREVIEW_KINDS
+from models.round import Round
 from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -122,7 +123,7 @@ class PreviewContext:
     division_id: int
     division_name: str
     division_tier: int
-    round: object | None = None
+    round: Round | None = None
     #: The division's whole calendar, resolved once. Three builders used to re-query this
     #: by ``division_id``; a fabricated league has no such row, and re-querying would have
     #: drawn it an empty calendar rather than the one it invented.

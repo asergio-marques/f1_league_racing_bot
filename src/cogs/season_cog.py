@@ -30,7 +30,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, cast
 
 import discord
 from discord import app_commands
@@ -358,7 +358,7 @@ async def _run_round_import(
 
     The interaction is already deferred. Everything here replies through ``followup``.
     """
-    cog = bot_of(interaction).get_cog("SeasonCog")
+    cog = cast("SeasonCog | None", bot_of(interaction).get_cog("SeasonCog"))
     if cog is None:  # pragma: no cover — the cog is loaded for the command to exist
         await interaction.followup.send(
             "❌ Season commands are unavailable.", ephemeral=True
@@ -2290,19 +2290,19 @@ class SeasonCog(commands.Cog):
         else:
             # Pending (not yet persisted) path — header then one block per division
             await interaction.followup.send("\n".join(header_lines), ephemeral=False)
-            for div in cfg.divisions:
-                if not div.name:
+            for pending_div in cfg.divisions:
+                if not pending_div.name:
                     continue
                 div_lines = []
-                tier_tag = f" (Tier {div.tier})" if div.tier > 0 else ""
-                pending_chan = f"<#{div.channel_id}>" if div.channel_id else "*(none)*"
-                div_lines.append(f"\U0001f4c2 **{div.name}**{tier_tag}")
-                div_lines.append(f"  Role: <@&{div.role_id}>")
+                tier_tag = f" (Tier {pending_div.tier})" if pending_div.tier > 0 else ""
+                pending_chan = f"<#{pending_div.channel_id}>" if pending_div.channel_id else "*(none)*"
+                div_lines.append(f"\U0001f4c2 **{pending_div.name}**{tier_tag}")
+                div_lines.append(f"  Role: <@&{pending_div.role_id}>")
                 div_lines.append(f"  Weather channel: {pending_chan}")
-                for r in div.rounds:
+                for pending_round in pending_div.rounds:
                     div_lines.append(
-                        f"  Round {r['round_number']}: {r['format'].value} "
-                        f"@ {r['track_name'] or 'Mystery'} \u2014 {discord_ts(r['scheduled_at'])}"
+                        f"  Round {pending_round['round_number']}: {pending_round['format'].value} "
+                        f"@ {pending_round['track_name'] or 'Mystery'} \u2014 {discord_ts(pending_round['scheduled_at'])}"
                     )
                 await interaction.followup.send("\n".join(div_lines), ephemeral=False)
             await self._post_approval_prompt(
