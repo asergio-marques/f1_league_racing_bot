@@ -212,9 +212,9 @@ def find_converter(*, use_cache: bool = True) -> str | None:
 def _probe() -> str | None:
     override = os.environ.get(INKSCAPE_ENV_VAR)
     if override:
-        candidate = Path(override)
-        if candidate.is_file():
-            return str(candidate)
+        override_path = Path(override)
+        if override_path.is_file():
+            return str(override_path)
         log.warning(
             "%s is set to %r but no file is there; falling back to the usual locations.",
             INKSCAPE_ENV_VAR,

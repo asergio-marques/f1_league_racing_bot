@@ -259,7 +259,7 @@ async def try_post(bot: LeagueBot, channel, drawing: VerdictBannerDrawing):
         if render.notices:
             await report_notices(bot, subject, render.notices)
 
-        if not render.draws:
+        if render.png is None:  # `render.draws`, in a form the type check can follow
             if render.problem:
                 await report(bot, subject, render.problem)
             #  The aspect is on and the picture could not be drawn, so the batch is headed

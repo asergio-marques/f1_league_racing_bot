@@ -151,6 +151,9 @@ def resolve_drawing(
         format_name = getattr(entry.format, "value", entry.format)
         is_mystery = format_name == "MYSTERY"
 
+        # A real round's track may record neither, which is refused below.
+        country: str | None
+        race_name: str | None
         if is_mystery:
             country, race_name, track_name = (
                 MYSTERY_COUNTRY,

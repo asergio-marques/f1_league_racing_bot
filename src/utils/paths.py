@@ -29,7 +29,7 @@ class PathContainmentError(ValueError):
         )
 
 
-def resolve_within_project_root(candidate: str, *, root: Path | None = None) -> Path:
+def resolve_within_project_root(candidate: str | None, *, root: Path | None = None) -> Path:
     """Resolve *candidate* against the project root, rejecting anything that escapes.
 
     Returns the resolved absolute path. Raises :class:`PathContainmentError` if the

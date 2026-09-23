@@ -8,6 +8,7 @@ Discord channel, role, message or scheduled job.
 from __future__ import annotations
 
 import dataclasses
+from typing import Any
 import logging
 
 from db.database import get_connection
@@ -120,7 +121,9 @@ class ImageConfigService:
         current = await self.get_config()
         if current is None:
             return None
-        return dataclasses.replace(current, **{column: value})
+        # The column is named at run time, so what it takes is only known then.
+        changes: dict[str, Any] = {column: value}
+        return dataclasses.replace(current, **changes)
 
     async def set_field(self, column: str, value: str) -> None:
         """Write a single configuration column, guarded by the allow-list."""

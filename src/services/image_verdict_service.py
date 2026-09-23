@@ -270,7 +270,7 @@ def build_fill_spec(
         # turned collection off still holds one, and drawing from the value alone would put
         # a flag on their verdict and none on the next driver's.
         if drawing.nationality_collected and drawing.driver_nationality:
-            image_data["driver_flag"] = ("flag", country_for_nationality(drawing.driver_nationality))
+            image_data["driver_flag"] = ("flag", country_for_nationality(drawing.driver_nationality) or "")
         else:
             remove.append("driver_flag")
 

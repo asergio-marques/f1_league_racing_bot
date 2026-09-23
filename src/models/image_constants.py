@@ -6,6 +6,8 @@ an implementation detail of what each aspect draws.
 """
 from __future__ import annotations
 
+from typing import TypedDict
+
 # ── Templates ─────────────────────────────────────────────────────────────
 
 #: Config column -> default filename. The sixteen templates, in report order.
@@ -599,6 +601,14 @@ ASSET_ASPECT_TOLERANCE = 0.01
 # The `/images test` kinds (046)
 # ─────────────────────────────────────────────────────────────────────────
 
+class PreviewKind(TypedDict):
+    """One row of `PREVIEW_KINDS`: what a preview kind needs, and what it draws."""
+
+    needs_round: bool
+    draws_roster: bool
+    format_demanded: bool | None
+
+
 #: One entry per `/images test` subcommand, describing what that kind needs and what it
 #: draws. It replaces the ad-hoc `require_rounds` / `require_teams` / `require_mystery`
 #: flags each call site passed at 045, so that three separate rules — which parameters a
@@ -619,7 +629,7 @@ ASSET_ASPECT_TOLERANCE = 0.01
 #: ``format_demanded`` is ``None`` where the kind accepts any round, ``False`` where a
 #: mystery round must be refused, and ``True`` where anything but one must be. The same
 #: tri-state ``require_mystery`` already uses.
-PREVIEW_KINDS: dict[str, dict[str, object]] = {
+PREVIEW_KINDS: dict[str, PreviewKind] = {
     "calendar":        {"needs_round": False, "draws_roster": False, "format_demanded": None},
     "lineup":          {"needs_round": False, "draws_roster": True,  "format_demanded": None},
     "results":         {"needs_round": True,  "draws_roster": True,  "format_demanded": None},

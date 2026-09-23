@@ -674,7 +674,7 @@ def fill(spec: FillSpec) -> FillResult:
 
         # A box declared in CSS, or no box at all: `inline-size` wide, `max-lines` tall.
         limit = length(style.get("inline-size"))
-        ratio: float | None = None
+        ratio = None
         if budget is not None and budget > 1:
             if limit is None:
                 unresolved.append(
@@ -1055,12 +1055,12 @@ def _element_y(element: etree._Element) -> float | None:
     own = length(element.get("y"))
     if own is not None:
         return own
-    candidates = [
+    measured = [
         length(descendant.get("y"))
         for descendant in element.iter()
         if descendant.get("y") is not None
     ]
-    candidates = [value for value in candidates if value is not None]
+    candidates = [value for value in measured if value is not None]
     return min(candidates) if candidates else None
 
 
@@ -1313,12 +1313,12 @@ def _element_x(element: etree._Element) -> float | None:
     own = length(element.get("x"))
     if own is not None:
         return own
-    candidates = [
+    measured = [
         length(descendant.get("x"))
         for descendant in element.iter()
         if descendant.get("x") is not None
     ]
-    candidates = [value for value in candidates if value is not None]
+    candidates = [value for value in measured if value is not None]
     return min(candidates) if candidates else None
 
 
@@ -1505,11 +1505,11 @@ def _carry_left_of_crop(
                 element.set(name, f"{max(left, right - delta):g}")
                 continue
         elif tag == "rect":
-            left, width = length(element.get("x")), length(element.get("width"))
-            if left is None or width is None:
+            rect_left, rect_width = length(element.get("x")), length(element.get("width"))
+            if rect_left is None or rect_width is None:
                 continue
-            if spans(left, left + width):
-                element.set("width", f"{max(0.0, width - delta):g}")
+            if spans(rect_left, rect_left + rect_width):
+                element.set("width", f"{max(0.0, rect_width - delta):g}")
                 continue
         elif tag == "path":
             rule = _path_rule_x(element.get("d"))
@@ -1875,15 +1875,13 @@ def _lay_out(
 
     declared_size = _font_size(style)
 
-    if budget is None:
-        def budget_at(size: float) -> int:
-            # A rectangle's own budget grows as the leading shrinks, so a field set smaller holds
-            # **more lines** rather than the same number more widely spaced (XIV.5). A declared
-            # `max-lines` is constant instead, and says so by ignoring the size.
+    def budget_at(size: float) -> int:
+        # A rectangle's own budget grows as the leading shrinks, so a field set smaller holds
+        # **more lines** rather than the same number more widely spaced (XIV.5). A declared
+        # `max-lines` is constant instead, and says so by ignoring the size.
+        if budget is None:
             return max(1, int(box_height // (size * ratio)))
-    else:
-        def budget_at(_size: float) -> int:
-            return budget
+        return budget
 
     lines, size, reduced = _fit_lines(value, resolved, declared_size, box_width, budget_at)
 

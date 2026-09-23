@@ -403,7 +403,9 @@ def _box_of(element) -> tuple[float, float, float, float] | None:
     for node in element.iter():
         x, y = length(node.get("x")), length(node.get("y"))
         width, height = length(node.get("width")), length(node.get("height"))
-        if None in (x, y, width, height) or width <= 0 or height <= 0:
+        if x is None or y is None or width is None or height is None:
+            continue
+        if width <= 0 or height <= 0:
             continue
         box = (x, y, width, height)
         if best is None or width * height > best[2] * best[3]:
@@ -548,10 +550,9 @@ def calendar_overlay_faults_of(root, template_key: str) -> list[str]:
         x, y, width, height = box
         outside = sorted(
             name for name, node in siblings.items()
-            if (_element_x(node) is not None and _element_y(node) is not None)
-            and not (
-                x <= _element_x(node) <= x + width and y <= _element_y(node) <= y + height
-            )
+            if (node_x := _element_x(node)) is not None
+            and (node_y := _element_y(node)) is not None
+            and not (x <= node_x <= x + width and y <= node_y <= y + height)
         )
         if outside:
             faults.append(

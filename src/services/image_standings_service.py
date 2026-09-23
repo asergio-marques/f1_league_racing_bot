@@ -847,7 +847,7 @@ def build_fill_spec(
             if not drawing.nationality_collected:
                 empty_quietly.append(flag_id)
             elif entry.nationality:
-                image_data[flag_id] = ("flag", country_for_nationality(entry.nationality))
+                image_data[flag_id] = ("flag", country_for_nationality(entry.nationality) or "")
             else:
                 empty.append(flag_id)
 

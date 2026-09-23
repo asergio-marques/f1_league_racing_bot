@@ -230,9 +230,9 @@ def coerce_css_colour(value: str | None) -> str | None:
     match = _RGB_FUNC_RE.match(candidate)
     if match:
         try:
-            r, g, b = (min(255, max(0, int(part))) for part in match.groups())
+            red, green, blue = (min(255, max(0, int(part))) for part in match.groups())
         except ValueError:
             return None
-        return f"#{r:02X}{g:02X}{b:02X}"
+        return f"#{red:02X}{green:02X}{blue:02X}"
 
     return None

@@ -147,6 +147,17 @@ class PreviewContext:
     #: flags are absent rather than left to guess.
     drivers_without_nationality: int = 0
 
+    def required_round(self) -> Round:
+        """The round, for a preview drawn for one — every kind marked ``needs_round``.
+
+        `resolve_context` refuses such a preview without a round, and refuses one naming a
+        round the division does not hold, so a builder for it always has one. Its absence
+        here would be a builder reached around that refusal, and is raised by name (#228).
+        """
+        if self.round is None:
+            raise RuntimeError("a preview drawn for one round was resolved without it")
+        return self.round
+
 
 # ── Fabricated drivers ────────────────────────────────────────────────────
 
@@ -797,7 +808,7 @@ async def build_rsvp_preview(bot: LeagueBot, context: PreviewContext):
     from services.image_rsvp_service import build_fill_spec, resolve_drawing
 
     config = await bot.image_config_service.get_config()
-    round_obj = context.round
+    round_obj = context.required_round()
     is_mystery = _format_of(round_obj) == "MYSTERY"
 
     deadline_hours = 24
@@ -864,7 +875,7 @@ async def build_results_preview(bot: LeagueBot, context: PreviewContext):
     config = await bot.image_config_service.get_config()
     drivers = _racing_drivers(context)
     names, teams, flags, team_key_of = _driver_maps(context, drivers)
-    round_obj = context.round
+    round_obj = context.required_round()
 
     # The results module works in its own session vocabulary — Sprint/Feature Qualifying
     # and Race — which is not the schedule's (Short/Long/Full). `get_sessions_for_format`
@@ -957,7 +968,7 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
 
     drivers = _racing_drivers(context)
     names, teams, flags, team_key_of = _driver_maps(context, drivers)
-    round_obj = context.round
+    round_obj = context.required_round()
     racing_teams = _racing_teams(context)
     from services.image_calendar_service import MYSTERY_DATUM
 
@@ -1125,7 +1136,7 @@ async def build_attendance_preview(bot: LeagueBot, context: PreviewContext):
     from services.image_calendar_service import MYSTERY_DATUM
 
     names, _teams, flags, _team_key_of = _driver_maps(context)
-    round_obj = context.round
+    round_obj = context.required_round()
     rounds = context.rounds
     tracks = await _tracks(bot)
 
@@ -1212,7 +1223,7 @@ async def build_verdict_preview(bot: LeagueBot, context: PreviewContext):
         sanction_text,
     )
 
-    round_obj = context.round
+    round_obj = context.required_round()
     driver = context.drivers[0] if context.drivers else None
     if driver is None:
         return []
@@ -1307,7 +1318,7 @@ async def build_weather_preview(bot: LeagueBot, context: PreviewContext, *, phas
     )
     from services.image_weather_service import build_fill_spec, resolve_drawing
 
-    round_obj = context.round
+    round_obj = context.required_round()
     round_format = _format_of(round_obj)
     is_mystery = round_format == "MYSTERY"
 
