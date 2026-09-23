@@ -525,6 +525,62 @@ class TestStandingsPreview:
         assert "position_change_gained" in markers
         assert "position_change_lost" in markers
 
+    async def test_a_reserve_driver_is_drawn_in_the_drivers_classification(
+        self, bot, league, db_path
+    ):
+        """#144 — `_racing_drivers` excluded the reserve team wholesale, so a preview never
+        exercised `driver_is_drawn`'s reserve branch at all.
+        """
+        from pathlib import Path
+
+        from utils.svg_document import load_svg
+
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
+                "is_reserve) VALUES (?, 'Reserve', 'Reserve', 1, 1)",
+                (league,),
+            )
+            team_id = cursor.lastrowid
+            cursor = await db.execute(
+                "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 1)",
+                (team_id,),
+            )
+            seat_id = cursor.lastrowid
+            cursor = await db.execute(
+                "INSERT INTO driver_profiles (discord_user_id, current_state) "
+                "VALUES (9_200_000, 'ACTIVE')"
+            )
+            profile_id = cursor.lastrowid
+            await db.execute(
+                "INSERT INTO signup_records (discord_user_id, server_display_name, "
+                "discord_username, nationality) VALUES ('9200000', 'Reserve 1', 'r', "
+                "'British')"
+            )
+            season_id = (
+                await (await db.execute("SELECT season_id FROM divisions WHERE id = ?", (league,))).fetchone()
+            )["season_id"]
+            await db.execute(
+                "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
+                "division_id, current_position, current_points, points_gap_to_first, "
+                "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                (profile_id, season_id, league, seat_id),
+            )
+            await db.commit()
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_standings_preview(bot, context)
+
+        drivers_spec_builder = next(
+            spec for label, key, spec in requests if key == "standings_drivers_template"
+        )
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        root = load_svg(root_dir / "standings_drivers_template.svg")
+        spec = drivers_spec_builder(root)
+
+        assert spec.row_count == 5
+        assert spec.text["row_5_driver_name"] == "Reserve 1"
+
 
 # ── Attendance (T024) ─────────────────────────────────────────────────────
 

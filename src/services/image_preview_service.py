@@ -735,12 +735,37 @@ def _racing_drivers(context: PreviewContext) -> list[PreviewDriver]:
     them alongside would give a division of eleven teams twenty-four entries, which is not
     a classification any league would see — and would overflow a template sized for the
     field. The lineup draws them, because a lineup is a roster and not a classification.
+
+    The standings preview needs one back regardless, to draw the reserve row the season's
+    own classification can carry: see :func:`_standings_reserve_driver`.
     """
     reserve_teams = {
         team.name for team in context.teams if getattr(team, "is_reserve", False)
     }
     racing = [d for d in context.drivers if (d.team_key or d.team_name) not in reserve_teams]
     return racing or list(context.drivers)
+
+
+def _standings_reserve_driver(context: PreviewContext) -> PreviewDriver | None:
+    """One reserve driver for the standings preview to draw, or None where it has none.
+
+    ``_racing_drivers`` excludes the reserve team wholesale, which is right for a single
+    round's classification — a reserve did not drive it unless standing in (see
+    ``fabricate_standings_round_results``). The season-long standings are a different
+    question: ``results_formatter.driver_is_drawn`` already draws a reserve who holds
+    points or has taken part, and a preview that never puts one before it never exercises
+    that branch at all (#144). The first seated reserve driver is kept back for exactly
+    this; the rest of the reserve team is still not a classification entry, for the reason
+    ``_racing_drivers`` already gives.
+    """
+    reserve_teams = {
+        team.name for team in context.teams if getattr(team, "is_reserve", False)
+    }
+    if not reserve_teams:
+        return None
+    return next(
+        (d for d in context.drivers if (d.team_key or d.team_name) in reserve_teams), None
+    )
 
 
 def _racing_teams(context: PreviewContext) -> list:
@@ -976,7 +1001,10 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
         resolve_drawing,
     )
 
-    drivers = _racing_drivers(context)
+    # One reserve driver is kept back so the preview exercises `driver_is_drawn`'s reserve
+    # branch at all (#144) — `_racing_drivers` itself stays as the results preview needs it.
+    reserve_driver = _standings_reserve_driver(context)
+    drivers = _racing_drivers(context) + ([reserve_driver] if reserve_driver else [])
     names, teams, flags, team_key_of = _driver_maps(context, drivers)
     round_obj = context.required_round()
     racing_teams = _racing_teams(context)
@@ -1103,6 +1131,8 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
         movements=driver_movements,
         gaps=driver_gaps,
         nationalities=flags,
+        reserve_user_ids={reserve_driver.key} if reserve_driver else set(),
+        show_reserves=reserve_driver is not None,
         **shared,
     )
     constructors_drawing = resolve_drawing(
