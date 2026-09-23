@@ -1,4 +1,4 @@
-"""`TeamService` — the server's team list, and a season's teams across its divisions.
+"""`TeamService` — the server's team list, and the division teams seeded from it.
 
 Issue #208. `tests/unit/test_team_name_validation.py` covers `validate_team_name`, the module
 function; `TeamService` itself — the class every `/team` command reaches — was almost entirely
@@ -6,7 +6,7 @@ unexecuted, 125 of its 177 statements. Teams are the thing seats hang off, so a 
 reaches the lineup graphic, the signup wizard's team preferences and the reserve distribution
 alike.
 
-Four rules are pinned here, each of which a reader could undo without any other test noticing.
+Three rules are pinned here, each of which a reader could undo without any other test noticing.
 
 **The Reserve team is protected, and is conjured whenever it is missing.** `_ensure_reserve`
 runs on every read and write of the server's list, not only on first setup — the older seeding
@@ -20,16 +20,10 @@ to remove, because validating the current name would refuse the very command tha
 `test_a_team_whose_existing_name_breaks_the_rule_can_still_be_changed` sits on that, and it is
 the test most likely to be broken by someone "tightening" the validation.
 
-**Uniqueness is scoped differently in the two halves.** The server's default list is unique
-across the server; a season's teams are unique **within a division**. The two use different
-key helpers against different tables, and conflating them would let a season carry two teams
-whose normalised names collide in one division — which is what the lineup template's field
-identifiers are keyed on.
-
-**A season's team commands are all-or-nothing across divisions.** `season_team_rename` checks
-every division before writing to any, so a name rejected in the third division leaves the
-first two untouched. `test_a_rename_rejected_in_one_division_changes_none_of_them` is the one
-that would catch a loop that validated and wrote in the same pass.
+**Uniqueness is the server list's.** A division's teams are copied from that list when it is
+seeded and are never named on their own, so the list is the one place a collision can be
+refused. That includes two shorthands whose normalised forms collide, which would otherwise
+seek the same artwork file (`test_a_name_colliding_once_normalised_is_refused`).
 
 Everything runs against a real migrated database. What these methods are chiefly at risk of
 getting wrong is SQL across four tables, and a double would confirm whatever shape the test
@@ -496,124 +490,8 @@ async def test_the_reserve_team_is_seeded_without_seats(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# A season's teams
+# get_setup_season_team_names
 # ---------------------------------------------------------------------------
-
-
-async def test_a_season_team_is_added_to_every_division(tmp_path):
-    db_path = await _make_db(tmp_path, season_status="SETUP", divisions=3)
-    service = TeamService(db_path)
-
-    count = await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
-
-    assert count == 3
-    for division_id in (1, 2, 3):
-        assert "Alpha" in await _division_names(db_path, division_id)
-
-
-async def test_a_season_team_is_added_with_its_seats(tmp_path):
-    db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
-
-    await TeamService(db_path).season_team_add(SEASON_ID, "Alpha", full_name="Alpha", max_seats=4)
-
-    assert await _seat_count(db_path, 1, "Alpha") == 4
-
-
-@pytest.mark.parametrize("status", ["ACTIVE", "COMPLETED"])
-async def test_a_season_not_in_setup_refuses_every_team_change(tmp_path, status):
-    """Teams decide seats, and seats decide who scores. Changing them mid-season would
-    move drivers out from under results already recorded."""
-    db_path = await _make_db(tmp_path, season_status=status, divisions=1)
-    service = TeamService(db_path)
-
-    for call in (
-        service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha"),
-        service.season_team_rename(SEASON_ID, "Alpha", "Beta"),
-        service.season_team_remove(SEASON_ID, "Alpha"),
-    ):
-        with pytest.raises(ValueError, match="season is currently in setup"):
-            await call
-
-
-async def test_a_season_that_does_not_exist_refuses_a_team_change(tmp_path):
-    db_path = await _make_db(tmp_path)
-
-    with pytest.raises(ValueError, match="season is currently in setup"):
-        await TeamService(db_path).season_team_add(999, "Alpha", full_name="Alpha")
-
-
-async def test_a_name_already_in_one_division_is_refused_for_the_season(tmp_path):
-    db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
-    service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
-
-    with pytest.raises(ValueError, match="already exists"):
-        await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
-
-
-async def test_a_season_team_is_renamed_across_every_division(tmp_path):
-    db_path = await _make_db(tmp_path, season_status="SETUP", divisions=3)
-    service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
-
-    count = await service.season_team_rename(SEASON_ID, "Alpha", "Beta")
-
-    assert count == 3
-    for division_id in (1, 2, 3):
-        assert "Beta" in await _division_names(db_path, division_id)
-        assert "Alpha" not in await _division_names(db_path, division_id)
-
-
-async def test_a_rename_rejected_in_one_division_changes_none_of_them(tmp_path):
-    """Every division is validated before any is written. A loop that validated and wrote
-    in one pass would leave the season half-renamed, with the divisions disagreeing about
-    what the team is called and no command to reconcile them."""
-    db_path = await _make_db(tmp_path, season_status="SETUP", divisions=3)
-    service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
-    # Only the third division already holds the name being renamed to.
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
-            "VALUES (3, 'Beta', 'Beta', 2, 0)"
-        )
-        await db.commit()
-
-    with pytest.raises(ValueError):
-        await service.season_team_rename(SEASON_ID, "Alpha", "Beta")
-
-    for division_id in (1, 2, 3):
-        assert "Alpha" in await _division_names(db_path, division_id)
-
-
-async def test_a_season_team_is_removed_from_every_division_with_its_seats(tmp_path):
-    db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
-    service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
-
-    count = await service.season_team_remove(SEASON_ID, "Alpha")
-
-    assert count == 2
-    for division_id in (1, 2):
-        assert "Alpha" not in await _division_names(db_path, division_id)
-        assert await _seat_count(db_path, division_id, "Alpha") == 0
-
-
-async def test_removing_a_team_absent_from_a_division_is_not_an_error(tmp_path):
-    """The divisions can legitimately disagree — a team added before a division was
-    created exists in some and not others — and the command's job is to end with it gone
-    everywhere, not to complain about where it already was."""
-    db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
-    service = TeamService(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
-            "VALUES (1, 'Alpha', 'Alpha', 2, 0)"
-        )
-        await db.commit()
-
-    assert await service.season_team_remove(SEASON_ID, "Alpha") == 2
-    assert "Alpha" not in await _division_names(db_path, 1)
 
 
 async def test_the_season_s_team_names_are_reported_without_the_reserve(tmp_path):
