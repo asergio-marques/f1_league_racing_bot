@@ -1038,7 +1038,7 @@ class ModuleCog(commands.Cog):
                     except Exception:
                         pass
 
-        # Delete config (cascades to settings + slots)
+        # Forget the channel. The time slots and question settings are kept (issue #127).
         await self.bot.signup_module_service.delete_config()
 
         # Set disabled + audit

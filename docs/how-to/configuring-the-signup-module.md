@@ -376,7 +376,7 @@ Worth running through before you confirm the season's configuration, which fixes
 | `/signup close` refused, naming an auto-close time | You set a `close_time`. Run `/signup close-time cancel`, then `/signup close` again — or `/signup close-time modify` if you only want to move the deadline |
 | Drivers you expected to be dropped by a close are still there | Closing only drops drivers still filling the form in, as the confirmation said. Anyone waiting on you keeps their place — approve or reject them |
 | `/signup time-slot add`, `remove` or another signup setting refused, naming a season | That season's configuration is confirmed, so its signup settings are fixed until it ends |
-| Your time slots came back after disabling the module | Known: disabling clears the channel and roles only, whatever the message says |
+| Your time slots and settings came back after re-enabling the module | As intended: disabling clears only the signup channel. Set it again with `/signup channel` |
 | A driver went back to waiting for approval on their own | The five-minute field window lapsed, or the bot restarted while it was open. The ping in their channel says which. Press **Request Changes** again |
 | Roles not granted after `/driver assign` | Placements are not confirmed yet. They are all granted when you confirm them from `/season placements-review` |
 | A driver cannot sign up, saying they are already approved | They are still Unassigned or placed this season. They sign up again once the season ends |
