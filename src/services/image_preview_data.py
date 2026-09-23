@@ -292,9 +292,11 @@ def fabricate_standings_totals(count: int, *, leader: int) -> list[int]:
     Two cases are **placed**, not left to arithmetic to produce or fail to produce:
 
     - **The tie.** 2nd and 3rd are set level, the leader kept clear of it, whenever the
-      field holds at least three. That is what the standings service hands a graphic after
-      a countback has failed to separate two entries at adjacent positions — never a shared
-      one — so this is the shape a real tie takes, not an invented one.
+      field holds at least three. *Which* of the two stands higher is not decided here: the
+      preview orders its classification through the standings service's own rule over the
+      grid it draws, so the pair is separated by the countback a reader can check beneath
+      them. Leaving it to the order of the list once drew a driver with a win beneath one
+      without.
     - **The nought.** The last entry is set to zero, unless it is the leader (a field of
       one) or already part of the tie (a field of three) — a tie *on* nought is the
       accidental case #144 reported, not the deliberate one this places.

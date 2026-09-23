@@ -976,6 +976,11 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
     entries level on points and one on none, rather than leaving a fixed ramp to reach
     either by accident of the field's size — which on a normal division it never did (#144).
 
+    **The order is never invented.** It is ``standings_service.order_drivers`` and
+    ``order_teams``, taken over those totals and the countback of the grid drawn — the rule a
+    posting orders by. Placing the entries in list order instead drew the level pair the wrong
+    way round whenever the grid gave the lower of them the better record.
+
     **The gap needs no reference round and the movement does — so a preview fabricates
     one.** A real reference round has no counterpart here, but the current round is already
     wholly invented, and a fabricated previous round is no different in kind
@@ -1058,30 +1063,86 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
         if team.name in team_key_of
     }
 
-    driver_totals = fabricate_standings_totals(len(drivers), leader=120)
+    # The countback's raw material, read off the grid this preview draws — so the pair the
+    # totals leave level is separated by what a reader can see beneath them (#144).
+    number_of = {heading.ordinal: int(heading.number) for heading in headings}
+    session_rows = [
+        (row, session, number_of[ordinal])
+        for ordinal, sessions in round_session_results.items()
+        for session, rows in sessions.items()
+        for row in rows
+    ]
+    driver_counts, driver_firsts = standings_service.tally_feature_finishes(
+        (row.driver_user_id, session, row.outcome, row.finishing_position, number)
+        for row, session, number in session_rows
+    )
+    team_counts, team_firsts = standings_service.tally_feature_finishes(
+        (row.team_instance_id, session, row.outcome, row.finishing_position, number)
+        for row, session, number in session_rows
+    )
+    participants = {row.driver_user_id for row, _, _ in session_rows}
+
+    # The totals are invented; the order is not. It is the standings service's own, taken
+    # over the invented totals and the grid, exactly as a posting orders what it draws.
+    reserve_team_names = {
+        team.name for team in context.teams if getattr(team, "is_reserve", False)
+    }
+    driver_points = dict(
+        zip(
+            (d.key for d in drivers),
+            fabricate_standings_totals(len(drivers), leader=120),
+        )
+    )
+    ordered_drivers = standings_service.order_drivers(
+        driver_points,
+        points=driver_points,
+        finish_counts=driver_counts,
+        first_finish_rounds=driver_firsts,
+        participants=participants,
+        seats={
+            d.key: (1 if (d.team_key or d.team_name) in reserve_team_names else 0, d.team_name)
+            for d in drivers
+        },
+        names=names,
+    )
     driver_snapshots = [
         SimpleNamespace(
-            driver_user_id=driver.key,
+            driver_user_id=key,
             standing_position=position,
-            total_points=driver_totals[position - 1],
-            finish_counts={},
-            first_finish_rounds={},
-            race_participant=True,
+            total_points=driver_points[key],
+            finish_counts=dict(driver_counts.get(key, {})),
+            first_finish_rounds=dict(driver_firsts.get(key, {})),
+            race_participant=key in participants,
         )
-        for position, driver in enumerate(drivers, start=1)
+        for position, key in enumerate(ordered_drivers, start=1)
     ]
 
     racing_teams_with_keys = [team for team in racing_teams if team.name in team_key_of]
-    team_totals = fabricate_standings_totals(len(racing_teams_with_keys), leader=200)
+    team_points = dict(
+        zip(
+            (team_key_of[team.name] for team in racing_teams_with_keys),
+            fabricate_standings_totals(len(racing_teams_with_keys), leader=200),
+        )
+    )
+    ordered_teams = standings_service.order_teams(
+        team_points,
+        points=team_points,
+        finish_counts=team_counts,
+        first_finish_rounds=team_firsts,
+        team_meta={
+            team_key_of[team.name]: (0, getattr(team, "full_name", "") or team.name)
+            for team in racing_teams_with_keys
+        },
+    )
     team_snapshots = [
         SimpleNamespace(
-            team_instance_id=team_key_of[team.name],
+            team_instance_id=key,
             standing_position=position,
-            total_points=team_totals[position - 1],
-            finish_counts={},
-            first_finish_rounds={},
+            total_points=team_points[key],
+            finish_counts=dict(team_counts.get(key, {})),
+            first_finish_rounds=dict(team_firsts.get(key, {})),
         )
-        for position, team in enumerate(racing_teams_with_keys, start=1)
+        for position, key in enumerate(ordered_teams, start=1)
     ]
 
     # The gap needs no reference round, so a preview draws it in full where it draws no
