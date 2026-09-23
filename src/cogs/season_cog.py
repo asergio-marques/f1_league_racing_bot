@@ -2886,16 +2886,13 @@ class SeasonCog(commands.Cog):
 
     async def _weather_review_lines(self) -> list[str]:
         """The weather deadlines, as both reviews report them."""
-        from services.weather_config_service import get_weather_pipeline_config as _gwpc
+        from services.weather_config_service import (
+            describe_deadlines,
+            get_weather_pipeline_config,
+        )
 
-        _wcfg = await _gwpc(self.bot.db_path)
-        return [
-            "**Weather Config**",
-            f"  • Phase 1 deadline: {_wcfg.phase_1_days} day(s) before race",
-            f"  • Phase 2 deadline: {_wcfg.phase_2_days} day(s) before race",
-            f"  • Phase 3 deadline: {_wcfg.phase_3_hours}h before race",
-            "",
-        ]
+        _wcfg = await get_weather_pipeline_config(self.bot.db_path)
+        return ["**Weather Config**", *describe_deadlines(_wcfg), ""]
 
     async def _league_roles_review_lines(self) -> list[str]:
         """The league's base role and driver role, as the configuration review reports them.
