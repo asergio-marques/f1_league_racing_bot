@@ -279,7 +279,7 @@ async def attach_forecast(bot: LeagueBot, round_id: int, phase: int):
             await report_notices(bot, what, render.notices)
         if render.problem:
             await report(bot, what, render.problem)
-        if not render.draws:
+        if render.png is None:  # `render.draws`, in a form the type check can follow
             return None
 
         return discord.File(str(render.png), filename=Path(render.png).name)
