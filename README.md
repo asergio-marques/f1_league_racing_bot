@@ -2581,6 +2581,12 @@ Turning the daily updates back off needs no time and asks for nothing.
 Both methods can be on at once. Pre-render updates keep a posted lineup current; daily
 updates keep the folder warm so the first lineup of a season is not the one that waits.
 
+**`/season placements-review` fetches any portrait still missing, whichever method is on.**
+Before it draws a lineup, the review fetches the portrait of each driver in it who has none
+yet. A driver seated since the last daily update is therefore shown with their picture, as
+the league will see them, rather than as the placeholder. A portrait already present is left
+to the method you chose. With the feature off, the review fetches nothing.
+
 **Which picture is used.** The one the driver presents on your server: their server-specific
 profile picture where they have set one, and their ordinary Discord picture otherwise. A
 driver who has set neither — carrying only the coloured default Discord generates — has

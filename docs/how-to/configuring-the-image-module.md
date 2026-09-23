@@ -227,10 +227,12 @@ You can have both on at once. One of the two must stay on while the feature is e
 you try to switch off the last one, the bot refuses and changes nothing, because neither on
 would mean no photo is ever fetched — which is what `/images use-pfp toggle` already does.
 
-**Approval fetches them whichever of the two you chose.** Approving a season draws
-your lineups once to check they work, and it brings the photos down first so that check is
-made on what the season will actually post — not on yesterday's overnight batch, and not on
-the placeholder for a driver you seated this morning. It is the only place that overrides
+**The placements review fetches any photo still missing, whichever of the two you chose.**
+`/season placements-review` shows you each lineup as your league will see it, so before
+drawing one it brings down the photo of every driver in it who has none yet. That way a
+driver you seated this morning is not judged as the grey placeholder just because the
+overnight refresh hasn't run yet. A driver who already has a photo keeps it: keeping photos
+current is the job of the method you chose. The review is the only place that overrides
 your choice of *when* to fetch, and it never overrides *whether*: with the feature off, no
 photo is fetched at any point.
 
