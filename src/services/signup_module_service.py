@@ -78,6 +78,17 @@ class SignupModuleService:
             await db.commit()
 
     async def delete_config(self) -> None:
+        """Forget the signup channel and the window state beside it, on a disable.
+
+        The row holds what names a Discord object — the channel, the button and the
+        closed-status message — and the window's state. A channel can be deleted or given
+        another job while the module is off, so the disable clears it (constitution,
+        Principle X, rules 3 and 6).
+
+        The time slots and the three question settings are not in this row, and no key
+        joins their tables to it, so nothing cascades: they stand again when the module is
+        next enabled, as the signup specification requires (issue #127).
+        """
         async with get_connection(self._db_path) as db:
             await db.execute(
                 "DELETE FROM signup_module_config",
