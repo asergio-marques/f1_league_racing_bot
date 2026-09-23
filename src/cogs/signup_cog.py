@@ -830,7 +830,8 @@ class SignupCog(commands.Cog):
             return
 
         # Check bot perms
-        bot_member = guild.get_member(self.bot.user.id)  # type: ignore[union-attr]
+        bot_user = self.bot.user
+        bot_member = guild.get_member(bot_user.id) if bot_user is not None else None
         if bot_member:
             perms = channel.permissions_for(bot_member)
             if not (perms.manage_channels or perms.manage_roles):

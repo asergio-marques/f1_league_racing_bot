@@ -373,7 +373,7 @@ class SeasonService:
                         initial_stage.value if initial_stage is not None else None,
                     ),
                 )
-                season_id = cursor.lastrowid  # type: ignore[assignment]
+                season_id = inserted_id(cursor)
             else:
                 cursor = await db.execute(
                     "SELECT status, season_number FROM seasons WHERE id = ?", (season_id,)
@@ -1410,7 +1410,7 @@ class SeasonService:
                 (season_id, name, role_id, forecast_channel_id, tier),
             )
             await db.commit()
-            new_div_id: int = cursor.lastrowid  # type: ignore[assignment]
+            new_div_id = inserted_id(cursor)
 
             delta = timedelta(days=day_offset, hours=hour_offset)
             for rnd in src_rounds:

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import ast
 import inspect
-import re
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -53,27 +52,6 @@ async def test_create_bot_builds_a_league_bot():
 def test_bot_of_is_the_interactions_client():
     interaction = MagicMock()
     assert bot_of(interaction) is interaction.client
-
-
-def test_no_read_of_the_bots_services_is_silenced():
-    """A read of the bot's services is typed, and never silenced back to `Any`.
-
-    Before #228 some 440 such reads carried `# type: ignore[attr-defined]`. The type check
-    refuses a silence that silences nothing, but it runs in CI alone; this runs on every host,
-    and says what to do instead.
-    """
-    silenced = re.compile(r"#\s*type:\s*ignore\[[^\]]*\battr-defined\b")
-    read = re.compile(r"\.(?:" + "|".join(sorted(_declared())) + r")\b")
-    offenders = sorted(
-        f"{path.relative_to(SRC).as_posix()}:{number}"
-        for path in SRC.rglob("*.py")
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
-        if silenced.search(line) and read.search(line)
-    )
-    assert offenders == [], (
-        "Type the bot as `LeagueBot`, or reach it through `bot_of(interaction)`, instead of "
-        f"silencing the read: {offenders}"
-    )
 
 
 def test_the_wizard_has_its_bot_before_the_gateway_opens():

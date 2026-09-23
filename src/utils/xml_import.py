@@ -201,8 +201,8 @@ def parse_xml_payload(xml_text: str) -> tuple[XmlImportPayload, list[str]]:
 
         if has_positions:
             positions[session_type] = pos_dict
-        if has_fl:
-            fastest_laps[session_type] = fl_entry  # type: ignore[assignment]
+        if fl_entry is not None:
+            fastest_laps[session_type] = fl_entry
 
     if errors:
         raise XmlImportError(errors)

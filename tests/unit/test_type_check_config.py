@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import configparser
 import re
+import tokenize
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -128,3 +129,20 @@ def test_the_checker_is_pinned_with_the_bot():
     """CI installs `requirements.txt` and nothing else, so the check is only there if mypy is."""
     requirements = REQUIREMENTS.read_text(encoding="utf-8")
     assert re.search(r"^mypy==\S+$", requirements, re.M)
+
+
+def test_nothing_in_src_silences_the_check():
+    """No `# type: ignore` anywhere in the bot (#228). A silenced expression is `Any`, and
+    nothing that flows from it is checked: before #228 some 440 of them hid the bot's services,
+    and #119 and #226 went through two. Where the check cannot see a truth, the code states it —
+    a narrowing, a helper with a reason, a stub — rather than switching the check off.
+
+    Comments are read as tokens, so prose naming the phrase in a docstring is not mistaken for
+    one."""
+    offenders = []
+    for path in sorted(SRC.rglob("*.py")):
+        with path.open(encoding="utf-8") as source:
+            for token in tokenize.generate_tokens(source.readline):
+                if token.type == tokenize.COMMENT and re.search(r"type:\s*ignore", token.string):
+                    offenders.append(f"{path.relative_to(SRC).as_posix()}:{token.start[0]}")
+    assert offenders == []
